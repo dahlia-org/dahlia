@@ -8,6 +8,10 @@ enum ScreenshotExportService {
             .appendingPathComponent("screenshots", isDirectory: true)
     }
 
+    static func filename(for screenshot: MeetingScreenshotRecord) -> String {
+        "\(screenshot.id.uuidString).\(fileExtension(for: screenshot))"
+    }
+
     /// スクリーンショットを `<vault>/_dahlia/screenshots/<screenshotId>.<ext>` に書き出す。
     /// DB の `imageData` をそのまま書き出す。
     /// - Returns: vault 相対パスの配列
@@ -23,10 +27,7 @@ enum ScreenshotExportService {
         var relativePaths: [String] = []
 
         for screenshot in screenshots {
-            let ext = ImageEncoder.fileExtension(for: screenshot.mimeType)
-                ?? ImageEncoder.fileExtension(for: ImageEncoder.mimeType(for: screenshot.imageData) ?? "")
-                ?? ImageEncoder.preferredFileExtension
-            let filename = "\(screenshot.id.uuidString).\(ext)"
+            let filename = filename(for: screenshot)
             let relativePath = "_dahlia/screenshots/\(filename)"
             let fileURL = vaultURL.appendingPathComponent(relativePath)
             try screenshot.imageData.write(to: fileURL, options: .atomic)
@@ -34,5 +35,11 @@ enum ScreenshotExportService {
         }
 
         return relativePaths
+    }
+
+    private static func fileExtension(for screenshot: MeetingScreenshotRecord) -> String {
+        ImageEncoder.fileExtension(for: screenshot.mimeType)
+            ?? ImageEncoder.fileExtension(for: ImageEncoder.mimeType(for: screenshot.imageData) ?? "")
+            ?? ImageEncoder.preferredFileExtension
     }
 }

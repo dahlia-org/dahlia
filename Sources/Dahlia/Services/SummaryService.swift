@@ -72,19 +72,20 @@ enum SummaryService {
             messages.append(.init(role: "user", content: transcriptContent))
         } else {
             // マルチモーダル: テキスト + スクリーンショット画像（MainActor 外でリサイズ・エンコード）
-            let preparedImages = await Task.detached(priority: .userInitiated) {
+            let preparedImageDataURIs = await Task.detached(priority: .userInitiated) {
                 screenshots.map { screenshot in
                     let imageData = ImageEncoder.resized(screenshot.imageData, maxLongEdge: 1024)
                     let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
-                    let ext = ImageEncoder.fileExtension(for: mimeType) ?? ImageEncoder.preferredFileExtension
-                    return (mimeType: mimeType, ext: ext, dataURI: "data:\(mimeType);base64,\(imageData.base64EncodedString())")
+                    return "data:\(mimeType);base64,\(imageData.base64EncodedString())"
                 }
             }.value
             var parts: [LLMService.ContentPart] = [.text(transcriptContent)]
-            for (screenshot, preparedImage) in zip(screenshots, preparedImages) {
+            for (screenshot, preparedImageDataURI) in zip(screenshots, preparedImageDataURIs) {
                 let time = timeFormatter.string(from: screenshot.capturedAt)
-                parts.append(.text("<time>\(time)</time> <image_id>\(screenshot.id.uuidString).\(preparedImage.ext)</image_id>"))
-                parts.append(.imageURL(preparedImage.dataURI))
+                let imageFilename = ScreenshotExportService.filename(for: screenshot)
+                let imageMetadata = "<time>\(time)</time> <image_id>\(imageFilename)</image_id> <image_filename>\(imageFilename)</image_filename>"
+                parts.append(.text(imageMetadata))
+                parts.append(.imageURL(preparedImageDataURI))
             }
             messages.append(.init(role: "user", parts: parts))
         }
@@ -127,7 +128,8 @@ enum SummaryService {
 
         let frontmatter = "---\n\(frontmatterFields)\n---"
 
-        let markdown = frontmatter + "\n\n" + result.summary + "\n"
+        let summary = normalizeScreenshotEmbeds(result.summary, screenshots: screenshots)
+        let markdown = frontmatter + "\n\n" + summary + "\n"
         let fileName = summaryFileName(
             datePrefix: dateFormatter.string(from: createdAt),
             title: result.title,
@@ -138,7 +140,7 @@ enum SummaryService {
             fileName: fileName,
             markdown: markdown,
             title: result.title,
-            summary: result.summary,
+            summary: summary,
             tags: tags,
             actionItems: result.actionItems
         )
@@ -181,9 +183,44 @@ enum SummaryService {
         return tags
     }
 
+    private static let obsidianImageEmbedRegex = try! NSRegularExpression(
+        pattern: #"\!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
+    )
+
     private static let obsidianLinkRegex = try! NSRegularExpression(
         pattern: #"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
     )
+
+    static func normalizeScreenshotEmbeds(_ summary: String, screenshots: [MeetingScreenshotRecord]) -> String {
+        guard !screenshots.isEmpty else { return summary }
+
+        let matches = obsidianImageEmbedRegex.matches(in: summary, range: NSRange(summary.startIndex..., in: summary))
+        guard !matches.isEmpty else { return summary }
+
+        let filenamesById = Dictionary(
+            screenshots.map { screenshot in
+                (screenshot.id.uuidString.lowercased(), ScreenshotExportService.filename(for: screenshot))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var normalized = summary
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range(at: 0), in: normalized),
+                  let targetRange = Range(match.range(at: 1), in: normalized) else { continue }
+            let target = String(normalized[targetRange])
+            guard let filename = normalizedScreenshotFilename(for: target, filenamesById: filenamesById) else { continue }
+
+            let replacement = if let aliasRange = Range(match.range(at: 2), in: normalized) {
+                "![[\(filename)|\(normalized[aliasRange])]]"
+            } else {
+                "![[\(filename)]]"
+            }
+            normalized.replaceSubrange(fullRange, with: replacement)
+        }
+
+        return normalized
+    }
 
     static func sanitizeDisplaySummary(_ summary: String) -> String {
         var sanitized = summary.replacingOccurrences(
@@ -214,6 +251,23 @@ enum SummaryService {
     }
 
     // MARK: - Private Helpers
+
+    private static func normalizedScreenshotFilename(for obsidianTarget: String, filenamesById: [String: String]) -> String? {
+        let target = obsidianTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return nil }
+
+        let targetPath = target as NSString
+        let directory = targetPath.deletingLastPathComponent
+        let lastPathComponent = targetPath.lastPathComponent as NSString
+        let id = lastPathComponent.deletingPathExtension.lowercased()
+        guard let filename = filenamesById[id] else { return nil }
+
+        return if directory.isEmpty || directory == "." {
+            filename
+        } else {
+            "\(directory)/\(filename)"
+        }
+    }
 
     private static func summaryFileName(datePrefix: String, title: String, meetingId: UUID) -> String {
         guard !title.isEmpty else {

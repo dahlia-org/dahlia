@@ -198,7 +198,9 @@ final class AppSettings: ObservableObject {
     - Use the most relevant timestamp for the referenced point.
     </transcript_links>
     <screenshot_embeds>
-    - When referencing a screenshot, embed it using the format `![[<image_id>]]`.
+    - When referencing a screenshot, embed it using the format `![[<image_filename>]]`.
+    - Use the exact provided image filename, including its file extension.
+    - Example: `![[019E61FD-B5D6-7A04-AC25-4B820FE951E6.jpeg]]`.
     - Use the screenshot whose timestamp is closest to the referenced point.
     </screenshot_embeds>
     </rendering_rules>
