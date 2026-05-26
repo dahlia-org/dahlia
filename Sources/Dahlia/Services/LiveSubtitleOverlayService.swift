@@ -9,6 +9,7 @@ final class LiveSubtitleOverlayService: ObservableObject {
     private var contentModel: ContentModel?
     private var panelMoveObserver: NSObjectProtocol?
     private var lastResolvedPanelSize: NSSize?
+    private var pendingLayoutTask: Task<Void, Never>?
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -23,6 +24,7 @@ final class LiveSubtitleOverlayService: ObservableObject {
         if let contentModel {
             guard contentModel.payload != payload else { return }
             contentModel.payload = payload
+            lastResolvedPanelSize = nil
         } else {
             let contentModel = ContentModel(payload: payload)
             let overlayView = LiveSubtitleOverlayView(model: contentModel)
@@ -39,10 +41,12 @@ final class LiveSubtitleOverlayService: ObservableObject {
             }
         }
 
-        updatePanelLayout(animated: false)
+        schedulePanelLayoutUpdate()
     }
 
     func hide() {
+        pendingLayoutTask?.cancel()
+        pendingLayoutTask = nil
         contentModel = nil
         hostingView = nil
         lastResolvedPanelSize = nil
@@ -83,8 +87,17 @@ final class LiveSubtitleOverlayService: ObservableObject {
         panel.ignoresMouseEvents = false
         panel.contentView = hostingView
         observePanelMoves(panel)
-        lastResolvedPanelSize = resolvedPanelSize(for: hostingView.fittingSize)
         return panel
+    }
+
+    private func schedulePanelLayoutUpdate() {
+        pendingLayoutTask?.cancel()
+        pendingLayoutTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.updatePanelLayout(animated: false)
+            self?.pendingLayoutTask = nil
+        }
     }
 
     private func updatePanelLayout(animated: Bool) {
@@ -93,19 +106,22 @@ final class LiveSubtitleOverlayService: ObservableObject {
         hostingView.layoutSubtreeIfNeeded()
         let resolvedSize = resolvedPanelSize(for: hostingView.fittingSize)
         let nextFrame = panelFrame(for: resolvedSize, currentFrame: panel.frame)
-        let sizeChanged = resolvedSize != lastResolvedPanelSize
-        let frameChanged = !panel.frame.equalTo(nextFrame)
-        guard sizeChanged || frameChanged else { return }
+        let cachedSize = lastResolvedPanelSize
+        let sizeChanged = cachedSize.map { !sizesMatch($0, resolvedSize) } ?? false
+        let frameChanged = !framesMatch(panel.frame, nextFrame)
+        guard sizeChanged || frameChanged || cachedSize == nil else { return }
 
-        if sizeChanged {
-            hostingView.setFrameSize(resolvedSize)
-            lastResolvedPanelSize = resolvedSize
-        }
+        lastResolvedPanelSize = resolvedSize
+        guard sizeChanged || frameChanged else { return }
+        let shouldDisplayImmediately = sizeChanged && (
+            nextFrame.width > panel.frame.width
+                || nextFrame.height > panel.frame.height
+        )
 
         if animated {
             panel.animator().setFrame(nextFrame, display: true)
         } else {
-            panel.setFrame(nextFrame, display: false)
+            panel.setFrame(nextFrame, display: shouldDisplayImmediately)
         }
     }
 
@@ -187,10 +203,10 @@ final class LiveSubtitleOverlayService: ObservableObject {
             fallbackScreen: fallbackScreen
         )
         let origin = CGPoint(
-            x: clampedTopLeft.x,
-            y: clampedTopLeft.y - size.height
+            x: clampedTopLeft.x.rounded(),
+            y: (clampedTopLeft.y - size.height).rounded()
         )
-        return NSRect(origin: origin, size: size)
+        return NSRect(origin: origin, size: roundedSize(size))
     }
 
     private func topLeft(of frame: NSRect) -> CGPoint {
@@ -200,7 +216,28 @@ final class LiveSubtitleOverlayService: ObservableObject {
     private func resolvedPanelSize(for size: NSSize) -> NSSize {
         NSSize(
             width: LiveSubtitleOverlayLayout.fixedWidth,
-            height: max(size.height, LiveSubtitleOverlayLayout.minimumHeight)
+            height: max(size.height, LiveSubtitleOverlayLayout.minimumHeight).rounded()
+        )
+    }
+
+    private func roundedSize(_ size: NSSize) -> NSSize {
+        NSSize(width: size.width.rounded(), height: size.height.rounded())
+    }
+
+    private func sizesMatch(_ lhs: NSSize, _ rhs: NSSize) -> Bool {
+        roundedSize(lhs) == roundedSize(rhs)
+    }
+
+    private func framesMatch(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
+        roundedFrame(lhs).equalTo(roundedFrame(rhs))
+    }
+
+    private func roundedFrame(_ frame: NSRect) -> NSRect {
+        NSRect(
+            x: frame.minX.rounded(),
+            y: frame.minY.rounded(),
+            width: frame.width.rounded(),
+            height: frame.height.rounded()
         )
     }
 

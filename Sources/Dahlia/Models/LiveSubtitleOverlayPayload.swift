@@ -27,6 +27,12 @@ struct LiveSubtitleOverlayPayload: Equatable {
         var foundUnconfirmed = false
 
         for segment in segments.reversed() {
+            if !foundUnconfirmed,
+               segment.isConfirmed,
+               latestConfirmedEntriesReversed.count >= clampedMaxEntries {
+                continue
+            }
+
             guard let entry = entry(
                 for: segment,
                 sourceMode: sourceMode,
