@@ -40,6 +40,27 @@ struct GoogleDriveStoreTests {
 
         #expect(signInProvider.signInRequestedScopes == [GoogleOAuthScope.drive])
     }
+
+    @Test
+    func ignoresUnrelatedSessionChangeNotification() async {
+        let watchedNotification = Notification.Name("GoogleDriveStoreTests.watched.\(UUID().uuidString)")
+        let ignoredNotification = Notification.Name("GoogleDriveStoreTests.ignored.\(UUID().uuidString)")
+        let signInProvider = MockGoogleSignInProvider(
+            hasPreviousSignIn: true,
+            sessionDidChangeNotification: watchedNotification,
+            restoreResult: .success(driveSession)
+        )
+        let store = GoogleDriveStore(
+            signInProvider: signInProvider,
+            apiClient: MockGoogleDriveAPIClient()
+        )
+
+        NotificationCenter.default.post(name: ignoredNotification, object: nil)
+        await Task.yield()
+
+        #expect(store.state == .signedOut)
+        #expect(signInProvider.restoreCallCount == 0)
+    }
 }
 
 private let calendarOnlySession = GoogleSession(
@@ -58,27 +79,32 @@ private let driveSession = GoogleSession(
 private final class MockGoogleSignInProvider: GoogleSignInProviding {
     let isConfigured: Bool
     let hasPreviousSignIn: Bool
+    let sessionDidChangeNotification: Notification.Name
     var restoreResult: Result<GoogleSession, Error>
     var signInResult: Result<GoogleSession, Error>
     var refreshResult: Result<GoogleSession?, Error>
+    private(set) var restoreCallCount = 0
     private(set) var signInRequestedScopes: [Set<String>] = []
 
     init(
         isConfigured: Bool = true,
         hasPreviousSignIn: Bool = false,
+        sessionDidChangeNotification: Notification.Name = .googleDriveSessionDidChange,
         restoreResult: Result<GoogleSession, Error> = .success(driveSession),
         signInResult: Result<GoogleSession, Error> = .success(driveSession),
         refreshResult: Result<GoogleSession?, Error> = .success(driveSession)
     ) {
         self.isConfigured = isConfigured
         self.hasPreviousSignIn = hasPreviousSignIn
+        self.sessionDidChangeNotification = sessionDidChangeNotification
         self.restoreResult = restoreResult
         self.signInResult = signInResult
         self.refreshResult = refreshResult
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
-        try restoreResult.get()
+        restoreCallCount += 1
+        return try restoreResult.get()
     }
 
     func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {

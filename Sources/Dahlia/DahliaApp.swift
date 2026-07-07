@@ -2,21 +2,46 @@ import AppKit
 import SwiftUI
 
 enum WindowID {
+    static let main = "main"
     static let vaultManager = "vault-manager"
+    static let projectManager = "project-manager"
 }
 
 @main
 struct DahliaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var viewModel = CaptionViewModel()
-    @State private var sidebarViewModel = SidebarViewModel()
+    @StateObject private var viewModel: CaptionViewModel
+    @State private var sidebarViewModel: SidebarViewModel
     @StateObject private var meetingDetectionService = MeetingDetectionService()
-    @StateObject private var liveSubtitleOverlayService = LiveSubtitleOverlayService()
+    @StateObject private var liveSubtitleOverlayService: LiveSubtitleOverlayService
+    @State private var liveSubtitleOverlayCoordinator: LiveSubtitleOverlayCoordinator
+    @State private var recordingCoordinator: RecordingCoordinator
     @State private var appDatabase: AppDatabaseManager?
     @State private var showVaultPicker = true
 
+    @MainActor
+    init() {
+        let viewModel = CaptionViewModel()
+        let sidebarViewModel = SidebarViewModel()
+        let liveSubtitleOverlayService = LiveSubtitleOverlayService()
+        let recordingCoordinator = RecordingCoordinator(
+            viewModel: viewModel,
+            sidebarViewModel: sidebarViewModel
+        )
+        let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
+            viewModel: viewModel,
+            liveSubtitleOverlayService: liveSubtitleOverlayService
+        )
+
+        _viewModel = StateObject(wrappedValue: viewModel)
+        _sidebarViewModel = State(initialValue: sidebarViewModel)
+        _liveSubtitleOverlayService = StateObject(wrappedValue: liveSubtitleOverlayService)
+        _recordingCoordinator = State(initialValue: recordingCoordinator)
+        _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
+    }
+
     var body: some Scene {
-        WindowGroup {
+        Window(L10n.dahlia, id: WindowID.main) {
             Group {
                 if showVaultPicker {
                     VaultPickerView(appDatabase: appDatabase) { vault in
@@ -26,18 +51,25 @@ struct DahliaApp: App {
                     ContentView(
                         viewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
-                        liveSubtitleOverlayService: liveSubtitleOverlayService,
+                        recordingCoordinator: recordingCoordinator,
                         onSelectVault: { vault in openVault(vault) }
                     )
                 }
             }
             .task {
+                _ = liveSubtitleOverlayCoordinator
                 initializeAppIfNeeded()
-                await GoogleCalendarStore.shared.restoreSessionIfNeeded()
+                let settings = AppSettings.shared
+                if settings.isCalendarSourceEnabled(.google) {
+                    await GoogleCalendarStore.shared.restoreSessionIfNeeded()
+                }
+                if settings.isCalendarSourceEnabled(.macOS) {
+                    await MacCalendarStore.shared.refreshIfNeeded()
+                }
             }
         }
         .windowResizability(.contentMinSize)
-        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+        .defaultLaunchBehavior(.presented)
 
         Window(L10n.vault, id: WindowID.vaultManager) {
             VaultPickerView(appDatabase: appDatabase) { vault in
@@ -46,15 +78,35 @@ struct DahliaApp: App {
         }
         .windowStyle(.automatic)
 
-        Settings {
-            SettingsView()
+        Window(L10n.projectManagement, id: WindowID.projectManager) {
+            ProjectManagementView(sidebarViewModel: sidebarViewModel)
         }
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+
+        Settings {
+            SettingsView(
+                sidebarViewModel: sidebarViewModel,
+                onSelectVault: { vault in openVault(vault) }
+            )
+        }
+
+        MenuBarExtra {
+            MenuBarMenuView(
+                viewModel: viewModel,
+                recordingCoordinator: recordingCoordinator
+            )
+        } label: {
+            MenuBarLabel(viewModel: viewModel)
+        }
+        .menuBarExtraStyle(.menu)
     }
 
     private func initializeAppIfNeeded() {
         guard appDatabase == nil else { return }
         guard let db = try? AppDatabaseManager() else { return }
         appDatabase = db
+        sidebarViewModel.setAppDatabase(db)
 
         let repo = MeetingRepository(dbQueue: db.dbQueue)
         if let lastVault = try? repo.fetchLastOpenedVault() {
@@ -65,12 +117,10 @@ struct DahliaApp: App {
     private func openVault(_ vault: VaultRecord) {
         guard let db = appDatabase else { return }
 
-        // 録音中なら停止
         if viewModel.isListening {
             viewModel.stopListening()
         }
 
-        // 保管庫ディレクトリが存在しなければ作成
         try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
 
         AppSettings.shared.currentVault = vault
@@ -97,35 +147,21 @@ struct DahliaApp: App {
         startTranscription: Bool
     ) {
         guard let vault = AppSettings.shared.currentVault else { return }
-        focusMainWindow()
+        MainWindowOpener.shared.openMainWindow()
 
         if let event = meeting.calendarEvent {
             let repository = MeetingRepository(dbQueue: db.dbQueue)
             if let existingMeetingId = try? repository.fetchMeetingIdForCalendarEvent(
-                platform: CalendarEventRecord.googleCalendarPlatform,
+                platform: event.platform,
                 platformId: event.platformId
             ) {
-                sidebarViewModel.deselectProject()
-                sidebarViewModel.selectDestination(.meetings)
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 if startTranscription {
-                    let ctx = meetingContext(for: existingMeetingId)
-                    Task {
-                        await viewModel.startListening(
-                            dbQueue: db.dbQueue,
-                            projectURL: ctx.projectURL,
-                            vaultId: vault.id,
-                            projectId: ctx.projectId,
-                            projectName: ctx.projectName,
-                            vaultURL: vault.url,
-                            appendingTo: existingMeetingId
-                        )
-                    }
+                    startTranscriptionForMeeting(existingMeetingId, in: db, vault: vault)
                 }
                 return
             }
 
-            sidebarViewModel.deselectProject()
             sidebarViewModel.clearMeetingSelection()
             viewModel.beginDraftMeeting(
                 from: event,
@@ -133,52 +169,41 @@ struct DahliaApp: App {
                 vaultURL: vault.url
             )
             guard let meetingId = viewModel.materializeDraftMeeting() else { return }
-            sidebarViewModel.selectDestination(.meetings)
             sidebarViewModel.selectMeeting(meetingId)
             if startTranscription {
-                Task { @MainActor in
-                    await viewModel.startListening(
-                        dbQueue: db.dbQueue,
-                        projectURL: nil,
-                        vaultId: vault.id,
-                        projectId: nil,
-                        projectName: nil,
-                        vaultURL: vault.url,
-                        appendingTo: meetingId
-                    )
-                }
+                startTranscriptionForMeeting(meetingId, in: db, vault: vault)
             }
             return
         }
 
-        let ctx = sidebarViewModel.selectedProjectContext
-        if ctx.projectId == nil {
-            sidebarViewModel.deselectProjectKeepingMeetingSelection()
-        }
         viewModel.createEmptyMeeting(
             dbQueue: db.dbQueue,
-            projectURL: ctx.projectURL,
+            projectURL: nil,
             vaultId: vault.id,
-            projectId: ctx.projectId,
+            projectId: nil,
             name: "",
-            projectName: ctx.projectName,
+            projectName: nil,
             vaultURL: vault.url
         )
         guard let meetingId = viewModel.currentMeetingId else { return }
-        sidebarViewModel.selectDestination(.meetings)
         sidebarViewModel.selectMeeting(meetingId)
         if startTranscription {
-            Task { @MainActor in
-                await viewModel.startListening(
-                    dbQueue: db.dbQueue,
-                    projectURL: ctx.projectURL,
-                    vaultId: vault.id,
-                    projectId: ctx.projectId,
-                    projectName: ctx.projectName,
-                    vaultURL: vault.url,
-                    appendingTo: meetingId
-                )
-            }
+            startTranscriptionForMeeting(meetingId, in: db, vault: vault)
+        }
+    }
+
+    private func startTranscriptionForMeeting(_ meetingId: UUID, in db: AppDatabaseManager, vault: VaultRecord) {
+        let ctx = meetingContext(for: meetingId)
+        Task { @MainActor in
+            await viewModel.startListening(
+                dbQueue: db.dbQueue,
+                projectURL: ctx.projectURL,
+                vaultId: vault.id,
+                projectId: ctx.projectId,
+                projectName: ctx.projectName,
+                vaultURL: vault.url,
+                appendingTo: meetingId
+            )
         }
     }
 
@@ -190,29 +215,23 @@ struct DahliaApp: App {
         let projectURL = meetingItem.projectName.map { sidebarViewModel.projectURL(for: $0) }
         return (projectURL, meetingItem.projectId, meetingItem.projectName)
     }
-
-    @MainActor
-    private func focusMainWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let targetWindow = NSApp.windows.first { window in
-            !(window is NSPanel) && window.identifier?.rawValue != WindowID.vaultManager
-        } ?? NSApp.mainWindow ?? NSApp.keyWindow
-
-        targetWindow?.orderFrontRegardless()
-        targetWindow?.makeKeyAndOrderFront(nil)
-    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
-        // Agent サブプロセスの stdin パイプが閉じた際の SIGPIPE クラッシュを防止
-        signal(SIGPIPE, SIG_IGN)
         ErrorReportingService.start()
         NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            MainWindowOpener.shared.openMainWindow()
+        }
+        return true
     }
 }

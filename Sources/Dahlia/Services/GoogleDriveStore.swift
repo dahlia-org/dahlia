@@ -38,16 +38,17 @@ final class GoogleDriveStore: ObservableObject {
     private var authChangeTask: Task<Void, Never>?
 
     init(
-        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(),
+        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .drive),
         apiClient: any GoogleDriveAPIClientProviding = GoogleDriveAPIClient(),
         presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow }
     ) {
         self.signInProvider = signInProvider
         self.apiClient = apiClient
         self.presentingWindowProvider = presentingWindowProvider
+        let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeTask = Task { [weak self] in
-            for await _ in NotificationCenter.default.notifications(named: .googleSessionDidChange) {
+            for await _ in NotificationCenter.default.notifications(named: sessionDidChangeNotification) {
                 await self?.handleAuthSessionChanged()
             }
         }

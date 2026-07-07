@@ -19,13 +19,13 @@ enum GoogleCalendarAPIError: LocalizedError {
 
 @MainActor
 protocol GoogleCalendarAPIClientProviding: AnyObject {
-    func fetchCalendarList(accessToken: String) async throws -> [GoogleCalendarListItem]
+    func fetchCalendarList(accessToken: String) async throws -> [CalendarListItem]
     func fetchUpcomingEvents(
         accessToken: String,
-        calendars: [GoogleCalendarListItem],
+        calendars: [CalendarListItem],
         now: Date,
         daysAhead: Int
-    ) async throws -> [GoogleCalendarEvent]
+    ) async throws -> [CalendarEvent]
 }
 
 @MainActor
@@ -38,7 +38,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         self.calendar = calendar
     }
 
-    func fetchCalendarList(accessToken: String) async throws -> [GoogleCalendarListItem] {
+    func fetchCalendarList(accessToken: String) async throws -> [CalendarListItem] {
         var components = URLComponents(string: "https://www.googleapis.com/calendar/v3/users/me/calendarList")
         components?.queryItems = [
             URLQueryItem(name: "minAccessRole", value: "reader"),
@@ -50,7 +50,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         return response.items
             .filter { !$0.deleted }
             .map {
-                GoogleCalendarListItem(
+                CalendarListItem(
                     id: $0.id,
                     title: $0.summaryOverride?.nilIfBlank ?? $0.summary?.nilIfBlank ?? $0.id,
                     colorHex: $0.backgroundColor,
@@ -67,16 +67,16 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 
     func fetchUpcomingEvents(
         accessToken: String,
-        calendars: [GoogleCalendarListItem],
+        calendars: [CalendarListItem],
         now: Date,
         daysAhead: Int = 7
-    ) async throws -> [GoogleCalendarEvent] {
+    ) async throws -> [CalendarEvent] {
         let intervalEnd = calendar.date(byAdding: .day, value: daysAhead, to: now) ?? now
         let calendarRef = calendar
 
         let fetchResults = try await withThrowingTaskGroup(
-            of: (GoogleCalendarListItem, Data).self,
-            returning: [(GoogleCalendarListItem, Data)].self
+            of: (CalendarListItem, Data).self,
+            returning: [(CalendarListItem, Data)].self
         ) { group in
             for calendarItem in calendars {
                 group.addTask {
@@ -91,14 +91,14 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
                 }
             }
 
-            var results: [(GoogleCalendarListItem, Data)] = []
+            var results: [(CalendarListItem, Data)] = []
             for try await result in group {
                 results.append(result)
             }
             return results
         }
 
-        var events: [GoogleCalendarEvent] = []
+        var events: [CalendarEvent] = []
         for (calendarItem, data) in fetchResults {
             let response = try JSONDecoder().decode(EventListResponse.self, from: data)
             let calendarEvents = try response.items.compactMap {
@@ -112,20 +112,21 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 
     static func makeEvent(
         from item: EventItem,
-        calendarItem: GoogleCalendarListItem,
+        calendarItem: CalendarListItem,
         calendar: Calendar = .current
-    ) throws -> GoogleCalendarEvent? {
+    ) throws -> CalendarEvent? {
         guard !item.isIgnoredForUpcomingEvents else { return nil }
 
         guard let start = try item.start.resolvedDate(calendar: calendar),
               let end = try item.end.resolvedDate(calendar: calendar)
         else { return nil }
 
-        return GoogleCalendarEvent(
+        return CalendarEvent(
             id: "\(calendarItem.id)::\(item.id)",
             calendarID: calendarItem.id,
             calendarName: calendarItem.title,
             calendarColorHex: calendarItem.colorHex,
+            platform: CalendarEventPlatform.googleCalendar,
             platformId: item.id,
             title: item.summary?.nilIfBlank ?? L10n.googleCalendarUntitledEvent,
             description: item.description?.nilIfBlank ?? "",
@@ -152,10 +153,10 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
     }
 
     static func sortAndFilter(
-        _ events: [GoogleCalendarEvent],
+        _ events: [CalendarEvent],
         now: Date,
         intervalEnd: Date
-    ) -> [GoogleCalendarEvent] {
+    ) -> [CalendarEvent] {
         events
             .filter { $0.endDate >= now && $0.startDate <= intervalEnd }
             .sorted { lhs, rhs in
@@ -174,7 +175,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
     }
 
     private static func requestEvents(
-        for calendarItem: GoogleCalendarListItem,
+        for calendarItem: CalendarListItem,
         accessToken: String,
         now: Date,
         intervalEnd: Date,

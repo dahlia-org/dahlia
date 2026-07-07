@@ -2,10 +2,14 @@
 "Delete" = "削除";
 "Rename" = "名前を変更";
 "Create" = "作成";
+"Auto" = "自動";
 "Apply" = "適用";
 "Clear" = "クリア";
 "Close" = "閉じる";
 "Search" = "検索";
+"Actions" = "操作";
+"Dahlia" = "Dahlia";
+"Language" = "言語";
 "Expand" = "展開";
 "Collapse" = "折りたたむ";
 "Back" = "戻る";
@@ -20,6 +24,7 @@
 "Good evening" = "こんばんは";
 "Meetings" = "Meetings";
 "Projects" = "Projects";
+"Project Management" = "プロジェクト管理";
 "Instructions" = "Instructions";
 "Context" = "Context";
 "Action Items" = "Action Items";
@@ -63,17 +68,40 @@
 "No content yet" = "まだ内容がありません";
 "No results found" = "結果が見つかりません";
 "No project" = "未設定";
+"Summary Destinations" = "要約の書き出し先";
+"Manage where this project's summary files are saved." = "このプロジェクトの要約ファイルを書き出す場所を管理します。";
+"Local Summary Folder" = "ローカルの要約フォルダ";
+"Project Context" = "プロジェクト Context";
+"Edit the CONTEXT.md file that is included when summaries are generated for this project." = "このプロジェクトの要約生成時に含める CONTEXT.md を編集します。";
+"CONTEXT.md" = "CONTEXT.md";
+"Create Context File" = "Context ファイルを作成";
+"Open Context File" = "Context ファイルを開く";
+"Saved" = "保存済み";
+"Could not load CONTEXT.md: %@" = "CONTEXT.md を読み込めませんでした: %@";
+"Could not save CONTEXT.md: %@" = "CONTEXT.md を保存できませんでした: %@";
+"Select a project to manage summary destinations and instructions." = "要約の書き出し先と instruction を管理するプロジェクトを選択してください。";
+"Open a vault before managing project settings." = "プロジェクト設定を管理するには保管庫を開いてください。";
 "Today" = "今日";
 "Tomorrow" = "明日";
 "In Progress" = "進行中";
 "No meetings yet" = "まだ meeting がありません";
 "No meetings match the current filter." = "現在のフィルターに一致する meeting はありません。";
+"%lld meetings" = "%lld 件の meeting";
+"Missing on Disk" = "ディスク上に見つかりません";
+"Search meetings..." = "ミーティングを検索...";
+"Search projects..." = "プロジェクトを検索...";
+"Move to Project" = "プロジェクトへ移動";
+"No meeting selected" = "ミーティングが選択されていません";
+"Select a meeting from the sidebar." = "サイドバーからミーティングを選択してください。";
 "No instructions yet" = "まだ instructions がありません";
 "No action items yet" = "まだ Action Items はありません";
 "No action items match the current filter." = "現在のフィルターに一致する Action Items はありません。";
 "Action items extracted from summaries will appear here." = "要約から抽出された Action Items がここに表示されます。";
 "We couldn't detect any conversation in this meeting." = "この meeting では会話を検出できませんでした。";
 "Recording now" = "録音中";
+"Transcribing now" = "文字起こし中";
+"Return to recording meeting" = "録音中のミーティングに戻る";
+"Return to transcribing meeting" = "文字起こし中のミーティングに戻る";
 "Yesterday" = "昨日";
 "Delete %lld items" = "%lld 件を削除";
 "Move %lld items" = "%lld 件を移動";
@@ -85,6 +113,9 @@
 "Transcription" = "文字起こし";
 "%lld segments" = "%lld セグメント";
 "Stop" = "停止";
+"Start Recording" = "録音を開始";
+"Stop Recording" = "録音を停止";
+"Stop transcribing" = "文字起こしを停止";
 "Pause" = "一時停止";
 "Resume" = "再開";
 "Record" = "録音";
@@ -93,6 +124,20 @@
 "New Transcription" = "新規文字起こし";
 "Screen" = "画面";
 "Source" = "ソース";
+"Not Selected" = "未設定";
+"Entire Desktop" = "デスクトップ全体";
+"Take Screenshot" = "スクリーンショットを撮影";
+"Display not found" = "ディスプレイが見つかりません";
+"Screenshot image was unavailable" = "スクリーンショット画像を取得できませんでした";
+"Screenshot encoding failed" = "スクリーンショットのエンコードに失敗しました";
+"Screenshot source is not selected or is unavailable" = "スクリーンショット対象が未設定、または利用できません";
+"Screenshot capture failed: %@" = "スクリーンショットの取得に失敗しました: %@";
+"Automatic Screenshots" = "自動スクリーンショット";
+"Capture the screen during recording and save a new image when the display changes significantly." = "録音中に画面を確認し、表示が大きく変わったときに新しい画像を保存します。";
+"Automatically add screenshots while recording." = "録音中にスクリーンショットを自動追加します。";
+"Screenshot Interval" = "スクリーンショット間隔";
+"Choose how often Dahlia checks the screen for meaningful changes." = "Dahlia が画面の変化を確認する間隔を選びます。";
+"%lld seconds" = "%lld 秒";
 "Show Live Subtitles" = "ライブ字幕を表示";
 "Hide Live Subtitles" = "ライブ字幕を隠す";
 "Live Subtitle Overlay" = "ライブ字幕オーバーレイ";
@@ -110,40 +155,11 @@
 "NotesPlaceholder" = "メモを入力...";
 "Screenshots" = "スクリーンショット";
 "Transcript" = "文字起こし";
-"Agent" = "エージェント";
 "Assignee" = "担当者";
 "Assign to me" = "自分に割り当てる";
 "Edit assignee" = "担当者を編集";
 "Mark action item complete" = "アクションアイテムを完了にする";
 "Mark action item incomplete" = "アクションアイテムを未完了に戻す";
-
-/* Agent */
-"Project Mode" = "プロジェクトモード";
-"Transcript Mode" = "文字起こしモード";
-"Run the configured agent command in the project directory." = "設定されたエージェントコマンドをプロジェクトディレクトリで実行します。";
-"Continuously feed transcript to the configured agent command." = "設定されたエージェントコマンドに文字起こしを継続的に入力します。";
-"Ask Agent" = "Ask Agent";
-"Ask anything about your project or transcript…" = "プロジェクトや文字起こしについて質問できます…";
-"New chat" = "新規チャット";
-"Start Agent" = "開始";
-"Stop Agent" = "停止";
-"Launching agent…" = "エージェントを起動中…";
-"Live mode" = "Live mode";
-"Thinking…" = "考え中…";
-
-/* Settings (Agent) */
-"Launch Command" = "起動コマンド";
-"Command used to launch the agent. Default: `claude`. A full path is optional when the executable is available in PATH or common user bin directories." = "エージェントの起動コマンドです。デフォルトは `claude` です。実行ファイルが PATH または一般的なユーザー用 bin ディレクトリで見つかる場合、フルパスは不要です。";
-"Permission Mode" = "権限モード";
-"Choose how the agent handles permission prompts when using tools and editing files." = "ツール利用やファイル編集時の権限プロンプトの扱い方を選びます。";
-"Auto" = "自動";
-"Default" = "通常";
-"Accept Edits" = "編集を自動許可";
-"Bypass Permissions" = "権限確認をスキップ";
-"Allowed Tools" = "許可ツール";
-"Space-separated tool allowlist passed to the agent CLI. Leave blank to use the default set." = "Agent CLI に渡す、スペース区切りの許可ツール一覧です。空欄の場合はデフォルト値を使います。";
-"Add a tool and press Space" = "ツール名を入力して Space で追加";
-"Remove %@" = "%@ を削除";
 
 /* Audio Source Mode */
 "Audio source" = "音声ソース";
@@ -163,8 +179,11 @@
 "Notifications" = "通知";
 "Calendar" = "カレンダー";
 "AI Summary" = "AI Summary";
-"AI Agent" = "AI Agent";
+"Developer Settings" = "開発者設定";
 "Vault" = "保管庫";
+"Current Vault" = "現在の保管庫";
+"Choose the vault used for recordings and sync." = "録音と同期に使用する保管庫を選択します。";
+"No vault selected" = "保管庫が選択されていません";
 "Appearance" = "外観";
 "Display" = "表示";
 "App Language" = "表示言語";
@@ -177,11 +196,27 @@
 "Target Language" = "翻訳先の言語";
 "Choose which language translated transcript lines should use." = "翻訳済みの文字起こし行に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
-"Configure automatic summaries and the LLM connection used to generate them." = "自動要約と、その生成に使う LLM 接続設定を管理します。";
-"Configure the built-in agent sidebar launch command and permission mode." = "内蔵 Agent サイドバーの起動コマンドと権限モードを設定します。";
-"Run a quick request to validate your endpoint, model, and token." = "エンドポイント、モデル、トークンの組み合わせを簡易的に検証します。";
+"Configure the LLM connection used for manual summary generation." = "手動の要約生成に使用する LLM 接続設定を管理します。";
+"Run a quick request to validate your endpoint, model, and token." = "プロバイダー設定、モデル、トークンの組み合わせを簡易的に検証します。";
+"Override developer-managed credentials used by external service integrations." = "外部サービス連携で使用する開発者管理の認証情報を上書きします。";
+"Google OAuth Client ID" = "Google OAuth クライアント ID";
+"Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "空欄の場合はバンドル済み、または環境変数の GOOGLE_CLIENT_ID を使用します。";
+"Google OAuth Client Secret" = "Google OAuth クライアントシークレット";
+"Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set." = "任意です。設定すると Keychain に保存され、GOOGLE_CLIENT_SECRET より優先して使用されます。";
+"Reconnect Google services after changing OAuth credentials." = "OAuth 認証情報を変更した後は Google サービスを再接続してください。";
 "Google Calendar" = "Google カレンダー";
+"macOS Calendar" = "macOS カレンダー";
+"Calendar Source" = "カレンダーソース";
+"Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
+"Calendar Sources" = "カレンダーソース";
+"Choose which calendar services provide upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
+"Show events from Google Calendar." = "Google カレンダーの予定を表示します。";
+"Show events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を表示します。";
+"Upcoming schedule" = "今後の予定";
+"Show Upcoming Schedule" = "今後の予定を表示";
+"Select a calendar event to prepare transcription." = "カレンダーの予定を選択して、文字起こし画面を準備します。";
 "Connect a Google account and choose which calendars appear on Home." = "Google アカウントを接続し、Home に表示するカレンダーを選びます。";
+"Use events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を使用します。";
 "Display Calendars" = "表示するカレンダー";
 "Only selected calendars are shown on Home." = "選択したカレンダーのみを Home に表示します。";
 "Connect" = "接続";
@@ -191,22 +226,41 @@
 "No Google account connected" = "Google アカウント未接続";
 "Primary calendar" = "メインカレンダー";
 "No calendars are available for this Google account." = "この Google アカウントで利用できるカレンダーがありません。";
+"No calendars are available in macOS Calendar." = "macOS カレンダーで利用できるカレンダーがありません。";
+"Loading calendars…" = "カレンダーを読み込み中…";
 "Loading Google Calendar…" = "Google カレンダーを読み込み中…";
+"Loading macOS Calendar…" = "macOS カレンダーを読み込み中…";
 "Retry" = "再試行";
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
-"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Google カレンダーを接続する前に GOOGLE_CLIENT_ID を設定してください。";
+"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Google カレンダーを接続する前に、開発者設定または環境変数で GOOGLE_CLIENT_ID を設定してください。";
 "Connect Google Calendar" = "Google カレンダーを接続";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Home に予定を表示するには設定画面から Google カレンダーを接続してください。";
+"Connect Google Calendar from Settings to show your upcoming events here." = "ここに予定を表示するには設定画面から Google カレンダーを接続してください。";
 "Choose calendars to show" = "表示するカレンダーを選択";
 "Select at least one calendar in Settings to show events on Home." = "Home に予定を表示するには設定画面で少なくとも 1 つのカレンダーを選択してください。";
+"Select at least one calendar in Settings to show events here." = "ここに予定を表示するには設定画面で少なくとも 1 つのカレンダーを選択してください。";
+"No calendar sources enabled" = "有効なカレンダーソースがありません";
+"Enable at least one calendar source in Settings to show upcoming events." = "今後の予定を表示するには設定画面で少なくとも 1 つのカレンダーソースを有効にしてください。";
 "No upcoming events" = "今後の予定はありません";
 "There are no events in the next 7 days for the selected calendars." = "選択したカレンダーには今後 7 日間の予定がありません。";
 "Could not load Google Calendar" = "Google カレンダーを読み込めませんでした";
+"Could not load macOS Calendar" = "macOS カレンダーを読み込めませんでした";
+"Allow macOS Calendar access" = "macOS カレンダーへのアクセスを許可";
+"Allow Calendar access to show upcoming events from this Mac." = "この Mac の今後の予定を表示するにはカレンダーへのアクセスを許可してください。";
+"Allow Access" = "アクセスを許可";
+"macOS Calendar access is denied" = "macOS カレンダーへのアクセスが拒否されています";
+"Allow Dahlia to access Calendars in System Settings > Privacy & Security > Calendars." = "システム設定 > プライバシーとセキュリティ > カレンダー で Dahlia のアクセスを許可してください。";
+"Calendar access granted" = "カレンダーアクセス許可済み";
+"Calendar access not granted" = "カレンダーアクセス未許可";
+"Allow access to load your upcoming schedule from Calendar." = "カレンダーから今後の予定を読み込むにはアクセスを許可してください。";
+"macOS Calendar connected" = "macOS カレンダー接続済み";
+"Unexpected response from macOS Calendar" = "macOS カレンダーから予期しないレスポンスが返されました";
+"Untitled calendar" = "タイトル未設定のカレンダー";
 "No window is available to present Google sign-in." = "Google サインインを表示できるウィンドウがありません。";
 "No previous Google Calendar session was found." = "以前の Google カレンダーセッションは見つかりませんでした。";
-"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "この Google OAuth クライアントには client secret が必要です。Google Cloud Console に表示されている値を GOOGLE_CLIENT_SECRET に設定し、Dahlia を再起動してください。";
+"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "この Google OAuth クライアントには client secret が必要です。Google Cloud Console の値を開発者設定または GOOGLE_CLIENT_SECRET に設定してください。";
 "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements." = "Google サインインが Keychain にアクセスできませんでした。必要な Keychain entitlement 付きでコード署名されるよう、./scripts/run-dev.sh でアプリを作り直してください。";
 "Google Account" = "Google アカウント";
 "Untitled event" = "タイトル未設定";
@@ -232,13 +286,21 @@
 
 /* Settings - LLM */
 "LLM Settings" = "モデル設定";
+"OpenAI" = "OpenAI";
+"Databricks" = "Databricks";
+"Custom endpoint" = "カスタムエンドポイント";
+"Model Provider" = "モデルプロバイダー";
+"Choose OpenAI, Databricks AI Gateway, or any OpenAI-compatible endpoint." = "OpenAI、Databricks AI Gateway、または OpenAI 互換エンドポイントを選択します。";
 "Endpoint URL" = "エンドポイント URL";
+"Uses OpenAI's Chat Completions API." = "OpenAI の Chat Completions API を使用します。";
+"Databricks Workspace ID" = "Databricks Workspace ID";
+"Used to build the Databricks AI Gateway chat completions URL." = "Databricks AI Gateway の chat completions URL の生成に使用します。";
+"Endpoint must accept OpenAI-compatible chat completions requests." = "OpenAI 互換の chat completions リクエストを受け付けるエンドポイントを指定します。";
+"Endpoint will be generated after entering a Workspace ID." = "Workspace ID を入力するとエンドポイントが生成されます。";
 "Model Name" = "モデル名";
 "API Token" = "API トークン";
 "Token is stored securely in Keychain." = "トークンはキーチェーンに安全に保存されます。";
-"Auto-Summary" = "自動要約";
-"Automatically generate a summary when transcription stops." = "文字起こし停止時に自動で要約を生成します。";
-"Configure an LLM endpoint for post-transcription summarization." = "文字起こし後の要約生成に使用する LLM エンドポイントを設定します。";
+"Configure an LLM endpoint for manual summary generation." = "手動の要約生成に使用するモデルプロバイダーと接続設定を管理します。";
 "Test Connection" = "疎通確認";
 "Testing..." = "テスト中...";
 "Connection successful" = "接続成功";
@@ -249,6 +311,7 @@
 
 /* Summary */
 "Generating summary..." = "要約を生成中...";
+"No summary has been generated yet." = "要約はまだ生成されていません。";
 "Summary generated" = "要約が生成されました";
 "Open Summary" = "要約を開く";
 "Generate Summary" = "要約を生成";
@@ -259,7 +322,7 @@
 "Open Templates Folder" = "テンプレートフォルダを開く";
 "Reset Presets" = "プリセットに戻す";
 "Select a template from _custom_instructions/ in the vault." = "保管庫内の _custom_instructions/ からテンプレートを選択します。";
-"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM の設定が不完全です。設定画面でエンドポイント、モデル、API トークンを設定してください。";
+"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM の設定が不完全です。設定画面でプロバイダー設定、モデル、API トークンを設定してください。";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "画面収録のアクセスが拒否されました。システム設定 > プライバシーとセキュリティ > 画面収録 で許可してください";
@@ -283,7 +346,14 @@
 /* Sidebar Footer */
 "Switch Vault" = "保管庫を切り替え";
 "Manage Vaults..." = "保管庫を管理...";
+"Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";
+
+/* Menu Bar */
+"Open Dahlia" = "Dahlia を開く";
+"Live Subtitles" = "ライブ字幕";
+"Settings..." = "設定...";
+"Quit Dahlia" = "Dahlia を終了";
 
 /* Meeting Detection */
 "Meeting Detection" = "会議検出";
@@ -296,6 +366,7 @@
 "Meeting detected" = "ミーティングが検出されました";
 "Meeting detected in %@" = "%@ でミーティングが検出されました";
 "Microphone is in use" = "マイクが使用されています";
+"No screenshots yet." = "スクリーンショットはまだありません。";
 
 /* Keychain */
 "Authenticate to access your API token stored in Keychain." = "キーチェーンに保存された API トークンにアクセスするために認証が必要です。";
@@ -305,9 +376,13 @@
 "Sign in with Google to choose project folders and export summaries." = "Google にサインインしてプロジェクトごとの保存先フォルダを選び、要約を Google Drive に書き出します。";
 "Google Drive connected" = "Google Drive 接続済み";
 "No Google Drive account connected" = "Google Drive 未接続";
+"Project Drive Folders" = "プロジェクトの Drive フォルダ";
+"Choose the Google Drive folder used when each project's summaries are exported." = "プロジェクトごとの要約書き出し先 Google Drive フォルダを選択します。";
+"Create a project from a meeting to configure its Google Drive folder." = "Google Drive フォルダを設定するには、ミーティングからプロジェクトを作成してください。";
+"Google Drive folder configured" = "Google Drive フォルダ設定済み";
 "Loading Google Drive folders…" = "Google Drive フォルダを読み込み中…";
 "No previous Google session was found." = "以前の Google セッションは見つかりませんでした。";
-"Set GOOGLE_CLIENT_ID before connecting Google services." = "Google サービスを接続する前に GOOGLE_CLIENT_ID を設定してください。";
+"Set GOOGLE_CLIENT_ID before connecting Google services." = "Google サービスを接続する前に、開発者設定または環境変数で GOOGLE_CLIENT_ID を設定してください。";
 "Unexpected response from Google" = "Google から予期しないレスポンスが返されました";
 "Google HTTP %lld: %@" = "Google HTTP %lld: %@";
 "Google account connected, but Calendar access has not been granted yet." = "Google アカウントは接続済みですが、カレンダー権限はまだ付与されていません。";

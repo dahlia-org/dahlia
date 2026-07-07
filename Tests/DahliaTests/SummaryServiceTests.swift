@@ -119,6 +119,59 @@ struct SummaryServiceTests {
     }
 
     @Test
+    func llmProviderDefaultsToOpenAIWhenNoLegacyEndpointExists() {
+        let settings = AppSettings.shared
+        let previousProviderRawValue = settings.llmProviderRawValue
+        let previousEndpointURL = settings.llmEndpointURL
+        defer {
+            settings.llmProviderRawValue = previousProviderRawValue
+            settings.llmEndpointURL = previousEndpointURL
+        }
+
+        settings.llmProviderRawValue = ""
+        settings.llmEndpointURL = ""
+
+        #expect(settings.llmProvider == .openAI)
+        #expect(settings.resolvedLLMEndpointURL == AppSettings.openAIEndpointURL)
+    }
+
+    @Test
+    func llmProviderPreservesLegacyCustomEndpoint() {
+        let settings = AppSettings.shared
+        let previousProviderRawValue = settings.llmProviderRawValue
+        let previousEndpointURL = settings.llmEndpointURL
+        defer {
+            settings.llmProviderRawValue = previousProviderRawValue
+            settings.llmEndpointURL = previousEndpointURL
+        }
+
+        settings.llmProviderRawValue = ""
+        settings.llmEndpointURL = " https://llm.example.com/v1/chat/completions "
+
+        #expect(settings.llmProvider == .customEndpoint)
+        #expect(settings.resolvedLLMEndpointURL == "https://llm.example.com/v1/chat/completions")
+    }
+
+    @Test
+    func llmProviderBuildsDatabricksAIGatewayEndpointFromWorkspaceID() {
+        let settings = AppSettings.shared
+        let previousProviderRawValue = settings.llmProviderRawValue
+        let previousWorkspaceID = settings.llmDatabricksWorkspaceID
+        defer {
+            settings.llmProviderRawValue = previousProviderRawValue
+            settings.llmDatabricksWorkspaceID = previousWorkspaceID
+        }
+
+        settings.llmProvider = .databricks
+        settings.llmDatabricksWorkspaceID = " 1234567890123456 "
+
+        #expect(
+            settings.resolvedLLMEndpointURL
+                == "https://1234567890123456.ai-gateway.cloud.databricks.com/mlflow/v1/chat/completions"
+        )
+    }
+
+    @Test
     func resolvedTagsDoesNotInjectAISummary() {
         let context = """
         ---

@@ -6,18 +6,20 @@ enum GoogleCalendarConfiguration {
     private static let clientSecretKey = "GOOGLE_CLIENT_SECRET"
 
     static var clientID: String? {
-        nonEmptyValue(
-            infoDictionaryValue(forKey: clientIDKey) ??
-                infoDictionaryValue(forKey: legacyClientIDKey) ??
-                ProcessInfo.processInfo.environment[clientIDKey]
-        )
+        firstNonEmptyValue([
+            UserDefaults.standard.string(forKey: AppSettings.googleOAuthClientIDOverrideUserDefaultsKey),
+            infoDictionaryValue(forKey: clientIDKey),
+            infoDictionaryValue(forKey: legacyClientIDKey),
+            ProcessInfo.processInfo.environment[clientIDKey],
+        ])
     }
 
     static var clientSecret: String? {
-        nonEmptyValue(
-            infoDictionaryValue(forKey: clientSecretKey) ??
-                ProcessInfo.processInfo.environment[clientSecretKey]
-        )
+        firstNonEmptyValue([
+            KeychainService.load(key: AppSettings.googleOAuthClientSecretOverrideKey, accessPolicy: .standard),
+            infoDictionaryValue(forKey: clientSecretKey),
+            ProcessInfo.processInfo.environment[clientSecretKey],
+        ])
     }
 
     static var isConfigured: Bool {
@@ -33,5 +35,9 @@ enum GoogleCalendarConfiguration {
             return nil
         }
         return trimmed
+    }
+
+    private static func firstNonEmptyValue(_ values: [String?]) -> String? {
+        values.lazy.compactMap(nonEmptyValue).first
     }
 }

@@ -4,9 +4,11 @@ private enum InstructionsEditorLayout {
     static let editorPadding = EdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
 }
 
-struct InstructionsWorkspaceView: View {
+struct InstructionsSettingsView: View {
     var sidebarViewModel: SidebarViewModel
+
     @ObservedObject private var appSettings = AppSettings.shared
+    @State private var selectedInstructionID: UUID?
     @State private var draftName = ""
     @State private var draftContent = ""
     @State private var saveTask: Task<Void, Never>?
@@ -15,18 +17,22 @@ struct InstructionsWorkspaceView: View {
     private let listWidth: CGFloat = 280
 
     var body: some View {
-        HStack(spacing: 0) {
-            instructionsList
-                .frame(width: listWidth)
+        SettingsPage {
+            SettingsCard {
+                HStack(spacing: 0) {
+                    instructionsList
+                        .frame(width: listWidth)
 
-            Divider()
+                    Divider()
 
-            instructionEditor
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    instructionEditor
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minHeight: 440)
+            }
         }
-        .background(.background)
-        .onAppear(perform: syncDraftsFromSelection)
-        .onChange(of: sidebarViewModel.selectedInstruction?.id) { _, _ in
+        .onAppear(perform: selectInitialInstructionIfNeeded)
+        .onChange(of: selectedInstruction?.id) { _, _ in
             syncDraftsFromSelection()
         }
         .onChange(of: draftName) { _, _ in
@@ -40,6 +46,11 @@ struct InstructionsWorkspaceView: View {
             persistDraftsIfNeeded()
         }
         .onDeleteCommand(perform: deleteSelectedInstruction)
+    }
+
+    private var selectedInstruction: InstructionRecord? {
+        guard let selectedInstructionID else { return nil }
+        return sidebarViewModel.allInstructions.first(where: { $0.id == selectedInstructionID })
     }
 
     private var instructionsList: some View {
@@ -67,7 +78,8 @@ struct InstructionsWorkspaceView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(sidebarViewModel.allInstructions) { instruction in
                             Button {
-                                sidebarViewModel.selectInstruction(instruction.id)
+                                persistDraftsIfNeeded()
+                                selectedInstructionID = instruction.id
                             } label: {
                                 instructionRow(instruction)
                             }
@@ -90,7 +102,7 @@ struct InstructionsWorkspaceView: View {
 
     @ViewBuilder
     private var instructionEditor: some View {
-        if let selectedInstruction = sidebarViewModel.selectedInstruction {
+        if let selectedInstruction {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -119,7 +131,7 @@ struct InstructionsWorkspaceView: View {
                         }
 
                         Button(L10n.delete, role: .destructive) {
-                            sidebarViewModel.deleteInstruction(id: selectedInstruction.id)
+                            deleteSelectedInstruction()
                         }
                     }
                 }
@@ -140,13 +152,13 @@ struct InstructionsWorkspaceView: View {
             emptyInstructionsView
         } else {
             ContentUnavailableView {
-                Label(L10n.instructions, systemImage: SidebarDestination.instructions.systemImage)
+                Label(L10n.instructions, systemImage: "list.bullet.clipboard")
             } description: {
                 Text(L10n.selectInstructionDescription)
             } actions: {
                 if let firstInstruction = sidebarViewModel.allInstructions.first {
                     Button(L10n.selectInstruction) {
-                        sidebarViewModel.selectInstruction(firstInstruction.id)
+                        selectedInstructionID = firstInstruction.id
                     }
                 }
             }
@@ -156,7 +168,7 @@ struct InstructionsWorkspaceView: View {
 
     private var emptyInstructionsView: some View {
         ContentUnavailableView {
-            Label(L10n.noInstructionsYet, systemImage: SidebarDestination.instructions.systemImage)
+            Label(L10n.noInstructionsYet, systemImage: "list.bullet.clipboard")
         } description: {
             Text(L10n.addInstructionDescription)
         } actions: {
@@ -166,7 +178,7 @@ struct InstructionsWorkspaceView: View {
     }
 
     private func instructionRow(_ instruction: InstructionRecord) -> some View {
-        let isSelected = sidebarViewModel.selectedInstruction?.id == instruction.id
+        let isSelected = selectedInstructionID == instruction.id
 
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
@@ -196,7 +208,7 @@ struct InstructionsWorkspaceView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.primary.opacity(0.08) : Color.clear)
         )
     }
@@ -216,14 +228,20 @@ struct InstructionsWorkspaceView: View {
         return L10n.summaryInstructionNotSelected
     }
 
+    private func selectInitialInstructionIfNeeded() {
+        guard selectedInstructionID == nil else { return }
+        selectedInstructionID = appSettings.selectedInstructionID ?? sidebarViewModel.allInstructions.first?.id
+        syncDraftsFromSelection()
+    }
+
     private func syncDraftsFromSelection() {
         saveTask?.cancel()
-        draftName = sidebarViewModel.selectedInstruction?.name ?? ""
-        draftContent = sidebarViewModel.selectedInstruction?.content ?? ""
+        draftName = selectedInstruction?.name ?? ""
+        draftContent = selectedInstruction?.content ?? ""
     }
 
     private func scheduleSave() {
-        guard sidebarViewModel.selectedInstruction != nil else { return }
+        guard selectedInstruction != nil else { return }
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(350))
@@ -232,7 +250,7 @@ struct InstructionsWorkspaceView: View {
     }
 
     private func persistDraftsIfNeeded() {
-        guard let selectedInstruction = sidebarViewModel.selectedInstruction else { return }
+        guard let selectedInstruction else { return }
 
         let trimmedName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -246,12 +264,15 @@ struct InstructionsWorkspaceView: View {
 
     private func createInstruction() {
         guard let instruction = sidebarViewModel.createInstruction() else { return }
-        sidebarViewModel.selectInstruction(instruction.id)
+        selectedInstructionID = instruction.id
+        syncDraftsFromSelection()
         isNameFieldFocused = true
     }
 
     private func deleteSelectedInstruction() {
-        guard let selectedInstruction = sidebarViewModel.selectedInstruction else { return }
+        guard let selectedInstruction else { return }
         sidebarViewModel.deleteInstruction(id: selectedInstruction.id)
+        selectedInstructionID = sidebarViewModel.allInstructions.first(where: { $0.id != selectedInstruction.id })?.id
+        syncDraftsFromSelection()
     }
 }

@@ -256,8 +256,7 @@ final class MeetingRepository {
         toMeetingId meetingId: UUID,
         title: String,
         summary: String,
-        tags: [String],
-        actionItems: [SummaryActionItem]
+        tags: [String]
     ) throws {
         try dbQueue.write { db in
             guard try MeetingRecord.fetchOne(db, key: meetingId) != nil else { return }
@@ -272,8 +271,6 @@ final class MeetingRepository {
                 createdAt: existingSummary?.createdAt ?? Date()
             )
             try record.save(db)
-
-            try replaceActionItems(forMeetingId: meetingId, with: actionItems, in: db)
 
             let tagNames = tags.filter { !$0.isEmpty }
             if !tagNames.isEmpty {
@@ -429,44 +426,6 @@ final class MeetingRepository {
         }
     }
 
-    // MARK: - Action Items
-
-    private nonisolated static func actionItemsRequest(meetingId: UUID) -> QueryInterfaceRequest<ActionItemRecord> {
-        ActionItemRecord
-            .filter(Column("meetingId") == meetingId)
-            .order(Column("isCompleted").asc, Column("title").asc, Column("assignee").asc, Column("id").asc)
-    }
-
-    func fetchActionItems(forMeetingId meetingId: UUID) throws -> [ActionItemRecord] {
-        try dbQueue.read { db in
-            try Self.actionItemsRequest(meetingId: meetingId).fetchAll(db)
-        }
-    }
-
-    func setActionItemCompleted(id: UUID, isCompleted: Bool) throws {
-        try dbQueue.write { db in
-            guard var record = try ActionItemRecord.fetchOne(db, key: id) else { return }
-            record.isCompleted = isCompleted
-            try record.update(db)
-        }
-    }
-
-    func setActionItemAssignee(id: UUID, assignee: String) throws {
-        try dbQueue.write { db in
-            guard var record = try ActionItemRecord.fetchOne(db, key: id) else { return }
-            let normalized = SummaryActionItem.normalize(assignee)
-            guard record.assignee != normalized else { return }
-            record.assignee = normalized
-            try record.update(db)
-        }
-    }
-
-    func deleteActionItem(id: UUID) throws {
-        try dbQueue.write { db in
-            _ = try ActionItemRecord.deleteOne(db, key: id)
-        }
-    }
-
     func deleteScreenshot(id: UUID) throws {
         try dbQueue.write { db in
             _ = try MeetingScreenshotRecord.deleteOne(db, key: id)
@@ -515,7 +474,6 @@ final class MeetingRepository {
         let screenshots: [MeetingScreenshotRecord]
         let note: MeetingNoteRecord?
         let summary: SummaryRecord?
-        let actionItems: [ActionItemRecord]
     }
 
     nonisolated func fetchMeetingDetail(id meetingId: UUID) throws -> MeetingDetail {
@@ -534,62 +492,14 @@ final class MeetingRepository {
                 .fetchAll(db)
             let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
             let summary = try SummaryRecord.fetchOne(db, key: meetingId)
-            let actionItems = try Self.actionItemsRequest(meetingId: meetingId).fetchAll(db)
             return MeetingDetail(
                 meeting: meeting,
                 calendarEvent: calendarEvent,
                 segments: segments,
                 screenshots: screenshots,
                 note: note,
-                summary: summary,
-                actionItems: actionItems
+                summary: summary
             )
-        }
-    }
-
-    private func replaceActionItems(
-        forMeetingId meetingId: UUID,
-        with actionItems: [SummaryActionItem],
-        in db: Database
-    ) throws {
-        let existingActionItems = try ActionItemRecord
-            .filter(Column("meetingId") == meetingId)
-            .order(Column("id").asc)
-            .fetchAll(db)
-        var existingByKey = Dictionary(grouping: existingActionItems, by: \.persistenceKey)
-
-        let normalizedActionItems = actionItems.compactMap { item -> SummaryActionItem? in
-            let normalizedTitle = SummaryActionItem.normalize(item.title)
-            guard !normalizedTitle.isEmpty else { return nil }
-            return SummaryActionItem(
-                title: normalizedTitle,
-                assignee: SummaryActionItem.normalize(item.assignee)
-            )
-        }
-
-        _ = try ActionItemRecord
-            .filter(Column("meetingId") == meetingId)
-            .deleteAll(db)
-
-        for item in normalizedActionItems {
-            let key = item.persistenceKey
-            let preservedCompletion: Bool
-            if var records = existingByKey[key], let existingRecord = records.first {
-                preservedCompletion = existingRecord.isCompleted
-                records.removeFirst()
-                existingByKey[key] = records
-            } else {
-                preservedCompletion = false
-            }
-
-            let record = ActionItemRecord(
-                id: .v7(),
-                meetingId: meetingId,
-                title: item.title,
-                assignee: item.assignee,
-                isCompleted: preservedCompletion
-            )
-            try record.insert(db)
         }
     }
 

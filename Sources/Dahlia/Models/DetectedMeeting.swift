@@ -6,5 +6,5 @@ struct DetectedMeeting: Identifiable {
     let title: String
     let appName: String
     let bundleIdentifier: String
-    let calendarEvent: GoogleCalendarEvent?
+    let calendarEvent: CalendarEvent?
 }

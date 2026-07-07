@@ -35,7 +35,7 @@ enum SummaryService {
         repository: MeetingRepository? = nil
     ) async throws -> GeneratedSummary {
         let settings = AppSettings.shared
-        let endpoint = settings.llmEndpointURL
+        let endpoint = settings.resolvedLLMEndpointURL
         let model = settings.llmModelName
         let token = settings.llmAPIToken
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
@@ -296,7 +296,10 @@ enum SummaryService {
     /// Auto モード時はデフォルトプロンプト全体を返す。
     /// instruction 選択時は instruction 本文をそのまま使う。
     @MainActor
-    static func resolvedSummaryPrompt(settings: AppSettings, repository: MeetingRepository? = nil) -> String {
+    static func resolvedSummaryPrompt(
+        settings: AppSettings,
+        repository: MeetingRepository? = nil
+    ) -> String {
         // Auto モード
         guard let selectedInstructionID = settings.selectedInstructionID,
               let vaultId = settings.currentVault?.id else {

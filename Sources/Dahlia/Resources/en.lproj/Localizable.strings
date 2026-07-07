@@ -2,10 +2,14 @@
 "Delete" = "Delete";
 "Rename" = "Rename";
 "Create" = "Create";
+"Auto" = "Auto";
 "Apply" = "Apply";
 "Clear" = "Clear";
 "Close" = "Close";
 "Search" = "Search";
+"Actions" = "Actions";
+"Dahlia" = "Dahlia";
+"Language" = "Language";
 "Expand" = "Expand";
 "Collapse" = "Collapse";
 "Back" = "Back";
@@ -20,6 +24,7 @@
 "Good evening" = "Good evening";
 "Meetings" = "Meetings";
 "Projects" = "Projects";
+"Project Management" = "Project Management";
 "Instructions" = "Instructions";
 "Context" = "Context";
 "Action Items" = "Action Items";
@@ -63,17 +68,40 @@
 "No content yet" = "No content yet";
 "No results found" = "No results found";
 "No project" = "No project";
+"Summary Destinations" = "Summary Destinations";
+"Manage where this project's summary files are saved." = "Manage where this project's summary files are saved.";
+"Local Summary Folder" = "Local Summary Folder";
+"Project Context" = "Project Context";
+"Edit the CONTEXT.md file that is included when summaries are generated for this project." = "Edit the CONTEXT.md file that is included when summaries are generated for this project.";
+"CONTEXT.md" = "CONTEXT.md";
+"Create Context File" = "Create Context File";
+"Open Context File" = "Open Context File";
+"Saved" = "Saved";
+"Could not load CONTEXT.md: %@" = "Could not load CONTEXT.md: %@";
+"Could not save CONTEXT.md: %@" = "Could not save CONTEXT.md: %@";
+"Select a project to manage summary destinations and instructions." = "Select a project to manage summary destinations and instructions.";
+"Open a vault before managing project settings." = "Open a vault before managing project settings.";
 "Today" = "Today";
 "Tomorrow" = "Tomorrow";
 "In Progress" = "In Progress";
 "No meetings yet" = "No meetings yet";
 "No meetings match the current filter." = "No meetings match the current filter.";
+"%lld meetings" = "%lld meetings";
+"Missing on Disk" = "Missing on Disk";
+"Search meetings..." = "Search meetings...";
+"Search projects..." = "Search projects...";
+"Move to Project" = "Move to Project";
+"No meeting selected" = "No meeting selected";
+"Select a meeting from the sidebar." = "Select a meeting from the sidebar.";
 "No instructions yet" = "No instructions yet";
 "No action items yet" = "No action items yet";
 "No action items match the current filter." = "No action items match the current filter.";
 "Action items extracted from summaries will appear here." = "Action items extracted from summaries will appear here.";
 "We couldn't detect any conversation in this meeting." = "We couldn't detect any conversation in this meeting.";
 "Recording now" = "Recording now";
+"Transcribing now" = "Transcribing";
+"Return to recording meeting" = "Return to recording meeting";
+"Return to transcribing meeting" = "Return to transcribing meeting";
 "Yesterday" = "Yesterday";
 "Delete %lld items" = "Delete %lld items";
 "Move %lld items" = "Move %lld items";
@@ -85,6 +113,9 @@
 "Transcription" = "Transcription";
 "%lld segments" = "%lld segments";
 "Stop" = "Stop";
+"Start Recording" = "Start Recording";
+"Stop Recording" = "Stop Recording";
+"Stop transcribing" = "Stop transcribing";
 "Pause" = "Pause";
 "Resume" = "Resume";
 "Record" = "Record";
@@ -93,6 +124,20 @@
 "New Transcription" = "New Transcription";
 "Screen" = "Screen";
 "Source" = "Source";
+"Not Selected" = "Not Selected";
+"Entire Desktop" = "Entire Desktop";
+"Take Screenshot" = "Take Screenshot";
+"Display not found" = "Display not found";
+"Screenshot image was unavailable" = "Screenshot image was unavailable";
+"Screenshot encoding failed" = "Screenshot encoding failed";
+"Screenshot source is not selected or is unavailable" = "Screenshot source is not selected or is unavailable";
+"Screenshot capture failed: %@" = "Screenshot capture failed: %@";
+"Automatic Screenshots" = "Automatic Screenshots";
+"Capture the screen during recording and save a new image when the display changes significantly." = "Capture the screen during recording and save a new image when the display changes significantly.";
+"Automatically add screenshots while recording." = "Automatically add screenshots while recording.";
+"Screenshot Interval" = "Screenshot Interval";
+"Choose how often Dahlia checks the screen for meaningful changes." = "Choose how often Dahlia checks the screen for meaningful changes.";
+"%lld seconds" = "%lld seconds";
 "Show Live Subtitles" = "Show Live Subtitles";
 "Hide Live Subtitles" = "Hide Live Subtitles";
 "Live Subtitle Overlay" = "Live Subtitle Overlay";
@@ -110,40 +155,11 @@
 "NotesPlaceholder" = "Add your private notes...";
 "Screenshots" = "Screenshots";
 "Transcript" = "Transcript";
-"Agent" = "Agent";
 "Assignee" = "Assignee";
 "Assign to me" = "Assign to me";
 "Edit assignee" = "Edit assignee";
 "Mark action item complete" = "Mark action item complete";
 "Mark action item incomplete" = "Mark action item incomplete";
-
-/* Agent */
-"Project Mode" = "Project Mode";
-"Transcript Mode" = "Transcript Mode";
-"Run the configured agent command in the project directory." = "Run the configured agent command in the project directory.";
-"Continuously feed transcript to the configured agent command." = "Continuously feed transcript to the configured agent command.";
-"Ask Agent" = "Ask Agent";
-"Ask anything about your project or transcript…" = "Ask anything about your project or transcript…";
-"New chat" = "New chat";
-"Start Agent" = "Start";
-"Stop Agent" = "Stop";
-"Launching agent…" = "Launching agent…";
-"Live mode" = "Live mode";
-"Thinking…" = "Thinking…";
-
-/* Settings (Agent) */
-"Launch Command" = "Launch Command";
-"Command used to launch the agent. Default: `claude`. A full path is optional when the executable is available in PATH or common user bin directories." = "Command used to launch the agent. Default: `claude`. A full path is optional when the executable is available in PATH or common user bin directories.";
-"Permission Mode" = "Permission Mode";
-"Choose how the agent handles permission prompts when using tools and editing files." = "Choose how the agent handles permission prompts when using tools and editing files.";
-"Auto" = "Auto";
-"Default" = "Default";
-"Accept Edits" = "Accept Edits";
-"Bypass Permissions" = "Bypass Permissions";
-"Allowed Tools" = "Allowed Tools";
-"Space-separated tool allowlist passed to the agent CLI. Leave blank to use the default set." = "Space-separated tool allowlist passed to the agent CLI. Leave blank to use the default set.";
-"Add a tool and press Space" = "Add a tool and press Space";
-"Remove %@" = "Remove %@";
 
 /* Audio Source Mode */
 "Audio source" = "Audio source";
@@ -163,8 +179,11 @@
 "Notifications" = "Notifications";
 "Calendar" = "Calendar";
 "AI Summary" = "AI Summary";
-"AI Agent" = "AI Agent";
+"Developer Settings" = "Developer Settings";
 "Vault" = "Vault";
+"Current Vault" = "Current Vault";
+"Choose the vault used for recordings and sync." = "Choose the vault used for recordings and sync.";
+"No vault selected" = "No vault selected";
 "Appearance" = "Appearance";
 "Display" = "Display";
 "App Language" = "App Language";
@@ -177,11 +196,27 @@
 "Target Language" = "Target Language";
 "Choose which language translated transcript lines should use." = "Choose which language translated transcript lines should use.";
 "Translation is automatically disabled when the target language matches the transcription language." = "Translation is automatically disabled when the target language matches the transcription language.";
-"Configure automatic summaries and the LLM connection used to generate them." = "Configure automatic summaries and the LLM connection used to generate them.";
-"Configure the built-in agent sidebar launch command and permission mode." = "Configure the built-in agent sidebar launch command and permission mode.";
-"Run a quick request to validate your endpoint, model, and token." = "Run a quick request to validate your endpoint, model, and token.";
+"Configure the LLM connection used for manual summary generation." = "Configure the LLM connection used for manual summary generation.";
+"Run a quick request to validate your endpoint, model, and token." = "Run a quick request to validate your provider settings, model, and token.";
+"Override developer-managed credentials used by external service integrations." = "Override developer-managed credentials used by external service integrations.";
+"Google OAuth Client ID" = "Google OAuth Client ID";
+"Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID.";
+"Google OAuth Client Secret" = "Google OAuth Client Secret";
+"Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set." = "Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set.";
+"Reconnect Google services after changing OAuth credentials." = "Reconnect Google services after changing OAuth credentials.";
 "Google Calendar" = "Google Calendar";
+"macOS Calendar" = "macOS Calendar";
+"Calendar Source" = "Calendar Source";
+"Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
+"Calendar Sources" = "Calendar Sources";
+"Choose which calendar services provide upcoming events." = "Choose which calendar services provide upcoming events.";
+"Show events from Google Calendar." = "Show events from Google Calendar.";
+"Show events from the Calendar app on this Mac." = "Show events from the Calendar app on this Mac.";
+"Upcoming schedule" = "Upcoming schedule";
+"Show Upcoming Schedule" = "Show Upcoming Schedule";
+"Select a calendar event to prepare transcription." = "Select a calendar event to prepare transcription.";
 "Connect a Google account and choose which calendars appear on Home." = "Connect a Google account and choose which calendars appear on Home.";
+"Use events from the Calendar app on this Mac." = "Use events from the Calendar app on this Mac.";
 "Display Calendars" = "Display Calendars";
 "Only selected calendars are shown on Home." = "Only selected calendars are shown on Home.";
 "Connect" = "Connect";
@@ -191,22 +226,41 @@
 "No Google account connected" = "No Google account connected";
 "Primary calendar" = "Primary calendar";
 "No calendars are available for this Google account." = "No calendars are available for this Google account.";
+"No calendars are available in macOS Calendar." = "No calendars are available in macOS Calendar.";
+"Loading calendars…" = "Loading calendars…";
 "Loading Google Calendar…" = "Loading Google Calendar…";
+"Loading macOS Calendar…" = "Loading macOS Calendar…";
 "Retry" = "Retry";
 "Join" = "Join";
 "All day" = "All day";
 "Google Calendar is not configured" = "Google Calendar is not configured";
-"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Set GOOGLE_CLIENT_ID before connecting Google Calendar.";
+"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Set GOOGLE_CLIENT_ID in Developer Settings or the environment before connecting Google Calendar.";
 "Connect Google Calendar" = "Connect Google Calendar";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Connect Google Calendar from Settings to show your upcoming events on Home.";
+"Connect Google Calendar from Settings to show your upcoming events here." = "Connect Google Calendar from Settings to show your upcoming events here.";
 "Choose calendars to show" = "Choose calendars to show";
 "Select at least one calendar in Settings to show events on Home." = "Select at least one calendar in Settings to show events on Home.";
+"Select at least one calendar in Settings to show events here." = "Select at least one calendar in Settings to show events here.";
+"No calendar sources enabled" = "No calendar sources enabled";
+"Enable at least one calendar source in Settings to show upcoming events." = "Enable at least one calendar source in Settings to show upcoming events.";
 "No upcoming events" = "No upcoming events";
 "There are no events in the next 7 days for the selected calendars." = "There are no events in the next 7 days for the selected calendars.";
 "Could not load Google Calendar" = "Could not load Google Calendar";
+"Could not load macOS Calendar" = "Could not load macOS Calendar";
+"Allow macOS Calendar access" = "Allow macOS Calendar access";
+"Allow Calendar access to show upcoming events from this Mac." = "Allow Calendar access to show upcoming events from this Mac.";
+"Allow Access" = "Allow Access";
+"macOS Calendar access is denied" = "macOS Calendar access is denied";
+"Allow Dahlia to access Calendars in System Settings > Privacy & Security > Calendars." = "Allow Dahlia to access Calendars in System Settings > Privacy & Security > Calendars.";
+"Calendar access granted" = "Calendar access granted";
+"Calendar access not granted" = "Calendar access not granted";
+"Allow access to load your upcoming schedule from Calendar." = "Allow access to load your upcoming schedule from Calendar.";
+"macOS Calendar connected" = "macOS Calendar connected";
+"Unexpected response from macOS Calendar" = "Unexpected response from macOS Calendar";
+"Untitled calendar" = "Untitled calendar";
 "No window is available to present Google sign-in." = "No window is available to present Google sign-in.";
 "No previous Google Calendar session was found." = "No previous Google Calendar session was found.";
-"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia.";
+"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "This Google OAuth client requires a client secret. Set the Google Cloud Console value in Developer Settings or GOOGLE_CLIENT_SECRET.";
 "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements." = "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements.";
 "Google Account" = "Google Account";
 "Untitled event" = "Untitled event";
@@ -232,13 +286,21 @@
 
 /* Settings - LLM */
 "LLM Settings" = "Model Settings";
+"OpenAI" = "OpenAI";
+"Databricks" = "Databricks";
+"Custom endpoint" = "Custom endpoint";
+"Model Provider" = "Model Provider";
+"Choose OpenAI, Databricks AI Gateway, or any OpenAI-compatible endpoint." = "Choose OpenAI, Databricks AI Gateway, or any OpenAI-compatible endpoint.";
 "Endpoint URL" = "Endpoint URL";
+"Uses OpenAI's Chat Completions API." = "Uses OpenAI's Chat Completions API.";
+"Databricks Workspace ID" = "Databricks Workspace ID";
+"Used to build the Databricks AI Gateway chat completions URL." = "Used to build the Databricks AI Gateway chat completions URL.";
+"Endpoint must accept OpenAI-compatible chat completions requests." = "Endpoint must accept OpenAI-compatible chat completions requests.";
+"Endpoint will be generated after entering a Workspace ID." = "Endpoint will be generated after entering a Workspace ID.";
 "Model Name" = "Model Name";
 "API Token" = "API Token";
 "Token is stored securely in Keychain." = "Token is stored securely in Keychain.";
-"Auto-Summary" = "Auto-Summary";
-"Automatically generate a summary when transcription stops." = "Automatically generate a summary when transcription stops.";
-"Configure an LLM endpoint for post-transcription summarization." = "Configure an LLM endpoint for post-transcription summarization.";
+"Configure an LLM endpoint for manual summary generation." = "Configure the model provider and connection settings used for manual summary generation.";
 "Test Connection" = "Test Connection";
 "Testing..." = "Testing...";
 "Connection successful" = "Connection successful";
@@ -249,6 +311,7 @@
 
 /* Summary */
 "Generating summary..." = "Generating summary...";
+"No summary has been generated yet." = "No summary has been generated yet.";
 "Summary generated" = "Summary generated";
 "Open Summary" = "Open Summary";
 "Generate Summary" = "Generate Summary";
@@ -259,7 +322,7 @@
 "Open Templates Folder" = "Open Templates Folder";
 "Reset Presets" = "Reset Presets";
 "Select a template from _custom_instructions/ in the vault." = "Select a template from _custom_instructions/ in the vault.";
-"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM configuration is incomplete. Please set endpoint, model, and API token in Settings.";
+"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM configuration is incomplete. Please set provider settings, model, and API token in Settings.";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording.";
@@ -283,7 +346,14 @@
 /* Sidebar Footer */
 "Switch Vault" = "Switch Vault";
 "Manage Vaults..." = "Manage Vaults...";
+"Manage Projects..." = "Manage Projects...";
 "Settings" = "Settings";
+
+/* Menu Bar */
+"Open Dahlia" = "Open Dahlia";
+"Live Subtitles" = "Live Subtitles";
+"Settings..." = "Settings...";
+"Quit Dahlia" = "Quit Dahlia";
 
 /* Meeting Detection */
 "Meeting Detection" = "Meeting Detection";
@@ -296,6 +366,7 @@
 "Meeting detected" = "Meeting detected";
 "Meeting detected in %@" = "Meeting detected in %@";
 "Microphone is in use" = "Microphone is in use";
+"No screenshots yet." = "No screenshots yet.";
 
 /* Keychain */
 "Authenticate to access your API token stored in Keychain." = "Authenticate to access your API token stored in Keychain.";
@@ -305,9 +376,13 @@
 "Sign in with Google to choose project folders and export summaries." = "Sign in with Google to choose project folders and export summaries.";
 "Google Drive connected" = "Google Drive connected";
 "No Google Drive account connected" = "No Google Drive account connected";
+"Project Drive Folders" = "Project Drive Folders";
+"Choose the Google Drive folder used when each project's summaries are exported." = "Choose the Google Drive folder used when each project's summaries are exported.";
+"Create a project from a meeting to configure its Google Drive folder." = "Create a project from a meeting to configure its Google Drive folder.";
+"Google Drive folder configured" = "Google Drive folder configured";
 "Loading Google Drive folders…" = "Loading Google Drive folders…";
 "No previous Google session was found." = "No previous Google session was found.";
-"Set GOOGLE_CLIENT_ID before connecting Google services." = "Set GOOGLE_CLIENT_ID before connecting Google services.";
+"Set GOOGLE_CLIENT_ID before connecting Google services." = "Set GOOGLE_CLIENT_ID in Developer Settings or the environment before connecting Google services.";
 "Unexpected response from Google" = "Unexpected response from Google";
 "Google HTTP %lld: %@" = "Google HTTP %lld: %@";
 "Google account connected, but Calendar access has not been granted yet." = "Google account connected, but Calendar access has not been granted yet.";

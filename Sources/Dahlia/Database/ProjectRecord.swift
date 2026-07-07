@@ -9,7 +9,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord {
     var vaultId: UUID
     var name: String
     var createdAt: Date
-    var googleDriveFolderId: String?
+    var googleDriveFolderId: String? = nil
     var missingOnDisk = false
 
     // MARK: - Shared DB Helpers
@@ -18,7 +18,13 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord {
     static func upsertAll(names: [String], vaultId: UUID, in db: Database) throws {
         let now = Date()
         for name in names {
-            let record = ProjectRecord(id: .v7(), vaultId: vaultId, name: name, createdAt: now, googleDriveFolderId: nil)
+            let record = ProjectRecord(
+                id: .v7(),
+                vaultId: vaultId,
+                name: name,
+                createdAt: now,
+                googleDriveFolderId: nil
+            )
             try record.insert(db, onConflict: .ignore)
         }
     }

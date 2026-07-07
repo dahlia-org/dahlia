@@ -21,7 +21,7 @@ final class MeetingPersistenceService {
         vaultId: UUID,
         projectId: UUID?,
         initialName: String,
-        calendarEvent: GoogleCalendarEvent? = nil
+        calendarEvent: CalendarEvent? = nil
     ) throws {
         self.store = store
         self.dbQueue = dbQueue
@@ -36,7 +36,7 @@ final class MeetingPersistenceService {
             vaultId: vaultId,
             projectId: projectId,
             name: trimmedInitialName,
-            status: .recording,
+            status: .ready,
             createdAt: now,
             updatedAt: now
         )
@@ -57,15 +57,6 @@ final class MeetingPersistenceService {
         self.meetingId = existingMeetingId
         self.persistedSegmentIds = existingSegmentIds
         self.recordingStartDate = store.recordingStartTime ?? Date()
-
-        try? dbQueue.write { db in
-            if var record = try MeetingRecord.fetchOne(db, key: existingMeetingId),
-               record.status != .recording {
-                record.status = .recording
-                record.updatedAt = Date()
-                try record.update(db)
-            }
-        }
 
         startObserving()
     }

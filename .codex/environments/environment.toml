@@ -6,7 +6,7 @@ name = "dahlia"
 script = ""
 
 [[actions]]
-name = "実行する"
+name = "run-dev"
 icon = "run"
 command = "./scripts/run-dev.sh"
 platform = "darwin"

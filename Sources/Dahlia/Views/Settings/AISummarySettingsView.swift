@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 設定画面「AI 要約」タブ。LLM エンドポイントを管理する。
+/// 設定画面「AI 要約」タブ。LLM プロバイダーとモデル設定を管理する。
 struct AISummarySettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var apiToken = ""
@@ -13,30 +13,28 @@ struct AISummarySettingsView: View {
 
     var body: some View {
         SettingsPage {
-            SettingsSection(title: L10n.autoSummary) {
-                SettingsCard {
-                    SettingsToggleRow(
-                        title: L10n.autoSummary,
-                        description: L10n.autoSummaryDescription,
-                        isOn: $settings.llmAutoSummaryEnabled
-                    )
-                    .disabled(!isLLMConfigComplete)
-                }
-            }
-
             SettingsSection(
                 title: L10n.llmSettings,
                 description: L10n.llmSettingsDescription
             ) {
                 SettingsCard {
-                    SettingsControlRow(title: L10n.endpointURL) {
-                        TextField(
-                            "",
-                            text: $settings.llmEndpointURL,
-                            prompt: Text("https://…/mlflow/v1/chat/completions")
-                        )
-                        .textFieldStyle(.roundedBorder)
+                    SettingsControlRow(
+                        title: L10n.modelProvider,
+                        description: L10n.modelProviderDescription
+                    ) {
+                        Picker(L10n.modelProvider, selection: $settings.llmProvider) {
+                            ForEach(LLMProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 220, alignment: .trailing)
                     }
+
+                    Divider()
+
+                    providerConfigurationRows
 
                     Divider()
 
@@ -44,7 +42,7 @@ struct AISummarySettingsView: View {
                         TextField(
                             "",
                             text: $settings.llmModelName,
-                            prompt: Text("databricks-gpt-5-4")
+                            prompt: Text(modelNamePrompt)
                         )
                         .textFieldStyle(.roundedBorder)
                     }
@@ -113,12 +111,79 @@ struct AISummarySettingsView: View {
         .onDisappear {
             settings.llmAPIToken = apiToken
         }
+        .onChange(of: settings.llmProviderRawValue) { _, _ in
+            connectionTestResult = nil
+        }
     }
 
     // MARK: - Private
 
     private var isLLMConfigComplete: Bool {
-        !settings.llmEndpointURL.isEmpty && !settings.llmModelName.isEmpty && !apiToken.isEmpty
+        settings.resolvedLLMEndpointURL.nilIfBlank != nil && settings.llmModelName.nilIfBlank != nil && apiToken.nilIfBlank != nil
+    }
+
+    @ViewBuilder
+    private var providerConfigurationRows: some View {
+        switch settings.llmProvider {
+        case .openAI:
+            SettingsControlRow(
+                title: L10n.endpointURL,
+                description: L10n.openAIEndpointDescription
+            ) {
+                endpointPreview(settings.resolvedLLMEndpointURL)
+            }
+        case .databricks:
+            SettingsControlRow(
+                title: L10n.databricksWorkspaceID,
+                description: L10n.databricksWorkspaceIDDescription
+            ) {
+                TextField(
+                    "",
+                    text: $settings.llmDatabricksWorkspaceID,
+                    prompt: Text("1234567890123456")
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            Divider()
+
+            SettingsControlRow(title: L10n.endpointURL) {
+                endpointPreview(settings.resolvedLLMEndpointURL)
+            }
+        case .customEndpoint:
+            SettingsControlRow(
+                title: L10n.endpointURL,
+                description: L10n.customEndpointDescription
+            ) {
+                TextField(
+                    "",
+                    text: $settings.llmEndpointURL,
+                    prompt: Text("https://api.example.com/v1/chat/completions")
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+        }
+    }
+
+    private var modelNamePrompt: String {
+        switch settings.llmProvider {
+        case .openAI:
+            "gpt-5"
+        case .databricks:
+            "databricks-gpt-5-4"
+        case .customEndpoint:
+            "gpt-5"
+        }
+    }
+
+    private func endpointPreview(_ endpoint: String) -> some View {
+        Text(endpoint.nilIfBlank ?? L10n.endpointGeneratedFromWorkspaceID)
+            .font(.callout.monospaced())
+            .foregroundStyle(endpoint.nilIfBlank == nil ? Color.secondary : Color.primary)
+            .lineLimit(2)
+            .multilineTextAlignment(.trailing)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func testConnection() {
@@ -128,7 +193,7 @@ struct AISummarySettingsView: View {
         Task {
             do {
                 try await LLMService.testConnection(
-                    endpoint: settings.llmEndpointURL,
+                    endpoint: settings.resolvedLLMEndpointURL,
                     model: settings.llmModelName,
                     token: apiToken
                 )

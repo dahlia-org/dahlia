@@ -3,7 +3,8 @@ import GRDB
 
 struct CalendarEventRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     static let databaseTableName = "calendar_events"
-    static let googleCalendarPlatform = "GoogleCalendar"
+    static let googleCalendarPlatform = CalendarEventPlatform.googleCalendar
+    static let macOSCalendarPlatform = CalendarEventPlatform.macOSCalendar
 
     var id: Int64? = nil
     var meetingId: UUID
@@ -43,12 +44,12 @@ struct CalendarEventRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         self.meetingUrl = meetingUrl
     }
 
-    init(meetingId: UUID, now: Date, event: GoogleCalendarEvent) {
+    init(meetingId: UUID, now: Date, event: CalendarEvent) {
         self.init(
             meetingId: meetingId,
             createdAt: now,
             updatedAt: now,
-            platform: Self.googleCalendarPlatform,
+            platform: event.platform,
             platformId: event.platformId,
             description: event.description,
             icalUid: event.icalUid,

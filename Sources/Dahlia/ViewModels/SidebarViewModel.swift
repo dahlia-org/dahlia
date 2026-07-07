@@ -1,161 +1,54 @@
 import Foundation
 import GRDB
 import Observation
-import SwiftUI
 
-/// サイドバーの状態管理。DB 駆動の階層プロジェクトツリーと文字起こし一覧を管理する。
+/// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
 @MainActor
 final class SidebarViewModel {
 
     // MARK: - Observed State
 
-    var selectedDestination: SidebarDestination = .home
+    /// 現在の vault に属する全 project のフラット一覧。
     var flatProjects: [FlatProjectRow] = []
-    var selectedProject: ProjectRecord?
-    var selectedMeetingSelection: MeetingScreenSelection?
-    /// 複数選択中の文字起こし ID。
+    /// SwiftUI の `List(selection:)` と直結するミーティング選択。
     var selectedMeetingIds: Set<UUID> = []
-    /// 複数選択の範囲指定に使うアンカー。
-    @ObservationIgnored private var selectionAnchorMeetingId: UUID?
     /// 現在の vault に属する全 meeting の一覧。
     var allMeetings: [MeetingOverviewItem] = []
     /// 現在の vault に属する全 project の集約一覧。
     var allProjectItems: [ProjectOverviewItem] = []
-    /// 現在の vault に属する全 action item の集約一覧。
-    var allActionItems: [ActionItemOverviewItem] = []
     /// 現在の vault に属する全 instructions の一覧。
     var allInstructions: [InstructionRecord] = []
-    /// 複数選択中のプロジェクト ID。
-    var selectedProjectIds: Set<UUID> = []
-    /// プロジェクト複数選択の範囲指定に使うアンカー。
-    @ObservationIgnored private var selectionAnchorProjectId: UUID?
-    /// 展開中のプロジェクトごとの文字起こし一覧（プロジェクトID → レコード配列）。
-    var meetingsForProject: [UUID: [MeetingRecord]] = [:]
-    var lastError: String?
     var allVaults: [VaultRecord] = []
     var allTags: [TagRecord] = []
+    private(set) var allAvailableTags: [TagInfo] = []
     var selectedInstruction: InstructionRecord?
-
-    /// 後方互換: 選択中プロジェクトの文字起こし一覧。
-    var meetingsForSelectedProject: [MeetingRecord] {
-        guard let project = selectedProject else { return [] }
-        return meetingsForProject[project.id] ?? []
-    }
+    var lastError: String?
 
     var selectedMeetingId: UUID? {
-        selectedMeetingSelection?.meetingId
-    }
-
-    var selectedDraftMeetingId: UUID? {
-        selectedMeetingSelection?.draftId
-    }
-
-    // MARK: - Collapse State
-
-    /// 折りたたまれているプロジェクト名のセット（UserDefaults で永続化）。
-    /// 初期状態では全フォルダが折りたたまれる。ユーザーが明示的に展開したものは expandedProjectNames に記録される。
-    var collapsedProjectNames: Set<String> = {
-        let saved = UserDefaults.standard.stringArray(forKey: "collapsedProjectNames") ?? []
-        return Set(saved)
-    }() {
-        didSet {
-            UserDefaults.standard.set(Array(collapsedProjectNames), forKey: "collapsedProjectNames")
-        }
-    }
-
-    /// ユーザーが明示的に展開したプロジェクト名（UserDefaults で永続化）。
-    /// この集合に含まれないフォルダは、hasChildren なら自動的に折りたたまれる。
-    @ObservationIgnored private var expandedProjectNames: Set<String> = {
-        let saved = UserDefaults.standard.stringArray(forKey: "expandedProjectNames") ?? []
-        return Set(saved)
-    }()
-
-    private func saveExpandedNames() {
-        UserDefaults.standard.set(Array(expandedProjectNames), forKey: "expandedProjectNames")
-    }
-
-    /// flatProjects が更新されたとき、まだ操作されていない全フォルダを自動的に折りたたむ。
-    func syncCollapseState() {
-        var updated = collapsedProjectNames
-        for row in flatProjects {
-            if !expandedProjectNames.contains(row.name) {
-                updated.insert(row.name)
-            }
-        }
-        // 存在しなくなったフォルダを除外
-        let allNames = Set(flatProjects.map(\.name))
-        updated = updated.intersection(allNames)
-        if updated != collapsedProjectNames {
-            collapsedProjectNames = updated
-        }
-        refreshMeetingObservations()
-    }
-
-    /// 折りたたまれた祖先を持つ行を除外した、表示用プロジェクト一覧。
-    var visibleFlatProjects: [FlatProjectRow] {
-        guard !collapsedProjectNames.isEmpty else { return flatProjects }
-        return flatProjects.filter { row in
-            !row.parentPaths().contains(where: { collapsedProjectNames.contains($0) })
-        }
-    }
-
-    /// フォルダの折りたたみ状態をトグルする（サブフォルダの階層表示用）。
-    func toggleCollapse(name: String) {
-        if collapsedProjectNames.contains(name) {
-            collapsedProjectNames.remove(name)
-            expandedProjectNames.insert(name)
-        } else {
-            collapsedProjectNames.insert(name)
-            expandedProjectNames.remove(name)
-        }
-        saveExpandedNames()
-    }
-
-    /// 指定した名前のフォルダが折りたたまれているかどうか。
-    func isCollapsed(name: String) -> Bool {
-        collapsedProjectNames.contains(name)
+        selectedMeetingIds.count == 1 ? selectedMeetingIds.first : nil
     }
 
     // MARK: - Active Database & Vault
 
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
-    /// 現在の保管庫。AppSettings.shared.currentVault から委譲。
     var currentVault: VaultRecord? { AppSettings.shared.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
+
+    @ObservationIgnored private var meetingRepository: MeetingRepository?
+    @ObservationIgnored private var fileWatcher: TranscriptFileWatcher?
+    @ObservationIgnored private var allMeetingsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var allProjectsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var vaultSyncService: VaultSyncService?
 
     /// プロジェクト名から vault 内の URL を返す。
     func projectURL(for name: String) -> URL {
         currentVault!.url.appendingPathComponent(name, isDirectory: true)
     }
-
-    /// 現在選択中のプロジェクトの vault 内 URL。
-    var selectedProjectURL: URL? {
-        guard let name = selectedProject?.name else { return nil }
-        return projectURL(for: name)
-    }
-
-    /// Projects タブでプロジェクトが選択されている場合のコンテキスト。未選択なら全て nil。
-    var selectedProjectContext: (projectURL: URL?, projectId: UUID?, projectName: String?) {
-        guard selectedDestination == .projects,
-              let project = selectedProject,
-              let url = selectedProjectURL else {
-            return (nil, nil, nil)
-        }
-        return (url, project.id, project.name)
-    }
-
-    @ObservationIgnored private var meetingRepository: MeetingRepository?
-    @ObservationIgnored private var fileWatcher: TranscriptFileWatcher?
-    @ObservationIgnored private var meetingObservations: [UUID: AnyDatabaseCancellable] = [:]
-    @ObservationIgnored private var allMeetingsObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var allProjectsObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var allActionItemsObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var vaultSyncService: VaultSyncService?
 
     /// 保管庫の最終オープン日時を更新する。
     func updateVaultLastOpened(_ id: UUID) {
@@ -168,57 +61,35 @@ final class SidebarViewModel {
         appDatabase = database
         meetingRepository = database.map { MeetingRepository(dbQueue: $0.dbQueue) }
 
-        // 既存の監視を停止
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
         vaultObservation?.cancel()
         allMeetingsObservation?.cancel()
         allTagsObservation?.cancel()
         allProjectsObservation?.cancel()
-        allActionItemsObservation?.cancel()
         instructionsObservation?.cancel()
         fileWatcher?.stopMonitoring()
 
-        // 全 meeting 監視を停止
-        for (_, cancellable) in meetingObservations {
-            cancellable.cancel()
-        }
-        meetingObservations.removeAll()
-        meetingsForProject.removeAll()
+        vaultSyncService = nil
+        fileWatcher = nil
+        flatProjects.removeAll()
         allMeetings.removeAll()
-        allTags.removeAll()
         allProjectItems.removeAll()
-        allActionItems.removeAll()
         allInstructions.removeAll()
-
-        // 選択状態をリセット
-        selectedProject = nil
+        allTags.removeAll()
+        allAvailableTags.removeAll()
         selectedInstruction = nil
         clearMeetingSelection()
-        clearProjectSelection()
 
-        // vaults テーブルの ValueObservation で保管庫一覧を自動更新
-        if let dbQueue = database?.dbQueue {
-            let vaultObs = ValueObservation.tracking { db in
-                try VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
-            }
-            vaultObservation = vaultObs.start(
-                in: dbQueue,
-                onError: { _ in },
-                onChange: { [weak self] vaults in
-                    Task { @MainActor in
-                        guard let self, self.allVaults != vaults else { return }
-                        self.allVaults = vaults
-                    }
-                }
-            )
+        guard let dbQueue = database?.dbQueue else {
+            allVaults.removeAll()
+            AppSettings.shared.selectedInstructionID = nil
+            return
         }
 
-        guard let dbQueue = database?.dbQueue,
-              let vault = currentVault else {
-            vaultSyncService = nil
-            fileWatcher = nil
-            flatProjects = []
+        startVaultObservation(dbQueue: dbQueue)
+
+        guard let vault = currentVault else {
             AppSettings.shared.selectedInstructionID = nil
             return
         }
@@ -226,7 +97,6 @@ final class SidebarViewModel {
         let vaultURL = vault.url
         let vaultId = vault.id
 
-        // VaultSyncService: 初期同期（バックグラウンド） + FSEvents 監視
         let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
         vaultSyncService = syncService
         Task.detached(priority: .userInitiated) {
@@ -234,12 +104,34 @@ final class SidebarViewModel {
         }
         syncService.startMonitoring()
 
-        // TranscriptFileWatcher: _dahlia/transcripts/ ディレクトリの監視
         let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
         watcher.startMonitoring()
         fileWatcher = watcher
 
-        // projects テーブルの ValueObservation でツリーを自動更新（vaultId でフィルタ）
+        startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startAllMeetingsObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startTagsObservation(dbQueue: dbQueue)
+        startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
+    }
+
+    private func startVaultObservation(dbQueue: DatabaseQueue) {
+        let observation = ValueObservation.tracking { db in
+            try VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
+        }
+        vaultObservation = observation.start(
+            in: dbQueue,
+            onError: { _ in },
+            onChange: { [weak self] vaults in
+                Task { @MainActor in
+                    guard let self, self.allVaults != vaults else { return }
+                    self.allVaults = vaults
+                }
+            }
+        )
+    }
+
+    private func startProjectObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
         let observation = ValueObservation.tracking { db in
             try ProjectRecord
                 .filter(Column("vaultId") == vaultId)
@@ -253,18 +145,15 @@ final class SidebarViewModel {
                 Task { @MainActor in
                     guard let self else { return }
                     let rows = FlatProjectRow.buildRows(fromRecords: records)
-                    if let selectedProject = self.selectedProject,
-                       let refreshedProject = records.first(where: { $0.id == selectedProject.id }) {
-                        self.selectedProject = refreshedProject
-                    }
                     guard self.flatProjects != rows else { return }
                     self.flatProjects = rows
-                    self.syncCollapseState()
                 }
             }
         )
+    }
 
-        let meetingsObservation = ValueObservation.tracking { db in
+    private func startAllMeetingsObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+        let observation = ValueObservation.tracking { db in
             try MeetingOverviewItem.fetchAll(
                 db,
                 sql: """
@@ -300,22 +189,30 @@ final class SidebarViewModel {
                 arguments: [vaultId]
             )
         }
-        allMeetingsObservation = meetingsObservation.start(
+        allMeetingsObservation = observation.start(
             in: dbQueue,
             onError: { _ in },
             onChange: { [weak self] meetings in
                 Task { @MainActor in
                     guard let self else { return }
+                    // 挿入前に計算された古いスナップショットが選択直後に届くことがあるため、
+                    // 「スナップショットに無い ID」ではなく「前回から消えた ID」だけを選択から外す。
+                    let removedIds = Set(self.allMeetings.map(\.meetingId))
+                        .subtracting(meetings.map(\.meetingId))
                     self.allMeetings = meetings
+                    if !removedIds.isEmpty {
+                        self.selectedMeetingIds.subtract(removedIds)
+                    }
                 }
             }
         )
+    }
 
-        // tags テーブルの ValueObservation でタグマスタを自動更新
-        let tagsObservation = ValueObservation.tracking { db in
+    private func startTagsObservation(dbQueue: DatabaseQueue) {
+        let observation = ValueObservation.tracking { db in
             try TagRecord.order(Column("name").asc).fetchAll(db)
         }
-        allTagsObservation = tagsObservation.start(
+        allTagsObservation = observation.start(
             in: dbQueue,
             onError: { _ in },
             onChange: { [weak self] tags in
@@ -326,8 +223,10 @@ final class SidebarViewModel {
                 }
             }
         )
+    }
 
-        let projectsOverviewObservation = ValueObservation.tracking { db in
+    private func startProjectOverviewObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+        let observation = ValueObservation.tracking { db in
             let projects = try ProjectOverviewItem.fetchAll(
                 db,
                 sql: """
@@ -354,7 +253,7 @@ final class SidebarViewModel {
                 return comparison == .orderedAscending
             }
         }
-        allProjectsObservation = projectsOverviewObservation.start(
+        allProjectsObservation = observation.start(
             in: dbQueue,
             onError: { _ in },
             onChange: { [weak self] projects in
@@ -364,71 +263,16 @@ final class SidebarViewModel {
                 }
             }
         )
+    }
 
-        let actionItemsObservation = ValueObservation.tracking { db in
-            let actionItems = try ActionItemOverviewItem.fetchAll(
-                db,
-                sql: """
-                SELECT
-                    action_items.id AS actionItemId,
-                    action_items.meetingId AS meetingId,
-                    meetings.projectId AS projectId,
-                    projects.name AS projectName,
-                    meetings.name AS meetingName,
-                    meetings.createdAt AS meetingCreatedAt,
-                    action_items.title AS title,
-                    action_items.assignee AS assignee,
-                    action_items.isCompleted AS isCompleted
-                FROM action_items
-                INNER JOIN meetings ON meetings.id = action_items.meetingId
-                LEFT JOIN projects ON projects.id = meetings.projectId
-                WHERE meetings.vaultId = ?
-                """,
-                arguments: [vaultId]
-            )
-
-            return actionItems.sorted { lhs, rhs in
-                if lhs.isCompleted != rhs.isCompleted {
-                    return !lhs.isCompleted && rhs.isCompleted
-                }
-                if lhs.sortsAsMine != rhs.sortsAsMine {
-                    return lhs.sortsAsMine && !rhs.sortsAsMine
-                }
-                if lhs.meetingCreatedAt != rhs.meetingCreatedAt {
-                    return lhs.meetingCreatedAt > rhs.meetingCreatedAt
-                }
-
-                let titleComparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
-                if titleComparison != .orderedSame {
-                    return titleComparison == .orderedAscending
-                }
-
-                let assigneeComparison = lhs.assignee.localizedCaseInsensitiveCompare(rhs.assignee)
-                if assigneeComparison != .orderedSame {
-                    return assigneeComparison == .orderedAscending
-                }
-
-                return lhs.actionItemId.uuidString < rhs.actionItemId.uuidString
-            }
-        }
-        allActionItemsObservation = actionItemsObservation.start(
-            in: dbQueue,
-            onError: { _ in },
-            onChange: { [weak self] actionItems in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.allActionItems = actionItems
-                }
-            }
-        )
-
-        let instructionsValueObservation = ValueObservation.tracking { db in
+    private func startInstructionsObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+        let observation = ValueObservation.tracking { db in
             try InstructionRecord
                 .filter(Column("vaultId") == vaultId)
                 .order(Column("name").asc)
                 .fetchAll(db)
         }
-        instructionsObservation = instructionsValueObservation.start(
+        instructionsObservation = observation.start(
             in: dbQueue,
             onError: { _ in },
             onChange: { [weak self] instructions in
@@ -454,69 +298,14 @@ final class SidebarViewModel {
 
     // MARK: - Selection
 
-    /// プロジェクト選択を解除し、関連するミーティング選択もクリアする。
-    func deselectProject() {
-        if let oldProject = selectedProject {
-            stopMeetingObservation(projectId: oldProject.id)
-        }
-        selectedProject = nil
-        clearMeetingSelection()
-    }
-
-    /// プロジェクト選択だけを解除し、表示中のミーティング選択は維持する。
-    func deselectProjectKeepingMeetingSelection() {
-        if let oldProject = selectedProject {
-            stopMeetingObservation(projectId: oldProject.id)
-        }
-        selectedProject = nil
-    }
-
-    func selectProject(id: UUID, name: String) {
-        guard let vault = currentVault else { return }
-        if selectedProject?.id == id {
-            clearMeetingSelection()
-            return
-        }
-        // 旧プロジェクトの監視を停止
-        if let oldProject = selectedProject {
-            stopMeetingObservation(projectId: oldProject.id)
-        }
-        selectedProject = ProjectRecord(
-            id: id,
-            vaultId: vault.id,
-            name: name,
-            createdAt: .distantPast,
-            googleDriveFolderId: allProjectItems.first(where: { $0.projectId == id })?.googleDriveFolderId
-        )
-        clearMeetingSelection()
-        startMeetingObservation(projectId: id)
-    }
-
-    /// transcript クリック時にプロジェクトを選択状態にする（selectedMeetingId を触らない）。
-    func ensureProjectSelected(id: UUID, name: String) {
-        guard let vault = currentVault else { return }
-        guard selectedProject?.id != id else { return }
-        if let oldProject = selectedProject {
-            stopMeetingObservation(projectId: oldProject.id)
-        }
-        selectedProject = ProjectRecord(
-            id: id,
-            vaultId: vault.id,
-            name: name,
-            createdAt: .distantPast,
-            googleDriveFolderId: allProjectItems.first(where: { $0.projectId == id })?.googleDriveFolderId
-        )
-        startMeetingObservation(projectId: id)
-    }
-
     func selectMeeting(_ id: UUID) {
-        selectedMeetingSelection = .persisted(id)
-        selectionAnchorMeetingId = id
+        selectedMeetingIds = [id]
     }
 
-    func selectDraftMeeting(_ id: UUID) {
-        selectedMeetingSelection = .draft(id)
-        selectionAnchorMeetingId = nil
+    func clearMeetingSelection() {
+        if !selectedMeetingIds.isEmpty {
+            selectedMeetingIds.removeAll()
+        }
     }
 
     func selectInstruction(_ id: UUID?) {
@@ -527,36 +316,7 @@ final class SidebarViewModel {
         selectedInstruction = allInstructions.first(where: { $0.id == id })
     }
 
-    func selectDestination(_ destination: SidebarDestination) {
-        if selectedDestination == destination {
-            if destination == .meetings {
-                clearMeetingSelection()
-            } else if destination == .projects {
-                clearProjectSelection()
-                deselectProject()
-            } else if destination == .actionItems {
-                clearProjectSelection()
-                deselectProject()
-                clearMeetingSelection()
-            } else if destination == .instructions {
-                selectedInstruction = nil
-            }
-            return
-        }
-
-        selectedDestination = destination
-    }
-
-    /// ミーティング選択状態をクリアする（no-op ガード付き）。
-    func clearMeetingSelection() {
-        if selectedMeetingSelection != nil {
-            selectedMeetingSelection = nil
-        }
-        if !selectedMeetingIds.isEmpty {
-            selectedMeetingIds.removeAll()
-        }
-        selectionAnchorMeetingId = nil
-    }
+    // MARK: - Instruction CRUD
 
     func useInstructionForSummary(_ instructionID: UUID?) {
         AppSettings.shared.selectedInstructionID = instructionID
@@ -618,73 +378,7 @@ final class SidebarViewModel {
         return name
     }
 
-    // MARK: - Meeting Observation
-
-    /// 指定プロジェクトのミーティング監視を開始する。
-    func startMeetingObservation(projectId: UUID) {
-        guard let dbQueue, meetingObservations[projectId] == nil else { return }
-
-        let observation = ValueObservation.tracking { db in
-            try MeetingRecord
-                .filter(Column("projectId") == projectId)
-                .order(Column("createdAt").desc)
-                .fetchAll(db)
-        }
-
-        meetingObservations[projectId] = observation.start(
-            in: dbQueue,
-            onError: { _ in },
-            onChange: { [weak self] meetings in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.meetingsForProject[projectId] = meetings
-                }
-            }
-        )
-    }
-
-    /// 指定プロジェクトのミーティング監視を停止する。
-    func stopMeetingObservation(projectId: UUID) {
-        meetingObservations[projectId]?.cancel()
-        meetingObservations.removeValue(forKey: projectId)
-        meetingsForProject.removeValue(forKey: projectId)
-    }
-
-    /// 選択プロジェクトに基づいてミーティング監視を同期する。
-    private func refreshMeetingObservations() {
-        let requiredIds: Set<UUID> = selectedProject.map { [$0.id] } ?? []
-
-        // 不要な監視を停止
-        for id in meetingObservations.keys where !requiredIds.contains(id) {
-            stopMeetingObservation(projectId: id)
-        }
-        // 必要な監視を開始
-        for id in requiredIds {
-            startMeetingObservation(projectId: id)
-        }
-    }
-
-    // MARK: - Project CRUD
-
-    func createProject(name: String) {
-        // "/" を含む名前は禁止（フラットプロジェクト）
-        guard !name.contains("/") else {
-            lastError = "プロジェクト名に「/」は使用できません。"
-            return
-        }
-        guard let vault = currentVault else { return }
-        let projectURL = projectURL(for: name)
-        do {
-            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
-        } catch {
-            return
-        }
-
-        guard let repo = meetingRepository else { return }
-        if let record = try? repo.fetchOrCreateProject(name: name, vaultId: vault.id) {
-            selectProject(id: record.id, name: record.name)
-        }
-    }
+    // MARK: - Project Helpers
 
     /// プロジェクトを取得または作成し、対応するフォルダ URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {
@@ -705,89 +399,9 @@ final class SidebarViewModel {
         }
     }
 
-    func renameProject(id: UUID, name: String, newName: String) {
-        guard let vault = currentVault else { return }
-        let oldURL = projectURL(for: name)
-        let newURL = projectURL(for: newName)
-
-        let isActive = selectedProject?.id == id
-        if isActive {
-            selectedProject = nil
-        }
-        stopMeetingObservation(projectId: id)
-
-        do {
-            try FileManager.default.createDirectory(
-                at: newURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try FileManager.default.moveItem(at: oldURL, to: newURL)
-        } catch {
-            if isActive { selectProject(id: id, name: name) }
-            return
-        }
-
-        try? meetingRepository?.renameProjectsByPrefix(oldPrefix: name, newPrefix: newName, vaultId: vault.id)
-
-        if isActive, let updated = try? meetingRepository?.fetchOrCreateProject(name: newName, vaultId: vault.id) {
-            selectProject(id: updated.id, name: updated.name)
-        }
-    }
-
-    func deleteProject(id: UUID, name: String) {
-        guard let vault = currentVault else { return }
-        let projectURL = projectURL(for: name)
-
-        if let selected = selectedProject,
-           selected.id == id || selected.name.hasPrefix(name + "/") {
-            selectedProject = nil
-            selectedMeetingSelection = nil
-        }
-        // 削除対象プロジェクトの meeting 監視を停止
-        stopMeetingObservation(projectId: id)
-
-        // FS 削除を先に実行 — フォルダが既に存在しない場合はスキップ
-        if FileManager.default.fileExists(atPath: projectURL.path) {
-            do {
-                try FileManager.default.trashItem(at: projectURL, resultingItemURL: nil)
-            } catch {
-                lastError = "フォルダの削除に失敗しました: \(error.localizedDescription)"
-                return
-            }
-        }
-
-        // FS 成功後に DB 削除（サブツリー対応）
-        do {
-            try meetingRepository?.deleteProjectsByPrefix(name: name, vaultId: vault.id)
-        } catch {
-            lastError = "データベースの更新に失敗しました: \(error.localizedDescription)"
-            ErrorReportingService.capture(error, context: ["source": "deleteProject"])
-        }
-    }
-
-    /// ディスクにフォルダを再作成し、missingOnDisk フラグをクリアする。
-    func recreateFolder(name: String) {
-        guard let vault = currentVault else { return }
-        let url = projectURL(for: name)
-        do {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-            try meetingRepository?.clearProjectsMissing(prefix: name, vaultId: vault.id)
-        } catch {
-            lastError = "フォルダの再作成に失敗しました: \(error.localizedDescription)"
-        }
-    }
-
     func updateProjectGoogleDriveFolder(id: UUID, folderId: String?) {
         do {
             try meetingRepository?.updateProjectGoogleDriveFolder(id: id, folderId: folderId)
-            if selectedProject?.id == id {
-                let trimmedFolderID = folderId?.trimmingCharacters(in: .whitespacesAndNewlines)
-                selectedProject?.googleDriveFolderId = if let trimmedFolderID, !trimmedFolderID.isEmpty {
-                    trimmedFolderID
-                } else {
-                    nil
-                }
-            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -816,243 +430,36 @@ final class SidebarViewModel {
         try? meetingRepository?.removeTag(name: tag, fromMeetingId: id)
     }
 
-    func setActionItemCompleted(id: UUID, isCompleted: Bool) {
-        do {
-            try meetingRepository?.setActionItemCompleted(id: id, isCompleted: isCompleted)
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func setActionItemAssignee(id: UUID, assignee: String) {
-        do {
-            try meetingRepository?.setActionItemAssignee(id: id, assignee: assignee)
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func deleteActionItem(id: UUID) {
-        do {
-            try meetingRepository?.deleteActionItem(id: id)
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    private(set) var allAvailableTags: [TagInfo] = []
-
     func deleteMeeting(id: UUID) {
         try? meetingRepository?.deleteMeeting(id: id)
         selectedMeetingIds.remove(id)
-        if selectedMeetingId == id {
-            selectedMeetingSelection = nil
-        }
-        if selectionAnchorMeetingId == id {
-            selectionAnchorMeetingId = selectedMeetingIds.first
-        }
     }
 
-    /// 複数の文字起こしを一括削除する。
     func deleteMeetings(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
         do {
             try meetingRepository?.deleteMeetings(ids: ids)
+            selectedMeetingIds.subtract(ids)
         } catch {
             lastError = error.localizedDescription
-            return
-        }
-        if let selected = selectedMeetingId, ids.contains(selected) {
-            selectedMeetingSelection = nil
-        }
-        selectedMeetingIds.subtract(ids)
-        if let anchor = selectionAnchorMeetingId, ids.contains(anchor) {
-            selectionAnchorMeetingId = selectedMeetingIds.first
         }
     }
 
     func moveMeeting(id: UUID, toProjectId: UUID?) {
-        guard let repo = meetingRepository else { return }
+        guard let repository = meetingRepository else { return }
         do {
-            try repo.moveMeeting(id: id, toProjectId: toProjectId)
+            try repository.moveMeeting(id: id, toProjectId: toProjectId)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    /// 複数の文字起こしを一括移動する。
     func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) {
-        guard let repo = meetingRepository, !ids.isEmpty else { return }
+        guard let repository = meetingRepository, !ids.isEmpty else { return }
         do {
-            try repo.moveMeetings(ids: ids, toProjectId: toProjectId)
+            try repository.moveMeetings(ids: ids, toProjectId: toProjectId)
         } catch {
             lastError = error.localizedDescription
-            return
-        }
-        if let selected = selectedMeetingId, ids.contains(selected) {
-            selectedMeetingSelection = nil
-        }
-        selectedMeetingIds.removeAll()
-        selectionAnchorMeetingId = nil
-    }
-
-    // MARK: - Multi-Selection Helpers
-
-    private func selectionScopeMeetings(for projectId: UUID?) -> [MeetingRecord] {
-        guard let projectId, selectedDestination != .meetings else {
-            return allMeetings.map(\.meeting)
-        }
-        return meetingsForProject[projectId] ?? []
-    }
-
-    private func applyProjectContext(projectId: UUID?, projectName: String?) {
-        if let projectId, let projectName {
-            ensureProjectSelected(id: projectId, name: projectName)
-        } else {
-            deselectProjectKeepingMeetingSelection()
-        }
-    }
-
-    /// Cmd+Click: トグル選択。
-    func toggleMeetingSelection(_ id: UUID, projectId: UUID?, projectName: String?) {
-        applyProjectContext(projectId: projectId, projectName: projectName)
-
-        if selectedMeetingIds.isEmpty, let existing = selectedMeetingId {
-            selectedMeetingIds = [existing]
-            selectionAnchorMeetingId = existing
-        }
-        selectedMeetingSelection = nil
-
-        if selectedMeetingIds.contains(id) {
-            selectedMeetingIds.remove(id)
-            if selectedMeetingIds.isEmpty {
-                selectionAnchorMeetingId = nil
-            } else if selectionAnchorMeetingId == id {
-                selectionAnchorMeetingId = selectedMeetingIds.first
-            }
-        } else {
-            selectedMeetingIds.insert(id)
-            selectionAnchorMeetingId = id
-        }
-    }
-
-    /// Shift+Click: 範囲選択。
-    func rangeSelectMeeting(_ id: UUID, projectId: UUID?, projectName: String?) {
-        applyProjectContext(projectId: projectId, projectName: projectName)
-        let meetings = selectionScopeMeetings(for: projectId)
-        let anchorId = selectionAnchorMeetingId ?? selectedMeetingId
-        selectedMeetingSelection = nil
-
-        guard let anchor = anchorId,
-              let anchorIndex = meetings.firstIndex(where: { $0.id == anchor }),
-              let targetIndex = meetings.firstIndex(where: { $0.id == id }) else {
-            selectedMeetingIds = [id]
-            selectionAnchorMeetingId = id
-            return
-        }
-        let range = min(anchorIndex, targetIndex) ... max(anchorIndex, targetIndex)
-        selectedMeetingIds = Set(meetings[range].map(\.id))
-        selectionAnchorMeetingId = id
-    }
-
-    /// 通常クリック: 単一選択（複数選択をクリア）。
-    func singleSelectMeeting(_ id: UUID, projectId: UUID?, projectName: String?) {
-        applyProjectContext(projectId: projectId, projectName: projectName)
-        selectedMeetingIds = [id]
-        selectedMeetingSelection = .persisted(id)
-        selectionAnchorMeetingId = id
-    }
-
-    /// 選択中の文字起こし ID を返す（単一選択時も含む）。
-    var effectiveSelectedIds: Set<UUID> {
-        if selectedMeetingIds.isEmpty, let single = selectedMeetingId {
-            return [single]
-        }
-        return selectedMeetingIds
-    }
-
-    // MARK: - Project Multi-Selection
-
-    /// 選択中のプロジェクト ID を返す（単一選択時も含む）。
-    var effectiveSelectedProjectIds: Set<UUID> {
-        if selectedProjectIds.isEmpty, let single = selectedProject {
-            return [single.id]
-        }
-        return selectedProjectIds
-    }
-
-    /// Cmd+Click: プロジェクトのトグル選択。
-    func toggleProjectSelection(_ id: UUID) {
-        if selectedProjectIds.isEmpty, let existing = selectedProject {
-            selectedProjectIds = [existing.id]
-            selectionAnchorProjectId = existing.id
-        }
-        selectedProject = nil
-
-        if selectedProjectIds.contains(id) {
-            selectedProjectIds.remove(id)
-            if selectedProjectIds.isEmpty {
-                selectionAnchorProjectId = nil
-            } else if selectionAnchorProjectId == id {
-                selectionAnchorProjectId = selectedProjectIds.first
-            }
-        } else {
-            selectedProjectIds.insert(id)
-            selectionAnchorProjectId = id
-        }
-    }
-
-    /// Shift+Click: プロジェクトの範囲選択。
-    func rangeSelectProject(_ id: UUID) {
-        let projects = allProjectItems
-        let anchorId = selectionAnchorProjectId ?? selectedProject?.id
-        selectedProject = nil
-
-        guard let anchor = anchorId,
-              let anchorIndex = projects.firstIndex(where: { $0.projectId == anchor }),
-              let targetIndex = projects.firstIndex(where: { $0.projectId == id }) else {
-            selectedProjectIds = [id]
-            selectionAnchorProjectId = id
-            return
-        }
-        let range = min(anchorIndex, targetIndex) ... max(anchorIndex, targetIndex)
-        selectedProjectIds = Set(projects[range].map(\.projectId))
-        selectionAnchorProjectId = id
-    }
-
-    /// 通常クリック: プロジェクトの単一選択（Projects Overview からのナビゲーション用）。
-    func singleSelectProjectFromOverview(_ id: UUID, name: String) {
-        selectedProjectIds.removeAll()
-        selectionAnchorProjectId = id
-        selectProject(id: id, name: name)
-    }
-
-    /// プロジェクトの複数選択をクリアする。
-    func clearProjectSelection() {
-        if !selectedProjectIds.isEmpty {
-            selectedProjectIds.removeAll()
-        }
-        selectionAnchorProjectId = nil
-    }
-
-    /// 複数のプロジェクトを一括削除する。
-    func deleteProjects(ids: Set<UUID>) {
-        guard let vault = currentVault, !ids.isEmpty else { return }
-        for id in ids {
-            guard let item = allProjectItems.first(where: { $0.projectId == id }) else { continue }
-            let url = projectURL(for: item.projectName)
-            if FileManager.default.fileExists(atPath: url.path) {
-                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            }
-            try? meetingRepository?.deleteProjectsByPrefix(name: item.projectName, vaultId: vault.id)
-        }
-        if let selected = selectedProject, ids.contains(selected.id) {
-            selectedProject = nil
-            selectedMeetingSelection = nil
-        }
-        selectedProjectIds.subtract(ids)
-        if let anchor = selectionAnchorProjectId, ids.contains(anchor) {
-            selectionAnchorProjectId = selectedProjectIds.first
         }
     }
 }

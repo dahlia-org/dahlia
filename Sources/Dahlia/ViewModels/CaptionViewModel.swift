@@ -6,9 +6,24 @@ import os
 import Speech
 import SwiftUI
 
-private enum ScreenshotError: Error {
+private enum ScreenshotError: LocalizedError {
     case encodingFailed
+    case displayUnavailable
     case imageUnavailable
+    case sourceUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .encodingFailed:
+            L10n.screenshotEncodingFailed
+        case .displayUnavailable:
+            L10n.screenshotDisplayUnavailable
+        case .imageUnavailable:
+            L10n.screenshotImageUnavailable
+        case .sourceUnavailable:
+            L10n.screenshotSourceUnavailable
+        }
+    }
 }
 
 /// 録音中のナビゲーション時に保持する録音コンテキスト。
@@ -71,15 +86,10 @@ final class CaptionViewModel: ObservableObject {
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
     @Published var currentMeetingSummary: String?
-    @Published var currentMeetingActionItems: [ActionItemRecord] = []
     /// Summary タブへの切り替えをリクエストするフラグ。
     @Published var requestShowSummaryTab = false
     /// 要約生成の進捗トースト状態。
     let summaryProgress = SummaryProgressState()
-
-    // MARK: - Agent State
-
-    @Published var agentService: AgentService?
 
     // MARK: - Note State
 
@@ -94,8 +104,15 @@ final class CaptionViewModel: ObservableObject {
     @Published var screenshots: [MeetingScreenshotRecord] = []
     /// キャプチャ対象として選択可能なウィンドウ一覧。
     @Published var availableWindows: [ScreenshotWindowOption] = []
-    /// 選択中のウィンドウ ID。nil の場合はデスクトップ全体をキャプチャ。
-    @Published var selectedWindowID: CGWindowID?
+    /// スクリーンショット取得対象。未設定の場合はキャプチャしない。
+    @Published var screenshotCaptureSource: ScreenshotCaptureSource = .none {
+        didSet {
+            guard screenshotCaptureSource != oldValue else { return }
+            lastSavedAutomaticScreenshotFingerprint = nil
+            handleScreenshotCaptureSourceChange()
+        }
+    }
+
     @Published private(set) var currentMeetingHasTranscriptSegments = false
 
     var hasCurrentMeetingSummary: Bool {
@@ -121,29 +138,6 @@ final class CaptionViewModel: ObservableObject {
     var currentSummaryGoogleFileURL: URL? {
         guard let fileId = currentSummaryGoogleFileId?.nilIfBlank else { return nil }
         return URL(string: "https://docs.google.com/document/d/\(fileId)/edit")
-    }
-
-    var orderedCurrentMeetingActionItems: [ActionItemRecord] {
-        currentMeetingActionItems.sorted { lhs, rhs in
-            if lhs.isCompleted != rhs.isCompleted {
-                return !lhs.isCompleted && rhs.isCompleted
-            }
-            if lhs.sortsAsMine != rhs.sortsAsMine {
-                return lhs.sortsAsMine && !rhs.sortsAsMine
-            }
-
-            let titleOrder = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
-            if titleOrder != .orderedSame {
-                return titleOrder == .orderedAscending
-            }
-
-            let assigneeOrder = lhs.assignee.localizedCaseInsensitiveCompare(rhs.assignee)
-            if assigneeOrder != .orderedSame {
-                return assigneeOrder == .orderedAscending
-            }
-
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
     }
 
     /// 録音中でなく、文字起こしを表示中の場合 true。
@@ -189,12 +183,14 @@ final class CaptionViewModel: ObservableObject {
         recordingContext?.meetingId ?? currentMeetingId
     }
 
-    var activeTranscriptStoreForAgent: TranscriptStore {
+    var activeTranscriptStore: TranscriptStore {
         recordingContext?.store ?? store
     }
 
     var canTakeScreenshot: Bool {
-        activeMeetingIdForSessionControls != nil && activeDbQueueForSessionControls != nil
+        activeMeetingIdForSessionControls != nil
+            && activeDbQueueForSessionControls != nil
+            && screenshotCaptureSource.isSelected
     }
 
     // MARK: - Private
@@ -207,6 +203,9 @@ final class CaptionViewModel: ObservableObject {
     private var settingsCancellable: AnyCancellable?
     private var storeSegmentsCancellable: AnyCancellable?
     private var transcriptionLocaleCancellable: AnyCancellable?
+    private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
+    private var automaticScreenshotTask: Task<Void, Never>?
+    private var lastSavedAutomaticScreenshotFingerprint: ScreenshotFingerprint?
     private var meetingLoadTask: Task<Void, Never>?
     private var isSynchronizingSelectedLocale = false
     private let availableInputDevicesProvider: @Sendable () -> [MicrophoneDevice]
@@ -249,6 +248,24 @@ final class CaptionViewModel: ObservableObject {
                 guard let self, self.selectedLocale != localeIdentifier else { return }
                 self.selectedLocale = localeIdentifier
             }
+
+        UserDefaults.standard
+            .publisher(for: \.automaticScreenshotEnabled)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleAutomaticScreenshotSettingsChange()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
+
+        UserDefaults.standard
+            .publisher(for: \.automaticScreenshotIntervalSeconds)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleAutomaticScreenshotIntervalChange()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
     }
 
     private func bindStoreSegments() {
@@ -372,7 +389,6 @@ final class CaptionViewModel: ObservableObject {
         let screenshots: [MeetingScreenshotRecord]
         let summary: String?
         let googleFileId: String?
-        let actionItems: [ActionItemRecord]
         let lastSummaryURL: URL?
         let note: MeetingNoteRecord?
     }
@@ -399,7 +415,6 @@ final class CaptionViewModel: ObservableObject {
             screenshots: detail.screenshots,
             summary: detail.summary?.summary,
             googleFileId: detail.summary?.googleFileId,
-            actionItems: detail.actionItems,
             lastSummaryURL: lastSummaryURL,
             note: detail.note
         )
@@ -511,7 +526,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func beginDraftMeeting(
-        from event: GoogleCalendarEvent,
+        from event: CalendarEvent,
         dbQueue: DatabaseQueue,
         projectURL: URL? = nil,
         projectId: UUID? = nil,
@@ -671,7 +686,6 @@ final class CaptionViewModel: ObservableObject {
         screenshots = loaded.screenshots
         currentMeetingSummary = loaded.summary
         currentSummaryGoogleFileId = loaded.googleFileId
-        currentMeetingActionItems = loaded.actionItems
         lastSummaryURL = loaded.lastSummaryURL
         noteText = loaded.note?.text ?? ""
         hasNote = loaded.note != nil
@@ -709,7 +723,6 @@ final class CaptionViewModel: ObservableObject {
 
     private func resetSummaryState() {
         currentMeetingSummary = nil
-        currentMeetingActionItems = []
         currentSummaryGoogleFileId = nil
         lastSummaryURL = nil
         requestShowSummaryTab = false
@@ -960,6 +973,7 @@ final class CaptionViewModel: ObservableObject {
         pipelines.removeAll()
         store.recordingStartTime = Date()
         persistenceService = nil
+        stopAutomaticScreenshotCapture()
 
         do {
             let primaryLocale = resolvedSelectedLocale()
@@ -1001,11 +1015,13 @@ final class CaptionViewModel: ObservableObject {
 
             self.isListening = true
             self.errorMessage = nil
+            syncAutomaticScreenshotCaptureState()
         } catch {
             self.errorMessage = error.localizedDescription
             ErrorReportingService.capture(error, context: ["source": "startListening"])
             await stopActivePipelines()
             stopActiveCaptures()
+            stopAutomaticScreenshotCapture()
             persistenceService = nil
             if existingMeetingId == nil {
                 currentMeetingId = nil
@@ -1014,6 +1030,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func stopListening() {
+        stopAutomaticScreenshotCapture()
         stopActiveCaptures()
         isListening = false
 
@@ -1022,9 +1039,7 @@ final class CaptionViewModel: ObservableObject {
         let activeStore = ctx?.store ?? store
         let meetingId = ctx?.meetingId ?? currentMeetingId
         let projectName = ctx?.projectName ?? selectedProjectName
-        let projectURL = ctx?.projectURL ?? currentProjectURL
         let vaultURL = ctx?.vaultURL ?? currentVaultURL
-        let transcriptText = activeStore.exportForSummary()
         let recordingStart = activeStore.recordingStartTime ?? Date()
         let segments = activeStore.segments
         recordingContext = nil
@@ -1037,27 +1052,13 @@ final class CaptionViewModel: ObservableObject {
             persistenceService = nil
 
             if let meetingId, !segments.isEmpty {
-                if AppSettings.shared.llmAutoSummaryEnabled {
-                    // 要約 + ファイル書き出しを並行実行
-                    await generateSummary(
-                        meetingId: meetingId,
-                        transcriptText: transcriptText,
-                        projectURL: projectURL,
-                        createdAt: recordingStart,
-                        vaultURL: vaultURL,
-                        projectName: projectName ?? "",
-                        segments: segments
-                    )
-                } else {
-                    // 要約なし: ファイル書き出しのみ
-                    await exportFiles(
-                        vaultURL: vaultURL,
-                        meetingId: meetingId,
-                        projectName: projectName ?? "",
-                        createdAt: recordingStart,
-                        segments: segments
-                    )
-                }
+                await exportFiles(
+                    vaultURL: vaultURL,
+                    meetingId: meetingId,
+                    projectName: projectName ?? "",
+                    createdAt: recordingStart,
+                    segments: segments
+                )
             }
         }
     }
@@ -1065,30 +1066,6 @@ final class CaptionViewModel: ObservableObject {
     /// 現在選択中のプロジェクト名。
     private var selectedProjectName: String? {
         currentProjectName ?? currentProjectURL?.lastPathComponent
-    }
-
-    // MARK: - Agent
-
-    /// 指定モードで Agent を起動する。初期メッセージを渡すとプロジェクトモードで即座に送信する。
-    /// `workingDirectory` を渡すと `currentProjectURL` より優先して使用する。
-    func startAgent(mode: AgentStartMode, initialMessage: String? = nil, workingDirectory: URL? = nil) {
-        guard agentService == nil,
-              let workingDirectory = workingDirectory ?? currentProjectURL ?? currentVaultURL else { return }
-        let service = AgentService()
-        self.agentService = service
-        service.start(workingDirectory: workingDirectory, mode: mode, initialMessage: initialMessage)
-    }
-
-    /// Agent を明示的に停止する。
-    func stopAgent() {
-        agentService?.stop()
-        agentService = nil
-    }
-
-    /// transcript 切替時に Agent のセグメント追跡をリセットする（transcript モードのみ）。
-    func resetAgentSegmentTrackingIfNeeded() {
-        guard let service = agentService, service.mode.isTranscript else { return }
-        service.resetSegmentTracking(store: activeTranscriptStoreForAgent)
     }
 
     // MARK: - Summary Generation
@@ -1187,14 +1164,12 @@ final class CaptionViewModel: ObservableObject {
                     toMeetingId: meetingId,
                     title: generatedSummary.title,
                     summary: generatedSummary.summary,
-                    tags: generatedSummary.tags,
-                    actionItems: generatedSummary.actionItems
+                    tags: generatedSummary.tags
                 )
             }
             summaryProgress.summaryGeneration = .completed
             if currentMeetingId == meetingId {
                 currentMeetingSummary = generatedSummary.summary
-                currentMeetingActionItems = (try? repo?.fetchActionItems(forMeetingId: meetingId)) ?? []
             }
 
             summaryProgress.vaultExport = .running
@@ -1363,10 +1338,10 @@ final class CaptionViewModel: ObservableObject {
                 if newWindows != self.availableWindows {
                     self.availableWindows = newWindows
                 }
-                // 選択中のウィンドウが一覧から消えていたらリセット
-                if let id = selectedWindowID,
+                // 選択中のウィンドウが一覧から消えていたら未設定に戻す。
+                if case let .window(id) = screenshotCaptureSource,
                    !self.availableWindows.contains(where: { $0.id == id }) {
-                    selectedWindowID = nil
+                    screenshotCaptureSource = .none
                 }
             } catch {
                 self.availableWindows = []
@@ -1376,65 +1351,209 @@ final class CaptionViewModel: ObservableObject {
 
     func takeScreenshot() {
         guard let meetingId = activeMeetingIdForSessionControls,
-              let dbQueue = activeDbQueueForSessionControls else { return }
+              let dbQueue = activeDbQueueForSessionControls,
+              screenshotCaptureSource.isSelected else { return }
 
         let shouldRefreshVisibleScreenshots = currentMeetingId == meetingId
 
         Task {
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-
-                let filter: SCContentFilter
-                let config = SCScreenshotConfiguration()
-                config.showsCursor = false
-                config.dynamicRange = .sdr
-
-                if let windowID = selectedWindowID,
-                   let window = content.windows.first(where: { $0.windowID == windowID }) {
-                    // 選択ウィンドウをキャプチャ
-                    filter = SCContentFilter(desktopIndependentWindow: window)
-                } else {
-                    // デスクトップ全体をキャプチャ
-                    guard let display = content.displays.first else {
-                        errorMessage = "ディスプレイが見つかりません"
-                        return
-                    }
-                    filter = SCContentFilter(display: display, excludingWindows: [])
-                }
-
-                // 対象の実サイズに合わせて ScreenCaptureKit に出力サイズを決めさせる。
-                // `window.frame * 2` のような固定スケールは、非 Retina の拡張モニタで余白を生む。
-                let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config)
-                guard let cgImage = output.sdrImage else {
-                    throw ScreenshotError.imageUnavailable
-                }
-
-                // 画像エンコードを MainActor 外で実行（WebP → JPEG フォールバック）
-                let imageData: Data = try await Task.detached(priority: .userInitiated) {
-                    guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
-                        throw ScreenshotError.encodingFailed
-                    }
-                    return encoded
-                }.value
-
-                let record = MeetingScreenshotRecord(
-                    id: UUID.v7(),
+                let cgImage = try await captureScreenshotImage()
+                try await persistScreenshot(
+                    cgImage,
                     meetingId: meetingId,
-                    capturedAt: Date(),
-                    imageData: imageData,
-                    mimeType: ImageEncoder.preferredMIMEType
+                    dbQueue: dbQueue,
+                    shouldRefreshVisibleScreenshots: shouldRefreshVisibleScreenshots
                 )
-
-                try await dbQueue.write { db in
-                    try record.insert(db)
-                }
-                if shouldRefreshVisibleScreenshots {
-                    reloadScreenshots()
-                }
+                await updateAutomaticScreenshotFingerprintIfNeeded(for: cgImage)
             } catch {
-                errorMessage = "スクリーンショットの取得に失敗しました: \(error.localizedDescription)"
+                errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
             }
         }
+    }
+
+    private func handleAutomaticScreenshotSettingsChange() {
+        syncAutomaticScreenshotCaptureState()
+    }
+
+    private func handleAutomaticScreenshotIntervalChange() {
+        guard automaticScreenshotTask != nil else { return }
+        automaticScreenshotTask?.cancel()
+        automaticScreenshotTask = nil
+        if isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected {
+            startAutomaticScreenshotCapture(resetFingerprint: false)
+        } else {
+            lastSavedAutomaticScreenshotFingerprint = nil
+        }
+    }
+
+    private func handleScreenshotCaptureSourceChange() {
+        guard isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected else {
+            stopAutomaticScreenshotCapture()
+            return
+        }
+        automaticScreenshotTask?.cancel()
+        automaticScreenshotTask = nil
+        startAutomaticScreenshotCapture()
+    }
+
+    private func syncAutomaticScreenshotCaptureState() {
+        if isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected {
+            startAutomaticScreenshotCapture()
+        } else {
+            stopAutomaticScreenshotCapture()
+        }
+    }
+
+    private func startAutomaticScreenshotCapture(resetFingerprint: Bool = true) {
+        guard automaticScreenshotTask == nil else { return }
+        if resetFingerprint {
+            lastSavedAutomaticScreenshotFingerprint = nil
+        }
+        automaticScreenshotTask = Task { [weak self] in
+            await self?.runAutomaticScreenshotLoop()
+        }
+    }
+
+    private func stopAutomaticScreenshotCapture() {
+        automaticScreenshotTask?.cancel()
+        automaticScreenshotTask = nil
+        lastSavedAutomaticScreenshotFingerprint = nil
+    }
+
+    private func runAutomaticScreenshotLoop() async {
+        while !Task.isCancelled {
+            await captureAutomaticScreenshotIfNeeded()
+
+            let intervalSeconds = max(1, AppSettings.shared.automaticScreenshotIntervalSeconds)
+            do {
+                try await Task.sleep(nanoseconds: UInt64(intervalSeconds) * 1_000_000_000)
+            } catch {
+                break
+            }
+        }
+    }
+
+    private func captureAutomaticScreenshotIfNeeded() async {
+        guard isListening,
+              AppSettings.shared.automaticScreenshotEnabled,
+              screenshotCaptureSource.isSelected,
+              let meetingId = activeMeetingIdForSessionControls,
+              let dbQueue = activeDbQueueForSessionControls
+        else {
+            return
+        }
+
+        let shouldRefreshVisibleScreenshots = currentMeetingId == meetingId
+
+        do {
+            let cgImage = try await captureScreenshotImage()
+            guard !Task.isCancelled,
+                  isListening,
+                  AppSettings.shared.automaticScreenshotEnabled,
+                  screenshotCaptureSource.isSelected
+            else { return }
+            guard let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
+
+            let shouldSave = lastSavedAutomaticScreenshotFingerprint.map {
+                ScreenshotChangeDetector.isSignificantlyDifferent($0, fingerprint)
+            } ?? true
+
+            guard shouldSave,
+                  !Task.isCancelled,
+                  isListening,
+                  AppSettings.shared.automaticScreenshotEnabled,
+                  screenshotCaptureSource.isSelected
+            else { return }
+
+            try await persistScreenshot(
+                cgImage,
+                meetingId: meetingId,
+                dbQueue: dbQueue,
+                shouldRefreshVisibleScreenshots: shouldRefreshVisibleScreenshots
+            )
+            lastSavedAutomaticScreenshotFingerprint = fingerprint
+        } catch is CancellationError {
+            return
+        } catch {
+            // ウィンドウの一時クローズや画面ロックなど一過性の失敗でループ全体を
+            // 止めない。次の周期で再試行する。
+            errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
+        }
+    }
+
+    private func captureScreenshotImage() async throws -> CGImage {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        let filter = try screenshotContentFilter(from: content)
+        let config = SCScreenshotConfiguration()
+        config.showsCursor = false
+        config.dynamicRange = .sdr
+
+        // 対象の実サイズに合わせて ScreenCaptureKit に出力サイズを決めさせる。
+        // `window.frame * 2` のような固定スケールは、非 Retina の拡張モニタで余白を生む。
+        let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config)
+        guard let cgImage = output.sdrImage else {
+            throw ScreenshotError.imageUnavailable
+        }
+        return cgImage
+    }
+
+    private func screenshotContentFilter(from content: SCShareableContent) throws -> SCContentFilter {
+        switch screenshotCaptureSource {
+        case .none:
+            throw ScreenshotError.sourceUnavailable
+        case .entireDesktop:
+            guard let display = content.displays.first else {
+                throw ScreenshotError.displayUnavailable
+            }
+            return SCContentFilter(display: display, excludingWindows: [])
+        case let .window(windowID):
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                throw ScreenshotError.sourceUnavailable
+            }
+            return SCContentFilter(desktopIndependentWindow: window)
+        }
+    }
+
+    private func persistScreenshot(
+        _ cgImage: CGImage,
+        meetingId: UUID,
+        dbQueue: DatabaseQueue,
+        shouldRefreshVisibleScreenshots: Bool
+    ) async throws {
+        let imageData: Data = try await Task.detached(priority: .userInitiated) {
+            guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
+                throw ScreenshotError.encodingFailed
+            }
+            return encoded
+        }.value
+
+        let record = MeetingScreenshotRecord(
+            id: UUID.v7(),
+            meetingId: meetingId,
+            capturedAt: Date(),
+            imageData: imageData,
+            mimeType: ImageEncoder.preferredMIMEType
+        )
+
+        try await dbQueue.write { db in
+            try record.insert(db)
+        }
+        if shouldRefreshVisibleScreenshots {
+            reloadScreenshots()
+        }
+    }
+
+    private func updateAutomaticScreenshotFingerprintIfNeeded(for cgImage: CGImage) async {
+        guard automaticScreenshotTask != nil,
+              let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
+        lastSavedAutomaticScreenshotFingerprint = fingerprint
+    }
+
+    private func screenshotFingerprint(for cgImage: CGImage) async -> ScreenshotFingerprint? {
+        await Task.detached(priority: .utility) {
+            ScreenshotChangeDetector.fingerprint(for: cgImage)
+        }.value
     }
 
     // MARK: - Note Auto-Save
@@ -1506,64 +1625,6 @@ final class CaptionViewModel: ObservableObject {
         try? repo.deleteScreenshot(id: screenshot.id)
         if currentMeetingId == screenshot.meetingId {
             reloadScreenshots()
-        }
-    }
-
-    func toggleActionItemCompletion(_ actionItem: ActionItemRecord) {
-        setActionItemCompleted(actionItem, isCompleted: !actionItem.isCompleted)
-    }
-
-    func setActionItemCompleted(_ actionItem: ActionItemRecord, isCompleted: Bool) {
-        guard let dbQueue = currentDbQueue,
-              let index = currentMeetingActionItems.firstIndex(where: { $0.id == actionItem.id }) else { return }
-
-        let previousValue = currentMeetingActionItems[index].isCompleted
-        currentMeetingActionItems[index].isCompleted = isCompleted
-
-        let repo = MeetingRepository(dbQueue: dbQueue)
-        do {
-            try repo.setActionItemCompleted(id: actionItem.id, isCompleted: isCompleted)
-        } catch {
-            currentMeetingActionItems[index].isCompleted = previousValue
-            summaryError = L10n.actionItemUpdateFailed(error.localizedDescription)
-            Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
-                .error("Failed to update action item completion: \(error)")
-        }
-    }
-
-    func deleteActionItem(_ actionItem: ActionItemRecord) {
-        guard let dbQueue = currentDbQueue,
-              let index = currentMeetingActionItems.firstIndex(where: { $0.id == actionItem.id }) else { return }
-
-        let removedActionItem = currentMeetingActionItems.remove(at: index)
-        let repo = MeetingRepository(dbQueue: dbQueue)
-
-        do {
-            try repo.deleteActionItem(id: actionItem.id)
-        } catch {
-            currentMeetingActionItems.insert(removedActionItem, at: index)
-            summaryError = L10n.actionItemDeleteFailed(error.localizedDescription)
-            Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
-                .error("Failed to delete action item: \(error)")
-        }
-    }
-
-    func setActionItemAssignee(_ actionItem: ActionItemRecord, assignee: String) {
-        guard let dbQueue = currentDbQueue,
-              let index = currentMeetingActionItems.firstIndex(where: { $0.id == actionItem.id }) else { return }
-
-        let normalizedAssignee = SummaryActionItem.normalize(assignee)
-        let previousAssignee = currentMeetingActionItems[index].assignee
-        currentMeetingActionItems[index].assignee = normalizedAssignee
-
-        let repo = MeetingRepository(dbQueue: dbQueue)
-        do {
-            try repo.setActionItemAssignee(id: actionItem.id, assignee: normalizedAssignee)
-        } catch {
-            currentMeetingActionItems[index].assignee = previousAssignee
-            summaryError = L10n.actionItemAssigneeUpdateFailed(error.localizedDescription)
-            Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
-                .error("Failed to update action item assignee: \(error)")
         }
     }
 

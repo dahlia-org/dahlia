@@ -8,7 +8,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case cloudStorage
     case transcription
     case aiSummary
-    case agent
+    case instructions
+    case developer
 
     var id: String { rawValue }
 
@@ -19,7 +20,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: L10n.cloudStorage
         case .transcription: L10n.transcription
         case .aiSummary: L10n.aiSummary
-        case .agent: L10n.aiAgent
+        case .instructions: L10n.instructions
+        case .developer: L10n.developerSettings
         }
     }
 
@@ -30,7 +32,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: "externaldrive.badge.icloud"
         case .transcription: "waveform"
         case .aiSummary: "sparkle.text.clipboard"
-        case .agent: "sparkles"
+        case .instructions: "list.bullet.clipboard"
+        case .developer: "wrench.and.screwdriver"
         }
     }
 }
@@ -48,6 +51,9 @@ enum SettingsNavigation {
 
 /// 設定画面（Cmd+, で表示）。サイドバーでセクションを切り替える。
 struct SettingsView: View {
+    var sidebarViewModel: SidebarViewModel
+    var onSelectVault: (VaultRecord) -> Void = { _ in }
+
     @AppStorage(SettingsNavigation.selectedCategoryDefaultsKey)
     private var selectionRawValue = SettingsCategory.general.rawValue
 
@@ -81,7 +87,7 @@ struct SettingsView: View {
     private var selectedCategoryView: some View {
         switch selectedCategory {
         case .general:
-            GeneralSettingsView()
+            GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
         case .calendar:
             CalendarSettingsView()
         case .cloudStorage:
@@ -90,8 +96,10 @@ struct SettingsView: View {
             TranscriptionSettingsView()
         case .aiSummary:
             AISummarySettingsView()
-        case .agent:
-            AgentSettingsView()
+        case .instructions:
+            InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
+        case .developer:
+            DeveloperSettingsView()
         }
     }
 

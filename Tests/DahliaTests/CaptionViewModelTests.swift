@@ -3,271 +3,138 @@ import GRDB
 @testable import Dahlia
 
 #if canImport(Testing)
-import Testing
+    import Testing
 
-@MainActor
-struct CaptionViewModelTests {
-    private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    @MainActor
+    struct CaptionViewModelTests {
+        private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
-    @Test
-    func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() {
-        var defaultDeviceID = AudioDeviceID(101)
-        let devices = [
-            MicrophoneDevice(id: 101, name: "Poly Sync 20"),
-            MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
-        ]
-        let viewModel = CaptionViewModel(
-            availableInputDevicesProvider: { devices },
-            defaultInputDeviceIDProvider: { defaultDeviceID }
-        )
-
-        #expect(viewModel.microphoneSelection == .systemDefault)
-        #expect(viewModel.selectedMicrophoneID == 101)
-
-        defaultDeviceID = 202
-
-        #expect(viewModel.selectedMicrophoneID == 202)
-    }
-
-    @Test
-    func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() {
-        var availableDevices = [
-            MicrophoneDevice(id: 101, name: "Poly Sync 20"),
-            MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
-        ]
-        let viewModel = CaptionViewModel(
-            availableInputDevicesProvider: { availableDevices },
-            defaultInputDeviceIDProvider: { 202 }
-        )
-
-        viewModel.microphoneSelection = .device(101)
-        availableDevices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
-        viewModel.refreshAvailableMicrophones()
-
-        #expect(viewModel.microphoneSelection == .systemDefault)
-        #expect(viewModel.selectedMicrophoneID == 202)
-    }
-
-    @Test
-    func unsupportedLocaleFallsBackToPreferredSupportedLanguageVariant() {
-        let supportedLocales = [
-            Locale(identifier: "en_AU"),
-            Locale(identifier: "en_US"),
-            Locale(identifier: "ja_JP"),
-        ]
-
-        let resolved = CaptionViewModel.resolvedSupportedLocaleIdentifier(
-            preferredIdentifier: "en_JP",
-            supportedLocales: supportedLocales
-        )
-
-        #expect(resolved == "en_US")
-    }
-
-    @Test
-    func localeIdentifierExtensionsAreStrippedBeforeSupportLookup() {
-        let supportedLocales = [
-            Locale(identifier: "en_US"),
-            Locale(identifier: "ja_JP"),
-        ]
-
-        let resolved = CaptionViewModel.resolvedSupportedLocaleIdentifier(
-            preferredIdentifier: "ja_JP@calendar=iso8601",
-            supportedLocales: supportedLocales
-        )
-
-        #expect(resolved == "ja_JP")
-    }
-
-    @Test
-    func selectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
-        let viewModel = CaptionViewModel()
-        let dbQueue = try DatabaseQueue(path: ":memory:")
-        let meetingId = UUID.v7()
-        let initialSegment = TranscriptSegment(
-            startTime: Date(),
-            text: "live transcript",
-            isConfirmed: true,
-            speakerLabel: "mic",
-        )
-
-        viewModel.isListening = true
-        viewModel.currentMeetingId = meetingId
-        viewModel.currentVaultURL = testVaultURL
-        viewModel.store.loadSegments([initialSegment])
-
-        let storeIdentity = ObjectIdentifier(viewModel.store)
-
-        viewModel.loadMeeting(
-            meetingId,
-            dbQueue: dbQueue,
-            projectURL: nil,
-            projectId: nil,
-            vaultURL: testVaultURL,
-        )
-
-        #expect(ObjectIdentifier(viewModel.store) == storeIdentity)
-        #expect(viewModel.store.segments == [initialSegment])
-        #expect(viewModel.recordingMeetingId == meetingId)
-    }
-
-    @Test
-    func currentMeetingHasTranscriptSegmentsTracksStoreContents() {
-        let viewModel = CaptionViewModel()
-        let segment = TranscriptSegment(
-            startTime: Date(),
-            text: "confirmed transcript",
-            isConfirmed: true,
-            speakerLabel: "mic",
-        )
-
-        #expect(!viewModel.currentMeetingHasTranscriptSegments)
-
-        viewModel.store.loadSegments([segment])
-        #expect(viewModel.currentMeetingHasTranscriptSegments)
-
-        viewModel.store.clear()
-        #expect(!viewModel.currentMeetingHasTranscriptSegments)
-    }
-
-    @Test
-    func orderedCurrentMeetingActionItemsPrioritizeIncompleteMine() {
-        let viewModel = CaptionViewModel()
-        let meetingId = UUID.v7()
-
-        viewModel.currentMeetingActionItems = [
-            ActionItemRecord(id: .v7(), meetingId: meetingId, title: "Done task", assignee: "Alex", isCompleted: true),
-            ActionItemRecord(id: .v7(), meetingId: meetingId, title: "Other task", assignee: "Alex", isCompleted: false),
-            ActionItemRecord(id: .v7(), meetingId: meetingId, title: "Mine explicit", assignee: "me", isCompleted: false),
-            ActionItemRecord(id: .v7(), meetingId: meetingId, title: "Mine implicit", assignee: "", isCompleted: false),
-        ]
-
-        #expect(viewModel.orderedCurrentMeetingActionItems.map(\.title) == [
-            "Mine explicit",
-            "Mine implicit",
-            "Other task",
-            "Done task",
-        ])
-    }
-
-    @Test
-    func clearCurrentMeetingResetsActionItems() {
-        let viewModel = CaptionViewModel()
-        let meetingId = UUID.v7()
-
-        viewModel.currentMeetingId = meetingId
-        viewModel.currentMeetingActionItems = [
-            ActionItemRecord(id: .v7(), meetingId: meetingId, title: "Follow up", assignee: "me", isCompleted: false),
-        ]
-
-        viewModel.clearCurrentMeeting()
-
-        #expect(viewModel.currentMeetingActionItems.isEmpty)
-    }
-
-    @Test
-    func beginDraftMeetingDoesNotPersistMeetingRecord() throws {
-        let viewModel = CaptionViewModel()
-        let database = try AppDatabaseManager(path: ":memory:")
-        let event = GoogleCalendarEvent(
-            id: "primary::event-1",
-            calendarID: "primary",
-            calendarName: "Primary",
-            calendarColorHex: "#4285F4",
-            platformId: "event-1",
-            title: "Design review",
-            description: "Review launch checklist",
-            icalUid: "event-1@google.com",
-            startDate: Date(timeIntervalSince1970: 1_776_384_000),
-            endDate: Date(timeIntervalSince1970: 1_776_387_600),
-            isAllDay: false,
-            meetingURL: URL(string: "https://meet.google.com/test-link")
-        )
-        let vaultId = UUID.v7()
-        try database.dbQueue.write { db in
-            try VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            ).insert(db)
-        }
-
-        viewModel.beginDraftMeeting(
-            from: event,
-            dbQueue: database.dbQueue,
-            vaultURL: testVaultURL
-        )
-
-        let counts = try database.dbQueue.read { db in
-            (
-                try MeetingRecord.fetchCount(db),
-                try CalendarEventRecord.fetchCount(db)
+        @Test
+        func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() {
+            var defaultDeviceID = AudioDeviceID(101)
+            let devices = [
+                MicrophoneDevice(id: 101, name: "Poly Sync 20"),
+                MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
+            ]
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { devices },
+                defaultInputDeviceIDProvider: { defaultDeviceID }
             )
+
+            #expect(viewModel.microphoneSelection == .systemDefault)
+            #expect(viewModel.selectedMicrophoneID == 101)
+
+            defaultDeviceID = 202
+
+            #expect(viewModel.selectedMicrophoneID == 202)
         }
 
-        #expect(viewModel.hasDraftMeeting)
-        #expect(viewModel.draftMeetingTitle == "Design review")
-        #expect(counts.0 == 0)
-        #expect(counts.1 == 0)
-    }
+        @Test
+        func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() {
+            var availableDevices = [
+                MicrophoneDevice(id: 101, name: "Poly Sync 20"),
+                MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
+            ]
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { availableDevices },
+                defaultInputDeviceIDProvider: { 202 }
+            )
 
-    @Test
-    func clearCurrentMeetingDiscardsDraftMeeting() {
-        let viewModel = CaptionViewModel()
-        let event = GoogleCalendarEvent(
-            id: "primary::event-1",
-            calendarID: "primary",
-            calendarName: "Primary",
-            calendarColorHex: "#4285F4",
-            platformId: "event-1",
-            title: "Design review",
-            description: "",
-            icalUid: "event-1@google.com",
-            startDate: Date(timeIntervalSince1970: 1_776_384_000),
-            endDate: Date(timeIntervalSince1970: 1_776_387_600),
-            isAllDay: false,
-            meetingURL: nil
-        )
+            viewModel.microphoneSelection = .device(101)
+            availableDevices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
+            viewModel.refreshAvailableMicrophones()
 
-        viewModel.beginDraftMeeting(
-            from: event,
-            dbQueue: try! DatabaseQueue(path: ":memory:"),
-            vaultURL: testVaultURL
-        )
-        viewModel.clearCurrentMeeting()
-
-        #expect(!viewModel.hasDraftMeeting)
-        #expect(viewModel.currentMeetingId == nil)
-    }
-
-    @Test
-    func materializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
-        let viewModel = CaptionViewModel()
-        let database = try AppDatabaseManager(path: ":memory:")
-        let vaultId = UUID.v7()
-        try database.dbQueue.write { db in
-            try VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            ).insert(db)
+            #expect(viewModel.microphoneSelection == .systemDefault)
+            #expect(viewModel.selectedMicrophoneID == 202)
         }
-        let previousVault = AppSettings.shared.currentVault
-        AppSettings.shared.currentVault = VaultRecord(
-            id: vaultId,
-            path: testVaultURL.path,
-            name: "Test Vault",
-            createdAt: Date(),
-            lastOpenedAt: Date()
-        )
-        defer { AppSettings.shared.currentVault = previousVault }
 
-        viewModel.beginDraftMeeting(
-            from: GoogleCalendarEvent(
+        @Test
+        func unsupportedLocaleFallsBackToPreferredSupportedLanguageVariant() {
+            let supportedLocales = [
+                Locale(identifier: "en_AU"),
+                Locale(identifier: "en_US"),
+                Locale(identifier: "ja_JP"),
+            ]
+
+            let resolved = CaptionViewModel.resolvedSupportedLocaleIdentifier(
+                preferredIdentifier: "en_JP",
+                supportedLocales: supportedLocales
+            )
+
+            #expect(resolved == "en_US")
+        }
+
+        @Test
+        func localeIdentifierExtensionsAreStrippedBeforeSupportLookup() {
+            let supportedLocales = [
+                Locale(identifier: "en_US"),
+                Locale(identifier: "ja_JP"),
+            ]
+
+            let resolved = CaptionViewModel.resolvedSupportedLocaleIdentifier(
+                preferredIdentifier: "ja_JP@calendar=iso8601",
+                supportedLocales: supportedLocales
+            )
+
+            #expect(resolved == "ja_JP")
+        }
+
+        @Test
+        func selectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
+            let viewModel = CaptionViewModel()
+            let dbQueue = try DatabaseQueue(path: ":memory:")
+            let meetingId = UUID.v7()
+            let initialSegment = TranscriptSegment(
+                startTime: Date(),
+                text: "live transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+
+            viewModel.isListening = true
+            viewModel.currentMeetingId = meetingId
+            viewModel.currentVaultURL = testVaultURL
+            viewModel.store.loadSegments([initialSegment])
+
+            let storeIdentity = ObjectIdentifier(viewModel.store)
+
+            viewModel.loadMeeting(
+                meetingId,
+                dbQueue: dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+
+            #expect(ObjectIdentifier(viewModel.store) == storeIdentity)
+            #expect(viewModel.store.segments == [initialSegment])
+            #expect(viewModel.recordingMeetingId == meetingId)
+        }
+
+        @Test
+        func currentMeetingHasTranscriptSegmentsTracksStoreContents() {
+            let viewModel = CaptionViewModel()
+            let segment = TranscriptSegment(
+                startTime: Date(),
+                text: "confirmed transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+
+            #expect(!viewModel.currentMeetingHasTranscriptSegments)
+
+            viewModel.store.loadSegments([segment])
+            #expect(viewModel.currentMeetingHasTranscriptSegments)
+
+            viewModel.store.clear()
+            #expect(!viewModel.currentMeetingHasTranscriptSegments)
+        }
+
+        @Test
+        func beginDraftMeetingDoesNotPersistMeetingRecord() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let event = GoogleCalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -280,211 +147,240 @@ struct CaptionViewModelTests {
                 endDate: Date(timeIntervalSince1970: 1_776_387_600),
                 isAllDay: false,
                 meetingURL: URL(string: "https://meet.google.com/test-link")
-            ),
-            dbQueue: database.dbQueue,
-            vaultURL: testVaultURL
-        )
+            )
+            let vaultId = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: testVaultURL.path,
+                    name: "Test Vault",
+                    createdAt: Date(),
+                    lastOpenedAt: Date()
+                ).insert(db)
+            }
 
-        let meetingId = try #require(viewModel.materializeDraftMeeting())
-        let persisted = try database.dbQueue.read { db in
-            (
-                try #require(MeetingRecord.fetchOne(db, key: meetingId)),
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+
+            let counts = try database.dbQueue.read { db in
+                try (
+                    MeetingRecord.fetchCount(db),
+                    CalendarEventRecord.fetchCount(db)
+                )
+            }
+
+            #expect(viewModel.hasDraftMeeting)
+            #expect(viewModel.draftMeetingTitle == "Design review")
+            #expect(counts.0 == 0)
+            #expect(counts.1 == 0)
+        }
+
+        @Test
+        func clearCurrentMeetingDiscardsDraftMeeting() {
+            let viewModel = CaptionViewModel()
+            let event = GoogleCalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "event-1",
+                title: "Design review",
+                description: "",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                meetingURL: nil
+            )
+
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: try! DatabaseQueue(path: ":memory:"),
+                vaultURL: testVaultURL
+            )
+            viewModel.clearCurrentMeeting()
+
+            #expect(!viewModel.hasDraftMeeting)
+            #expect(viewModel.currentMeetingId == nil)
+        }
+
+        @Test
+        func materializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultId = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: testVaultURL.path,
+                    name: "Test Vault",
+                    createdAt: Date(),
+                    lastOpenedAt: Date()
+                ).insert(db)
+            }
+            let previousVault = AppSettings.shared.currentVault
+            AppSettings.shared.currentVault = VaultRecord(
+                id: vaultId,
+                path: testVaultURL.path,
+                name: "Test Vault",
+                createdAt: Date(),
+                lastOpenedAt: Date()
+            )
+            defer { AppSettings.shared.currentVault = previousVault }
+
+            viewModel.beginDraftMeeting(
+                from: GoogleCalendarEvent(
+                    id: "primary::event-1",
+                    calendarID: "primary",
+                    calendarName: "Primary",
+                    calendarColorHex: "#4285F4",
+                    platformId: "event-1",
+                    title: "Design review",
+                    description: "Review launch checklist",
+                    icalUid: "event-1@google.com",
+                    startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                    endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                    isAllDay: false,
+                    meetingURL: URL(string: "https://meet.google.com/test-link")
+                ),
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+
+            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let persisted = try database.dbQueue.read { db in
+                try (
+                    #require(MeetingRecord.fetchOne(db, key: meetingId)),
+                    #require(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
+                )
+            }
+
+            #expect(persisted.0.name == "Design review")
+            #expect(persisted.1.platformId == "event-1")
+            #expect(persisted.1.meetingUrl == "https://meet.google.com/test-link")
+            #expect(!viewModel.hasDraftMeeting)
+            #expect(viewModel.currentMeetingId == meetingId)
+        }
+
+        @Test
+        func materializeDraftMeetingPersistsMacCalendarEventPlatform() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultId = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: testVaultURL.path,
+                    name: "Test Vault",
+                    createdAt: Date(),
+                    lastOpenedAt: Date()
+                ).insert(db)
+            }
+            let previousVault = AppSettings.shared.currentVault
+            AppSettings.shared.currentVault = VaultRecord(
+                id: vaultId,
+                path: testVaultURL.path,
+                name: "Test Vault",
+                createdAt: Date(),
+                lastOpenedAt: Date()
+            )
+            defer { AppSettings.shared.currentVault = previousVault }
+
+            viewModel.beginDraftMeeting(
+                from: CalendarEvent(
+                    id: "local::mac-event-1",
+                    calendarID: "local",
+                    calendarName: "Local",
+                    calendarColorHex: "#FF9500",
+                    platform: CalendarEventPlatform.macOSCalendar,
+                    platformId: "mac-event-1::1776384000",
+                    title: "Mac event review",
+                    description: "Local calendar notes",
+                    icalUid: "mac-event-1@local",
+                    startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                    endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                    isAllDay: false,
+                    meetingURL: URL(string: "https://zoom.us/j/123456789")
+                ),
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+
+            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let persisted = try database.dbQueue.read { db in
                 try #require(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
-            )
+            }
+
+            #expect(persisted.platform == "MacOSCalendar")
+            #expect(persisted.platformId == "mac-event-1::1776384000")
+            #expect(persisted.meetingUrl == "https://zoom.us/j/123456789")
         }
 
-        #expect(persisted.0.name == "Design review")
-        #expect(persisted.1.platformId == "event-1")
-        #expect(persisted.1.meetingUrl == "https://meet.google.com/test-link")
-        #expect(!viewModel.hasDraftMeeting)
-        #expect(viewModel.currentMeetingId == meetingId)
     }
 
-    @Test
-    func emptyAssigneeIsNotExplicitlyAssignedToMe() {
-        let actionItem = ActionItemRecord(
-            id: .v7(),
-            meetingId: .v7(),
-            title: "Follow up",
-            assignee: "",
-            isCompleted: false
-        )
-
-        #expect(actionItem.sortsAsMine)
-        #expect(!actionItem.isExplicitlyAssignedToMe)
-    }
-
-    @Test
-    func explicitMeAssigneeIsRecognized() {
-        let actionItem = ActionItemRecord(
-            id: .v7(),
-            meetingId: .v7(),
-            title: "Follow up",
-            assignee: "me",
-            isCompleted: false
-        )
-
-        #expect(actionItem.sortsAsMine)
-        #expect(actionItem.isExplicitlyAssignedToMe)
-    }
-}
 #elseif canImport(XCTest)
-import XCTest
+    import XCTest
 
-@MainActor
-final class CaptionViewModelTests: XCTestCase {
-    private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    @MainActor
+    final class CaptionViewModelTests: XCTestCase {
+        private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
-    func testSelectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
-        let viewModel = CaptionViewModel()
-        let dbQueue = try DatabaseQueue(path: ":memory:")
-        let meetingId = UUID.v7()
-        let initialSegment = TranscriptSegment(
-            startTime: Date(),
-            text: "live transcript",
-            isConfirmed: true,
-            speakerLabel: "mic",
-        )
-
-        viewModel.isListening = true
-        viewModel.currentMeetingId = meetingId
-        viewModel.currentVaultURL = testVaultURL
-        viewModel.store.loadSegments([initialSegment])
-
-        let storeIdentity = ObjectIdentifier(viewModel.store)
-
-        viewModel.loadMeeting(
-            meetingId,
-            dbQueue: dbQueue,
-            projectURL: nil,
-            projectId: nil,
-            vaultURL: testVaultURL,
-        )
-
-        XCTAssertEqual(ObjectIdentifier(viewModel.store), storeIdentity)
-        XCTAssertEqual(viewModel.store.segments, [initialSegment])
-        XCTAssertEqual(viewModel.recordingMeetingId, meetingId)
-    }
-
-    func testCurrentMeetingHasTranscriptSegmentsTracksStoreContents() {
-        let viewModel = CaptionViewModel()
-        let segment = TranscriptSegment(
-            startTime: Date(),
-            text: "confirmed transcript",
-            isConfirmed: true,
-            speakerLabel: "mic",
-        )
-
-        XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
-
-        viewModel.store.loadSegments([segment])
-        XCTAssertTrue(viewModel.currentMeetingHasTranscriptSegments)
-
-        viewModel.store.clear()
-        XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
-    }
-
-    func testBeginDraftMeetingDoesNotPersistMeetingRecord() throws {
-        let viewModel = CaptionViewModel()
-        let database = try AppDatabaseManager(path: ":memory:")
-        let event = GoogleCalendarEvent(
-            id: "primary::event-1",
-            calendarID: "primary",
-            calendarName: "Primary",
-            calendarColorHex: "#4285F4",
-            platformId: "event-1",
-            title: "Design review",
-            description: "Review launch checklist",
-            icalUid: "event-1@google.com",
-            startDate: Date(timeIntervalSince1970: 1_776_384_000),
-            endDate: Date(timeIntervalSince1970: 1_776_387_600),
-            isAllDay: false,
-            meetingURL: URL(string: "https://meet.google.com/test-link")
-        )
-        let vaultId = UUID.v7()
-        try database.dbQueue.write { db in
-            try VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            ).insert(db)
-        }
-
-        viewModel.beginDraftMeeting(
-            from: event,
-            dbQueue: database.dbQueue,
-            vaultURL: testVaultURL
-        )
-
-        let counts = try database.dbQueue.read { db in
-            (
-                try MeetingRecord.fetchCount(db),
-                try CalendarEventRecord.fetchCount(db)
+        func testSelectingActiveRecordingMeetingKeepsLiveTranscriptStore() throws {
+            let viewModel = CaptionViewModel()
+            let dbQueue = try DatabaseQueue(path: ":memory:")
+            let meetingId = UUID.v7()
+            let initialSegment = TranscriptSegment(
+                startTime: Date(),
+                text: "live transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
             )
+
+            viewModel.isListening = true
+            viewModel.currentMeetingId = meetingId
+            viewModel.currentVaultURL = testVaultURL
+            viewModel.store.loadSegments([initialSegment])
+
+            let storeIdentity = ObjectIdentifier(viewModel.store)
+
+            viewModel.loadMeeting(
+                meetingId,
+                dbQueue: dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+
+            XCTAssertEqual(ObjectIdentifier(viewModel.store), storeIdentity)
+            XCTAssertEqual(viewModel.store.segments, [initialSegment])
+            XCTAssertEqual(viewModel.recordingMeetingId, meetingId)
         }
 
-        XCTAssertTrue(viewModel.hasDraftMeeting)
-        XCTAssertEqual(viewModel.draftMeetingTitle, "Design review")
-        XCTAssertEqual(counts.0, 0)
-        XCTAssertEqual(counts.1, 0)
-    }
+        func testCurrentMeetingHasTranscriptSegmentsTracksStoreContents() {
+            let viewModel = CaptionViewModel()
+            let segment = TranscriptSegment(
+                startTime: Date(),
+                text: "confirmed transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
 
-    func testClearCurrentMeetingDiscardsDraftMeeting() throws {
-        let viewModel = CaptionViewModel()
-        let event = GoogleCalendarEvent(
-            id: "primary::event-1",
-            calendarID: "primary",
-            calendarName: "Primary",
-            calendarColorHex: "#4285F4",
-            platformId: "event-1",
-            title: "Design review",
-            description: "",
-            icalUid: "event-1@google.com",
-            startDate: Date(timeIntervalSince1970: 1_776_384_000),
-            endDate: Date(timeIntervalSince1970: 1_776_387_600),
-            isAllDay: false,
-            meetingURL: nil
-        )
+            XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
 
-        let dbQueue = try DatabaseQueue(path: ":memory:")
-        viewModel.beginDraftMeeting(
-            from: event,
-            dbQueue: dbQueue,
-            vaultURL: testVaultURL
-        )
-        viewModel.clearCurrentMeeting()
+            viewModel.store.loadSegments([segment])
+            XCTAssertTrue(viewModel.currentMeetingHasTranscriptSegments)
 
-        XCTAssertFalse(viewModel.hasDraftMeeting)
-        XCTAssertNil(viewModel.currentMeetingId)
-    }
-
-    func testMaterializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
-        let viewModel = CaptionViewModel()
-        let database = try AppDatabaseManager(path: ":memory:")
-        let vaultId = UUID.v7()
-        try database.dbQueue.write { db in
-            try VaultRecord(
-                id: vaultId,
-                path: testVaultURL.path,
-                name: "Test Vault",
-                createdAt: Date(),
-                lastOpenedAt: Date()
-            ).insert(db)
+            viewModel.store.clear()
+            XCTAssertFalse(viewModel.currentMeetingHasTranscriptSegments)
         }
-        let previousVault = AppSettings.shared.currentVault
-        AppSettings.shared.currentVault = VaultRecord(
-            id: vaultId,
-            path: testVaultURL.path,
-            name: "Test Vault",
-            createdAt: Date(),
-            lastOpenedAt: Date()
-        )
-        defer { AppSettings.shared.currentVault = previousVault }
 
-        viewModel.beginDraftMeeting(
-            from: GoogleCalendarEvent(
+        func testBeginDraftMeetingDoesNotPersistMeetingRecord() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let event = GoogleCalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -497,24 +393,121 @@ final class CaptionViewModelTests: XCTestCase {
                 endDate: Date(timeIntervalSince1970: 1_776_387_600),
                 isAllDay: false,
                 meetingURL: URL(string: "https://meet.google.com/test-link")
-            ),
-            dbQueue: database.dbQueue,
-            vaultURL: testVaultURL
-        )
-
-        let meetingId = try XCTUnwrap(viewModel.materializeDraftMeeting())
-        let persisted = try database.dbQueue.read { db in
-            (
-                try XCTUnwrap(MeetingRecord.fetchOne(db, key: meetingId)),
-                try XCTUnwrap(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
             )
+            let vaultId = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: testVaultURL.path,
+                    name: "Test Vault",
+                    createdAt: Date(),
+                    lastOpenedAt: Date()
+                ).insert(db)
+            }
+
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+
+            let counts = try database.dbQueue.read { db in
+                try (
+                    MeetingRecord.fetchCount(db),
+                    CalendarEventRecord.fetchCount(db)
+                )
+            }
+
+            XCTAssertTrue(viewModel.hasDraftMeeting)
+            XCTAssertEqual(viewModel.draftMeetingTitle, "Design review")
+            XCTAssertEqual(counts.0, 0)
+            XCTAssertEqual(counts.1, 0)
         }
 
-        XCTAssertEqual(persisted.0.name, "Design review")
-        XCTAssertEqual(persisted.1.platformId, "event-1")
-        XCTAssertEqual(persisted.1.meetingUrl, "https://meet.google.com/test-link")
-        XCTAssertFalse(viewModel.hasDraftMeeting)
-        XCTAssertEqual(viewModel.currentMeetingId, meetingId)
+        func testClearCurrentMeetingDiscardsDraftMeeting() throws {
+            let viewModel = CaptionViewModel()
+            let event = GoogleCalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "event-1",
+                title: "Design review",
+                description: "",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                meetingURL: nil
+            )
+
+            let dbQueue = try DatabaseQueue(path: ":memory:")
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: dbQueue,
+                vaultURL: testVaultURL
+            )
+            viewModel.clearCurrentMeeting()
+
+            XCTAssertFalse(viewModel.hasDraftMeeting)
+            XCTAssertNil(viewModel.currentMeetingId)
+        }
+
+        func testMaterializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultId = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: testVaultURL.path,
+                    name: "Test Vault",
+                    createdAt: Date(),
+                    lastOpenedAt: Date()
+                ).insert(db)
+            }
+            let previousVault = AppSettings.shared.currentVault
+            AppSettings.shared.currentVault = VaultRecord(
+                id: vaultId,
+                path: testVaultURL.path,
+                name: "Test Vault",
+                createdAt: Date(),
+                lastOpenedAt: Date()
+            )
+            defer { AppSettings.shared.currentVault = previousVault }
+
+            viewModel.beginDraftMeeting(
+                from: GoogleCalendarEvent(
+                    id: "primary::event-1",
+                    calendarID: "primary",
+                    calendarName: "Primary",
+                    calendarColorHex: "#4285F4",
+                    platformId: "event-1",
+                    title: "Design review",
+                    description: "Review launch checklist",
+                    icalUid: "event-1@google.com",
+                    startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                    endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                    isAllDay: false,
+                    meetingURL: URL(string: "https://meet.google.com/test-link")
+                ),
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+
+            let meetingId = try XCTUnwrap(viewModel.materializeDraftMeeting())
+            let persisted = try database.dbQueue.read { db in
+                try (
+                    XCTUnwrap(MeetingRecord.fetchOne(db, key: meetingId)),
+                    XCTUnwrap(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
+                )
+            }
+
+            XCTAssertEqual(persisted.0.name, "Design review")
+            XCTAssertEqual(persisted.1.platformId, "event-1")
+            XCTAssertEqual(persisted.1.meetingUrl, "https://meet.google.com/test-link")
+            XCTAssertFalse(viewModel.hasDraftMeeting)
+            XCTAssertEqual(viewModel.currentMeetingId, meetingId)
+        }
     }
-}
 #endif

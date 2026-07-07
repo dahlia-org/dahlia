@@ -9,7 +9,7 @@ enum GoogleDriveSummaryExportService {
         fileName: String,
         markdown: String
     ) async throws -> String {
-        let signInProvider = GoogleSignInAdapter()
+        let signInProvider = GoogleSignInAdapter(sessionKind: .drive)
         let apiClient = GoogleDriveAPIClient()
         guard let session = try await signInProvider.refreshCurrentSession(),
               session.hasScopes(GoogleOAuthScope.drive) else {

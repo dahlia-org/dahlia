@@ -13,10 +13,8 @@ struct MeetingMetadataBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            MeetingTagsView(viewModel: viewModel, tags: tags, sidebarViewModel: sidebarViewModel)
-            Spacer(minLength: 0)
-        }
+        MeetingTagsView(viewModel: viewModel, tags: tags, sidebarViewModel: sidebarViewModel)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -49,7 +47,7 @@ private struct MeetingTagsView: View {
     }
 
     var body: some View {
-        FlowLayout(spacing: 6) {
+        FlowLayout(spacing: 6, rowSpacing: 7) {
             ForEach(tags, id: \.name) { tag in
                 TagChip(tag: tag) {
                     guard let meetingId = viewModel.currentMeetingId else { return }
@@ -74,9 +72,9 @@ private struct MeetingTagsView: View {
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.vertical, 4)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     .foregroundStyle(Color.secondary.opacity(0.4))
             )
@@ -202,13 +200,15 @@ private struct TagChip: View {
             Text(tag.name)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .background(
-            Capsule()
-                .fill(Color(hex: tag.colorHex).opacity(0.12))
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(hex: tag.colorHex).opacity(isHovered ? 0.16 : 0.1))
         )
+        .frame(maxWidth: 220)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -300,8 +300,8 @@ struct MeetingProjectPicker: View {
         .padding(.horizontal, style == .compact ? 6 : 8)
         .padding(.vertical, 3)
         .background(
-            Capsule()
-                .fill(Color.primary.opacity(0.05))
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.primary.opacity(isHovered ? 0.08 : 0.06))
         )
         .fixedSize(horizontal: true, vertical: false)
         .onHover { hovering in
@@ -436,7 +436,6 @@ struct MeetingProjectPicker: View {
 
         guard let meetingId = viewModel.materializeDraftMeeting() else { return }
         sidebarViewModel.moveMeeting(id: meetingId, toProjectId: nil)
-        sidebarViewModel.deselectProjectKeepingMeetingSelection()
         viewModel.updateCurrentProjectContext(projectURL: nil, projectId: nil, projectName: nil)
         sidebarViewModel.selectMeeting(meetingId)
         projectInput = ""
@@ -454,7 +453,6 @@ struct MeetingProjectPicker: View {
         if projectId != viewModel.currentProjectId {
             sidebarViewModel.moveMeeting(id: meetingId, toProjectId: projectId)
         }
-        sidebarViewModel.selectProject(id: projectId, name: projectName)
         viewModel.updateCurrentProjectContext(
             projectURL: projectURL,
             projectId: projectId,

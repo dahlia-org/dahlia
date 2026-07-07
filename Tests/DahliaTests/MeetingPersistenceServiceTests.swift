@@ -8,6 +8,62 @@ import Testing
 @MainActor
 struct MeetingPersistenceServiceTests {
     @Test
+    func newMeetingStartsPersistedAsReady() throws {
+        let database = try makeDatabase()
+        let store = TranscriptStore()
+        let startDate = Date(timeIntervalSince1970: 1_776_384_000)
+        store.recordingStartTime = startDate
+
+        let service = try MeetingPersistenceService(
+            store: store,
+            dbQueue: database.dbQueue,
+            vaultId: testVault.id,
+            projectId: nil,
+            initialName: "Runtime status meeting"
+        )
+
+        let persisted = try database.dbQueue.read { db in
+            try #require(MeetingRecord.fetchOne(db, key: service.meetingId))
+        }
+
+        #expect(persisted.status == .ready)
+    }
+
+    @Test
+    func appendModeDoesNotChangePersistedStatusOnStart() throws {
+        let database = try makeDatabase()
+        let meetingId = UUID.v7()
+        let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
+
+        try database.dbQueue.write { db in
+            try MeetingRecord(
+                id: meetingId,
+                vaultId: testVault.id,
+                projectId: nil,
+                name: "Existing meeting",
+                status: .transcriptNotFound,
+                duration: nil,
+                createdAt: createdAt,
+                updatedAt: createdAt
+            ).insert(db)
+        }
+
+        _ = MeetingPersistenceService(
+            store: TranscriptStore(),
+            dbQueue: database.dbQueue,
+            existingMeetingId: meetingId,
+            existingSegmentIds: []
+        )
+
+        let persisted = try database.dbQueue.read { db in
+            try #require(MeetingRecord.fetchOne(db, key: meetingId))
+        }
+
+        #expect(persisted.status == .transcriptNotFound)
+        #expect(persisted.updatedAt == createdAt)
+    }
+
+    @Test
     func newMeetingPersistsLinkedCalendarEvent() throws {
         let database = try makeDatabase()
         let store = TranscriptStore()
@@ -39,6 +95,33 @@ struct MeetingPersistenceServiceTests {
         #expect(persisted.1.start == startDate)
         #expect(persisted.1.end == startDate.addingTimeInterval(3600))
         #expect(persisted.1.meetingUrl == "https://meet.google.com/test-link")
+    }
+
+    @Test
+    func newMeetingPersistsLinkedMacCalendarEventPlatform() throws {
+        let database = try makeDatabase()
+        let store = TranscriptStore()
+        let startDate = Date(timeIntervalSince1970: 1_776_384_000)
+        store.recordingStartTime = startDate
+
+        let service = try MeetingPersistenceService(
+            store: store,
+            dbQueue: database.dbQueue,
+            vaultId: testVault.id,
+            projectId: nil,
+            initialName: "Mac event review",
+            calendarEvent: fixtureMacCalendarEvent(startDate: startDate)
+        )
+        service.stop()
+
+        let persisted = try database.dbQueue.read { db in
+            try #require(CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db))
+        }
+
+        #expect(persisted.platform == "MacOSCalendar")
+        #expect(persisted.platformId == "mac-event-1::1776384000")
+        #expect(persisted.description == "Local calendar notes")
+        #expect(persisted.icalUid == "mac-event-1@local")
     }
 
     @Test
@@ -619,5 +702,23 @@ private func fixtureEvent(startDate: Date) -> GoogleCalendarEvent {
         endDate: startDate.addingTimeInterval(3600),
         isAllDay: false,
         meetingURL: URL(string: "https://meet.google.com/test-link")
+    )
+}
+
+private func fixtureMacCalendarEvent(startDate: Date) -> CalendarEvent {
+    CalendarEvent(
+        id: "local::mac-event-1",
+        calendarID: "local",
+        calendarName: "Local",
+        calendarColorHex: "#FF9500",
+        platform: CalendarEventPlatform.macOSCalendar,
+        platformId: "mac-event-1::1776384000",
+        title: "Mac event review",
+        description: "Local calendar notes",
+        icalUid: "mac-event-1@local",
+        startDate: startDate,
+        endDate: startDate.addingTimeInterval(3600),
+        isAllDay: false,
+        meetingURL: URL(string: "https://zoom.us/j/123456789")
     )
 }

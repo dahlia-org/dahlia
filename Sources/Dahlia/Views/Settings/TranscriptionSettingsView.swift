@@ -8,6 +8,8 @@ struct TranscriptionSettingsView: View {
     @State private var isLoadingLocales = false
     @State private var localeSearchText = ""
 
+    private static let automaticScreenshotIntervals = [15, 30, 60, 120]
+
     var body: some View {
         SettingsPage {
             SettingsSection(title: L10n.transcriptTranslation) {
@@ -83,6 +85,38 @@ struct TranscriptionSettingsView: View {
                             .labelsHidden()
                             .pickerStyle(.menu)
                             .frame(width: 120, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+
+            SettingsSection(
+                title: L10n.screen,
+                description: L10n.automaticScreenshotsDescription
+            ) {
+                SettingsCard {
+                    VStack(spacing: 0) {
+                        SettingsToggleRow(
+                            title: L10n.automaticScreenshots,
+                            description: L10n.automaticScreenshotsToggleDescription,
+                            isOn: $settings.automaticScreenshotEnabled
+                        )
+
+                        Divider()
+
+                        SettingsControlRow(
+                            title: L10n.screenshotInterval,
+                            description: L10n.screenshotIntervalDescription
+                        ) {
+                            Picker(L10n.screenshotInterval, selection: $settings.automaticScreenshotIntervalSeconds) {
+                                ForEach(Self.automaticScreenshotIntervals, id: \.self) { interval in
+                                    Text(L10n.seconds(interval)).tag(interval)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(width: 120, alignment: .trailing)
+                            .disabled(!settings.automaticScreenshotEnabled)
                         }
                     }
                 }

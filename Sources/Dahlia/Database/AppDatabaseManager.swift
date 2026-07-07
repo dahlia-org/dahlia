@@ -53,6 +53,10 @@ final class AppDatabaseManager: Sendable {
             try addTranscriptSegmentTranslatedTextColumnIfNeeded(in: db)
         }
 
+        migrator.registerMigration("v7_normalizeLegacyMeetingStatus") { db in
+            try normalizeLegacyMeetingStatus(in: db)
+        }
+
         return migrator
     }()
 
@@ -66,6 +70,8 @@ final class AppDatabaseManager: Sendable {
         try createNotesTable(in: db)
         try createScreenshotsTable(in: db)
         try createSummariesTable(in: db)
+        // Legacy table kept in the v3 migration for existing database compatibility.
+        // The app no longer reads or writes action item rows.
         try createActionItemsTable(in: db)
         try createCalendarEventsTable(in: db)
         try createInstructionsTable(in: db)
@@ -126,6 +132,14 @@ final class AppDatabaseManager: Sendable {
             index: "meetings_on_vaultId_createdAt",
             on: "meetings",
             columns: ["vaultId", "createdAt"]
+        )
+    }
+
+    private static func normalizeLegacyMeetingStatus(in db: Database) throws {
+        guard try db.tableExists("meetings") else { return }
+        try db.execute(
+            sql: "UPDATE meetings SET status = ? WHERE status = ?",
+            arguments: [MeetingStatus.ready.rawValue, "RECORDING"]
         )
     }
 

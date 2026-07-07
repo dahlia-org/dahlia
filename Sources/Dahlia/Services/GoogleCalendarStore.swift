@@ -19,8 +19,8 @@ final class GoogleCalendarStore: ObservableObject {
 
     @Published private(set) var state: State
     @Published private(set) var account: GoogleCalendarAccount?
-    @Published private(set) var availableCalendars: [GoogleCalendarListItem] = []
-    @Published private(set) var upcomingEvents: [GoogleCalendarEvent] = []
+    @Published private(set) var availableCalendars: [CalendarListItem] = []
+    @Published private(set) var upcomingEvents: [CalendarEvent] = []
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var selectedCalendarIDs: Set<String>
 
@@ -49,7 +49,7 @@ final class GoogleCalendarStore: ObservableObject {
     private var authChangeTask: Task<Void, Never>?
 
     init(
-        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(),
+        signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .calendar),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init,
@@ -64,10 +64,11 @@ final class GoogleCalendarStore: ObservableObject {
         self.refreshInterval = refreshInterval
         self.daysAhead = daysAhead
         self.presentingWindowProvider = presentingWindowProvider
+        let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
         self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeTask = Task { [weak self] in
-            for await _ in NotificationCenter.default.notifications(named: .googleSessionDidChange) {
+            for await _ in NotificationCenter.default.notifications(named: sessionDidChangeNotification) {
                 await self?.handleAuthSessionChanged()
             }
         }
@@ -148,6 +149,11 @@ final class GoogleCalendarStore: ObservableObject {
         }
 
         guard currentSession != nil else {
+            if !didAttemptRestore, signInProvider.hasPreviousSignIn {
+                await restoreSessionIfNeeded()
+                return
+            }
+
             recomputeState()
             return
         }

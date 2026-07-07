@@ -42,11 +42,44 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+enum CalendarSource: String, CaseIterable, Identifiable {
+    case google
+    case macOS
+
+    static let defaultEnabledSources: Set<CalendarSource> = [.google]
+    static let defaultEnabledSourcesJSON = "[\"google\"]"
+    nonisolated static let enabledSourcesUserDefaultsKey = "enabledCalendarSources"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .google: L10n.googleCalendar
+        case .macOS: L10n.macOSCalendar
+        }
+    }
+}
+
+enum LLMProvider: String, CaseIterable, Identifiable {
+    case openAI
+    case databricks
+    case customEndpoint
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .openAI: L10n.openAI
+        case .databricks: L10n.databricks
+        case .customEndpoint: L10n.customEndpoint
+        }
+    }
+}
+
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
-    nonisolated static let defaultAgentLaunchCommand = "claude"
 
     // MARK: - 表示言語
 
@@ -65,6 +98,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
     @AppStorage("liveSubtitleOverlaySegmentCount") var liveSubtitleOverlaySegmentCount = 2
     @AppStorage("liveSubtitleSourceMode") var liveSubtitleSourceModeRawValue = LiveSubtitleSourceMode.includeMicrophone.rawValue
+    @AppStorage("automaticScreenshotEnabled") var automaticScreenshotEnabled = true
+    @AppStorage("automaticScreenshotIntervalSeconds") var automaticScreenshotIntervalSeconds = 30
 
     var liveSubtitleSourceMode: LiveSubtitleSourceMode {
         get { LiveSubtitleSourceMode(rawValue: liveSubtitleSourceModeRawValue) ?? .includeMicrophone }
@@ -127,23 +162,132 @@ final class AppSettings: ObservableObject {
 
     @AppStorage("meetingDetectionEnabled") var meetingDetectionEnabled = true
 
-    // MARK: - Agent 設定
+    // MARK: - カレンダー設定
 
-    @AppStorage("agentLaunchCommand") var agentLaunchCommand = AppSettings.defaultAgentLaunchCommand
-    @AppStorage("agentPermissionMode") var agentPermissionModeRawValue = AgentPermissionMode.auto.rawValue
-    @AppStorage("agentAllowedTools") var agentAllowedTools = AgentService.defaultAllowedTools
+    @AppStorage("calendarSource") var calendarSourceRawValue = CalendarSource.google.rawValue
+    @AppStorage(CalendarSource.enabledSourcesUserDefaultsKey) var enabledCalendarSourcesJSON = CalendarSource.defaultEnabledSourcesJSON
+    nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
+    nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
+    @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""
 
-    var agentPermissionMode: AgentPermissionMode {
-        get { AgentPermissionMode(rawValue: agentPermissionModeRawValue) ?? .auto }
-        set { agentPermissionModeRawValue = newValue.rawValue }
+    var calendarSource: CalendarSource {
+        get { CalendarSource(rawValue: calendarSourceRawValue) ?? .google }
+        set { calendarSourceRawValue = newValue.rawValue }
+    }
+
+    var enabledCalendarSources: Set<CalendarSource> {
+        get {
+            let hasStoredEnabledSources = UserDefaults.standard.object(forKey: CalendarSource.enabledSourcesUserDefaultsKey) != nil
+
+            if hasStoredEnabledSources,
+               let sources = Self.decodeCalendarSources(from: enabledCalendarSourcesJSON) {
+                return sources
+            }
+
+            if !hasStoredEnabledSources, let legacySource = CalendarSource(rawValue: calendarSourceRawValue) {
+                return [legacySource]
+            }
+
+            return CalendarSource.defaultEnabledSources
+        }
+        set {
+            enabledCalendarSourcesJSON = Self.encodeCalendarSources(newValue)
+            if let firstSource = CalendarSource.allCases.first(where: { newValue.contains($0) }) {
+                calendarSourceRawValue = firstSource.rawValue
+            }
+        }
+    }
+
+    func isCalendarSourceEnabled(_ source: CalendarSource) -> Bool {
+        enabledCalendarSources.contains(source)
+    }
+
+    func setCalendarSource(_ source: CalendarSource, isEnabled: Bool) {
+        var sources = enabledCalendarSources
+        if isEnabled {
+            sources.insert(source)
+        } else {
+            sources.remove(source)
+        }
+        enabledCalendarSources = sources
+    }
+
+    private static func decodeCalendarSources(from json: String) -> Set<CalendarSource>? {
+        guard !json.isEmpty,
+              let data = json.data(using: .utf8),
+              let rawValues = try? JSONDecoder().decode([String].self, from: data)
+        else { return nil }
+
+        let sources = rawValues.compactMap(CalendarSource.init(rawValue:))
+        return Set(sources)
+    }
+
+    private static func encodeCalendarSources(_ sources: Set<CalendarSource>) -> String {
+        let rawValues = CalendarSource.allCases
+            .filter { sources.contains($0) }
+            .map(\.rawValue)
+
+        guard let data = try? JSONEncoder().encode(rawValues),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            return CalendarSource.defaultEnabledSourcesJSON
+        }
+
+        return json
+    }
+
+    /// Google OAuth client secret override（Keychain に保存）。
+    var googleOAuthClientSecretOverride: String {
+        get { KeychainService.load(key: Self.googleOAuthClientSecretOverrideKey, accessPolicy: .standard) ?? "" }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                KeychainService.delete(key: Self.googleOAuthClientSecretOverrideKey)
+            } else {
+                do {
+                    try KeychainService.save(key: Self.googleOAuthClientSecretOverrideKey, value: trimmed, accessPolicy: .standard)
+                } catch {
+                    print("[KeychainService] Failed to save Google OAuth client secret override: \(error)")
+                }
+            }
+            objectWillChange.send()
+        }
     }
 
     // MARK: - LLM 設定
 
+    @AppStorage("llmProvider") var llmProviderRawValue = ""
     @AppStorage("llmEndpointURL") var llmEndpointURL = ""
+    @AppStorage("llmDatabricksWorkspaceID") var llmDatabricksWorkspaceID = ""
     @AppStorage("llmModelName") var llmModelName = ""
-    @AppStorage("llmAutoSummaryEnabled") var llmAutoSummaryEnabled = false
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+
+    var llmProvider: LLMProvider {
+        get {
+            if let provider = LLMProvider(rawValue: llmProviderRawValue) {
+                return provider
+            }
+
+            if llmEndpointURL.nilIfBlank != nil {
+                return .customEndpoint
+            }
+
+            return .openAI
+        }
+        set { llmProviderRawValue = newValue.rawValue }
+    }
+
+    var resolvedLLMEndpointURL: String {
+        switch llmProvider {
+        case .openAI:
+            return Self.openAIEndpointURL
+        case .databricks:
+            guard let workspaceID = llmDatabricksWorkspaceID.nilIfBlank else { return "" }
+            return Self.databricksEndpointURL(workspaceID: workspaceID)
+        case .customEndpoint:
+            return llmEndpointURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
 
     var llmSummaryLanguage: SummaryLanguage {
         get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }
@@ -241,7 +385,14 @@ final class AppSettings: ObservableObject {
 
     /// LLM の接続設定が揃っているかどうか。
     var isLLMConfigComplete: Bool {
-        !llmEndpointURL.isEmpty && !llmModelName.isEmpty && !llmAPIToken.isEmpty
+        resolvedLLMEndpointURL.nilIfBlank != nil && llmModelName.nilIfBlank != nil && llmAPIToken.nilIfBlank != nil
+    }
+
+    nonisolated static let openAIEndpointURL = "https://api.openai.com/v1/chat/completions"
+
+    nonisolated static func databricksEndpointURL(workspaceID: String) -> String {
+        let trimmedWorkspaceID = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "https://\(trimmedWorkspaceID).ai-gateway.cloud.databricks.com/mlflow/v1/chat/completions"
     }
 
     /// API トークン（Keychain に保存）。
@@ -286,7 +437,27 @@ extension UserDefaults {
         bool(forKey: "liveSubtitleOverlayEnabled")
     }
 
-    @objc dynamic var llmAutoSummaryEnabled: Bool {
-        bool(forKey: "llmAutoSummaryEnabled")
+    @objc dynamic var liveSubtitleOverlaySegmentCount: Int {
+        object(forKey: "liveSubtitleOverlaySegmentCount") as? Int ?? 2
+    }
+
+    @objc dynamic var liveSubtitleSourceMode: String? {
+        string(forKey: "liveSubtitleSourceMode")
+    }
+
+    @objc dynamic var automaticScreenshotEnabled: Bool {
+        object(forKey: "automaticScreenshotEnabled") as? Bool ?? true
+    }
+
+    @objc dynamic var automaticScreenshotIntervalSeconds: Int {
+        object(forKey: "automaticScreenshotIntervalSeconds") as? Int ?? 30
+    }
+
+    @objc dynamic var calendarSource: String? {
+        string(forKey: "calendarSource")
+    }
+
+    @objc dynamic var enabledCalendarSources: String? {
+        string(forKey: CalendarSource.enabledSourcesUserDefaultsKey)
     }
 }

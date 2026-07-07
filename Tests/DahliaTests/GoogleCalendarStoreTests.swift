@@ -169,6 +169,28 @@ struct GoogleCalendarStoreTests {
     }
 
     @Test
+    func ignoresUnrelatedSessionChangeNotification() async {
+        let watchedNotification = Notification.Name("GoogleCalendarStoreTests.watched.\(UUID().uuidString)")
+        let ignoredNotification = Notification.Name("GoogleCalendarStoreTests.ignored.\(UUID().uuidString)")
+        let signInProvider = MockGoogleCalendarSignInProvider(
+            hasPreviousSignIn: true,
+            sessionDidChangeNotification: watchedNotification,
+            restoreResult: .success(fixtureSession)
+        )
+        let store = GoogleCalendarStore(
+            signInProvider: signInProvider,
+            apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+            userDefaults: isolatedUserDefaults()
+        )
+
+        NotificationCenter.default.post(name: ignoredNotification, object: nil)
+        await Task.yield()
+
+        #expect(store.state == .signedOut)
+        #expect(signInProvider.restoreCallCount == 0)
+    }
+
+    @Test
     func eventTransformationPrefersConferenceEntryPointAndFiltersFutureWindow() throws {
         let conferenceItem = GoogleCalendarAPIClient.EventItem(
             id: "event-1",
@@ -382,28 +404,33 @@ private let fixtureEvent = GoogleCalendarEvent(
 private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     let isConfigured: Bool
     let hasPreviousSignIn: Bool
+    let sessionDidChangeNotification: Notification.Name
     var restoreResult: Result<GoogleSession, Error>
     var signInResult: Result<GoogleSession, Error>
     var refreshResult: Result<GoogleSession?, Error>
+    private(set) var restoreCallCount = 0
     private(set) var disconnectCallCount = 0
     private(set) var signInRequestedScopes: [Set<String>] = []
 
     init(
         isConfigured: Bool = true,
         hasPreviousSignIn: Bool = false,
+        sessionDidChangeNotification: Notification.Name = .googleCalendarSessionDidChange,
         restoreResult: Result<GoogleSession, Error> = .success(fixtureSession),
         signInResult: Result<GoogleSession, Error> = .success(fixtureSession),
         refreshResult: Result<GoogleSession?, Error> = .success(fixtureSession)
     ) {
         self.isConfigured = isConfigured
         self.hasPreviousSignIn = hasPreviousSignIn
+        self.sessionDidChangeNotification = sessionDidChangeNotification
         self.restoreResult = restoreResult
         self.signInResult = signInResult
         self.refreshResult = refreshResult
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
-        try restoreResult.get()
+        restoreCallCount += 1
+        return try restoreResult.get()
     }
 
     func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {

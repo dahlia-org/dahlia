@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CloudStorageSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var driveStore = GoogleDriveStore.shared
 
     var body: some View {
@@ -21,6 +22,24 @@ struct CloudStorageSettingsView: View {
                             tint: .orange
                         )
                         .padding(20)
+                    }
+                }
+            }
+
+            SettingsSection(
+                title: L10n.projectDriveFolders,
+                description: L10n.projectDriveFoldersDescription
+            ) {
+                SettingsCard {
+                    SettingsControlRow(
+                        title: L10n.projectManagement,
+                        description: L10n.summaryDestinationsDescription
+                    ) {
+                        Button {
+                            openWindow(id: WindowID.projectManager)
+                        } label: {
+                            Label(L10n.manageProjects, systemImage: "folder")
+                        }
                     }
                 }
             }
@@ -79,4 +98,5 @@ struct CloudStorageSettingsView: View {
 
         return L10n.googleDriveConnectDescription
     }
+
 }

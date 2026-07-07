@@ -30,10 +30,14 @@ enum L10n {
     static var delete: String { String(localized: "Delete", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }
+    static var auto: String { String(localized: "Auto", bundle: bundle) }
     static var apply: String { String(localized: "Apply", bundle: bundle) }
     static var clear: String { String(localized: "Clear", bundle: bundle) }
     static var close: String { String(localized: "Close", bundle: bundle) }
     static var search: String { String(localized: "Search", bundle: bundle) }
+    static var actions: String { String(localized: "Actions", bundle: bundle) }
+    static var dahlia: String { String(localized: "Dahlia", bundle: bundle) }
+    static var language: String { String(localized: "Language", bundle: bundle) }
     static var join: String { String(localized: "Join", bundle: bundle) }
     static var expand: String { String(localized: "Expand", bundle: bundle) }
     static var collapse: String { String(localized: "Collapse", bundle: bundle) }
@@ -50,6 +54,7 @@ enum L10n {
     static var goodEvening: String { String(localized: "Good evening", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
+    static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
     static var instructions: String { String(localized: "Instructions", bundle: bundle) }
     static var context: String { String(localized: "Context", bundle: bundle) }
     static var actionItems: String { String(localized: "Action Items", bundle: bundle) }
@@ -84,6 +89,11 @@ enum L10n {
     static var inProgress: String { String(localized: "In Progress", bundle: bundle) }
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var noMeetingsMatchFilter: String { String(localized: "No meetings match the current filter.", bundle: bundle) }
+    static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
+    static var searchProjects: String { String(localized: "Search projects...", bundle: bundle) }
+    static var moveToProject: String { String(localized: "Move to Project", bundle: bundle) }
+    static var noMeetingSelected: String { String(localized: "No meeting selected", bundle: bundle) }
+    static var selectMeetingDescription: String { String(localized: "Select a meeting from the sidebar.", bundle: bundle) }
     static var noProjectsYet: String { String(localized: "No projects yet", bundle: bundle) }
     static var noProjectsMatchFilter: String { String(localized: "No projects match the current filter.", bundle: bundle) }
     static var noInstructionsYet: String { String(localized: "No instructions yet", bundle: bundle) }
@@ -95,6 +105,9 @@ enum L10n {
     static var noMeetings: String { String(localized: "No meetings", bundle: bundle) }
     static var noConversationDetected: String { String(localized: "We couldn't detect any conversation in this meeting.", bundle: bundle) }
     static var recordingNow: String { String(localized: "Recording now", bundle: bundle) }
+    static var transcribingNow: String { String(localized: "Transcribing now", bundle: bundle) }
+    static var returnToRecordingMeeting: String { String(localized: "Return to recording meeting", bundle: bundle) }
+    static var returnToTranscribingMeeting: String { String(localized: "Return to transcribing meeting", bundle: bundle) }
     static var yesterday: String { String(localized: "Yesterday", bundle: bundle) }
     static func deleteCount(_ count: Int) -> String { String(localized: "Delete \(count) items", bundle: bundle) }
     static func moveCount(_ count: Int) -> String { String(localized: "Move \(count) items", bundle: bundle) }
@@ -119,6 +132,32 @@ enum L10n {
     static var instructionsEmptyContent: String { String(localized: "No content yet", bundle: bundle) }
     static var noResultsFound: String { String(localized: "No results found", bundle: bundle) }
     static var noProject: String { String(localized: "No project", bundle: bundle) }
+    static var summaryDestinations: String { String(localized: "Summary Destinations", bundle: bundle) }
+    static var summaryDestinationsDescription: String { String(
+        localized: "Manage where this project's summary files are saved.",
+        bundle: bundle
+    ) }
+    static var localSummaryFolder: String { String(localized: "Local Summary Folder", bundle: bundle) }
+    static var projectContext: String { String(localized: "Project Context", bundle: bundle) }
+    static var projectContextDescription: String { String(
+        localized: "Edit the CONTEXT.md file that is included when summaries are generated for this project.",
+        bundle: bundle
+    ) }
+    static var contextFile: String { String(localized: "CONTEXT.md", bundle: bundle) }
+    static var createContextFile: String { String(localized: "Create Context File", bundle: bundle) }
+    static var openContextFile: String { String(localized: "Open Context File", bundle: bundle) }
+    static var contextSaved: String { String(localized: "Saved", bundle: bundle) }
+    static var contextUnavailable: String { String(localized: "Could not create CONTEXT.md.", bundle: bundle) }
+    static func contextLoadFailed(_ error: String) -> String { String(localized: "Could not load CONTEXT.md: \(error)", bundle: bundle) }
+    static func contextSaveFailed(_ error: String) -> String { String(localized: "Could not save CONTEXT.md: \(error)", bundle: bundle) }
+    static var selectProjectToManageDescription: String { String(
+        localized: "Select a project to manage summary destinations and instructions.",
+        bundle: bundle
+    ) }
+    static var projectManagementNoVaultDescription: String { String(
+        localized: "Open a vault before managing project settings.",
+        bundle: bundle
+    ) }
 
     // MARK: - Control Panel
 
@@ -128,6 +167,9 @@ enum L10n {
     static var transcription: String { String(localized: "Transcription", bundle: bundle) }
     static func segmentCount(_ count: Int) -> String { String(localized: "\(count) segments", bundle: bundle) }
     static var stop: String { String(localized: "Stop", bundle: bundle) }
+    static var startRecording: String { String(localized: "Start Recording", bundle: bundle) }
+    static var stopRecording: String { String(localized: "Stop Recording", bundle: bundle) }
+    static var stopTranscribing: String { String(localized: "Stop transcribing", bundle: bundle) }
     static var pause: String { String(localized: "Pause", bundle: bundle) }
     static var resume: String { String(localized: "Resume", bundle: bundle) }
     static var record: String { String(localized: "Record", bundle: bundle) }
@@ -136,6 +178,29 @@ enum L10n {
     static var newTranscription: String { String(localized: "New Transcription", bundle: bundle) }
     static var screen: String { String(localized: "Screen", bundle: bundle) }
     static var source: String { String(localized: "Source", bundle: bundle) }
+    static var notSelected: String { String(localized: "Not Selected", bundle: bundle) }
+    static var entireDesktop: String { String(localized: "Entire Desktop", bundle: bundle) }
+    static var takeScreenshot: String { String(localized: "Take Screenshot", bundle: bundle) }
+    static var screenshotDisplayUnavailable: String { String(localized: "Display not found", bundle: bundle) }
+    static var screenshotImageUnavailable: String { String(localized: "Screenshot image was unavailable", bundle: bundle) }
+    static var screenshotEncodingFailed: String { String(localized: "Screenshot encoding failed", bundle: bundle) }
+    static var screenshotSourceUnavailable: String { String(localized: "Screenshot source is not selected or is unavailable", bundle: bundle) }
+    static func screenshotCaptureFailed(_ reason: String) -> String { String(localized: "Screenshot capture failed: \(reason)", bundle: bundle) }
+    static var automaticScreenshots: String { String(localized: "Automatic Screenshots", bundle: bundle) }
+    static var automaticScreenshotsDescription: String { String(
+        localized: "Capture the screen during recording and save a new image when the display changes significantly.",
+        bundle: bundle
+    ) }
+    static var automaticScreenshotsToggleDescription: String { String(
+        localized: "Automatically add screenshots while recording.",
+        bundle: bundle
+    ) }
+    static var screenshotInterval: String { String(localized: "Screenshot Interval", bundle: bundle) }
+    static var screenshotIntervalDescription: String { String(
+        localized: "Choose how often Dahlia checks the screen for meaningful changes.",
+        bundle: bundle
+    ) }
+    static func seconds(_ count: Int) -> String { String(localized: "\(count) seconds", bundle: bundle) }
     static var showLiveSubtitles: String { String(localized: "Show Live Subtitles", bundle: bundle) }
     static var hideLiveSubtitles: String { String(localized: "Hide Live Subtitles", bundle: bundle) }
     static var liveSubtitleOverlay: String { String(localized: "Live Subtitle Overlay", bundle: bundle) }
@@ -163,63 +228,11 @@ enum L10n {
     static var notesPlaceholder: String { String(localized: "NotesPlaceholder", bundle: bundle) }
     static var screenshots: String { String(localized: "Screenshots", bundle: bundle) }
     static var transcript: String { String(localized: "Transcript", bundle: bundle) }
-    static var agent: String { String(localized: "Agent", bundle: bundle) }
     static var assignee: String { String(localized: "Assignee", bundle: bundle) }
     static var assignToMe: String { String(localized: "Assign to me", bundle: bundle) }
     static var editAssignee: String { String(localized: "Edit assignee", bundle: bundle) }
     static var markActionItemComplete: String { String(localized: "Mark action item complete", bundle: bundle) }
     static var markActionItemIncomplete: String { String(localized: "Mark action item incomplete", bundle: bundle) }
-
-    // MARK: - Agent
-
-    static var agentProjectMode: String { String(localized: "Project Mode", bundle: bundle) }
-    static var agentTranscriptMode: String { String(localized: "Transcript Mode", bundle: bundle) }
-    static var agentProjectModeDescription: String { String(
-        localized: "Run the configured agent command in the project directory.",
-        bundle: bundle
-    ) }
-    static var agentTranscriptModeDescription: String { String(
-        localized: "Continuously feed transcript to the configured agent command.",
-        bundle: bundle
-    ) }
-    static var askAgent: String { String(localized: "Ask Agent", bundle: bundle) }
-    static var agentAskPlaceholder: String { String(
-        localized: "Ask anything about your project or transcript…",
-        bundle: bundle
-    ) }
-    static var newChat: String { String(localized: "New chat", bundle: bundle) }
-    static var startAgent: String { String(localized: "Start Agent", bundle: bundle) }
-    static var stopAgent: String { String(localized: "Stop Agent", bundle: bundle) }
-    static var agentLaunching: String { String(localized: "Launching agent…", bundle: bundle) }
-    static var agentLiveMode: String { String(localized: "Live mode", bundle: bundle) }
-    static var agentProcessing: String { String(localized: "Thinking…", bundle: bundle) }
-
-    // MARK: - Settings (Agent)
-
-    static var agentLaunchCommand: String { String(localized: "Launch Command", bundle: bundle) }
-    static var agentLaunchCommandDescription: String { String(
-        localized: "Command used to launch the agent. Default: `claude`. A full path is optional when the executable is available in PATH or common user bin directories.",
-        bundle: bundle
-    ) }
-    static var agentPermissionMode: String { String(localized: "Permission Mode", bundle: bundle) }
-    static var agentPermissionModeDescription: String { String(
-        localized: "Choose how the agent handles permission prompts when using tools and editing files.",
-        bundle: bundle
-    ) }
-    static var agentPermissionModeAuto: String { String(localized: "Auto", bundle: bundle) }
-    static var agentPermissionModeDefault: String { String(localized: "Default", bundle: bundle) }
-    static var agentPermissionModeAcceptEdits: String { String(localized: "Accept Edits", bundle: bundle) }
-    static var agentPermissionModeBypassPermissions: String { String(localized: "Bypass Permissions", bundle: bundle) }
-    static var agentAllowedTools: String { String(localized: "Allowed Tools", bundle: bundle) }
-    static var agentAllowedToolsDescription: String { String(
-        localized: "Space-separated tool allowlist passed to the agent CLI. Leave blank to use the default set.",
-        bundle: bundle
-    ) }
-    static var agentAllowedToolsPlaceholder: String { String(
-        localized: "Add a tool and press Space",
-        bundle: bundle
-    ) }
-    static func agentAllowedToolsRemoveToken(_ token: String) -> String { String(localized: "Remove \(token)", bundle: bundle) }
 
     // MARK: - Audio Source Mode
 
@@ -241,8 +254,11 @@ enum L10n {
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
     static var cloudStorage: String { String(localized: "Cloud Storage", bundle: bundle) }
     static var aiSummary: String { String(localized: "AI Summary", bundle: bundle) }
-    static var aiAgent: String { String(localized: "AI Agent", bundle: bundle) }
+    static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
     static var vault: String { String(localized: "Vault", bundle: bundle) }
+    static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
+    static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
+    static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
     static var appLanguage: String { String(localized: "App Language", bundle: bundle) }
@@ -271,21 +287,64 @@ enum L10n {
         bundle: bundle
     ) }
     static var aiSummarySettingsDescription: String { String(
-        localized: "Configure automatic summaries and the LLM connection used to generate them.",
-        bundle: bundle
-    ) }
-    static var agentSettingsDescription: String { String(
-        localized: "Configure the built-in agent sidebar launch command and permission mode.",
+        localized: "Configure the LLM connection used for manual summary generation.",
         bundle: bundle
     ) }
     static var connectionDiagnosticsDescription: String { String(
         localized: "Run a quick request to validate your endpoint, model, and token.",
         bundle: bundle
     ) }
+    static var developerSettingsDescription: String { String(
+        localized: "Override developer-managed credentials used by external service integrations.",
+        bundle: bundle
+    ) }
+    static var googleOAuthClientIDOverride: String { String(localized: "Google OAuth Client ID", bundle: bundle) }
+    static var googleOAuthClientIDOverrideDescription: String { String(
+        localized: "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID.",
+        bundle: bundle
+    ) }
+    static var googleOAuthClientSecretOverride: String { String(localized: "Google OAuth Client Secret", bundle: bundle) }
+    static var googleOAuthClientSecretOverrideDescription: String { String(
+        localized: "Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set.",
+        bundle: bundle
+    ) }
+    static var googleOAuthOverrideReconnectNotice: String { String(
+        localized: "Reconnect Google services after changing OAuth credentials.",
+        bundle: bundle
+    ) }
     static var googleCalendar: String { String(localized: "Google Calendar", bundle: bundle) }
+    static var macOSCalendar: String { String(localized: "macOS Calendar", bundle: bundle) }
+    static var calendarSource: String { String(localized: "Calendar Source", bundle: bundle) }
+    static var calendarSourceDescription: String { String(
+        localized: "Choose which calendar service provides upcoming events.",
+        bundle: bundle
+    ) }
+    static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
+    static var calendarSourcesDescription: String { String(
+        localized: "Choose which calendar services provide upcoming events.",
+        bundle: bundle
+    ) }
+    static var googleCalendarSourceDescription: String { String(
+        localized: "Show events from Google Calendar.",
+        bundle: bundle
+    ) }
+    static var macOSCalendarSourceDescription: String { String(
+        localized: "Show events from the Calendar app on this Mac.",
+        bundle: bundle
+    ) }
+    static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
+    static var showUpcomingSchedule: String { String(localized: "Show Upcoming Schedule", bundle: bundle) }
+    static var calendarScheduleDescription: String { String(
+        localized: "Select a calendar event to prepare transcription.",
+        bundle: bundle
+    ) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
     static var googleCalendarSettingsDescription: String { String(
         localized: "Connect a Google account and choose which calendars appear on Home.",
+        bundle: bundle
+    ) }
+    static var macOSCalendarSettingsDescription: String { String(
+        localized: "Use events from the Calendar app on this Mac.",
         bundle: bundle
     ) }
     static var googleDriveSettingsDescription: String { String(
@@ -297,6 +356,7 @@ enum L10n {
         localized: "Only selected calendars are shown on Home.",
         bundle: bundle
     ) }
+    static var macOSCalendarDisplayCalendarsDescription: String { googleCalendarDisplayCalendarsDescription }
     static var googleCalendarConnect: String { String(localized: "Connect", bundle: bundle) }
     static var googleCalendarDisconnect: String { String(localized: "Disconnect", bundle: bundle) }
     static var googleCalendarConnectDescription: String { String(
@@ -313,12 +373,27 @@ enum L10n {
     ) }
     static var googleDriveConnected: String { String(localized: "Google Drive connected", bundle: bundle) }
     static var googleDriveNotConnected: String { String(localized: "No Google Drive account connected", bundle: bundle) }
+    static var projectDriveFolders: String { String(localized: "Project Drive Folders", bundle: bundle) }
+    static var projectDriveFoldersDescription: String { String(
+        localized: "Choose the Google Drive folder used when each project's summaries are exported.",
+        bundle: bundle
+    ) }
+    static var projectDriveFoldersEmptyDescription: String { String(
+        localized: "Create a project from a meeting to configure its Google Drive folder.",
+        bundle: bundle
+    ) }
+    static var googleDriveFolderConfigured: String { String(localized: "Google Drive folder configured", bundle: bundle) }
     static var googleCalendarPrimaryCalendar: String { String(localized: "Primary calendar", bundle: bundle) }
+    static var calendarPrimaryCalendar: String { googleCalendarPrimaryCalendar }
     static var googleCalendarNoCalendars: String { String(localized: "No calendars are available for this Google account.", bundle: bundle) }
+    static var macOSCalendarNoCalendars: String { String(localized: "No calendars are available in macOS Calendar.", bundle: bundle) }
+    static var calendarLoading: String { String(localized: "Loading calendars…", bundle: bundle) }
     static var googleCalendarLoading: String { String(localized: "Loading Google Calendar…", bundle: bundle) }
+    static var macOSCalendarLoading: String { String(localized: "Loading macOS Calendar…", bundle: bundle) }
     static var googleDriveLoadingFolders: String { String(localized: "Loading Google Drive folders…", bundle: bundle) }
     static var googleCalendarRetry: String { String(localized: "Retry", bundle: bundle) }
     static var googleCalendarAllDay: String { String(localized: "All day", bundle: bundle) }
+    static var calendarAllDay: String { googleCalendarAllDay }
     static var googleCalendarClientIDMissingTitle: String { String(localized: "Google Calendar is not configured", bundle: bundle) }
     static var googleCalendarClientIDMissingMessage: String { String(
         localized: "Set GOOGLE_CLIENT_ID before connecting Google Calendar.",
@@ -329,9 +404,25 @@ enum L10n {
         localized: "Connect Google Calendar from Settings to show your upcoming events on Home.",
         bundle: bundle
     ) }
+    static var googleCalendarScheduleSignInRequiredMessage: String { String(
+        localized: "Connect Google Calendar from Settings to show your upcoming events here.",
+        bundle: bundle
+    ) }
     static var googleCalendarSelectionRequiredTitle: String { String(localized: "Choose calendars to show", bundle: bundle) }
+    static var calendarSelectionRequiredTitle: String { googleCalendarSelectionRequiredTitle }
     static var googleCalendarSelectionRequiredMessage: String { String(
         localized: "Select at least one calendar in Settings to show events on Home.",
+        bundle: bundle
+    ) }
+    static var calendarSelectionRequiredMessage: String { googleCalendarSelectionRequiredMessage }
+    static var googleCalendarScheduleSelectionRequiredMessage: String { String(
+        localized: "Select at least one calendar in Settings to show events here.",
+        bundle: bundle
+    ) }
+    static var calendarScheduleSelectionRequiredMessage: String { googleCalendarScheduleSelectionRequiredMessage }
+    static var calendarNoSourcesEnabledTitle: String { String(localized: "No calendar sources enabled", bundle: bundle) }
+    static var calendarNoSourcesEnabledMessage: String { String(
+        localized: "Enable at least one calendar source in Settings to show upcoming events.",
         bundle: bundle
     ) }
     static var googleCalendarNoUpcomingEventsTitle: String { String(localized: "No upcoming events", bundle: bundle) }
@@ -339,7 +430,30 @@ enum L10n {
         localized: "There are no events in the next 7 days for the selected calendars.",
         bundle: bundle
     ) }
+    static var calendarNoUpcomingEventsMessage: String { googleCalendarNoUpcomingEventsMessage }
     static var googleCalendarLoadFailedTitle: String { String(localized: "Could not load Google Calendar", bundle: bundle) }
+    static var macOSCalendarLoadFailedTitle: String { String(localized: "Could not load macOS Calendar", bundle: bundle) }
+    static var macOSCalendarAccessRequiredTitle: String { String(localized: "Allow macOS Calendar access", bundle: bundle) }
+    static var macOSCalendarAccessRequiredMessage: String { String(
+        localized: "Allow Calendar access to show upcoming events from this Mac.",
+        bundle: bundle
+    ) }
+    static var macOSCalendarAllowAccess: String { String(localized: "Allow Access", bundle: bundle) }
+    static var macOSCalendarAccessDeniedTitle: String { String(localized: "macOS Calendar access is denied", bundle: bundle) }
+    static var macOSCalendarAccessDeniedMessage: String { String(
+        localized: "Allow Dahlia to access Calendars in System Settings > Privacy & Security > Calendars.",
+        bundle: bundle
+    ) }
+    static var macOSCalendarAccessGranted: String { String(localized: "Calendar access granted", bundle: bundle) }
+    static var macOSCalendarAccessNotGranted: String { String(localized: "Calendar access not granted", bundle: bundle) }
+    static var macOSCalendarConnectDescription: String { String(
+        localized: "Allow access to load your upcoming schedule from Calendar.",
+        bundle: bundle
+    ) }
+    static var macOSCalendarConnected: String { String(localized: "macOS Calendar connected", bundle: bundle) }
+    static var macOSCalendarUnexpectedError: String { String(localized: "Unexpected response from macOS Calendar", bundle: bundle) }
+    static var macOSCalendarUntitledCalendar: String { String(localized: "Untitled calendar", bundle: bundle) }
+    static var macOSCalendarUntitledEvent: String { String(localized: "Untitled event", bundle: bundle) }
     static var googleCalendarMissingPresentingWindow: String { String(
         localized: "No window is available to present Google sign-in.",
         bundle: bundle
@@ -437,13 +551,33 @@ enum L10n {
     static var model: String { String(localized: "Model", bundle: bundle) }
     static var templates: String { String(localized: "Templates", bundle: bundle) }
     static var llmSettings: String { String(localized: "LLM Settings", bundle: bundle) }
+    static var openAI: String { String(localized: "OpenAI", bundle: bundle) }
+    static var databricks: String { String(localized: "Databricks", bundle: bundle) }
+    static var customEndpoint: String { String(localized: "Custom endpoint", bundle: bundle) }
+    static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
+    static var modelProviderDescription: String { String(
+        localized: "Choose OpenAI, Databricks AI Gateway, or any OpenAI-compatible endpoint.",
+        bundle: bundle
+    ) }
     static var endpointURL: String { String(localized: "Endpoint URL", bundle: bundle) }
+    static var openAIEndpointDescription: String { String(localized: "Uses OpenAI's Chat Completions API.", bundle: bundle) }
+    static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
+    static var databricksWorkspaceIDDescription: String { String(
+        localized: "Used to build the Databricks AI Gateway chat completions URL.",
+        bundle: bundle
+    ) }
+    static var customEndpointDescription: String { String(
+        localized: "Endpoint must accept OpenAI-compatible chat completions requests.",
+        bundle: bundle
+    ) }
+    static var endpointGeneratedFromWorkspaceID: String { String(
+        localized: "Endpoint will be generated after entering a Workspace ID.",
+        bundle: bundle
+    ) }
     static var modelName: String { String(localized: "Model Name", bundle: bundle) }
     static var apiToken: String { String(localized: "API Token", bundle: bundle) }
     static var apiTokenStoredInKeychain: String { String(localized: "Token is stored securely in Keychain.", bundle: bundle) }
-    static var autoSummary: String { String(localized: "Auto-Summary", bundle: bundle) }
-    static var autoSummaryDescription: String { String(localized: "Automatically generate a summary when transcription stops.", bundle: bundle) }
-    static var llmSettingsDescription: String { String(localized: "Configure an LLM endpoint for post-transcription summarization.", bundle: bundle) }
+    static var llmSettingsDescription: String { String(localized: "Configure an LLM endpoint for manual summary generation.", bundle: bundle) }
     static var testConnection: String { String(localized: "Test Connection", bundle: bundle) }
     static var testing: String { String(localized: "Testing...", bundle: bundle) }
     static var connectionSuccess: String { String(localized: "Connection successful", bundle: bundle) }
@@ -455,6 +589,7 @@ enum L10n {
     // MARK: - Summary
 
     static var generatingSummary: String { String(localized: "Generating summary...", bundle: bundle) }
+    static var noSummaryYet: String { String(localized: "No summary has been generated yet.", bundle: bundle) }
     static var summaryGenerated: String { String(localized: "Summary generated", bundle: bundle) }
     static var openSummary: String { String(localized: "Open Summary", bundle: bundle) }
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }
@@ -507,7 +642,17 @@ enum L10n {
 
     static var switchVault: String { String(localized: "Switch Vault", bundle: bundle) }
     static var manageVaults: String { String(localized: "Manage Vaults...", bundle: bundle) }
+    static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
+
+    // MARK: - Menu Bar
+
+    static var menuBarStartRecording: String { String(localized: "Start Recording", bundle: bundle) }
+    static var menuBarStopRecording: String { String(localized: "Stop Recording", bundle: bundle) }
+    static var menuBarOpenDahlia: String { String(localized: "Open Dahlia", bundle: bundle) }
+    static var menuBarShowLiveSubtitles: String { String(localized: "Live Subtitles", bundle: bundle) }
+    static var settingsMenuItem: String { String(localized: "Settings...", bundle: bundle) }
+    static var menuBarQuitDahlia: String { String(localized: "Quit Dahlia", bundle: bundle) }
 
     // MARK: - Meeting Detection
 
@@ -530,6 +675,7 @@ enum L10n {
         bundle: bundle
     ) }
     static var microphoneInUse: String { String(localized: "Microphone is in use", bundle: bundle) }
+    static var noScreenshotsYet: String { String(localized: "No screenshots yet.", bundle: bundle) }
 
     // MARK: - Keychain
 

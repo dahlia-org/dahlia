@@ -446,11 +446,11 @@ final class MeetingDetectionService: ObservableObject {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    private func recentCalendarEvent() -> GoogleCalendarEvent? {
+    private func recentCalendarEvent() -> CalendarEvent? {
         let currentDate = now()
         let windowStart = currentDate.addingTimeInterval(-300)
 
-        return GoogleCalendarStore.shared.upcomingEvents
+        return selectedUpcomingEvents
             .filter { event in
                 !event.isAllDay
                     && event.startDate >= windowStart
@@ -468,7 +468,22 @@ final class MeetingDetectionService: ObservableObject {
             }
     }
 
-    private func meetingTitle(for calendarEvent: GoogleCalendarEvent?) -> String {
+    private var selectedUpcomingEvents: [CalendarEvent] {
+        var events: [CalendarEvent] = []
+        let settings = AppSettings.shared
+
+        if settings.isCalendarSourceEnabled(.google) {
+            events.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
+        }
+
+        if settings.isCalendarSourceEnabled(.macOS) {
+            events.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
+        }
+
+        return events.deduplicatedAcrossSources()
+    }
+
+    private func meetingTitle(for calendarEvent: CalendarEvent?) -> String {
         let trimmed = calendarEvent?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? L10n.newMeeting : trimmed
     }

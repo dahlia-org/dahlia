@@ -33,6 +33,44 @@ enum GoogleOAuthScope {
     }
 }
 
+enum GoogleAuthSessionKind: CaseIterable {
+    case calendar
+    case drive
+
+    var keychainKey: String {
+        switch self {
+        case .calendar:
+            "googleCalendarOAuthSession"
+        case .drive:
+            "googleDriveOAuthSession"
+        }
+    }
+
+    var serviceScopes: Set<String> {
+        switch self {
+        case .calendar:
+            GoogleOAuthScope.calendar
+        case .drive:
+            GoogleOAuthScope.drive
+        }
+    }
+
+    var sessionDidChangeNotification: Notification.Name {
+        switch self {
+        case .calendar:
+            .googleCalendarSessionDidChange
+        case .drive:
+            .googleDriveSessionDidChange
+        }
+    }
+
+    fileprivate func canAdoptLegacySession(_ session: StoredGoogleSession) -> Bool {
+        // 旧実装は Calendar/Drive のスコープを 1 つのセッションに union して保存していたため、
+        // 完全一致ではなく「このサービスのスコープを含むか」で採用可否を判定する。
+        serviceScopes.isSubset(of: session.grantedScopes)
+    }
+}
+
 enum GoogleSignInError: LocalizedError {
     case notConfigured
     case missingPresentingWindow
@@ -62,6 +100,7 @@ enum GoogleSignInError: LocalizedError {
 protocol GoogleSignInProviding: AnyObject {
     var isConfigured: Bool { get }
     var hasPreviousSignIn: Bool { get }
+    var sessionDidChangeNotification: Notification.Name { get }
 
     func restorePreviousSignIn() async throws -> GoogleSession
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession
@@ -71,13 +110,14 @@ protocol GoogleSignInProviding: AnyObject {
 
 @MainActor
 final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
-    private static let keychainKey = "googleOAuthSession"
+    private static let legacyKeychainKey = "googleOAuthSession"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
     private static let revokeEndpoint = URL(string: "https://oauth2.googleapis.com/revoke")!
     private static let userInfoEndpoint = URL(string: "https://openidconnect.googleapis.com/v1/userinfo")!
     private static let tokenRefreshLeeway: TimeInterval = 60
 
+    private let sessionKind: GoogleAuthSessionKind
     private let urlSession: URLSession
 
     var isConfigured: Bool {
@@ -88,18 +128,24 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         storedSession != nil
     }
 
-    init(urlSession: URLSession = .shared) {
+    var sessionDidChangeNotification: Notification.Name {
+        sessionKind.sessionDidChangeNotification
+    }
+
+    init(sessionKind: GoogleAuthSessionKind = .calendar, urlSession: URLSession = .shared) {
+        self.sessionKind = sessionKind
         self.urlSession = urlSession
         super.init()
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
-        guard let storedSession else {
+        guard let storedSessionLookup else {
             throw GoogleSignInError.noPreviousSignIn
         }
 
-        let refreshed = try await refreshedSession(from: storedSession)
+        let refreshed = try await refreshedSession(from: storedSessionLookup.session)
         save(refreshed)
+        deleteLegacySessionIfNeeded(storedSessionLookup)
         return refreshed.session
     }
 
@@ -108,6 +154,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             throw GoogleSignInError.notConfigured
         }
 
+        let previousSessionLookup = storedSessionLookup
         let authorizationScopes = authorizationScopesForSignIn(requestedScopes: requestedScopes)
         let clientSecret = GoogleCalendarConfiguration.clientSecret
         let pkce = PKCE.generate()
@@ -143,35 +190,69 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let session = StoredGoogleSession(
             account: account,
             accessToken: tokenResponse.accessToken,
-            refreshToken: tokenResponse.refreshToken ?? storedSession?.refreshToken,
+            refreshToken: tokenResponse.refreshToken ?? previousSessionLookup?.session.refreshToken,
             expirationDate: tokenResponse.expirationDate,
             grantedScopes: authorizationScopes
         )
         save(session)
-        NotificationCenter.default.post(name: .googleSessionDidChange, object: nil)
+        if let previousSessionLookup {
+            deleteLegacySessionIfNeeded(previousSessionLookup)
+        }
+        NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         return session.session
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {
-        guard let storedSession else {
+        guard let storedSessionLookup else {
             return nil
         }
 
-        let refreshed = try await refreshedSession(from: storedSession)
+        let refreshed = try await refreshedSession(from: storedSessionLookup.session)
         save(refreshed)
+        deleteLegacySessionIfNeeded(storedSessionLookup)
         return refreshed.session
     }
 
     func disconnect() async throws {
-        if let storedSession {
-            try await revokeIfPossible(token: storedSession.refreshToken ?? storedSession.accessToken)
+        if let storedSessionLookup {
+            try await revokeIfPossible(token: storedSessionLookup.session.refreshToken ?? storedSessionLookup.session.accessToken)
+            KeychainService.delete(key: storedSessionLookup.keychainKey)
         }
-        KeychainService.delete(key: Self.keychainKey)
-        NotificationCenter.default.post(name: .googleSessionDidChange, object: nil)
+        KeychainService.delete(key: sessionKind.keychainKey)
+        NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
     }
 
     private var storedSession: StoredGoogleSession? {
-        guard let json = KeychainService.load(key: Self.keychainKey, accessPolicy: .standard),
+        storedSessionLookup?.session
+    }
+
+    private var storedSessionLookup: StoredGoogleSessionLookup? {
+        if let session = Self.loadStoredSession(key: sessionKind.keychainKey) {
+            return StoredGoogleSessionLookup(session: session, keychainKey: sessionKind.keychainKey)
+        }
+
+        guard let legacySession = Self.loadStoredSession(key: Self.legacyKeychainKey),
+              sessionKind.canAdoptLegacySession(legacySession)
+        else {
+            return nil
+        }
+        return StoredGoogleSessionLookup(session: legacySession, keychainKey: Self.legacyKeychainKey)
+    }
+
+    private func save(_ session: StoredGoogleSession) {
+        save(session, key: sessionKind.keychainKey)
+    }
+
+    private func save(_ session: StoredGoogleSession, key: String) {
+        guard let data = try? JSONEncoder().encode(session),
+              let json = String(data: data, encoding: .utf8)
+        else { return }
+
+        try? KeychainService.save(key: key, value: json, accessPolicy: .standard)
+    }
+
+    private static func loadStoredSession(key: String) -> StoredGoogleSession? {
+        guard let json = KeychainService.load(key: key, accessPolicy: .standard),
               let data = json.data(using: .utf8)
         else {
             return nil
@@ -179,17 +260,21 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         return try? JSONDecoder().decode(StoredGoogleSession.self, from: data)
     }
 
-    private func save(_ session: StoredGoogleSession) {
-        guard let data = try? JSONEncoder().encode(session),
-              let json = String(data: data, encoding: .utf8)
-        else { return }
-
-        try? KeychainService.save(key: Self.keychainKey, value: json, accessPolicy: .standard)
+    private func deleteLegacySessionIfNeeded(_ lookup: StoredGoogleSessionLookup) {
+        guard lookup.keychainKey == Self.legacyKeychainKey else { return }
+        // 旧セッションは Calendar/Drive 共用の可能性があるため、削除する前に
+        // 採用可能な他サービスのキーへ複製して、もう一方が締め出されるのを防ぐ。
+        for kind in GoogleAuthSessionKind.allCases
+            where kind != sessionKind
+            && kind.canAdoptLegacySession(lookup.session)
+            && Self.loadStoredSession(key: kind.keychainKey) == nil {
+            save(lookup.session, key: kind.keychainKey)
+        }
+        KeychainService.delete(key: Self.legacyKeychainKey)
     }
 
     private func authorizationScopesForSignIn(requestedScopes: Set<String>) -> Set<String> {
-        let existingScopes = storedSession?.grantedScopes ?? []
-        return GoogleOAuthScope.authorizationScopes(for: requestedScopes.union(existingScopes))
+        GoogleOAuthScope.authorizationScopes(for: requestedScopes)
     }
 
     private func refreshedSession(from storedSession: StoredGoogleSession) async throws -> StoredGoogleSession {
@@ -413,6 +498,11 @@ private struct StoredGoogleSession: Codable {
     }
 }
 
+private struct StoredGoogleSessionLookup {
+    let session: StoredGoogleSession
+    let keychainKey: String
+}
+
 private struct TokenPayload: Decodable {
     let accessToken: String
     let refreshToken: String?
@@ -582,5 +672,6 @@ private final class LoopbackRedirectServer: @unchecked Sendable {
 }
 
 extension Notification.Name {
-    static let googleSessionDidChange = Notification.Name("GoogleSessionDidChangeNotification")
+    static let googleCalendarSessionDidChange = Notification.Name("GoogleCalendarSessionDidChangeNotification")
+    static let googleDriveSessionDidChange = Notification.Name("GoogleDriveSessionDidChangeNotification")
 }

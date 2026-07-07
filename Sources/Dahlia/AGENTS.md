@@ -24,10 +24,10 @@ MeetingPersistenceService → GRDB/SQLite (確定済みセグメントを差分 
 | **Audio** | `AudioCaptureManager`（マイク）、`SystemAudioCaptureManager`（システム音声）、`AudioBufferBridge` |
 | **Speech** | `SpeechTranscriberService`（actor）、`PreviewTranslationCoordinator` |
 | **Storage** | `TranscriptStore`、`MeetingPersistenceService`、`MeetingRepository`、`AppDatabaseManager` |
-| **LLM** | `LLMService`（OpenAI 互換 API）、`SummaryService`（`SummaryResult` 構造化出力のマルチモーダル要約）、`AgentService` |
-| **Services** | `VaultSyncService`（FSEvents）、`MeetingDetectionService`（3 層検出）、`KeychainService`、Google Calendar/Drive クライアント、`LiveSubtitleOverlayService`、各種 Export |
-| **ViewModels** | `CaptionViewModel`（録音制御・パイプライン管理）、`SidebarViewModel`（GRDB ValueObservation でツリー監視） |
-| **Views** | `ContentView`（NavigationSplitView）→ `SidebarView` + `ControlPanelView` + `SettingsView` |
+| **LLM** | `LLMService`（OpenAI 互換 API）、`SummaryService`（`SummaryResult` 構造化出力のマルチモーダル要約） |
+| **Services** | `VaultSyncService`（FSEvents）、`MeetingDetectionService`（3 層検出）、`RecordingCoordinator`、`LiveSubtitleOverlayCoordinator`、`KeychainService`、Google Calendar/Drive クライアント、`LiveSubtitleOverlayService`、各種 Export |
+| **ViewModels** | `CaptionViewModel`（録音制御・パイプライン管理）、`SidebarViewModel`（GRDB ValueObservation でミーティング一覧と設定補助データを監視） |
+| **Views** | `ContentView`（NavigationSplitView）→ `MeetingListSidebarView` + `ControlPanelView` + `SettingsView` + `MenuBarExtra` |
 
 ## 並行処理規約
 
