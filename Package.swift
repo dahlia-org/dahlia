@@ -19,12 +19,22 @@ let package = Package(
                 .product(name: "Sentry", package: "sentry-cocoa"),
             ],
             path: "Sources/Dahlia",
+            exclude: [
+                "AGENTS.md",
+                "CLAUDE.md",
+                "Database/AGENTS.md",
+                "Database/CLAUDE.md",
+            ],
             resources: [.process("Resources")]
         ),
         .testTarget(
             name: "DahliaTests",
             dependencies: ["Dahlia"],
-            path: "Tests/DahliaTests"
+            path: "Tests/DahliaTests",
+            exclude: [
+                "AGENTS.md",
+                "CLAUDE.md",
+            ]
         )
     ]
 )

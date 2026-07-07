@@ -1,63 +1,53 @@
 # CLAUDE.md
 
-## Project Overview
+**Dahlia** — macOS ネイティブのリアルタイム文字起こしアプリ。マイク（AVAudioEngine）とシステム音声（ScreenCaptureKit）を同時にキャプチャし、Apple Speech framework（`SpeechAnalyzer` / `SpeechTranscriber`）で文字起こしし、任意で LLM による要約を生成する。
 
-**Dahlia** — macOS native real-time transcription app. Captures microphone audio (AVAudioEngine) and system audio (ScreenCaptureKit) simultaneously, transcribes via Apple Speech framework (`SpeechAnalyzer`/`SpeechTranscriber`), and optionally generates LLM-powered summaries.
+## スタック
 
-Swift 6.2 / SwiftUI / macOS 26+ / Swift Package Manager (no Xcode project). Single external dependency: GRDB.swift (SQLite ORM).
+- Swift 6.2 / SwiftUI / macOS 26+
+- Swift Package Manager のみ（Xcode プロジェクトは存在しない。生成もしない）
+- 外部依存は 2 つだけ: GRDB.swift（SQLite ORM）、sentry-cocoa（クラッシュレポート）
 
-## Build & Run
+## コマンド
 
 ```bash
-swift build && swift run            # Debug (unsigned, legacy keychain fallback)
-./scripts/run-dev.sh                # Debug + codesigned (Data Protection Keychain + Touch ID)
-./scripts/build-app.sh && open Dahlia.app  # Release .app bundle
-./scripts/lint.sh                   # SwiftFormat + SwiftLint
+swift build                                # ビルド
+swift run                                  # Debug 実行（未署名、レガシー Keychain フォールバック）
+./scripts/run-dev.sh                       # Debug + codesign 実行（Data Protection Keychain + Touch ID）← 開発時推奨
+./scripts/build-app.sh && open Dahlia.app  # Release .app バンドル
+swift test                                 # 全テスト実行
+swift test --filter <TypeName>             # テストスイート単位で実行
+./scripts/lint.sh                          # SwiftFormat + SwiftLint（brew install swiftformat swiftlint）
 ```
 
-> `swift run` cannot use Data Protection Keychain (unsigned). Use `run-dev.sh` for full functionality.
+> `swift run` は未署名のため Data Protection Keychain を使えない。フル機能の動作確認は `run-dev.sh` を使う。
+> pre-commit フック（`scripts/pre-commit`）がステージ済み `.swift` を SwiftFormat で整形する。
 
-## Architecture
+## ディレクトリ構成
 
-### Recording Data Flow
+| パス | 役割 |
+|------|------|
+| `Sources/Dahlia/` | アプリ本体。アーキテクチャと実装規約は `Sources/Dahlia/CLAUDE.md` |
+| `Sources/Dahlia/Audio/` | マイク・システム音声キャプチャ（AVAudioEngine / ScreenCaptureKit） |
+| `Sources/Dahlia/Speech/` | 音声認識（`SpeechTranscriberService`）・プレビュー翻訳 |
+| `Sources/Dahlia/Database/` | GRDB スキーマ・マイグレーション・Record/Repository。規約は `Sources/Dahlia/Database/CLAUDE.md` |
+| `Sources/Dahlia/Services/` | LLM 要約、Google Calendar/Drive 連携、Vault 同期、Keychain、各種エクスポート |
+| `Sources/Dahlia/Models/` | ドメインモデル・アプリ設定・`TranscriptStore` |
+| `Sources/Dahlia/ViewModels/` | `CaptionViewModel`（録音制御）、`SidebarViewModel`（プロジェクトツリー） |
+| `Sources/Dahlia/Views/` | SwiftUI ビュー（ルートは `ContentView` = NavigationSplitView） |
+| `Sources/Dahlia/Utilities/` | `L10n`、UUID v7、変換ヘルパー |
+| `Sources/Dahlia/Resources/` | Assets、`ja.lproj` / `en.lproj` の Localizable.strings |
+| `Tests/DahliaTests/` | ユニットテスト。規約は `Tests/DahliaTests/CLAUDE.md` |
+| `scripts/` | ビルド・署名・notarize・lint・pre-commit スクリプト |
 
-```
-AudioCaptureManager (mic/AVAudioEngine)
-SystemAudioCaptureManager (system audio/ScreenCaptureKit)
-    ↓ onAudioBuffer callback
-AudioBufferBridge → AsyncStream<AnalyzerInput>
-    ↓
-SpeechTranscriberService (actor, per audio source)
-    ↓ results AsyncSequence
-TranscriptStore (@MainActor, 200ms throttle per speakerLabel)
-    ↓ Combine .debounce(500ms)
-TranscriptPersistenceService → GRDB/SQLite
-```
+## 絶対に破ってはいけないルール
 
-Each audio source gets an independent `(SpeechTranscriberService, AudioBufferBridge)` pipeline, managed via `CaptionViewModel.pipelines`.
+1. **DB マイグレーションで既存ユーザーデータを壊さない。** `eraseDatabaseOnSchemaChange` のような破壊的リセットは禁止。登録済みマイグレーションは変更せず、新しいマイグレーションを追加する（詳細: `Sources/Dahlia/Database/CLAUDE.md`）。
+2. **新規の外部依存を追加しない。** GRDB.swift と sentry-cocoa 以外の依存が必要になったら、追加せずまずユーザーに相談する。
+3. **UI 文字列をハードコードしない。** 必ず `L10n` 経由で参照し、`ja.lproj` / `en.lproj` 両方の `Localizable.strings` にキーを追加する（日本語がプライマリ）。
 
-### Key Components
+## 全体規約
 
-| Layer | Components |
-|-------|-----------|
-| **Audio** | `AudioCaptureManager`, `SystemAudioCaptureManager`, `AudioBufferBridge` |
-| **Speech** | `SpeechTranscriberService` (actor) |
-| **Storage** | `TranscriptStore`, `TranscriptPersistenceService`, `TranscriptionRepository`, `AppDatabaseManager` |
-| **LLM** | `LLMService` (OpenAI-compatible API), `SummaryService` (multimodal summaries with `SummaryResult` structured output) |
-| **Services** | `VaultSyncService` (FSEvents), `MeetingDetectionService` (3-layer), `KeychainService`, `FolderProjectService` |
-| **ViewModels** | `CaptionViewModel` (recording control), `SidebarViewModel` (project/transcript tree, GRDB ValueObservation) |
-| **Views** | `ContentView` (NavigationSplitView) → `SidebarView` + `ControlPanelView` + `SettingsView` |
-
-### Database
-
-SQLite at `~/Library/Application Support/Dahlia/dahlia.sqlite`. Tables: `vaults`, `projects` (vault-scoped, path-based), `transcripts`, `segments`, `notes`, `screenshots`. All IDs are UUID v7.
-
-Projects map to filesystem folders under a vault directory. `VaultSyncService` monitors via FSEvents and syncs to DB.
-
-## Code Conventions
-
-- **Concurrency**: `@MainActor` on ViewModels, Store, Repository. `actor` for `SpeechTranscriberService`. `@unchecked Sendable` only for ScreenCaptureKit delegates. `@preconcurrency import` to suppress Apple framework Sendable warnings.
-- **DB migrations**: リリース向けのマイグレーションでは既存ユーザーデータを保持すること。`eraseDatabaseOnSchemaChange` のような破壊的リセットは使わず、GRDB の前方互換な追加マイグレーションで対応する。
-- **UI strings**: Japanese (primary) + English via `L10n` dynamic localization.
-- **Formatting**: SwiftFormat + SwiftLint enforced (see `.swiftformat`, `.swiftlint.yml`). 4-space indent, 150 char line limit, trailing commas required.
-- **IDs**: UUID v7 (`UUID.v7()`) for time-sortable ordering.
+- **フォーマット**: SwiftFormat + SwiftLint（`.swiftformat` / `.swiftlint.yml`）。4 スペースインデント、150 文字行制限、trailing comma 必須。
+- **ID**: 全テーブル・全エンティティで時系列ソート可能な UUID v7（`UUID.v7()`）を使う。
+- **並行処理**: Swift 6 strict concurrency。詳細な規約は `Sources/Dahlia/CLAUDE.md`。

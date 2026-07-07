@@ -1,0 +1,42 @@
+# Sources/Dahlia — アーキテクチャと実装規約
+
+## 録音データフロー
+
+```
+AudioCaptureManager (マイク / AVAudioEngine)
+SystemAudioCaptureManager (システム音声 / ScreenCaptureKit)
+    ↓ onAudioBuffer コールバック
+AudioBufferBridge → AsyncStream<AnalyzerInput>
+    ↓
+SpeechTranscriberService (actor、音声ソースごとに 1 つ)
+    ↓ results AsyncSequence
+TranscriptStore (@MainActor、speakerLabel ごとに 200ms スロットル)
+    ↓ Combine .debounce(500ms)
+MeetingPersistenceService → GRDB/SQLite (確定済みセグメントを差分 INSERT)
+```
+
+音声ソースごとに独立した `(SpeechTranscriberService, AudioBufferBridge)` パイプラインを持ち、`CaptionViewModel.pipelines` が管理する。
+
+## 主要コンポーネント
+
+| レイヤ | コンポーネント |
+|--------|----------------|
+| **Audio** | `AudioCaptureManager`（マイク）、`SystemAudioCaptureManager`（システム音声）、`AudioBufferBridge` |
+| **Speech** | `SpeechTranscriberService`（actor）、`PreviewTranslationCoordinator` |
+| **Storage** | `TranscriptStore`、`MeetingPersistenceService`、`MeetingRepository`、`AppDatabaseManager` |
+| **LLM** | `LLMService`（OpenAI 互換 API）、`SummaryService`（`SummaryResult` 構造化出力のマルチモーダル要約）、`AgentService` |
+| **Services** | `VaultSyncService`（FSEvents）、`MeetingDetectionService`（3 層検出）、`KeychainService`、Google Calendar/Drive クライアント、`LiveSubtitleOverlayService`、各種 Export |
+| **ViewModels** | `CaptionViewModel`（録音制御・パイプライン管理）、`SidebarViewModel`（GRDB ValueObservation でツリー監視） |
+| **Views** | `ContentView`（NavigationSplitView）→ `SidebarView` + `ControlPanelView` + `SettingsView` |
+
+## 並行処理規約
+
+- ViewModel / Store / Repository は `@MainActor`。
+- `SpeechTranscriberService` は `actor`。
+- `@unchecked Sendable` は ScreenCaptureKit のデリゲートのみに限定する。
+- Apple フレームワークの Sendable 警告は `@preconcurrency import` で抑制する。
+
+## UI 規約
+
+- UI 文字列は `Utilities/L10n.swift` に computed property を追加し、`Resources/ja.lproj` と `Resources/en.lproj` 両方の `Localizable.strings` にキーを追加する。
+- 設定タブ（`Views/Settings/`）にはセクションヘッダーを付けない（他タブとの一貫性のため）。
