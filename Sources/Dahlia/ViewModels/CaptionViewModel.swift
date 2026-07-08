@@ -437,6 +437,8 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
+        guard !isFinalizingRecording else { return }
+
         // 録音中に録音対象のトランスクリプトを選択した場合はライブ表示に復帰
         if isListening, meetingId == recordingMeetingId {
             returnToRecordingMeeting()
@@ -504,6 +506,8 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
+        guard !isFinalizingRecording else { return }
+
         resetMeetingState()
         draftMeeting = nil
 
@@ -539,6 +543,8 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
+        guard !isFinalizingRecording else { return }
+
         resetMeetingState()
         let draftId = UUID.v7()
         currentMeetingId = nil
@@ -622,6 +628,8 @@ final class CaptionViewModel: ObservableObject {
     /// 現在の文字起こし表示をクリアして初期状態に戻す。
     /// 録音中はバックグラウンド録音を維持したまま表示のみクリアする。
     func clearCurrentMeeting() {
+        guard !isFinalizingRecording else { return }
+
         if isListening {
             saveRecordingContextIfNeeded()
             store = TranscriptStore()
@@ -1389,6 +1397,8 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func clearText() {
+        guard !isFinalizingRecording else { return }
+
         store.clear()
         persistenceService?.reset()
         Task {
