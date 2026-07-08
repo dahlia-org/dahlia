@@ -138,6 +138,38 @@ import GRDB
 
         @Test
         func canGenerateSummaryIsDisabledWhileListening() {
+            let viewModel = summaryReadyViewModel()
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.isListening = true
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
+        func canGenerateSummaryIsDisabledWhileFinalizingRecording() {
+            let viewModel = summaryReadyViewModel()
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.isFinalizingRecording = true
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
+        func manualSummaryDoesNotStartWhileFinalizingRecording() {
+            let viewModel = summaryReadyViewModel()
+            viewModel.isFinalizingRecording = true
+
+            viewModel.triggerManualSummary()
+
+            #expect(!viewModel.requestShowSummaryTab)
+            #expect(viewModel.summaryGeneratingMeetingId == nil)
+        }
+
+        private func summaryReadyViewModel() -> CaptionViewModel {
             let viewModel = CaptionViewModel()
             let segment = TranscriptSegment(
                 startTime: Date(),
@@ -150,11 +182,7 @@ import GRDB
             viewModel.currentVaultURL = testVaultURL
             viewModel.store.loadSegments([segment])
 
-            #expect(viewModel.canGenerateSummary)
-
-            viewModel.isListening = true
-
-            #expect(!viewModel.canGenerateSummary)
+            return viewModel
         }
 
         @Test

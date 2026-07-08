@@ -13,7 +13,9 @@ final class RecordingCoordinator {
     }
 
     var canStartNewMeeting: Bool {
-        viewModel.analyzerReady
+        !viewModel.isListening
+            && !viewModel.isFinalizingRecording
+            && viewModel.analyzerReady
             && viewModel.hasEnabledAudioSource
             && sidebarViewModel.dbQueue != nil
             && sidebarViewModel.currentVault != nil

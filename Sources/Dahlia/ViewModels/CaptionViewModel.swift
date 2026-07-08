@@ -50,6 +50,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     @Published var isListening = false
+    @Published var isFinalizingRecording = false
     @Published var analyzerReady = false
     @Published var isPreparingAnalyzer = false
     @Published var errorMessage: String?
@@ -952,6 +953,8 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
+        guard !isFinalizingRecording else { return }
+
         if isListening {
             stopListening()
         } else {
@@ -978,6 +981,8 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL,
         appendingTo existingMeetingId: UUID? = nil
     ) async {
+        guard !isListening, !isFinalizingRecording else { return }
+
         self.currentProjectURL = projectURL
         self.currentProjectId = projectId
         self.currentProjectName = projectName
@@ -1085,6 +1090,9 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func stopListening() {
+        guard isListening, !isFinalizingRecording else { return }
+
+        isFinalizingRecording = true
         stopAutomaticScreenshotCapture()
         stopActiveCaptures()
         isListening = false
@@ -1096,27 +1104,25 @@ final class CaptionViewModel: ObservableObject {
         let projectName = ctx?.projectName ?? selectedProjectName
         let vaultURL = ctx?.vaultURL ?? currentVaultURL
         let recordingStart = activeStore.timeBase
-        let segments = activeStore.segments
-        let recordingSessions = activeStore.recordingSessions
         recordingContext = nil
-
-        guard let vaultURL else { return }
 
         Task {
             await stopActivePipelines()
             persistenceService?.stop()
             persistenceService = nil
+            let segments = activeStore.segments
+            let recordingSessions = activeStore.recordingSessions
+            isFinalizingRecording = false
 
-            if let meetingId, !segments.isEmpty {
-                await exportFiles(
-                    vaultURL: vaultURL,
-                    meetingId: meetingId,
-                    projectName: projectName ?? "",
-                    createdAt: recordingStart,
-                    segments: segments,
-                    recordingSessions: recordingSessions
-                )
-            }
+            guard let vaultURL, let meetingId, !segments.isEmpty else { return }
+            await exportFiles(
+                vaultURL: vaultURL,
+                meetingId: meetingId,
+                projectName: projectName ?? "",
+                createdAt: recordingStart,
+                segments: segments,
+                recordingSessions: recordingSessions
+            )
         }
     }
 
@@ -1130,6 +1136,7 @@ final class CaptionViewModel: ObservableObject {
     /// 手動で要約を実行できるかどうか。
     var canGenerateSummary: Bool {
         guard !isListening,
+              !isFinalizingRecording,
               currentMeetingId != nil,
               currentVaultURL != nil else { return false }
         return !store.segments.isEmpty
@@ -1137,7 +1144,8 @@ final class CaptionViewModel: ObservableObject {
 
     /// プルダウンメニューから手動で要約を実行する。
     func triggerManualSummary() {
-        guard let meetingId = currentMeetingId,
+        guard canGenerateSummary,
+              let meetingId = currentMeetingId,
               let vaultURL = currentVaultURL else { return }
         let projectURL = currentProjectURL
         let transcriptText = store.exportForSummary()
