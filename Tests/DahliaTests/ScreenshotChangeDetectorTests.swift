@@ -67,6 +67,40 @@ struct ScreenshotChangeDetectorTests {
     }
 
     @Test
+    func highContrastLocalChangeRespectsConfiguredThreshold() throws {
+        let baseline = try makeImage(width: 640, height: 360, background: .black)
+        let changed = try makeImage(
+            width: 640,
+            height: 360,
+            background: .black,
+            patches: [
+                Patch(rect: CGRect(x: 0, y: 0, width: 80, height: 360), color: .white),
+            ]
+        )
+
+        let first = try #require(ScreenshotChangeDetector.fingerprint(for: baseline))
+        let second = try #require(ScreenshotChangeDetector.fingerprint(for: changed))
+
+        #expect(ScreenshotChangeDetector.isSignificantlyDifferent(first, second, changedPixelRatioThreshold: 0.10))
+        #expect(!ScreenshotChangeDetector.isSignificantlyDifferent(first, second, changedPixelRatioThreshold: 0.20))
+    }
+
+    @Test
+    func screenWideLowContrastChangeIsSignificant() throws {
+        let baseline = try makeImage(width: 640, height: 360, background: .black)
+        let changed = try makeImage(
+            width: 640,
+            height: 360,
+            background: CGColor(red: 0.08, green: 0.08, blue: 0.08, alpha: 1)
+        )
+
+        let first = try #require(ScreenshotChangeDetector.fingerprint(for: baseline))
+        let second = try #require(ScreenshotChangeDetector.fingerprint(for: changed))
+
+        #expect(ScreenshotChangeDetector.isSignificantlyDifferent(first, second, changedPixelRatioThreshold: 0.50))
+    }
+
+    @Test
     func sameRelativeContentAtDifferentSizesIsStable() throws {
         let firstImage = try makeImage(
             width: 640,
