@@ -10,7 +10,6 @@ struct ScreenshotFingerprint: Equatable {
 enum ScreenshotChangeDetector {
     private static let fingerprintWidth = 64
     private static let fingerprintHeight = 36
-    private static let significantAverageDifference = 0.08
     private static let defaultChangedPixelRatioThreshold = 0.20
     private static let changedPixelThreshold = 24
 
@@ -57,24 +56,20 @@ enum ScreenshotChangeDetector {
             return true
         }
 
-        var totalDifference = 0
         var changedPixelCount = 0
 
         for index in lhs.pixels.indices {
             let difference = abs(Int(lhs.pixels[index]) - Int(rhs.pixels[index]))
-            totalDifference += difference
             if difference >= changedPixelThreshold {
                 changedPixelCount += 1
             }
         }
 
         let pixelCount = lhs.pixels.count
-        let averageDifference = Double(totalDifference) / Double(pixelCount) / 255.0
         let changedPixelRatio = Double(changedPixelCount) / Double(pixelCount)
         let requiredChangedPixelRatio = normalizedChangedPixelRatioThreshold(changedPixelRatioThreshold)
 
-        return averageDifference >= significantAverageDifference
-            || changedPixelRatio >= requiredChangedPixelRatio
+        return changedPixelRatio >= requiredChangedPixelRatio
     }
 
     private static func normalizedChangedPixelRatioThreshold(_ threshold: Double) -> Double {
