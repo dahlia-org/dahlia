@@ -138,6 +138,90 @@ import GRDB
 
         @Test
         func canGenerateSummaryIsDisabledWhileListening() {
+            let viewModel = summaryReadyViewModel()
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.isListening = true
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
+        func canGenerateSummaryIsDisabledWhileFinalizingRecording() {
+            let viewModel = summaryReadyViewModel()
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.isFinalizingRecording = true
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
+        func manualSummaryDoesNotStartWhileFinalizingRecording() {
+            let viewModel = summaryReadyViewModel()
+            viewModel.isFinalizingRecording = true
+
+            viewModel.triggerManualSummary()
+
+            #expect(!viewModel.requestShowSummaryTab)
+            #expect(viewModel.summaryGeneratingMeetingId == nil)
+        }
+
+        @Test
+        func loadMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
+            let viewModel = summaryReadyViewModel()
+            let originalMeetingId = try #require(viewModel.currentMeetingId)
+            let originalSegments = viewModel.store.segments
+            let dbQueue = try DatabaseQueue(path: ":memory:")
+
+            viewModel.isFinalizingRecording = true
+            viewModel.loadMeeting(
+                UUID.v7(),
+                dbQueue: dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+
+            #expect(viewModel.currentMeetingId == originalMeetingId)
+            #expect(viewModel.store.segments == originalSegments)
+        }
+
+        @Test
+        func clearCurrentMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
+            let viewModel = summaryReadyViewModel()
+            let originalMeetingId = try #require(viewModel.currentMeetingId)
+            let originalSegments = viewModel.store.segments
+
+            viewModel.isFinalizingRecording = true
+            viewModel.clearCurrentMeeting()
+
+            #expect(viewModel.currentMeetingId == originalMeetingId)
+            #expect(viewModel.store.segments == originalSegments)
+        }
+
+        @Test
+        func createEmptyMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
+            let viewModel = summaryReadyViewModel()
+            let originalMeetingId = try #require(viewModel.currentMeetingId)
+            let originalSegments = viewModel.store.segments
+
+            viewModel.isFinalizingRecording = true
+            try viewModel.createEmptyMeeting(
+                dbQueue: DatabaseQueue(path: ":memory:"),
+                projectURL: nil,
+                vaultId: UUID.v7(),
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+
+            #expect(viewModel.currentMeetingId == originalMeetingId)
+            #expect(viewModel.store.segments == originalSegments)
+        }
+
+        private func summaryReadyViewModel() -> CaptionViewModel {
             let viewModel = CaptionViewModel()
             let segment = TranscriptSegment(
                 startTime: Date(),
@@ -150,11 +234,7 @@ import GRDB
             viewModel.currentVaultURL = testVaultURL
             viewModel.store.loadSegments([segment])
 
-            #expect(viewModel.canGenerateSummary)
-
-            viewModel.isListening = true
-
-            #expect(!viewModel.canGenerateSummary)
+            return viewModel
         }
 
         @Test
