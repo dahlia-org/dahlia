@@ -7,6 +7,8 @@ struct ContentView: View {
     let recordingCoordinator: RecordingCoordinator
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         NavigationSplitView {
             MeetingListSidebarView(
@@ -21,14 +23,28 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                if showsCalendarScheduleToolbarButton {
-                    Button(action: returnToCalendarSchedule) {
-                        Label(L10n.showUpcomingSchedule, systemImage: "calendar")
-                    }
-                    .labelStyle(.iconOnly)
-                    .help(L10n.showUpcomingSchedule)
+            ToolbarItemGroup(placement: .navigation) {
+                Button {
+                    recordingCoordinator.createEmptyMeeting()
+                } label: {
+                    Label(L10n.newMeeting, systemImage: "square.and.pencil")
                 }
+                .labelStyle(.iconOnly)
+                .help(L10n.newMeeting)
+
+                Button {
+                    openWindow(id: WindowID.projectManager)
+                } label: {
+                    Label(L10n.manageProjects, systemImage: "folder")
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.manageProjects)
+
+                Button(action: returnToCalendarSchedule) {
+                    Label(L10n.showUpcomingSchedule, systemImage: "calendar")
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.showUpcomingSchedule)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -46,10 +62,6 @@ struct ContentView: View {
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
         }
-    }
-
-    private var showsCalendarScheduleToolbarButton: Bool {
-        !sidebarViewModel.selectedMeetingIds.isEmpty || viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil
     }
 
     @ViewBuilder

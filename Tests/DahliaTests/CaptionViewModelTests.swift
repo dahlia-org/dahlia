@@ -137,6 +137,27 @@ import GRDB
         }
 
         @Test
+        func canGenerateSummaryIsDisabledWhileListening() {
+            let viewModel = CaptionViewModel()
+            let segment = TranscriptSegment(
+                startTime: Date(),
+                text: "confirmed transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+
+            viewModel.currentMeetingId = UUID.v7()
+            viewModel.currentVaultURL = testVaultURL
+            viewModel.store.loadSegments([segment])
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.isListening = true
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
         func beginDraftMeetingDoesNotPersistMeetingRecord() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
