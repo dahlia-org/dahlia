@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -11,40 +12,45 @@ import GRDB
 
         @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() {
-            var defaultDeviceID = AudioDeviceID(101)
-            let devices = [
-                MicrophoneDevice(id: 101, name: "Poly Sync 20"),
-                MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
-            ]
+            let inputProvider = MutableMicrophoneInputProvider(
+                defaultDeviceID: AudioDeviceID(101),
+                devices: [
+                    MicrophoneDevice(id: 101, name: "Poly Sync 20"),
+                    MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
+                ]
+            )
             let viewModel = CaptionViewModel(
-                availableInputDevicesProvider: { devices },
-                defaultInputDeviceIDProvider: { defaultDeviceID }
+                availableInputDevicesProvider: { inputProvider.devices },
+                defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
 
-            #expect(viewModel.microphoneSelection == .systemDefault)
+            #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 101)
 
-            defaultDeviceID = 202
+            inputProvider.defaultDeviceID = 202
 
             #expect(viewModel.selectedMicrophoneID == 202)
         }
 
         @Test
         func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() {
-            var availableDevices = [
-                MicrophoneDevice(id: 101, name: "Poly Sync 20"),
-                MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
-            ]
+            let inputProvider = MutableMicrophoneInputProvider(
+                defaultDeviceID: AudioDeviceID(202),
+                devices: [
+                    MicrophoneDevice(id: 101, name: "Poly Sync 20"),
+                    MicrophoneDevice(id: 202, name: "MacBook Pro Mic"),
+                ]
+            )
             let viewModel = CaptionViewModel(
-                availableInputDevicesProvider: { availableDevices },
-                defaultInputDeviceIDProvider: { 202 }
+                availableInputDevicesProvider: { inputProvider.devices },
+                defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
 
             viewModel.microphoneSelection = .device(101)
-            availableDevices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
+            inputProvider.devices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
             viewModel.refreshAvailableMicrophones()
 
-            #expect(viewModel.microphoneSelection == .systemDefault)
+            #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 202)
         }
 
@@ -252,9 +258,11 @@ import GRDB
 
             let meetingId = try #require(viewModel.materializeDraftMeeting())
             let persisted = try database.dbQueue.read { db in
-                try (
-                    #require(MeetingRecord.fetchOne(db, key: meetingId)),
-                    #require(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                let calendarEvent = try CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db)
+                return try (
+                    #require(meeting),
+                    #require(calendarEvent)
                 )
             }
 
@@ -311,7 +319,8 @@ import GRDB
 
             let meetingId = try #require(viewModel.materializeDraftMeeting())
             let persisted = try database.dbQueue.read { db in
-                try #require(CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db))
+                let calendarEvent = try CalendarEventRecord.filter(Column("meetingId") == meetingId).fetchOne(db)
+                return try #require(calendarEvent)
             }
 
             #expect(persisted.platform == "MacOSCalendar")
@@ -319,6 +328,16 @@ import GRDB
             #expect(persisted.meetingUrl == "https://zoom.us/j/123456789")
         }
 
+    }
+
+    private final class MutableMicrophoneInputProvider: @unchecked Sendable {
+        var defaultDeviceID: AudioDeviceID
+        var devices: [MicrophoneDevice]
+
+        init(defaultDeviceID: AudioDeviceID, devices: [MicrophoneDevice]) {
+            self.defaultDeviceID = defaultDeviceID
+            self.devices = devices
+        }
     }
 
 #elseif canImport(XCTest)

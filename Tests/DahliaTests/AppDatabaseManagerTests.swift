@@ -5,13 +5,14 @@ import GRDB
 #if canImport(Testing)
 import Testing
 
+@MainActor
 struct AppDatabaseManagerTests {
     @Test
     func initializesInMemoryDatabaseWithGoogleDriveFolderColumn() throws {
         let database = try AppDatabaseManager(path: ":memory:")
 
         let columns = try database.dbQueue.read { db in
-            try String.fetchAll(db, sql: "PRAGMA table_info(projects)")
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
         }
 
         #expect(columns.contains("googleDriveFolderId"))
@@ -44,10 +45,10 @@ struct AppDatabaseManagerTests {
         let database = try AppDatabaseManager(path: ":memory:")
 
         let result = try database.dbQueue.read { db in
-            (
-                try db.tableExists("recording_sessions"),
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('screenshots')")
+            try (
+                db.tableExists("recording_sessions"),
+                String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
+                String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('screenshots')")
             )
         }
 
@@ -148,10 +149,13 @@ struct AppDatabaseManagerTests {
 
         let migrated = try AppDatabaseManager(path: databaseURL.path)
         let result = try migrated.dbQueue.read { db in
-            (
-                try RecordingSessionRecord.filter(Column("meetingId") == meetingID).fetchAll(db),
-                try #require(TranscriptSegmentRecord.fetchOne(db, key: segmentID)),
-                try #require(MeetingScreenshotRecord.fetchOne(db, key: screenshotID))
+            let sessions = try RecordingSessionRecord.filter(Column("meetingId") == meetingID).fetchAll(db)
+            let segment = try TranscriptSegmentRecord.fetchOne(db, key: segmentID)
+            let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: screenshotID)
+            return try (
+                sessions,
+                #require(segment),
+                #require(screenshot)
             )
         }
 
@@ -181,7 +185,8 @@ struct AppDatabaseManagerTests {
         let project = try repository.fetchOrCreateProject(name: "Project A", vaultId: vault.id)
         try repository.updateProjectGoogleDriveFolder(id: project.id, folderId: "folder-123")
 
-        let updatedProject = try #require(repository.fetchProject(id: project.id))
+        let fetchedProject = try repository.fetchProject(id: project.id)
+        let updatedProject = try #require(fetchedProject)
         #expect(updatedProject.googleDriveFolderId == "folder-123")
     }
 
@@ -318,8 +323,8 @@ struct AppDatabaseManagerTests {
                 t.column("identifier", .text).primaryKey()
             }
             try db.execute(
-                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
-                arguments: ["v4_instructionsSchema"]
+                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?), (?)",
+                arguments: ["v3_googleDriveFolderSchema", "v4_instructionsSchema"]
             )
         }
 
@@ -368,16 +373,16 @@ struct AppDatabaseManagerTests {
                 arguments: [segmentID, meetingID, startTime, "Hello world", true, "mic"]
             )
             try db.execute(
-                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
-                arguments: ["v5_summaryGoogleFileId"]
+                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?), (?), (?)",
+                arguments: ["v3_googleDriveFolderSchema", "v4_instructionsSchema", "v5_summaryGoogleFileId"]
             )
         }
 
         let migrated = try AppDatabaseManager(path: databaseURL.path)
         let result = try migrated.dbQueue.read { db in
-            (
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                try Row.fetchOne(db, sql: "SELECT text, translatedText FROM transcript_segments WHERE id = ?", arguments: [segmentID])
+            try (
+                String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
+                Row.fetchOne(db, sql: "SELECT text, translatedText FROM transcript_segments WHERE id = ?", arguments: [segmentID])
             )
         }
 
@@ -386,15 +391,17 @@ struct AppDatabaseManagerTests {
         #expect(result.1?["translatedText"] == nil as String?)
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
+@MainActor
 final class AppDatabaseManagerTests: XCTestCase {
     func testInitializesInMemoryDatabaseWithGoogleDriveFolderColumn() throws {
         let database = try AppDatabaseManager(path: ":memory:")
 
         let columns = try database.dbQueue.read { db in
-            try String.fetchAll(db, sql: "PRAGMA table_info(projects)")
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
         }
 
         XCTAssertTrue(columns.contains("googleDriveFolderId"))
@@ -568,8 +575,8 @@ final class AppDatabaseManagerTests: XCTestCase {
                 t.column("identifier", .text).primaryKey()
             }
             try db.execute(
-                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
-                arguments: ["v4_instructionsSchema"]
+                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?), (?)",
+                arguments: ["v3_googleDriveFolderSchema", "v4_instructionsSchema"]
             )
         }
 
@@ -617,16 +624,16 @@ final class AppDatabaseManagerTests: XCTestCase {
                 arguments: [segmentID, meetingID, startTime, "Hello world", true, "mic"]
             )
             try db.execute(
-                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
-                arguments: ["v5_summaryGoogleFileId"]
+                sql: "INSERT INTO grdb_migrations (identifier) VALUES (?), (?), (?)",
+                arguments: ["v3_googleDriveFolderSchema", "v4_instructionsSchema", "v5_summaryGoogleFileId"]
             )
         }
 
         let migrated = try AppDatabaseManager(path: databaseURL.path)
         let result = try migrated.dbQueue.read { db in
-            (
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
-                try Row.fetchOne(db, sql: "SELECT text, translatedText FROM transcript_segments WHERE id = ?", arguments: [segmentID])
+            try (
+                String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('transcript_segments')"),
+                Row.fetchOne(db, sql: "SELECT text, translatedText FROM transcript_segments WHERE id = ?", arguments: [segmentID])
             )
         }
 

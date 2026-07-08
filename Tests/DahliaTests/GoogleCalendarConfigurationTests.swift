@@ -4,6 +4,7 @@ import Foundation
 #if canImport(Testing)
 import Testing
 
+@MainActor
 struct GoogleCalendarConfigurationTests {
     @Test
     func clientIDIsReadFromEnvironment() {
@@ -71,9 +72,11 @@ struct GoogleCalendarConfigurationTests {
         #expect(GoogleAuthSessionKind.drive.sessionDidChangeNotification == .googleDriveSessionDidChange)
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
+@MainActor
 final class GoogleCalendarConfigurationTests: XCTestCase {
     func testClientIDIsReadFromEnvironment() {
         withTemporaryGoogleOAuthOverrides {

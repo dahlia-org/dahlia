@@ -36,7 +36,8 @@ import GRDB
                     arguments: [context.meeting.id]
                 )
             }
-            let summary = try #require(context.repo.fetchSummary(forMeetingId: context.meeting.id))
+            let fetchedSummary = try context.repo.fetchSummary(forMeetingId: context.meeting.id)
+            let summary = try #require(fetchedSummary)
 
             #expect(summary.summary == "Summary body")
             #expect(result.count == 1)

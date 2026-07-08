@@ -33,7 +33,8 @@ struct GoogleDriveStoreTests {
         )
         let store = GoogleDriveStore(
             signInProvider: signInProvider,
-            apiClient: MockGoogleDriveAPIClient()
+            apiClient: MockGoogleDriveAPIClient(),
+            presentingWindowProvider: { NSWindow() }
         )
 
         await store.signIn()
@@ -109,7 +110,7 @@ private final class MockGoogleSignInProvider: GoogleSignInProviding {
 
     func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
         signInRequestedScopes.append(requestedScopes)
-        try signInResult.get()
+        return try signInResult.get()
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {

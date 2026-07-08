@@ -12,7 +12,7 @@ struct TranscriptSegmentTests {
 
         #expect(Formatters.elapsedHHmmss(from: start, to: start) == "00:00:00")
         #expect(Formatters.elapsedHHmmss(from: start, to: start.addingTimeInterval(754)) == "00:12:34")
-        #expect(Formatters.elapsedHHmmss(from: start, to: start.addingTimeInterval(3_947)) == "01:05:47")
+        #expect(Formatters.elapsedHHmmss(from: start, to: start.addingTimeInterval(3947)) == "01:05:47")
         #expect(Formatters.elapsedHHmmss(from: start, to: start.addingTimeInterval(-1)) == "00:00:00")
     }
 
@@ -29,7 +29,7 @@ struct TranscriptSegmentTests {
                 speakerLabel: "mic"
             ),
             TranscriptSegment(
-                startTime: start.addingTimeInterval(3_947),
+                startTime: start.addingTimeInterval(3947),
                 text: "Second",
                 isConfirmed: true
             ),
@@ -103,7 +103,7 @@ struct TranscriptSegmentTests {
     }
 
     @Test
-    func transcriptStoreReusesUnconfirmedSegmentIDAndPreservesTranslatedText() {
+    func transcriptStoreReusesUnconfirmedSegmentIDAndPreservesTranslatedText() async {
         let store = TranscriptStore()
         let first = store.updateUnconfirmedSegment(
             TranscriptSegment(
@@ -115,6 +115,7 @@ struct TranscriptSegmentTests {
             ),
             forSource: "mic"
         )
+        await waitForUnconfirmedThrottleWindow()
         let second = store.updateUnconfirmedSegment(
             TranscriptSegment(
                 startTime: Date(timeIntervalSince1970: 1_776_384_001),
@@ -133,7 +134,7 @@ struct TranscriptSegmentTests {
     }
 
     @Test
-    func clearUnconfirmedSegmentsOnlyRemovesMatchingSource() {
+    func clearUnconfirmedSegmentsOnlyRemovesMatchingSource() async {
         let store = TranscriptStore()
         store.loadSegments([
             TranscriptSegment(
@@ -161,6 +162,7 @@ struct TranscriptSegmentTests {
             ),
             forSource: "system"
         )
+        await waitForUnconfirmedThrottleWindow()
 
         store.clearUnconfirmedSegments(forSource: "mic")
 
@@ -208,6 +210,7 @@ struct TranscriptSegmentTests {
         #expect(blankSegment.visibleTranslatedText(isEnabled: true) == nil)
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
@@ -235,7 +238,7 @@ final class TranscriptSegmentTests: XCTestCase {
         XCTAssertEqual(store.segments[1].translatedText, "2つ目")
     }
 
-    func testTranscriptStoreReusesUnconfirmedSegmentIDAndPreservesTranslatedText() {
+    func testTranscriptStoreReusesUnconfirmedSegmentIDAndPreservesTranslatedText() async {
         let store = TranscriptStore()
         let first = store.updateUnconfirmedSegment(
             TranscriptSegment(
@@ -247,6 +250,7 @@ final class TranscriptSegmentTests: XCTestCase {
             ),
             forSource: "mic"
         )
+        await waitForUnconfirmedThrottleWindow()
         let second = store.updateUnconfirmedSegment(
             TranscriptSegment(
                 startTime: Date(timeIntervalSince1970: 1_776_384_001),
@@ -264,7 +268,7 @@ final class TranscriptSegmentTests: XCTestCase {
         XCTAssertEqual(store.segments[0].text, "Hello world")
     }
 
-    func testClearUnconfirmedSegmentsOnlyRemovesMatchingSource() {
+    func testClearUnconfirmedSegmentsOnlyRemovesMatchingSource() async {
         let store = TranscriptStore()
         store.loadSegments([
             TranscriptSegment(
@@ -292,6 +296,7 @@ final class TranscriptSegmentTests: XCTestCase {
             ),
             forSource: "system"
         )
+        await waitForUnconfirmedThrottleWindow()
 
         store.clearUnconfirmedSegments(forSource: "mic")
 
@@ -338,3 +343,8 @@ final class TranscriptSegmentTests: XCTestCase {
     }
 }
 #endif
+
+@MainActor
+private func waitForUnconfirmedThrottleWindow() async {
+    try? await Task.sleep(for: .milliseconds(250))
+}

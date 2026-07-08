@@ -203,13 +203,12 @@ struct GoogleCalendarStoreTests {
             conferenceData: .init(entryPoints: [.init(uri: "https://meet.google.com/abc-defg-hij")]),
             eventType: nil
         )
-        let event = try #require(
-            GoogleCalendarAPIClient.makeEvent(
-                from: conferenceItem,
-                calendarItem: primaryCalendar,
-                calendar: .current
-            )
+        let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
+            from: conferenceItem,
+            calendarItem: primaryCalendar,
+            calendar: .current
         )
+        let event = try #require(transformedEvent)
 
         #expect(event.meetingURL?.absoluteString == "https://meet.google.com/abc-defg-hij")
         #expect(event.platformId == "event-1")
@@ -289,6 +288,7 @@ struct GoogleCalendarStoreTests {
         #expect(event == nil)
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 

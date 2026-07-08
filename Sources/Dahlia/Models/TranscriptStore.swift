@@ -55,7 +55,7 @@ final class TranscriptStore: ObservableObject {
         let now = ContinuousClock.now
         pendingUnconfirmed[key] = mutation
 
-        let lastUpdate = lastUnconfirmedUpdate[key] ?? .now - throttleInterval
+        let lastUpdate = lastUnconfirmedUpdate[key] ?? now - throttleInterval
         guard now - lastUpdate >= throttleInterval else {
             if unconfirmedThrottleTasks[key] == nil {
                 unconfirmedThrottleTasks[key] = Task { @MainActor [weak self] in

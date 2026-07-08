@@ -4,6 +4,7 @@ import Foundation
 #if canImport(Testing)
 import Testing
 
+@MainActor
 struct InstructionRepositoryTests {
     @Test
     func createUpdateDeleteAndFilterInstructionsByVault() throws {
@@ -46,7 +47,8 @@ struct InstructionRepositoryTests {
             content: "# Output Format\n- Updated"
         )
 
-        let updated = try #require(repository.fetchInstruction(id: created.id))
+        let fetchedInstruction = try repository.fetchInstruction(id: created.id)
+        let updated = try #require(fetchedInstruction)
         #expect(updated.name == "customer_followup")
         #expect(updated.content.contains("Updated"))
 
@@ -59,6 +61,7 @@ struct InstructionRepositoryTests {
 #elseif canImport(XCTest)
 import XCTest
 
+@MainActor
 final class InstructionRepositoryTests: XCTestCase {
     func testCreateUpdateDeleteAndFilterInstructionsByVault() throws {
         let database = try AppDatabaseManager(path: ":memory:")

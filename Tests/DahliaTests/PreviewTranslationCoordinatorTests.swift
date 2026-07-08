@@ -25,12 +25,12 @@ struct PreviewTranslationCoordinatorTests {
             await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
         }
 
+        await sleepGate.waitUntilWaiting()
         #expect(await recorder.translateCallCount() == 0)
 
         await sleepGate.release()
-        try? await Task.sleep(for: .milliseconds(50))
 
-        #expect(await recorder.translateCallCount() == 1)
+        #expect(await waitUntil { await recorder.translateCallCount() == 1 })
         #expect(await recorder.appliedTexts() == ["訳: Hello"])
     }
 
@@ -55,6 +55,7 @@ struct PreviewTranslationCoordinatorTests {
             TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
         ) { _, _ in }
 
+        #expect(await waitUntil { await recorder.translateCallCount() == 2 })
         #expect(await recorder.translatedTexts() == ["Hello", "Helloabc"])
     }
 
@@ -76,6 +77,7 @@ struct PreviewTranslationCoordinatorTests {
             TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
         ) { _, _ in }
 
+        #expect(await waitUntil { await recorder.translateCallCount() == 2 })
         #expect(await recorder.translatedTexts() == ["Hello", "Hello."])
     }
 
@@ -109,8 +111,8 @@ struct PreviewTranslationCoordinatorTests {
         }
 
         await translator.resume(with: "古い訳")
-        try? await Task.sleep(for: .milliseconds(50))
 
+        #expect(await waitUntil { await recorder.appliedTexts().isEmpty })
         #expect(await recorder.appliedTexts().isEmpty)
 
         await coordinator.unconfirmedSegmentDidChange(
@@ -119,13 +121,15 @@ struct PreviewTranslationCoordinatorTests {
             await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
         }
 
+        await translator.waitUntilStarted(count: 2)
         await translator.resume(with: "新しい訳")
-        try? await Task.sleep(for: .milliseconds(50))
 
+        #expect(await waitUntil { await recorder.appliedTexts() == ["新しい訳"] })
         #expect(await recorder.appliedTexts() == ["新しい訳"])
         #expect(await recorder.appliedSegmentIDs() == [thirdSegmentID])
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
@@ -149,13 +153,16 @@ final class PreviewTranslationCoordinatorTests: XCTestCase {
             await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
         }
 
-        XCTAssertEqual(await recorder.translateCallCount(), 0)
+        await sleepGate.waitUntilWaiting()
+        let countBeforeRelease = await recorder.translateCallCount()
+        XCTAssertEqual(countBeforeRelease, 0)
 
         await sleepGate.release()
-        try? await Task.sleep(for: .milliseconds(50))
 
-        XCTAssertEqual(await recorder.translateCallCount(), 1)
-        XCTAssertEqual(await recorder.appliedTexts(), ["訳: Hello"])
+        let didTranslate = await waitUntil { await recorder.translateCallCount() == 1 }
+        let appliedTexts = await recorder.appliedTexts()
+        XCTAssertTrue(didTranslate)
+        XCTAssertEqual(appliedTexts, ["訳: Hello"])
     }
 
     func testIgnoresSmallChangesUntilThresholdIsReached() async {
@@ -178,7 +185,10 @@ final class PreviewTranslationCoordinatorTests: XCTestCase {
             TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
         ) { _, _ in }
 
-        XCTAssertEqual(await recorder.translatedTexts(), ["Hello", "Helloabc"])
+        let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
+        let translatedTexts = await recorder.translatedTexts()
+        XCTAssertTrue(didTranslate)
+        XCTAssertEqual(translatedTexts, ["Hello", "Helloabc"])
     }
 
     func testReTranslatesWhenTrailingBoundaryChanges() async {
@@ -198,7 +208,10 @@ final class PreviewTranslationCoordinatorTests: XCTestCase {
             TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
         ) { _, _ in }
 
-        XCTAssertEqual(await recorder.translatedTexts(), ["Hello", "Hello."])
+        let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
+        let translatedTexts = await recorder.translatedTexts()
+        XCTAssertTrue(didTranslate)
+        XCTAssertEqual(translatedTexts, ["Hello", "Hello."])
     }
 
     func testDropsStaleResultWhenTextChangesDuringTranslation() async {
@@ -230,9 +243,11 @@ final class PreviewTranslationCoordinatorTests: XCTestCase {
         }
 
         await translator.resume(with: "古い訳")
-        try? await Task.sleep(for: .milliseconds(50))
 
-        XCTAssertTrue(await recorder.appliedTexts().isEmpty)
+        let didDropStaleText = await waitUntil { await recorder.appliedTexts().isEmpty }
+        let staleAppliedTexts = await recorder.appliedTexts()
+        XCTAssertTrue(didDropStaleText)
+        XCTAssertTrue(staleAppliedTexts.isEmpty)
 
         await coordinator.unconfirmedSegmentDidChange(
             TranscriptSegment(id: thirdSegmentID, startTime: .now, text: "Helloabc", isConfirmed: false)
@@ -240,11 +255,15 @@ final class PreviewTranslationCoordinatorTests: XCTestCase {
             await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
         }
 
+        await translator.waitUntilStarted(count: 2)
         await translator.resume(with: "新しい訳")
-        try? await Task.sleep(for: .milliseconds(50))
 
-        XCTAssertEqual(await recorder.appliedTexts(), ["新しい訳"])
-        XCTAssertEqual(await recorder.appliedSegmentIDs(), [thirdSegmentID])
+        let didApplyLatestText = await waitUntil { await recorder.appliedTexts() == ["新しい訳"] }
+        let latestAppliedTexts = await recorder.appliedTexts()
+        let appliedSegmentIDs = await recorder.appliedSegmentIDs()
+        XCTAssertTrue(didApplyLatestText)
+        XCTAssertEqual(latestAppliedTexts, ["新しい訳"])
+        XCTAssertEqual(appliedSegmentIDs, [thirdSegmentID])
     }
 }
 #endif
@@ -280,10 +299,20 @@ private actor PreviewTranslationRecorder {
 
 private actor SleepGate {
     private var continuation: CheckedContinuation<Void, Never>?
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     func wait(duration _: Duration) async {
         await withCheckedContinuation { continuation in
             self.continuation = continuation
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
         }
     }
 
@@ -296,22 +325,23 @@ private actor SleepGate {
 private actor BlockingTranslator {
     private var continuations: [CheckedContinuation<String?, Never>] = []
     private var startedCount = 0
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     func translate(text _: String) async -> String? {
         startedCount += 1
-        startWaiters.forEach { $0.resume() }
-        startWaiters.removeAll()
+        let readyWaiters = startWaiters.filter { startedCount >= $0.count }
+        startWaiters.removeAll { startedCount >= $0.count }
+        readyWaiters.forEach { $0.continuation.resume() }
 
         return await withCheckedContinuation { continuation in
             continuations.append(continuation)
         }
     }
 
-    func waitUntilStarted() async {
-        guard startedCount == 0 else { return }
+    func waitUntilStarted(count: Int = 1) async {
+        guard startedCount < count else { return }
         await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
+            startWaiters.append((count, continuation))
         }
     }
 
@@ -320,4 +350,21 @@ private actor BlockingTranslator {
         let continuation = continuations.removeFirst()
         continuation.resume(returning: text)
     }
+}
+
+private func waitUntil(
+    timeout: Duration = .seconds(1),
+    condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now + timeout
+
+    while clock.now < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+
+    return await condition()
 }

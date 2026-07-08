@@ -4,6 +4,7 @@ import Foundation
 #if canImport(Testing)
 import Testing
 
+@MainActor
 struct GoogleCalendarAPIClientTests {
     @Test
     func calendarListDecodingAllowsMissingOptionalFields() throws {
@@ -56,7 +57,8 @@ struct GoogleCalendarAPIClientTests {
         )
 
         let request = try #require(requestRecorder.lastRequest)
-        let queryItems = try #require(URLComponents(url: try #require(request.url), resolvingAgainstBaseURL: false)?.queryItems)
+        let url = try #require(request.url)
+        let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
         let eventTypes = queryItems
             .filter { $0.name == "eventTypes" }
             .compactMap(\.value)
@@ -79,30 +81,31 @@ struct GoogleCalendarAPIClientTests {
             eventType: nil
         )
 
-        let event = try #require(
-            GoogleCalendarAPIClient.makeEvent(
-                from: item,
-                calendarItem: GoogleCalendarListItem(
-                    id: "primary",
-                    title: "Primary",
-                    colorHex: "#4285F4",
-                    isPrimary: true
-                ),
-                calendar: Calendar(identifier: .gregorian)
-            )
+        let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
+            from: item,
+            calendarItem: GoogleCalendarListItem(
+                id: "primary",
+                title: "Primary",
+                colorHex: "#4285F4",
+                isPrimary: true
+            ),
+            calendar: Calendar(identifier: .gregorian)
         )
+        let event = try #require(transformedEvent)
 
         #expect(event.platformId == "google-event-id")
         #expect(event.description == "Quarterly planning")
         #expect(event.icalUid == "planning@google.com")
         #expect(event.meetingURL?.absoluteString == "https://meet.google.com/test-room")
-        #expect(event.startDate == Date(timeIntervalSince1970: 1_776_459_600))
-        #expect(event.endDate == Date(timeIntervalSince1970: 1_776_463_200))
+        #expect(event.startDate == Date(timeIntervalSince1970: 1_776_387_600))
+        #expect(event.endDate == Date(timeIntervalSince1970: 1_776_391_200))
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
+@MainActor
 final class GoogleCalendarAPIClientTests: XCTestCase {
     func testCalendarListDecodingAllowsMissingOptionalFields() throws {
         let data = Data("""
@@ -192,8 +195,8 @@ final class GoogleCalendarAPIClientTests: XCTestCase {
         XCTAssertEqual(event.description, "Quarterly planning")
         XCTAssertEqual(event.icalUid, "planning@google.com")
         XCTAssertEqual(event.meetingURL?.absoluteString, "https://meet.google.com/test-room")
-        XCTAssertEqual(event.startDate, Date(timeIntervalSince1970: 1_776_459_600))
-        XCTAssertEqual(event.endDate, Date(timeIntervalSince1970: 1_776_463_200))
+        XCTAssertEqual(event.startDate, Date(timeIntervalSince1970: 1_776_387_600))
+        XCTAssertEqual(event.endDate, Date(timeIntervalSince1970: 1_776_391_200))
     }
 }
 #endif
@@ -224,7 +227,7 @@ private func makeRecordingSession(recorder: RequestRecorderURLProtocol) -> URLSe
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var recorder: RequestRecorderURLProtocol?
 
-    override class func canInit(with request: URLRequest) -> Bool {
+    override class func canInit(with _: URLRequest) -> Bool {
         true
     }
 

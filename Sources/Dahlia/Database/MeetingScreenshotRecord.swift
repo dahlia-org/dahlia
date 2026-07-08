@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// スクリーンショットを表す GRDB レコード。
-struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "screenshots"
 
     var id: UUID

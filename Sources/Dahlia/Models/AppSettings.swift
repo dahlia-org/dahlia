@@ -171,7 +171,7 @@ final class AppSettings: ObservableObject {
         )
     }
 
-    nonisolated private static func normalizedOption(_ value: Int, options: [Int], defaultValue: Int) -> Int {
+    private nonisolated static func normalizedOption(_ value: Int, options: [Int], defaultValue: Int) -> Int {
         guard !options.isEmpty else { return defaultValue }
         if options.contains(value) {
             return value

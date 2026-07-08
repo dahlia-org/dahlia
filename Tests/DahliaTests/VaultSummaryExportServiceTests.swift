@@ -98,7 +98,7 @@ struct VaultSummaryExportServiceTests {
             summaryMarkdown: summaryMarkdown
         )
 
-        #expect(summaryURL == existingSummaryURL)
+        #expect(summaryURL.resolvingSymlinksInPath() == existingSummaryURL.resolvingSymlinksInPath())
         #expect(try String(contentsOf: existingSummaryURL, encoding: .utf8) == summaryMarkdown)
         #expect(!FileManager.default.fileExists(atPath: projectURL.appendingPathComponent("new-summary.md").path))
     }

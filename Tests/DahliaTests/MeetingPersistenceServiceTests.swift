@@ -23,7 +23,8 @@ struct MeetingPersistenceServiceTests {
         )
 
         let persisted = try database.dbQueue.read { db in
-            try #require(MeetingRecord.fetchOne(db, key: service.meetingId))
+            let meeting = try MeetingRecord.fetchOne(db, key: service.meetingId)
+            return try #require(meeting)
         }
 
         #expect(persisted.status == .ready)
@@ -56,7 +57,8 @@ struct MeetingPersistenceServiceTests {
         )
 
         let persisted = try database.dbQueue.read { db in
-            try #require(MeetingRecord.fetchOne(db, key: meetingId))
+            let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+            return try #require(meeting)
         }
 
         #expect(persisted.status == .transcriptNotFound)
@@ -95,14 +97,15 @@ struct MeetingPersistenceServiceTests {
         service.stop()
 
         let persisted = try database.dbQueue.read { db in
-            try #require(MeetingRecord.fetchOne(db, key: meetingId))
+            let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+            return try #require(meeting)
         }
 
         #expect((persisted.duration ?? .greatestFiniteMagnitude) < 10)
     }
 
     @Test
-    func appendModePersistsSegmentsWithNewRecordingSessionOffset() throws {
+    func appendModePersistsSegmentsWithNewRecordingSessionOffset() async throws {
         let database = try makeDatabase()
         let meetingId = UUID.v7()
         let firstSessionId = UUID.v7()
@@ -111,7 +114,7 @@ struct MeetingPersistenceServiceTests {
         let store = TranscriptStore()
         store.recordingStartTime = firstSessionStart
 
-        try database.dbQueue.write { db in
+        try await database.dbQueue.write { db in
             try MeetingRecord(
                 id: meetingId,
                 vaultId: testVault.id,
@@ -152,22 +155,19 @@ struct MeetingPersistenceServiceTests {
         store.loadSegments([segment])
         service.stop()
 
-        let persisted = try database.dbQueue.read { db in
-            (
-                try RecordingSessionRecord
-                    .filter(Column("meetingId") == meetingId)
-                    .order(Column("offsetSeconds").asc)
-                    .fetchAll(db),
-                try #require(TranscriptSegmentRecord.fetchOne(db, key: segment.id)),
-                try #require(MeetingRecord.fetchOne(db, key: meetingId))
-            )
-        }
+        let persisted = try await waitForAppendPersistence(
+            database: database,
+            meetingId: meetingId,
+            segmentId: segment.id
+        )
+        let segmentRecord = try #require(persisted.segment)
+        let meetingRecord = try #require(persisted.meeting)
 
-        let secondSession = try #require(persisted.0.first(where: { $0.id == service.recordingSessionId }))
+        let secondSession = try #require(persisted.sessions.first(where: { $0.id == service.recordingSessionId }))
         #expect(secondSession.offsetSeconds == 10)
-        #expect(persisted.1.sessionId == secondSession.id)
-        #expect((persisted.2.duration ?? 0) >= 10)
-        #expect((persisted.2.duration ?? 0) < 20)
+        #expect(segmentRecord.sessionId == secondSession.id)
+        #expect((meetingRecord.duration ?? 0) >= 10)
+        #expect((meetingRecord.duration ?? 0) < 20)
     }
 
     @Test
@@ -188,9 +188,11 @@ struct MeetingPersistenceServiceTests {
         service.stop()
 
         let persisted = try database.dbQueue.read { db in
-            (
-                try #require(MeetingRecord.fetchOne(db, key: service.meetingId)),
-                try #require(CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db))
+            let meeting = try MeetingRecord.fetchOne(db, key: service.meetingId)
+            let calendarEvent = try CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db)
+            return try (
+                #require(meeting),
+                #require(calendarEvent)
             )
         }
 
@@ -222,7 +224,8 @@ struct MeetingPersistenceServiceTests {
         service.stop()
 
         let persisted = try database.dbQueue.read { db in
-            try #require(CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db))
+            let calendarEvent = try CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db)
+            return try #require(calendarEvent)
         }
 
         #expect(persisted.platform == "MacOSCalendar")
@@ -412,7 +415,8 @@ struct MeetingPersistenceServiceTests {
         service.stop()
 
         let persisted = try database.dbQueue.read { db in
-            try #require(TranscriptSegmentRecord.fetchOne(db, key: segment.id))
+            let segmentRecord = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+            return try #require(segmentRecord)
         }
 
         #expect(persisted.text == "Hello world")
@@ -447,8 +451,9 @@ struct MeetingPersistenceServiceTests {
         try await Task.sleep(for: .milliseconds(700))
         service.stop()
 
-        let persisted = try database.dbQueue.read { db in
-            try #require(TranscriptSegmentRecord.fetchOne(db, key: segment.id))
+        let persisted = try await database.dbQueue.read { db in
+            let segmentRecord = try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
+            return try #require(segmentRecord)
         }
 
         #expect(persisted.translatedText == "こんにちは、世界")
@@ -488,6 +493,7 @@ struct MeetingPersistenceServiceTests {
         #expect(persistedCount == 0)
     }
 }
+
 #elseif canImport(XCTest)
 import XCTest
 
@@ -510,9 +516,9 @@ final class MeetingPersistenceServiceTests: XCTestCase {
         service.stop()
 
         let persisted = try database.dbQueue.read { db in
-            (
-                try XCTUnwrap(MeetingRecord.fetchOne(db, key: service.meetingId)),
-                try XCTUnwrap(CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db))
+            try (
+                XCTUnwrap(MeetingRecord.fetchOne(db, key: service.meetingId)),
+                XCTUnwrap(CalendarEventRecord.filter(Column("meetingId") == service.meetingId).fetchOne(db))
             )
         }
 
@@ -793,6 +799,48 @@ private func makeDatabase() throws -> AppDatabaseManager {
         try testVault.insert(db)
     }
     return database
+}
+
+private struct PersistedAppendState {
+    let sessions: [RecordingSessionRecord]
+    let segment: TranscriptSegmentRecord?
+    let meeting: MeetingRecord?
+}
+
+private func waitForAppendPersistence(
+    database: AppDatabaseManager,
+    meetingId: UUID,
+    segmentId: UUID,
+    timeout: Duration = .seconds(5)
+) async throws -> PersistedAppendState {
+    let clock = ContinuousClock()
+    let deadline = clock.now + timeout
+
+    while clock.now < deadline {
+        let state = try fetchAppendPersistence(database: database, meetingId: meetingId, segmentId: segmentId)
+        if state.segment != nil, state.meeting != nil {
+            return state
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+
+    return try fetchAppendPersistence(database: database, meetingId: meetingId, segmentId: segmentId)
+}
+
+private func fetchAppendPersistence(
+    database: AppDatabaseManager,
+    meetingId: UUID,
+    segmentId: UUID
+) throws -> PersistedAppendState {
+    try database.dbQueue.read { db in
+        let sessions = try RecordingSessionRecord
+            .filter(Column("meetingId") == meetingId)
+            .order(Column("offsetSeconds").asc)
+            .fetchAll(db)
+        let segment = try TranscriptSegmentRecord.fetchOne(db, key: segmentId)
+        let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+        return PersistedAppendState(sessions: sessions, segment: segment, meeting: meeting)
+    }
 }
 
 private func fixtureEvent(startDate: Date) -> GoogleCalendarEvent {
