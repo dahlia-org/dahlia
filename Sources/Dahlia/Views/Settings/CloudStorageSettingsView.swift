@@ -5,65 +5,53 @@ struct CloudStorageSettingsView: View {
     @ObservedObject private var driveStore = GoogleDriveStore.shared
 
     var body: some View {
-        SettingsPage {
-            SettingsSection(
-                title: L10n.googleDrive,
-                description: L10n.googleDriveSettingsDescription
-            ) {
-                SettingsCard {
-                    connectionRow
+        Form {
+            Section {
+                connectionRow
 
-                    if let message = driveStore.lastErrorMessage {
-                        Divider()
-
-                        SettingsStatusMessage(
-                            text: message,
-                            systemImage: "exclamationmark.triangle",
-                            tint: .orange
-                        )
-                        .padding(20)
-                    }
+                if let message = driveStore.lastErrorMessage {
+                    SettingsStatusMessage(
+                        text: message,
+                        systemImage: "exclamationmark.triangle",
+                        tint: .orange
+                    )
                 }
+            } header: {
+                Text(L10n.googleDrive)
+            } footer: {
+                Text(L10n.googleDriveSettingsDescription)
             }
 
-            SettingsSection(
-                title: L10n.projectDriveFolders,
-                description: L10n.projectDriveFoldersDescription
-            ) {
-                SettingsCard {
-                    SettingsControlRow(
-                        title: L10n.projectManagement,
-                        description: L10n.summaryDestinationsDescription
-                    ) {
-                        Button {
-                            openWindow(id: WindowID.projectManager)
-                        } label: {
-                            Label(L10n.manageProjects, systemImage: "folder")
-                        }
+            Section {
+                LabeledContent {
+                    Button {
+                        openWindow(id: WindowID.projectManager)
+                    } label: {
+                        Label(L10n.manageProjects, systemImage: "folder")
                     }
+                } label: {
+                    Text(L10n.projectManagement)
+                    Text(L10n.summaryDestinationsDescription)
                 }
+            } header: {
+                Text(L10n.projectDriveFolders)
+            } footer: {
+                Text(L10n.projectDriveFoldersDescription)
             }
         }
+        .formStyle(.grouped)
         .task {
             await driveStore.restoreSessionIfNeeded()
         }
     }
 
     private var connectionRow: some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(driveStore.account?.displayName ?? L10n.googleDriveNotConnected)
-                    .font(.headline)
-
-                Text(accountSubtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        LabeledContent {
             actionButton
+        } label: {
+            Text(driveStore.account?.displayName ?? L10n.googleDriveNotConnected)
+            Text(accountSubtitle)
         }
-        .padding(20)
     }
 
     @ViewBuilder
@@ -98,5 +86,4 @@ struct CloudStorageSettingsView: View {
 
         return L10n.googleDriveConnectDescription
     }
-
 }

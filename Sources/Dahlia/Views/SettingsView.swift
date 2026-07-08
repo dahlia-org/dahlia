@@ -21,7 +21,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: L10n.cloudStorage
         case .transcription: L10n.transcription
         case .screenshots: L10n.screenshots
-        case .aiSummary: L10n.aiSummary
+        case .aiSummary: L10n.foundationModels
         case .instructions: L10n.instructions
         case .developer: L10n.developerSettings
         }
@@ -34,7 +34,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: "externaldrive.badge.icloud"
         case .transcription: "waveform"
         case .screenshots: "photo.on.rectangle.angled"
-        case .aiSummary: "sparkle.text.clipboard"
+        case .aiSummary: "sparkles"
         case .instructions: "list.bullet.clipboard"
         case .developer: "wrench.and.screwdriver"
         }
@@ -52,81 +52,80 @@ enum SettingsNavigation {
     }
 }
 
-/// 設定画面（Cmd+, で表示）。サイドバーでセクションを切り替える。
+/// 設定画面（Cmd+, で表示）。
 struct SettingsView: View {
     var sidebarViewModel: SidebarViewModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @AppStorage(SettingsNavigation.selectedCategoryDefaultsKey)
-    private var selectionRawValue = SettingsCategory.general.rawValue
-
-    private let sidebarWidth: CGFloat = 240
+    private var selection: SettingsCategory = .general
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(spacing: 4) {
-                    ForEach(SettingsCategory.allCases) { category in
-                        settingsSidebarRow(for: category)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 18)
-
-                Spacer(minLength: 0)
+        TabView(selection: $selection) {
+            Tab(
+                SettingsCategory.general.label,
+                systemImage: SettingsCategory.general.systemImage,
+                value: SettingsCategory.general
+            ) {
+                GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
             }
-            .frame(width: sidebarWidth)
-            .background(.bar)
 
-            Divider()
+            Tab(
+                SettingsCategory.calendar.label,
+                systemImage: SettingsCategory.calendar.systemImage,
+                value: SettingsCategory.calendar
+            ) {
+                CalendarSettingsView()
+            }
 
-            selectedCategoryView
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Tab(
+                SettingsCategory.cloudStorage.label,
+                systemImage: SettingsCategory.cloudStorage.systemImage,
+                value: SettingsCategory.cloudStorage
+            ) {
+                CloudStorageSettingsView()
+            }
+
+            Tab(
+                SettingsCategory.transcription.label,
+                systemImage: SettingsCategory.transcription.systemImage,
+                value: SettingsCategory.transcription
+            ) {
+                TranscriptionSettingsView()
+            }
+
+            Tab(
+                SettingsCategory.screenshots.label,
+                systemImage: SettingsCategory.screenshots.systemImage,
+                value: SettingsCategory.screenshots
+            ) {
+                ScreenshotSettingsView()
+            }
+
+            Tab(
+                SettingsCategory.aiSummary.label,
+                systemImage: SettingsCategory.aiSummary.systemImage,
+                value: SettingsCategory.aiSummary
+            ) {
+                AISummarySettingsView()
+            }
+
+            Tab(
+                SettingsCategory.instructions.label,
+                systemImage: SettingsCategory.instructions.systemImage,
+                value: SettingsCategory.instructions
+            ) {
+                InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
+            }
+
+            Tab(
+                SettingsCategory.developer.label,
+                systemImage: SettingsCategory.developer.systemImage,
+                value: SettingsCategory.developer
+            ) {
+                DeveloperSettingsView()
+            }
         }
-        .frame(minWidth: 820, minHeight: 560)
-    }
-
-    @ViewBuilder
-    private var selectedCategoryView: some View {
-        switch selectedCategory {
-        case .general:
-            GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
-        case .calendar:
-            CalendarSettingsView()
-        case .cloudStorage:
-            CloudStorageSettingsView()
-        case .transcription:
-            TranscriptionSettingsView()
-        case .screenshots:
-            ScreenshotSettingsView()
-        case .aiSummary:
-            AISummarySettingsView()
-        case .instructions:
-            InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
-        case .developer:
-            DeveloperSettingsView()
-        }
-    }
-
-    private func settingsSidebarRow(for category: SettingsCategory) -> some View {
-        Button {
-            selectionRawValue = category.rawValue
-        } label: {
-            Label(category.label, systemImage: category.systemImage)
-                .font(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(selectedCategory == category ? Color.primary.opacity(0.08) : Color.clear)
-        )
-    }
-
-    private var selectedCategory: SettingsCategory {
-        SettingsCategory(rawValue: selectionRawValue) ?? .general
+        .frame(minWidth: 680, minHeight: 500)
     }
 }

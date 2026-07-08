@@ -12,99 +12,53 @@ struct AISummarySettingsView: View {
     }
 
     var body: some View {
-        SettingsPage {
-            SettingsSection(
-                title: L10n.llmSettings,
-                description: L10n.llmSettingsDescription
-            ) {
-                SettingsCard {
-                    SettingsControlRow(
-                        title: L10n.modelProvider,
-                        description: L10n.modelProviderDescription
-                    ) {
-                        Picker(L10n.modelProvider, selection: $settings.llmProvider) {
-                            ForEach(LLMProvider.allCases) { provider in
-                                Text(provider.displayName).tag(provider)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(width: 220, alignment: .trailing)
+        Form {
+            Section {
+                Picker(selection: $settings.llmProvider) {
+                    ForEach(LLMProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
                     }
-
-                    Divider()
-
-                    providerConfigurationRows
-
-                    Divider()
-
-                    SettingsControlRow(title: L10n.modelName) {
-                        TextField(
-                            "",
-                            text: $settings.llmModelName,
-                            prompt: Text(modelNamePrompt)
-                        )
-                        .textFieldStyle(.roundedBorder)
-                    }
-
-                    Divider()
-
-                    SettingsControlRow(
-                        title: L10n.apiToken,
-                        description: L10n.apiTokenStoredInKeychain
-                    ) {
-                        SecureField("", text: $apiToken)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { settings.llmAPIToken = apiToken }
-                    }
+                } label: {
+                    Text(L10n.modelProvider)
+                    Text(L10n.modelProviderDescription)
                 }
+                .pickerStyle(.menu)
+
+                providerConfigurationRows
+
+                LabeledContent(L10n.modelName) {
+                    TextField(
+                        "",
+                        text: $settings.llmModelName,
+                        prompt: Text(modelNamePrompt)
+                    )
+                    .textFieldStyle(.roundedBorder)
+                }
+
+                LabeledContent {
+                    SecureField("", text: $apiToken)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { settings.llmAPIToken = apiToken }
+                } label: {
+                    Text(L10n.apiToken)
+                    Text(L10n.apiTokenStoredInKeychain)
+                }
+            } header: {
+                Text(L10n.llmSettings)
+            } footer: {
+                Text(L10n.llmSettingsDescription)
             }
 
-            SettingsSection(
-                title: L10n.testConnection,
-                description: L10n.connectionDiagnosticsDescription
-            ) {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if isTestingConnection {
-                            HStack(spacing: 10) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text(L10n.testing)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            Button(L10n.testConnection) {
-                                testConnection()
-                            }
-                            .disabled(!isLLMConfigComplete)
-                        }
-
-                        if let result = connectionTestResult {
-                            switch result {
-                            case .success:
-                                SettingsStatusMessage(
-                                    text: L10n.connectionSuccess,
-                                    systemImage: "checkmark.circle.fill",
-                                    tint: .green
-                                )
-                            case let .failure(message):
-                                SettingsStatusMessage(
-                                    text: message,
-                                    systemImage: "xmark.circle.fill",
-                                    tint: .red
-                                )
-                            }
-                        } else if !isLLMConfigComplete {
-                            Text(L10n.llmConfigIncomplete)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(20)
-                }
+            Section {
+                connectionTestControl
+                connectionTestStatus
+            } header: {
+                Text(L10n.testConnection)
+            } footer: {
+                Text(L10n.connectionDiagnosticsDescription)
             }
         }
+        .formStyle(.grouped)
         .task {
             apiToken = settings.llmAPIToken
         }
@@ -123,44 +77,82 @@ struct AISummarySettingsView: View {
     }
 
     @ViewBuilder
+    private var connectionTestControl: some View {
+        if isTestingConnection {
+            HStack(spacing: 10) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.testing)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Button(L10n.testConnection) {
+                testConnection()
+            }
+            .disabled(!isLLMConfigComplete)
+        }
+    }
+
+    @ViewBuilder
+    private var connectionTestStatus: some View {
+        if let result = connectionTestResult {
+            switch result {
+            case .success:
+                SettingsStatusMessage(
+                    text: L10n.connectionSuccess,
+                    systemImage: "checkmark.circle.fill",
+                    tint: .green
+                )
+            case let .failure(message):
+                SettingsStatusMessage(
+                    text: message,
+                    systemImage: "xmark.circle.fill",
+                    tint: .red
+                )
+            }
+        } else if !isLLMConfigComplete {
+            Text(L10n.llmConfigIncomplete)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
     private var providerConfigurationRows: some View {
         switch settings.llmProvider {
         case .openAI:
-            SettingsControlRow(
-                title: L10n.endpointURL,
-                description: L10n.openAIEndpointDescription
-            ) {
+            LabeledContent {
                 endpointPreview(settings.resolvedLLMEndpointURL)
+            } label: {
+                Text(L10n.endpointURL)
+                Text(L10n.openAIEndpointDescription)
             }
         case .databricks:
-            SettingsControlRow(
-                title: L10n.databricksWorkspaceID,
-                description: L10n.databricksWorkspaceIDDescription
-            ) {
+            LabeledContent {
                 TextField(
                     "",
                     text: $settings.llmDatabricksWorkspaceID,
                     prompt: Text("1234567890123456")
                 )
                 .textFieldStyle(.roundedBorder)
+            } label: {
+                Text(L10n.databricksWorkspaceID)
+                Text(L10n.databricksWorkspaceIDDescription)
             }
 
-            Divider()
-
-            SettingsControlRow(title: L10n.endpointURL) {
+            LabeledContent(L10n.endpointURL) {
                 endpointPreview(settings.resolvedLLMEndpointURL)
             }
         case .customEndpoint:
-            SettingsControlRow(
-                title: L10n.endpointURL,
-                description: L10n.customEndpointDescription
-            ) {
+            LabeledContent {
                 TextField(
                     "",
                     text: $settings.llmEndpointURL,
                     prompt: Text("https://api.example.com/v1/chat/completions")
                 )
                 .textFieldStyle(.roundedBorder)
+            } label: {
+                Text(L10n.endpointURL)
+                Text(L10n.customEndpointDescription)
             }
         }
     }

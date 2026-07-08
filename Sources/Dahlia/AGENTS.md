@@ -39,4 +39,4 @@ MeetingPersistenceService → GRDB/SQLite (確定済みセグメントを差分 
 ## UI 規約
 
 - UI 文字列は `Utilities/L10n.swift` に computed property を追加し、`Resources/ja.lproj` と `Resources/en.lproj` 両方の `Localizable.strings` にキーを追加する。
-- 設定タブ（`Views/Settings/`）にはセクションヘッダーを付けない（他タブとの一貫性のため）。
+- 設定タブ（`Views/Settings/`）は `Form` + `.formStyle(.grouped)` を使い、見出しは `Section` のヘッダー、説明文は `Section` のフッターまたはラベルの 2 つ目の `Text`（subtitle）で表現する。`LabeledContent` と標準コントロールを使い、カスタムのカード・行コンポーネントやコントロールへの固定幅 `frame` を追加しない。トグルは `.toggleStyle(.switch)`、複数選択リストは `.checkbox` を使う。

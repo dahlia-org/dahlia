@@ -6,61 +6,52 @@ struct DeveloperSettingsView: View {
     @State private var clientSecretOverride = ""
 
     var body: some View {
-        SettingsPage {
-            SettingsSection(
-                title: L10n.developerSettings,
-                description: L10n.developerSettingsDescription
-            ) {
-                SettingsCard {
-                    SettingsControlRow(
-                        title: L10n.googleOAuthClientIDOverride,
-                        description: L10n.googleOAuthClientIDOverrideDescription
-                    ) {
-                        TextField(
-                            "",
-                            text: $settings.googleOAuthClientIDOverride,
-                            prompt: Text("1234567890-abcdef.apps.googleusercontent.com")
-                        )
-                        .font(.callout.monospaced())
+        Form {
+            Section {
+                LabeledContent {
+                    TextField(
+                        "",
+                        text: $settings.googleOAuthClientIDOverride,
+                        prompt: Text("1234567890-abcdef.apps.googleusercontent.com")
+                    )
+                    .font(.callout.monospaced())
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        saveClientIDOverride()
+                    }
+                } label: {
+                    Text(L10n.googleOAuthClientIDOverride)
+                    Text(L10n.googleOAuthClientIDOverrideDescription)
+                }
+
+                LabeledContent {
+                    SecureField("", text: $clientSecretOverride)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit {
-                            saveClientIDOverride()
+                            saveClientSecretOverride()
                         }
-                    }
-
-                    Divider()
-
-                    SettingsControlRow(
-                        title: L10n.googleOAuthClientSecretOverride,
-                        description: L10n.googleOAuthClientSecretOverrideDescription
-                    ) {
-                        SecureField("", text: $clientSecretOverride)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                saveClientSecretOverride()
-                            }
-                    }
-
-                    Divider()
-
-                    VStack(alignment: .leading, spacing: 14) {
-                        SettingsStatusMessage(
-                            text: L10n.googleOAuthOverrideReconnectNotice,
-                            systemImage: "info.circle",
-                            tint: .blue
-                        )
-
-                        Button(L10n.resetToDefault) {
-                            settings.googleOAuthClientIDOverride = ""
-                            clientSecretOverride = ""
-                            settings.googleOAuthClientSecretOverride = ""
-                        }
-                        .disabled(!hasOverrides)
-                    }
-                    .padding(20)
+                } label: {
+                    Text(L10n.googleOAuthClientSecretOverride)
+                    Text(L10n.googleOAuthClientSecretOverrideDescription)
                 }
+
+                SettingsStatusMessage(
+                    text: L10n.googleOAuthOverrideReconnectNotice,
+                    systemImage: "info.circle",
+                    tint: .blue
+                )
+
+                Button(L10n.resetToDefault) {
+                    resetOverrides()
+                }
+                .disabled(!hasOverrides)
+            } header: {
+                Text(L10n.developerSettings)
+            } footer: {
+                Text(L10n.developerSettingsDescription)
             }
         }
+        .formStyle(.grouped)
         .task {
             clientSecretOverride = settings.googleOAuthClientSecretOverride
         }
@@ -85,5 +76,11 @@ struct DeveloperSettingsView: View {
     private func saveClientSecretOverride() {
         settings.googleOAuthClientSecretOverride = clientSecretOverride
         clientSecretOverride = settings.googleOAuthClientSecretOverride
+    }
+
+    private func resetOverrides() {
+        settings.googleOAuthClientIDOverride = ""
+        clientSecretOverride = ""
+        settings.googleOAuthClientSecretOverride = ""
     }
 }

@@ -9,105 +9,72 @@ struct TranscriptionSettingsView: View {
     @State private var localeSearchText = ""
 
     var body: some View {
-        SettingsPage {
-            SettingsSection(title: L10n.transcriptTranslation) {
-                SettingsCard {
-                    VStack(spacing: 0) {
-                        SettingsToggleRow(
-                            title: L10n.transcriptTranslation,
-                            description: L10n.transcriptTranslationDescription,
-                            isOn: $settings.transcriptTranslationEnabled
-                        )
+        Form {
+            Section {
+                Toggle(isOn: $settings.transcriptTranslationEnabled) {
+                    Text(L10n.transcriptTranslation)
+                    Text(L10n.transcriptTranslationDescription)
+                }
+                .toggleStyle(.switch)
 
-                        Divider()
-
-                        SettingsControlRow(
-                            title: L10n.translationTargetLanguage,
-                            description: L10n.translationTargetLanguageDescription
-                        ) {
-                            Picker(L10n.translationTargetLanguage, selection: $settings.transcriptTranslationTargetLanguage) {
-                                ForEach(targetLanguageOptions) { option in
-                                    Text(option.displayName).tag(option.identifier)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 220, alignment: .trailing)
-                        }
-
-                        if !settings.isTranscriptTranslationEffectivelyEnabled, settings.transcriptTranslationEnabled {
-                            Divider()
-
-                            SettingsStatusMessage(
-                                text: L10n.translationDisabledForMatchingLanguage,
-                                systemImage: "info.circle",
-                                tint: .secondary
-                            )
-                            .padding(20)
-                        }
+                Picker(selection: $settings.transcriptTranslationTargetLanguage) {
+                    ForEach(targetLanguageOptions) { option in
+                        Text(option.displayName).tag(option.identifier)
                     }
+                } label: {
+                    Text(L10n.translationTargetLanguage)
+                    Text(L10n.translationTargetLanguageDescription)
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text(L10n.transcriptTranslation)
+            } footer: {
+                if !settings.isTranscriptTranslationEffectivelyEnabled, settings.transcriptTranslationEnabled {
+                    Text(L10n.translationDisabledForMatchingLanguage)
                 }
             }
 
-            SettingsSection(
-                title: L10n.liveSubtitleOverlay,
-                description: L10n.liveSubtitleOverlayDescription
-            ) {
-                SettingsCard {
-                    VStack(spacing: 0) {
-                        SettingsControlRow(
-                            title: L10n.source,
-                            description: L10n.liveSubtitleSourceDescription
-                        ) {
-                            Picker(L10n.source, selection: $settings.liveSubtitleSourceModeRawValue) {
-                                ForEach(LiveSubtitleSourceMode.allCases) { mode in
-                                    Text(mode.displayName).tag(mode.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 220, alignment: .trailing)
-                        }
-
-                        Divider()
-
-                        SettingsControlRow(
-                            title: L10n.liveSubtitleOverlaySegmentCount,
-                            description: L10n.liveSubtitleOverlaySegmentCountDescription
-                        ) {
-                            Picker(L10n.liveSubtitleOverlaySegmentCount, selection: $settings.liveSubtitleOverlaySegmentCount) {
-                                ForEach(1 ..< 6, id: \.self) { count in
-                                    Text("\(count)").tag(count)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 120, alignment: .trailing)
-                        }
+            Section {
+                Picker(selection: $settings.liveSubtitleSourceModeRawValue) {
+                    ForEach(LiveSubtitleSourceMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode.rawValue)
                     }
+                } label: {
+                    Text(L10n.source)
+                    Text(L10n.liveSubtitleSourceDescription)
                 }
+
+                Picker(selection: $settings.liveSubtitleOverlaySegmentCount) {
+                    ForEach(1 ..< 6, id: \.self) { count in
+                        Text("\(count)").tag(count)
+                    }
+                } label: {
+                    Text(L10n.liveSubtitleOverlaySegmentCount)
+                    Text(L10n.liveSubtitleOverlaySegmentCountDescription)
+                }
+            } header: {
+                Text(L10n.liveSubtitleOverlay)
+            } footer: {
+                Text(L10n.liveSubtitleOverlayDescription)
             }
 
-            SettingsSection(
-                title: L10n.displayLanguages,
-                description: L10n.displayLanguagesDescription
-            ) {
-                SettingsCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        TextField(L10n.searchLanguages, text: $localeSearchText)
-                            .textFieldStyle(.roundedBorder)
+            Section {
+                TextField(L10n.searchLanguages, text: $localeSearchText)
+                    .textFieldStyle(.roundedBorder)
 
-                        if isLoadingLocales {
-                            ProgressView(L10n.loadingLanguages)
-                        } else {
-                            localeSelectionList
-                            localeSelectionFooter
-                        }
-                    }
-                    .padding(20)
+                if isLoadingLocales {
+                    ProgressView(L10n.loadingLanguages)
+                } else {
+                    localeSelectionList
+                    localeSelectionFooter
                 }
+            } header: {
+                Text(L10n.displayLanguages)
+            } footer: {
+                Text(L10n.displayLanguagesDescription)
             }
         }
+        .formStyle(.grouped)
         .task {
             await loadSupportedLocales()
         }
@@ -120,33 +87,20 @@ struct TranscriptionSettingsView: View {
         let searchedLocales = searchFilteredLocales
         if searchedLocales.isEmpty {
             Text(L10n.noMatchingLanguages)
-                .font(.callout)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(searchedLocales, id: \.identifier) { locale in
-                        localeRow(for: locale)
-                    }
-                }
-                .padding(.vertical, 2)
+            ForEach(searchedLocales, id: \.identifier) { locale in
+                localeRow(for: locale)
             }
-            .frame(minHeight: 220, maxHeight: 280)
         }
     }
 
     private var localeSelectionFooter: some View {
         HStack(alignment: .center, spacing: 12) {
             let enabled = settings.enabledLocaleIdentifiers
-            Text(
-                enabled.isEmpty
-                    ? L10n.allLanguagesShown
-                    : L10n.languagesSelected(enabled.count)
-            )
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            Text(localeSelectionSummary(for: enabled))
+                .font(.callout)
+                .foregroundStyle(.secondary)
 
             Spacer()
 
@@ -162,6 +116,13 @@ struct TranscriptionSettingsView: View {
                 }
             }
         }
+    }
+
+    private func localeSelectionSummary(for enabled: Set<String>) -> String {
+        if enabled.isEmpty {
+            return L10n.allLanguagesShown
+        }
+        return L10n.languagesSelected(enabled.count)
     }
 
     private var targetLanguageOptions: [TranscriptTranslationLanguageOption] {
@@ -202,41 +163,30 @@ struct TranscriptionSettingsView: View {
             enabled.remove(identifier)
         } else if enabled.contains(identifier) {
             enabled.remove(identifier)
-            if enabled.isEmpty { /* そのまま空セットでOK */ }
         } else {
             enabled.insert(identifier)
         }
         settings.enabledLocaleIdentifiers = enabled
     }
 
+    private func localeSelectionBinding(for identifier: String) -> Binding<Bool> {
+        Binding {
+            settings.isLocaleEnabled(identifier)
+        } set: { _ in
+            toggleLocale(identifier)
+        }
+    }
+
     private func localeRow(for locale: Locale) -> some View {
         let identifier = locale.identifier
-        let isEnabled = settings.isLocaleEnabled(identifier)
-        return Button {
-            toggleLocale(identifier)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: isEnabled ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary)
-
+        return Toggle(isOn: localeSelectionBinding(for: identifier)) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(locale.localizedString(forIdentifier: identifier) ?? identifier)
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 12)
 
                 Text(identifier)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isEnabled ? Color.accentColor.opacity(0.08) : Color.clear)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .toggleStyle(.checkbox)
     }
 
     private func loadSupportedLocales() async {

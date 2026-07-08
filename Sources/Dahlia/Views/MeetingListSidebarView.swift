@@ -8,14 +8,18 @@ struct MeetingListSidebarView: View {
     let recordingCoordinator: RecordingCoordinator
 
     @State private var searchText = ""
+    @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
     @FocusState private var isRenameFieldFocused: Bool
 
     private var meetingSelection: Binding<Set<UUID>> {
         Binding(
-            get: { sidebarViewModel.selectedMeetingIds },
-            set: { sidebarViewModel.selectedMeetingIds = $0 }
+            get: { renderedMeetingSelection },
+            set: { selection in
+                renderedMeetingSelection = selection
+                sidebarViewModel.selectedMeetingIds = selection
+            }
         )
     }
 
@@ -42,6 +46,7 @@ struct MeetingListSidebarView: View {
                     ForEach(group.meetings) { item in
                         MeetingSidebarRow(
                             item: item,
+                            isSelected: renderedMeetingSelection.contains(item.meetingId),
                             isActiveRecording: item.meetingId == viewModel.recordingMeetingId,
                             isEditing: editingMeetingId == item.meetingId,
                             editingName: $editingMeetingName,
@@ -83,6 +88,12 @@ struct MeetingListSidebarView: View {
         }
         .onDeleteCommand {
             sidebarViewModel.deleteMeetings(ids: sidebarViewModel.selectedMeetingIds)
+        }
+        .onAppear {
+            renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
+        }
+        .onChange(of: sidebarViewModel.selectedMeetingIds) { _, selection in
+            renderedMeetingSelection = selection
         }
     }
 
@@ -559,6 +570,7 @@ private struct RecordingSourceControlLabel: View {
 
 private struct MeetingSidebarRow: View {
     let item: MeetingOverviewItem
+    let isSelected: Bool
     let isActiveRecording: Bool
     let isEditing: Bool
     @Binding var editingName: String
@@ -590,12 +602,17 @@ private struct MeetingSidebarRow: View {
                 }
 
                 HStack(spacing: 6) {
-                    Text(durationText)
-                    Text(Self.timeFormatter.string(from: item.createdAt))
+                    Text(startTimeText)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
 
-                    if let projectName = item.projectName {
-                        Text(projectName)
-                            .lineLimit(1)
+                    Text(durationText)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    if let projectName {
+                        ProjectPill(name: projectName, isSelected: isSelected)
+                            .layoutPriority(-1)
                     }
                 }
                 .font(.caption)
@@ -628,6 +645,16 @@ private struct MeetingSidebarRow: View {
         return trimmed.isEmpty ? L10n.newMeeting : trimmed
     }
 
+    private var projectName: String? {
+        guard let projectName = item.projectName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !projectName.isEmpty else { return nil }
+        return projectName
+    }
+
+    private var startTimeText: String {
+        Self.timeFormatter.string(from: item.createdAt)
+    }
+
     private var durationText: String {
         guard let duration = item.duration else { return "00:00" }
         let totalSeconds = max(0, Int(duration.rounded()))
@@ -641,5 +668,38 @@ private struct MeetingSidebarRow: View {
             return "\(displayTitle), \(L10n.recordingNow)"
         }
         return displayTitle
+    }
+}
+
+private struct ProjectPill: View {
+    let name: String
+    let isSelected: Bool
+
+    var body: some View {
+        Text(name)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(foregroundColor)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(backgroundColor, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(borderColor, lineWidth: 0.5)
+            }
+            .accessibilityLabel(name)
+    }
+
+    private var foregroundColor: Color {
+        isSelected ? Color(nsColor: .controlAccentColor) : Color(nsColor: .secondaryLabelColor)
+    }
+
+    private var backgroundColor: Color {
+        isSelected ? Color(nsColor: .controlBackgroundColor).opacity(0.95) : Color(nsColor: .secondaryLabelColor).opacity(0.10)
+    }
+
+    private var borderColor: Color {
+        isSelected ? Color(nsColor: .controlAccentColor).opacity(0.24) : Color(nsColor: .secondaryLabelColor).opacity(0.16)
     }
 }

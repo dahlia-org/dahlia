@@ -100,18 +100,8 @@ struct ProjectManagementView: View {
                 Text(L10n.projectManagementNoVaultDescription)
             }
         } else if let selectedProject {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    projectHeader(selectedProject)
-                    contextSection(for: selectedProject)
-                    destinationSection(for: selectedProject)
-                }
-                .padding(.horizontal, 32)
-                .padding(.vertical, 28)
-                .frame(maxWidth: 780, alignment: .leading)
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
-            .navigationTitle(selectedProject.projectName)
+            projectDetailForm(for: selectedProject)
+                .navigationTitle(selectedProject.projectName)
         } else {
             ContentUnavailableView {
                 Label(L10n.projects, systemImage: "folder")
@@ -121,13 +111,9 @@ struct ProjectManagementView: View {
         }
     }
 
-    private func projectHeader(_ project: ProjectOverviewItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(project.projectName)
-                .font(.largeTitle.weight(.semibold))
-                .lineLimit(2)
-
-            HStack(spacing: 10) {
+    private func projectDetailForm(for project: ProjectOverviewItem) -> some View {
+        Form {
+            Section {
                 Label(L10n.meetingCount(project.meetingCount), systemImage: "text.bubble")
                     .foregroundStyle(.secondary)
 
@@ -136,41 +122,19 @@ struct ProjectManagementView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .font(.callout)
-        }
-    }
 
-    private func destinationSection(for project: ProjectOverviewItem) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: L10n.summaryDestinations, description: L10n.summaryDestinationsDescription)
-
-            VStack(spacing: 0) {
-                projectFolderRow(for: project)
-                Divider()
-                googleDriveRow(for: project)
-            }
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
-            }
+            contextSection(for: project)
+            destinationSection(for: project)
         }
+        .formStyle(.grouped)
     }
 
     private func contextSection(for project: ProjectOverviewItem) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: L10n.projectContext, description: L10n.projectContextDescription)
-
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Label(L10n.contextFile, systemImage: "doc.text")
-                        .font(.headline)
-
-                    Spacer(minLength: 0)
-
+        Section {
+            LabeledContent {
+                HStack(spacing: 8) {
                     if let contextStatusMessage {
                         Label(contextStatusMessage, systemImage: contextStatusSystemImage)
-                            .font(.callout)
                             .foregroundStyle(contextStatusTint)
                     }
 
@@ -188,58 +152,49 @@ struct ProjectManagementView: View {
                     }
                     .disabled(contextFileURL == nil)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
-
-                Divider()
-
-                TextEditor(text: $contextText)
-                    .font(.body.monospaced())
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 260)
-                    .padding(12)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .disabled(contextFileURL == nil)
+            } label: {
+                Text(L10n.contextFile)
             }
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
-            }
+
+            TextEditor(text: $contextText)
+                .font(.body.monospaced())
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 220)
+                .disabled(contextFileURL == nil)
+        } header: {
+            Text(L10n.projectContext)
+        } footer: {
+            Text(L10n.projectContextDescription)
         }
     }
 
-    private func sectionHeader(title: String, description: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.title3.weight(.semibold))
-
-            Text(description)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private func destinationSection(for project: ProjectOverviewItem) -> some View {
+        Section {
+            projectFolderRow(for: project)
+            googleDriveRow(for: project)
+        } header: {
+            Text(L10n.summaryDestinations)
+        } footer: {
+            Text(L10n.summaryDestinationsDescription)
         }
     }
 
     private func projectFolderRow(for project: ProjectOverviewItem) -> some View {
-        SettingsControlRow(
-            title: L10n.localSummaryFolder,
-            description: projectFolderPath(for: project) ?? L10n.noVaultSelected
-        ) {
+        LabeledContent {
             Button {
                 openProjectFolder(for: project)
             } label: {
                 Label(L10n.openInFinder, systemImage: "folder")
             }
             .disabled(projectFolderURL(for: project) == nil)
+        } label: {
+            Text(L10n.localSummaryFolder)
+            Text(projectFolderPath(for: project) ?? L10n.noVaultSelected)
         }
     }
 
     private func googleDriveRow(for project: ProjectOverviewItem) -> some View {
-        SettingsControlRow(
-            title: L10n.googleDrive,
-            description: googleDriveDescription(for: project)
-        ) {
+        LabeledContent {
             HStack(spacing: 8) {
                 if let folderURL = googleDriveFolderURL(for: project) {
                     Button {
@@ -251,17 +206,20 @@ struct ProjectManagementView: View {
                     .help(L10n.openInBrowser)
                 }
 
-                Button(project.googleDriveFolderId?.isEmpty == false ? L10n.changeFolder : L10n.chooseFolder) {
+                Button(hasGoogleDriveFolder(for: project) ? L10n.changeFolder : L10n.chooseFolder) {
                     pickingProjectId = project.projectId
                 }
                 .disabled(!driveStore.isAuthorized)
 
-                if project.googleDriveFolderId?.isEmpty == false {
+                if hasGoogleDriveFolder(for: project) {
                     Button(L10n.clear) {
                         sidebarViewModel.updateProjectGoogleDriveFolder(id: project.projectId, folderId: nil)
                     }
                 }
             }
+        } label: {
+            Text(L10n.googleDrive)
+            Text(googleDriveDescription(for: project))
         }
     }
 
@@ -272,7 +230,7 @@ struct ProjectManagementView: View {
         if !driveStore.isAuthorized {
             return L10n.googleDriveConnectDescription
         }
-        if project.googleDriveFolderId?.isEmpty == false {
+        if hasGoogleDriveFolder(for: project) {
             return L10n.googleDriveFolderConfigured
         }
         return L10n.googleDriveNoFolderSelected
@@ -320,6 +278,10 @@ struct ProjectManagementView: View {
         guard let folderId = project.googleDriveFolderId?.trimmingCharacters(in: .whitespacesAndNewlines),
               !folderId.isEmpty else { return nil }
         return URL(string: "https://drive.google.com/drive/folders/\(folderId)")
+    }
+
+    private func hasGoogleDriveFolder(for project: ProjectOverviewItem) -> Bool {
+        project.googleDriveFolderId?.isEmpty == false
     }
 
     private func loadContextForSelectedProject() {

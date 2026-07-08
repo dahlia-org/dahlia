@@ -22,68 +22,6 @@ struct GoogleDriveFolderPickerView: View {
         let name: String
     }
 
-    private struct PickerTabBar: View {
-        @Binding var selection: PickerTab
-        @Namespace private var tabNamespace
-
-        var body: some View {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    ForEach(PickerTab.allCases) { tab in
-                        PickerTabButton(
-                            tab: tab,
-                            isSelected: selection == tab,
-                            namespace: tabNamespace
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                selection = tab
-                            }
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Divider()
-            }
-        }
-    }
-
-    private struct PickerTabButton: View {
-        let tab: PickerTab
-        let isSelected: Bool
-        var namespace: Namespace.ID
-        let action: () -> Void
-
-        var body: some View {
-            Button(action: action) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(tab.title)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .foregroundStyle(isSelected ? .primary : .tertiary)
-
-                    Spacer()
-                        .frame(height: 3)
-                }
-                .overlay(alignment: .bottom) {
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color.accentColor)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 3)
-                            .padding(.horizontal, 6)
-                            .matchedGeometryEffect(id: "googleDrivePickerActiveTab", in: namespace)
-                    }
-                }
-                .fixedSize(horizontal: true, vertical: false)
-            }
-            .buttonStyle(.plain)
-            .pointerStyle(.link)
-        }
-    }
-
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var driveStore = GoogleDriveStore.shared
 
@@ -109,7 +47,7 @@ struct GoogleDriveFolderPickerView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 if !isSearching {
-                    PickerTabBar(selection: $selectedTab)
+                    tabPicker
                 }
 
                 if !isSearching, shouldShowBreadcrumbs {
@@ -127,19 +65,18 @@ struct GoogleDriveFolderPickerView: View {
                 }
 
                 HStack {
+                    Spacer()
+
                     Button(L10n.close) {
                         dismiss()
                     }
-                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
 
-                    Spacer()
                     if !isSearching {
-                        Button {
+                        Button(L10n.selectFolder) {
                             selectCurrentFolder()
-                        } label: {
-                            Label(L10n.selectFolder, systemImage: "checkmark.circle.fill")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
                         .disabled(currentSelectionFolder == nil)
                     }
                 }
@@ -171,6 +108,16 @@ struct GoogleDriveFolderPickerView: View {
                 }
             }
         }
+    }
+
+    private var tabPicker: some View {
+        Picker("", selection: $selectedTab) {
+            ForEach(PickerTab.allCases) { tab in
+                Text(tab.title).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
     }
 
     @ViewBuilder
@@ -348,21 +295,20 @@ struct GoogleDriveFolderPickerView: View {
     }
 
     private var currentSelectionFolder: GoogleDriveFolderItem? {
+        guard let currentNode = currentSelectionNode else { return nil }
+        return GoogleDriveFolderItem(
+            id: currentNode.id,
+            name: currentNode.name,
+            detail: currentNode.name
+        )
+    }
+
+    private var currentSelectionNode: BrowserNode? {
         switch selectedTab {
         case .myDrive:
-            guard let currentNode = myDrivePath.last else { return nil }
-            return GoogleDriveFolderItem(
-                id: currentNode.id,
-                name: currentNode.name,
-                detail: currentNode.name
-            )
+            myDrivePath.last
         case .sharedDrives:
-            guard let currentNode = sharedDrivePath.last else { return nil }
-            return GoogleDriveFolderItem(
-                id: currentNode.id,
-                name: currentNode.name,
-                detail: currentNode.name
-            )
+            sharedDrivePath.last
         }
     }
 

@@ -6,24 +6,19 @@ struct CalendarSettingsView: View {
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
 
     var body: some View {
-        SettingsPage {
-            SettingsSection(
-                title: L10n.calendarSources,
-                description: L10n.calendarSourcesDescription
-            ) {
-                SettingsCard {
-                    ForEach(Array(CalendarSource.allCases.enumerated()), id: \.element.id) { index, source in
-                        SettingsToggleRow(
-                            title: source.displayName,
-                            description: calendarSourceDescription(for: source),
-                            isOn: calendarSourceBinding(for: source)
-                        )
-
-                        if index < CalendarSource.allCases.count - 1 {
-                            Divider()
-                        }
+        Form {
+            Section {
+                ForEach(CalendarSource.allCases) { source in
+                    Toggle(isOn: calendarSourceBinding(for: source)) {
+                        Text(source.displayName)
+                        Text(calendarSourceDescription(for: source))
                     }
+                    .toggleStyle(.switch)
                 }
+            } header: {
+                Text(L10n.calendarSources)
+            } footer: {
+                Text(L10n.calendarSourcesDescription)
             }
 
             if settings.isCalendarSourceEnabled(.google) {
@@ -42,137 +37,98 @@ struct CalendarSettingsView: View {
                 await refreshEnabledSources(force: true)
             }
         }
+        .formStyle(.grouped)
     }
 
     @ViewBuilder
     private var googleCalendarSettings: some View {
-        SettingsSection(
-            title: L10n.googleCalendar,
-            description: L10n.googleCalendarSettingsDescription
-        ) {
-            SettingsCard {
-                googleConnectionRow
+        Section {
+            googleConnectionRow
 
-                if let message = googleCalendarStore.lastErrorMessage {
-                    Divider()
-
-                    SettingsStatusMessage(
-                        text: message,
-                        systemImage: "exclamationmark.triangle",
-                        tint: .orange
-                    )
-                    .padding(20)
-                }
+            if let message = googleCalendarStore.lastErrorMessage {
+                calendarErrorMessage(message)
             }
+        } header: {
+            Text(L10n.googleCalendar)
+        } footer: {
+            Text(L10n.googleCalendarSettingsDescription)
         }
 
         if googleCalendarStore.isAuthorized {
-            SettingsSection(
-                title: L10n.googleCalendarDisplayCalendars,
-                description: L10n.googleCalendarDisplayCalendarsDescription
-            ) {
-                SettingsCard {
-                    if googleCalendarStore.isBusy, googleCalendarStore.availableCalendars.isEmpty {
-                        ProgressView(L10n.googleCalendarLoading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    } else if googleCalendarStore.availableCalendars.isEmpty {
-                        Text(L10n.googleCalendarNoCalendars)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    } else {
-                        ForEach(Array(googleCalendarStore.availableCalendars.enumerated()), id: \.element.id) { index, calendar in
-                            CalendarSelectionRow(
-                                calendar: calendar,
-                                isSelected: googleCalendarStore.selectedCalendarIDs.contains(calendar.id)
-                            ) {
-                                googleCalendarStore.toggleCalendarSelection(id: calendar.id)
-                            }
-
-                            if index < googleCalendarStore.availableCalendars.count - 1 {
-                                Divider()
-                            }
-                        }
+            Section {
+                if googleCalendarStore.isBusy, googleCalendarStore.availableCalendars.isEmpty {
+                    ProgressView(L10n.googleCalendarLoading)
+                } else if googleCalendarStore.availableCalendars.isEmpty {
+                    Text(L10n.googleCalendarNoCalendars)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(googleCalendarStore.availableCalendars) { calendar in
+                        CalendarSelectionToggle(
+                            calendar: calendar,
+                            isSelected: googleCalendarSelectionBinding(for: calendar.id)
+                        )
                     }
                 }
+            } header: {
+                Text(L10n.googleCalendarDisplayCalendars)
+            } footer: {
+                Text(L10n.googleCalendarDisplayCalendarsDescription)
             }
         }
     }
 
     @ViewBuilder
     private var macCalendarSettings: some View {
-        SettingsSection(
-            title: L10n.macOSCalendar,
-            description: L10n.macOSCalendarSettingsDescription
-        ) {
-            SettingsCard {
-                macCalendarAccessRow
+        Section {
+            macCalendarAccessRow
 
-                if let message = macCalendarStore.lastErrorMessage {
-                    Divider()
-
-                    SettingsStatusMessage(
-                        text: message,
-                        systemImage: "exclamationmark.triangle",
-                        tint: .orange
-                    )
-                    .padding(20)
-                }
+            if let message = macCalendarStore.lastErrorMessage {
+                calendarErrorMessage(message)
             }
+        } header: {
+            Text(L10n.macOSCalendar)
+        } footer: {
+            Text(L10n.macOSCalendarSettingsDescription)
         }
 
         if macCalendarStore.isAuthorized {
-            SettingsSection(
-                title: L10n.googleCalendarDisplayCalendars,
-                description: L10n.macOSCalendarDisplayCalendarsDescription
-            ) {
-                SettingsCard {
-                    if macCalendarStore.isBusy, macCalendarStore.availableCalendars.isEmpty {
-                        ProgressView(L10n.macOSCalendarLoading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    } else if macCalendarStore.availableCalendars.isEmpty {
-                        Text(L10n.macOSCalendarNoCalendars)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    } else {
-                        ForEach(Array(macCalendarStore.availableCalendars.enumerated()), id: \.element.id) { index, calendar in
-                            CalendarSelectionRow(
-                                calendar: calendar,
-                                isSelected: macCalendarStore.selectedCalendarIDs.contains(calendar.id)
-                            ) {
-                                macCalendarStore.toggleCalendarSelection(id: calendar.id)
-                            }
-
-                            if index < macCalendarStore.availableCalendars.count - 1 {
-                                Divider()
-                            }
-                        }
+            Section {
+                if macCalendarStore.isBusy, macCalendarStore.availableCalendars.isEmpty {
+                    ProgressView(L10n.macOSCalendarLoading)
+                } else if macCalendarStore.availableCalendars.isEmpty {
+                    Text(L10n.macOSCalendarNoCalendars)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(macCalendarStore.availableCalendars) { calendar in
+                        CalendarSelectionToggle(
+                            calendar: calendar,
+                            isSelected: macCalendarSelectionBinding(for: calendar.id)
+                        )
                     }
                 }
+            } header: {
+                Text(L10n.googleCalendarDisplayCalendars)
+            } footer: {
+                Text(L10n.macOSCalendarDisplayCalendarsDescription)
             }
         }
     }
 
+    private func calendarErrorMessage(_ message: String) -> SettingsStatusMessage {
+        SettingsStatusMessage(
+            text: message,
+            systemImage: "exclamationmark.triangle",
+            tint: .orange
+        )
+    }
+
     private var googleConnectionRow: some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(googleCalendarStore.account?.displayName ?? L10n.googleCalendarNotConnected)
-                    .font(.headline)
-
-                Text(googleAccountSubtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        LabeledContent {
             googleActionButton
+        } label: {
+            Text(googleCalendarStore.account?.displayName ?? L10n.googleCalendarNotConnected)
+            Text(googleAccountSubtitle)
         }
-        .padding(20)
     }
 
     @ViewBuilder
@@ -213,20 +169,12 @@ struct CalendarSettingsView: View {
     }
 
     private var macCalendarAccessRow: some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(macCalendarStore.isAuthorized ? L10n.macOSCalendarAccessGranted : L10n.macOSCalendarAccessNotGranted)
-                    .font(.headline)
-
-                Text(macCalendarSubtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
+        LabeledContent {
             macCalendarActionButton
+        } label: {
+            Text(macCalendarStore.isAuthorized ? L10n.macOSCalendarAccessGranted : L10n.macOSCalendarAccessNotGranted)
+            Text(macCalendarSubtitle)
         }
-        .padding(20)
     }
 
     @ViewBuilder
@@ -284,6 +232,26 @@ struct CalendarSettingsView: View {
         }
     }
 
+    private func googleCalendarSelectionBinding(for id: String) -> Binding<Bool> {
+        Binding {
+            googleCalendarStore.selectedCalendarIDs.contains(id)
+        } set: { isSelected in
+            let wasSelected = googleCalendarStore.selectedCalendarIDs.contains(id)
+            guard isSelected != wasSelected else { return }
+            googleCalendarStore.toggleCalendarSelection(id: id)
+        }
+    }
+
+    private func macCalendarSelectionBinding(for id: String) -> Binding<Bool> {
+        Binding {
+            macCalendarStore.selectedCalendarIDs.contains(id)
+        } set: { isSelected in
+            let wasSelected = macCalendarStore.selectedCalendarIDs.contains(id)
+            guard isSelected != wasSelected else { return }
+            macCalendarStore.toggleCalendarSelection(id: id)
+        }
+    }
+
     private func refreshEnabledSources(force: Bool = false) async {
         if settings.isCalendarSourceEnabled(.google) {
             await googleCalendarStore.refreshIfNeeded(force: force)
@@ -295,38 +263,26 @@ struct CalendarSettingsView: View {
     }
 }
 
-private struct CalendarSelectionRow: View {
+private struct CalendarSelectionToggle: View {
     let calendar: CalendarListItem
-    let isSelected: Bool
-    let toggle: () -> Void
+    @Binding var isSelected: Bool
 
     var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: 16) {
-                Circle()
-                    .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                    .frame(width: 10, height: 10)
+        Toggle(isOn: $isSelected) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
+                        .frame(width: 10, height: 10)
 
-                VStack(alignment: .leading, spacing: 4) {
                     Text(calendar.title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-
-                    if calendar.isPrimary {
-                        Text(L10n.calendarPrimaryCalendar)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
                 }
 
-                Spacer(minLength: 0)
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                if calendar.isPrimary {
+                    Text(L10n.calendarPrimaryCalendar)
+                }
             }
-            .padding(20)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .toggleStyle(.checkbox)
     }
 }
