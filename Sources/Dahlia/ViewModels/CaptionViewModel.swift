@@ -1129,7 +1129,8 @@ final class CaptionViewModel: ObservableObject {
 
     /// 手動で要約を実行できるかどうか。
     var canGenerateSummary: Bool {
-        guard currentMeetingId != nil,
+        guard !isListening,
+              currentMeetingId != nil,
               currentVaultURL != nil else { return false }
         return !store.segments.isEmpty
     }

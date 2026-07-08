@@ -60,17 +60,6 @@ struct MeetingListSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    recordingCoordinator.createEmptyMeeting()
-                } label: {
-                    Label(L10n.newMeeting, systemImage: "square.and.pencil")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.newMeeting)
-            }
-        }
         .overlay(alignment: .bottom) {
             if viewModel.isListening {
                 RecordingStatusBar(
