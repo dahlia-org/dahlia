@@ -8,6 +8,12 @@ struct VaultPickerView: View {
     @State private var vaults: [VaultRecord] = []
     @State private var showFolderPicker = false
 
+    private static var defaultVaultURL: URL {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
+        return documentsURL.appendingPathComponent("Meetings", isDirectory: true)
+    }
+
     private var repository: MeetingRepository? {
         appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
     }
@@ -88,6 +94,7 @@ struct VaultPickerView: View {
                 registerVault(url: url)
             }
         }
+        .fileDialogDefaultDirectory(Self.defaultVaultURL)
     }
 
     private func actionRow(
