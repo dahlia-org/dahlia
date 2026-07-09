@@ -14,50 +14,61 @@ struct SummaryDocumentResponse: Decodable {
     struct BlockDTO: Decodable {
         let type: String
         let level: Int
-        let text: String
+        let content: TextDTO
         let items: [ItemDTO]
-        let transcriptRefs: [TranscriptReferenceDTO]
         let language: String
         let imageId: String
 
         private enum CodingKeys: String, CodingKey {
             case type
             case level
-            case text
+            case content
             case items
-            case transcriptRefs = "transcript_refs"
             case language
             case imageId = "image_id"
         }
     }
 
-    struct ItemDTO: Decodable {
+    struct TextDTO: Decodable {
         let text: String
-        let checked: Bool
+        let transcriptRef: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case transcriptRef = "transcript_ref"
+        }
     }
 
-    struct TranscriptReferenceDTO: Decodable {
-        let time: String
-        let label: String
+    struct ItemDTO: Decodable {
+        let text: String
+        let transcriptRef: String?
+        let checked: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case transcriptRef = "transcript_ref"
+            case checked
+        }
     }
 
     static let responseFormat: LLMService.ResponseFormat = {
-        let checklistItemSchema: [String: Any] = [
+        let summaryTextSchema: [String: Any] = [
             "type": "object",
             "properties": [
                 "text": ["type": "string"],
-                "checked": ["type": "boolean"],
+                "transcript_ref": ["type": ["string", "null"]],
             ],
-            "required": ["text", "checked"],
+            "required": ["text", "transcript_ref"],
             "additionalProperties": false,
         ]
-        let transcriptReferenceSchema: [String: Any] = [
+        let itemSchema: [String: Any] = [
             "type": "object",
             "properties": [
-                "time": ["type": "string"],
-                "label": ["type": "string"],
+                "text": ["type": "string"],
+                "transcript_ref": ["type": ["string", "null"]],
+                "checked": ["type": "boolean"],
             ],
-            "required": ["time", "label"],
+            "required": ["text", "transcript_ref", "checked"],
             "additionalProperties": false,
         ]
         let blockSchema: [String: Any] = [
@@ -77,19 +88,15 @@ struct SummaryDocumentResponse: Decodable {
                     ],
                 ],
                 "level": ["type": "integer"],
-                "text": ["type": "string"],
+                "content": summaryTextSchema,
                 "items": [
                     "type": "array",
-                    "items": checklistItemSchema,
-                ],
-                "transcript_refs": [
-                    "type": "array",
-                    "items": transcriptReferenceSchema,
+                    "items": itemSchema,
                 ],
                 "language": ["type": "string"],
                 "image_id": ["type": "string"],
             ],
-            "required": ["type", "level", "text", "items", "transcript_refs", "language", "image_id"],
+            "required": ["type", "level", "content", "items", "language", "image_id"],
             "additionalProperties": false,
         ]
         let actionItemSchema: [String: Any] = [

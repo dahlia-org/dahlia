@@ -36,7 +36,7 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func summaryDocumentResponseSchemaRequiresFlatBlocksWithoutExtraFields() throws {
+    func summaryDocumentResponseSchemaRequiresTextContainersWithoutExtraFields() throws {
         let schemaData = try #require(SummaryDocumentResponse.responseFormat.json_schema?.schemaData)
         let schemaObject = try JSONSerialization.jsonObject(with: schemaData)
         let schema = try #require(schemaObject as? [String: Any])
@@ -47,14 +47,24 @@ struct SummaryServiceTests {
         let sectionProperties = try #require(sectionItems["properties"] as? [String: Any])
         let blocks = try #require(sectionProperties["blocks"] as? [String: Any])
         let blockItems = try #require(blocks["items"] as? [String: Any])
+        let blockProperties = try #require(blockItems["properties"] as? [String: Any])
         let blockRequired = try #require(blockItems["required"] as? [String])
+        let content = try #require(blockProperties["content"] as? [String: Any])
+        let contentRequired = try #require(content["required"] as? [String])
+        let blockList = try #require(blockProperties["items"] as? [String: Any])
+        let blockListItem = try #require(blockList["items"] as? [String: Any])
+        let blockListItemRequired = try #require(blockListItem["required"] as? [String])
         let actionItems = try #require(properties["action_items"] as? [String: Any])
         let items = try #require(actionItems["items"] as? [String: Any])
 
         #expect(required.contains("sections"))
         #expect(required.contains("action_items"))
-        #expect(blockRequired == ["type", "level", "text", "items", "transcript_refs", "language", "image_id"])
+        #expect(blockRequired == ["type", "level", "content", "items", "language", "image_id"])
+        #expect(contentRequired == ["text", "transcript_ref"])
+        #expect(blockListItemRequired == ["text", "transcript_ref", "checked"])
         #expect((blockItems["additionalProperties"] as? Bool) == false)
+        #expect((content["additionalProperties"] as? Bool) == false)
+        #expect((blockListItem["additionalProperties"] as? Bool) == false)
         #expect((items["additionalProperties"] as? Bool) == false)
     }
 
@@ -83,20 +93,16 @@ struct SummaryServiceTests {
                 {
                   "type": "paragraph",
                   "level": 0,
-                  "text": "Ship it",
+                  "content": {"text": "Ship it", "transcript_ref": "00:10:00"},
                   "items": [],
-                  "transcript_refs": [
-                    {"time": "00:10:00", "label": "Decision"}
-                  ],
                   "language": "",
                   "image_id": ""
                 },
                 {
                   "type": "image",
                   "level": 0,
-                  "text": "Architecture",
+                  "content": {"text": "Architecture", "transcript_ref": "00:11:00"},
                   "items": [],
-                  "transcript_refs": [],
                   "language": "",
                   "image_id": "\(screenshotId.uuidString)"
                 }
@@ -113,8 +119,60 @@ struct SummaryServiceTests {
         #expect(document.title == "Weekly sync")
         #expect(document.sections.first?.heading == "Decisions")
         #expect(document.sections.first?.blocks == [
-            .paragraph("Ship it", transcriptRefs: [TranscriptReference(time: "00:10:00", label: "Decision")]),
-            .image(screenshotId: screenshotId, caption: "Architecture"),
+            .paragraph(SummaryText("Ship it", transcriptRef: TranscriptReference(time: "00:10:00"))),
+            .image(screenshotId: screenshotId, caption: SummaryText("Architecture", transcriptRef: TranscriptReference(time: "00:11:00"))),
+        ])
+    }
+
+    @Test
+    func decodeSummaryDocumentUsesTextLevelRefsForListItems() {
+        let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: Date(timeIntervalSince1970: 0))
+        let json = """
+        {
+          "title": "Lists",
+          "sections": [
+            {
+              "heading": "Actions",
+              "blocks": [
+                {
+                  "type": "bulleted_list",
+                  "level": 0,
+                  "content": {"text": "", "transcript_ref": null},
+                  "items": [
+                    {"text": "Reviewed launch", "transcript_ref": "00:10:00", "checked": false},
+                    {"text": "Skipped invalid timestamp", "transcript_ref": "10:00", "checked": false}
+                  ],
+                  "language": "",
+                  "image_id": ""
+                },
+                {
+                  "type": "checklist",
+                  "level": 0,
+                  "content": {"text": "", "transcript_ref": null},
+                  "items": [
+                    {"text": "Send notes", "transcript_ref": "00:11:00", "checked": false}
+                  ],
+                  "language": "",
+                  "image_id": ""
+                }
+              ]
+            }
+          ],
+          "tags": [],
+          "action_items": []
+        }
+        """
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+
+        #expect(document.sections.first?.blocks == [
+            .bulletedList(items: [
+                SummaryText("Reviewed launch", transcriptRef: TranscriptReference(time: "00:10:00")),
+                SummaryText("Skipped invalid timestamp"),
+            ]),
+            .checklist(items: [
+                .init(text: SummaryText("Send notes", transcriptRef: TranscriptReference(time: "00:11:00")), checked: false),
+            ]),
         ])
     }
 
@@ -131,11 +189,8 @@ struct SummaryServiceTests {
                 {
                   "type": "code",
                   "level": 0,
-                  "text": "func f() {\\n    return foo()\\n}",
+                  "content": {"text": "func f() {\\n    return foo()\\n}", "transcript_ref": "00:10:00"},
                   "items": [],
-                  "transcript_refs": [
-                    {"time": "00:10:00", "label": "Swift example"}
-                  ],
                   "language": "swift",
                   "image_id": ""
                 }
@@ -152,8 +207,7 @@ struct SummaryServiceTests {
         #expect(document.sections.first?.blocks == [
             .code(
                 language: "swift",
-                code: "func f() {\n    return foo()\n}",
-                transcriptRefs: [TranscriptReference(time: "00:10:00", label: "Swift example")]
+                content: SummaryText("func f() {\n    return foo()\n}", transcriptRef: TranscriptReference(time: "00:10:00"))
             ),
         ])
     }
@@ -180,9 +234,8 @@ struct SummaryServiceTests {
                 {
                   "type": "paragraph",
                   "level": 0,
-                  "text": "Review ![[\(screenshotId.uuidString).jpeg|Dashboard]]",
+                  "content": {"text": "Review ![[\(screenshotId.uuidString).jpeg|Dashboard]]", "transcript_ref": null},
                   "items": [],
-                  "transcript_refs": [],
                   "language": "",
                   "image_id": ""
                 }
@@ -223,8 +276,7 @@ struct SummaryServiceTests {
         #expect(document.sections.first?.heading == "Summary")
         #expect(document.sections.first?.blocks == [
             .bulletedList(
-                items: ["Decide"],
-                transcriptRefs: [TranscriptReference(time: "00:10:00", label: "00:10:00")]
+                items: [SummaryText("Decide", transcriptRef: TranscriptReference(time: "00:10:00"))]
             ),
         ])
         #expect(document.actionItems == [SummaryActionItem(title: "Follow up", assignee: "me")])
@@ -240,15 +292,22 @@ struct SummaryServiceTests {
             {
               "heading": "",
               "blocks": [
-                {"type": "bulleted_list", "level": 0, "text": "", "items": [], "transcript_refs": [], "language": "", "image_id": ""},
-                {"type": "checklist", "level": 0, "text": "", "items": [{"text": "", "checked": false}], "transcript_refs": [], "language": "", "image_id": ""},
-                {"type": "paragraph", "level": 0, "text": "", "items": [], "transcript_refs": [], "language": "", "image_id": ""}
+                {"type": "bulleted_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""},
+                {
+                  "type": "checklist",
+                  "level": 0,
+                  "content": {"text": "", "transcript_ref": null},
+                  "items": [{"text": "", "transcript_ref": null, "checked": false}],
+                  "language": "",
+                  "image_id": ""
+                },
+                {"type": "paragraph", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
               ]
             },
             {
               "heading": "Notes",
               "blocks": [
-                {"type": "numbered_list", "level": 0, "text": "", "items": [], "transcript_refs": [], "language": "", "image_id": ""}
+                {"type": "numbered_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
               ]
             }
           ],
@@ -315,7 +374,8 @@ struct SummaryServiceTests {
     @Test
     func defaultSummaryPromptRequiresStructuredImageBlocks() {
         #expect(AppSettings.defaultSummaryPrompt.contains("create an `image` block"))
-        #expect(AppSettings.defaultSummaryPrompt.contains("transcript_refs"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("content.transcript_ref"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("items[].transcript_ref"))
     }
 
     @Test

@@ -46,8 +46,7 @@ import Foundation
             #expect(document.sections[0].heading == "Summary")
             #expect(document.sections[0].blocks == [
                 .paragraph(
-                    "Decide to ship and see",
-                    transcriptRefs: [TranscriptReference(time: "00:10:00", label: "00:10:00")]
+                    SummaryText("Decide to ship and see", transcriptRef: TranscriptReference(time: "00:10:00"))
                 ),
                 .image(screenshotId: screenshotId, caption: "Screen"),
                 .checklist(items: [
@@ -113,6 +112,26 @@ import Foundation
             )
 
             #expect(document.sections.first?.blocks == [.paragraph("See Project Alpha for details")])
+        }
+
+        @Test
+        func keepsTranscriptReferencesOnEachListItem() {
+            let meetingId = UUID.v7()
+            let markdown = """
+            ## Summary
+
+            - Decide [[\(meetingId.uuidString)#00:10:00|00:10:00]]
+            - Follow up [[\(meetingId.uuidString)#00:11:00|00:11:00]]
+            """
+
+            let document = LegacyMarkdownSummaryParser.parse(markdown: markdown, title: "List refs")
+
+            #expect(document.sections.first?.blocks == [
+                .bulletedList(items: [
+                    SummaryText("Decide", transcriptRef: TranscriptReference(time: "00:10:00")),
+                    SummaryText("Follow up", transcriptRef: TranscriptReference(time: "00:11:00")),
+                ]),
+            ])
         }
     }
 #endif

@@ -52,14 +52,16 @@ enum SummaryService {
         Each block MUST be one object with all of these keys:
         - "type": one of "paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading"
         - "level": heading level for "heading"; otherwise 0
-        - "text": paragraph/quote/heading text, code body, or image caption; otherwise empty string
+        - "content": paragraph/quote/heading text, code body, or image caption; otherwise {"text":"","transcript_ref":null}
+          - "content.text": the actual text
+          - "content.transcript_ref": the most relevant HH:MM:SS timestamp for this text, or null
         - "items": list/checklist items; otherwise []
-        - "transcript_refs": transcript references for this block; otherwise []
-          - Each reference has "time" as HH:MM:SS and "label" as a short human-readable label.
+          - Each item has "text", "transcript_ref" as HH:MM:SS or null, and "checked" as true/false.
+          - Use "checked": false for bulleted_list and numbered_list items.
         - "language": code language for "code"; otherwise empty string
         - "image_id": screenshot UUID for "image"; otherwise empty string
 
-        Do not put transcript links inside text fields. Use transcript_refs instead.
+        Do not put transcript links inside text fields. Use content.transcript_ref or item.transcript_ref instead.
         Use inline Markdown only for emphasis and ordinary links inside text fields. Do not output tables; express them as lists.
         """
         let systemPrompt = prompt + "\n\n# Language\nWrite the summary in \(languageName)." + structuredInstruction
@@ -214,89 +216,122 @@ enum SummaryService {
     }
 
     private static func blocks(from dto: SummaryDocumentResponse.BlockDTO, context: SummaryRenderContext) -> [SummaryBlock] {
-        let refs = normalizedTranscriptRefs(dto.transcriptRefs)
+        let content = normalizedText(dto.content)
 
         switch dto.type {
         case "paragraph":
-            return blocksByAttaching(refs, to: LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context))
+            return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
         case "bulleted_list":
-            let normalizedItems = normalizedItemTexts(dto.items)
-            return normalizedItems.texts.isEmpty ? [] : [.bulletedList(items: normalizedItems.texts, transcriptRefs: refs + normalizedItems.refs)]
+            let items = normalizedItemTexts(dto.items)
+            return items.isEmpty ? [] : [.bulletedList(items: items)]
         case "numbered_list":
-            let normalizedItems = normalizedItemTexts(dto.items)
-            return normalizedItems.texts.isEmpty ? [] : [.numberedList(items: normalizedItems.texts, transcriptRefs: refs + normalizedItems.refs)]
+            let items = normalizedItemTexts(dto.items)
+            return items.isEmpty ? [] : [.numberedList(items: items)]
         case "checklist":
-            let normalizedItems = normalizedChecklistItems(dto.items)
-            return normalizedItems.items.isEmpty ? [] : [.checklist(items: normalizedItems.items, transcriptRefs: refs + normalizedItems.refs)]
+            let items = normalizedChecklistItems(dto.items)
+            return items.isEmpty ? [] : [.checklist(items: items)]
         case "quote":
-            let normalizedText = LegacyMarkdownSummaryParser.normalizedTextAndRefs(dto.text)
-            return normalizedText.text.isEmpty ? [] : [.quote(normalizedText.text, transcriptRefs: refs + normalizedText.refs)]
+            return content.text.isEmpty ? [] : [.quote(content)]
         case "code":
-            return dto.text.isEmpty ? [] : [.code(language: dto.language, code: dto.text, transcriptRefs: refs)]
+            let codeContent = SummaryText(
+                dto.content.text,
+                transcriptRef: normalizedTranscriptRef(dto.content.transcriptRef)
+            )
+            return codeContent.text.isEmpty ? [] : [.code(language: dto.language, content: codeContent)]
         case "image":
-            let normalizedText = LegacyMarkdownSummaryParser.normalizedTextAndRefs(dto.text)
             guard let screenshotId = UUID(uuidString: dto.imageId),
                   context.screenshots.contains(where: { $0.id == screenshotId }) else {
-                return blocksByAttaching(refs, to: LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context))
+                return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
             }
             return [
                 .image(
                     screenshotId: screenshotId,
-                    caption: normalizedText.text,
-                    transcriptRefs: refs + normalizedText.refs
+                    caption: content
                 ),
             ]
         case "heading":
-            let normalizedText = LegacyMarkdownSummaryParser.normalizedTextAndRefs(dto.text)
-            return normalizedText.text.isEmpty ? [] : [.heading(
+            return content.text.isEmpty ? [] : [.heading(
                 level: max(3, dto.level),
-                text: normalizedText.text,
-                transcriptRefs: refs + normalizedText.refs
+                content: content
             )]
         default:
-            return blocksByAttaching(refs, to: LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context))
+            return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
         }
     }
 
-    private static func blocksByAttaching(_ refs: [TranscriptReference], to blocks: [SummaryBlock]) -> [SummaryBlock] {
-        blocks.map { block in
-            SummaryBlock(id: block.id, transcriptRefs: refs + block.transcriptRefs, content: block.content)
+    private static func blocksByAttaching(_ ref: TranscriptReference?, to blocks: [SummaryBlock]) -> [SummaryBlock] {
+        guard let ref else { return blocks }
+
+        return blocks.map { block in
+            SummaryBlock(id: block.id, content: contentByAttaching(ref, to: block.content))
         }
     }
 
-    private static func normalizedItemTexts(_ items: [SummaryDocumentResponse.ItemDTO]) -> (texts: [String], refs: [TranscriptReference]) {
-        var refs: [TranscriptReference] = []
-        let texts = items.compactMap { item -> String? in
-            let normalized = LegacyMarkdownSummaryParser.normalizedTextAndRefs(item.text)
-            refs.append(contentsOf: normalized.refs)
-            return normalized.text.nilIfBlank
+    private static func contentByAttaching(_ ref: TranscriptReference, to content: SummaryBlockContent) -> SummaryBlockContent {
+        switch content {
+        case let .paragraph(text):
+            return .paragraph(text.withFallbackTranscriptRef(ref))
+        case let .bulletedList(items):
+            return .bulletedList(items: items.map { $0.withFallbackTranscriptRef(ref) })
+        case let .numberedList(items):
+            return .numberedList(items: items.map { $0.withFallbackTranscriptRef(ref) })
+        case let .checklist(items):
+            return .checklist(items: items.map { item in
+                .init(text: item.text.withFallbackTranscriptRef(ref), checked: item.checked)
+            })
+        case let .quote(text):
+            return .quote(text.withFallbackTranscriptRef(ref))
+        case let .code(language, text):
+            return .code(language: language, content: text.withFallbackTranscriptRef(ref))
+        case let .image(screenshotId, caption):
+            return .image(screenshotId: screenshotId, caption: caption.withFallbackTranscriptRef(ref))
+        case let .heading(level, text):
+            return .heading(level: level, content: text.withFallbackTranscriptRef(ref))
+        case let .table(headers, rows):
+            return .table(
+                headers: headers.map { $0.withFallbackTranscriptRef(ref) },
+                rows: rows.map { $0.map { $0.withFallbackTranscriptRef(ref) } }
+            )
         }
-        return (texts, refs)
     }
 
-    private static func normalizedChecklistItems(
-        _ items: [SummaryDocumentResponse.ItemDTO]
-    ) -> (items: [SummaryBlock.ChecklistItem], refs: [TranscriptReference]) {
-        var refs: [TranscriptReference] = []
-        let checklistItems = items.compactMap { item -> SummaryBlock.ChecklistItem? in
-            let normalized = LegacyMarkdownSummaryParser.normalizedTextAndRefs(item.text)
-            refs.append(contentsOf: normalized.refs)
-            guard let text = normalized.text.nilIfBlank else { return nil }
+    private static func normalizedItemTexts(_ items: [SummaryDocumentResponse.ItemDTO]) -> [SummaryText] {
+        items.compactMap(normalizedItemText)
+    }
+
+    private static func normalizedChecklistItems(_ items: [SummaryDocumentResponse.ItemDTO]) -> [SummaryBlock.ChecklistItem] {
+        items.compactMap { item -> SummaryBlock.ChecklistItem? in
+            guard let text = normalizedItemText(item) else { return nil }
             return SummaryBlock.ChecklistItem(
                 text: text,
                 checked: item.checked
             )
         }
-        return (checklistItems, refs)
     }
 
-    private static func normalizedTranscriptRefs(
-        _ refs: [SummaryDocumentResponse.TranscriptReferenceDTO]
-    ) -> [TranscriptReference] {
-        refs.compactMap { ref in
-            guard ref.time.firstMatch(of: /^\d{2}:\d{2}:\d{2}$/) != nil else { return nil }
-            return TranscriptReference(time: ref.time, label: ref.label.nilIfBlank ?? ref.time)
+    private static func normalizedItemText(_ item: SummaryDocumentResponse.ItemDTO) -> SummaryText? {
+        let text = normalizedText(text: item.text, transcriptRef: item.transcriptRef)
+        return text.text.nilIfBlank.map { SummaryText($0, transcriptRef: text.transcriptRef) }
+    }
+
+    private static func normalizedText(_ dto: SummaryDocumentResponse.TextDTO) -> SummaryText {
+        normalizedText(text: dto.text, transcriptRef: dto.transcriptRef)
+    }
+
+    private static func normalizedText(text: String, transcriptRef: String?) -> SummaryText {
+        let normalized = LegacyMarkdownSummaryParser.normalizedTextAndRefs(text)
+        return SummaryText(
+            normalized.text,
+            transcriptRef: normalizedTranscriptRef(transcriptRef) ?? normalized.refs.first
+        )
+    }
+
+    private static func normalizedTranscriptRef(_ ref: String?) -> TranscriptReference? {
+        guard let time = ref?.nilIfBlank,
+              time.firstMatch(of: /^\d{2}:\d{2}:\d{2}$/) != nil else {
+            return nil
         }
+        return TranscriptReference(time: time)
     }
 
     private static func normalizedActionItems(
@@ -308,9 +343,9 @@ enum SummaryService {
                 .compactMap { block -> String? in
                     switch block.content {
                     case let .paragraph(text):
-                        text
+                        text.text
                     case let .image(_, caption):
-                        caption.nilIfBlank
+                        caption.text.nilIfBlank
                     default:
                         nil
                     }
@@ -419,5 +454,11 @@ enum SummaryService {
         let tag = normalized.trimmingCharacters(in: tagTrimCharacters)
         guard tag.contains(where: { !$0.isNumber }) else { return nil }
         return tag
+    }
+}
+
+private extension SummaryText {
+    func withFallbackTranscriptRef(_ ref: TranscriptReference) -> SummaryText {
+        SummaryText(text, transcriptRef: transcriptRef ?? ref)
     }
 }

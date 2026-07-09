@@ -8,7 +8,7 @@ struct SummaryDocument: Codable, Equatable {
     var actionItems: [SummaryActionItem]
 
     init(
-        schemaVersion: Int = 1,
+        schemaVersion: Int = 2,
         title: String,
         sections: [SummarySection],
         tags: [String] = [],
@@ -36,89 +36,176 @@ struct SummarySection: Codable, Equatable, Identifiable {
 
 struct TranscriptReference: Codable, Equatable {
     var time: String
-    var label: String
+
+    init(time: String) {
+        self.time = time
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        time = try container.decode(String.self)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(time)
+    }
+}
+
+struct SummaryText: Codable, Equatable {
+    var text: String
+    var transcriptRef: TranscriptReference?
+
+    init(_ text: String, transcriptRef: TranscriptReference? = nil) {
+        self.text = text
+        self.transcriptRef = transcriptRef
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case transcriptRef = "transcript_ref"
+    }
 }
 
 struct SummaryBlock: Codable, Equatable, Identifiable {
     var id: UUID
-    var transcriptRefs: [TranscriptReference]
     var content: SummaryBlockContent
 
-    init(id: UUID = .v7(), transcriptRefs: [TranscriptReference] = [], content: SummaryBlockContent) {
+    init(id: UUID = .v7(), content: SummaryBlockContent) {
         self.id = id
-        self.transcriptRefs = transcriptRefs
         self.content = content
     }
 
     typealias ChecklistItem = SummaryBlockContent.ChecklistItem
 
-    static func paragraph(_ text: String, transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .paragraph(text))
+    static func paragraph(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+        SummaryBlock(content: .paragraph(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    static func bulletedList(items: [String], transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .bulletedList(items: items))
+    static func paragraph(_ text: SummaryText) -> SummaryBlock {
+        SummaryBlock(content: .paragraph(text))
     }
 
-    static func numberedList(items: [String], transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .numberedList(items: items))
+    static func bulletedList(items: [String]) -> SummaryBlock {
+        SummaryBlock(content: .bulletedList(items: items.map { SummaryText($0) }))
     }
 
-    static func checklist(items: [ChecklistItem], transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .checklist(items: items))
+    static func bulletedList(items: [SummaryText]) -> SummaryBlock {
+        SummaryBlock(content: .bulletedList(items: items))
     }
 
-    static func quote(_ text: String, transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .quote(text))
+    static func numberedList(items: [String]) -> SummaryBlock {
+        SummaryBlock(content: .numberedList(items: items.map { SummaryText($0) }))
     }
 
-    static func code(language: String, code: String, transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .code(language: language, code: code))
+    static func numberedList(items: [SummaryText]) -> SummaryBlock {
+        SummaryBlock(content: .numberedList(items: items))
     }
 
-    static func image(screenshotId: UUID, caption: String, transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .image(screenshotId: screenshotId, caption: caption))
+    static func checklist(items: [ChecklistItem]) -> SummaryBlock {
+        SummaryBlock(content: .checklist(items: items))
     }
 
-    static func heading(level: Int, text: String, transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .heading(level: level, text: text))
+    static func quote(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+        SummaryBlock(content: .quote(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    static func table(headers: [String], rows: [[String]], transcriptRefs: [TranscriptReference] = []) -> SummaryBlock {
-        SummaryBlock(transcriptRefs: transcriptRefs, content: .table(headers: headers, rows: rows))
+    static func quote(_ text: SummaryText) -> SummaryBlock {
+        SummaryBlock(content: .quote(text))
+    }
+
+    static func code(language: String, code: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+        SummaryBlock(content: .code(language: language, content: SummaryText(code, transcriptRef: transcriptRef)))
+    }
+
+    static func code(language: String, content: SummaryText) -> SummaryBlock {
+        SummaryBlock(content: .code(language: language, content: content))
+    }
+
+    static func image(screenshotId: UUID, caption: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+        SummaryBlock(content: .image(screenshotId: screenshotId, caption: SummaryText(caption, transcriptRef: transcriptRef)))
+    }
+
+    static func image(screenshotId: UUID, caption: SummaryText) -> SummaryBlock {
+        SummaryBlock(content: .image(screenshotId: screenshotId, caption: caption))
+    }
+
+    static func heading(level: Int, text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+        SummaryBlock(content: .heading(level: level, content: SummaryText(text, transcriptRef: transcriptRef)))
+    }
+
+    static func heading(level: Int, content: SummaryText) -> SummaryBlock {
+        SummaryBlock(content: .heading(level: level, content: content))
+    }
+
+    static func table(headers: [String], rows: [[String]]) -> SummaryBlock {
+        SummaryBlock(content: .table(headers: headers.map { SummaryText($0) }, rows: rows.map { $0.map { SummaryText($0) } }))
+    }
+
+    static func table(headers: [SummaryText], rows: [[SummaryText]]) -> SummaryBlock {
+        SummaryBlock(content: .table(headers: headers, rows: rows))
     }
 
     static func == (lhs: SummaryBlock, rhs: SummaryBlock) -> Bool {
-        lhs.transcriptRefs == rhs.transcriptRefs && lhs.content == rhs.content
+        lhs.content == rhs.content
     }
 }
 
 enum SummaryBlockContent: Equatable {
-    case paragraph(String)
-    case bulletedList(items: [String])
-    case numberedList(items: [String])
+    case paragraph(SummaryText)
+    case bulletedList(items: [SummaryText])
+    case numberedList(items: [SummaryText])
     case checklist(items: [ChecklistItem])
-    case quote(String)
-    case code(language: String, code: String)
-    case image(screenshotId: UUID, caption: String)
-    case heading(level: Int, text: String)
-    case table(headers: [String], rows: [[String]])
+    case quote(SummaryText)
+    case code(language: String, content: SummaryText)
+    case image(screenshotId: UUID, caption: SummaryText)
+    case heading(level: Int, content: SummaryText)
+    case table(headers: [SummaryText], rows: [[SummaryText]])
 
     struct ChecklistItem: Codable, Equatable {
-        var text: String
+        var text: SummaryText
         var checked: Bool
+
+        init(text: String, transcriptRef: TranscriptReference? = nil, checked: Bool) {
+            self.text = SummaryText(text, transcriptRef: transcriptRef)
+            self.checked = checked
+        }
+
+        init(text: SummaryText, checked: Bool) {
+            self.text = text
+            self.checked = checked
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case text
+            case transcriptRef = "transcript_ref"
+            case checked
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let value = try container.decode(String.self, forKey: .text)
+            let transcriptRef = try container.decodeIfPresent(TranscriptReference.self, forKey: .transcriptRef)
+            text = SummaryText(value, transcriptRef: transcriptRef)
+            checked = (try? container.decode(Bool.self, forKey: .checked)) ?? false
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(text.text, forKey: .text)
+            try container.encodeIfPresent(text.transcriptRef, forKey: .transcriptRef)
+            try container.encode(checked, forKey: .checked)
+        }
     }
 }
 
 extension SummaryBlockContent: Codable {
     private enum CodingKeys: String, CodingKey {
         case type
-        case text
+        case content
         case items
         case language
-        case code
         case screenshotId = "screenshot_id"
-        case caption
         case level
         case headers
         case rows
@@ -142,41 +229,41 @@ extension SummaryBlockContent: Codable {
 
         switch BlockType(rawValue: type) {
         case .paragraph:
-            self = .paragraph((try? container.decode(String.self, forKey: .text)) ?? "")
+            self = .paragraph((try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText(""))
         case .bulletedList:
-            self = .bulletedList(items: (try? container.decode([String].self, forKey: .items)) ?? [])
+            self = .bulletedList(items: (try? container.decode([SummaryText].self, forKey: .items)) ?? [])
         case .numberedList:
-            self = .numberedList(items: (try? container.decode([String].self, forKey: .items)) ?? [])
+            self = .numberedList(items: (try? container.decode([SummaryText].self, forKey: .items)) ?? [])
         case .checklist:
             self = .checklist(items: (try? container.decode([ChecklistItem].self, forKey: .items)) ?? [])
         case .quote:
-            self = .quote((try? container.decode(String.self, forKey: .text)) ?? "")
+            self = .quote((try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText(""))
         case .code:
             self = .code(
                 language: (try? container.decode(String.self, forKey: .language)) ?? "",
-                code: (try? container.decode(String.self, forKey: .code)) ?? ""
+                content: (try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText("")
             )
         case .image:
             if let screenshotId = try? container.decode(UUID.self, forKey: .screenshotId) {
                 self = .image(
                     screenshotId: screenshotId,
-                    caption: (try? container.decode(String.self, forKey: .caption)) ?? ""
+                    caption: (try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText("")
                 )
             } else {
-                self = .paragraph((try? container.decode(String.self, forKey: .caption)) ?? "")
+                self = .paragraph((try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText(""))
             }
         case .heading:
             self = .heading(
                 level: (try? container.decode(Int.self, forKey: .level)) ?? 3,
-                text: (try? container.decode(String.self, forKey: .text)) ?? ""
+                content: (try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText("")
             )
         case .table:
             self = .table(
-                headers: (try? container.decode([String].self, forKey: .headers)) ?? [],
-                rows: (try? container.decode([[String]].self, forKey: .rows)) ?? []
+                headers: (try? container.decode([SummaryText].self, forKey: .headers)) ?? [],
+                rows: (try? container.decode([[SummaryText]].self, forKey: .rows)) ?? []
             )
         case nil:
-            self = .paragraph((try? container.decode(String.self, forKey: .text)) ?? "")
+            self = .paragraph((try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText(""))
         }
     }
 
@@ -184,9 +271,9 @@ extension SummaryBlockContent: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
-        case let .paragraph(text):
+        case let .paragraph(content):
             try container.encode(BlockType.paragraph.rawValue, forKey: .type)
-            try container.encode(text, forKey: .text)
+            try container.encode(content, forKey: .content)
         case let .bulletedList(items):
             try container.encode(BlockType.bulletedList.rawValue, forKey: .type)
             try container.encode(items, forKey: .items)
@@ -196,21 +283,21 @@ extension SummaryBlockContent: Codable {
         case let .checklist(items):
             try container.encode(BlockType.checklist.rawValue, forKey: .type)
             try container.encode(items, forKey: .items)
-        case let .quote(text):
+        case let .quote(content):
             try container.encode(BlockType.quote.rawValue, forKey: .type)
-            try container.encode(text, forKey: .text)
-        case let .code(language, code):
+            try container.encode(content, forKey: .content)
+        case let .code(language, content):
             try container.encode(BlockType.code.rawValue, forKey: .type)
             try container.encode(language, forKey: .language)
-            try container.encode(code, forKey: .code)
+            try container.encode(content, forKey: .content)
         case let .image(screenshotId, caption):
             try container.encode(BlockType.image.rawValue, forKey: .type)
             try container.encode(screenshotId, forKey: .screenshotId)
-            try container.encode(caption, forKey: .caption)
-        case let .heading(level, text):
+            try container.encode(caption, forKey: .content)
+        case let .heading(level, content):
             try container.encode(BlockType.heading.rawValue, forKey: .type)
             try container.encode(level, forKey: .level)
-            try container.encode(text, forKey: .text)
+            try container.encode(content, forKey: .content)
         case let .table(headers, rows):
             try container.encode(BlockType.table.rawValue, forKey: .type)
             try container.encode(headers, forKey: .headers)
@@ -222,20 +309,17 @@ extension SummaryBlockContent: Codable {
 extension SummaryBlock {
     private enum CodingKeys: String, CodingKey {
         case id
-        case transcriptRefs = "transcript_refs"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? container.decode(UUID.self, forKey: .id)) ?? .v7()
-        transcriptRefs = (try? container.decode([TranscriptReference].self, forKey: .transcriptRefs)) ?? []
         content = try SummaryBlockContent(from: decoder)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
-        try container.encode(transcriptRefs, forKey: .transcriptRefs)
         try content.encode(to: encoder)
     }
 }

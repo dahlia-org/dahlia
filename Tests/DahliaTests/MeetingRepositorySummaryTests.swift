@@ -72,8 +72,7 @@ import GRDB
             #expect(document.sections.first?.heading == "Summary")
             #expect(document.sections.first?.blocks == [
                 .bulletedList(
-                    items: ["Decide"],
-                    transcriptRefs: [TranscriptReference(time: "00:10:00", label: "00:10:00")]
+                    items: [SummaryText("Decide", transcriptRef: TranscriptReference(time: "00:10:00"))]
                 ),
             ])
         }

@@ -50,16 +50,16 @@ struct SummaryDocumentView: View {
         VStack(alignment: .leading, spacing: 4) {
             switch block.content {
             case let .paragraph(text):
-                inlineMarkdownText(text)
-                    .font(.body)
+                summaryTextView(text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    .font(.body)
             case let .bulletedList(items):
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
-                            inlineMarkdownText(item)
+                            summaryTextView(item)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -73,7 +73,7 @@ struct SummaryDocumentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("\(index + 1).")
                                 .monospacedDigit()
-                            inlineMarkdownText(item)
+                            summaryTextView(item)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -87,7 +87,7 @@ struct SummaryDocumentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: item.checked ? "checkmark.square" : "square")
                                 .foregroundStyle(item.checked ? .secondary : .tertiary)
-                            inlineMarkdownText(item.text)
+                            summaryTextView(item.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -100,7 +100,7 @@ struct SummaryDocumentView: View {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color.secondary.opacity(0.4))
                         .frame(width: 3)
-                    inlineMarkdownText(text)
+                    summaryTextView(text)
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -108,43 +108,44 @@ struct SummaryDocumentView: View {
                         .padding(.leading, 8)
                 }
                 .padding(.vertical, 2)
-            case let .code(_, code):
-                Text(code)
-                    .font(.system(.callout, design: .monospaced))
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+            case let .code(_, content):
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(content.text)
+                        .font(.system(.callout, design: .monospaced))
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                    transcriptReferenceView(content.transcriptRef)
+                }
             case let .image(screenshotId, caption):
                 imageView(screenshotId: screenshotId, caption: caption)
-            case let .heading(level, text):
-                headingView(level: level, text: text)
+            case let .heading(level, content):
+                headingView(level: level, content: content)
             case let .table(headers, rows):
                 tableView(headers: headers, rows: rows)
             }
-
-            transcriptReferencesView(block.transcriptRefs)
         }
     }
 
     @ViewBuilder
-    private func headingView(level: Int, text: String) -> some View {
+    private func headingView(level: Int, content: SummaryText) -> some View {
         switch level {
         case 1, 2:
-            inlineMarkdownText(text)
+            summaryTextView(content)
                 .font(.title3.bold())
                 .padding(.top, 4)
         case 3:
-            inlineMarkdownText(text)
+            summaryTextView(content)
                 .font(.headline)
                 .padding(.top, 2)
         default:
-            inlineMarkdownText(text)
+            summaryTextView(content)
                 .font(.subheadline.bold())
                 .padding(.top, 2)
         }
     }
 
-    private func imageView(screenshotId: UUID, caption: String) -> some View {
+    private func imageView(screenshotId: UUID, caption: SummaryText) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let image = imageProvider(screenshotId) {
                 Image(nsImage: image)
@@ -161,21 +162,23 @@ struct SummaryDocumentView: View {
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
             }
 
-            if !caption.isEmpty {
-                inlineMarkdownText(caption)
+            if !caption.text.isEmpty {
+                summaryTextView(caption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
+            } else {
+                transcriptReferenceView(caption.transcriptRef)
             }
         }
     }
 
-    private func tableView(headers: [String], rows: [[String]]) -> some View {
+    private func tableView(headers: [SummaryText], rows: [[SummaryText]]) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
                 ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
-                    Text(header)
+                    tableCellView(header)
                         .font(.caption.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -187,7 +190,7 @@ struct SummaryDocumentView: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 GridRow {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        inlineMarkdownText(cell)
+                        tableCellView(cell)
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -202,17 +205,34 @@ struct SummaryDocumentView: View {
     }
 
     @ViewBuilder
-    private func transcriptReferencesView(_ refs: [TranscriptReference]) -> some View {
-        if !refs.isEmpty {
-            HStack(spacing: 6) {
-                ForEach(Array(refs.enumerated()), id: \.offset) { _, ref in
-                    TranscriptReferenceChip(
-                        reference: ref,
-                        transcriptText: transcriptTextProvider(ref)
-                    )
-                }
+    private func summaryTextView(_ summaryText: SummaryText) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if !summaryText.text.isEmpty {
+                inlineMarkdownText(summaryText.text)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            transcriptReferenceView(summaryText.transcriptRef)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func tableCellView(_ summaryText: SummaryText) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if !summaryText.text.isEmpty {
+                inlineMarkdownText(summaryText.text)
+            }
+            transcriptReferenceView(summaryText.transcriptRef)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func transcriptReferenceView(_ ref: TranscriptReference?) -> some View {
+        if let ref {
+            TranscriptReferenceChip(
+                reference: ref,
+                transcriptText: transcriptTextProvider(ref)
+            )
         }
     }
 

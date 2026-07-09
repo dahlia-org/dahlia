@@ -25,13 +25,11 @@ import Foundation
                         heading: "Summary",
                         blocks: [
                             .paragraph(
-                                "Decision",
-                                transcriptRefs: [TranscriptReference(time: "00:10:00", label: "Decision")]
+                                SummaryText("Decision", transcriptRef: TranscriptReference(time: "00:10:00"))
                             ),
                             .image(
                                 screenshotId: screenshotId,
-                                caption: "Screen",
-                                transcriptRefs: [TranscriptReference(time: "00:11:00", label: "Screen shown")]
+                                caption: SummaryText("Screen", transcriptRef: TranscriptReference(time: "00:11:00"))
                             ),
                         ]
                     ),
@@ -66,13 +64,11 @@ import Foundation
                         blocks: [
                             .code(
                                 language: "swift",
-                                code: "func f() {\n    return 1\n}",
-                                transcriptRefs: [TranscriptReference(time: "00:10:00", label: "Code")]
+                                content: SummaryText("func f() {\n    return 1\n}", transcriptRef: TranscriptReference(time: "00:10:00"))
                             ),
                             .table(
-                                headers: ["Topic"],
-                                rows: [["Launch"]],
-                                transcriptRefs: [TranscriptReference(time: "00:11:00", label: "Table")]
+                                headers: [SummaryText("Topic")],
+                                rows: [[SummaryText("Launch", transcriptRef: TranscriptReference(time: "00:11:00"))]]
                             ),
                         ]
                     ),
@@ -84,7 +80,34 @@ import Foundation
 
             #expect(rendered.body.contains("```swift\nfunc f() {\n    return 1\n}\n```\n\n([[\(meetingId.uuidString)#00:10:00|00:10:00]])"))
             #expect(!rendered.body.contains("``` ([["))
-            #expect(rendered.body.contains("| Launch |\n\n([[\(meetingId.uuidString)#00:11:00|00:11:00]])"))
+            #expect(rendered.body.contains("| Launch ([[\(meetingId.uuidString)#00:11:00|00:11:00]]) |"))
+        }
+
+        @Test
+        func rendersListItemReferencesOnEachItem() throws {
+            let meetingId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
+            let createdAt = Date(timeIntervalSince1970: 1_783_598_400)
+            let document = SummaryDocument(
+                title: "List refs",
+                sections: [
+                    SummarySection(
+                        id: UUID.v7(),
+                        heading: "Summary",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryText("Decision", transcriptRef: TranscriptReference(time: "00:10:00")),
+                                SummaryText("Follow up", transcriptRef: TranscriptReference(time: "00:11:00")),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+            let context = SummaryRenderContext(meetingId: meetingId, createdAt: createdAt)
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
+
+            #expect(rendered.body.contains("- Decision ([[\(meetingId.uuidString)#00:10:00|00:10:00]])"))
+            #expect(rendered.body.contains("- Follow up ([[\(meetingId.uuidString)#00:11:00|00:11:00]])"))
         }
 
         @Test
