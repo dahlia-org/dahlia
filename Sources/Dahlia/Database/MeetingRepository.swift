@@ -310,19 +310,20 @@ final class MeetingRepository {
 
     func applyGeneratedSummary(
         toMeetingId meetingId: UUID,
-        title: String,
-        summary: String,
+        document: SummaryDocument,
+        renderedBody: String,
         tags: [String]
     ) throws {
         try dbQueue.write { db in
             guard try MeetingRecord.fetchOne(db, key: meetingId) != nil else { return }
 
             let existingSummary = try SummaryRecord.fetchOne(db, key: meetingId)
-            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let record = SummaryRecord(
+            let trimmedTitle = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let record = try SummaryRecord(
                 meetingId: meetingId,
                 title: trimmedTitle.isEmpty ? (existingSummary?.title ?? "") : trimmedTitle,
-                summary: summary,
+                summary: renderedBody,
+                document: document.databaseJSONString(),
                 googleFileId: existingSummary?.googleFileId,
                 createdAt: existingSummary?.createdAt ?? Date()
             )

@@ -442,7 +442,7 @@ final class GoogleDriveAPIClient: GoogleDriveAPIClientProviding, @unchecked Send
     }
 
     private static func googleDocumentImportPayload(from content: String) -> DriveImportPayload {
-        let body = SummaryService.sanitizeDisplaySummary(googleDocumentBody(from: content))
+        let body = sanitizeGoogleDocumentMarkdown(googleDocumentBody(from: content))
         return DriveImportPayload(data: Data(body.utf8), mimeType: "text/markdown")
     }
 
@@ -459,6 +459,37 @@ final class GoogleDriveAPIClient: GoogleDriveAPIClientProviding, @unchecked Send
         let bodyLines = lines.suffix(from: lines.index(after: closingIndex))
         return bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    private static func sanitizeGoogleDocumentMarkdown(_ markdown: String) -> String {
+        var sanitized = markdown.replacingOccurrences(
+            of: #"\!\[\[[^\]]+\]\]"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        let matches = obsidianLinkRegex.matches(in: sanitized, range: NSRange(sanitized.startIndex..., in: sanitized))
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range(at: 0), in: sanitized) else { continue }
+            let replacement = if let aliasRange = Range(match.range(at: 2), in: sanitized) {
+                String(sanitized[aliasRange])
+            } else {
+                ""
+            }
+            sanitized.replaceSubrange(fullRange, with: replacement)
+        }
+
+        sanitized = sanitized.replacingOccurrences(of: #"\(\s*\)"#, with: "", options: .regularExpression)
+        sanitized = sanitized.replacingOccurrences(of: #"[ \t]+\n"#, with: "\n", options: .regularExpression)
+        sanitized = sanitized.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        sanitized = sanitized.replacingOccurrences(of: #"(?m)^[ \t]*[-*+]\s*$\n?"#, with: "", options: .regularExpression)
+        sanitized = sanitized.replacingOccurrences(of: #"(?m)^[ \t]*[-*+]\s+\[[ xX]\]\s*$\n?"#, with: "", options: .regularExpression)
+
+        return sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let obsidianLinkRegex = try! NSRegularExpression(
+        pattern: #"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
+    )
 }
 
 private struct DriveFilesListResponse: Decodable {

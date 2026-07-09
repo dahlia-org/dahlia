@@ -36,41 +36,30 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func summaryResultSchemaRequiresActionItemsWithoutExtraFields() throws {
-        let schemaData = try #require(SummaryResult.responseFormat.json_schema?.schemaData)
+    func summaryDocumentResponseSchemaRequiresFlatBlocksWithoutExtraFields() throws {
+        let schemaData = try #require(SummaryDocumentResponse.responseFormat.json_schema?.schemaData)
         let schemaObject = try JSONSerialization.jsonObject(with: schemaData)
         let schema = try #require(schemaObject as? [String: Any])
         let required = try #require(schema["required"] as? [String])
         let properties = try #require(schema["properties"] as? [String: Any])
+        let sections = try #require(properties["sections"] as? [String: Any])
+        let sectionItems = try #require(sections["items"] as? [String: Any])
+        let sectionProperties = try #require(sectionItems["properties"] as? [String: Any])
+        let blocks = try #require(sectionProperties["blocks"] as? [String: Any])
+        let blockItems = try #require(blocks["items"] as? [String: Any])
+        let blockRequired = try #require(blockItems["required"] as? [String])
         let actionItems = try #require(properties["action_items"] as? [String: Any])
         let items = try #require(actionItems["items"] as? [String: Any])
 
+        #expect(required.contains("sections"))
         #expect(required.contains("action_items"))
+        #expect(blockRequired == ["type", "level", "text", "items", "language", "image_id"])
+        #expect((blockItems["additionalProperties"] as? Bool) == false)
         #expect((items["additionalProperties"] as? Bool) == false)
     }
 
     @Test
-    func sanitizeDisplaySummaryRemovesObsidianSyntax() {
-        let input = """
-        ## Summary
-
-        - Decide to ship ([[meeting#00:10:00|00:10:00]])
-        - See ![[capture-1.webp]]
-        - Ref [[internal-note]]
-        - ![[capture-2.webp]]
-        """
-
-        let sanitized = SummaryService.sanitizeDisplaySummary(input)
-
-        #expect(!sanitized.contains("[["))
-        #expect(!sanitized.contains("![["))
-        #expect(sanitized.contains("00:10:00"))
-        #expect(!sanitized.contains("internal-note"))
-        #expect(!sanitized.contains("capture-2.webp"))
-    }
-
-    @Test
-    func normalizeScreenshotEmbedsUsesExportedFilenameWithExtension() throws {
+    func decodeSummaryDocumentUsesStructuredSectionsAndImages() throws {
         let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
         let screenshot = MeetingScreenshotRecord(
             id: screenshotId,
@@ -79,37 +68,107 @@ struct SummaryServiceTests {
             imageData: Data(),
             mimeType: "image/jpeg"
         )
-        let input = """
-        - Main image ![[\(screenshotId.uuidString)]]
-        - Path image ![[_dahlia/screenshots/\(screenshotId.uuidString).webp|Screen]]
-        - Other image ![[not-a-screenshot]]
+        let context = SummaryRenderContext(
+            meetingId: screenshot.meetingId,
+            createdAt: Date(timeIntervalSince1970: 0),
+            screenshots: [screenshot]
+        )
+        let json = """
+        {
+          "title": "Weekly sync",
+          "sections": [
+            {
+              "heading": "Decisions",
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "level": 0,
+                  "text": "Ship it [00:10:00](transcript://00:10:00)",
+                  "items": [],
+                  "language": "",
+                  "image_id": ""
+                },
+                {
+                  "type": "image",
+                  "level": 0,
+                  "text": "Architecture",
+                  "items": [],
+                  "language": "",
+                  "image_id": "\(screenshotId.uuidString)"
+                }
+              ]
+            }
+          ],
+          "tags": ["team"],
+          "action_items": []
+        }
         """
 
-        let normalized = SummaryService.normalizeScreenshotEmbeds(input, screenshots: [screenshot])
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
 
-        #expect(normalized.contains("![[\(screenshotId.uuidString).jpeg]]"))
-        #expect(normalized.contains("![[_dahlia/screenshots/\(screenshotId.uuidString).jpeg|Screen]]"))
-        #expect(normalized.contains("![[not-a-screenshot]]"))
-        #expect(!normalized.contains("\(screenshotId.uuidString).webp"))
+        #expect(document.title == "Weekly sync")
+        #expect(document.sections.first?.heading == "Decisions")
+        #expect(document.sections.first?.blocks == [
+            .paragraph("Ship it [00:10:00](transcript://00:10:00)"),
+            .image(screenshotId: screenshotId, caption: "Architecture"),
+        ])
     }
 
     @Test
-    func normalizeActionItemsUsesExportedFilenameWithExtension() throws {
-        let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
-        let screenshot = MeetingScreenshotRecord(
-            id: screenshotId,
-            meetingId: UUID(),
-            capturedAt: Date(timeIntervalSince1970: 0),
-            imageData: Data(),
-            mimeType: "image/jpeg"
-        )
-        let actionItems = [
-            SummaryActionItem(title: "Review ![[\(screenshotId.uuidString)]]", assignee: "me"),
-        ]
+    func decodeSummaryDocumentFallsBackToLegacySummaryResult() throws {
+        let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: Date(timeIntervalSince1970: 0))
+        let json = """
+        {
+          "title": "Legacy",
+          "summary": "## Summary\\n\\n- Decide ([[meeting#00:10:00|00:10:00]])",
+          "tags": ["team"],
+          "action_items": [
+            {"title": "Follow up [[meeting#00:11:00|00:11:00]]", "assignee": "me"}
+          ]
+        }
+        """
 
-        let normalized = SummaryService.normalizeActionItems(actionItems, screenshots: [screenshot])
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
 
-        #expect(normalized == [SummaryActionItem(title: "Review ![[\(screenshotId.uuidString).jpeg]]", assignee: "me")])
+        #expect(document.title == "Legacy")
+        #expect(document.tags == ["team"])
+        #expect(document.sections.first?.heading == "Summary")
+        #expect(document.sections.first?.blocks == [.bulletedList(items: ["Decide [00:10:00](transcript://00:10:00)"])])
+        #expect(document.actionItems == [SummaryActionItem(title: "Follow up [00:11:00](transcript://00:11:00)", assignee: "me")])
+    }
+
+    @Test
+    func decodeSummaryDocumentDropsEmptyStructuredBlocksAndSections() throws {
+        let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: Date(timeIntervalSince1970: 0))
+        let json = """
+        {
+          "title": "Empty blocks",
+          "sections": [
+            {
+              "heading": "",
+              "blocks": [
+                {"type": "bulleted_list", "level": 0, "text": "", "items": [], "language": "", "image_id": ""},
+                {"type": "checklist", "level": 0, "text": "", "items": [{"text": "", "checked": false}], "language": "", "image_id": ""},
+                {"type": "paragraph", "level": 0, "text": "", "items": [], "language": "", "image_id": ""}
+              ]
+            },
+            {
+              "heading": "Notes",
+              "blocks": [
+                {"type": "numbered_list", "level": 0, "text": "", "items": [], "language": "", "image_id": ""}
+              ]
+            }
+          ],
+          "tags": [],
+          "action_items": []
+        }
+        """
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+
+        #expect(document.sections.count == 1)
+        #expect(document.sections.first?.heading == "Notes")
+        #expect(document.sections.first?.blocks.isEmpty == true)
     }
 
     @Test
@@ -127,7 +186,7 @@ struct SummaryServiceTests {
         let metadata = SummaryService.screenshotMetadata(for: screenshot, relativeTo: timeBase)
 
         #expect(metadata.contains("<time>00:12:34</time>"))
-        #expect(metadata.contains("<image_id>\(screenshotId.uuidString).jpeg</image_id>"))
+        #expect(metadata.contains("<image_id>\(screenshotId.uuidString)</image_id>"))
         #expect(metadata.contains("<image_filename>\(screenshotId.uuidString).jpeg</image_filename>"))
     }
 
@@ -161,9 +220,9 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func defaultSummaryPromptRequiresScreenshotFilenameExtension() {
-        #expect(AppSettings.defaultSummaryPrompt.contains("![[<image_filename>]]"))
-        #expect(AppSettings.defaultSummaryPrompt.contains("including its file extension"))
+    func defaultSummaryPromptRequiresStructuredImageBlocks() {
+        #expect(AppSettings.defaultSummaryPrompt.contains("create an `image` block"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("[HH:MM:SS](transcript://HH:MM:SS)"))
     }
 
     @Test

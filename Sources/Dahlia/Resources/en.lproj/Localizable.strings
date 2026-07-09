@@ -315,6 +315,7 @@
 /* Summary */
 "Generating summary..." = "Generating summary...";
 "No summary has been generated yet." = "No summary has been generated yet.";
+"Summary image unavailable" = "Summary image unavailable";
 "Summary generated" = "Summary generated";
 "Open Summary" = "Open Summary";
 "Generate Summary" = "Generate Summary";

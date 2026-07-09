@@ -30,6 +30,17 @@ struct AppDatabaseManagerTests {
     }
 
     @Test
+    func initializesInMemoryDatabaseWithSummaryDocumentColumn() throws {
+        let database = try AppDatabaseManager(path: ":memory:")
+
+        let columns = try database.dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
+        }
+
+        #expect(columns.contains("document"))
+    }
+
+    @Test
     func initializesInMemoryDatabaseWithTranscriptTranslatedTextColumn() throws {
         let database = try AppDatabaseManager(path: ":memory:")
 
@@ -389,6 +400,93 @@ struct AppDatabaseManagerTests {
         #expect(result.0.contains("translatedText"))
         #expect(result.1?["text"] == "Hello world")
         #expect(result.1?["translatedText"] == nil as String?)
+    }
+
+    @Test
+    func existingV8DatabaseMigratesSummaryDocumentColumnWithoutDataLoss() throws {
+        let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("sqlite")
+        let meetingID = UUID.v7()
+        let screenshotID = UUID.v7()
+        let missingScreenshotID = UUID.v7()
+        let createdAt = Date(timeIntervalSince1970: 1_783_536_000)
+
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+        let legacyQueue = try DatabaseQueue(path: databaseURL.path)
+        try legacyQueue.write { db in
+            try db.create(table: "screenshots") { t in
+                t.primaryKey("id", .blob)
+                t.column("meetingId", .blob).notNull()
+                t.column("sessionId", .blob)
+                t.column("capturedAt", .datetime).notNull()
+                t.column("imageData", .blob).notNull()
+                t.column("mimeType", .text).notNull()
+            }
+            try db.create(table: "summaries") { t in
+                t.primaryKey("meetingId", .blob)
+                t.column("title", .text).notNull().defaults(to: "")
+                t.column("summary", .text).notNull()
+                t.column("googleFileId", .text)
+                t.column("createdAt", .datetime).notNull()
+            }
+            try db.execute(
+                sql: """
+                INSERT INTO screenshots (id, meetingId, sessionId, capturedAt, imageData, mimeType)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [screenshotID, meetingID, nil as UUID?, createdAt, Data([0x00]), "image/jpeg"]
+            )
+            try db.execute(
+                sql: """
+                INSERT INTO summaries (meetingId, title, summary, googleFileId, createdAt)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    meetingID,
+                    "Legacy",
+                    "## Summary\n\n![[\(screenshotID.uuidString).jpeg|Valid]]\n\n![[\(missingScreenshotID.uuidString).jpeg]]",
+                    "google-123",
+                    createdAt,
+                ]
+            )
+            try db.create(table: "grdb_migrations") { t in
+                t.column("identifier", .text).primaryKey()
+            }
+            try db.execute(
+                sql: """
+                INSERT INTO grdb_migrations (identifier)
+                VALUES (?), (?), (?), (?), (?), (?)
+                """,
+                arguments: [
+                    "v3_googleDriveFolderSchema",
+                    "v4_instructionsSchema",
+                    "v5_summaryGoogleFileId",
+                    "v6_transcriptSegmentTranslation",
+                    "v7_normalizeLegacyMeetingStatus",
+                    "v8_recordingSessions",
+                ]
+            )
+        }
+
+        let migrated = try AppDatabaseManager(path: databaseURL.path)
+        let result = try migrated.dbQueue.read { db in
+            try (
+                String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"),
+                Row.fetchOne(db, sql: "SELECT title, summary, document, googleFileId FROM summaries WHERE meetingId = ?", arguments: [meetingID])
+            )
+        }
+
+        #expect(result.0.contains("document"))
+        #expect(result.1?["title"] == "Legacy")
+        #expect(result.1?["summary"] == "## Summary\n\n![[\(screenshotID.uuidString).jpeg|Valid]]\n\n![[\(missingScreenshotID.uuidString).jpeg]]")
+        let documentJSON = try #require(result.1?["document"] as String?)
+        let document = try JSONDecoder().decode(SummaryDocument.self, from: Data(documentJSON.utf8))
+        #expect(document.title == "Legacy")
+        #expect(document.sections.first?.heading == "Summary")
+        #expect(document.sections.first?.blocks == [.image(screenshotId: screenshotID, caption: "Valid")])
+        #expect(result.1?["googleFileId"] == "google-123")
     }
 }
 

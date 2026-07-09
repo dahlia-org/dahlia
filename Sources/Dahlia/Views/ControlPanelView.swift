@@ -546,7 +546,7 @@ struct ControlPanelView: View {
 
     @ViewBuilder
     private var summaryTabContent: some View {
-        if let summary = viewModel.sanitizedMeetingSummary {
+        if let document = viewModel.currentSummaryDocument {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 12) {
@@ -572,8 +572,11 @@ struct ControlPanelView: View {
                     }
                     .buttonStyle(.bordered)
 
-                    MarkdownContentView(markdown: summary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    SummaryDocumentView(document: document) { screenshotId in
+                        guard let record = viewModel.screenshots.first(where: { $0.id == screenshotId }) else { return nil }
+                        return NSImage(data: record.imageData)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)

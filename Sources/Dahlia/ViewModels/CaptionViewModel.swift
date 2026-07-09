@@ -86,7 +86,7 @@ final class CaptionViewModel: ObservableObject {
     @Published var summaryWarning: String?
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
-    @Published var currentMeetingSummary: String?
+    @Published var currentSummaryDocument: SummaryDocument?
     /// Summary タブへの切り替えをリクエストするフラグ。
     @Published var requestShowSummaryTab = false
     /// 要約生成の進捗トースト状態。
@@ -117,8 +117,8 @@ final class CaptionViewModel: ObservableObject {
     @Published private(set) var currentMeetingHasTranscriptSegments = false
 
     var hasCurrentMeetingSummary: Bool {
-        guard let currentMeetingSummary else { return false }
-        return !currentMeetingSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let currentSummaryDocument else { return false }
+        return !currentSummaryDocument.sections.isEmpty
     }
 
     var hasDraftMeeting: Bool {
@@ -128,12 +128,6 @@ final class CaptionViewModel: ObservableObject {
     var draftMeetingTitle: String {
         let trimmed = draftMeeting?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? L10n.newMeeting : trimmed
-    }
-
-    var sanitizedMeetingSummary: String? {
-        guard let currentMeetingSummary else { return nil }
-        let sanitized = SummaryService.sanitizeDisplaySummary(currentMeetingSummary)
-        return sanitized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : sanitized
     }
 
     var currentSummaryGoogleFileURL: URL? {
@@ -390,7 +384,7 @@ final class CaptionViewModel: ObservableObject {
         let recordingSessions: [RecordingSessionTimeline]
         let segments: [TranscriptSegment]
         let screenshots: [MeetingScreenshotRecord]
-        let summary: String?
+        let summaryDocument: SummaryDocument?
         let googleFileId: String?
         let lastSummaryURL: URL?
         let note: MeetingNoteRecord?
@@ -418,7 +412,7 @@ final class CaptionViewModel: ObservableObject {
             recordingSessions: recordingSessions,
             segments: segments,
             screenshots: detail.screenshots,
-            summary: detail.summary?.summary,
+            summaryDocument: detail.summary?.loadDocument(),
             googleFileId: detail.summary?.googleFileId,
             lastSummaryURL: lastSummaryURL,
             note: detail.note
@@ -698,7 +692,7 @@ final class CaptionViewModel: ObservableObject {
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
     private func applyLoadedDetail(_ loaded: LoadedMeetingData) {
         screenshots = loaded.screenshots
-        currentMeetingSummary = loaded.summary
+        currentSummaryDocument = loaded.summaryDocument
         currentSummaryGoogleFileId = loaded.googleFileId
         lastSummaryURL = loaded.lastSummaryURL
         noteText = loaded.note?.text ?? ""
@@ -736,7 +730,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func resetSummaryState() {
-        currentMeetingSummary = nil
+        currentSummaryDocument = nil
         currentSummaryGoogleFileId = nil
         lastSummaryURL = nil
         requestShowSummaryTab = false
@@ -1240,14 +1234,14 @@ final class CaptionViewModel: ObservableObject {
             if let repo {
                 try repo.applyGeneratedSummary(
                     toMeetingId: meetingId,
-                    title: generatedSummary.title,
-                    summary: generatedSummary.summary,
-                    tags: generatedSummary.tags
+                    document: generatedSummary.document,
+                    renderedBody: generatedSummary.renderedBody,
+                    tags: generatedSummary.document.tags
                 )
             }
             summaryProgress.summaryGeneration = .completed
             if currentMeetingId == meetingId {
-                currentMeetingSummary = generatedSummary.summary
+                currentSummaryDocument = generatedSummary.document
             }
 
             summaryProgress.vaultExport = .running

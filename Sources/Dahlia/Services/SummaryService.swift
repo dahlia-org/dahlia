@@ -3,19 +3,11 @@ import Foundation
 /// 文字起こしテキストを LLM で要約し、Obsidian 互換の Markdown を生成するサービス。
 enum SummaryService {
     struct GeneratedSummary {
+        let document: SummaryDocument
         let fileName: String
         let markdown: String
-        let title: String
-        let summary: String
-        let tags: [String]
-        let actionItems: [SummaryActionItem]
+        let renderedBody: String
     }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 
     /// 要約を生成し、Markdown と関連メタデータを返す。
     @MainActor
@@ -44,7 +36,9 @@ enum SummaryService {
         # Response Format
         Your response MUST be a JSON object with exactly four keys:
         - "title": a concise title for this meeting/transcript (one line, no quotes)
-        - "summary": the full summary in Markdown format
+        - "sections": an array of sections. Each section has:
+          - "heading": the section heading, or an empty string for an intro section
+          - "blocks": an array of content blocks in reading order
         - "tags": an array of relevant short Obsidian-compatible tags for categorization (empty array if none)
           - Tags MUST contain no spaces.
           - Tags MUST not be numeric-only.
@@ -54,6 +48,16 @@ enum SummaryService {
         - "action_items": an array of objects with exactly two keys:
           - "title": the concrete action item
           - "assignee": who owns it, or an empty string if unclear
+
+        Each block MUST be one object with all of these keys:
+        - "type": one of "paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading"
+        - "level": heading level for "heading"; otherwise 0
+        - "text": paragraph/quote/heading text, code body, or image caption; otherwise empty string
+        - "items": list/checklist items; otherwise []
+        - "language": code language for "code"; otherwise empty string
+        - "image_id": screenshot UUID for "image"; otherwise empty string
+
+        Use inline Markdown only inside text fields. Do not output tables; express them as lists.
         """
         let systemPrompt = prompt + "\n\n# Language\nWrite the summary in \(languageName)." + structuredInstruction
         var messages: [LLMService.ChatMessage] = [
@@ -93,54 +97,19 @@ enum SummaryService {
             token: token,
             messages: messages,
             maxTokens: 16000,
-            responseFormat: SummaryResult.responseFormat
+            responseFormat: SummaryDocumentResponse.responseFormat
         )
 
-        // Structured output のパース（フォールバック: プレーンテキストとして扱う）
-        let result: SummaryResult = if let data = responseText.data(using: .utf8),
-                                       let decoded = try? JSONDecoder().decode(SummaryResult.self, from: data) {
-            decoded
-        } else {
-            SummaryResult(title: "", summary: responseText, tags: [])
-        }
-
-        let dateString = dateFormatter.string(from: createdAt)
-        let tags = resolvedTags(resultTags: result.tags, contextContent: contextContent)
-        let tagsYAML = tags.map { "  - \($0)" }.joined(separator: "\n")
-
-        var frontmatterFields = """
-        meeting_id: "\(meetingId.uuidString)"
-        date: \(dateString)
-        """
-        if !result.title.isEmpty {
-            let escapedTitle = result.title
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
-            frontmatterFields += "\ntitle: \"\(escapedTitle)\""
-        }
-        if !tags.isEmpty {
-            frontmatterFields += "\ntags:\n\(tagsYAML)"
-        }
-
-        let frontmatter = "---\n\(frontmatterFields)\n---"
-
-        let summary = normalizeScreenshotEmbeds(result.summary, screenshots: screenshots)
-        let actionItems = normalizeActionItems(result.actionItems, screenshots: screenshots)
-        let markdown = frontmatter + "\n\n" + summary + "\n"
-        let fileName = summaryFileName(
-            datePrefix: dateFormatter.string(from: createdAt),
-            title: result.title,
-            meetingId: meetingId
-        ) + ".md"
+        let context = SummaryRenderContext(meetingId: meetingId, createdAt: createdAt, screenshots: screenshots)
+        var document = decodeSummaryDocument(from: responseText, context: context)
+        document.tags = resolvedTags(resultTags: document.tags, contextContent: contextContent)
+        let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
 
         return GeneratedSummary(
-            fileName: fileName,
-            markdown: markdown,
-            title: result.title,
-            summary: summary,
-            tags: tags,
-            actionItems: actionItems
+            document: document,
+            fileName: rendered.fileName,
+            markdown: rendered.markdown,
+            renderedBody: rendered.body
         )
     }
 
@@ -156,7 +125,7 @@ enum SummaryService {
             fallbackTimeBase: timeBase
         )
         let imageFilename = ScreenshotExportService.filename(for: screenshot)
-        return "<time>\(time)</time> <image_id>\(imageFilename)</image_id> <image_filename>\(imageFilename)</image_filename>"
+        return "<time>\(time)</time> <image_id>\(screenshot.id.uuidString)</image_id> <image_filename>\(imageFilename)</image_filename>"
     }
 
     /// 要約保存先ディレクトリ内の `.md` ファイルを走査し、frontmatter の `meeting_id` が一致するファイルを返す。
@@ -196,116 +165,130 @@ enum SummaryService {
         return tags
     }
 
-    private static let obsidianImageEmbedRegex = try! NSRegularExpression(
-        pattern: #"\!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
-    )
-
-    private static let obsidianLinkRegex = try! NSRegularExpression(
-        pattern: #"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
-    )
-
     private static let tagAllowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
     private static let tagTrimCharacters = CharacterSet(charactersIn: "_-")
 
-    static func normalizeScreenshotEmbeds(_ summary: String, screenshots: [MeetingScreenshotRecord]) -> String {
-        guard !screenshots.isEmpty else { return summary }
-
-        let matches = obsidianImageEmbedRegex.matches(in: summary, range: NSRange(summary.startIndex..., in: summary))
-        guard !matches.isEmpty else { return summary }
-
-        let filenamesById = Dictionary(
-            screenshots.map { screenshot in
-                (screenshot.id.uuidString.lowercased(), ScreenshotExportService.filename(for: screenshot))
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-
-        var normalized = summary
-        for match in matches.reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: normalized),
-                  let targetRange = Range(match.range(at: 1), in: normalized) else { continue }
-            let target = String(normalized[targetRange])
-            guard let filename = normalizedScreenshotFilename(for: target, filenamesById: filenamesById) else { continue }
-
-            let replacement = if let aliasRange = Range(match.range(at: 2), in: normalized) {
-                "![[\(filename)|\(normalized[aliasRange])]]"
-            } else {
-                "![[\(filename)]]"
-            }
-            normalized.replaceSubrange(fullRange, with: replacement)
+    static func decodeSummaryDocument(from responseText: String, context: SummaryRenderContext) -> SummaryDocument {
+        guard let data = responseText.data(using: .utf8) else {
+            return LegacyMarkdownSummaryParser.parse(markdown: responseText, context: context)
         }
 
-        return normalized
+        if let response = try? JSONDecoder().decode(SummaryDocumentResponse.self, from: data) {
+            return document(from: response, context: context)
+        }
+
+        if let legacy = try? JSONDecoder().decode(SummaryResult.self, from: data) {
+            var document = LegacyMarkdownSummaryParser.parse(
+                markdown: legacy.summary,
+                title: legacy.title,
+                context: context
+            )
+            document.tags = legacy.tags
+            document.actionItems = normalizedActionItems(legacy.actionItems, context: context)
+            return document
+        }
+
+        return LegacyMarkdownSummaryParser.parse(markdown: responseText, context: context)
     }
 
-    static func normalizeActionItems(_ actionItems: [SummaryActionItem], screenshots: [MeetingScreenshotRecord]) -> [SummaryActionItem] {
-        guard !actionItems.isEmpty else { return actionItems }
+    private static func document(from response: SummaryDocumentResponse, context: SummaryRenderContext) -> SummaryDocument {
+        let sections = response.sections
+            .map { sectionDTO in
+                SummarySection(
+                    id: .v7(),
+                    heading: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(sectionDTO.heading),
+                    blocks: sectionDTO.blocks.flatMap { blocks(from: $0, context: context) }
+                )
+            }
+            .filter { !$0.heading.isEmpty || !$0.blocks.isEmpty }
 
-        return actionItems.map { item in
-            let title = normalizeScreenshotEmbeds(item.title, screenshots: screenshots)
-            guard title != item.title else { return item }
-            return SummaryActionItem(title: title, assignee: item.assignee)
+        return SummaryDocument(
+            title: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(response.title),
+            sections: sections,
+            tags: response.tags,
+            actionItems: normalizedActionItems(response.actionItems, context: context)
+        )
+    }
+
+    private static func blocks(from dto: SummaryDocumentResponse.BlockDTO, context: SummaryRenderContext) -> [SummaryBlock] {
+        switch dto.type {
+        case "paragraph":
+            return LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context)
+        case "bulleted_list":
+            let items = normalizedItemTexts(dto.items)
+            return items.isEmpty ? [] : [.bulletedList(items: items)]
+        case "numbered_list":
+            let items = normalizedItemTexts(dto.items)
+            return items.isEmpty ? [] : [.numberedList(items: items)]
+        case "checklist":
+            let items = normalizedChecklistItems(dto.items)
+            return items.isEmpty ? [] : [.checklist(items: items)]
+        case "quote":
+            let text = LegacyMarkdownSummaryParser.normalizeInlineMarkdown(dto.text)
+            return text.isEmpty ? [] : [.quote(text)]
+        case "code":
+            return [.code(language: dto.language, code: dto.text)]
+        case "image":
+            guard let screenshotId = UUID(uuidString: dto.imageId),
+                  context.screenshots.contains(where: { $0.id == screenshotId }) else {
+                return LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context)
+            }
+            return [
+                .image(
+                    screenshotId: screenshotId,
+                    caption: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(dto.text)
+                ),
+            ]
+        case "heading":
+            let text = LegacyMarkdownSummaryParser.normalizeInlineMarkdown(dto.text)
+            return text.isEmpty ? [] : [.heading(level: max(3, dto.level), text: text)]
+        default:
+            return LegacyMarkdownSummaryParser.parseInlineBlocks(dto.text, context: context)
         }
     }
 
-    static func sanitizeDisplaySummary(_ summary: String) -> String {
-        var sanitized = summary.replacingOccurrences(
-            of: #"\!\[\[[^\]]+\]\]"#,
-            with: "",
-            options: .regularExpression
-        )
+    private static func normalizedItemTexts(_ items: [SummaryDocumentResponse.ItemDTO]) -> [String] {
+        items
+            .map { LegacyMarkdownSummaryParser.normalizeInlineMarkdown($0.text) }
+            .filter { !$0.isEmpty }
+    }
 
-        let linkRegex = obsidianLinkRegex
-        let matches = linkRegex.matches(in: sanitized, range: NSRange(sanitized.startIndex..., in: sanitized))
-        for match in matches.reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: sanitized) else { continue }
-            let replacement = if let aliasRange = Range(match.range(at: 2), in: sanitized) {
-                String(sanitized[aliasRange])
-            } else {
-                ""
+    private static func normalizedChecklistItems(_ items: [SummaryDocumentResponse.ItemDTO]) -> [SummaryBlock.ChecklistItem] {
+        items
+            .map {
+                SummaryBlock.ChecklistItem(
+                    text: LegacyMarkdownSummaryParser.normalizeInlineMarkdown($0.text),
+                    checked: $0.checked
+                )
             }
-            sanitized.replaceSubrange(fullRange, with: replacement)
+            .filter { !$0.text.isEmpty }
+    }
+
+    private static func normalizedActionItems(
+        _ actionItems: [SummaryActionItem],
+        context: SummaryRenderContext
+    ) -> [SummaryActionItem] {
+        actionItems.map { item in
+            let text = LegacyMarkdownSummaryParser.parseInlineBlocks(item.title, context: context)
+                .compactMap { block -> String? in
+                    switch block {
+                    case let .paragraph(text):
+                        text
+                    case let .image(_, caption):
+                        caption.nilIfBlank
+                    default:
+                        nil
+                    }
+                }
+                .joined(separator: " ")
+            return SummaryActionItem(
+                title: text.nilIfBlank ?? LegacyMarkdownSummaryParser.normalizeInlineMarkdown(item.title),
+                assignee: item.assignee
+            )
         }
-
-        sanitized = sanitized.replacingOccurrences(of: #"\(\s*\)"#, with: "", options: .regularExpression)
-        sanitized = sanitized.replacingOccurrences(of: #"[ \t]+\n"#, with: "\n", options: .regularExpression)
-        sanitized = sanitized.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-        sanitized = sanitized.replacingOccurrences(of: #"(?m)^[ \t]*[-*+]\s*$\n?"#, with: "", options: .regularExpression)
-        sanitized = sanitized.replacingOccurrences(of: #"(?m)^[ \t]*[-*+]\s+\[[ xX]\]\s*$\n?"#, with: "", options: .regularExpression)
-
-        return sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Private Helpers
-
-    private static func normalizedScreenshotFilename(for obsidianTarget: String, filenamesById: [String: String]) -> String? {
-        let target = obsidianTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !target.isEmpty else { return nil }
-
-        let targetPath = target as NSString
-        let directory = targetPath.deletingLastPathComponent
-        let lastPathComponent = targetPath.lastPathComponent as NSString
-        let id = lastPathComponent.deletingPathExtension.lowercased()
-        guard let filename = filenamesById[id] else { return nil }
-
-        return if directory.isEmpty || directory == "." {
-            filename
-        } else {
-            "\(directory)/\(filename)"
-        }
-    }
-
-    private static func summaryFileName(datePrefix: String, title: String, meetingId: UUID) -> String {
-        guard !title.isEmpty else {
-            return "\(datePrefix)-summary_\(meetingId.uuidString)"
-        }
-        let sanitized = title
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "[/\\\\:*?\"<>|]", with: "", options: .regularExpression)
-        return sanitized.isEmpty
-            ? "\(datePrefix)-summary_\(meetingId.uuidString)"
-            : "\(datePrefix)-\(sanitized)"
-    }
 
     /// 選択中 instruction の内容を DB から解決する。
     /// Auto モード時はデフォルトプロンプト全体を返す。

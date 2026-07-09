@@ -315,6 +315,7 @@
 /* Summary */
 "Generating summary..." = "要約を生成中...";
 "No summary has been generated yet." = "要約はまだ生成されていません。";
+"Summary image unavailable" = "要約の画像を表示できません";
 "Summary generated" = "要約が生成されました";
 "Open Summary" = "要約を開く";
 "Generate Summary" = "要約を生成";

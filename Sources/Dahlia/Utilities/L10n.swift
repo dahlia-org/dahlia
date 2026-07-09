@@ -596,6 +596,7 @@ enum L10n {
 
     static var generatingSummary: String { String(localized: "Generating summary...", bundle: bundle) }
     static var noSummaryYet: String { String(localized: "No summary has been generated yet.", bundle: bundle) }
+    static var summaryImageUnavailable: String { String(localized: "Summary image unavailable", bundle: bundle) }
     static var summaryGenerated: String { String(localized: "Summary generated", bundle: bundle) }
     static var openSummary: String { String(localized: "Open Summary", bundle: bundle) }
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }

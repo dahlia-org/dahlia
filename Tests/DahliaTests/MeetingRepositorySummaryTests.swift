@@ -22,10 +22,18 @@ import GRDB
                 )
             }
 
+            let document = SummaryDocument(
+                title: "Weekly sync",
+                sections: [
+                    SummarySection(id: UUID.v7(), heading: "Summary", blocks: [.paragraph("Summary body")]),
+                ],
+                tags: ["team"]
+            )
+
             try context.repo.applyGeneratedSummary(
                 toMeetingId: context.meeting.id,
-                title: "Weekly sync",
-                summary: "Summary body",
+                document: document,
+                renderedBody: "Summary body",
                 tags: ["team"]
             )
 
@@ -40,10 +48,29 @@ import GRDB
             let summary = try #require(fetchedSummary)
 
             #expect(summary.summary == "Summary body")
+            #expect(summary.loadDocument() == document)
             #expect(result.count == 1)
             #expect(result.first?["title"] == "Legacy task")
             #expect(result.first?["assignee"] == "me")
             #expect(result.first?["isCompleted"] == true)
+        }
+
+        @Test
+        func legacySummaryRecordLoadsDocumentFromMarkdownFallback() throws {
+            let record = SummaryRecord(
+                meetingId: UUID.v7(),
+                title: "Legacy",
+                summary: "## Summary\n\n- Decide [[meeting#00:10:00|00:10:00]]",
+                document: nil,
+                googleFileId: nil,
+                createdAt: Date()
+            )
+
+            let document = record.loadDocument()
+
+            #expect(document.title == "Legacy")
+            #expect(document.sections.first?.heading == "Summary")
+            #expect(document.sections.first?.blocks == [.bulletedList(items: ["Decide [00:10:00](transcript://00:10:00)"])])
         }
 
         private func makeRepositoryContext() throws -> RepositoryContext {
