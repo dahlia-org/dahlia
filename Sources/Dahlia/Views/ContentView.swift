@@ -45,6 +45,12 @@ struct ContentView: View {
                 }
                 .labelStyle(.iconOnly)
                 .help(L10n.showUpcomingSchedule)
+
+                SettingsLink {
+                    Label(L10n.settingsMenuItem, systemImage: "gearshape")
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.settingsMenuItem)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
