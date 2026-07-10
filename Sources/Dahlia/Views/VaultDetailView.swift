@@ -33,6 +33,7 @@ struct VaultDetailView: View {
                 Section {
                     Button(L10n.openVault, systemImage: "folder", action: onOpen)
                         .buttonStyle(.borderedProminent)
+                        .disabled(isCurrentVault)
                 } footer: {
                     Text(L10n.openVaultDescription)
                 }
