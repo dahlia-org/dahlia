@@ -346,7 +346,8 @@
 "Open Summary" = "Open Summary";
 "Generate Summary" = "Generate Summary";
 "Share Summary" = "Share Summary";
-"Copy Summary" = "Copy Summary";
+"Copy for Google Docs" = "Copy for Google Docs";
+"Copy for Slack" = "Copy for Slack";
 "Summary Prompt" = "Summary Prompt";
 "Reset to Default" = "Reset to Default";
 "Summary Template" = "Summary Template";

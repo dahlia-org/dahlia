@@ -158,15 +158,24 @@ private struct SummarySharePopover: View {
             Divider()
                 .padding(.horizontal, 20)
 
-            SummarySharePopoverRow(title: L10n.copySummary, systemImage: "doc.on.doc") {
-                viewModel.copyCurrentSummaryForSlack()
-                dismiss()
+            VStack(spacing: 2) {
+                SummarySharePopoverRow(title: L10n.copySummaryForGoogleDocs, systemImage: "doc.richtext") {
+                    copySummary(for: .googleDocs)
+                }
+                SummarySharePopoverRow(title: L10n.copySummaryForSlack, systemImage: "message") {
+                    copySummary(for: .slack)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
         }
         .frame(width: 320)
         .padding(.vertical, 8)
+    }
+
+    private func copySummary(for destination: SummaryShareRenderer.Destination) {
+        viewModel.copyCurrentSummary(for: destination)
+        dismiss()
     }
 }
 

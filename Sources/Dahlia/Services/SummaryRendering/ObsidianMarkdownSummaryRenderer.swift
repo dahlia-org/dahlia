@@ -52,7 +52,7 @@ enum ObsidianMarkdownSummaryRenderer {
         for section in document.sections {
             var sectionChunks: [String] = []
             if !section.heading.isEmpty {
-                sectionChunks.append("## \(renderInlineMarkdown(section.heading, meetingId: context.meetingId))")
+                sectionChunks.append("## \(section.heading)")
             }
             sectionChunks.append(contentsOf: section.blocks.compactMap { renderBlock($0, context: context) })
 
@@ -140,7 +140,7 @@ enum ObsidianMarkdownSummaryRenderer {
 
     private static func renderSummaryText(_ text: SummaryText, meetingId: UUID, placement: ReferencePlacement) -> String {
         appendReference(
-            to: renderInlineMarkdown(text.text, meetingId: meetingId),
+            to: text.text,
             ref: text.transcriptRef,
             meetingId: meetingId,
             placement: placement
@@ -161,23 +161,6 @@ enum ObsidianMarkdownSummaryRenderer {
         case .separateParagraph:
             return "\(text)\n\n(\(referenceText))"
         }
-    }
-
-    private static func renderInlineMarkdown(_ text: String, meetingId: UUID) -> String {
-        let pattern = #"\[([^\]]+)\]\(transcript://([0-9]{2}:[0-9]{2}:[0-9]{2})\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
-
-        var rendered = text
-        let matches = regex.matches(in: rendered, range: NSRange(rendered.startIndex..., in: rendered))
-        for match in matches.reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: rendered),
-                  let labelRange = Range(match.range(at: 1), in: rendered),
-                  let timeRange = Range(match.range(at: 2), in: rendered) else { continue }
-            let label = String(rendered[labelRange])
-            let time = String(rendered[timeRange])
-            rendered.replaceSubrange(fullRange, with: "[[" + meetingId.uuidString + "#" + time + "|" + obsidianAlias(label) + "]]")
-        }
-        return rendered
     }
 
     private static func obsidianAlias(_ value: String) -> String {

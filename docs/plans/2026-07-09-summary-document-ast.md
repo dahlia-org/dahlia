@@ -124,7 +124,7 @@ struct SummaryDocumentResponse: Decodable {
 
 - セクションごとに `UUID.v7()` を採番。
 - `image` は `UUID(uuidString: imageId)` が当該 meeting の screenshots に存在するもののみ採用。不一致は caption を paragraph 化 or 破棄(現行 `normalizeScreenshotEmbeds` の防御と同思想)。
-- 全テキストに**旧記法サルベージ**: `![[...]]` → 対応 screenshot があれば image ブロック昇格(stem が UUID のため照合可能 — `ScreenshotExportService.filename(for:)` は `<UUID>.<ext>`)、`[[id#HH:MM:SS|label]]` / `[label](transcript://HH:MM:SS)` → block-level の `transcript_refs` へ抽出(カスタム instruction に旧プロンプト全文を保存しているユーザー対策)。
+- 全テキストに**旧記法サルベージ**: `![[...]]` → 対応 screenshot があれば image ブロック昇格(stem が UUID のため照合可能 — `ScreenshotExportService.filename(for:)` は `<UUID>.<ext>`)、`[[id#HH:MM:SS|label]]` → block-level の `transcript_refs` へ抽出(カスタム instruction に旧プロンプト全文を保存しているユーザー対策)。
 
 **フォールバック連鎖**(structured output 非対応/パース失敗時):
 
@@ -152,7 +152,7 @@ struct SummaryDocumentResponse: Decodable {
 
 - `SummaryRenderContext`: `{meetingId, createdAt, screenshots: [MeetingScreenshotRecord]}`(screenshotId → ファイル名解決用)。
 - **`LegacyMarkdownSummaryParser.swift`**: markdown → sections/blocks。`MarkdownContentView.parseBlocks`(Views/MarkdownContentView.swift L160-273)のロジックを移植・拡張:
-  - 追加: checklist(`- [ ]` / `- [x]`)、`![[...]]` → image(context の screenshots と stem-UUID 照合)、`[[id#HH:MM:SS|label]]` / `[label](transcript://HH:MM:SS)` → block-level `transcript_refs` へ抽出、frontmatter スキップ、heading レベル 1-2 でセクション分割(最初の heading より前は heading 空のセクション)。
+  - 追加: checklist(`- [ ]` / `- [x]`)、`![[...]]` → image(context の screenshots と stem-UUID 照合)、`[[id#HH:MM:SS|label]]` → block-level `transcript_refs` へ抽出、frontmatter スキップ、heading レベル 1-2 でセクション分割(最初の heading より前は heading 空のセクション)。
   - 既存の table / horizontalRule / code / quote / list パースは維持(table は `.table` ブロックへ、hr は段落区切り扱いで破棄可)。
   - フォールバック 3 か所(LLM 応答フォールバック・レガシー DB 行・旧記法サルベージ)から共用。
 - **`ObsidianMarkdownSummaryRenderer.swift`**: `render(document, context) -> (fileName, markdown /* frontmatter 付き */, body)`。現 `SummaryService` から移設: frontmatter 組み立て(L107-126、title エスケープ・tags YAML 含む)、`summaryFileName`(L298-308)。image → `![[<ScreenshotExportService.filename(for:)>]]`、`transcript_refs` → `[[meetingId#HH:MM:SS|label]]`。**現行 Vault 出力と同型**を維持(`findSummaryFile` の frontmatter 先頭 512 バイト内 meeting_id 照合・`VaultSummaryExportService.resolveSummaryFileURL` の upsert・Drive upsert と互換)。

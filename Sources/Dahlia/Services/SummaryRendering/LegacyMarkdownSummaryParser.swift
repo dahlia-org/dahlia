@@ -233,32 +233,11 @@ enum LegacyMarkdownSummaryParser {
     }
 
     static func normalizedTextAndRefs(_ text: String) -> (text: String, refs: [TranscriptReference]) {
-        let markdownResult = replaceTranscriptMarkdownLinks(in: text)
-        let obsidianResult = replaceObsidianLinks(in: markdownResult.text)
+        let obsidianResult = replaceObsidianLinks(in: text)
         return (
             text: cleanupReferenceWhitespace(obsidianResult.text),
-            refs: uniqueReferences(markdownResult.refs + obsidianResult.refs)
+            refs: uniqueReferences(obsidianResult.refs)
         )
-    }
-
-    private static func replaceTranscriptMarkdownLinks(in text: String) -> (text: String, refs: [TranscriptReference]) {
-        let matches = transcriptMarkdownLinkRegex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        guard !matches.isEmpty else { return (text, []) }
-
-        var refs: [TranscriptReference] = []
-        var normalized = text
-        for match in matches.reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: normalized),
-                  let labelRange = Range(match.range(at: 1), in: normalized),
-                  let timeRange = Range(match.range(at: 2), in: normalized) else { continue }
-
-            let label = String(normalized[labelRange])
-            let time = String(normalized[timeRange])
-            refs.append(TranscriptReference(time: time))
-            normalized.replaceSubrange(fullRange, with: label == time ? "" : label)
-        }
-
-        return (normalized, Array(refs.reversed()))
     }
 
     private static func replaceObsidianLinks(in text: String) -> (text: String, refs: [TranscriptReference]) {
@@ -290,10 +269,6 @@ enum LegacyMarkdownSummaryParser {
 
     private static let obsidianImageEmbedRegex = try! NSRegularExpression(
         pattern: #"\!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
-    )
-
-    private static let transcriptMarkdownLinkRegex = try! NSRegularExpression(
-        pattern: #"\[([^\]]+)\]\(transcript://([0-9]{2}:[0-9]{2}:[0-9]{2})\)"#
     )
 
     private static let obsidianLinkRegex = try! NSRegularExpression(

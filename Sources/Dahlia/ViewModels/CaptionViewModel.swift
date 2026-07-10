@@ -193,14 +193,16 @@ final class CaptionViewModel: ObservableObject {
         return URL(string: "https://docs.google.com/document/d/\(fileId)/edit")
     }
 
-    func copyCurrentSummaryForSlack() {
+    func copyCurrentSummary(for destination: SummaryShareRenderer.Destination) {
         guard let currentSummaryDocument, canShareCurrentSummary else { return }
 
-        let text = SlackSummaryRenderer.render(document: currentSummaryDocument, actionItemsHeading: L10n.actionItems)
-        guard text.nilIfBlank != nil else { return }
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        let content = SummaryShareRenderer.render(
+            document: currentSummaryDocument,
+            actionItemsHeading: L10n.actionItems,
+            for: destination
+        )
+        guard content.markdown.nilIfBlank != nil else { return }
+        SummaryPasteboardWriter.write(content)
     }
 
     /// 録音中でなく、文字起こしを表示中の場合 true。
