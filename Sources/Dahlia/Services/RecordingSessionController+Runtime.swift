@@ -20,13 +20,12 @@ extension RecordingSessionController {
                 recordingStartTime: snapshot.startedAt,
                 recordingSessionId: snapshot.sessionId
             ) { [weak self] event in
-                await onEvent(event)
-                guard case .failure = event else { return }
-                await self?.recognitionDidFail(
+                await self?.handleRecognitionEvent(
                     event,
                     expectedPipelineID: pipelineID,
                     expectedSource: source,
-                    sessionId: snapshot.sessionId
+                    sessionId: snapshot.sessionId,
+                    onEvent: onEvent
                 )
             }
         } catch {
@@ -36,6 +35,36 @@ extension RecordingSessionController {
                 sessionId: snapshot.sessionId
             )
             throw error
+        }
+    }
+
+    private func handleRecognitionEvent(
+        _ event: TranscriptionEvent,
+        expectedPipelineID: UUID,
+        expectedSource: RecordingAudioSource,
+        sessionId: UUID,
+        onEvent: @escaping EventHandler
+    ) async {
+        guard event.belongs(to: sessionId), state.belongs(to: sessionId) else { return }
+        let isPending = pendingRecognitionStarts[expectedPipelineID]?.sessionId == sessionId
+        let isCurrent = sourceRuntimes[expectedSource]?.recognition?.pipelineID == expectedPipelineID
+
+        switch event {
+        case .preview, .clearPreview:
+            guard isPending || isCurrent else { return }
+            await onEvent(event)
+        case .finalized, .translation:
+            // 引退した認識器の確定結果・翻訳は保持するが、preview世代は上のguardで分離する。
+            await onEvent(event)
+        case .failure:
+            guard isPending || isCurrent else { return }
+            await onEvent(event)
+            await recognitionDidFail(
+                event,
+                expectedPipelineID: expectedPipelineID,
+                expectedSource: expectedSource,
+                sessionId: sessionId
+            )
         }
     }
 
@@ -107,12 +136,18 @@ extension RecordingSessionController {
         if snapshot.plan.finalMode == .batch {
             let runtimeID = runtime.id
             await runtime.pipeline.router.removeLiveConsumerAndWait()
-            await runtime.recognition?.cancel()
             guard var currentRuntime = sourceRuntimes[expectedSource],
                   currentRuntime.id == runtimeID,
                   currentRuntime.recognition?.pipelineID == expectedPipelineID else { return }
+            let failedRecognition = currentRuntime.recognition
             currentRuntime.recognition = nil
             sourceRuntimes[expectedSource] = currentRuntime
+            // failureはrecognition自身のresultTaskから届くため、この場でcancel完了を待つと自己待機になる。
+            if let failedRecognition {
+                Task {
+                    await failedRecognition.cancel()
+                }
+            }
             await onRuntimeFailure?(expectedSource, message, false)
         } else {
             await onRuntimeFailure?(expectedSource, message, true)
@@ -303,6 +338,30 @@ extension RecordingSessionController {
     ) throws {
         if let failureMessage = pending.failureMessage {
             throw RecordingSessionControllerError.recognitionFailed(failureMessage)
+        }
+    }
+}
+
+private extension TranscriptionEvent {
+    func belongs(to sessionId: UUID) -> Bool {
+        switch self {
+        case let .preview(segment), let .finalized(segment):
+            segment.sessionId == sessionId
+        case let .clearPreview(eventSessionId, _),
+             let .translation(eventSessionId, _, _),
+             let .failure(eventSessionId, _, _, _):
+            eventSessionId == sessionId
+        }
+    }
+}
+
+private extension RecordingSessionController.State {
+    func belongs(to sessionId: UUID) -> Bool {
+        switch self {
+        case .idle:
+            false
+        case let .prepared(snapshot), let .capturing(snapshot), let .stopping(snapshot):
+            snapshot.sessionId == sessionId
         }
     }
 }

@@ -77,6 +77,45 @@ import Foundation
             #expect(liveStore.segments.isEmpty)
         }
 
+        @Test
+        func finalizationRemovesMatchingPreviewSynchronously() {
+            let sessionID = UUID.v7()
+            let segmentID = UUID.v7()
+            let transcriptStore = TranscriptStore()
+            let liveStore = LiveCaptionStore()
+            let plan = TranscriptionSessionPlan(
+                finalMode: .realtime,
+                liveSubtitlesEnabled: false,
+                retainBatchAudio: false
+            )
+            let preview = TranscriptSegment(
+                id: segmentID,
+                sessionId: sessionID,
+                startTime: Date(timeIntervalSince1970: 1_776_384_000),
+                text: "Preview",
+                isConfirmed: false,
+                speakerLabel: "mic"
+            )
+            var final = preview
+            final.text = "Final"
+            final.isConfirmed = true
+
+            TranscriptionEventRouter.route(
+                .preview(preview),
+                plan: plan,
+                transcriptStore: transcriptStore,
+                liveCaptionStore: liveStore
+            )
+            TranscriptionEventRouter.route(
+                .finalized(final),
+                plan: plan,
+                transcriptStore: transcriptStore,
+                liveCaptionStore: liveStore
+            )
+
+            #expect(transcriptStore.segments == [final])
+        }
+
         private func makeSegment(sessionID: UUID) -> TranscriptSegment {
             TranscriptSegment(
                 sessionId: sessionID,

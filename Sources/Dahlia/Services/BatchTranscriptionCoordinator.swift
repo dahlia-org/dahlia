@@ -50,6 +50,13 @@ actor BatchTranscriptionCoordinator {
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
         )
+        let recoveryFailures = await BatchInterruptedRecordingRecoveryService.recover(
+            dbQueue: dbQueue,
+            managedRootURL: managedRootURL
+        )
+        for failure in recoveryFailures {
+            await persistFailure(sessionId: failure.sessionId, message: failure.message)
+        }
         let sessionIds = await (try? dbQueue.read { db in
             try RecordingSessionRecord
                 .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)

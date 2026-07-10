@@ -21,20 +21,27 @@ final class DefaultBatchRecordingSession: BatchRecordingSession {
     func beginRangeConsumer(
         source: RecordingAudioSource,
         locale: Locale,
-        at date: Date
-    ) async throws -> AudioFrameRouter.BatchConsumer {
-        let writer = try await session.beginRange(source: source, locale: locale, at: date)
-        return Self.consumer(writer: writer)
+        at date: Date,
+        continuingFromActiveRange: Bool
+    ) async throws -> BatchRecordingConsumerAttachment {
+        let range = try await session.beginRangeWithOrigin(
+            source: source,
+            locale: locale,
+            at: date,
+            continuingFromActiveRange: continuingFromActiveRange
+        )
+        return BatchRecordingConsumerAttachment(
+            consumer: Self.consumer(writer: range.writer),
+            origin: range.origin
+        )
     }
 
-    func rotateRanges(_ origins: [BatchRecordingRangeOrigin], locale: Locale) async throws {
+    func rotateRanges(
+        _ origins: [BatchRecordingRangeOrigin],
+        locale: Locale
+    ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin] {
         try await session.rotateRanges(
-            origins.map { origin in
-                (
-                    source: origin.source,
-                    sessionRelativeOriginSeconds: origin.sessionRelativeOriginSeconds
-                )
-            },
+            origins,
             locale: locale
         )
     }

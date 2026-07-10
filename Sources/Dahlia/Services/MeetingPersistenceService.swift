@@ -195,7 +195,17 @@ final class MeetingPersistenceService {
             let persistedSession = try dbQueue.write { db -> RecordingSessionRecord in
                 // debounce中だった最終セグメントもsession終了と同じtransactionで確定する。
                 for record in finalSegmentRecords {
-                    try record.save(db)
+                    if let existing = try TranscriptSegmentRecord.fetchOne(db, key: record.id) {
+                        // 既存行のmeeting/session/timeは変更せず、この録音中に更新され得る翻訳だけを反映する。
+                        if existing.translatedText != record.translatedText {
+                            try db.execute(
+                                sql: "UPDATE transcript_segments SET translatedText = ? WHERE id = ?",
+                                arguments: [record.translatedText, record.id]
+                            )
+                        }
+                    } else {
+                        try record.insert(db)
+                    }
                 }
                 // バッチ処理が先に記録したエラーや試行情報を、録音開始時点の値で上書きしない。
                 try db.execute(

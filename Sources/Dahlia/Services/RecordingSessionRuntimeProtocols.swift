@@ -62,9 +62,13 @@ protocol BatchRecordingSession: AnyObject, Sendable {
     func beginRangeConsumer(
         source: RecordingAudioSource,
         locale: Locale,
-        at date: Date
-    ) async throws -> AudioFrameRouter.BatchConsumer
-    func rotateRanges(_ origins: [BatchRecordingRangeOrigin], locale: Locale) async throws
+        at date: Date,
+        continuingFromActiveRange: Bool
+    ) async throws -> BatchRecordingConsumerAttachment
+    func rotateRanges(
+        _ origins: [BatchRecordingRangeOrigin],
+        locale: Locale
+    ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin]
     func endRangeForReconfiguration(source: RecordingAudioSource) async throws
     func finish() async throws
     func cancelAndDelete() async

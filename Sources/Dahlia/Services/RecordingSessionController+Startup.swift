@@ -26,14 +26,12 @@ extension RecordingSessionController {
                 preferredTimescale: 1_000_000
             )
         )
-        if let batchRecording {
-            let consumer = try await batchRecording.beginRangeConsumer(
-                source: configuration.source,
-                locale: locale,
-                at: captureOriginDate
-            )
-            pipeline.router.setBatchConsumer(consumer)
-        }
+        let batchRangeOrigin = try await attachInitialBatchRange(
+            to: pipeline,
+            source: configuration.source,
+            locale: locale,
+            captureOriginDate: captureOriginDate
+        )
         let recognition = try await startPreparedRecognition(
             preparedSource.recognition?.session,
             source: configuration.source,
@@ -58,7 +56,8 @@ extension RecordingSessionController {
             id: runtimeID,
             pipeline: pipeline,
             capture: capture,
-            recognition: recognition
+            recognition: recognition,
+            batchRangeOrigin: batchRangeOrigin
         )
         try await capture.start()
         try requireCurrentSourceRuntime(
@@ -66,6 +65,24 @@ extension RecordingSessionController {
             runtimeID: runtimeID,
             sessionId: snapshot.sessionId
         )
+    }
+
+    private func attachInitialBatchRange(
+        to pipeline: AudioSourcePipeline,
+        source: RecordingAudioSource,
+        locale: Locale,
+        captureOriginDate: Date
+    ) async throws -> BatchRecordingRangeOrigin? {
+        guard let batchRecording else { return nil }
+        let attachment = try await batchRecording.beginRangeConsumer(
+            source: source,
+            locale: locale,
+            at: captureOriginDate,
+            continuingFromActiveRange: false
+        )
+        pipeline.setSessionRelativeOrigin(seconds: attachment.origin.sessionRelativeOriginSeconds)
+        pipeline.router.setBatchConsumer(attachment.consumer)
+        return attachment.origin
     }
 
     private func preparedCaptureFormat(for source: PreparedSource) async throws -> AVAudioFormat {

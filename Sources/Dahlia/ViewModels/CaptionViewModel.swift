@@ -681,6 +681,7 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL
     ) {
         guard !isFinalizingRecording else { return }
+        if case .starting = recordingLifecycle { return }
 
         // 録音中に録音対象のトランスクリプトを選択した場合はライブ表示に復帰
         if isListening, meetingId == recordingMeetingId {
@@ -872,6 +873,7 @@ final class CaptionViewModel: ObservableObject {
     /// 録音中はバックグラウンド録音を維持したまま表示のみクリアする。
     func clearCurrentMeeting() {
         guard !isFinalizingRecording else { return }
+        if case .starting = recordingLifecycle { return }
 
         if isListening {
             saveRecordingContextIfNeeded()
@@ -1162,6 +1164,8 @@ final class CaptionViewModel: ObservableObject {
             errorMessage = nil
             return true
         } catch {
+            guard !Task.isCancelled,
+                  recordingLifecycle == .recording(recordingSessionId) else { return false }
             if let snapshot = await recordingSessionController.snapshot(),
                snapshot.sessionId == recordingSessionId {
                 activeControllerSources = snapshot.enabledSources
@@ -1533,12 +1537,8 @@ final class CaptionViewModel: ObservableObject {
         let recordingStart = activeStore.timeBase
         let transcriptionMode = activeTranscriptionMode ?? .realtime
         let recordingSessionId = persistenceService?.recordingSessionId
-        recordingContext = nil
 
         Task {
-            for task in configurationTasks {
-                await task.value
-            }
             var stopResult: RecordingSessionController.StopResult?
             do {
                 stopResult = try await recordingSessionController.stop()
@@ -1546,9 +1546,13 @@ final class CaptionViewModel: ObservableObject {
                 ErrorReportingService.capture(error, context: ["source": "stopRecordingSession"])
                 await recordingSessionController.abort()
             }
+            for task in configurationTasks {
+                await task.value
+            }
             let persistenceResult = persistenceService?.stop()
                 ?? .failure(message: L10n.recordingSessionNotActive)
             persistenceService = nil
+            recordingContext = nil
             if let persistenceFailureMessage = persistenceResult.failureMessage {
                 errorMessage = persistenceFailureMessage
             }
@@ -1611,14 +1615,15 @@ final class CaptionViewModel: ObservableObject {
         dbQueue: DatabaseQueue?
     ) async {
         let recordingFailed = stopResult?.batchRecordingSucceeded != true || !persistenceResult.succeeded
-        if recordingFailed,
-           currentMeetingId == meetingId {
-            batchTranscriptionState = .failed(
-                sessionId: recordingSessionId,
-                message: stopResult?.batchFailureMessage
-                    ?? persistenceResult.failureMessage.map(L10n.batchAudioWriteFailed)
-                    ?? L10n.batchAudioWriteFailed("")
-            )
+        if recordingFailed {
+            if currentMeetingId == meetingId {
+                batchTranscriptionState = .failed(
+                    sessionId: recordingSessionId,
+                    message: stopResult?.batchFailureMessage
+                        ?? persistenceResult.failureMessage.map(L10n.batchAudioWriteFailed)
+                        ?? L10n.batchAudioWriteFailed("")
+                )
+            }
         } else if let meetingId {
             if currentMeetingId == meetingId {
                 batchTranscriptionState = .awaitingConfirmation(sessionId: recordingSessionId)
@@ -2397,6 +2402,8 @@ final class CaptionViewModel: ObservableObject {
     private func handleLiveSubtitleSettingChange(isEnabled: Bool) {
         guard var plan = activeTranscriptionPlan,
               let recordingSessionId = activeRecordingSessionId else { return }
+        guard plan.liveSubtitlesEnabled != isEnabled else { return }
+        let previousValue = plan.liveSubtitlesEnabled
 
         switch recordingLifecycle {
         case let .starting(sessionId) where sessionId == recordingSessionId:
@@ -2438,7 +2445,28 @@ final class CaptionViewModel: ObservableObject {
                 self.activeControllerSources = snapshot.enabledSources
             } catch {
                 self.errorMessage = error.localizedDescription
+                self.restoreLiveSubtitleSetting(
+                    previousValue,
+                    recordingSessionId: recordingSessionId
+                )
             }
+        }
+    }
+
+    private func restoreLiveSubtitleSetting(_ isEnabled: Bool, recordingSessionId: UUID) {
+        guard activeRecordingSessionId == recordingSessionId,
+              var plan = activeTranscriptionPlan else { return }
+        plan.liveSubtitlesEnabled = isEnabled
+        activeTranscriptionPlan = plan
+        AppSettings.shared.liveSubtitleOverlayEnabled = isEnabled
+
+        if isEnabled {
+            liveCaptionStore.start(sessionId: recordingSessionId)
+            if plan.persistsRealtimeTranscript {
+                liveCaptionStore.seed(activeTranscriptStore.segments, sessionId: recordingSessionId)
+            }
+        } else {
+            liveCaptionStore.clear()
         }
     }
 

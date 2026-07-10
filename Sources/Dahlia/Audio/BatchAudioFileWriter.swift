@@ -43,7 +43,7 @@ actor BatchAudioFileWriter {
     ) {
         let pair = AsyncStream.makeStream(
             of: AudioChunk.self,
-            bufferingPolicy: .bufferingNewest(max(1, maximumBufferedChunkCount))
+            bufferingPolicy: .bufferingOldest(max(1, maximumBufferedChunkCount))
         )
         stream = pair.stream
         continuation = pair.continuation

@@ -8,7 +8,7 @@ import GRDB
     @MainActor
     struct BatchTranscriptionRecoveryServiceTests {
         @Test
-        func recoversPartialCAFAndOpenRangeAfterCrash() throws {
+        func recoversPartialCAFAndOpenRangeAfterCrash() async throws {
             let fixture = try BatchAudioTestFixture(name: "Recovery")
             defer { fixture.removeFiles() }
             let audioRecord = fixture.makeAudioRecord(finalizedAt: nil, totalFrameCount: nil)
@@ -22,7 +22,7 @@ import GRDB
                 createdAt: fixture.now,
                 updatedAt: fixture.now
             )
-            try fixture.database.dbQueue.write { db in
+            try await fixture.database.dbQueue.write { db in
                 try audioRecord.insert(db)
                 try range.insert(db)
             }
@@ -38,7 +38,7 @@ import GRDB
                 managedRootURL: fixture.managedRootURL
             )
 
-            let result = try fixture.database.dbQueue.read { db in
+            let result = try await fixture.database.dbQueue.read { db in
                 let recoveredSession = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
                 let recoveredMeeting = try MeetingRecord.fetchOne(db, key: fixture.meeting.id)
                 let recoveredFile = try RecordingAudioFileRecord.fetchOne(db, key: audioRecord.id)
@@ -61,6 +61,47 @@ import GRDB
                 relativePath: fixture.managedRelativePath
             )
             #expect(FileManager.default.fileExists(atPath: finalURL.path))
+        }
+
+        @Test
+        func coordinatorRecoversInterruptedRecordingIntoConfirmationState() async throws {
+            let fixture = try BatchAudioTestFixture(name: "CoordinatorRecovery")
+            defer { fixture.removeFiles() }
+            let audioRecord = fixture.makeAudioRecord(finalizedAt: nil, totalFrameCount: nil)
+            let range = RecordingAudioRangeRecord(
+                id: .v7(),
+                audioFileId: audioRecord.id,
+                startFrame: 0,
+                frameCount: nil,
+                sessionOffsetSeconds: 0,
+                localeIdentifier: "ja_JP",
+                createdAt: fixture.now,
+                updatedAt: fixture.now
+            )
+            try await fixture.database.dbQueue.write { db in
+                try audioRecord.insert(db)
+                try range.insert(db)
+            }
+            let partialURL = BatchAudioStorage.partialURL(
+                baseURL: fixture.managedRootURL,
+                relativePath: fixture.managedRelativePath
+            )
+            try BatchAudioTestFixture.writeCAF(url: partialURL, frameCount: 320)
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                onStateChange: { _ in }
+            )
+
+            await coordinator.recoverAndEnqueue()
+
+            let session = try await fixture.database.dbQueue.read { db in
+                let record = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+                return try #require(record)
+            }
+            #expect(session.endedAt != nil)
+            #expect(session.batchLastAttemptAt == nil)
+            #expect(BatchTranscriptionState.derive(from: session) == .awaitingConfirmation(sessionId: session.id))
         }
     }
 #endif

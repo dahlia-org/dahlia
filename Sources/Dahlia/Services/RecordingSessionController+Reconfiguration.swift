@@ -47,15 +47,29 @@ extension RecordingSessionController {
             try await recognitionFactory.prepareModel(locale: locale)
         } catch {
             await onRuntimeFailure?(nil, error.localizedDescription, false)
-            return
+            throw error
         }
 
+        var attachedCount = 0
+        var firstFailureMessage: String?
         for source in Self.sortedSources(sourceRuntimes.keys) {
-            await attachBatchLiveRecognition(
-                source: source,
-                locale: locale,
-                snapshot: snapshot,
-                translateSegment: translateSegment
+            do {
+                if try await attachBatchLiveRecognition(
+                    source: source,
+                    locale: locale,
+                    snapshot: snapshot,
+                    translateSegment: translateSegment
+                ) {
+                    attachedCount += 1
+                }
+            } catch {
+                firstFailureMessage = firstFailureMessage ?? error.localizedDescription
+                await onRuntimeFailure?(source, error.localizedDescription, false)
+            }
+        }
+        guard attachedCount > 0 else {
+            throw RecordingSessionControllerError.recognitionFailed(
+                firstFailureMessage ?? L10n.speechRecognitionNotReady
             )
         }
     }
@@ -65,9 +79,9 @@ extension RecordingSessionController {
         locale: Locale,
         snapshot: Snapshot,
         translateSegment: ProgressiveSegmentTranslationHandler?
-    ) async {
-        guard let initialRuntime = sourceRuntimes[source],
-              initialRuntime.recognition == nil else { return }
+    ) async throws -> Bool {
+        guard let initialRuntime = sourceRuntimes[source] else { return false }
+        guard initialRuntime.recognition == nil else { return true }
         var prepared: PreparedProgressiveRecognitionSession?
         do {
             let newRecognition = try await recognitionFactory.prepareSession(
@@ -85,6 +99,7 @@ extension RecordingSessionController {
                 runtimeID: initialRuntime.id,
                 sessionId: snapshot.sessionId
             )
+            return true
         } catch {
             if let prepared {
                 discardPendingRecognitionStart(
@@ -94,7 +109,7 @@ extension RecordingSessionController {
                 )
                 await prepared.session.cancel()
             }
-            await onRuntimeFailure?(source, error.localizedDescription, false)
+            throw error
         }
     }
 
@@ -289,15 +304,16 @@ extension RecordingSessionController {
 
     private func rotateBatchRanges(to locale: Locale) async throws {
         guard let batchRecording else { return }
-        try await batchRecording.rotateRanges(
-            sourceRuntimes.values.map {
-                BatchRecordingRangeOrigin(
-                    source: $0.pipeline.source,
-                    sessionRelativeOriginSeconds: $0.pipeline.sessionRelativeOriginSeconds
-                )
-            },
+        let origins = sourceRuntimes.values.compactMap(\.batchRangeOrigin)
+        let rotatedOrigins = try await batchRecording.rotateRanges(
+            origins,
             locale: locale
         )
+        for (source, origin) in rotatedOrigins {
+            guard var runtime = sourceRuntimes[source] else { continue }
+            runtime.batchRangeOrigin = origin
+            sourceRuntimes[source] = runtime
+        }
     }
 
     private func validateLocaleReplacements(

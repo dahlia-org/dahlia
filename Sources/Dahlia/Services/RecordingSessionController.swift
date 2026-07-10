@@ -119,6 +119,7 @@ actor RecordingSessionController {
         let pipeline: AudioSourcePipeline
         let capture: any AudioCaptureSession
         var recognition: (any ProgressiveRecognitionSession)?
+        var batchRangeOrigin: BatchRecordingRangeOrigin?
     }
 
     let captureFactory: any AudioCaptureSessionFactory

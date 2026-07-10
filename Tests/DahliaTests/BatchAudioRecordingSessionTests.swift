@@ -147,8 +147,16 @@ import GRDB
             await #expect(throws: (any Error).self) {
                 try await recorder.rotateRanges(
                     [
-                        (source: .microphone, sessionRelativeOriginSeconds: 0.25),
-                        (source: .system, sessionRelativeOriginSeconds: 0.5),
+                        BatchRecordingRangeOrigin(
+                            source: .microphone,
+                            startFrame: 0,
+                            sessionRelativeOriginSeconds: 0.25
+                        ),
+                        BatchRecordingRangeOrigin(
+                            source: .system,
+                            startFrame: 0,
+                            sessionRelativeOriginSeconds: 0.5
+                        ),
                     ],
                     locale: Locale(identifier: "en_US")
                 )
@@ -165,8 +173,16 @@ import GRDB
             }
             try await recorder.rotateRanges(
                 [
-                    (source: .microphone, sessionRelativeOriginSeconds: 0.25),
-                    (source: .system, sessionRelativeOriginSeconds: 0.5),
+                    BatchRecordingRangeOrigin(
+                        source: .microphone,
+                        startFrame: 0,
+                        sessionRelativeOriginSeconds: 0.25
+                    ),
+                    BatchRecordingRangeOrigin(
+                        source: .system,
+                        startFrame: 0,
+                        sessionRelativeOriginSeconds: 0.5
+                    ),
                 ],
                 locale: Locale(identifier: "en_US")
             )
@@ -193,6 +209,49 @@ import GRDB
             #expect(systemRanges.map(\.startFrame) == [0, 120])
             #expect(systemRanges.map(\.frameCount) == [120, 60])
             #expect(abs((systemRanges.last?.sessionOffsetSeconds ?? 0) - 0.5075) < 0.000_001)
+        }
+
+        @Test
+        func replacementRangeAndLaterLocaleRotationDoNotDoubleCountElapsedFrames() async throws {
+            let fixture = try BatchAudioTestFixture(name: "BatchReplacementOrigin")
+            defer { fixture.removeFiles() }
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id,
+                recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now,
+                sampleRate: 16000
+            )
+            let initialWriter = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try initialWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 16000))
+
+            let replacement = try await recorder.beginRangeWithOrigin(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now.addingTimeInterval(60),
+                continuingFromActiveRange: true
+            )
+            #expect(replacement.origin.startFrame == 16000)
+            #expect(abs(replacement.origin.sessionRelativeOriginSeconds - 1) < 0.000_001)
+            try replacement.writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 8000))
+
+            _ = try await recorder.rotateRanges(
+                [replacement.origin],
+                locale: Locale(identifier: "en_US")
+            )
+            try await recorder.finish()
+
+            let ranges = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+            }
+            #expect(ranges.map(\.startFrame) == [0, 16000, 24000])
+            #expect(abs(ranges[1].sessionOffsetSeconds - 1) < 0.000_001)
+            #expect(abs(ranges[2].sessionOffsetSeconds - 1.5) < 0.000_001)
         }
 
         @Test
@@ -257,7 +316,7 @@ import GRDB
         }
 
         @Test
-        func failedRangeCloseRemainsActiveAndMakesFinishFailAfterRetrySucceeds() async throws {
+        func failedRangeCloseRemainsActiveAndFinishSucceedsAfterRetry() async throws {
             let fixture = try BatchAudioTestFixture(name: "BatchRangeCloseFailure")
             defer { fixture.removeFiles() }
 
@@ -305,9 +364,7 @@ import GRDB
                 try RecordingAudioRangeRecord.fetchOne(db)
             }
             #expect(rangeAfterRetry?.frameCount == 120)
-            await #expect(throws: (any Error).self) {
-                try await recorder.finish()
-            }
+            try await recorder.finish()
 
             let result = try await fixture.database.dbQueue.read { db in
                 let file = try RecordingAudioFileRecord

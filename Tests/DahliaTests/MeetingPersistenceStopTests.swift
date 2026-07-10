@@ -72,6 +72,57 @@ import GRDB
             #expect(session.duration == nil)
         }
 
+        @Test
+        func appendStopDoesNotAssignLegacySegmentsToNewSession() throws {
+            let fixture = try makeDatabase()
+            let meetingId = UUID.v7()
+            let legacySegment = TranscriptSegment(
+                id: .v7(),
+                sessionId: nil,
+                startTime: fixture.vault.createdAt,
+                text: "Legacy transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+            try fixture.database.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: fixture.vault.id,
+                    projectId: nil,
+                    name: "Legacy meeting",
+                    status: .ready,
+                    createdAt: fixture.vault.createdAt,
+                    updatedAt: fixture.vault.createdAt
+                ).insert(db)
+                try TranscriptSegmentRecord(from: legacySegment, meetingId: meetingId).insert(db)
+            }
+            let store = TranscriptStore()
+            store.loadSegments([legacySegment])
+            let service = try MeetingPersistenceService(
+                store: store,
+                dbQueue: fixture.database.dbQueue,
+                existingMeetingId: meetingId,
+                existingSegmentIds: [legacySegment.id],
+                recordingStartDate: .now
+            )
+            let newSegment = TranscriptSegment(
+                startTime: .now,
+                text: "New transcript",
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+            store.addSegment(newSegment)
+
+            let result = service.stop()
+
+            let records = try fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord.order(Column("startTime").asc).fetchAll(db)
+            }
+            #expect(result.succeeded)
+            #expect(records.first(where: { $0.id == legacySegment.id })?.sessionId == nil)
+            #expect(records.first(where: { $0.id == newSegment.id })?.sessionId == service.recordingSessionId)
+        }
+
         private func makeDatabase() throws -> (database: AppDatabaseManager, vault: VaultRecord) {
             let database = try AppDatabaseManager(path: ":memory:")
             let createdAt = Date(timeIntervalSince1970: 1_776_380_000)

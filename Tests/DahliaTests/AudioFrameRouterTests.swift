@@ -169,5 +169,25 @@ import os
             #expect(first.sessionRelativeStartSeconds == 3)
             #expect(second.sessionRelativeStartSeconds == 3.01)
         }
+
+        @Test
+        func sourcePipelineOriginCanBeFinalizedBeforeFirstCapture() throws {
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: 16000,
+                channels: 1,
+                interleaved: false
+            ))
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+            buffer.frameLength = 160
+            let pipeline = AudioSourcePipeline(source: .microphone, captureFormat: format)
+
+            pipeline.setSessionRelativeOrigin(seconds: 12.5)
+            let chunk = pipeline.capture(buffer)
+            pipeline.setSessionRelativeOrigin(seconds: 99)
+
+            #expect(chunk.sessionRelativeStartSeconds == 12.5)
+            #expect(pipeline.sessionRelativeOriginSeconds == 12.5)
+        }
     }
 #endif

@@ -36,6 +36,12 @@ final class TranscriptStore: ObservableObject {
         segments.insert(segment, at: insertIndex)
     }
 
+    /// previewを同期的に取り除いてから確定セグメントを追加し、SwiftUI上の重複IDを防ぐ。
+    func finalizeSegment(_ segment: TranscriptSegment, forSource sourceLabel: String? = nil) {
+        clearUnconfirmedSegmentsImmediately(forSource: sourceLabel)
+        addSegment(segment)
+    }
+
     /// 指定ソースの未確定セグメントを更新する。
     /// 他ソースの未確定セグメントには影響しない。
     /// 200ms 以内の連続呼び出しはスロットルし、最後の状態のみ反映する。
@@ -48,6 +54,15 @@ final class TranscriptStore: ObservableObject {
 
     func clearUnconfirmedSegments(forSource sourceLabel: String? = nil) {
         scheduleUnconfirmedMutation(.clear, forSource: sourceLabel)
+    }
+
+    private func clearUnconfirmedSegmentsImmediately(forSource sourceLabel: String?) {
+        let key = sourceLabel ?? ""
+        unconfirmedThrottleTasks[key]?.cancel()
+        unconfirmedThrottleTasks[key] = nil
+        pendingUnconfirmed[key] = nil
+        segments.removeAll { !$0.isConfirmed && $0.speakerLabel == sourceLabel }
+        lastUnconfirmedUpdate[key] = .now
     }
 
     private func scheduleUnconfirmedMutation(_ mutation: UnconfirmedMutation, forSource sourceLabel: String? = nil) {

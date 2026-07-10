@@ -267,7 +267,8 @@ enum L10n {
     static var retryBatchTranscription: String { String(localized: "Retry Batch Transcription", bundle: bundle) }
     static var batchTranscriptionConfirmationTitle: String { String(localized: "Start batch transcription?", bundle: bundle) }
     static var batchTranscriptionConfirmationDescription: String { String(
-        localized: "The recording will be transcribed using the selected language. The audio is kept until transcription succeeds.",
+        // swiftlint:disable:next line_length
+        localized: "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.",
         bundle: bundle
     ) }
     static var later: String { String(localized: "Later", bundle: bundle) }

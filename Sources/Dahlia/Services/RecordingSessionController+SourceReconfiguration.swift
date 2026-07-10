@@ -6,7 +6,6 @@ extension RecordingSessionController {
     private struct SourcePipelinePreparation {
         let source: RecordingAudioSource
         let pipeline: AudioSourcePipeline
-        let captureOriginDate: Date
         let preparedRecognition: PreparedProgressiveRecognitionSession?
     }
 
@@ -90,7 +89,6 @@ extension RecordingSessionController {
         guard let captureFormat = batchFormat ?? preparedRecognition?.analyzerFormat else {
             throw AudioCaptureError.converterCreationFailed
         }
-        let captureOriginDate = Date.now
         return SourcePipelinePreparation(
             source: source,
             pipeline: AudioSourcePipeline(
@@ -98,12 +96,8 @@ extension RecordingSessionController {
                 captureFormat: captureFormat,
                 captureDeviceID: configuration.captureDeviceID,
                 captureBufferSize: configuration.captureBufferSize,
-                sessionRelativeOrigin: CMTime(
-                    seconds: max(0, captureOriginDate.timeIntervalSince(snapshot.startedAt)),
-                    preferredTimescale: 1_000_000
-                )
+                sessionRelativeOrigin: .zero
             ),
-            captureOriginDate: captureOriginDate,
             preparedRecognition: preparedRecognition
         )
     }
@@ -119,11 +113,13 @@ extension RecordingSessionController {
         )
         var runtimeID: UUID?
         var capture: (any AudioCaptureSession)?
-        var didBeginBatchRange = false
+        var batchRangeOrigin: BatchRecordingRangeOrigin?
         do {
-            didBeginBatchRange = try await beginBatchRange(
+            batchRangeOrigin = try await beginBatchRange(
                 for: preparation,
-                locale: locale
+                locale: locale,
+                snapshot: snapshot,
+                continuingFromActiveRange: false
             )
             attachment = try await attachRecognition(
                 preparation.preparedRecognition,
@@ -149,7 +145,8 @@ extension RecordingSessionController {
                 id: newRuntimeID,
                 pipeline: preparation.pipeline,
                 capture: newCapture,
-                recognition: attachment.recognition
+                recognition: attachment.recognition,
+                batchRangeOrigin: batchRangeOrigin
             )
             try await newCapture.start()
             try requireCurrentSourceRuntime(
@@ -168,7 +165,7 @@ extension RecordingSessionController {
                 attachment: attachment,
                 runtimeID: runtimeID,
                 capture: capture,
-                didBeginBatchRange: didBeginBatchRange,
+                didBeginBatchRange: batchRangeOrigin != nil,
                 sessionId: snapshot.sessionId
             )
             throw error
@@ -204,16 +201,26 @@ extension RecordingSessionController {
 
     private func beginBatchRange(
         for preparation: SourcePipelinePreparation,
-        locale: Locale
-    ) async throws -> Bool {
-        guard let batchRecording else { return false }
-        let consumer = try await batchRecording.beginRangeConsumer(
+        locale: Locale,
+        snapshot: Snapshot,
+        continuingFromActiveRange: Bool
+    ) async throws -> BatchRecordingRangeOrigin? {
+        let captureOriginDate = Date.now
+        guard let batchRecording else {
+            preparation.pipeline.setSessionRelativeOrigin(
+                seconds: captureOriginDate.timeIntervalSince(snapshot.startedAt)
+            )
+            return nil
+        }
+        let attachment = try await batchRecording.beginRangeConsumer(
             source: preparation.source,
             locale: locale,
-            at: preparation.captureOriginDate
+            at: captureOriginDate,
+            continuingFromActiveRange: continuingFromActiveRange
         )
-        preparation.pipeline.router.setBatchConsumer(consumer)
-        return true
+        preparation.pipeline.setSessionRelativeOrigin(seconds: attachment.origin.sessionRelativeOriginSeconds)
+        preparation.pipeline.router.setBatchConsumer(attachment.consumer)
+        return attachment.origin
     }
 
     private func attachRecognition(
@@ -297,6 +304,7 @@ extension RecordingSessionController {
         var runtimeID: UUID?
         var capture: (any AudioCaptureSession)?
         var didAttemptPreviousCaptureStop = false
+        var batchRangeOrigin: BatchRecordingRangeOrigin?
         do {
             guard sourceRuntimes[preparation.source]?.id == previousRuntime.id else {
                 throw RecordingSessionControllerError.sessionNotActive
@@ -328,7 +336,12 @@ extension RecordingSessionController {
                 replacementRuntimeID: replacementRuntimeID,
                 sessionId: snapshot.sessionId
             )
-            _ = try await beginBatchRange(for: preparation, locale: locale)
+            batchRangeOrigin = try await beginBatchRange(
+                for: preparation,
+                locale: locale,
+                snapshot: snapshot,
+                continuingFromActiveRange: true
+            )
             attachment = try await attachRecognition(
                 preparation.preparedRecognition,
                 to: preparation.pipeline,
@@ -340,7 +353,8 @@ extension RecordingSessionController {
                 id: replacementRuntimeID,
                 pipeline: preparation.pipeline,
                 capture: replacementCapture,
-                recognition: attachment.recognition
+                recognition: attachment.recognition,
+                batchRangeOrigin: batchRangeOrigin
             )
             try await replacementCapture.start()
             try requireCurrentSourceRuntime(
@@ -399,10 +413,11 @@ extension RecordingSessionController {
             await attachment.preparedRecognition?.session.cancel()
         }
         guard didAttemptPreviousCaptureStop else { return }
-        await restoreBatchRangeIfNeeded(previousRuntime, locale: locale)
+        let restoredRangeOrigin = await restoreBatchRangeIfNeeded(previousRuntime, locale: locale)
         try await restorePreviousRuntime(
             previousRuntime,
             source: preparation.source,
+            batchRangeOrigin: restoredRangeOrigin ?? previousRuntime.batchRangeOrigin,
             sessionId: sessionId
         )
     }
@@ -410,24 +425,27 @@ extension RecordingSessionController {
     private func restoreBatchRangeIfNeeded(
         _ previousRuntime: SourceRuntime,
         locale: Locale
-    ) async {
-        guard let batchRecording else { return }
+    ) async -> BatchRecordingRangeOrigin? {
+        guard let batchRecording else { return nil }
         let source = previousRuntime.pipeline.source
         previousRuntime.pipeline.router.setBatchConsumer(nil)
         await previousRuntime.pipeline.router.waitUntilIdle()
         do {
-            let rollbackConsumer = try await batchRecording.beginRangeConsumer(
+            let attachment = try await batchRecording.beginRangeConsumer(
                 source: source,
                 locale: locale,
-                at: .now
+                at: .now,
+                continuingFromActiveRange: false
             )
-            previousRuntime.pipeline.router.setBatchConsumer(rollbackConsumer)
+            previousRuntime.pipeline.router.setBatchConsumer(attachment.consumer)
+            return attachment.origin
         } catch {
             previousRuntime.pipeline.router.setBatchConsumer(nil)
             if batchRuntimeFailureMessage == nil {
                 batchRuntimeFailureMessage = error.localizedDescription
             }
             await onRuntimeFailure?(source, error.localizedDescription, false)
+            return nil
         }
     }
 
@@ -601,6 +619,7 @@ extension RecordingSessionController {
     private func restorePreviousRuntime(
         _ previousRuntime: SourceRuntime,
         source: RecordingAudioSource,
+        batchRangeOrigin: BatchRecordingRangeOrigin?,
         sessionId: UUID
     ) async throws {
         guard case var .capturing(snapshot) = state,
@@ -609,7 +628,9 @@ extension RecordingSessionController {
             throw RecordingSessionControllerError.sessionNotActive
         }
         sourceRuntimeGenerations[source] = previousRuntime.id
-        sourceRuntimes[source] = previousRuntime
+        var restoredRuntime = previousRuntime
+        restoredRuntime.batchRangeOrigin = batchRangeOrigin
+        sourceRuntimes[source] = restoredRuntime
         do {
             try await previousRuntime.capture.start()
             try requireCurrentSourceRuntime(

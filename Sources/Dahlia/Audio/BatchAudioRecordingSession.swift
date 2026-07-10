@@ -2,6 +2,37 @@
 import Foundation
 import GRDB
 
+private struct RangeRotation {
+    let source: RecordingAudioSource
+    let previousRange: RecordingAudioRangeRecord?
+    let newRange: RecordingAudioRangeRecord
+}
+
+private struct RangeRotationRequest {
+    let source: RecordingAudioSource
+    let offsetBasis: RangeOffsetBasis
+}
+
+private enum RangeOffsetBasis {
+    case fixed(TimeInterval)
+    case sourceOrigin(BatchRecordingRangeOrigin)
+
+    func sessionOffsetSeconds(boundaryFrame: Int64, sampleRate: Double) -> TimeInterval {
+        switch self {
+        case let .fixed(offset):
+            offset
+        case let .sourceOrigin(origin):
+            origin.sessionRelativeOriginSeconds
+                + Double(max(0, boundaryFrame - origin.startFrame)) / sampleRate
+        }
+    }
+}
+
+private struct RangePersistence {
+    let previousRange: RecordingAudioRangeRecord?
+    let newRange: RecordingAudioRangeRecord
+}
+
 /// ひとつのバッチ録音セッションで、音源ごとの単一CAFとrangeを管理する。
 @MainActor
 final class BatchAudioRecordingSession {
@@ -17,7 +48,6 @@ final class BatchAudioRecordingSession {
     private var writers: [RecordingAudioSource: BatchAudioFileWriter] = [:]
     private var fileRecords: [RecordingAudioSource: RecordingAudioFileRecord] = [:]
     private var activeRanges: [RecordingAudioSource: RecordingAudioRangeRecord] = [:]
-    private var firstRangeCloseError: Error?
 
     init(
         dbQueue: DatabaseQueue,
@@ -48,17 +78,43 @@ final class BatchAudioRecordingSession {
         try await writer(for: source)
     }
 
-    func beginRange(source: RecordingAudioSource, locale: Locale, at date: Date = .now) async throws -> BatchAudioFileWriter {
+    func beginRange(
+        source: RecordingAudioSource,
+        locale: Locale,
+        at date: Date = .now
+    ) async throws -> BatchAudioFileWriter {
+        try await beginRangeWithOrigin(
+            source: source,
+            locale: locale,
+            at: date,
+            continuingFromActiveRange: false
+        ).writer
+    }
+
+    func beginRangeWithOrigin(
+        source: RecordingAudioSource,
+        locale: Locale,
+        at date: Date,
+        continuingFromActiveRange: Bool
+    ) async throws -> (writer: BatchAudioFileWriter, origin: BatchRecordingRangeOrigin) {
+        let previousRange = activeRanges[source]
         try await endRange(source: source)
         let writer = try await writer(for: source)
         let audioFile = try fileRecord(for: source)
+        let startFrame = writer.appendedFrameCount
+        let sessionOffsetSeconds: TimeInterval = if continuingFromActiveRange, let previousRange {
+            previousRange.sessionOffsetSeconds
+                + Double(max(0, startFrame - previousRange.startFrame)) / targetFormat.sampleRate
+        } else {
+            max(0, date.timeIntervalSince(recordingStartTime))
+        }
         let now = Date.now
         let range = RecordingAudioRangeRecord(
             id: .v7(),
             audioFileId: audioFile.id,
-            startFrame: writer.appendedFrameCount,
+            startFrame: startFrame,
             frameCount: nil,
-            sessionOffsetSeconds: max(0, date.timeIntervalSince(recordingStartTime)),
+            sessionOffsetSeconds: sessionOffsetSeconds,
             localeIdentifier: locale.identifier,
             createdAt: now,
             updatedAt: now
@@ -67,34 +123,43 @@ final class BatchAudioRecordingSession {
             try range.insert(db)
         }
         activeRanges[source] = range
-        return writer
+        return (
+            writer,
+            BatchRecordingRangeOrigin(
+                source: source,
+                startFrame: startFrame,
+                sessionRelativeOriginSeconds: sessionOffsetSeconds
+            )
+        )
     }
 
     /// capture を止めず、同一フレーム境界で locale range を切り替える。
     func rotateRange(source: RecordingAudioSource, locale: Locale, at date: Date = .now) async throws -> BatchAudioFileWriter {
         let writer = try await writer(for: source)
-        let rotatedWriters = try await performRangeRotation(
-            [RangeRotationRequest(
-                source: source,
-                offsetBasis: .fixed(date.timeIntervalSince(recordingStartTime))
-            )],
+        _ = try await performRangeRotation(
+            [
+                RangeRotationRequest(
+                    source: source,
+                    offsetBasis: .fixed(date.timeIntervalSince(recordingStartTime))
+                ),
+            ],
             locale: locale
         )
-        return rotatedWriters[source] ?? writer
+        return writer
     }
 
     /// 複数音源の locale range を、各CAFの同一フレーム境界で原子的に切り替える。
-    /// `sessionRelativeOriginSeconds` は各CAFの先頭フレームが録音セッション内で始まる時刻。
+    /// originは各range先頭フレームと、そのフレームのセッション相対時刻を対で保持する。
     @discardableResult
     func rotateRanges(
-        _ sourceOrigins: [(source: RecordingAudioSource, sessionRelativeOriginSeconds: TimeInterval)],
+        _ sourceOrigins: [BatchRecordingRangeOrigin],
         locale: Locale
-    ) async throws -> [RecordingAudioSource: BatchAudioFileWriter] {
+    ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin] {
         try await performRangeRotation(
             sourceOrigins.map {
                 RangeRotationRequest(
                     source: $0.source,
-                    offsetBasis: .sourceOrigin($0.sessionRelativeOriginSeconds)
+                    offsetBasis: .sourceOrigin($0)
                 )
             },
             locale: locale
@@ -104,45 +169,13 @@ final class BatchAudioRecordingSession {
     private func performRangeRotation(
         _ requests: [RangeRotationRequest],
         locale: Locale
-    ) async throws -> [RecordingAudioSource: BatchAudioFileWriter] {
+    ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin] {
         var seenSources: Set<RecordingAudioSource> = []
         let uniqueRequests = requests.filter { seenSources.insert($0.source).inserted }
         var rotations: [RangeRotation] = []
 
         for request in uniqueRequests {
-            let source = request.source
-            let writer = try await writer(for: source)
-            let audioFile = try fileRecord(for: source)
-            let boundaryFrame = writer.appendedFrameCount
-            let now = Date.now
-            var updatedPreviousRange = activeRanges[source]
-            if var previousRange = updatedPreviousRange {
-                previousRange.frameCount = max(0, boundaryFrame - previousRange.startFrame)
-                previousRange.updatedAt = now
-                updatedPreviousRange = previousRange
-            }
-            let newRange = RecordingAudioRangeRecord(
-                id: .v7(),
-                audioFileId: audioFile.id,
-                startFrame: boundaryFrame,
-                frameCount: nil,
-                sessionOffsetSeconds: max(
-                    0,
-                    request.offsetBasis.sessionOffsetSeconds(
-                        boundaryFrame: boundaryFrame,
-                        sampleRate: targetFormat.sampleRate
-                    )
-                ),
-                localeIdentifier: locale.identifier,
-                createdAt: now,
-                updatedAt: now
-            )
-            rotations.append(RangeRotation(
-                source: source,
-                writer: writer,
-                previousRange: updatedPreviousRange,
-                newRange: newRange
-            ))
+            try await rotations.append(makeRotation(request, locale: locale))
         }
 
         let persistedRotations = rotations.map {
@@ -159,12 +192,63 @@ final class BatchAudioRecordingSession {
         for rotation in rotations {
             activeRanges[rotation.source] = rotation.newRange
         }
-        return Dictionary(uniqueKeysWithValues: rotations.map { ($0.source, $0.writer) })
+        return Dictionary(uniqueKeysWithValues: rotations.map { rotation in
+            (
+                rotation.source,
+                BatchRecordingRangeOrigin(
+                    source: rotation.source,
+                    startFrame: rotation.newRange.startFrame,
+                    sessionRelativeOriginSeconds: rotation.newRange.sessionOffsetSeconds
+                )
+            )
+        })
+    }
+
+    private func makeRotation(
+        _ request: RangeRotationRequest,
+        locale: Locale
+    ) async throws -> RangeRotation {
+        let source = request.source
+        let writer = try await writer(for: source)
+        let audioFile = try fileRecord(for: source)
+        let boundaryFrame = writer.appendedFrameCount
+        let now = Date.now
+        var previousRange = activeRanges[source]
+        if var updatedRange = previousRange {
+            updatedRange.frameCount = max(0, boundaryFrame - updatedRange.startFrame)
+            updatedRange.updatedAt = now
+            previousRange = updatedRange
+        }
+        let sessionOffsetSeconds = request.offsetBasis.sessionOffsetSeconds(
+            boundaryFrame: boundaryFrame,
+            sampleRate: targetFormat.sampleRate
+        )
+        let newRange = RecordingAudioRangeRecord(
+            id: .v7(),
+            audioFileId: audioFile.id,
+            startFrame: boundaryFrame,
+            frameCount: nil,
+            sessionOffsetSeconds: max(0, sessionOffsetSeconds),
+            localeIdentifier: locale.identifier,
+            createdAt: now,
+            updatedAt: now
+        )
+        return RangeRotation(source: source, previousRange: previousRange, newRange: newRange)
     }
 
     func endActiveRanges() async throws {
+        var firstError: Error?
         for source in Array(activeRanges.keys) {
-            try await endRange(source: source)
+            do {
+                try await endRange(source: source)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
+        }
+        if let firstError {
+            throw firstError
         }
     }
 
@@ -174,7 +258,7 @@ final class BatchAudioRecordingSession {
 
     func finish() async throws {
         writers.values.forEach { $0.seal() }
-        var firstError = firstRangeCloseError
+        var firstError: Error?
         do {
             try await endActiveRanges()
         } catch {
@@ -278,49 +362,12 @@ final class BatchAudioRecordingSession {
         range.frameCount = max(0, writer.appendedFrameCount - range.startFrame)
         range.updatedAt = .now
         let updatedRange = range
-        do {
-            try await dbQueue.write { db in
-                try updatedRange.update(db)
-            }
-            if activeRanges[source]?.id == updatedRange.id {
-                activeRanges.removeValue(forKey: source)
-            }
-        } catch {
-            if firstRangeCloseError == nil {
-                firstRangeCloseError = error
-            }
-            throw error
+        try await dbQueue.write { db in
+            try updatedRange.update(db)
+        }
+        if activeRanges[source]?.id == updatedRange.id {
+            activeRanges.removeValue(forKey: source)
         }
     }
 
-    private struct RangeRotation {
-        let source: RecordingAudioSource
-        let writer: BatchAudioFileWriter
-        let previousRange: RecordingAudioRangeRecord?
-        let newRange: RecordingAudioRangeRecord
-    }
-
-    private struct RangeRotationRequest {
-        let source: RecordingAudioSource
-        let offsetBasis: RangeOffsetBasis
-    }
-
-    private enum RangeOffsetBasis {
-        case fixed(TimeInterval)
-        case sourceOrigin(TimeInterval)
-
-        func sessionOffsetSeconds(boundaryFrame: Int64, sampleRate: Double) -> TimeInterval {
-            switch self {
-            case let .fixed(offset):
-                offset
-            case let .sourceOrigin(origin):
-                origin + Double(boundaryFrame) / sampleRate
-            }
-        }
-    }
-
-    private struct RangePersistence {
-        let previousRange: RecordingAudioRangeRecord?
-        let newRange: RecordingAudioRangeRecord
-    }
 }

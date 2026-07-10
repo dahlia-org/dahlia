@@ -115,6 +115,114 @@
         }
 
         @Test
+        func failedBatchLiveToggleDoesNotCommitEnabledPlan() async throws {
+            let runtime = try await makeRuntime(
+                mode: .batch,
+                liveSubtitlesEnabled: false,
+                recognitionFailureMode: .modelPreparation
+            )
+
+            await #expect(throws: FakeRuntimeError.self) {
+                try await runtime.controller.setLiveSubtitlesEnabled(true, translateSegment: nil)
+            }
+
+            let snapshot = try #require(await runtime.controller.snapshot())
+            #expect(!snapshot.plan.liveSubtitlesEnabled)
+            #expect(await runtime.controller.resourceCounts().recognizers == 0)
+            _ = try await runtime.controller.stop()
+            await runtime.controller.completeStop()
+        }
+
+        @Test
+        func batchRecognitionFailureDoesNotWaitForItsOwnEventDelivery() async throws {
+            let probe = RecordingRuntimeProbe()
+            let control = SelfWaitingRecognitionControl()
+            let failures = RuntimeFailureRecorder()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(probe: probe),
+                recognitionFactory: SelfWaitingRecognitionFactory(probe: probe, control: control),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            let sessionID = UUID.v7()
+            try await controller.prepare(
+                RecordingSessionController.PreparationRequest(
+                    sessionId: sessionID,
+                    startedAt: .now,
+                    plan: TranscriptionSessionPlan(
+                        finalMode: .batch,
+                        liveSubtitlesEnabled: true,
+                        retainBatchAudio: false
+                    ),
+                    locale: Locale(identifier: "ja_JP"),
+                    sources: [.init(source: .microphone)],
+                    dbQueue: DatabaseQueue(),
+                    meetingId: .v7(),
+                    batchSampleRate: 16000
+                ),
+                onEvent: { _ in },
+                onRuntimeFailure: { source, message, isFatal in
+                    failures.append(source: source, message: message, isFatal: isFatal)
+                }
+            )
+            _ = try await controller.startPrepared()
+
+            await control.emitFailure()
+
+            #expect(await controller.resourceCounts().recognizers == 0)
+            let entries = await failures.entries
+            #expect(entries.contains { $0.source == .microphone && !$0.isFatal })
+            let result = try await controller.stop()
+            #expect(result.batchRecordingSucceeded)
+            await controller.completeStop()
+        }
+
+        @Test
+        func retiredRecognitionCannotClearReplacementPreview() async throws {
+            let probe = RecordingRuntimeProbe()
+            let control = SelfWaitingRecognitionControl()
+            let events = TranscriptionEventRecorder()
+            let controller = RecordingSessionController(
+                captureFactory: FakeAudioCaptureFactory(probe: probe),
+                recognitionFactory: SelfWaitingRecognitionFactory(probe: probe, control: control),
+                batchRecordingFactory: FakeBatchFactory(probe: probe)
+            )
+            let sessionID = UUID.v7()
+            try await controller.prepare(
+                RecordingSessionController.PreparationRequest(
+                    sessionId: sessionID,
+                    startedAt: .now,
+                    plan: TranscriptionSessionPlan(
+                        finalMode: .realtime,
+                        liveSubtitlesEnabled: true,
+                        retainBatchAudio: false
+                    ),
+                    locale: Locale(identifier: "ja_JP"),
+                    sources: [.init(source: .microphone)]
+                ),
+                onEvent: { event in events.append(event) },
+                onRuntimeFailure: { _, _, _ in }
+            )
+            _ = try await controller.startPrepared()
+
+            _ = try await controller.changeLocale(
+                to: Locale(identifier: "en_US"),
+                translateSegment: nil
+            )
+
+            let deliveredEvents = await events.events
+            #expect(deliveredEvents.contains { event in
+                guard case let .preview(segment) = event else { return false }
+                return segment.text == "replacement preview"
+            })
+            #expect(!deliveredEvents.contains { event in
+                if case .clearPreview = event { return true }
+                return false
+            })
+            _ = try await controller.stop()
+            await controller.completeStop()
+        }
+
+        @Test
         func stopOrdersCaptureBeforeRecognitionBeforeBatchAndWaitsForConfirmation() async throws {
             let runtime = try await makeRuntime(mode: .batch, liveSubtitlesEnabled: true)
             await runtime.probe.clear()
@@ -430,6 +538,15 @@
         }
     }
 
+    @MainActor
+    private final class TranscriptionEventRecorder {
+        private(set) var events: [TranscriptionEvent] = []
+
+        func append(_ event: TranscriptionEvent) {
+            events.append(event)
+        }
+    }
+
     private struct FakeAudioCaptureFactory: AudioCaptureSessionFactory {
         let probe: RecordingRuntimeProbe
         let failingSource: RecordingAudioSource?
@@ -588,6 +705,134 @@
         }
     }
 
+    private struct SelfWaitingRecognitionFactory: ProgressiveRecognitionSessionFactory {
+        let probe: RecordingRuntimeProbe
+        let control: SelfWaitingRecognitionControl
+
+        func prepareModel(locale _: Locale) async throws {}
+
+        func prepareSession(
+            locale _: Locale,
+            source: RecordingAudioSource,
+            sourceFormat _: AVAudioFormat?,
+            bufferingMode _: AudioBufferBridge.BufferingMode,
+            translateSegment _: ProgressiveSegmentTranslationHandler?
+        ) async throws -> PreparedProgressiveRecognitionSession {
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: 16000,
+                channels: 1,
+                interleaved: false
+            ))
+            return PreparedProgressiveRecognitionSession(
+                analyzerFormat: format,
+                session: SelfWaitingRecognitionSession(source: source, probe: probe, control: control)
+            )
+        }
+    }
+
+    private actor SelfWaitingRecognitionSession: ProgressiveRecognitionSession {
+        nonisolated let pipelineID = UUID.v7()
+        nonisolated let liveConsumer: AudioFrameRouter.LiveConsumer = { _ in true }
+
+        private let source: RecordingAudioSource
+        private let probe: RecordingRuntimeProbe
+        private let control: SelfWaitingRecognitionControl
+
+        init(source: RecordingAudioSource, probe: RecordingRuntimeProbe, control: SelfWaitingRecognitionControl) {
+            self.source = source
+            self.probe = probe
+            self.control = control
+        }
+
+        func start(
+            recordingStartTime _: Date,
+            recordingSessionId: UUID,
+            onEvent: @escaping ProgressiveTranscriptionEventHandler
+        ) async throws {
+            await probe.append(.recognitionStart(source))
+            await control.register(
+                sessionID: recordingSessionId,
+                pipelineID: pipelineID,
+                source: source,
+                handler: onEvent
+            )
+        }
+
+        func finish() async throws {
+            await control.finish(pipelineID: pipelineID)
+            await probe.append(.recognitionFinish(source))
+        }
+
+        func cancel() async {
+            await control.waitForActiveDelivery()
+            await probe.append(.recognitionCancel(source))
+        }
+    }
+
+    private actor SelfWaitingRecognitionControl {
+        private struct Registration {
+            let sessionID: UUID
+            let pipelineID: UUID
+            let source: RecordingAudioSource
+            let handler: ProgressiveTranscriptionEventHandler
+        }
+
+        private var registrations: [Registration] = []
+        private var activeDelivery: Task<Void, Never>?
+
+        func register(
+            sessionID: UUID,
+            pipelineID: UUID,
+            source: RecordingAudioSource,
+            handler: @escaping ProgressiveTranscriptionEventHandler
+        ) {
+            registrations.append(Registration(
+                sessionID: sessionID,
+                pipelineID: pipelineID,
+                source: source,
+                handler: handler
+            ))
+        }
+
+        func emitFailure() async {
+            guard let registration = registrations.last else { return }
+            let delivery = Task {
+                await registration.handler(.failure(
+                    sessionId: registration.sessionID,
+                    pipelineID: registration.pipelineID,
+                    sourceLabel: registration.source.speakerLabel,
+                    message: "runtime recognition failure"
+                ))
+            }
+            activeDelivery = delivery
+            await delivery.value
+            activeDelivery = nil
+        }
+
+        func waitForActiveDelivery() async {
+            await activeDelivery?.value
+        }
+
+        func finish(pipelineID: UUID) async {
+            guard let retiring = registrations.first(where: { $0.pipelineID == pipelineID }),
+                  let latest = registrations.last,
+                  latest.pipelineID != retiring.pipelineID else { return }
+            let preview = TranscriptSegment(
+                sessionId: latest.sessionID,
+                startTime: .now,
+                text: "replacement preview",
+                isConfirmed: false,
+                speakerLabel: latest.source.speakerLabel
+            )
+            await latest.handler(.preview(preview))
+            await retiring.handler(.clearPreview(
+                sessionId: retiring.sessionID,
+                sourceLabel: retiring.source.speakerLabel
+            ))
+        }
+    }
+
     private struct FakeBatchFactory: BatchRecordingSessionFactory {
         let probe: RecordingRuntimeProbe
 
@@ -622,14 +867,28 @@
         func prepare(source _: RecordingAudioSource) async throws {}
 
         func beginRangeConsumer(
-            source _: RecordingAudioSource,
+            source: RecordingAudioSource,
             locale _: Locale,
-            at _: Date
-        ) async throws -> AudioFrameRouter.BatchConsumer {
-            { _ in }
+            at _: Date,
+            continuingFromActiveRange _: Bool
+        ) async throws -> BatchRecordingConsumerAttachment {
+            BatchRecordingConsumerAttachment(
+                consumer: { _ in },
+                origin: BatchRecordingRangeOrigin(
+                    source: source,
+                    startFrame: 0,
+                    sessionRelativeOriginSeconds: 0
+                )
+            )
         }
 
-        func rotateRanges(_: [BatchRecordingRangeOrigin], locale _: Locale) async throws {}
+        func rotateRanges(
+            _ origins: [BatchRecordingRangeOrigin],
+            locale _: Locale
+        ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin] {
+            Dictionary(uniqueKeysWithValues: origins.map { ($0.source, $0) })
+        }
+
         func endRangeForReconfiguration(source _: RecordingAudioSource) async throws {}
 
         func finish() async throws {

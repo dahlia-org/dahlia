@@ -9,7 +9,7 @@ enum AudioConverter {
         using converter: AVAudioConverter
     ) -> AVAudioPCMBuffer? {
         let ratio = targetFormat.sampleRate / inputBuffer.format.sampleRate
-        let outputFrameCount = AVAudioFrameCount(Double(inputBuffer.frameLength) * ratio)
+        let outputFrameCount = AVAudioFrameCount(ceil(Double(inputBuffer.frameLength) * ratio))
         guard outputFrameCount > 0 else { return nil }
 
         guard let outputBuffer = AVAudioPCMBuffer(

@@ -7,6 +7,7 @@ import os
 final class AudioSourcePipeline: Sendable {
     private struct ClockState {
         var nextFrame: Int64 = 0
+        var sessionRelativeOrigin: CMTime
     }
 
     let source: RecordingAudioSource
@@ -14,13 +15,11 @@ final class AudioSourcePipeline: Sendable {
     let captureFormat: AVAudioFormat
     let captureDeviceID: AudioDeviceID?
     let captureBufferSize: AVAudioFrameCount
-    let sessionRelativeOrigin: CMTime
-
-    private let clockState = OSAllocatedUnfairLock(initialState: ClockState())
+    private let clockState: OSAllocatedUnfairLock<ClockState>
     private let sampleRateTimescale: CMTimeScale
 
     var sessionRelativeOriginSeconds: TimeInterval {
-        sessionRelativeOrigin.seconds
+        clockState.withLock { $0.sessionRelativeOrigin.seconds }
     }
 
     init(
@@ -36,8 +35,16 @@ final class AudioSourcePipeline: Sendable {
         self.captureFormat = captureFormat
         self.captureDeviceID = captureDeviceID
         self.captureBufferSize = captureBufferSize
-        self.sessionRelativeOrigin = sessionRelativeOrigin
+        clockState = OSAllocatedUnfairLock(initialState: ClockState(sessionRelativeOrigin: sessionRelativeOrigin))
         sampleRateTimescale = CMTimeScale(captureFormat.sampleRate.rounded())
+    }
+
+    /// capture開始前に、先頭フレームのセッション相対時刻を確定する。
+    func setSessionRelativeOrigin(seconds: TimeInterval) {
+        clockState.withLock { state in
+            guard state.nextFrame == 0 else { return }
+            state.sessionRelativeOrigin = CMTime(seconds: max(0, seconds), preferredTimescale: 1_000_000)
+        }
     }
 
     /// capture callback ごとに呼び出し、同一音源内で単調増加するセッション相対時刻を付与する。
@@ -47,7 +54,7 @@ final class AudioSourcePipeline: Sendable {
             let chunk = CapturedAudioChunk(
                 source: source,
                 buffer: buffer,
-                sessionRelativeStartTime: CMTimeAdd(sessionRelativeOrigin, frameOffset)
+                sessionRelativeStartTime: CMTimeAdd(state.sessionRelativeOrigin, frameOffset)
             )
             state.nextFrame += Int64(buffer.frameLength)
             return chunk
