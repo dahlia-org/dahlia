@@ -84,10 +84,15 @@ actor BatchTranscriptionCoordinator {
         return session.batchAttemptCount < maximumAutomaticAttemptCount
     }
 
-    func confirmAndEnqueue(sessionId: UUID, localeIdentifier: String) async throws {
+    func confirmAndEnqueue(
+        sessionId: UUID,
+        localeIdentifier: String,
+        retainAudioAfterBatch: Bool
+    ) async throws {
         let meetingId = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
             localeIdentifier: localeIdentifier,
+            retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
         await notify(meetingId: meetingId, state: .queued(sessionId: sessionId))

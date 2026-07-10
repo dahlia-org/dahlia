@@ -406,7 +406,8 @@ final class CaptionViewModel: ObservableObject {
         presentBatchTranscriptionConfirmation(
             sessionId: sessionId,
             meetingId: meetingId,
-            suggestedLocaleIdentifier: selectedLocale
+            suggestedLocaleIdentifier: selectedLocale,
+            dbQueue: currentDbQueue
         )
     }
 
@@ -414,13 +415,14 @@ final class CaptionViewModel: ObservableObject {
         pendingBatchTranscriptionConfirmation = nil
     }
 
-    func confirmBatchTranscription(localeIdentifier: String) {
+    func confirmBatchTranscription(localeIdentifier: String, retainAudioAfterBatch: Bool) {
         guard let confirmation = pendingBatchTranscriptionConfirmation,
               let coordinator = batchTranscriptionCoordinator else { return }
         let retryConfirmation = BatchTranscriptionConfirmation(
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
-            suggestedLocaleIdentifier: localeIdentifier
+            suggestedLocaleIdentifier: localeIdentifier,
+            retainAudioAfterBatch: retainAudioAfterBatch
         )
         pendingBatchTranscriptionConfirmation = nil
         if currentMeetingId == confirmation.meetingId {
@@ -431,7 +433,8 @@ final class CaptionViewModel: ObservableObject {
             do {
                 try await coordinator.confirmAndEnqueue(
                     sessionId: confirmation.sessionId,
-                    localeIdentifier: localeIdentifier
+                    localeIdentifier: localeIdentifier,
+                    retainAudioAfterBatch: retainAudioAfterBatch
                 )
             } catch {
                 if currentMeetingId == confirmation.meetingId {
@@ -1631,7 +1634,8 @@ final class CaptionViewModel: ObservableObject {
             presentBatchTranscriptionConfirmation(
                 sessionId: recordingSessionId,
                 meetingId: meetingId,
-                suggestedLocaleIdentifier: selectedLocale
+                suggestedLocaleIdentifier: selectedLocale,
+                dbQueue: dbQueue
             )
         }
         await completeBatchRecording(
@@ -1644,14 +1648,27 @@ final class CaptionViewModel: ObservableObject {
     private func presentBatchTranscriptionConfirmation(
         sessionId: UUID,
         meetingId: UUID,
-        suggestedLocaleIdentifier: String
+        suggestedLocaleIdentifier: String,
+        dbQueue: DatabaseQueue?
     ) {
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
             sessionId: sessionId,
             meetingId: meetingId,
-            suggestedLocaleIdentifier: suggestedLocaleIdentifier
+            suggestedLocaleIdentifier: suggestedLocaleIdentifier,
+            retainAudioAfterBatch: batchAudioRetentionPreference(
+                sessionId: sessionId,
+                dbQueue: dbQueue
+            )
         )
         MainWindowOpener.shared.openMainWindow()
+    }
+
+    private func batchAudioRetentionPreference(sessionId: UUID, dbQueue: DatabaseQueue?) -> Bool {
+        let fallback = AppSettings.shared.retainAudioAfterBatchTranscription
+        guard let dbQueue else { return fallback }
+        return (try? dbQueue.read { db in
+            try RecordingSessionRecord.fetchOne(db, key: sessionId)
+        })?.retainAudioAfterBatch ?? fallback
     }
 
     private func completeBatchRecording(

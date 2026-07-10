@@ -27,6 +27,7 @@ import GRDB
             let meetingId = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 localeIdentifier: "en_US",
+                retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
 
@@ -43,6 +44,7 @@ import GRDB
             #expect(result.unrelatedRange?.localeIdentifier == "ja_JP")
             #expect(session.batchLastAttemptAt != nil)
             #expect(session.batchAttemptCount == 0)
+            #expect(session.retainAudioAfterBatch)
             #expect(BatchTranscriptionState.derive(from: session) == .queued(sessionId: session.id))
             #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
         }
@@ -52,7 +54,8 @@ import GRDB
             let fixture = try BatchAudioTestFixture(
                 name: "BatchSingleLocaleConfirmation",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_060),
-                duration: 60
+                duration: 60,
+                retainAudioAfterBatch: true
             )
             defer { fixture.removeFiles() }
             let file = fixture.makeAudioRecord(finalizedAt: fixture.now, totalFrameCount: 320)
@@ -70,13 +73,17 @@ import GRDB
             _ = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 localeIdentifier: "en_US",
+                retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
 
-            let persisted = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+            let result = try await fixture.database.dbQueue.read { db in
+                let ranges = try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+                let session = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+                return (ranges, session)
             }
-            #expect(persisted.map(\.localeIdentifier) == ["en_US", "en_US"])
+            #expect(result.0.map(\.localeIdentifier) == ["en_US", "en_US"])
+            #expect(result.1?.retainAudioAfterBatch == false)
         }
 
         private func insertConfirmationScenario(in fixture: BatchAudioTestFixture) async throws -> UUID {

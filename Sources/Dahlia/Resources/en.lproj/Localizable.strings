@@ -453,6 +453,8 @@
 "Retry Batch Transcription" = "Retry Batch Transcription";
 "Start batch transcription?" = "Start batch transcription?";
 "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds." = "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.";
+"Delete Recording Files After Transcription" = "Delete Recording Files After Transcription";
+"Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.";
 "Later" = "Later";
 "Discard Failed Recording" = "Discard Failed Recording";
 "Discard this failed recording?" = "Discard this failed recording?";

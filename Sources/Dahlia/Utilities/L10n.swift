@@ -274,6 +274,14 @@ enum L10n {
         localized: "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.",
         bundle: bundle
     ) }
+    static var deleteBatchAudioAfterTranscription: String { String(
+        localized: "Delete Recording Files After Transcription",
+        bundle: bundle
+    ) }
+    static var deleteBatchAudioAfterTranscriptionDescription: String { String(
+        localized: "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.",
+        bundle: bundle
+    ) }
     static var later: String { String(localized: "Later", bundle: bundle) }
     static var discardFailedBatchRecording: String { String(localized: "Discard Failed Recording", bundle: bundle) }
     static var discardFailedBatchRecordingConfirmation: String { String(localized: "Discard this failed recording?", bundle: bundle) }

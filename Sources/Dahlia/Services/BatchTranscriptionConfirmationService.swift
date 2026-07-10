@@ -6,6 +6,7 @@ enum BatchTranscriptionConfirmationService {
     static func confirm(
         sessionId: UUID,
         localeIdentifier: String,
+        retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
     ) async throws -> UUID {
         let normalizedLocaleIdentifier = localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,7 +24,12 @@ enum BatchTranscriptionConfirmationService {
                 updatedAt: confirmedAt,
                 db: db
             )
-            try markConfirmed(sessionId: sessionId, confirmedAt: confirmedAt, db: db)
+            try markConfirmed(
+                sessionId: sessionId,
+                retainAudioAfterBatch: retainAudioAfterBatch,
+                confirmedAt: confirmedAt,
+                db: db
+            )
             return session.meetingId
         }
     }
@@ -89,15 +95,20 @@ enum BatchTranscriptionConfirmationService {
         )
     }
 
-    private static func markConfirmed(sessionId: UUID, confirmedAt: Date, db: Database) throws {
+    private static func markConfirmed(
+        sessionId: UUID,
+        retainAudioAfterBatch: Bool,
+        confirmedAt: Date,
+        db: Database
+    ) throws {
         // 試行時刻を確認済みマーカーとして先に保存する。処理開始時に実際の開始時刻で上書きされる。
         try db.execute(
             sql: """
             UPDATE recording_sessions
-            SET batchLastAttemptAt = ?, updatedAt = ?
+            SET retainAudioAfterBatch = ?, batchLastAttemptAt = ?, updatedAt = ?
             WHERE id = ?
             """,
-            arguments: [confirmedAt, confirmedAt, sessionId]
+            arguments: [retainAudioAfterBatch, confirmedAt, confirmedAt, sessionId]
         )
     }
 }
