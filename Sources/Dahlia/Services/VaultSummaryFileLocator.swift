@@ -16,8 +16,9 @@ enum VaultSummaryFileLocator {
     ) -> URL? {
         if let storedRelativePath,
            let storedURL = fileURL(for: storedRelativePath, vaultURL: vaultURL),
-           FileManager.default.fileExists(atPath: storedURL.path) {
-            return storedURL
+           let storedSummary = locatedSummaryFile(at: storedURL, vaultURL: vaultURL),
+           storedSummary.meetingId == meetingId {
+            return storedSummary.url
         }
 
         if let projectURL,

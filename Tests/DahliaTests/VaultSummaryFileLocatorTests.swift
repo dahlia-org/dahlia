@@ -47,6 +47,30 @@ import Foundation
             #expect(resolved?.resolvingSymlinksInPath() == movedURL.resolvingSymlinksInPath())
         }
 
+        @Test
+        func storedPathForAnotherMeetingFallsBackToMatchingSummary() throws {
+            let vaultURL = FileManager.default.temporaryDirectory
+                .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+            let storedURL = vaultURL.appending(path: "Project/Stored.md")
+            let matchingURL = vaultURL.appending(path: "Archive/Matching.md")
+            let meetingId = UUID.v7()
+            defer { try? FileManager.default.removeItem(at: vaultURL) }
+
+            try FileManager.default.createDirectory(at: storedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: matchingURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try writeSummary(meetingId: .v7(), to: storedURL)
+            try writeSummary(meetingId: meetingId, to: matchingURL)
+
+            let resolved = SummaryService.findSummaryFile(
+                storedRelativePath: "Project/Stored.md",
+                projectURL: storedURL.deletingLastPathComponent(),
+                vaultURL: vaultURL,
+                meetingId: meetingId
+            )
+
+            #expect(resolved?.resolvingSymlinksInPath() == matchingURL.resolvingSymlinksInPath())
+        }
+
         private func writeSummary(meetingId: UUID, to url: URL) throws {
             try Data(
                 """
