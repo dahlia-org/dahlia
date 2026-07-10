@@ -97,6 +97,8 @@ final class AppSettings: ObservableObject {
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
+    nonisolated static let defaultLLMModelName = "system.ai.gpt-5-6-sol"
+    nonisolated static let defaultLLMMaxTokens = 16000
 
     // MARK: - 表示言語
 
@@ -337,8 +339,14 @@ final class AppSettings: ObservableObject {
     @AppStorage("llmProvider") var llmProviderRawValue = ""
     @AppStorage("llmEndpointURL") var llmEndpointURL = ""
     @AppStorage("llmDatabricksWorkspaceID") var llmDatabricksWorkspaceID = ""
-    @AppStorage("llmModelName") var llmModelName = ""
+    @AppStorage("llmModelName") var llmModelName = AppSettings.defaultLLMModelName
+    @AppStorage("llmMaxTokens") private var storedLLMMaxTokens = AppSettings.defaultLLMMaxTokens
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+
+    var llmMaxTokens: Int {
+        get { max(1, storedLLMMaxTokens) }
+        set { storedLLMMaxTokens = max(1, newValue) }
+    }
 
     var llmProvider: LLMProvider {
         get {

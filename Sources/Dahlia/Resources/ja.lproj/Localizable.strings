@@ -327,6 +327,8 @@
 "Endpoint must accept OpenAI-compatible chat completions requests." = "OpenAI 互換の chat completions リクエストを受け付けるエンドポイントを指定します。";
 "Endpoint will be generated after entering a Workspace ID." = "Workspace ID を入力するとエンドポイントが生成されます。";
 "Model Name" = "モデル名";
+"Maximum Output Tokens" = "最大出力トークン数";
+"Limits the number of tokens generated for each summary." = "要約ごとに生成するトークン数の上限を指定します。";
 "API Token" = "API トークン";
 "Token is stored securely in Keychain." = "トークンはキーチェーンに安全に保存されます。";
 "Configure an LLM endpoint for manual summary generation." = "手動の要約生成に使用するモデルプロバイダーと接続設定を管理します。";

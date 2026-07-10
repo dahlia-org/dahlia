@@ -697,6 +697,11 @@ enum L10n {
         bundle: bundle
     ) }
     static var modelName: String { String(localized: "Model Name", bundle: bundle) }
+    static var maxTokens: String { String(localized: "Maximum Output Tokens", bundle: bundle) }
+    static var maxTokensDescription: String { String(
+        localized: "Limits the number of tokens generated for each summary.",
+        bundle: bundle
+    ) }
     static var apiToken: String { String(localized: "API Token", bundle: bundle) }
     static var apiTokenStoredInKeychain: String { String(localized: "Token is stored securely in Keychain.", bundle: bundle) }
     static var llmSettingsDescription: String { String(localized: "Configure an LLM endpoint for manual summary generation.", bundle: bundle) }

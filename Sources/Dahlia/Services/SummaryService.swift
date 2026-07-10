@@ -24,6 +24,7 @@ enum SummaryService {
         let settings = AppSettings.shared
         let endpoint = settings.resolvedLLMEndpointURL
         let model = settings.llmModelName
+        let maxTokens = settings.llmMaxTokens
         let token = settings.llmAPIToken
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
         let languageName = settings.llmSummaryLanguage.displayName
@@ -101,7 +102,7 @@ enum SummaryService {
             model: model,
             token: token,
             messages: messages,
-            maxTokens: 16000,
+            maxTokens: maxTokens,
             responseFormat: SummaryDocumentResponse.responseFormat
         )
 

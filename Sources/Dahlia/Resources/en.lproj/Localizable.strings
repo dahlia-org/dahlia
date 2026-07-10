@@ -327,6 +327,8 @@
 "Endpoint must accept OpenAI-compatible chat completions requests." = "Endpoint must accept OpenAI-compatible chat completions requests.";
 "Endpoint will be generated after entering a Workspace ID." = "Endpoint will be generated after entering a Workspace ID.";
 "Model Name" = "Model Name";
+"Maximum Output Tokens" = "Maximum Output Tokens";
+"Limits the number of tokens generated for each summary." = "Limits the number of tokens generated for each summary.";
 "API Token" = "API Token";
 "Token is stored securely in Keychain." = "Token is stored securely in Keychain.";
 "Configure an LLM endpoint for manual summary generation." = "Configure the model provider and connection settings used for manual summary generation.";

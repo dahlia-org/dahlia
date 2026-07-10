@@ -387,6 +387,23 @@ struct SummaryServiceTests {
     }
 
     @Test
+    func llmDefaultsUseConfiguredModelAndTokenLimit() {
+        #expect(AppSettings.defaultLLMModelName == "system.ai.gpt-5-6-sol")
+        #expect(AppSettings.defaultLLMMaxTokens == 16000)
+    }
+
+    @Test
+    func llmMaxTokensRequiresPositiveValue() {
+        let settings = AppSettings.shared
+        let previousMaxTokens = settings.llmMaxTokens
+        defer { settings.llmMaxTokens = previousMaxTokens }
+
+        settings.llmMaxTokens = 0
+
+        #expect(settings.llmMaxTokens == 1)
+    }
+
+    @Test
     func llmProviderDefaultsToOpenAIWhenNoLegacyEndpointExists() {
         let settings = AppSettings.shared
         let previousProviderRawValue = settings.llmProviderRawValue

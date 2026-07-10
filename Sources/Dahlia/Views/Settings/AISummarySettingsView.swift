@@ -36,6 +36,14 @@ struct AISummarySettingsView: View {
                 }
 
                 LabeledContent {
+                    TextField("", value: $settings.llmMaxTokens, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                } label: {
+                    Text(L10n.maxTokens)
+                    Text(L10n.maxTokensDescription)
+                }
+
+                LabeledContent {
                     SecureField("", text: $apiToken)
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { settings.llmAPIToken = apiToken }
