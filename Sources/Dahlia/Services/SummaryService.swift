@@ -23,7 +23,7 @@ enum SummaryService {
     ) async throws -> GeneratedSummary {
         let settings = AppSettings.shared
         let endpoint = settings.resolvedLLMEndpointURL
-        let model = settings.llmModelName
+        let model = settings.resolvedLLMModelName
         let maxTokens = settings.llmMaxTokens
         let token = settings.llmAPIToken
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)

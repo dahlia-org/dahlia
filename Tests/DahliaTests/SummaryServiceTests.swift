@@ -388,8 +388,20 @@ struct SummaryServiceTests {
 
     @Test
     func llmDefaultsUseConfiguredModelAndTokenLimit() {
-        #expect(AppSettings.defaultLLMModelName == "system.ai.gpt-5-6-sol")
+        #expect(LLMModel.defaultModel == .gpt56Sol)
         #expect(AppSettings.defaultLLMMaxTokens == 16000)
+    }
+
+    @Test
+    func llmModelsMapToProviderIdentifiers() {
+        #expect(LLMModel.gpt56Sol.identifier(for: .openAI) == "gpt-5-6-sol")
+        #expect(LLMModel.gpt56Sol.identifier(for: .databricks) == "system.ai.gpt-5-6-sol")
+        #expect(LLMModel.gpt56Terra.identifier(for: .openAI) == "gpt-5-6-terra")
+        #expect(LLMModel.gpt56Terra.identifier(for: .databricks) == "system.ai.gpt-5-6-terra")
+        #expect(LLMModel.gpt56Luna.identifier(for: .openAI) == "gpt-5-6-luna")
+        #expect(LLMModel.gpt56Luna.identifier(for: .databricks) == "system.ai.gpt-5-6-luna")
+        #expect(LLMModel.gpt55.identifier(for: .openAI) == "gpt-5-5")
+        #expect(LLMModel.gpt55.identifier(for: .databricks) == "system.ai.gpt-5-5")
     }
 
     @Test
@@ -404,37 +416,57 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func llmProviderDefaultsToOpenAIWhenNoLegacyEndpointExists() {
+    func llmProviderDefaultsToOpenAI() {
         let settings = AppSettings.shared
         let previousProviderRawValue = settings.llmProviderRawValue
-        let previousEndpointURL = settings.llmEndpointURL
-        defer {
-            settings.llmProviderRawValue = previousProviderRawValue
-            settings.llmEndpointURL = previousEndpointURL
-        }
+        defer { settings.llmProviderRawValue = previousProviderRawValue }
 
         settings.llmProviderRawValue = ""
-        settings.llmEndpointURL = ""
 
         #expect(settings.llmProvider == .openAI)
         #expect(settings.resolvedLLMEndpointURL == AppSettings.openAIEndpointURL)
     }
 
     @Test
-    func llmProviderPreservesLegacyCustomEndpoint() {
+    func removedCustomEndpointProviderFallsBackToOpenAI() {
         let settings = AppSettings.shared
         let previousProviderRawValue = settings.llmProviderRawValue
-        let previousEndpointURL = settings.llmEndpointURL
+        defer { settings.llmProviderRawValue = previousProviderRawValue }
+
+        settings.llmProviderRawValue = "customEndpoint"
+
+        #expect(settings.llmProvider == .openAI)
+        #expect(settings.resolvedLLMEndpointURL == AppSettings.openAIEndpointURL)
+    }
+
+    @Test
+    func selectedLLMModelIsIndependentFromProvider() {
+        let settings = AppSettings.shared
+        let previousProviderRawValue = settings.llmProviderRawValue
+        let previousModelRawValue = settings.llmModelRawValue
         defer {
             settings.llmProviderRawValue = previousProviderRawValue
-            settings.llmEndpointURL = previousEndpointURL
+            settings.llmModelRawValue = previousModelRawValue
         }
 
-        settings.llmProviderRawValue = ""
-        settings.llmEndpointURL = " https://llm.example.com/v1/chat/completions "
+        settings.llmModel = .gpt56Terra
+        settings.llmProvider = .openAI
+        #expect(settings.resolvedLLMModelName == "gpt-5-6-terra")
 
-        #expect(settings.llmProvider == .customEndpoint)
-        #expect(settings.resolvedLLMEndpointURL == "https://llm.example.com/v1/chat/completions")
+        settings.llmProvider = .databricks
+        #expect(settings.llmModel == .gpt56Terra)
+        #expect(settings.resolvedLLMModelName == "system.ai.gpt-5-6-terra")
+    }
+
+    @Test
+    func persistedDatabricksModelNameMigratesToIndependentSelection() {
+        let settings = AppSettings.shared
+        let previousModelRawValue = settings.llmModelRawValue
+        defer { settings.llmModelRawValue = previousModelRawValue }
+
+        settings.llmModelRawValue = "system.ai.gpt-5-6-luna"
+
+        #expect(settings.llmModel == .gpt56Luna)
     }
 
     @Test
