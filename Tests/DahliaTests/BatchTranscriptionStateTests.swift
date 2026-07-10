@@ -23,8 +23,11 @@ import Foundation
             #expect(BatchTranscriptionState.derive(from: session) == .recording(sessionId: session.id))
 
             session.endedAt = now.addingTimeInterval(10)
-            #expect(BatchTranscriptionState.derive(from: session) == .queued(sessionId: session.id))
+            #expect(BatchTranscriptionState.derive(from: session) == .awaitingConfirmation(sessionId: session.id))
             #expect(BatchTranscriptionState.derive(from: session, isRunning: true) == .running(sessionId: session.id))
+
+            session.batchLastAttemptAt = now.addingTimeInterval(11)
+            #expect(BatchTranscriptionState.derive(from: session) == .queued(sessionId: session.id))
 
             session.batchLastError = "damaged"
             #expect(BatchTranscriptionState.derive(from: session) == .failed(sessionId: session.id, message: "damaged"))
@@ -77,7 +80,13 @@ import Foundation
 
             // 実行中クラッシュでエラーが記録されなかったセッションは、回数にかかわらず復旧対象にする。
             session.batchLastError = nil
+            session.batchLastAttemptAt = now.addingTimeInterval(11)
             #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
+
+            // 停止後にまだ確認されていないセッションは、再起動しても自動実行しない。
+            session.batchLastAttemptAt = nil
+            session.batchAttemptCount = 0
+            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
         }
     }
 #endif

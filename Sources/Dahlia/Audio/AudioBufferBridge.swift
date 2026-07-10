@@ -6,40 +6,102 @@ import Speech
 /// オーディオキャプチャコールバックから SpeechAnalyzer が消費する
 /// AsyncStream<AnalyzerInput> へのブリッジ。
 /// AudioCaptureManager / SystemAudioCaptureManager の onAudioBuffer コールバックから
-/// appendBuffer() を呼び出し、SpeechAnalyzer.start(inputSequence:) に stream を渡す。
-final class AudioBufferBridge: @unchecked Sendable {
+/// append(_:) を呼び出し、SpeechAnalyzer.start(inputSequence:) に stream を渡す。
+final class AudioBufferBridge: Sendable {
+    enum BufferingMode: Equatable {
+        case lossless
+        case lowLatency(maximumInputCount: Int)
+    }
+
     let stream: AsyncStream<AnalyzerInput>
     private let continuation: AsyncStream<AnalyzerInput>.Continuation
 
-    /// 累積サンプル数（bufferStartTime 計算用）
-    private var cumulativeSampleCount: Int64 = 0
-    private let sampleRate: Double
+    private let inputConverter: AnalyzerInputConverting?
+    private let bufferingMode: BufferingMode
     private let lock = OSAllocatedUnfairLock()
 
-    init(sampleRate: Double) {
-        self.sampleRate = sampleRate
-        let (stream, continuation) = AsyncStream.makeStream(
-            of: AnalyzerInput.self,
-            bufferingPolicy: .bufferingNewest(64)
-        )
+    /// Capture と SpeechAnalyzer の形式が異なる場合に、ライブ分岐内でのみ変換する。
+    /// batch + live では固定形式の CAF 録音を維持しつつ、同じバッファをライブ認識に利用できる。
+    init(
+        sourceFormat: AVAudioFormat,
+        analyzerFormat: AVAudioFormat,
+        inputConverter: AnalyzerInputConverting? = nil,
+        bufferingMode: BufferingMode = .lossless
+    ) throws {
+        self.bufferingMode = bufferingMode
+        if sourceFormat == analyzerFormat {
+            self.inputConverter = nil
+        } else {
+            guard let inputConverter else {
+                throw AudioCaptureError.converterCreationFailed
+            }
+            self.inputConverter = inputConverter
+        }
+
+        let (stream, continuation) = Self.makeStream(bufferingMode: bufferingMode)
         self.stream = stream
         self.continuation = continuation
     }
 
     /// オーディオキャプチャコールバックから呼ばれる。スレッドセーフ。
-    func appendBuffer(_ buffer: AVAudioPCMBuffer) {
-        let startTime: CMTime = lock.withLock {
-            let time = CMTime(value: cumulativeSampleCount, timescale: CMTimeScale(sampleRate))
-            cumulativeSampleCount += Int64(buffer.frameLength)
-            return time
-        }
+    @discardableResult
+    func append(_ chunk: CapturedAudioChunk) -> Bool {
+        lock.withLock {
+            let inputs: [AnalyzerInput]
+            do {
+                if let inputConverter {
+                    inputs = try inputConverter.convert(chunk.buffer, at: chunk.sessionRelativeStartTime)
+                } else {
+                    inputs = [AnalyzerInput(
+                        buffer: chunk.buffer,
+                        bufferStartTime: chunk.sessionRelativeStartTime
+                    )]
+                }
+            } catch {
+                return false
+            }
 
-        let input = AnalyzerInput(buffer: buffer, bufferStartTime: startTime)
-        continuation.yield(input)
+            var accepted = true
+            for input in inputs {
+                switch continuation.yield(input) {
+                case .enqueued:
+                    break
+                case .dropped:
+                    if case .lossless = bufferingMode {
+                        accepted = false
+                    }
+                case .terminated:
+                    accepted = false
+                @unknown default:
+                    accepted = false
+                }
+            }
+            return accepted
+        }
     }
 
     /// オーディオ入力の終了を通知する。
     func finish() {
-        continuation.finish()
+        lock.withLock {
+            if let inputConverter,
+               let pendingInputs = try? inputConverter.finish() {
+                for input in pendingInputs {
+                    continuation.yield(input)
+                }
+            }
+            continuation.finish()
+        }
+    }
+
+    private static func makeStream(
+        bufferingMode: BufferingMode
+    ) -> (stream: AsyncStream<AnalyzerInput>, continuation: AsyncStream<AnalyzerInput>.Continuation) {
+        let bufferingPolicy: AsyncStream<AnalyzerInput>.Continuation.BufferingPolicy = switch bufferingMode {
+        case .lossless:
+            .unbounded
+        case let .lowLatency(maximumInputCount):
+            .bufferingNewest(max(1, maximumInputCount))
+        }
+        return AsyncStream.makeStream(of: AnalyzerInput.self, bufferingPolicy: bufferingPolicy)
     }
 }

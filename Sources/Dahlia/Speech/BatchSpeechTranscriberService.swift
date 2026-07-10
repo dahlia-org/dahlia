@@ -5,15 +5,6 @@ import Speech
 
 /// CAFの指定rangeを精度優先のSpeechTranscriberで文字起こしする。
 enum BatchSpeechTranscriberService {
-    static func preferredSampleRate(locale: Locale) async throws -> Double {
-        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
-        try await installAssetsIfNeeded(for: transcriber)
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
-            throw BatchSpeechTranscriberError.audioFormatUnavailable
-        }
-        return format.sampleRate
-    }
-
     static func transcribe(_ request: BatchSpeechTranscriptionRequest) async throws -> [TranscriptSegment] {
         guard request.startFrame >= 0, request.frameCount > 0 else { return [] }
         let rangeURL = try extractRange(

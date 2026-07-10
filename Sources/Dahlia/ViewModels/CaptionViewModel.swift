@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreAudio
+import CoreMedia
 import GRDB
 import os
 @preconcurrency import ScreenCaptureKit
@@ -48,8 +49,38 @@ private struct PersistenceStartRequest {
     let recordingStartTime: Date
     let recordingSessionId: UUID
     let transcriptionMode: TranscriptionMode
+    let persistencePolicy: TranscriptPersistencePolicy
     let retainAudioAfterBatch: Bool
     let draftMeeting: DraftMeeting?
+}
+
+private struct RecordingStartRollbackState {
+    let segments: [TranscriptSegment]
+    let recordingSessions: [RecordingSessionTimeline]
+    let recordingStartTime: Date?
+}
+
+private struct RecordingControllerStartRequest {
+    let dbQueue: DatabaseQueue
+    let meetingId: UUID?
+    let sessionId: UUID
+    let startedAt: Date
+    let plan: TranscriptionSessionPlan
+    let locale: Locale
+    let batchSampleRate: Double?
+}
+
+private enum RecordingLifecycle: Equatable {
+    case idle
+    case starting(UUID)
+    case recording(UUID)
+    case stopping(UUID)
+}
+
+private struct RecordingPipelineFailure: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
 }
 
 /// 音声キャプチャ → Speech フレームワーク文字起こし → UI 更新を統括するビューモデル。
@@ -64,12 +95,15 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    let liveCaptionStore = LiveCaptionStore()
+
     @Published var isListening = false
     @Published var isFinalizingRecording = false
     @Published var analyzerReady = false
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
     @Published private(set) var batchTranscriptionState: BatchTranscriptionState?
+    @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
     @Published var errorMessage: String?
     @Published var availableMicrophones: [MicrophoneDevice] = []
     @Published var microphoneSelection: MicrophoneSelection = .systemDefault
@@ -196,6 +230,23 @@ final class CaptionViewModel: ObservableObject {
     /// 少なくとも 1 つの音声ソースが有効か。
     var hasEnabledAudioSource: Bool { isMicEnabled || isSystemAudioEnabled }
 
+    var canBeginRecording: Bool {
+        recordingLifecycle == .idle
+            && !isFinalizingRecording
+            && hasEnabledAudioSource
+    }
+
+    private var enabledRecordingAudioSources: Set<RecordingAudioSource> {
+        var sources: Set<RecordingAudioSource> = []
+        if isMicEnabled {
+            sources.insert(.microphone)
+        }
+        if isSystemAudioEnabled {
+            sources.insert(.system)
+        }
+        return sources
+    }
+
     // MARK: - Recording Context (録音中のナビゲーション時に保持)
 
     /// 録音中に別トランスクリプトへナビゲーションした際の録音コンテキスト。
@@ -229,15 +280,24 @@ final class CaptionViewModel: ObservableObject {
     // MARK: - Private
 
     private var currentDbQueue: DatabaseQueue?
-    private var audioManager: AudioCaptureManager?
-    private var systemAudioManager: SystemAudioCaptureManager?
-    private var pipelines: [(service: SpeechTranscriberService, bridge: AudioBufferBridge)] = []
     private var persistenceService: MeetingPersistenceService?
-    private var batchAudioRecordingSession: BatchAudioRecordingSession?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
+    private let recordingSessionController = RecordingSessionController()
+    private var activeTranscriptionPlan: TranscriptionSessionPlan?
+    private var activeRecordingSessionId: UUID?
+    private var activeControllerSources: Set<RecordingAudioSource> = []
+    private var recordingLifecycle: RecordingLifecycle = .idle
+    private var recordingConfigurationTasks: [Int: Task<Void, Never>] = [:]
+    private var nextRecordingConfigurationID = 0
+    private var pendingRealtimeRecognitionFailure: (source: RecordingAudioSource?, message: String)?
+    private var pendingLiveSubtitleWarning: String?
+    private var startingMicrophoneSelection: MicrophoneSelection?
+    private var startingSystemAudioEnabled: Bool?
+    private var startingLocaleIdentifier: String?
     private var settingsCancellable: AnyCancellable?
     private var storeSegmentsCancellable: AnyCancellable?
     private var transcriptionLocaleCancellable: AnyCancellable?
+    private var liveSubtitleSettingsCancellable: AnyCancellable?
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
     private var automaticScreenshotTask: Task<Void, Never>?
     private var lastSavedAutomaticScreenshotFingerprint: ScreenshotFingerprint?
@@ -285,6 +345,14 @@ final class CaptionViewModel: ObservableObject {
                 self.selectedLocale = localeIdentifier
             }
 
+        liveSubtitleSettingsCancellable = UserDefaults.standard
+            .publisher(for: \.liveSubtitleOverlayEnabled)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isEnabled in
+                self?.handleLiveSubtitleSettingChange(isEnabled: isEnabled)
+            }
+
         UserDefaults.standard
             .publisher(for: \.automaticScreenshotEnabled)
             .removeDuplicates()
@@ -324,6 +392,58 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    func batchTranscriptionLocaleOptions(preferredIdentifier: String) -> [Locale] {
+        var locales = filteredLocales.isEmpty ? supportedLocales : filteredLocales
+        if !locales.contains(where: { $0.identifier == preferredIdentifier }) {
+            locales.append(Locale(identifier: preferredIdentifier))
+        }
+        return locales.sortedByLocalizedName()
+    }
+
+    func presentBatchTranscriptionConfirmation() {
+        guard case let .awaitingConfirmation(sessionId) = batchTranscriptionState,
+              let meetingId = currentMeetingId else { return }
+        presentBatchTranscriptionConfirmation(
+            sessionId: sessionId,
+            meetingId: meetingId,
+            suggestedLocaleIdentifier: selectedLocale
+        )
+    }
+
+    func postponeBatchTranscription() {
+        pendingBatchTranscriptionConfirmation = nil
+    }
+
+    func confirmBatchTranscription(localeIdentifier: String) {
+        guard let confirmation = pendingBatchTranscriptionConfirmation,
+              let coordinator = batchTranscriptionCoordinator else { return }
+        let retryConfirmation = BatchTranscriptionConfirmation(
+            sessionId: confirmation.sessionId,
+            meetingId: confirmation.meetingId,
+            suggestedLocaleIdentifier: localeIdentifier
+        )
+        pendingBatchTranscriptionConfirmation = nil
+        if currentMeetingId == confirmation.meetingId {
+            batchTranscriptionState = .queued(sessionId: confirmation.sessionId)
+        }
+
+        Task {
+            do {
+                try await coordinator.confirmAndEnqueue(
+                    sessionId: confirmation.sessionId,
+                    localeIdentifier: localeIdentifier
+                )
+            } catch {
+                if currentMeetingId == confirmation.meetingId {
+                    batchTranscriptionState = .awaitingConfirmation(sessionId: confirmation.sessionId)
+                }
+                errorMessage = error.localizedDescription
+                pendingBatchTranscriptionConfirmation = retryConfirmation
+                MainWindowOpener.shared.openMainWindow()
+            }
+        }
+    }
+
     func discardFailedBatchTranscription() {
         guard case let .failed(sessionId, _) = batchTranscriptionState,
               let meetingId = currentMeetingId,
@@ -353,12 +473,17 @@ final class CaptionViewModel: ObservableObject {
             .first(where: \.blocksSummaryGeneration)
     }
 
-    private func handleBatchTranscriptionUpdate(_ update: BatchTranscriptionUpdate) async {
+    func handleBatchTranscriptionUpdate(_ update: BatchTranscriptionUpdate) async {
         guard currentMeetingId == update.meetingId,
               !(isBatchRecording && recordingMeetingId == update.meetingId) else { return }
         batchTranscriptionState = update.state
-        guard case .completed = update.state, !isListening else { return }
+        guard case .completed = update.state,
+              canReloadMeetingAfterBatchCompletion(update.meetingId) else { return }
         await reloadCurrentMeetingAfterBatchCompletion(meetingId: update.meetingId)
+    }
+
+    private func canReloadMeetingAfterBatchCompletion(_ meetingId: UUID) -> Bool {
+        !isListening || recordingMeetingId != meetingId
     }
 
     private func reloadCurrentMeetingAfterBatchCompletion(meetingId: UUID) async {
@@ -375,7 +500,8 @@ final class CaptionViewModel: ObservableObject {
                     vaultURL: vaultURL
                 )
             }.value
-            guard currentMeetingId == meetingId, !isListening else { return }
+            guard currentMeetingId == meetingId,
+                  canReloadMeetingAfterBatchCompletion(meetingId) else { return }
             store.recordingStartTime = loaded.createdAt
             store.loadRecordingSessions(loaded.recordingSessions)
             store.loadSegments(loaded.segments)
@@ -938,117 +1064,132 @@ final class CaptionViewModel: ObservableObject {
 
     func handleMicrophoneSelectionChange(from oldSelection: MicrophoneSelection, to newSelection: MicrophoneSelection) {
         guard oldSelection != newSelection else { return }
-        applyAudioSourceSelectionChange { self.microphoneSelection = oldSelection }
+        if case .starting = recordingLifecycle, let startingMicrophoneSelection {
+            if newSelection != startingMicrophoneSelection {
+                microphoneSelection = startingMicrophoneSelection
+            }
+            return
+        }
+        applyAudioSourceSelectionChange(source: .microphone) { self.microphoneSelection = oldSelection }
     }
 
     func handleSystemAudioSelectionChange(from oldValue: Bool, to newValue: Bool) {
         guard oldValue != newValue else { return }
-        applyAudioSourceSelectionChange { self.isSystemAudioEnabled = oldValue }
+        if case .starting = recordingLifecycle, let startingSystemAudioEnabled {
+            if newValue != startingSystemAudioEnabled {
+                isSystemAudioEnabled = startingSystemAudioEnabled
+            }
+            return
+        }
+        applyAudioSourceSelectionChange(source: .system) { self.isSystemAudioEnabled = oldValue }
     }
 
     private func applyLocaleChange(from oldLocale: String, to newLocale: String) {
         guard newLocale != oldLocale || !analyzerReady else { return }
+        if case .starting = recordingLifecycle, let startingLocaleIdentifier {
+            if newLocale != startingLocaleIdentifier {
+                selectedLocale = startingLocaleIdentifier
+            }
+            AppSettings.shared.transcriptionLocale = startingLocaleIdentifier
+            return
+        }
         AppSettings.shared.transcriptionLocale = newLocale
 
         if isListening {
-            Task { await rebuildPipelines(reason: .localeChange) }
+            enqueueRecordingConfiguration { [weak self] recordingSessionId in
+                _ = await self?.rebuildPipelines(
+                    reason: .localeChange,
+                    recordingSessionId: recordingSessionId
+                )
+            }
         } else {
             analyzerReady = false
-            pipelines.removeAll()
             prepareAnalyzer()
         }
     }
 
-    private func applyAudioSourceSelectionChange(restoreSelection: @escaping @MainActor () -> Void) {
+    private func applyAudioSourceSelectionChange(
+        source: RecordingAudioSource,
+        restoreSelection: @escaping @MainActor () -> Void
+    ) {
         guard isListening else { return }
 
-        Task { @MainActor in
-            let applied = await rebuildPipelines(reason: .audioSourceChange)
+        enqueueRecordingConfiguration { [weak self] recordingSessionId in
+            guard let self else { return }
+            let applied = await self.rebuildPipelines(
+                reason: .audioSourceChange(source),
+                recordingSessionId: recordingSessionId
+            )
             if !applied {
                 restoreSelection()
+                if self.activeControllerSources.isEmpty {
+                    self.stopListening()
+                }
             }
         }
     }
 
     private enum PipelineRebuildReason {
         case localeChange
-        case audioSourceChange
+        case audioSourceChange(RecordingAudioSource)
     }
 
     @discardableResult
-    private func rebuildPipelines(reason: PipelineRebuildReason) async -> Bool {
-        await stopActivePipelines()
-        stopActiveCaptures()
+    private func rebuildPipelines(
+        reason: PipelineRebuildReason,
+        recordingSessionId: UUID
+    ) async -> Bool {
+        guard recordingLifecycle == .recording(recordingSessionId) else { return false }
         do {
-            try await batchAudioRecordingSession?.endActiveRanges()
+            let snapshot: RecordingSessionController.Snapshot
+            switch reason {
+            case .localeChange:
+                let locale = resolvedSelectedLocale()
+                snapshot = try await recordingSessionController.changeLocale(
+                    to: locale,
+                    translateSegment: translationHandler(for: locale)
+                )
+            case let .audioSourceChange(source):
+                let locale = resolvedSelectedLocale()
+                snapshot = try await recordingSessionController.setSource(
+                    controllerSourceConfiguration(for: source),
+                    enabled: enabledRecordingAudioSources.contains(source),
+                    translateSegment: translationHandler(for: locale)
+                )
+            }
+            guard snapshot.sessionId == recordingSessionId else { return false }
+            activeControllerSources = snapshot.enabledSources
+            errorMessage = nil
+            return true
         } catch {
+            if let snapshot = await recordingSessionController.snapshot(),
+               snapshot.sessionId == recordingSessionId {
+                activeControllerSources = snapshot.enabledSources
+            }
             setPipelineRebuildError(error, reason: reason)
             return false
         }
-
-        let primaryLocale = resolvedSelectedLocale()
-        let sourceError: Error?
-        if activeTranscriptionMode == .batch {
-            sourceError = await firstAudioSourceError(
-                startMicrophone: { try await self.startMicrophoneBatchCapture(locale: primaryLocale) },
-                startSystemAudio: { try await self.startSystemAudioBatchCapture(locale: primaryLocale) }
-            )
-        } else {
-            do {
-                try await SpeechTranscriberService.ensureModelInstalled(locale: primaryLocale)
-            } catch {
-                setPipelineRebuildError(error, reason: reason)
-                return false
-            }
-            let recordingStartTime = Date.now
-            let recordingSessionId = persistenceService?.recordingSessionId ?? .v7()
-            sourceError = await firstAudioSourceError(
-                startMicrophone: {
-                    try await self.startMicrophonePipeline(
-                        locale: primaryLocale,
-                        recordingStartTime: recordingStartTime,
-                        recordingSessionId: recordingSessionId
-                    )
-                },
-                startSystemAudio: {
-                    try await self.startSystemAudioPipeline(
-                        locale: primaryLocale,
-                        recordingStartTime: recordingStartTime,
-                        recordingSessionId: recordingSessionId
-                    )
-                }
-            )
-            analyzerReady = true
-        }
-
-        if let sourceError {
-            setPipelineRebuildError(sourceError, reason: reason)
-            return false
-        }
-        errorMessage = nil
-        return true
     }
 
-    private func firstAudioSourceError(
-        startMicrophone: () async throws -> Void,
-        startSystemAudio: () async throws -> Void
-    ) async -> Error? {
-        var errors: [Error] = []
-        if isMicEnabled {
-            do {
-                try await startMicrophone()
-            } catch {
-                errors.append(error)
-            }
+    private func enqueueRecordingConfiguration(
+        _ operation: @escaping @MainActor (UUID) async -> Void
+    ) {
+        guard case let .recording(recordingSessionId) = recordingLifecycle else { return }
+
+        nextRecordingConfigurationID += 1
+        let operationID = nextRecordingConfigurationID
+        let previousTask = recordingConfigurationTasks
+            .max(by: { $0.key < $1.key })?
+            .value
+        let task = Task { @MainActor [weak self] in
+            await previousTask?.value
+            guard let self else { return }
+            defer { self.recordingConfigurationTasks[operationID] = nil }
+            guard !Task.isCancelled,
+                  self.recordingLifecycle == .recording(recordingSessionId) else { return }
+            await operation(recordingSessionId)
         }
-        if isSystemAudioEnabled {
-            do {
-                try await startSystemAudio()
-            } catch {
-                errors.append(error)
-            }
-        }
-        return errors.first
+        recordingConfigurationTasks[operationID] = task
     }
 
     private func setPipelineRebuildError(_ error: Error, reason: PipelineRebuildReason) {
@@ -1060,110 +1201,12 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func stopActiveCaptures() {
-        audioManager?.onAudioBuffer = nil
-        audioManager?.stopCapture()
-        audioManager = nil
-
-        systemAudioManager?.onAudioBuffer = nil
-        systemAudioManager?.onStreamStopped = nil
-        systemAudioManager?.stopCapture()
-        systemAudioManager = nil
-    }
-
-    private func stopActivePipelines() async {
-        for pipeline in pipelines {
-            pipeline.bridge.finish()
-            await pipeline.service.stopStreaming()
-        }
-        pipelines.removeAll()
-    }
-
-    private func startMicrophonePipeline(locale: Locale, recordingStartTime: Date, recordingSessionId: UUID) async throws {
-        let hasMicPermission = await AudioCaptureManager.requestMicrophonePermission()
-        guard hasMicPermission else {
-            throw AudioCaptureError.microphonePermissionDenied
-        }
-
-        let (service, bridge, format) = try await buildPipeline(
-            locale: locale,
-            speakerLabel: "mic",
-            recordingStartTime: recordingStartTime,
-            recordingSessionId: recordingSessionId
-        )
-        try startMicrophoneCapture(
-            bridge: bridge,
-            targetFormat: format,
-            selectedDeviceID: selectedMicrophoneID
-        )
-        pipelines.append((service: service, bridge: bridge))
-    }
-
-    private func startSystemAudioPipeline(locale: Locale, recordingStartTime: Date, recordingSessionId: UUID) async throws {
-        let (service, bridge, format) = try await buildPipeline(
-            locale: locale,
-            speakerLabel: "system",
-            recordingStartTime: recordingStartTime,
-            recordingSessionId: recordingSessionId
-        )
-        try await startSystemAudioCapture(bridge: bridge, targetFormat: format)
-        pipelines.append((service: service, bridge: bridge))
-    }
-
-    private func startMicrophoneBatchCapture(locale: Locale) async throws {
-        let hasMicPermission = await AudioCaptureManager.requestMicrophonePermission()
-        guard hasMicPermission else {
-            throw AudioCaptureError.microphonePermissionDenied
-        }
-        guard let batchAudioRecordingSession else {
-            throw BatchAudioFileWriterError.incompatibleBuffer
-        }
-        let writer = try await batchAudioRecordingSession.beginRange(source: .microphone, locale: locale)
-        let manager = AudioCaptureManager()
-        manager.onAudioBuffer = { [writer] buffer in
-            writer.appendBuffer(buffer)
-        }
-        try manager.startCapture(
-            targetFormat: batchAudioRecordingSession.targetFormat,
-            selectedDeviceID: selectedMicrophoneID,
-            bufferSize: 1024
-        )
-        audioManager = manager
-    }
-
-    private func startSystemAudioBatchCapture(locale: Locale) async throws {
-        let hasPermission = await SystemAudioCaptureManager.requestPermission()
-        guard hasPermission else {
-            throw SystemAudioCaptureError.screenRecordingPermissionDenied
-        }
-        guard let batchAudioRecordingSession else {
-            throw BatchAudioFileWriterError.incompatibleBuffer
-        }
-        let writer = try await batchAudioRecordingSession.beginRange(source: .system, locale: locale)
-        let manager = SystemAudioCaptureManager()
-        manager.onAudioBuffer = { [writer] buffer in
-            writer.appendBuffer(buffer)
-        }
-        manager.onStreamStopped = { [weak self] error in
-            Task { @MainActor in
-                self?.errorMessage = error?.localizedDescription ?? L10n.systemAudioCaptureStopped
-                if self?.audioManager == nil {
-                    self?.stopListening()
-                }
-            }
-        }
-        try await manager.startCapture(targetFormat: batchAudioRecordingSession.targetFormat)
-        systemAudioManager = manager
-    }
-
     private func prepareRecordingStart(
         existingMeetingId: UUID?,
         dbQueue: DatabaseQueue,
         recordingStartTime: Date
     ) -> MeetingRepository.AppendRecordingContext? {
-        pipelines.removeAll()
         persistenceService = nil
-        batchAudioRecordingSession = nil
         stopAutomaticScreenshotCapture()
 
         guard let existingMeetingId else {
@@ -1186,65 +1229,45 @@ final class CaptionViewModel: ObservableObject {
         return context
     }
 
-    private func prepareCapture(
-        mode: TranscriptionMode,
-        locale: Locale,
-        recordingStartTime: Date,
-        recordingSessionId: UUID
-    ) async throws -> Double? {
-        guard mode == .realtime else {
-            return try await BatchSpeechTranscriberService.preferredSampleRate(locale: locale)
-        }
-
-        try await SpeechTranscriberService.ensureModelInstalled(locale: locale)
-        if isMicEnabled {
-            try await startMicrophonePipeline(
-                locale: locale,
-                recordingStartTime: recordingStartTime,
-                recordingSessionId: recordingSessionId
-            )
-        }
-        if isSystemAudioEnabled {
-            try await startSystemAudioPipeline(
-                locale: locale,
-                recordingStartTime: recordingStartTime,
-                recordingSessionId: recordingSessionId
-            )
-        }
-        return nil
+    private func batchRecordingSampleRate(for plan: TranscriptionSessionPlan) -> Double? {
+        guard plan.recordsBatchAudio else { return nil }
+        return BatchAudioRecordingSession.standardSampleRate
     }
 
-    private func startBatchRecordingIfNeeded(
-        sampleRate: Double?,
-        dbQueue: DatabaseQueue,
-        meetingId: UUID?,
-        recordingSessionId: UUID,
-        recordingStartTime: Date,
-        locale: Locale
+    private func prepareAndStartRecordingController(
+        _ request: RecordingControllerStartRequest
     ) async throws {
-        guard let sampleRate, let meetingId else { return }
-        let recordingSession = try BatchAudioRecordingSession(
-            dbQueue: dbQueue,
-            meetingId: meetingId,
-            recordingSessionId: recordingSessionId,
-            recordingStartTime: recordingStartTime,
-            sampleRate: sampleRate
-        )
-        batchAudioRecordingSession = recordingSession
-        if isMicEnabled {
-            try await startMicrophoneBatchCapture(locale: locale)
+        try await recordingSessionController.prepare(
+            RecordingSessionController.PreparationRequest(
+                sessionId: request.sessionId,
+                startedAt: request.startedAt,
+                plan: request.plan,
+                locale: request.locale,
+                sources: controllerSourceConfigurations(plan: request.plan),
+                dbQueue: request.plan.recordsBatchAudio ? request.dbQueue : nil,
+                meetingId: request.plan.recordsBatchAudio ? request.meetingId : nil,
+                batchSampleRate: request.batchSampleRate,
+                translateSegment: translationHandler(for: request.locale),
+                batchScheduler: batchTranscriptionCoordinator
+            )
+        ) { [weak self] event in
+            self?.handleTranscriptionEvent(event)
+        } onRuntimeFailure: { [weak self] source, message, isFatal in
+            self?.handleControllerRuntimeFailure(
+                source: source,
+                message: message,
+                isFatal: isFatal,
+                recordingSessionId: request.sessionId
+            )
         }
-        if isSystemAudioEnabled {
-            try await startSystemAudioBatchCapture(locale: locale)
+        let snapshot = try await recordingSessionController.startPrepared()
+        activeControllerSources = snapshot.enabledSources
+        if request.plan.recordsBatchAudio {
+            batchTranscriptionState = .recording(sessionId: request.sessionId)
         }
-        batchTranscriptionState = .recording(sessionId: recordingSessionId)
     }
 
     private func canStartRecording() -> Bool {
-        guard analyzerReady else {
-            errorMessage = L10n.speechRecognitionNotReady
-            return false
-        }
         guard hasEnabledAudioSource else {
             errorMessage = L10n.noAudioSourceSelected
             return false
@@ -1252,9 +1275,15 @@ final class CaptionViewModel: ObservableObject {
         return true
     }
 
-    private func markRecordingStarted() {
+    private func markRecordingStarted(recordingSessionId: UUID) {
+        guard recordingLifecycle == .starting(recordingSessionId) else { return }
+        recordingLifecycle = .recording(recordingSessionId)
+        startingMicrophoneSelection = nil
+        startingSystemAudioEnabled = nil
+        startingLocaleIdentifier = nil
         isListening = true
-        errorMessage = nil
+        errorMessage = pendingLiveSubtitleWarning
+        pendingLiveSubtitleWarning = nil
         syncAutomaticScreenshotCaptureState()
     }
 
@@ -1269,6 +1298,7 @@ final class CaptionViewModel: ObservableObject {
                 recordingOffsetSeconds: request.appendContext?.nextOffsetSeconds ?? 0,
                 recordingSessionId: request.recordingSessionId,
                 transcriptionMode: request.transcriptionMode,
+                persistencePolicy: request.persistencePolicy,
                 retainAudioAfterBatch: request.retainAudioAfterBatch
             )
             currentMeetingId = existingMeetingId
@@ -1285,6 +1315,7 @@ final class CaptionViewModel: ObservableObject {
             calendarEvent: request.draftMeeting?.linkedCalendarEvent,
             recordingSessionId: request.recordingSessionId,
             transcriptionMode: request.transcriptionMode,
+            persistencePolicy: request.persistencePolicy,
             retainAudioAfterBatch: request.retainAudioAfterBatch
         )
         currentMeetingId = persistenceService?.meetingId
@@ -1299,19 +1330,33 @@ final class CaptionViewModel: ObservableObject {
 
     private func handleRecordingStartFailure(
         _ error: Error,
+        recordingSessionId: UUID,
+        rollbackState: RecordingStartRollbackState,
         existingMeetingId: UUID?,
         previousBatchTranscriptionState: BatchTranscriptionState?
     ) async {
+        guard recordingLifecycle == .starting(recordingSessionId) else { return }
         errorMessage = error.localizedDescription
         ErrorReportingService.capture(error, context: ["source": "startListening"])
-        await stopActivePipelines()
-        stopActiveCaptures()
+        await recordingSessionController.abort()
         stopAutomaticScreenshotCapture()
-        await batchAudioRecordingSession?.cancelAndDelete()
-        batchAudioRecordingSession = nil
         persistenceService?.cancel()
         persistenceService = nil
         activeTranscriptionMode = nil
+        activeTranscriptionPlan = nil
+        activeRecordingSessionId = nil
+        activeControllerSources.removeAll()
+        pendingRealtimeRecognitionFailure = nil
+        pendingLiveSubtitleWarning = nil
+        startingMicrophoneSelection = nil
+        startingSystemAudioEnabled = nil
+        startingLocaleIdentifier = nil
+        liveCaptionStore.clear()
+        store.clear()
+        store.loadSegments(rollbackState.segments)
+        store.loadRecordingSessions(rollbackState.recordingSessions)
+        store.recordingStartTime = rollbackState.recordingStartTime
+        recordingLifecycle = .idle
         batchTranscriptionState = previousBatchTranscriptionState
         if existingMeetingId == nil {
             currentMeetingId = nil
@@ -1330,9 +1375,10 @@ final class CaptionViewModel: ObservableObject {
     ) {
         guard !isFinalizingRecording else { return }
 
-        if isListening {
+        switch recordingLifecycle {
+        case .recording:
             stopListening()
-        } else {
+        case .idle:
             Task {
                 await startListening(
                     dbQueue: dbQueue,
@@ -1343,6 +1389,8 @@ final class CaptionViewModel: ObservableObject {
                     vaultURL: vaultURL
                 )
             }
+        case .starting, .stopping:
+            break
         }
     }
 
@@ -1356,7 +1404,7 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL,
         appendingTo existingMeetingId: UUID? = nil
     ) async {
-        guard !isListening, !isFinalizingRecording else { return }
+        guard recordingLifecycle == .idle, !isFinalizingRecording else { return }
         let previousBatchTranscriptionState = batchTranscriptionState
 
         self.currentProjectURL = projectURL
@@ -1368,24 +1416,50 @@ final class CaptionViewModel: ObservableObject {
         let activeDraftMeeting = draftMeeting
         guard canStartRecording() else { return }
 
-        let recordingStartTime = Date()
         let recordingSessionId = UUID.v7()
-        let appendContext = prepareRecordingStart(
-            existingMeetingId: existingMeetingId,
-            dbQueue: dbQueue,
-            recordingStartTime: recordingStartTime
+        let rollbackState = RecordingStartRollbackState(
+            segments: store.segments,
+            recordingSessions: store.recordingSessions,
+            recordingStartTime: store.recordingStartTime
         )
+        startingMicrophoneSelection = microphoneSelection
+        startingSystemAudioEnabled = isSystemAudioEnabled
+        startingLocaleIdentifier = selectedLocale
+        recordingLifecycle = .starting(recordingSessionId)
+        pendingRealtimeRecognitionFailure = nil
+        pendingLiveSubtitleWarning = nil
+        let transcriptionMode = AppSettings.shared.transcriptionMode
+        let retainAudioAfterBatch = transcriptionMode == .batch
+            && AppSettings.shared.retainAudioAfterBatchTranscription
+        var transcriptionPlan = TranscriptionSessionPlan(
+            finalMode: transcriptionMode,
+            liveSubtitlesEnabled: AppSettings.shared.liveSubtitleOverlayEnabled,
+            retainBatchAudio: retainAudioAfterBatch
+        )
+        let primaryLocale = resolvedSelectedLocale()
+        activeTranscriptionMode = transcriptionMode
+        activeTranscriptionPlan = transcriptionPlan
+        activeRecordingSessionId = recordingSessionId
+        if transcriptionPlan.liveSubtitlesEnabled {
+            liveCaptionStore.start(sessionId: recordingSessionId)
+        } else {
+            liveCaptionStore.clear()
+        }
+
         do {
-            let transcriptionMode = AppSettings.shared.transcriptionMode
-            let retainAudioAfterBatch = transcriptionMode == .batch
-                && AppSettings.shared.retainAudioAfterBatchTranscription
-            activeTranscriptionMode = transcriptionMode
-            let primaryLocale = resolvedSelectedLocale()
-            let batchSampleRate = try await prepareCapture(
-                mode: transcriptionMode,
-                locale: primaryLocale,
-                recordingStartTime: recordingStartTime,
+            let batchSampleRate = batchRecordingSampleRate(for: transcriptionPlan)
+            transcriptionPlan = try await reconcileStartingPlan(
+                transcriptionPlan,
                 recordingSessionId: recordingSessionId
+            )
+            activeTranscriptionPlan = transcriptionPlan
+            try ensureSessionIsActive(recordingSessionId)
+
+            let recordingStartTime = Date.now
+            let appendContext = prepareRecordingStart(
+                existingMeetingId: existingMeetingId,
+                dbQueue: dbQueue,
+                recordingStartTime: recordingStartTime
             )
 
             try startPersistence(
@@ -1398,25 +1472,38 @@ final class CaptionViewModel: ObservableObject {
                     recordingStartTime: recordingStartTime,
                     recordingSessionId: recordingSessionId,
                     transcriptionMode: transcriptionMode,
+                    persistencePolicy: transcriptionPlan.persistsRealtimeTranscript ? .streaming : .deferred,
                     retainAudioAfterBatch: retainAudioAfterBatch,
                     draftMeeting: activeDraftMeeting
                 )
             )
-
-            try await startBatchRecordingIfNeeded(
-                sampleRate: batchSampleRate,
+            try await prepareAndStartRecordingController(RecordingControllerStartRequest(
                 dbQueue: dbQueue,
                 meetingId: currentMeetingId,
-                recordingSessionId: recordingSessionId,
-                recordingStartTime: recordingStartTime,
-                locale: primaryLocale
+                sessionId: recordingSessionId,
+                startedAt: recordingStartTime,
+                plan: transcriptionPlan,
+                locale: primaryLocale,
+                batchSampleRate: batchSampleRate
+            ))
+
+            transcriptionPlan = try await reconcileStartingLiveConfiguration(
+                transcriptionPlan,
+                recordingSessionId: recordingSessionId
             )
 
+            if let failure = pendingRealtimeRecognitionFailure {
+                throw RecordingPipelineFailure(message: failure.message)
+            }
+
             completePersistenceStart(existingMeetingId: existingMeetingId)
-            markRecordingStarted()
+            markRecordingStarted(recordingSessionId: recordingSessionId)
+            pendingRealtimeRecognitionFailure = nil
         } catch {
             await handleRecordingStartFailure(
                 error,
+                recordingSessionId: recordingSessionId,
+                rollbackState: rollbackState,
                 existingMeetingId: existingMeetingId,
                 previousBatchTranscriptionState: previousBatchTranscriptionState
             )
@@ -1424,11 +1511,16 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func stopListening() {
-        guard isListening, !isFinalizingRecording else { return }
+        guard case let .recording(activeSessionId) = recordingLifecycle,
+              isListening,
+              !isFinalizingRecording else { return }
 
+        recordingLifecycle = .stopping(activeSessionId)
         isFinalizingRecording = true
         stopAutomaticScreenshotCapture()
-        stopActiveCaptures()
+        let configurationTasks = Array(recordingConfigurationTasks.values)
+        configurationTasks.forEach { $0.cancel() }
+        recordingConfigurationTasks.removeAll()
         isListening = false
 
         // ナビゲーション済みの場合、録音コンテキストからデータを取得
@@ -1441,27 +1533,46 @@ final class CaptionViewModel: ObservableObject {
         let recordingStart = activeStore.timeBase
         let transcriptionMode = activeTranscriptionMode ?? .realtime
         let recordingSessionId = persistenceService?.recordingSessionId
-        let batchRecordingSession = batchAudioRecordingSession
-        batchAudioRecordingSession = nil
         recordingContext = nil
 
         Task {
-            await stopActivePipelines()
-            await finishBatchRecording(
-                batchRecordingSession,
-                recordingSessionId: recordingSessionId,
-                meetingId: meetingId
-            )
-            persistenceService?.stop()
+            for task in configurationTasks {
+                await task.value
+            }
+            var stopResult: RecordingSessionController.StopResult?
+            do {
+                stopResult = try await recordingSessionController.stop()
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "stopRecordingSession"])
+                await recordingSessionController.abort()
+            }
+            let persistenceResult = persistenceService?.stop()
+                ?? .failure(message: L10n.recordingSessionNotActive)
             persistenceService = nil
+            if let persistenceFailureMessage = persistenceResult.failureMessage {
+                errorMessage = persistenceFailureMessage
+            }
+            await recordingSessionController.completeStop()
             activeTranscriptionMode = nil
+            activeTranscriptionPlan = nil
+            activeRecordingSessionId = nil
+            activeControllerSources.removeAll()
+            pendingRealtimeRecognitionFailure = nil
+            pendingLiveSubtitleWarning = nil
+            startingMicrophoneSelection = nil
+            startingSystemAudioEnabled = nil
+            startingLocaleIdentifier = nil
+            liveCaptionStore.clear()
+            recordingLifecycle = .idle
             var segments = activeStore.segments
             let recordingSessions = activeStore.recordingSessions
             isFinalizingRecording = false
 
             if transcriptionMode == .batch, let recordingSessionId {
-                await completeBatchRecording(
-                    sessionId: recordingSessionId,
+                await finishStoppedBatchRecording(
+                    recordingSessionId: recordingSessionId,
+                    stopResult: stopResult,
+                    persistenceResult: persistenceResult,
                     meetingId: meetingId,
                     vaultURL: vaultURL,
                     dbQueue: dbQueue
@@ -1491,40 +1602,58 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func finishBatchRecording(
-        _ recordingSession: BatchAudioRecordingSession?,
-        recordingSessionId: UUID?,
-        meetingId: UUID?
-    ) async {
-        do {
-            try await recordingSession?.finish()
-        } catch {
-            if let recordingSessionId,
-               let coordinator = batchTranscriptionCoordinator {
-                await coordinator.recordRecordingFailure(sessionId: recordingSessionId, error: error)
-            }
-            if currentMeetingId == meetingId, let recordingSessionId {
-                batchTranscriptionState = .failed(
-                    sessionId: recordingSessionId,
-                    message: error.localizedDescription
-                )
-            }
-        }
-    }
-
-    private func completeBatchRecording(
-        sessionId: UUID,
+    private func finishStoppedBatchRecording(
+        recordingSessionId: UUID,
+        stopResult: RecordingSessionController.StopResult?,
+        persistenceResult: MeetingPersistenceStopResult,
         meetingId: UUID?,
         vaultURL: URL?,
         dbQueue: DatabaseQueue?
     ) async {
-        let recordingFailed = isFailedBatchState(for: sessionId)
-        if currentMeetingId == meetingId, !recordingFailed {
-            batchTranscriptionState = .queued(sessionId: sessionId)
+        let recordingFailed = stopResult?.batchRecordingSucceeded != true || !persistenceResult.succeeded
+        if recordingFailed,
+           currentMeetingId == meetingId {
+            batchTranscriptionState = .failed(
+                sessionId: recordingSessionId,
+                message: stopResult?.batchFailureMessage
+                    ?? persistenceResult.failureMessage.map(L10n.batchAudioWriteFailed)
+                    ?? L10n.batchAudioWriteFailed("")
+            )
+        } else if let meetingId {
+            if currentMeetingId == meetingId {
+                batchTranscriptionState = .awaitingConfirmation(sessionId: recordingSessionId)
+            }
+            presentBatchTranscriptionConfirmation(
+                sessionId: recordingSessionId,
+                meetingId: meetingId,
+                suggestedLocaleIdentifier: selectedLocale
+            )
         }
-        if !recordingFailed, let coordinator = batchTranscriptionCoordinator {
-            await coordinator.enqueue(sessionId: sessionId)
-        }
+        await completeBatchRecording(
+            meetingId: meetingId,
+            vaultURL: vaultURL,
+            dbQueue: dbQueue
+        )
+    }
+
+    private func presentBatchTranscriptionConfirmation(
+        sessionId: UUID,
+        meetingId: UUID,
+        suggestedLocaleIdentifier: String
+    ) {
+        pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
+            sessionId: sessionId,
+            meetingId: meetingId,
+            suggestedLocaleIdentifier: suggestedLocaleIdentifier
+        )
+        MainWindowOpener.shared.openMainWindow()
+    }
+
+    private func completeBatchRecording(
+        meetingId: UUID?,
+        vaultURL: URL?,
+        dbQueue: DatabaseQueue?
+    ) async {
         if let vaultURL, let meetingId, let dbQueue {
             await exportBatchScreenshots(
                 vaultURL: vaultURL,
@@ -1532,11 +1661,6 @@ final class CaptionViewModel: ObservableObject {
                 dbQueue: dbQueue
             )
         }
-    }
-
-    private func isFailedBatchState(for sessionId: UUID) -> Bool {
-        guard case let .failed(failedSessionId, _) = batchTranscriptionState else { return false }
-        return failedSessionId == sessionId
     }
 
     private func exportBatchScreenshots(vaultURL: URL, meetingId: UUID, dbQueue: DatabaseQueue) async {
@@ -1845,11 +1969,6 @@ final class CaptionViewModel: ObservableObject {
 
         store.clear()
         persistenceService?.reset()
-        Task {
-            for pipeline in pipelines {
-                await pipeline.service.reset()
-            }
-        }
     }
 
     // MARK: - Screenshot
@@ -2203,29 +2322,167 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Pipeline Construction
 
-    private func buildPipeline(
-        locale: Locale,
-        speakerLabel: String,
-        recordingStartTime: Date,
-        recordingSessionId: UUID
-    ) async throws -> (service: SpeechTranscriberService, bridge: AudioBufferBridge, format: AVAudioFormat) {
-        let service = SpeechTranscriberService(
-            locale: locale,
-            speakerLabel: speakerLabel,
-            translateSegment: translationHandler(for: locale)
+    private func handleTranscriptionEvent(_ event: TranscriptionEvent) {
+        guard let plan = activeTranscriptionPlan else { return }
+        TranscriptionEventRouter.route(
+            event,
+            plan: plan,
+            transcriptStore: activeTranscriptStore,
+            liveCaptionStore: liveCaptionStore
         )
-        try await service.prepare()
-        guard let format = await service.targetAudioFormat() else {
-            throw AudioCaptureError.converterCreationFailed
+
+        guard case let .failure(_, _, sourceLabel, message) = event else { return }
+
+        let source = RecordingAudioSource(speakerLabel: sourceLabel)
+        errorMessage = message
+        if case .starting = recordingLifecycle {
+            if plan.finalMode == .realtime {
+                pendingRealtimeRecognitionFailure = (source, message)
+            } else {
+                pendingLiveSubtitleWarning = message
+            }
         }
-        let bridge = AudioBufferBridge(sampleRate: format.sampleRate)
-        try await service.startStreaming(
-            store: store,
-            bridge: bridge,
-            recordingStartTime: recordingStartTime,
-            recordingSessionId: recordingSessionId
+    }
+
+    private func controllerSourceConfiguration(
+        for source: RecordingAudioSource,
+        plan: TranscriptionSessionPlan? = nil
+    ) -> RecordingSessionController.SourceConfiguration {
+        let effectivePlan = plan ?? activeTranscriptionPlan
+        return RecordingSessionController.SourceConfiguration(
+            source: source,
+            captureDeviceID: source == .microphone ? selectedMicrophoneID : nil,
+            captureBufferSize: effectivePlan?.recordsBatchAudio == true ? 1024 : 4096
         )
-        return (service: service, bridge: bridge, format: format)
+    }
+
+    private func controllerSourceConfigurations(
+        plan: TranscriptionSessionPlan
+    ) -> [RecordingSessionController.SourceConfiguration] {
+        enabledRecordingAudioSources.map { source in
+            controllerSourceConfiguration(for: source, plan: plan)
+        }
+    }
+
+    private func handleControllerRuntimeFailure(
+        source: RecordingAudioSource?,
+        message: String,
+        isFatal: Bool,
+        recordingSessionId: UUID
+    ) {
+        guard activeRecordingSessionId == recordingSessionId else { return }
+        errorMessage = message
+        if case .starting = recordingLifecycle {
+            if isFatal {
+                pendingRealtimeRecognitionFailure = (source, message)
+            } else {
+                pendingLiveSubtitleWarning = message
+            }
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.activeRecordingSessionId == recordingSessionId else { return }
+            if let snapshot = await self.recordingSessionController.snapshot(),
+               snapshot.sessionId == recordingSessionId {
+                self.activeControllerSources = snapshot.enabledSources
+            }
+            if isFatal {
+                self.stopListening()
+            }
+        }
+    }
+
+    private func handleLiveSubtitleSettingChange(isEnabled: Bool) {
+        guard var plan = activeTranscriptionPlan,
+              let recordingSessionId = activeRecordingSessionId else { return }
+
+        switch recordingLifecycle {
+        case let .starting(sessionId) where sessionId == recordingSessionId:
+            plan.liveSubtitlesEnabled = isEnabled
+            activeTranscriptionPlan = plan
+            if isEnabled {
+                liveCaptionStore.start(sessionId: recordingSessionId)
+            } else {
+                liveCaptionStore.clear()
+            }
+            return
+        case let .recording(sessionId) where sessionId == recordingSessionId:
+            break
+        default:
+            return
+        }
+
+        plan.liveSubtitlesEnabled = isEnabled
+        activeTranscriptionPlan = plan
+
+        if isEnabled {
+            liveCaptionStore.start(sessionId: recordingSessionId)
+            if plan.persistsRealtimeTranscript {
+                liveCaptionStore.seed(activeTranscriptStore.segments, sessionId: recordingSessionId)
+            }
+        } else {
+            liveCaptionStore.clear()
+        }
+
+        enqueueRecordingConfiguration { [weak self] _ in
+            guard let self,
+                  self.activeTranscriptionPlan?.liveSubtitlesEnabled == isEnabled else { return }
+            do {
+                let locale = self.resolvedSelectedLocale()
+                let snapshot = try await self.recordingSessionController.setLiveSubtitlesEnabled(
+                    isEnabled,
+                    translateSegment: self.translationHandler(for: locale)
+                )
+                self.activeControllerSources = snapshot.enabledSources
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func reconcileStartingPlan(
+        _ initialPlan: TranscriptionSessionPlan,
+        recordingSessionId: UUID
+    ) async throws -> TranscriptionSessionPlan {
+        var plan = initialPlan
+        while recordingLifecycle == .starting(recordingSessionId) {
+            let desiredValue = activeTranscriptionPlan?.liveSubtitlesEnabled
+                ?? AppSettings.shared.liveSubtitleOverlayEnabled
+            guard plan.liveSubtitlesEnabled != desiredValue else { return plan }
+
+            try ensureSessionIsActive(recordingSessionId)
+            guard activeTranscriptionPlan?.liveSubtitlesEnabled == desiredValue else { continue }
+
+            plan.liveSubtitlesEnabled = desiredValue
+            return plan
+        }
+        throw CancellationError()
+    }
+
+    private func reconcileStartingLiveConfiguration(
+        _ initialPlan: TranscriptionSessionPlan,
+        recordingSessionId: UUID
+    ) async throws -> TranscriptionSessionPlan {
+        var appliedPlan = initialPlan
+        while recordingLifecycle == .starting(recordingSessionId) {
+            guard let latestPlan = activeTranscriptionPlan else { throw CancellationError() }
+            if appliedPlan.liveSubtitlesEnabled != latestPlan.liveSubtitlesEnabled {
+                let locale = resolvedSelectedLocale()
+                let snapshot = try await recordingSessionController.setLiveSubtitlesEnabled(
+                    latestPlan.liveSubtitlesEnabled,
+                    translateSegment: translationHandler(for: locale)
+                )
+                activeControllerSources = snapshot.enabledSources
+                appliedPlan = latestPlan
+            }
+            guard activeTranscriptionPlan?.liveSubtitlesEnabled == latestPlan.liveSubtitlesEnabled else {
+                continue
+            }
+            return latestPlan
+        }
+        throw CancellationError()
     }
 
     private func translationHandler(for locale: Locale) -> SpeechTranscriberService.SegmentTranslationHandler? {
@@ -2256,38 +2513,18 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private func startMicrophoneCapture(
-        bridge: AudioBufferBridge,
-        targetFormat: AVAudioFormat,
-        selectedDeviceID: AudioDeviceID?
-    ) throws {
-        let manager = AudioCaptureManager()
-        manager.onAudioBuffer = { [bridge] buffer in
-            bridge.appendBuffer(buffer)
+    private func ensureSessionIsActive(_ recordingSessionId: UUID) throws {
+        guard isSessionActive(recordingSessionId), !Task.isCancelled else {
+            throw CancellationError()
         }
-        try manager.startCapture(targetFormat: targetFormat, selectedDeviceID: selectedDeviceID)
-        self.audioManager = manager
     }
 
-    private func startSystemAudioCapture(bridge: AudioBufferBridge, targetFormat: AVAudioFormat) async throws {
-        let hasPermission = await SystemAudioCaptureManager.requestPermission()
-        guard hasPermission else {
-            throw SystemAudioCaptureError.screenRecordingPermissionDenied
+    private func isSessionActive(_ recordingSessionId: UUID) -> Bool {
+        switch recordingLifecycle {
+        case let .starting(sessionId), let .recording(sessionId):
+            sessionId == recordingSessionId
+        case .idle, .stopping:
+            false
         }
-
-        let manager = SystemAudioCaptureManager()
-        manager.onAudioBuffer = { [bridge] buffer in
-            bridge.appendBuffer(buffer)
-        }
-        manager.onStreamStopped = { [weak self] error in
-            Task { @MainActor in
-                self?.errorMessage = error?.localizedDescription ?? L10n.systemAudioCaptureStopped
-                if self?.audioManager == nil {
-                    self?.isListening = false
-                }
-            }
-        }
-        try await manager.startCapture(targetFormat: targetFormat)
-        self.systemAudioManager = manager
     }
 }

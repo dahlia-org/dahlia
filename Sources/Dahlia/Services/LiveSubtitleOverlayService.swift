@@ -259,6 +259,8 @@ final class LiveSubtitleOverlayService: ObservableObject {
     }
 }
 
+extension LiveSubtitleOverlayService: LiveSubtitlePresenting {}
+
 private enum LiveSubtitleOverlayLayout {
     static let fixedWidth: CGFloat = 960
     static let minimumHeight: CGFloat = 72

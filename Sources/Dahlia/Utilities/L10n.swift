@@ -169,6 +169,8 @@ enum L10n {
     static var stop: String { String(localized: "Stop", bundle: bundle) }
     static var startRecording: String { String(localized: "Start Recording", bundle: bundle) }
     static var stopRecording: String { String(localized: "Stop Recording", bundle: bundle) }
+    static var recordingSessionAlreadyActive: String { String(localized: "A recording session is already active.", bundle: bundle) }
+    static var recordingSessionNotActive: String { String(localized: "No recording session is active.", bundle: bundle) }
     static var stopTranscribing: String { String(localized: "Stop transcribing", bundle: bundle) }
     static var pause: String { String(localized: "Pause", bundle: bundle) }
     static var resume: String { String(localized: "Resume", bundle: bundle) }
@@ -209,12 +211,22 @@ enum L10n {
     static func percent(_ count: Int) -> String { String(localized: "\(count)%", bundle: bundle) }
     static var showLiveSubtitles: String { String(localized: "Show Live Subtitles", bundle: bundle) }
     static var hideLiveSubtitles: String { String(localized: "Hide Live Subtitles", bundle: bundle) }
+    static var liveSubtitles: String { String(localized: "Live Subtitles", bundle: bundle) }
+    static var subtitles: String { String(localized: "Subtitles", bundle: bundle) }
+    static var liveSubtitlesOnStatus: String { String(localized: "Live subtitles on", bundle: bundle) }
+    static var liveSubtitlesOffStatus: String { String(localized: "Live subtitles off", bundle: bundle) }
     static var liveSubtitleOverlay: String { String(localized: "Live Subtitle Overlay", bundle: bundle) }
-    static var liveSubtitleOverlayDescription: String { String(
-        localized: "Configure how the desktop live subtitle overlay is shown while recording.",
+    static var liveSubtitleOverlayToggleDescription: String { String(
+        localized: "Show live subtitles when recording starts.",
         bundle: bundle
     ) }
-    static var subtitles: String { String(localized: "Subtitles", bundle: bundle) }
+    static var liveSubtitleOverlayDescription: String {
+        [
+            String(localized: "Live subtitles are available with both real-time and batch transcription.", bundle: bundle),
+            String(localized: "In batch mode, subtitles are temporary and the final transcript is created after recording stops.", bundle: bundle),
+        ].joined(separator: " ")
+    }
+
     static var systemAudioOnly: String { String(localized: "System Audio Only", bundle: bundle) }
     static var includeMicrophone: String { String(localized: "Include Microphone", bundle: bundle) }
     static var liveSubtitleSourceDescription: String { String(
@@ -224,6 +236,10 @@ enum L10n {
     static var liveSubtitleOverlaySegmentCount: String { String(localized: "Overlay Segment Count", bundle: bundle) }
     static var liveSubtitleOverlaySegmentCountDescription: String { String(
         localized: "Choose how many recent transcript segments the live subtitle overlay shows.",
+        bundle: bundle
+    ) }
+    static var liveSubtitleConversionFailed: String { String(
+        localized: "Live subtitles stopped because the audio format could not be converted.",
         bundle: bundle
     ) }
 
@@ -236,6 +252,11 @@ enum L10n {
     static var transcript: String { String(localized: "Transcript", bundle: bundle) }
     static var transcriptEmpty: String { String(localized: "No transcript yet.", bundle: bundle) }
     static var batchRecordingInProgress: String { String(localized: "Recording audio for transcription after recording stops…", bundle: bundle) }
+    static var batchTranscriptionAwaitingConfirmation: String { String(
+        localized: "Audio is ready. Confirm the language to start transcription.",
+        bundle: bundle
+    ) }
+    static var reviewBatchTranscription: String { String(localized: "Review and Start", bundle: bundle) }
     static var batchTranscriptionQueued: String { String(localized: "Waiting to transcribe the recording…", bundle: bundle) }
     static var batchTranscriptionRunning: String { String(localized: "Creating a high-accuracy transcript…", bundle: bundle) }
     static var batchTranscriptionCompleted: String { String(localized: "High-accuracy transcription completed.", bundle: bundle) }
@@ -244,6 +265,12 @@ enum L10n {
     }
 
     static var retryBatchTranscription: String { String(localized: "Retry Batch Transcription", bundle: bundle) }
+    static var batchTranscriptionConfirmationTitle: String { String(localized: "Start batch transcription?", bundle: bundle) }
+    static var batchTranscriptionConfirmationDescription: String { String(
+        localized: "The recording will be transcribed using the selected language. The audio is kept until transcription succeeds.",
+        bundle: bundle
+    ) }
+    static var later: String { String(localized: "Later", bundle: bundle) }
     static var discardFailedBatchRecording: String { String(localized: "Discard Failed Recording", bundle: bundle) }
     static var discardFailedBatchRecordingConfirmation: String { String(localized: "Discard this failed recording?", bundle: bundle) }
     static var discardFailedBatchRecordingDescription: String { String(
@@ -252,6 +279,14 @@ enum L10n {
     ) }
     static var cancel: String { String(localized: "Cancel", bundle: bundle) }
     static var batchAudioBufferInvalid: String { String(localized: "The recorded audio format is invalid.", bundle: bundle) }
+    static var batchAudioBufferOverflow: String { String(
+        localized: "The audio writer could not keep up with the recording.",
+        bundle: bundle
+    ) }
+    static var batchAudioWriterClosed: String { String(
+        localized: "The audio writer was closed before the buffer was saved.",
+        bundle: bundle
+    ) }
     static func batchAudioWriteFailed(_ reason: String) -> String {
         String(localized: "Could not save the recording: \(reason)", bundle: bundle)
     }

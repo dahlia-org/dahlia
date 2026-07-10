@@ -2,10 +2,35 @@ import Combine
 import Foundation
 import GRDB
 
+enum MeetingPersistenceStopResult {
+    case success
+    case failure(message: String)
+
+    var succeeded: Bool {
+        if case .success = self {
+            return true
+        }
+        return false
+    }
+
+    var failureMessage: String? {
+        guard case let .failure(message) = self else { return nil }
+        return message
+    }
+}
+
 /// ミーティングの文字起こし結果を GRDB/SQLite にリアルタイム保存するサービス。
 /// 確定済みセグメントを差分で INSERT する。
 @MainActor
 final class MeetingPersistenceService {
+    private enum StopError: LocalizedError {
+        case recordingSessionMissing
+
+        var errorDescription: String? {
+            L10n.recordingSessionNotActive
+        }
+    }
+
     private let store: TranscriptStore
     private let dbQueue: DatabaseQueue
     let meetingId: UUID
@@ -14,13 +39,10 @@ final class MeetingPersistenceService {
     private var persistedSegmentTranslations: [UUID: String?] = [:]
     private var recordingSession: RecordingSessionRecord
     private let createsMeeting: Bool
+    private let persistencePolicy: TranscriptPersistencePolicy
 
     var recordingSessionId: UUID {
         recordingSession.id
-    }
-
-    private var isRealtime: Bool {
-        recordingSession.transcriptionMode == .realtime
     }
 
     /// 新規ミーティングを作成して録音を開始する。
@@ -33,12 +55,14 @@ final class MeetingPersistenceService {
         calendarEvent: CalendarEvent? = nil,
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
+        persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false
     ) throws {
         self.store = store
         self.dbQueue = dbQueue
         self.meetingId = .v7()
         self.createsMeeting = true
+        self.persistencePolicy = persistencePolicy
 
         let now = store.recordingStartTime ?? Date()
         let session = Self.makeRecordingSession(
@@ -83,12 +107,14 @@ final class MeetingPersistenceService {
         recordingOffsetSeconds: TimeInterval = 0,
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
+        persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false
     ) throws {
         self.store = store
         self.dbQueue = dbQueue
         self.meetingId = existingMeetingId
         self.createsMeeting = false
+        self.persistencePolicy = persistencePolicy
         self.persistedSegmentIds = existingSegmentIds
         let session = Self.makeRecordingSession(
             id: recordingSessionId,
@@ -108,7 +134,7 @@ final class MeetingPersistenceService {
     }
 
     private func startObserving() {
-        guard isRealtime else { return }
+        guard persistencePolicy.persistsStreamingSegments else { return }
         cancellable = store.$segments
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] segments in
@@ -150,11 +176,14 @@ final class MeetingPersistenceService {
     }
 
     /// 監視を停止し、最終保存とミーティング完了の記録を行う。
-    func stop() {
+    @discardableResult
+    func stop() -> MeetingPersistenceStopResult {
         cancellable = nil
-        if isRealtime {
-            persistNewConfirmedSegments(store.segments)
-        }
+        let finalSegmentRecords = persistencePolicy.persistsStreamingSegments
+            ? store.segments
+            .filter(\.isConfirmed)
+            .map { TranscriptSegmentRecord(from: $0, meetingId: meetingId, defaultSessionId: recordingSession.id) }
+            : []
 
         let now = Date.now
         let duration = max(0, now.timeIntervalSince(recordingSession.startedAt))
@@ -162,35 +191,45 @@ final class MeetingPersistenceService {
         recordingSession.duration = duration
         recordingSession.updatedAt = now
 
-        let persistedSession = try? dbQueue.write { db -> RecordingSessionRecord? in
-            // バッチ処理が先に記録したエラーや試行情報を、録音開始時点の値で上書きしない。
-            try db.execute(
-                sql: """
-                UPDATE recording_sessions
-                SET endedAt = ?, duration = ?, updatedAt = ?
-                WHERE id = ?
-                """,
-                arguments: [now, duration, now, recordingSession.id]
-            )
-            let totalDuration = try Double.fetchOne(
-                db,
-                sql: "SELECT COALESCE(SUM(duration), 0) FROM recording_sessions WHERE meetingId = ?",
-                arguments: [meetingId]
-            ) ?? duration
-            if var record = try MeetingRecord.fetchOne(db, key: meetingId) {
-                if isRealtime {
-                    record.status = .ready
+        do {
+            let persistedSession = try dbQueue.write { db -> RecordingSessionRecord in
+                // debounce中だった最終セグメントもsession終了と同じtransactionで確定する。
+                for record in finalSegmentRecords {
+                    try record.save(db)
                 }
-                record.duration = totalDuration
-                record.updatedAt = now
-                try record.update(db)
+                // バッチ処理が先に記録したエラーや試行情報を、録音開始時点の値で上書きしない。
+                try db.execute(
+                    sql: """
+                    UPDATE recording_sessions
+                    SET endedAt = ?, duration = ?, updatedAt = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [now, duration, now, recordingSession.id]
+                )
+                let totalDuration = try Double.fetchOne(
+                    db,
+                    sql: "SELECT COALESCE(SUM(duration), 0) FROM recording_sessions WHERE meetingId = ?",
+                    arguments: [meetingId]
+                ) ?? duration
+                if var record = try MeetingRecord.fetchOne(db, key: meetingId) {
+                    if persistencePolicy.persistsStreamingSegments {
+                        record.status = .ready
+                    }
+                    record.duration = totalDuration
+                    record.updatedAt = now
+                    try record.update(db)
+                }
+                guard let persistedSession = try RecordingSessionRecord.fetchOne(db, key: recordingSession.id) else {
+                    throw StopError.recordingSessionMissing
+                }
+                return persistedSession
             }
-            return try RecordingSessionRecord.fetchOne(db, key: recordingSession.id)
-        }
-        if let persistedSession {
             recordingSession = persistedSession
+            store.upsertRecordingSession(RecordingSessionTimeline(from: recordingSession))
+            return .success
+        } catch {
+            return .failure(message: error.localizedDescription)
         }
-        store.upsertRecordingSession(RecordingSessionTimeline(from: recordingSession))
     }
 
     /// 保存済みセグメント追跡をリセットし、監視を再開する。

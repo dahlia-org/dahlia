@@ -52,22 +52,6 @@ struct RecordToolbarButton: View {
     }
 }
 
-struct LiveSubtitleOverlayToolbarButton: View {
-    @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
-
-    var body: some View {
-        Button {
-            liveSubtitleOverlayEnabled.toggle()
-        } label: {
-            Label(
-                liveSubtitleOverlayEnabled ? L10n.hideLiveSubtitles : L10n.showLiveSubtitles,
-                systemImage: liveSubtitleOverlayEnabled ? "text.bubble.fill" : "text.bubble"
-            )
-        }
-        .help(liveSubtitleOverlayEnabled ? L10n.hideLiveSubtitles : L10n.showLiveSubtitles)
-    }
-}
-
 struct GenerateSummaryToolbarButton: View {
     @ObservedObject var viewModel: CaptionViewModel
 

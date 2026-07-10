@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct MeetingPersistenceServiceTests {
         @Test
         func newMeetingStartsPersistedAsReady() throws {
@@ -44,6 +45,7 @@ import GRDB
                 projectId: nil,
                 initialName: "Batch meeting",
                 transcriptionMode: .batch,
+                persistencePolicy: .deferred,
                 retainAudioAfterBatch: true
             )
             store.addSegment(
@@ -82,7 +84,8 @@ import GRDB
                 vaultId: testVault.id,
                 projectId: nil,
                 initialName: "Failed batch meeting",
-                transcriptionMode: .batch
+                transcriptionMode: .batch,
+                persistencePolicy: .deferred
             )
             let attemptDate = Date(timeIntervalSince1970: 1_776_384_030)
             try database.dbQueue.write { db in

@@ -26,6 +26,10 @@ struct MenuBarMenuView: View {
                 .disabled(!recordingCoordinator.canStartNewMeeting && AppSettings.shared.currentVault != nil)
             }
 
+            Toggle(isOn: $liveSubtitleOverlayEnabled) {
+                Label(L10n.menuBarShowLiveSubtitles, systemImage: "text.bubble")
+            }
+
             Divider()
 
             recordingSettingsMenus
@@ -43,10 +47,6 @@ struct MenuBarMenuView: View {
                 openWindow(id: WindowID.projectManager)
             } label: {
                 Label(L10n.manageProjects, systemImage: "folder")
-            }
-
-            Toggle(isOn: $liveSubtitleOverlayEnabled) {
-                Label(L10n.menuBarShowLiveSubtitles, systemImage: "text.bubble")
             }
 
             Divider()

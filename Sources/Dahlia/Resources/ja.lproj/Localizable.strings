@@ -115,6 +115,8 @@
 "Stop" = "停止";
 "Start Recording" = "録音を開始";
 "Stop Recording" = "録音を停止";
+"A recording session is already active." = "すでに録音セッションが実行中です。";
+"No recording session is active." = "実行中の録音セッションはありません。";
 "Stop transcribing" = "文字起こしを停止";
 "Pause" = "一時停止";
 "Resume" = "再開";
@@ -143,14 +145,19 @@
 "%lld%%" = "%lld%%";
 "Show Live Subtitles" = "ライブ字幕を表示";
 "Hide Live Subtitles" = "ライブ字幕を隠す";
+"Subtitles" = "字幕";
+"Live subtitles on" = "表示中";
+"Live subtitles off" = "非表示";
 "Live Subtitle Overlay" = "ライブ字幕オーバーレイ";
-"Configure how the desktop live subtitle overlay is shown while recording." = "録音中に表示するデスクトップのライブ字幕オーバーレイ設定を調整します。";
-"Subtitles" = "ライブ字幕";
+"Show live subtitles when recording starts." = "録音開始時にライブ字幕を表示します。";
+"Live subtitles are available with both real-time and batch transcription." = "ライブ字幕はリアルタイム文字起こしとバッチ文字起こしの両方で利用できます。";
+"In batch mode, subtitles are temporary and the final transcript is created after recording stops." = "バッチ方式では字幕は一時的な表示で、最終的な文字起こしは録音停止後に作成されます。";
 "System Audio Only" = "システムオーディオのみ";
 "Include Microphone" = "マイク入力を含める";
 "Choose whether live subtitles only show system audio or also include microphone input." = "ライブ字幕をシステムオーディオのみにするか、マイク入力も含めるかを選びます。";
 "Overlay Segment Count" = "表示セグメント数";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "ライブ字幕オーバーレイに表示する最近の文字起こしセグメント数を選びます。";
+"Live subtitles stopped because the audio format could not be converted." = "音声形式を変換できなかったため、ライブ字幕を停止しました。";
 
 /* Detail Tabs */
 "Summary" = "要約";
@@ -419,16 +426,23 @@
 "Keep the CAF audio files in the vault after batch transcription succeeds." = "バッチ文字起こし成功後もCAF音声ファイルを保管庫に残します。";
 "No transcript yet." = "文字起こしはまだありません。";
 "Recording audio for transcription after recording stops…" = "録音終了後の文字起こし用に音声を保存しています…";
+"Audio is ready. Confirm the language to start transcription." = "音声の準備ができました。言語を確認して文字起こしを開始してください。";
+"Review and Start" = "確認して開始";
 "Waiting to transcribe the recording…" = "録音の文字起こしを待機しています…";
 "Creating a high-accuracy transcript…" = "高精度な文字起こしを作成しています…";
 "High-accuracy transcription completed." = "高精度な文字起こしが完了しました。";
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
 "Retry Batch Transcription" = "バッチ文字起こしを再試行";
+"Start batch transcription?" = "バッチ文字起こしを開始しますか？";
+"The recording will be transcribed using the selected language. The audio is kept until transcription succeeds." = "選択した言語で録音音声を文字起こしします。文字起こしが成功するまで音声データは保持されます。";
+"Later" = "あとで";
 "Discard Failed Recording" = "失敗した録音を破棄";
 "Discard this failed recording?" = "失敗した録音を破棄しますか？";
 "The untranscribed audio will be deleted. Existing transcript content will be kept." = "文字起こしできなかった音声を削除します。既存の文字起こし内容は保持されます。";
 "Cancel" = "キャンセル";
 "The recorded audio format is invalid." = "録音音声の形式が不正です。";
+"The audio writer could not keep up with the recording." = "音声ファイルへの書き込みが録音に追いつきませんでした。";
+"The audio writer was closed before the buffer was saved." = "音声バッファを保存する前に録音処理が終了しました。";
 "Could not save the recording: %@" = "録音を保存できませんでした: %@";
 "No compatible audio format is available." = "互換性のある音声形式を利用できません。";
 "The recorded audio range is invalid or damaged." = "録音音声の範囲が不正または破損しています。";

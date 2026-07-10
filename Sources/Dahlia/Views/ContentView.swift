@@ -54,6 +54,17 @@ struct ContentView: View {
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
+            BatchTranscriptionConfirmationView(
+                locales: viewModel.batchTranscriptionLocaleOptions(
+                    preferredIdentifier: confirmation.suggestedLocaleIdentifier
+                ),
+                initialLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
+                onStart: viewModel.confirmBatchTranscription,
+                onPostpone: viewModel.postponeBatchTranscription
+            )
+            .interactiveDismissDisabled()
+        }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
             handleMeetingSelectionChange(newValue)

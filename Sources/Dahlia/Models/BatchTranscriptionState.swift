@@ -3,6 +3,7 @@ import Foundation
 /// バッチ処理の表示状態。DBの事実と実行中Coordinatorから都度導出する。
 enum BatchTranscriptionState: Equatable {
     case recording(sessionId: UUID)
+    case awaitingConfirmation(sessionId: UUID)
     case queued(sessionId: UUID)
     case running(sessionId: UUID)
     case completed(sessionId: UUID)
@@ -11,6 +12,7 @@ enum BatchTranscriptionState: Equatable {
     var sessionId: UUID {
         switch self {
         case let .recording(sessionId),
+             let .awaitingConfirmation(sessionId),
              let .queued(sessionId),
              let .running(sessionId),
              let .completed(sessionId),
@@ -21,7 +23,7 @@ enum BatchTranscriptionState: Equatable {
 
     var blocksSummaryGeneration: Bool {
         switch self {
-        case .recording, .queued, .running, .failed:
+        case .recording, .awaitingConfirmation, .queued, .running, .failed:
             true
         case .completed:
             false
@@ -42,6 +44,9 @@ enum BatchTranscriptionState: Equatable {
         }
         if session.endedAt == nil {
             return .recording(sessionId: session.id)
+        }
+        if session.batchLastAttemptAt == nil {
+            return .awaitingConfirmation(sessionId: session.id)
         }
         return .queued(sessionId: session.id)
     }

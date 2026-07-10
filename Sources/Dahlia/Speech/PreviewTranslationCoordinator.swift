@@ -10,7 +10,8 @@ actor PreviewTranslationCoordinator {
     private let sleep: SleepHandler
     private let translate: TranslationHandler
 
-    private var pendingTask: Task<Void, Never>?
+    private var translationTasks: [UUID: Task<Void, Never>] = [:]
+    private var currentTaskID: UUID?
     private var generation: UInt64 = 0
     private var lastScheduledText: String?
 
@@ -35,29 +36,57 @@ actor PreviewTranslationCoordinator {
         generation += 1
         let currentGeneration = generation
 
-        pendingTask?.cancel()
-        pendingTask = nil
+        if let currentTaskID {
+            translationTasks[currentTaskID]?.cancel()
+            self.currentTaskID = nil
+        }
 
         guard shouldScheduleTranslation(for: segment.text) else { return }
 
         lastScheduledText = segment.text
-        pendingTask = Task { [debounceDuration, sleep, translate] in
+        let taskID = UUID.v7()
+        currentTaskID = taskID
+        translationTasks[taskID] = Task { [debounceDuration, sleep, translate] in
             await sleep(debounceDuration)
-            guard !Task.isCancelled else { return }
-
-            let translatedText = await translate(segment)
-            guard !Task.isCancelled else { return }
-
-            guard self.generation == currentGeneration else { return }
-            await applyTranslation(segment.id, translatedText)
+            if !Task.isCancelled {
+                let translatedText = await translate(segment)
+                if !Task.isCancelled, self.isCurrentGeneration(currentGeneration) {
+                    await applyTranslation(segment.id, translatedText)
+                }
+            }
+            self.translationTaskDidFinish(taskID)
         }
     }
 
-    func reset() {
+    func cancelPending() {
         generation += 1
-        pendingTask?.cancel()
-        pendingTask = nil
+        translationTasks.values.forEach { $0.cancel() }
+        currentTaskID = nil
         lastScheduledText = nil
+    }
+
+    func reset() async {
+        cancelPending()
+
+        while !translationTasks.isEmpty {
+            let tasks = Array(translationTasks.values)
+            translationTasks.removeAll()
+            tasks.forEach { $0.cancel() }
+            for task in tasks {
+                await task.value
+            }
+        }
+    }
+
+    private func isCurrentGeneration(_ candidate: UInt64) -> Bool {
+        generation == candidate
+    }
+
+    private func translationTaskDidFinish(_ taskID: UUID) {
+        translationTasks[taskID] = nil
+        if currentTaskID == taskID {
+            currentTaskID = nil
+        }
     }
 
     private func shouldScheduleTranslation(for newText: String) -> Bool {

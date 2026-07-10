@@ -22,6 +22,7 @@ struct TranscriptTabView: View {
     let showsRecordingIndicator: Bool
     let showsTranslatedText: Bool
     let batchTranscriptionState: BatchTranscriptionState?
+    let confirmBatchTranscription: () -> Void
     let retryBatchTranscription: () -> Void
     let discardFailedBatchTranscription: () -> Void
 
@@ -56,6 +57,7 @@ struct TranscriptTabView: View {
             if let batchTranscriptionState {
                 BatchTranscriptionStatusView(
                     state: batchTranscriptionState,
+                    confirm: confirmBatchTranscription,
                     retry: retryBatchTranscription,
                     discard: discardFailedBatchTranscription
                 )

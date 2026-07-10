@@ -153,6 +153,8 @@ private struct RecordingStatusBar: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
 
+    @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
+
     private var recordingMeetingId: UUID? {
         viewModel.recordingMeetingId
     }
@@ -210,6 +212,7 @@ private struct RecordingStatusBar: View {
                 microphoneMenu
                 systemAudioMenu
                 languageMenu
+                RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
                 screenSourceMenu
             }
         }

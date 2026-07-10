@@ -12,5 +12,16 @@ enum RecordingAudioSource: String, Codable, DatabaseValueConvertible {
         }
     }
 
+    init?(speakerLabel: String?) {
+        switch speakerLabel {
+        case "mic":
+            self = .microphone
+        case "system":
+            self = .system
+        default:
+            return nil
+        }
+    }
+
     var fileName: String { "\(rawValue).caf" }
 }

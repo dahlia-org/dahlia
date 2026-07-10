@@ -128,6 +128,51 @@ struct PreviewTranslationCoordinatorTests {
         #expect(await recorder.appliedTexts() == ["新しい訳"])
         #expect(await recorder.appliedSegmentIDs() == [thirdSegmentID])
     }
+
+    @Test
+    func resetWaitsForAllInFlightTranslationsAndSuppressesTheirResults() async {
+        let translator = BlockingTranslator()
+        let recorder = PreviewTranslationRecorder()
+        let resetState = AsyncCompletionState()
+        let coordinator = PreviewTranslationCoordinator(
+            sleep: { _ in },
+            translate: { segment in
+                await recorder.recordTranslate(text: segment.text)
+                return await translator.translate(text: segment.text)
+            }
+        )
+
+        await coordinator.unconfirmedSegmentDidChange(
+            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+        ) { segmentID, translatedText in
+            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+        }
+        await translator.waitUntilStarted()
+
+        await coordinator.unconfirmedSegmentDidChange(
+            TranscriptSegment(startTime: .now, text: "Hello world", isConfirmed: false)
+        ) { segmentID, translatedText in
+            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+        }
+        await translator.waitUntilStarted(count: 2)
+
+        let resetTask = Task {
+            await coordinator.reset()
+            await resetState.markFinished()
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(await !(resetState.isFinished()))
+
+        await translator.resume(with: "古い訳")
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(await !(resetState.isFinished()))
+
+        await translator.resume(with: "新しい訳")
+        await resetTask.value
+
+        #expect(await resetState.isFinished())
+        #expect(await recorder.appliedTexts().isEmpty)
+    }
 }
 
 #elseif canImport(XCTest)
@@ -349,6 +394,18 @@ private actor BlockingTranslator {
         guard !continuations.isEmpty else { return }
         let continuation = continuations.removeFirst()
         continuation.resume(returning: text)
+    }
+}
+
+private actor AsyncCompletionState {
+    private var finished = false
+
+    func markFinished() {
+        finished = true
+    }
+
+    func isFinished() -> Bool {
+        finished
     }
 }
 

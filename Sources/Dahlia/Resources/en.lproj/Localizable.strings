@@ -115,6 +115,8 @@
 "Stop" = "Stop";
 "Start Recording" = "Start Recording";
 "Stop Recording" = "Stop Recording";
+"A recording session is already active." = "A recording session is already active.";
+"No recording session is active." = "No recording session is active.";
 "Stop transcribing" = "Stop transcribing";
 "Pause" = "Pause";
 "Resume" = "Resume";
@@ -143,14 +145,19 @@
 "%lld%%" = "%lld%%";
 "Show Live Subtitles" = "Show Live Subtitles";
 "Hide Live Subtitles" = "Hide Live Subtitles";
+"Subtitles" = "Subtitles";
+"Live subtitles on" = "On";
+"Live subtitles off" = "Off";
 "Live Subtitle Overlay" = "Live Subtitle Overlay";
-"Configure how the desktop live subtitle overlay is shown while recording." = "Configure how the desktop live subtitle overlay is shown while recording.";
-"Subtitles" = "Live Captions";
+"Show live subtitles when recording starts." = "Show live subtitles when recording starts.";
+"Live subtitles are available with both real-time and batch transcription." = "Live subtitles are available with both real-time and batch transcription.";
+"In batch mode, subtitles are temporary and the final transcript is created after recording stops." = "In batch mode, subtitles are temporary and the final transcript is created after recording stops.";
 "System Audio Only" = "System Audio Only";
 "Include Microphone" = "Include Microphone";
 "Choose whether live subtitles only show system audio or also include microphone input." = "Choose whether live subtitles only show system audio or also include microphone input.";
 "Overlay Segment Count" = "Overlay Segment Count";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "Choose how many recent transcript segments the live subtitle overlay shows.";
+"Live subtitles stopped because the audio format could not be converted." = "Live subtitles stopped because the audio format could not be converted.";
 
 /* Detail Tabs */
 "Summary" = "Summary";
@@ -419,16 +426,23 @@
 "Keep the CAF audio files in the vault after batch transcription succeeds." = "Keep the CAF audio files in the vault after batch transcription succeeds.";
 "No transcript yet." = "No transcript yet.";
 "Recording audio for transcription after recording stops…" = "Recording audio for transcription after recording stops…";
+"Audio is ready. Confirm the language to start transcription." = "Audio is ready. Confirm the language to start transcription.";
+"Review and Start" = "Review and Start";
 "Waiting to transcribe the recording…" = "Waiting to transcribe the recording…";
 "Creating a high-accuracy transcript…" = "Creating a high-accuracy transcript…";
 "High-accuracy transcription completed." = "High-accuracy transcription completed.";
 "Batch transcription failed: %@" = "Batch transcription failed: %@";
 "Retry Batch Transcription" = "Retry Batch Transcription";
+"Start batch transcription?" = "Start batch transcription?";
+"The recording will be transcribed using the selected language. The audio is kept until transcription succeeds." = "The recording will be transcribed using the selected language. The audio is kept until transcription succeeds.";
+"Later" = "Later";
 "Discard Failed Recording" = "Discard Failed Recording";
 "Discard this failed recording?" = "Discard this failed recording?";
 "The untranscribed audio will be deleted. Existing transcript content will be kept." = "The untranscribed audio will be deleted. Existing transcript content will be kept.";
 "Cancel" = "Cancel";
 "The recorded audio format is invalid." = "The recorded audio format is invalid.";
+"The audio writer could not keep up with the recording." = "The audio writer could not keep up with the recording.";
+"The audio writer was closed before the buffer was saved." = "The audio writer was closed before the buffer was saved.";
 "Could not save the recording: %@" = "Could not save the recording: %@";
 "No compatible audio format is available." = "No compatible audio format is available.";
 "The recorded audio range is invalid or damaged." = "The recorded audio range is invalid or damaged.";

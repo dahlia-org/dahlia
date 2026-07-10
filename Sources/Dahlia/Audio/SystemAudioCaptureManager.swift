@@ -85,15 +85,32 @@ final class SystemAudioCaptureManager: NSObject, @unchecked Sendable {
         Task {
             try? await stream.stopCapture()
         }
-        converter = nil
-        sourceFormat = nil
-        captureTargetFormat = nil
-        lastFormatDescription = nil
+        clearCaptureState()
+    }
+
+    /// capture停止の完了を待つ。セッションcontrollerの停止順序を保証するadapterから利用する。
+    func stopCaptureAndWait() async throws {
+        guard let stream = self.stream else { return }
+        self.stream = nil
+        do {
+            try await stream.stopCapture()
+        } catch {
+            clearCaptureState()
+            throw error
+        }
+        clearCaptureState()
     }
 
     // MARK: - Private
 
     private var lastFormatDescription: CMFormatDescription?
+
+    private func clearCaptureState() {
+        converter = nil
+        sourceFormat = nil
+        captureTargetFormat = nil
+        lastFormatDescription = nil
+    }
 
     private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         guard let targetFormat = captureTargetFormat else { return }

@@ -4,16 +4,23 @@ import os
 
 /// 音声コールバックをブロックせず、CAFへ直列に追記するWriter。
 actor BatchAudioFileWriter {
+    private static let maximumBufferedChunkCount = 256
+
     private struct AudioChunk {
         let data: Data
         let frameCount: AVAudioFrameCount
     }
 
+    private struct CallbackState {
+        var appendedFrameCount: Int64 = 0
+        var errorMessage: String?
+        var isAcceptingBuffers = true
+    }
+
     // SwiftFormatのmodifier順と、無効なSwiftLint modifier_order設定のfallbackが競合する。
     // swiftlint:disable modifier_order
     private nonisolated let continuation: AsyncStream<AudioChunk>.Continuation
-    private nonisolated let frameCounter = OSAllocatedUnfairLock(initialState: Int64(0))
-    private nonisolated let callbackError = OSAllocatedUnfairLock<String?>(initialState: nil)
+    private nonisolated let callbackState = OSAllocatedUnfairLock(initialState: CallbackState())
     // swiftlint:enable modifier_order
 
     private let stream: AsyncStream<AudioChunk>
@@ -25,11 +32,19 @@ actor BatchAudioFileWriter {
     private var writeError: Error?
 
     nonisolated var appendedFrameCount: Int64 {
-        frameCounter.withLock { $0 }
+        callbackState.withLock { $0.appendedFrameCount }
     }
 
-    init(partialURL: URL, finalURL: URL, format: AVAudioFormat) {
-        let pair = AsyncStream.makeStream(of: AudioChunk.self)
+    init(
+        partialURL: URL,
+        finalURL: URL,
+        format: AVAudioFormat,
+        maximumBufferedChunkCount: Int = BatchAudioFileWriter.maximumBufferedChunkCount
+    ) {
+        let pair = AsyncStream.makeStream(
+            of: AudioChunk.self,
+            bufferingPolicy: .bufferingNewest(max(1, maximumBufferedChunkCount))
+        )
         stream = pair.stream
         continuation = pair.continuation
         self.partialURL = partialURL
@@ -63,7 +78,7 @@ actor BatchAudioFileWriter {
         guard buffer.format.commonFormat == .pcmFormatInt16,
               buffer.format.channelCount == 1,
               let channelData = buffer.int16ChannelData else {
-            callbackError.withLock { $0 = BatchAudioFileWriterError.incompatibleBuffer.localizedDescription }
+            callbackState.withLock { $0.errorMessage = BatchAudioFileWriterError.incompatibleBuffer.localizedDescription }
             return
         }
 
@@ -71,14 +86,35 @@ actor BatchAudioFileWriter {
         guard frameCount > 0 else { return }
         let byteCount = Int(frameCount) * MemoryLayout<Int16>.size
         let data = Data(bytes: channelData[0], count: byteCount)
-        frameCounter.withLock { $0 += Int64(frameCount) }
-        continuation.yield(AudioChunk(data: data, frameCount: frameCount))
+        callbackState.withLock { state in
+            guard state.isAcceptingBuffers else { return }
+            switch continuation.yield(AudioChunk(data: data, frameCount: frameCount)) {
+            case .enqueued:
+                state.appendedFrameCount += Int64(frameCount)
+            case .dropped:
+                state.errorMessage = L10n.batchAudioBufferOverflow
+            case .terminated:
+                state.errorMessage = L10n.batchAudioWriterClosed
+            @unknown default:
+                state.errorMessage = L10n.batchAudioWriterClosed
+            }
+        }
+    }
+
+    /// capture を切り離した後に呼び、range と CAF のフレーム数を固定する。
+    @discardableResult
+    nonisolated func seal() -> Int64 {
+        callbackState.withLock { state in
+            state.isAcceptingBuffers = false
+            return state.appendedFrameCount
+        }
     }
 
     func finish() async throws -> Int64 {
+        let finalFrameCount = seal()
         await closeWriter()
 
-        if let callbackMessage = callbackError.withLock({ $0 }) {
+        if let callbackMessage = callbackState.withLock({ $0.errorMessage }) {
             throw BatchAudioFileWriterError.writeFailed(callbackMessage)
         }
         if let writeError {
@@ -89,10 +125,11 @@ actor BatchAudioFileWriter {
             try FileManager.default.removeItem(at: finalURL)
         }
         try FileManager.default.moveItem(at: partialURL, to: finalURL)
-        return appendedFrameCount
+        return finalFrameCount
     }
 
     func cancelAndDelete() async {
+        seal()
         await closeWriter()
         try? FileManager.default.removeItem(at: partialURL)
         try? FileManager.default.removeItem(at: finalURL)

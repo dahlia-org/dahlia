@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BatchTranscriptionStatusView: View {
     let state: BatchTranscriptionState
+    let confirm: () -> Void
     let retry: () -> Void
     let discard: () -> Void
 
@@ -14,6 +15,10 @@ struct BatchTranscriptionStatusView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(L10n.batchRecordingInProgress)
+            case .awaitingConfirmation:
+                Label(L10n.batchTranscriptionAwaitingConfirmation, systemImage: "clock")
+                Spacer()
+                Button(L10n.reviewBatchTranscription, action: confirm)
             case .queued:
                 ProgressView()
                     .controlSize(.small)

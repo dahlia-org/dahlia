@@ -1,19 +1,36 @@
 import AVFoundation
 import CoreMedia
+import Foundation
 import Speech
 
 /// SpeechAnalyzer + SpeechTranscriber によるストリーミング文字起こしサービス。
 /// AudioBufferBridge から受け取った AsyncStream<AnalyzerInput> を SpeechAnalyzer に渡し、
-/// SpeechTranscriber の結果を TranscriptStore に反映する。
+/// SpeechTranscriber の結果を保存先に依存しないイベントとして通知する。
 actor SpeechTranscriberService {
+    typealias EventHandler = @MainActor @Sendable (TranscriptionEvent) async -> Void
     typealias SegmentTranslationHandler = @Sendable (TranscriptSegment) async -> String?
 
+    private enum ServiceError: LocalizedError {
+        case notPrepared
+
+        var errorDescription: String? {
+            L10n.speechRecognitionNotReady
+        }
+    }
+
     private nonisolated static let ignoredConfirmedTexts: Set = [".", "あ"]
+    nonisolated let pipelineID: UUID
 
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
     private var resultTask: Task<Void, Never>?
+    private var finalTranslationTasks: [UUID: Task<Void, Never>] = [:]
     private var bestFormat: AVAudioFormat?
+    private var activeSessionId: UUID?
+    private var eventHandler: EventHandler?
+    private var previewSegmentID: UUID?
+    private var hasReportedFailure = false
+    private var streamingFailure: Error?
 
     private let locale: Locale
     private let speakerLabel: String?
@@ -21,10 +38,12 @@ actor SpeechTranscriberService {
     private let previewTranslationCoordinator: PreviewTranslationCoordinator?
 
     init(
+        pipelineID: UUID = .v7(),
         locale: Locale = Locale(identifier: "ja-JP"),
         speakerLabel: String? = nil,
         translateSegment: SegmentTranslationHandler? = nil
     ) {
+        self.pipelineID = pipelineID
         self.locale = locale
         self.speakerLabel = speakerLabel
         self.translateSegment = translateSegment
@@ -90,106 +109,247 @@ actor SpeechTranscriberService {
     }
 
     /// ストリーミング文字起こしを開始する。
-    func startStreaming(store: TranscriptStore, bridge: AudioBufferBridge, recordingStartTime: Date, recordingSessionId: UUID) async throws {
-        guard let analyzer, let transcriber else { return }
+    func startStreaming(
+        bridge: AudioBufferBridge,
+        recordingStartTime: Date,
+        recordingSessionId: UUID,
+        onEvent: @escaping EventHandler
+    ) async throws {
+        guard let analyzer, let transcriber else {
+            let error = ServiceError.notPrepared
+            await onEvent(.failure(
+                sessionId: recordingSessionId,
+                pipelineID: pipelineID,
+                sourceLabel: speakerLabel,
+                message: error.localizedDescription
+            ))
+            throw error
+        }
 
-        // SpeechAnalyzer にオーディオストリームを渡して解析開始
-        try await analyzer.start(inputSequence: bridge.stream)
+        activeSessionId = recordingSessionId
+        eventHandler = onEvent
+        previewSegmentID = nil
+        hasReportedFailure = false
+        streamingFailure = nil
 
-        // SpeechTranscriber の結果を非同期でイテレーションし、TranscriptStore に反映
+        do {
+            try await analyzer.start(inputSequence: bridge.stream)
+        } catch {
+            await reportFailure(error)
+            clearStreamingContext()
+            throw error
+        }
+
         resultTask = Task { [weak self] in
-            do {
-                for try await result in transcriber.results {
-                    guard let self else { break }
-
-                    let label = self.speakerLabel
-                    guard let text = Self.normalizedTranscriptText(String(result.text.characters)) else {
-                        if result.isFinal {
-                            await self.previewTranslationCoordinator?.reset()
-                            await MainActor.run {
-                                store.clearUnconfirmedSegments(forSource: label)
-                            }
-                        }
-                        continue
-                    }
-
-                    let startSeconds = result.range.start.seconds
-                    let endSeconds = result.range.end.seconds
-
-                    let startDate = recordingStartTime.addingTimeInterval(
-                        startSeconds.isFinite ? startSeconds : 0
-                    )
-                    let endDate = recordingStartTime.addingTimeInterval(
-                        endSeconds.isFinite ? endSeconds : 0
-                    )
-
-                    let segment = TranscriptSegment(
-                        sessionId: recordingSessionId,
-                        startTime: startDate,
-                        endTime: endDate,
-                        text: text,
-                        isConfirmed: result.isFinal,
-                        speakerLabel: label
-                    )
-
-                    if result.isFinal {
-                        await self.previewTranslationCoordinator?.reset()
-                        await MainActor.run {
-                            store.clearUnconfirmedSegments(forSource: label)
-                            store.addSegment(segment)
-                        }
-                        if let translateSegment = self.translateSegment {
-                            Task {
-                                guard let translatedText = await translateSegment(segment) else { return }
-                                await MainActor.run {
-                                    store.updateTranslatedText(for: segment.id, translatedText: translatedText)
-                                }
-                            }
-                        }
-                    } else {
-                        let unconfirmedSegment = await MainActor.run {
-                            store.updateUnconfirmedSegment(segment, forSource: label)
-                        }
-                        await self.previewTranslationCoordinator?.unconfirmedSegmentDidChange(unconfirmedSegment) { segmentID, translatedText in
-                            store.updateTranslatedText(for: segmentID, translatedText: translatedText)
-                        }
-                    }
-                }
-            } catch {
-                print("[SpeechTranscriberService] 結果イテレーションエラー: \(error)")
-            }
+            await self?.consumeResults(
+                from: transcriber,
+                recordingStartTime: recordingStartTime,
+                recordingSessionId: recordingSessionId,
+                onEvent: onEvent
+            )
         }
     }
 
     /// ストリーミング文字起こしを停止する。残りのバッファを処理してから終了。
-    func stopStreaming() async {
-        await previewTranslationCoordinator?.reset()
+    func stopStreaming() async throws {
+        await previewTranslationCoordinator?.cancelPending()
+        let runningResultTask = resultTask
+        var finalizationError: Error?
         do {
             try await analyzer?.finalizeAndFinishThroughEndOfInput()
         } catch {
-            print("[SpeechTranscriberService] 終了処理エラー: \(error)")
+            await reportFailure(error)
+            finalizationError = error
+            runningResultTask?.cancel()
+            await analyzer?.cancelAndFinishNow()
         }
 
         // 結果イテレーションタスクの完了を待機
-        await resultTask?.value
+        await runningResultTask?.value
         resultTask = nil
+        // finalize 中に届いた最後の preview が翻訳を開始している可能性がある。
+        await previewTranslationCoordinator?.reset()
+        await finishFinalTranslations(cancel: false)
+        await clearPreview()
+        let completionError = finalizationError ?? streamingFailure
+        clearStreamingContext()
+
+        if let completionError {
+            throw completionError
+        }
     }
 
     /// 即時キャンセル。残りのバッファは破棄する。
     func cancel() async {
-        await previewTranslationCoordinator?.reset()
+        await previewTranslationCoordinator?.cancelPending()
+        let runningResultTask = resultTask
+        runningResultTask?.cancel()
         await analyzer?.cancelAndFinishNow()
-        resultTask?.cancel()
+        await runningResultTask?.value
         resultTask = nil
+        // 最初の reset 後に結果タスクが登録した preview 翻訳も確実に終了させる。
+        await previewTranslationCoordinator?.reset()
+        await finishFinalTranslations(cancel: true)
+        await clearPreview()
+        clearStreamingContext()
     }
 
     /// 状態をリセットする。
     func reset() async {
-        await previewTranslationCoordinator?.reset()
-        resultTask?.cancel()
+        await previewTranslationCoordinator?.cancelPending()
+        let runningResultTask = resultTask
+        runningResultTask?.cancel()
+        await analyzer?.cancelAndFinishNow()
+        await runningResultTask?.value
         resultTask = nil
+        await previewTranslationCoordinator?.reset()
+        await finishFinalTranslations(cancel: true)
+        await clearPreview()
+        clearStreamingContext()
         analyzer = nil
         transcriber = nil
         bestFormat = nil
+    }
+
+    private func consumeResults(
+        from transcriber: SpeechTranscriber,
+        recordingStartTime: Date,
+        recordingSessionId: UUID,
+        onEvent: @escaping EventHandler
+    ) async {
+        do {
+            for try await result in transcriber.results {
+                guard !Task.isCancelled else { return }
+
+                let label = speakerLabel
+                guard let text = Self.normalizedTranscriptText(String(result.text.characters)) else {
+                    if result.isFinal {
+                        await previewTranslationCoordinator?.cancelPending()
+                        previewSegmentID = nil
+                        await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: label))
+                    }
+                    continue
+                }
+
+                let startSeconds = result.range.start.seconds
+                let endSeconds = result.range.end.seconds
+                let segment = TranscriptSegment(
+                    id: segmentID(forFinalResult: result.isFinal),
+                    sessionId: recordingSessionId,
+                    startTime: recordingStartTime.addingTimeInterval(startSeconds.isFinite ? startSeconds : 0),
+                    endTime: recordingStartTime.addingTimeInterval(endSeconds.isFinite ? endSeconds : 0),
+                    text: text,
+                    isConfirmed: result.isFinal,
+                    speakerLabel: label
+                )
+
+                if result.isFinal {
+                    await previewTranslationCoordinator?.cancelPending()
+                    previewSegmentID = nil
+                    await onEvent(.clearPreview(sessionId: recordingSessionId, sourceLabel: label))
+                    await onEvent(.finalized(segment))
+
+                    startFinalTranslation(
+                        for: segment,
+                        recordingSessionId: recordingSessionId,
+                        onEvent: onEvent
+                    )
+                } else {
+                    await onEvent(.preview(segment))
+                    await previewTranslationCoordinator?.unconfirmedSegmentDidChange(segment) { segmentID, translatedText in
+                        await onEvent(
+                            .translation(
+                                sessionId: recordingSessionId,
+                                segmentID: segmentID,
+                                translatedText: translatedText
+                            )
+                        )
+                    }
+                }
+            }
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
+            await reportFailure(error)
+        }
+    }
+
+    private func segmentID(forFinalResult isFinal: Bool) -> UUID {
+        if let previewSegmentID {
+            return previewSegmentID
+        }
+
+        let id = UUID.v7()
+        if !isFinal {
+            previewSegmentID = id
+        }
+        return id
+    }
+
+    private func reportFailure(_ error: Error) async {
+        if streamingFailure == nil {
+            streamingFailure = error
+        }
+        guard !hasReportedFailure,
+              let activeSessionId,
+              let eventHandler else { return }
+        hasReportedFailure = true
+        await eventHandler(.failure(
+            sessionId: activeSessionId,
+            pipelineID: pipelineID,
+            sourceLabel: speakerLabel,
+            message: error.localizedDescription
+        ))
+    }
+
+    private func startFinalTranslation(
+        for segment: TranscriptSegment,
+        recordingSessionId: UUID,
+        onEvent: @escaping EventHandler
+    ) {
+        guard let translateSegment else { return }
+        let taskID = UUID.v7()
+        finalTranslationTasks[taskID] = Task { [weak self] in
+            let translatedText = await translateSegment(segment)
+            if !Task.isCancelled {
+                await onEvent(.translation(
+                    sessionId: recordingSessionId,
+                    segmentID: segment.id,
+                    translatedText: translatedText
+                ))
+            }
+            await self?.finalTranslationDidFinish(taskID: taskID)
+        }
+    }
+
+    private func finalTranslationDidFinish(taskID: UUID) {
+        finalTranslationTasks[taskID] = nil
+    }
+
+    private func finishFinalTranslations(cancel: Bool) async {
+        while !finalTranslationTasks.isEmpty {
+            let tasks = Array(finalTranslationTasks.values)
+            finalTranslationTasks.removeAll()
+            if cancel {
+                tasks.forEach { $0.cancel() }
+            }
+            for task in tasks {
+                await task.value
+            }
+        }
+    }
+
+    private func clearPreview() async {
+        guard let activeSessionId,
+              let eventHandler else { return }
+        await eventHandler(.clearPreview(sessionId: activeSessionId, sourceLabel: speakerLabel))
+        previewSegmentID = nil
+    }
+
+    private func clearStreamingContext() {
+        activeSessionId = nil
+        eventHandler = nil
+        previewSegmentID = nil
+        hasReportedFailure = false
+        streamingFailure = nil
     }
 }

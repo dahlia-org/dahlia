@@ -440,6 +440,7 @@ struct ControlPanelView: View {
                             && !viewModel.isViewingOtherWhileRecording,
                         showsTranslatedText: appSettings.isTranscriptTranslationEffectivelyEnabled,
                         batchTranscriptionState: viewModel.batchTranscriptionState,
+                        confirmBatchTranscription: viewModel.presentBatchTranscriptionConfirmation,
                         retryBatchTranscription: viewModel.retryBatchTranscription,
                         discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription
                     )

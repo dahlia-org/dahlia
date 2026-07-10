@@ -1,6 +1,12 @@
 import Foundation
 import GRDB
 
+private struct BatchRecordingFailure: LocalizedError {
+    let message: String
+
+    var errorDescription: String? { message }
+}
+
 /// 未完了のバッチセッションを直列実行し、成功結果だけをDBへ反映する。
 actor BatchTranscriptionCoordinator {
     typealias StateHandler = @Sendable (BatchTranscriptionUpdate) async -> Void
@@ -64,8 +70,21 @@ actor BatchTranscriptionCoordinator {
         guard session.transcriptionMode == .batch,
               session.batchCompletedAt == nil,
               session.batchDiscardedAt == nil else { return false }
+        guard session.batchLastAttemptAt != nil || session.batchLastError?.nilIfBlank != nil else {
+            return false
+        }
         guard session.batchLastError?.nilIfBlank != nil else { return true }
         return session.batchAttemptCount < maximumAutomaticAttemptCount
+    }
+
+    func confirmAndEnqueue(sessionId: UUID, localeIdentifier: String) async throws {
+        let meetingId = try await BatchTranscriptionConfirmationService.confirm(
+            sessionId: sessionId,
+            localeIdentifier: localeIdentifier,
+            dbQueue: dbQueue
+        )
+        await notify(meetingId: meetingId, state: .queued(sessionId: sessionId))
+        enqueue(sessionId: sessionId)
     }
 
     func enqueue(sessionId: UUID) {
@@ -81,8 +100,12 @@ actor BatchTranscriptionCoordinator {
         runningSessionId == sessionId
     }
 
-    func recordRecordingFailure(sessionId: UUID, error: Error) async {
-        await recordFailure(sessionId: sessionId, error: error)
+    func recordRecordingFailure(sessionId: UUID, message: String) async {
+        await persistFailure(sessionId: sessionId, message: message)
+        ErrorReportingService.capture(
+            BatchRecordingFailure(message: message),
+            context: ["source": "batchRecording"]
+        )
     }
 
     private func processQueue() async {
@@ -313,6 +336,11 @@ actor BatchTranscriptionCoordinator {
 
     private func recordFailure(sessionId: UUID, error: Error) async {
         let message = error.localizedDescription
+        await persistFailure(sessionId: sessionId, message: message)
+        ErrorReportingService.capture(error, context: ["source": "batchTranscription"])
+    }
+
+    private func persistFailure(sessionId: UUID, message: String) async {
         try? await dbQueue.write { db in
             try db.execute(
                 sql: "UPDATE recording_sessions SET batchLastError = ?, updatedAt = ? WHERE id = ?",
@@ -322,7 +350,6 @@ actor BatchTranscriptionCoordinator {
         if let meetingId = try? meetingId(for: sessionId) {
             await notify(meetingId: meetingId, state: .failed(sessionId: sessionId, message: message))
         }
-        ErrorReportingService.capture(error, context: ["source": "batchTranscription"])
     }
 
     private func notify(meetingId: UUID, state: BatchTranscriptionState) async {
