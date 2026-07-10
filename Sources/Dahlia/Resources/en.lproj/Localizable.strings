@@ -8,6 +8,7 @@
 "Close" = "Close";
 "Search" = "Search";
 "Actions" = "Actions";
+"Status" = "Status";
 "Dahlia" = "Dahlia";
 "Language" = "Language";
 "Expand" = "Expand";
@@ -274,9 +275,25 @@
 /* Vault Picker */
 "Create New Vault" = "Create New Vault";
 "Create a new folder to use as a vault." = "Create a new folder to use as a vault.";
+"Add Vault" = "Add Vault";
 "Open Folder as Vault" = "Open Folder as Vault";
 "Select an existing folder to use as a vault." = "Select an existing folder to use as a vault.";
 "Remove Vault" = "Remove Vault";
+"Open a different vault before removing this one." = "Open a different vault before removing this one.";
+"Remove %@?" = "Remove %@?";
+"Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed." = "Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed.";
+"Vault Details" = "Vault Details";
+"Vault Name" = "Vault Name";
+"Open Vault" = "Open Vault";
+"Use this vault for recordings and sync." = "Use this vault for recordings and sync.";
+"Select a vault to view its details." = "Select a vault to view its details.";
+"No Vaults" = "No Vaults";
+"Add a folder to start recording and syncing meetings." = "Add a folder to start recording and syncing meetings.";
+"Vault Operation Failed" = "Vault Operation Failed";
+"Could not select the vault folder." = "Could not select the vault folder.";
+"Could not load vaults." = "Could not load vaults.";
+"Could not add the vault." = "Could not add the vault.";
+"Could not remove the vault." = "Could not remove the vault.";
 "Open" = "Open";
 "Loading supported languages..." = "Loading supported languages...";
 "Search languages..." = "Search languages...";

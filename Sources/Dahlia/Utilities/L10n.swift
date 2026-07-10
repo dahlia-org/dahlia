@@ -36,6 +36,7 @@ enum L10n {
     static var close: String { String(localized: "Close", bundle: bundle) }
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var actions: String { String(localized: "Actions", bundle: bundle) }
+    static var status: String { String(localized: "Status", bundle: bundle) }
     static var dahlia: String { String(localized: "Dahlia", bundle: bundle) }
     static var language: String { String(localized: "Language", bundle: bundle) }
     static var join: String { String(localized: "Join", bundle: bundle) }
@@ -576,9 +577,38 @@ enum L10n {
 
     static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
     static var createNewVaultDescription: String { String(localized: "Create a new folder to use as a vault.", bundle: bundle) }
+    static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }
     static var openFolderAsVaultDescription: String { String(localized: "Select an existing folder to use as a vault.", bundle: bundle) }
     static var removeVault: String { String(localized: "Remove Vault", bundle: bundle) }
+    static var currentVaultRemoveDescription: String { String(
+        localized: "Open a different vault before removing this one.",
+        bundle: bundle
+    ) }
+    static func removeVaultConfirmation(_ name: String) -> String { String(localized: "Remove \(name)?", bundle: bundle) }
+    static var removeVaultConfirmationDescription: String { String(
+        localized: """
+        Dahlia will remove this vault and its meeting history from the app. \
+        Audio files managed outside the vault folder will also be deleted. \
+        Files inside the vault folder are not changed.
+        """,
+        bundle: bundle
+    ) }
+    static var vaultDetails: String { String(localized: "Vault Details", bundle: bundle) }
+    static var vaultName: String { String(localized: "Vault Name", bundle: bundle) }
+    static var openVault: String { String(localized: "Open Vault", bundle: bundle) }
+    static var openVaultDescription: String { String(localized: "Use this vault for recordings and sync.", bundle: bundle) }
+    static var selectVaultDescription: String { String(localized: "Select a vault to view its details.", bundle: bundle) }
+    static var noVaults: String { String(localized: "No Vaults", bundle: bundle) }
+    static var noVaultsDescription: String { String(
+        localized: "Add a folder to start recording and syncing meetings.",
+        bundle: bundle
+    ) }
+    static var vaultOperationFailed: String { String(localized: "Vault Operation Failed", bundle: bundle) }
+    static var vaultFolderSelectionFailed: String { String(localized: "Could not select the vault folder.", bundle: bundle) }
+    static var vaultLoadFailed: String { String(localized: "Could not load vaults.", bundle: bundle) }
+    static var vaultAddFailed: String { String(localized: "Could not add the vault.", bundle: bundle) }
+    static var vaultRemoveFailed: String { String(localized: "Could not remove the vault.", bundle: bundle) }
     static var open: String { String(localized: "Open", bundle: bundle) }
     static var loadingLanguages: String { String(localized: "Loading supported languages...", bundle: bundle) }
     static var searchLanguages: String { String(localized: "Search languages...", bundle: bundle) }

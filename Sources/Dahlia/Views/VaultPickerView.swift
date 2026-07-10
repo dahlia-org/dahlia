@@ -1,177 +1,149 @@
+import Combine
 import SwiftUI
 
-/// Obsidian 風の保管庫登録・選択画面。
+/// 保管庫の登録・選択・登録解除を行う画面。
 struct VaultPickerView: View {
     let appDatabase: AppDatabaseManager?
     let onVaultSelected: (VaultRecord) -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
     @State private var vaults: [VaultRecord] = []
-    @State private var showFolderPicker = false
+    @State private var selectedVaultId: UUID?
+    @State private var isShowingFolderPicker = false
+    @State private var isShowingError = false
+    @State private var errorMessage = ""
 
-    private static var defaultVaultURL: URL {
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents", isDirectory: true)
-        return documentsURL.appendingPathComponent("Meetings", isDirectory: true)
-    }
+    private static let defaultVaultURL = URL.documentsDirectory
+        .appending(path: "Meetings", directoryHint: .isDirectory)
 
     private var repository: MeetingRepository? {
         appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
     }
 
+    private var selectedVault: VaultRecord? {
+        guard let selectedVaultId else { return nil }
+        return vaults.first(where: { $0.id == selectedVaultId })
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            vaultList
-            Divider()
-            mainPanel
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            VaultSidebarView(
+                vaults: vaults,
+                selectedVaultId: $selectedVaultId,
+                currentVaultId: settings.currentVault?.id,
+                onAdd: showFolderPicker,
+                onRemove: removeVault
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 360)
+        } detail: {
+            VaultDetailView(
+                vault: selectedVault,
+                hasRegisteredVaults: !vaults.isEmpty,
+                isCurrentVault: selectedVault?.id == settings.currentVault?.id,
+                onOpen: openSelectedVault,
+                onAdd: showFolderPicker
+            )
         }
-        .frame(minWidth: 820, minHeight: 460)
-        .task { loadVaults() }
-    }
-
-    // MARK: - Left: Vault List
-
-    private var vaultList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            List {
-                ForEach(vaults) { vault in
-                    VaultRow(vault: vault) {
-                        onVaultSelected(vault)
-                    }
-                    .contextMenu {
-                        Button(L10n.removeVault, role: .destructive) {
-                            deleteVault(vault)
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
+        .frame(minWidth: 720, minHeight: 460)
+        .task(id: appDatabase != nil) {
+            loadVaults()
         }
-        .frame(width: 260)
-    }
-
-    // MARK: - Right: Main Panel
-
-    private var mainPanel: some View {
-        VStack(spacing: 32) {
-            Spacer()
-
-            // App branding
-            VStack(spacing: 8) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.tint)
-                Text("Dahlia")
-                    .font(.largeTitle.bold())
-            }
-
-            Spacer()
-
-            // Actions
-            VStack(spacing: 0) {
-                actionRow(
-                    title: L10n.openFolderAsVault,
-                    description: L10n.openFolderAsVaultDescription
-                ) {
-                    Button(L10n.open) {
-                        showFolderPicker = true
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(repository == nil)
-                }
-            }
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 40)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
         .fileImporter(
-            isPresented: $showFolderPicker,
+            isPresented: $isShowingFolderPicker,
             allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                registerVault(url: url)
-            }
-        }
+            allowsMultipleSelection: false,
+            onCompletion: handleFolderImport
+        )
         .fileDialogDefaultDirectory(Self.defaultVaultURL)
-    }
-
-    private func actionRow(
-        title: String,
-        description: String,
-        @ViewBuilder action: () -> some View
-    ) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            action()
+        .alert(L10n.vaultOperationFailed, isPresented: $isShowingError) {} message: {
+            Text(errorMessage)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
-    // MARK: - Actions
+    private func showFolderPicker() {
+        isShowingFolderPicker = true
+    }
 
-    private func loadVaults() {
-        vaults = (try? repository?.fetchAllVaults()) ?? []
+    private func handleFolderImport(_ result: Result<[URL], any Error>) {
+        switch result {
+        case let .success(urls):
+            guard let url = urls.first else { return }
+            registerVault(url: url)
+        case let .failure(error):
+            guard (error as? CocoaError)?.code != .userCancelled else { return }
+            presentError(L10n.vaultFolderSelectionFailed, error: error, source: "folderImport")
+        }
+    }
+
+    private func loadVaults(preferredSelection: UUID? = nil) {
+        guard let repository else {
+            vaults = []
+            selectedVaultId = nil
+            return
+        }
+
+        do {
+            let loadedVaults = try repository.fetchAllVaults()
+            let preferredIds = [preferredSelection, selectedVaultId, settings.currentVault?.id].compactMap(\.self)
+            vaults = loadedVaults
+            selectedVaultId = preferredIds.first(where: { id in
+                loadedVaults.contains(where: { $0.id == id })
+            }) ?? loadedVaults.first?.id
+        } catch {
+            presentError(L10n.vaultLoadFailed, error: error, source: "loadVaults")
+        }
     }
 
     private func registerVault(url: URL) {
-        guard repository != nil else { return }
-        let now = Date()
+        guard let repository else { return }
+
+        let normalizedURL = url.standardizedFileURL
+        if let existingVault = vaults.first(where: { $0.url.standardizedFileURL == normalizedURL }) {
+            selectedVaultId = existingVault.id
+            onVaultSelected(existingVault)
+            return
+        }
+
+        let now = Date.now
         let vault = VaultRecord(
             id: .v7(),
-            path: url.path,
-            name: url.lastPathComponent,
+            path: normalizedURL.path,
+            name: normalizedURL.lastPathComponent,
             createdAt: now,
             lastOpenedAt: now
         )
-        try? repository?.insertVault(vault)
-        loadVaults()
-        onVaultSelected(vault)
-    }
 
-    private func deleteVault(_ vault: VaultRecord) {
-        try? repository?.deleteVault(id: vault.id)
-        loadVaults()
-    }
-}
-
-// MARK: - Vault Row
-
-private struct VaultRow: View {
-    let vault: VaultRecord
-    let onOpen: () -> Void
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(vault.name)
-                    .font(.headline)
-                Text(vault.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+        do {
+            try repository.insertVault(vault)
+            loadVaults(preferredSelection: vault.id)
+            onVaultSelected(vault)
+        } catch {
+            presentError(L10n.vaultAddFailed, error: error, source: "registerVault")
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .pointerStyle(.link)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isHovered ? Color.primary.opacity(0.06) : Color.clear)
-        )
+    }
+
+    private func removeVault(_ vault: VaultRecord) {
+        guard let repository else { return }
+
+        do {
+            try repository.deleteVault(id: vault.id)
+            vaults.removeAll(where: { $0.id == vault.id })
+            if selectedVaultId == vault.id {
+                selectedVaultId = vaults.first?.id
+            }
+        } catch {
+            presentError(L10n.vaultRemoveFailed, error: error, source: "removeVault")
+        }
+    }
+
+    private func openSelectedVault() {
+        guard let selectedVault else { return }
+        onVaultSelected(selectedVault)
+    }
+
+    private func presentError(_ message: String, error: any Error, source: String) {
+        errorMessage = message
+        isShowingError = true
+        ErrorReportingService.capture(error, context: ["source": source])
     }
 }
