@@ -24,15 +24,24 @@ struct AISummarySettingsView: View {
                 }
                 .pickerStyle(.menu)
 
+                Picker(selection: $settings.llmModel) {
+                    ForEach(LLMModel.allCases) { model in
+                        Text(model.displayName).tag(model)
+                    }
+                } label: {
+                    Text(L10n.model)
+                    Text(L10n.modelDescription)
+                }
+                .pickerStyle(.menu)
+
                 providerConfigurationRows
 
-                LabeledContent(L10n.modelName) {
-                    TextField(
-                        "",
-                        text: $settings.llmModelName,
-                        prompt: Text(modelNamePrompt)
-                    )
-                    .textFieldStyle(.roundedBorder)
+                LabeledContent {
+                    TextField("", value: $settings.llmMaxTokens, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                } label: {
+                    Text(L10n.maxTokens)
+                    Text(L10n.maxTokensDescription)
                 }
 
                 LabeledContent {
@@ -68,12 +77,15 @@ struct AISummarySettingsView: View {
         .onChange(of: settings.llmProviderRawValue) { _, _ in
             connectionTestResult = nil
         }
+        .onChange(of: settings.llmModelRawValue) { _, _ in
+            connectionTestResult = nil
+        }
     }
 
     // MARK: - Private
 
     private var isLLMConfigComplete: Bool {
-        settings.resolvedLLMEndpointURL.nilIfBlank != nil && settings.llmModelName.nilIfBlank != nil && apiToken.nilIfBlank != nil
+        settings.resolvedLLMEndpointURL.nilIfBlank != nil && apiToken.nilIfBlank != nil
     }
 
     @ViewBuilder
@@ -142,29 +154,6 @@ struct AISummarySettingsView: View {
             LabeledContent(L10n.endpointURL) {
                 endpointPreview(settings.resolvedLLMEndpointURL)
             }
-        case .customEndpoint:
-            LabeledContent {
-                TextField(
-                    "",
-                    text: $settings.llmEndpointURL,
-                    prompt: Text("https://api.example.com/v1/chat/completions")
-                )
-                .textFieldStyle(.roundedBorder)
-            } label: {
-                Text(L10n.endpointURL)
-                Text(L10n.customEndpointDescription)
-            }
-        }
-    }
-
-    private var modelNamePrompt: String {
-        switch settings.llmProvider {
-        case .openAI:
-            "gpt-5"
-        case .databricks:
-            "databricks-gpt-5-4"
-        case .customEndpoint:
-            "gpt-5"
         }
     }
 
@@ -186,7 +175,7 @@ struct AISummarySettingsView: View {
             do {
                 try await LLMService.testConnection(
                     endpoint: settings.resolvedLLMEndpointURL,
-                    model: settings.llmModelName,
+                    model: settings.resolvedLLMModelName,
                     token: apiToken
                 )
                 connectionTestResult = .success

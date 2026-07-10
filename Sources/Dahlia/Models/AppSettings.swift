@@ -63,7 +63,6 @@ enum CalendarSource: String, CaseIterable, Identifiable {
 enum LLMProvider: String, CaseIterable, Identifiable {
     case openAI
     case databricks
-    case customEndpoint
 
     var id: String { rawValue }
 
@@ -71,7 +70,6 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         switch self {
         case .openAI: L10n.openAI
         case .databricks: L10n.databricks
-        case .customEndpoint: L10n.customEndpoint
         }
     }
 }
@@ -97,6 +95,7 @@ final class AppSettings: ObservableObject {
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
+    nonisolated static let defaultLLMMaxTokens = 16000
 
     // MARK: - 表示言語
 
@@ -335,24 +334,28 @@ final class AppSettings: ObservableObject {
     // MARK: - LLM 設定
 
     @AppStorage("llmProvider") var llmProviderRawValue = ""
-    @AppStorage("llmEndpointURL") var llmEndpointURL = ""
     @AppStorage("llmDatabricksWorkspaceID") var llmDatabricksWorkspaceID = ""
-    @AppStorage("llmModelName") var llmModelName = ""
+    @AppStorage("llmModelName") var llmModelRawValue = LLMModel.defaultModel.rawValue
+    @AppStorage("llmMaxTokens") private var storedLLMMaxTokens = AppSettings.defaultLLMMaxTokens
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
 
+    var llmMaxTokens: Int {
+        get { max(1, storedLLMMaxTokens) }
+        set { storedLLMMaxTokens = max(1, newValue) }
+    }
+
     var llmProvider: LLMProvider {
-        get {
-            if let provider = LLMProvider(rawValue: llmProviderRawValue) {
-                return provider
-            }
-
-            if llmEndpointURL.nilIfBlank != nil {
-                return .customEndpoint
-            }
-
-            return .openAI
-        }
+        get { LLMProvider(rawValue: llmProviderRawValue) ?? .openAI }
         set { llmProviderRawValue = newValue.rawValue }
+    }
+
+    var llmModel: LLMModel {
+        get { LLMModel.fromPersistedValue(llmModelRawValue) ?? .defaultModel }
+        set { llmModelRawValue = newValue.rawValue }
+    }
+
+    var resolvedLLMModelName: String {
+        llmModel.identifier(for: llmProvider)
     }
 
     var resolvedLLMEndpointURL: String {
@@ -362,8 +365,6 @@ final class AppSettings: ObservableObject {
         case .databricks:
             guard let workspaceID = llmDatabricksWorkspaceID.nilIfBlank else { return "" }
             return Self.databricksEndpointURL(workspaceID: workspaceID)
-        case .customEndpoint:
-            return llmEndpointURL.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -471,7 +472,7 @@ final class AppSettings: ObservableObject {
 
     /// LLM の接続設定が揃っているかどうか。
     var isLLMConfigComplete: Bool {
-        resolvedLLMEndpointURL.nilIfBlank != nil && llmModelName.nilIfBlank != nil && llmAPIToken.nilIfBlank != nil
+        resolvedLLMEndpointURL.nilIfBlank != nil && llmAPIToken.nilIfBlank != nil
     }
 
     nonisolated static let openAIEndpointURL = "https://api.openai.com/v1/chat/completions"

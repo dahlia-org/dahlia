@@ -675,10 +675,9 @@ enum L10n {
     static var llmSettings: String { String(localized: "LLM Settings", bundle: bundle) }
     static var openAI: String { String(localized: "OpenAI", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
-    static var customEndpoint: String { String(localized: "Custom endpoint", bundle: bundle) }
     static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
     static var modelProviderDescription: String { String(
-        localized: "Choose OpenAI, Databricks AI Gateway, or any OpenAI-compatible endpoint.",
+        localized: "Choose OpenAI or Databricks AI Gateway.",
         bundle: bundle
     ) }
     static var endpointURL: String { String(localized: "Endpoint URL", bundle: bundle) }
@@ -688,15 +687,23 @@ enum L10n {
         localized: "Used to build the Databricks AI Gateway chat completions URL.",
         bundle: bundle
     ) }
-    static var customEndpointDescription: String { String(
-        localized: "Endpoint must accept OpenAI-compatible chat completions requests.",
-        bundle: bundle
-    ) }
     static var endpointGeneratedFromWorkspaceID: String { String(
         localized: "Endpoint will be generated after entering a Workspace ID.",
         bundle: bundle
     ) }
-    static var modelName: String { String(localized: "Model Name", bundle: bundle) }
+    static var modelDescription: String { String(
+        localized: "The selected model is mapped to the provider's model ID.",
+        bundle: bundle
+    ) }
+    static var gpt56Sol: String { String(localized: "GPT-5.6 Sol", bundle: bundle) }
+    static var gpt56Terra: String { String(localized: "GPT-5.6 Terra", bundle: bundle) }
+    static var gpt56Luna: String { String(localized: "GPT-5.6 Luna", bundle: bundle) }
+    static var gpt55: String { String(localized: "GPT-5.5", bundle: bundle) }
+    static var maxTokens: String { String(localized: "Maximum Output Tokens", bundle: bundle) }
+    static var maxTokensDescription: String { String(
+        localized: "Limits the number of tokens generated for each summary.",
+        bundle: bundle
+    ) }
     static var apiToken: String { String(localized: "API Token", bundle: bundle) }
     static var apiTokenStoredInKeychain: String { String(localized: "Token is stored securely in Keychain.", bundle: bundle) }
     static var llmSettingsDescription: String { String(localized: "Configure an LLM endpoint for manual summary generation.", bundle: bundle) }
