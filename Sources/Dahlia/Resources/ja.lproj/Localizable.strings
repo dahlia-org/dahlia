@@ -346,7 +346,8 @@
 "Open Summary" = "要約を開く";
 "Generate Summary" = "要約を生成";
 "Share Summary" = "要約を共有";
-"Copy Summary" = "要約をコピー";
+"Copy for Google Docs" = "Google Docs 用にコピー";
+"Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
 "Reset to Default" = "デフォルトに戻す";
 "Summary Template" = "要約テンプレート";

@@ -7,7 +7,7 @@ import Foundation
 
     struct SummaryShareRendererTests {
         @Test
-        func rendersRichHTMLAndMarkdownWhileOmittingStructuredTranscriptReferences() {
+        func rendersGoogleDocsHTMLAndMarkdownWhileOmittingStructuredTranscriptReferences() {
             let document = SummaryDocument(
                 title: "Weekly Sync",
                 sections: [
@@ -35,7 +35,11 @@ import Foundation
                 ]
             )
 
-            let content = SummaryShareRenderer.render(document: document, actionItemsHeading: "Action Items")
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
 
             #expect(content.markdown.contains("# Weekly Sync"))
             #expect(content.markdown.contains("## Summary"))
@@ -64,6 +68,48 @@ import Foundation
         }
 
         @Test
+        func rendersSlackHeadingsAndExplicitLineBreaks() {
+            let document = SummaryDocument(
+                title: "Weekly Sync",
+                sections: [
+                    SummarySection(
+                        id: UUID.v7(),
+                        heading: "Summary",
+                        blocks: [
+                            .paragraph("Decision"),
+                            .heading(level: 3, text: "Details"),
+                            .paragraph("More"),
+                            .heading(level: 4, text: "Notes"),
+                            .bulletedList(items: ["One", "Two"]),
+                        ]
+                    ),
+                ],
+                actionItems: [
+                    SummaryActionItem(title: "Send notes", assignee: "Aki"),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .slack
+            )
+
+            #expect(content.html.contains("<strong><em>Weekly Sync</em></strong><br><br>\n<strong><u>Summary</u></strong>"))
+            #expect(content.html.contains("Decision<br><br>\n<strong>Details</strong><br><br>\nMore<br><br>\nNotes"))
+            #expect(content.html.contains("Notes<br><br>\n• One<br>\n• Two"))
+            #expect(content.html.contains("<strong><u>Action Items</u></strong><br><br>\n☐ Send notes (Aki)"))
+            #expect(!content.html.contains("<h1>"))
+            #expect(!content.html.contains("<h2>"))
+            #expect(!content.html.contains("<h3>"))
+            #expect(!content.html.contains("<strong>Notes</strong>"))
+            #expect(content.markdown.contains("# Weekly Sync"))
+            #expect(content.markdown.contains("## Summary"))
+            #expect(content.markdown.contains("### Details"))
+            #expect(content.markdown.contains("#### Notes"))
+        }
+
+        @Test
         func rendersStructuredActionItemsAndEscapesHTML() {
             let document = SummaryDocument(
                 title: "Review <Draft>",
@@ -74,7 +120,11 @@ import Foundation
                 ]
             )
 
-            let content = SummaryShareRenderer.render(document: document, actionItemsHeading: "Action Items")
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
 
             #expect(content.markdown == """
             # Review <Draft>

@@ -6,9 +6,32 @@ struct SummaryShareContent {
 }
 
 enum SummaryShareRenderer {
-    static func render(document: SummaryDocument, actionItemsHeading: String) -> SummaryShareContent {
+    enum Destination {
+        case googleDocs
+        case slack
+    }
+
+    private enum HTMLListKind {
+        case bulleted
+        case numbered
+
+        var element: String {
+            switch self {
+            case .bulleted:
+                "ul"
+            case .numbered:
+                "ol"
+            }
+        }
+    }
+
+    static func render(
+        document: SummaryDocument,
+        actionItemsHeading: String,
+        for destination: Destination
+    ) -> SummaryShareContent {
         SummaryShareContent(
-            html: renderHTML(document: document, actionItemsHeading: actionItemsHeading),
+            html: renderHTML(document: document, actionItemsHeading: actionItemsHeading, destination: destination),
             markdown: renderMarkdown(document: document, actionItemsHeading: actionItemsHeading)
         )
     }
@@ -116,20 +139,30 @@ enum SummaryShareRenderer {
         return (["## \(normalizedInlineMarkdown(heading))"] + lines).joined(separator: "\n")
     }
 
-    private static func renderHTML(document: SummaryDocument, actionItemsHeading: String) -> String {
+    private static func renderHTML(
+        document: SummaryDocument,
+        actionItemsHeading: String,
+        destination: Destination
+    ) -> String {
         var chunks: [String] = []
 
         if let title = normalizedInlineMarkdown(document.title).nilIfBlank {
-            chunks.append("<h1>\(renderInlineHTML(title))</h1>")
+            chunks.append(renderHTMLHeading(title, level: 1, destination: destination))
         }
 
-        chunks.append(contentsOf: document.sections.compactMap(renderHTMLSection))
+        chunks.append(contentsOf: document.sections.compactMap { section in
+            renderHTMLSection(section, destination: destination)
+        })
 
-        if let actionItems = renderHTMLActionItems(document.actionItems, heading: actionItemsHeading) {
+        if let actionItems = renderHTMLActionItems(
+            document.actionItems,
+            heading: actionItemsHeading,
+            destination: destination
+        ) {
             chunks.append(actionItems)
         }
 
-        let body = chunks.joined(separator: "\n")
+        let body = joinHTMLBlocks(chunks, destination: destination)
         return """
         <!doctype html>
         <html>
@@ -141,94 +174,201 @@ enum SummaryShareRenderer {
         """
     }
 
-    private static func renderHTMLSection(_ section: SummarySection) -> String? {
+    private static func renderHTMLSection(_ section: SummarySection, destination: Destination) -> String? {
         var chunks: [String] = []
 
         if let heading = normalizedInlineMarkdown(section.heading).nilIfBlank {
-            chunks.append("<h2>\(renderInlineHTML(heading))</h2>")
+            chunks.append(renderHTMLHeading(heading, level: 2, destination: destination))
         }
 
-        chunks.append(contentsOf: section.blocks.compactMap(renderHTMLBlock))
+        chunks.append(contentsOf: section.blocks.compactMap { block in
+            renderHTMLBlock(block, destination: destination)
+        })
         guard !chunks.isEmpty else { return nil }
-        return "<section>\n\(chunks.joined(separator: "\n"))\n</section>"
+
+        let body = joinHTMLBlocks(chunks, destination: destination)
+        switch destination {
+        case .googleDocs:
+            return "<section>\n\(body)\n</section>"
+        case .slack:
+            return body
+        }
     }
 
-    private static func renderHTMLBlock(_ block: SummaryBlock) -> String? {
+    private static func renderHTMLBlock(_ block: SummaryBlock, destination: Destination) -> String? {
         switch block.content {
         case let .paragraph(text):
-            return htmlParagraph(text.text)
+            htmlParagraph(text.text, destination: destination)
         case let .bulletedList(items):
-            return htmlList(items.map(\.text), element: "ul")
+            htmlList(items.map(\.text), kind: .bulleted, destination: destination)
         case let .numberedList(items):
-            return htmlList(items.map(\.text), element: "ol")
+            htmlList(items.map(\.text), kind: .numbered, destination: destination)
         case let .checklist(items):
-            let renderedItems = items.compactMap { item -> String? in
-                guard let text = normalizedInlineMarkdown(item.text.text).nilIfBlank else { return nil }
-                let marker = item.checked ? "☑" : "☐"
-                return "<li>\(marker) \(renderInlineHTML(text))</li>"
-            }
-            return htmlList(renderedItems: renderedItems, element: "ul")
+            htmlChecklist(items, destination: destination)
         case let .quote(text):
-            return htmlParagraph(text.text).map { "<blockquote>\($0)</blockquote>" }
+            htmlParagraph(text.text, destination: destination).map { "<blockquote>\($0)</blockquote>" }
         case let .code(_, content):
-            return content.text.nilIfBlank.map { "<pre><code>\(escapeHTML($0))</code></pre>" }
+            content.text.nilIfBlank.map { "<pre><code>\(escapeHTML($0))</code></pre>" }
         case let .image(_, caption):
-            return normalizedInlineMarkdown(caption.text).nilIfBlank.map {
-                "<p><em>\(renderInlineHTML($0))</em></p>"
+            normalizedInlineMarkdown(caption.text).nilIfBlank.map {
+                let html = "<em>\(renderInlineHTML($0))</em>"
+                switch destination {
+                case .googleDocs:
+                    return "<p>\(html)</p>"
+                case .slack:
+                    return html
+                }
             }
         case let .heading(level, content):
-            return normalizedInlineMarkdown(content.text).nilIfBlank.map {
-                let element = "h\(clampedHeadingLevel(level))"
-                return "<\(element)>\(renderInlineHTML($0))</\(element)>"
+            normalizedInlineMarkdown(content.text).nilIfBlank.map {
+                let headingLevel = destination == .googleDocs ? clampedHeadingLevel(level) : level
+                return renderHTMLHeading($0, level: headingLevel, destination: destination)
             }
         case let .table(headers, rows):
-            return renderHTMLTable(headers: headers, rows: rows)
+            renderHTMLTable(headers: headers, rows: rows, destination: destination)
         }
     }
 
-    private static func htmlParagraph(_ text: String) -> String? {
-        normalizedInlineMarkdown(text).nilIfBlank.map { "<p>\(renderInlineHTML($0))</p>" }
-    }
-
-    private static func htmlList(_ items: [String], element: String) -> String? {
-        let renderedItems = items.compactMap { item in
-            normalizedInlineMarkdown(item).nilIfBlank.map { "<li>\(renderInlineHTML($0))</li>" }
+    private static func htmlParagraph(_ text: String, destination: Destination) -> String? {
+        guard let text = normalizedInlineMarkdown(text).nilIfBlank else { return nil }
+        let html = renderInlineHTML(text)
+        switch destination {
+        case .googleDocs:
+            return "<p>\(html)</p>"
+        case .slack:
+            return html
         }
-        return htmlList(renderedItems: renderedItems, element: element)
     }
 
-    private static func htmlList(renderedItems: [String], element: String) -> String? {
+    private static func htmlList(
+        _ items: [String],
+        kind: HTMLListKind,
+        destination: Destination
+    ) -> String? {
+        let renderedItems = items.compactMap { item -> String? in
+            normalizedInlineMarkdown(item).nilIfBlank.map(renderInlineHTML)
+        }
         guard !renderedItems.isEmpty else { return nil }
-        return "<\(element)>\n\(renderedItems.joined(separator: "\n"))\n</\(element)>"
+
+        switch destination {
+        case .googleDocs:
+            return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: kind.element)
+        case .slack:
+            let lines = renderedItems.enumerated().map { index, item in
+                switch kind {
+                case .bulleted:
+                    "• \(item)"
+                case .numbered:
+                    "\(index + 1). \(item)"
+                }
+            }
+            return lines.joined(separator: "<br>\n")
+        }
     }
 
-    private static func renderHTMLTable(headers: [SummaryText], rows: [[SummaryText]]) -> String? {
+    private static func htmlChecklist(_ items: [SummaryBlock.ChecklistItem], destination: Destination) -> String? {
+        let renderedItems = items.compactMap { item -> String? in
+            guard let text = normalizedInlineMarkdown(item.text.text).nilIfBlank else { return nil }
+            let marker = item.checked ? "☑" : "☐"
+            return "\(marker) \(renderInlineHTML(text))"
+        }
+        guard !renderedItems.isEmpty else { return nil }
+
+        switch destination {
+        case .googleDocs:
+            return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
+        case .slack:
+            return renderedItems.joined(separator: "<br>\n")
+        }
+    }
+
+    private static func wrapHTMLList(_ renderedItems: [String], element: String) -> String {
+        "<\(element)>\n\(renderedItems.joined(separator: "\n"))\n</\(element)>"
+    }
+
+    private static func renderHTMLTable(
+        headers: [SummaryText],
+        rows: [[SummaryText]],
+        destination: Destination
+    ) -> String? {
         guard !headers.isEmpty else { return nil }
 
-        let headerCells = headers.map { "<th>\(renderInlineHTML(normalizedInlineMarkdown($0.text)))</th>" }
-        let rowHTML = rows.map { row in
-            let cells = row.map { "<td>\(renderInlineHTML(normalizedInlineMarkdown($0.text)))</td>" }
-            return "<tr>\(cells.joined())</tr>"
+        switch destination {
+        case .googleDocs:
+            let headerCells = headers.map { "<th>\(renderInlineHTML(normalizedInlineMarkdown($0.text)))</th>" }
+            let rowHTML = rows.map { row in
+                let cells = row.map { "<td>\(renderInlineHTML(normalizedInlineMarkdown($0.text)))</td>" }
+                return "<tr>\(cells.joined())</tr>"
+            }
+            return """
+            <table>
+            <thead><tr>\(headerCells.joined())</tr></thead>
+            <tbody>
+            \(rowHTML.joined(separator: "\n"))
+            </tbody>
+            </table>
+            """
+        case .slack:
+            let header = headers.map { renderInlineHTML(normalizedInlineMarkdown($0.text)) }.joined(separator: " | ")
+            let rowLines = rows.map { row in
+                row.map { renderInlineHTML(normalizedInlineMarkdown($0.text)) }.joined(separator: " | ")
+            }
+            return ([header] + rowLines).joined(separator: "<br>\n")
         }
-
-        return """
-        <table>
-        <thead><tr>\(headerCells.joined())</tr></thead>
-        <tbody>
-        \(rowHTML.joined(separator: "\n"))
-        </tbody>
-        </table>
-        """
     }
 
-    private static func renderHTMLActionItems(_ actionItems: [SummaryActionItem], heading: String) -> String? {
-        let renderedItems = actionItems.compactMap(normalizedActionItem).map { item in
-            let assignee = item.assignee.map { " (\(renderInlineHTML($0)))" } ?? ""
-            return "<li>☐ \(renderInlineHTML(item.title))\(assignee)</li>"
-        }
+    private static func renderHTMLActionItems(
+        _ actionItems: [SummaryActionItem],
+        heading: String,
+        destination: Destination
+    ) -> String? {
+        let items = actionItems.compactMap(normalizedActionItem)
+        guard !items.isEmpty else { return nil }
 
-        guard let list = htmlList(renderedItems: renderedItems, element: "ul") else { return nil }
-        return "<section>\n<h2>\(renderInlineHTML(normalizedInlineMarkdown(heading)))</h2>\n\(list)\n</section>"
+        let renderedItems = items.map { item in
+            let assignee = item.assignee.map { " (\(renderInlineHTML($0)))" } ?? ""
+            return "☐ \(renderInlineHTML(item.title))\(assignee)"
+        }
+        let heading = renderHTMLHeading(normalizedInlineMarkdown(heading), level: 2, destination: destination)
+
+        switch destination {
+        case .googleDocs:
+            let list = wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
+            return "<section>\n\(heading)\n\(list)\n</section>"
+        case .slack:
+            let list = renderedItems.joined(separator: "<br>\n")
+            return joinHTMLBlocks([heading, list], destination: destination)
+        }
+    }
+
+    private static func renderHTMLHeading(_ markdown: String, level: Int, destination: Destination) -> String {
+        let html = renderInlineHTML(markdown)
+        switch destination {
+        case .googleDocs:
+            let element = "h\(level)"
+            return "<\(element)>\(html)</\(element)>"
+        case .slack:
+            switch level {
+            case 1:
+                return "<strong><em>\(html)</em></strong>"
+            case 2:
+                return "<strong><u>\(html)</u></strong>"
+            case 3:
+                return "<strong>\(html)</strong>"
+            default:
+                return html
+            }
+        }
+    }
+
+    private static func joinHTMLBlocks(_ blocks: [String], destination: Destination) -> String {
+        let separator = switch destination {
+        case .googleDocs:
+            "\n"
+        case .slack:
+            "<br><br>\n"
+        }
+        return blocks.joined(separator: separator)
     }
 
     private static func normalizedActionItem(_ item: SummaryActionItem) -> (title: String, assignee: String?)? {

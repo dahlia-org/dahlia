@@ -193,10 +193,14 @@ final class CaptionViewModel: ObservableObject {
         return URL(string: "https://docs.google.com/document/d/\(fileId)/edit")
     }
 
-    func copyCurrentSummary() {
+    func copyCurrentSummary(for destination: SummaryShareRenderer.Destination) {
         guard let currentSummaryDocument, canShareCurrentSummary else { return }
 
-        let content = SummaryShareRenderer.render(document: currentSummaryDocument, actionItemsHeading: L10n.actionItems)
+        let content = SummaryShareRenderer.render(
+            document: currentSummaryDocument,
+            actionItemsHeading: L10n.actionItems,
+            for: destination
+        )
         guard content.markdown.nilIfBlank != nil else { return }
         SummaryPasteboardWriter.write(content)
     }
