@@ -32,10 +32,13 @@ swift build && swift run
 # リリース用 .app バンドルのビルド
 ./scripts/build-app.sh && open Dahlia.app
 
+# テスト
+swift test
+
 # リリースビルド + notarization + staple + 配布用 zip 再作成
 ./scripts/notarize.sh
 
-# Lint
+# 整形 + Lint
 ./scripts/lint.sh
 ```
 
@@ -64,16 +67,18 @@ xcrun notarytool store-credentials "dahlia-notary" \
 ## アーキテクチャ
 
 ```
-AudioCaptureManager (マイク)
-SystemAudioCaptureManager (システム音声)
+AudioCaptureManager (マイク / AVAudioEngine)
+SystemAudioCaptureManager (システム音声 / ScreenCaptureKit)
     ↓ onAudioBuffer
-AudioBufferBridge → AsyncStream
-    ↓
-SpeechTranscriberService (音声ソースごと)
-    ↓ AsyncSequence
-TranscriptStore (200ms スロットル)
+AudioSourcePipeline → CapturedAudioChunk
+    ↓ AudioFrameRouter (音源ごとに物理 capture 1 回)
+    ├─ BatchAudioFileWriter (欠落のない録音保存)
+    └─ AudioBufferBridge → SpeechTranscriberService (低遅延文字起こし)
+        ↓ TranscriptionEvent
+        ├─ TranscriptStore (リアルタイム状態)
+        └─ LiveCaptionStore (一時字幕)
     ↓ Combine debounce(500ms)
-TranscriptPersistenceService → SQLite (GRDB)
+MeetingPersistenceService → SQLite (GRDB)
 ```
 
 ### プロジェクト構成
@@ -94,6 +99,7 @@ Sources/Dahlia/
 ## 依存ライブラリ
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite ツールキット
+- [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Release ビルドのクラッシュレポート
 
 ## ライセンス
 

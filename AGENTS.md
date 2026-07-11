@@ -1,53 +1,54 @@
-# CLAUDE.md
+# Dahlia — リポジトリ作業ガイド
 
-**Dahlia** — macOS ネイティブのリアルタイム文字起こしアプリ。マイク（AVAudioEngine）とシステム音声（ScreenCaptureKit）を同時にキャプチャし、Apple Speech framework（`SpeechAnalyzer` / `SpeechTranscriber`）で文字起こしし、任意で LLM による要約を生成する。
+## 目的
 
-## スタック
+Dahlia は、マイクとシステム音声を同時にキャプチャし、Apple Speech framework でリアルタイム文字起こしを行う macOS アプリ。任意で LLM 要約も生成する。
 
-- Swift 6.2 / SwiftUI / macOS 26+
-- Swift Package Manager のみ（Xcode プロジェクトは存在しない。生成もしない）
-- 外部依存は 2 つだけ: GRDB.swift（SQLite ORM）、sentry-cocoa（クラッシュレポート）
+依頼された成果を、既存の録音・文字起こし品質とユーザーデータを保ちながら完成させる。明示的に変更を求められていない挙動は維持する。
+
+## 指示の適用範囲
+
+このファイルはリポジトリ全体に適用する。編集対象により近い `AGENTS.md` がある場合は、作業前に読み、より具体的な指示を優先する。
+
+| 対象 | 追加の指示 |
+|------|------------|
+| `Sources/Dahlia/` | アーキテクチャ、並行処理、UI: `Sources/Dahlia/AGENTS.md` |
+| `Sources/Dahlia/Database/` | GRDB とマイグレーション: `Sources/Dahlia/Database/AGENTS.md` |
+| `Tests/DahliaTests/` | テスト実装と実行確認: `Tests/DahliaTests/AGENTS.md` |
+| `scripts/` | SwiftPM のビルド、署名、notarize、lint スクリプト |
+
+`CLAUDE.md` は同じ階層の `AGENTS.md` への互換シンボリックリンクであり、内容を二重管理しない。
+
+## 技術と不変条件
+
+- Swift 6.2 / SwiftUI / macOS 26+ / Swift 6 strict concurrency。
+- ビルドシステムは Swift Package Manager のみ。Xcode プロジェクトは生成しない。
+- 外部依存は GRDB.swift と sentry-cocoa の 2 つだけ。新規依存は追加前に確認を取る。
+- リリース済みユーザーの DB を破壊しない。登録済みマイグレーションは変更せず、Database の `AGENTS.md` に従って新しいマイグレーションを追加する。
+
+## 作業範囲と承認
+
+- 回答、説明、レビュー、診断、計画の依頼では、必要なファイルやログを調査して結果を報告する。変更も明示された場合だけ編集する。
+- 変更、実装、修正の依頼では、必要なローカル編集と非破壊的な検証を進める。既存の未コミット変更を保持し、依頼と無関係な差分を直さない。
+- 破壊的操作、外部への書き込み、または依頼範囲の実質的な拡大には、実行前に確認を取る。
 
 ## コマンド
 
 ```bash
-swift build                                # ビルド
-swift run                                  # Debug 実行（未署名、レガシー Keychain フォールバック）
-./scripts/run-dev.sh                       # Debug + codesign 実行（Data Protection Keychain + Touch ID）← 開発時推奨
-./scripts/build-app.sh && open Dahlia.app  # Release .app バンドル
-swift test                                 # 全テスト実行
-swift test --filter <TypeName>             # テストスイート単位で実行
-./scripts/lint.sh                          # SwiftFormat + SwiftLint（brew install swiftformat swiftlint）
+swift build                       # Debug ビルド
+swift run                         # 未署名 Debug 実行
+./scripts/run-dev.sh              # Debug + codesign（フル機能の動作確認に推奨）
+./scripts/build-app.sh            # Release .app バンドル
+swift test                        # 全テスト
+swift test --filter SummaryServiceTests  # 対象スイートの例
+CI=true ./scripts/lint.sh         # 変更せず SwiftFormat / SwiftLint を検査
 ```
 
-> `swift run` は未署名のため Data Protection Keychain を使えない。フル機能の動作確認は `run-dev.sh` を使う。
-> pre-commit フック（`scripts/pre-commit`）がステージ済み `.swift` を SwiftFormat で整形する。
+`swift run` は未署名のため Data Protection Keychain を使えない。Keychain と Touch ID を含む動作確認には `run-dev.sh` を使う。
 
-## ディレクトリ構成
+## 完了条件
 
-| パス | 役割 |
-|------|------|
-| `Sources/Dahlia/` | アプリ本体。アーキテクチャと実装規約は `Sources/Dahlia/CLAUDE.md` |
-| `Sources/Dahlia/Audio/` | マイク・システム音声キャプチャ（AVAudioEngine / ScreenCaptureKit） |
-| `Sources/Dahlia/Speech/` | 音声認識（`SpeechTranscriberService`）・プレビュー翻訳 |
-| `Sources/Dahlia/Database/` | GRDB スキーマ・マイグレーション・Record/Repository。規約は `Sources/Dahlia/Database/CLAUDE.md` |
-| `Sources/Dahlia/Services/` | LLM 要約、Google Calendar/Drive 連携、Vault 同期、Keychain、録音/字幕 coordinator、各種エクスポート |
-| `Sources/Dahlia/Models/` | ドメインモデル・アプリ設定・`TranscriptStore` |
-| `Sources/Dahlia/ViewModels/` | `CaptionViewModel`（録音制御）、`SidebarViewModel`（ミーティング一覧・設定補助データ） |
-| `Sources/Dahlia/Views/` | SwiftUI ビュー（ルートは `ContentView` = NavigationSplitView、サイドバーはミーティング一覧） |
-| `Sources/Dahlia/Utilities/` | `L10n`、UUID v7、変換ヘルパー |
-| `Sources/Dahlia/Resources/` | Assets、`ja.lproj` / `en.lproj` の Localizable.strings |
-| `Tests/DahliaTests/` | ユニットテスト。規約は `Tests/DahliaTests/CLAUDE.md` |
-| `scripts/` | ビルド・署名・notarize・lint・pre-commit スクリプト |
-
-## 絶対に破ってはいけないルール
-
-1. **DB マイグレーションで既存ユーザーデータを壊さない。** `eraseDatabaseOnSchemaChange` のような破壊的リセットは禁止。登録済みマイグレーションは変更せず、新しいマイグレーションを追加する（詳細: `Sources/Dahlia/Database/CLAUDE.md`）。
-2. **新規の外部依存を追加しない。** GRDB.swift と sentry-cocoa 以外の依存が必要になったら、追加せずまずユーザーに相談する。
-3. **UI 文字列をハードコードしない。** 必ず `L10n` 経由で参照し、`ja.lproj` / `en.lproj` 両方の `Localizable.strings` にキーを追加する（日本語がプライマリ）。
-
-## 全体規約
-
-- **フォーマット**: SwiftFormat + SwiftLint（`.swiftformat` / `.swiftlint.yml`）。4 スペースインデント、150 文字行制限、trailing comma 必須。
-- **ID**: 全テーブル・全エンティティで時系列ソート可能な UUID v7（`UUID.v7()`）を使う。
-- **並行処理**: Swift 6 strict concurrency。詳細な規約は `Sources/Dahlia/CLAUDE.md`。
+- 依頼された成果と、このファイルおよび対象階層の制約を満たしている。
+- Swift の変更は `swift build`、変更した挙動は対象テスト、広範な変更は必要に応じて `swift test` で検証している。Swift ソースの変更では `CI=true ./scripts/lint.sh` も確認する。
+- テストは終了コードだけでなく、出力の集計行で対象テストが実際に実行されたことを確認する。
+- 公開挙動、設定、スキーマが変わる場合は、対応するテスト、ローカライズ、ドキュメントも更新する。検証できない項目は、未実行のコマンド、理由、次の確認を明記し、成功と扱わない。
