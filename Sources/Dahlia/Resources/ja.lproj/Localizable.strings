@@ -411,6 +411,14 @@
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Google アカウントを接続し、共有メニューから画像を含む要約を Google Docs に書き出します。";
 "Sign in with Google to export summaries to Google Docs." = "Google にサインインして要約を Google Docs に書き出します。";
 "Google Docs connected" = "Google Docs 接続済み";
+"Export Destination" = "書き出し先";
+"Export Folder" = "書き出しフォルダ";
+"Folder name" = "フォルダ名";
+"My Drive" = "マイドライブ";
+"Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used." = "マイドライブ直下にこのフォルダを作成し、Google Docs を書き出します。空欄の場合は Meeting Notes を使用します。";
+"The Google Drive export folder has not been configured." = "Google Drive の書き出しフォルダが設定されていません。";
+"Could not configure the Google Drive export folder." = "Google Drive の書き出しフォルダを設定できませんでした。";
+"Open Cloud Storage Settings" = "Cloud Storage 設定を開く";
 "No previous Google session was found." = "以前の Google セッションは見つかりませんでした。";
 "Set GOOGLE_CLIENT_ID before connecting Google services." = "Google サービスを接続する前に、開発者設定または環境変数で GOOGLE_CLIENT_ID を設定してください。";
 "Unexpected response from Google" = "Google から予期しないレスポンスが返されました";

@@ -76,7 +76,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
 
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
-final class AppSettings: ObservableObject {
+final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProviding {
     static let shared = AppSettings()
     nonisolated static let automaticScreenshotIntervalOptions = [
         5,
@@ -93,6 +93,7 @@ final class AppSettings: ObservableObject {
     ]
     nonisolated static let automaticScreenshotIntervalSecondsUserDefaultsKey = "automaticScreenshotIntervalSeconds"
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
+    nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
     nonisolated static let defaultLLMMaxTokens = 16000
@@ -104,6 +105,41 @@ final class AppSettings: ObservableObject {
     var appLanguage: AppLanguage {
         get { AppLanguage(rawValue: appLanguageRawValue) ?? .system }
         set { appLanguageRawValue = newValue.rawValue }
+    }
+
+    // MARK: - Google Drive
+
+    @AppStorage("googleDriveExportFolderName") var googleDriveExportFolderName = AppSettings.defaultGoogleDriveExportFolderName
+    @AppStorage("googleDriveExportFolderID") private var googleDriveExportFolderID = ""
+    @AppStorage("googleDriveExportFolderAccountID") private var googleDriveExportFolderAccountID = ""
+
+    var resolvedGoogleDriveExportFolderName: String {
+        Self.resolvedGoogleDriveExportFolderName(googleDriveExportFolderName)
+    }
+
+    nonisolated static func resolvedGoogleDriveExportFolderName(_ folderName: String) -> String {
+        folderName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+            ?? defaultGoogleDriveExportFolderName
+    }
+
+    func googleDriveExportFolderID(forAccountID accountID: String) -> String? {
+        guard googleDriveExportFolderAccountID == accountID else { return nil }
+        return googleDriveExportFolderID.nilIfBlank
+    }
+
+    func setGoogleDriveExportFolder(
+        name: String,
+        id: String,
+        accountID: String
+    ) {
+        googleDriveExportFolderName = Self.resolvedGoogleDriveExportFolderName(name)
+        googleDriveExportFolderID = id
+        googleDriveExportFolderAccountID = accountID
+    }
+
+    func clearGoogleDriveExportFolderID(forAccountID accountID: String) {
+        guard googleDriveExportFolderAccountID == accountID else { return }
+        googleDriveExportFolderID = ""
     }
 
     // MARK: - 音声認識設定

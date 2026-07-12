@@ -4,7 +4,40 @@ import Foundation
 #if canImport(Testing)
     import Testing
 
+    @Suite(.serialized)
     struct GoogleDriveAPIClientTests {
+        @Test
+        func validatesStoredExportFolderByID() async throws {
+            let recorder = GoogleDriveRequestRecorder(responses: [
+                .init(data: Data(#"{"mimeType":"application/vnd.google-apps.folder","trashed":false}"#.utf8)),
+            ])
+            let client = GoogleDriveAPIClient(session: makeGoogleDriveRecordingSession(recorder: recorder))
+
+            let isAvailable = try await client.isExportFolderAvailable(
+                accessToken: "access-token",
+                folderID: "folder-1"
+            )
+
+            #expect(isAvailable)
+            #expect(recorder.requests.count == 1)
+            #expect(recorder.requests[0].url?.path == "/drive/v3/files/folder-1")
+        }
+
+        @Test
+        func unavailableStoredExportFolderReturnsFalse() async throws {
+            let recorder = GoogleDriveRequestRecorder(responses: [
+                .init(statusCode: 404, data: Data(#"{"error":{"message":"Not found"}}"#.utf8)),
+            ])
+            let client = GoogleDriveAPIClient(session: makeGoogleDriveRecordingSession(recorder: recorder))
+
+            let isAvailable = try await client.isExportFolderAvailable(
+                accessToken: "access-token",
+                folderID: "missing-folder"
+            )
+
+            #expect(!isAvailable)
+        }
+
         @Test
         func createsGoogleDocumentWithResumableRTFUpload() async throws {
             let recorder = GoogleDriveRequestRecorder()
@@ -20,7 +53,8 @@ import Foundation
                 appProperties: [
                     "dahliaKind": "summary",
                     "dahliaMeetingId": "meeting-1",
-                ]
+                ],
+                parentFolderID: "folder-1"
             )
 
             #expect(fileID == "document-1")
@@ -56,17 +90,129 @@ import Foundation
             let metadata = try JSONSerialization.jsonObject(with: #require(metadataRequest.httpBody)) as? [String: Any]
             #expect(metadata?["name"] as? String == "Weekly / Sync")
             #expect(metadata?["mimeType"] as? String == "application/vnd.google-apps.document")
+            #expect(metadata?["parents"] as? [String] == ["folder-1"])
 
             let uploadRequest = requests[2]
             #expect(uploadRequest.httpMethod == "PUT")
             #expect(uploadRequest.url?.absoluteString == "https://upload.example.com/session-1")
             #expect(uploadRequest.httpBody == rtfData)
         }
+
+        @Test
+        func createsConfiguredExportFolderInMyDriveWhenMissing() async throws {
+            let recorder = GoogleDriveRequestRecorder(responses: [
+                .init(data: Data(#"{"files":[]}"#.utf8)),
+                .init(data: Data(#"{"id":"folder-1"}"#.utf8)),
+            ])
+            let client = GoogleDriveAPIClient(session: makeGoogleDriveRecordingSession(recorder: recorder))
+
+            let folderID = try await client.resolveExportFolderID(
+                accessToken: "access-token",
+                folderName: "Meeting Notes"
+            )
+
+            #expect(folderID == "folder-1")
+            let requests = recorder.requests
+            #expect(requests.count == 2)
+
+            let searchURL = try #require(requests[0].url)
+            let searchQuery = try #require(
+                URLComponents(url: searchURL, resolvingAgainstBaseURL: false)?
+                    .queryItems?
+                    .first(where: { $0.name == "q" })?
+                    .value
+            )
+            #expect(searchQuery.contains("name = 'Meeting Notes'"))
+            #expect(searchQuery.contains("'root' in parents"))
+            #expect(searchQuery.contains("dahliaKind"))
+
+            let createRequest = requests[1]
+            #expect(createRequest.httpMethod == "POST")
+            let metadata = try JSONSerialization.jsonObject(with: #require(createRequest.httpBody)) as? [String: Any]
+            #expect(metadata?["name"] as? String == "Meeting Notes")
+            #expect(metadata?["mimeType"] as? String == "application/vnd.google-apps.folder")
+            #expect(metadata?["parents"] as? [String] == ["root"])
+        }
+
+        @Test
+        func reusesExistingConfiguredExportFolder() async throws {
+            let recorder = GoogleDriveRequestRecorder(responses: [
+                .init(data: Data(#"{"files":[{"id":"folder-1","parents":["root"]}]}"#.utf8)),
+            ])
+            let client = GoogleDriveAPIClient(session: makeGoogleDriveRecordingSession(recorder: recorder))
+
+            let folderID = try await client.resolveExportFolderID(
+                accessToken: "access-token",
+                folderName: "Meeting Notes"
+            )
+
+            #expect(folderID == "folder-1")
+            #expect(recorder.requests.count == 1)
+        }
+
+        @Test
+        func movesExistingDocumentToConfiguredFolder() async throws {
+            let recorder = GoogleDriveRequestRecorder(responses: [
+                .init(data: Data(#"{"files":[{"id":"document-1","parents":["old-folder"]}]}"#.utf8)),
+                .init(
+                    headers: ["Location": "https://upload.example.com/session-1"],
+                    data: Data()
+                ),
+                .init(data: Data(#"{"id":"document-1"}"#.utf8)),
+            ])
+            let client = GoogleDriveAPIClient(session: makeGoogleDriveRecordingSession(recorder: recorder))
+
+            _ = try await client.upsertGoogleDocument(
+                accessToken: "access-token",
+                fileName: "Weekly Sync.rtf",
+                data: Data(#"{\rtf1 Summary}"#.utf8),
+                dataMimeType: "application/rtf",
+                appProperties: ["dahliaMeetingId": "meeting-1"],
+                parentFolderID: "new-folder"
+            )
+
+            let metadataRequest = recorder.requests[1]
+            #expect(metadataRequest.httpMethod == "PATCH")
+            let metadataURL = try #require(metadataRequest.url)
+            let queryItems = try #require(
+                URLComponents(url: metadataURL, resolvingAgainstBaseURL: false)?.queryItems
+            )
+            #expect(queryItems.first(where: { $0.name == "addParents" })?.value == "new-folder")
+            #expect(queryItems.first(where: { $0.name == "removeParents" })?.value == "old-folder")
+        }
+    }
+
+    private struct GoogleDriveStubResponse: Sendable {
+        let statusCode: Int
+        let headers: [String: String]
+        let data: Data
+
+        init(
+            statusCode: Int = 200,
+            headers: [String: String] = [:],
+            data: Data
+        ) {
+            self.statusCode = statusCode
+            self.headers = headers
+            self.data = data
+        }
     }
 
     private final class GoogleDriveRequestRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var storedRequests: [URLRequest] = []
+        private let responses: [GoogleDriveStubResponse]
+
+        init(responses: [GoogleDriveStubResponse] = [
+            .init(data: Data(#"{"files":[]}"#.utf8)),
+            .init(
+                headers: ["Location": "https://upload.example.com/session-1"],
+                data: Data()
+            ),
+            .init(data: Data(#"{"id":"document-1"}"#.utf8)),
+        ]) {
+            self.responses = responses
+        }
 
         var requests: [URLRequest] {
             lock.withLock { storedRequests }
@@ -82,6 +228,13 @@ import Foundation
                 storedRequests.append(recordedRequest)
                 return storedRequests.count
             }
+        }
+
+        func response(at requestIndex: Int) -> GoogleDriveStubResponse {
+            guard responses.indices.contains(requestIndex - 1) else {
+                return .init(statusCode: 500, data: Data(#"{"error":{"message":"Missing stub response"}}"#.utf8))
+            }
+            return responses[requestIndex - 1]
         }
 
         private static func read(_ stream: InputStream) -> Data {
@@ -121,34 +274,25 @@ import Foundation
         }
 
         override func startLoading() {
-            let requestIndex = Self.recorder?.record(request) ?? 0
-            let response: HTTPURLResponse
-            let data: Data
-
-            switch requestIndex {
-            case 1:
-                response = makeResponse()
-                data = Data(#"{"files":[]}"#.utf8)
-            case 2:
-                response = makeResponse(headers: ["Location": "https://upload.example.com/session-1"])
-                data = Data()
-            default:
-                response = makeResponse()
-                data = Data(#"{"id":"document-1"}"#.utf8)
+            guard let recorder = Self.recorder else {
+                fatalError("GoogleDriveRecordingURLProtocol recorder is not configured")
             }
+            let requestIndex = recorder.record(request)
+            let stub = recorder.response(at: requestIndex)
+            let response = makeResponse(statusCode: stub.statusCode, headers: stub.headers)
 
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocol(self, didLoad: stub.data)
             client?.urlProtocolDidFinishLoading(self)
         }
 
         override func stopLoading() {}
 
-        private func makeResponse(headers: [String: String] = [:]) -> HTTPURLResponse {
+        private func makeResponse(statusCode: Int, headers: [String: String]) -> HTTPURLResponse {
             guard let url = request.url,
                   let response = HTTPURLResponse(
                       url: url,
-                      statusCode: 200,
+                      statusCode: statusCode,
                       httpVersion: nil,
                       headerFields: headers
                   ) else {

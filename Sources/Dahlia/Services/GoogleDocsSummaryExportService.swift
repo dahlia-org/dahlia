@@ -7,7 +7,8 @@ enum GoogleDocsSummaryExportService {
         context: SummaryRenderContext,
         fileName: String,
         driveStore: GoogleDriveStore = .shared,
-        apiClient: any GoogleDriveAPIClientProviding = GoogleDriveAPIClient()
+        apiClient: any GoogleDriveAPIClientProviding = GoogleDriveAPIClient(),
+        settings: any GoogleDriveExportFolderSettingsProviding = AppSettings.shared
     ) async throws -> String {
         let actionItemsHeading = L10n.actionItems
         let imageUnavailableText = L10n.summaryImageUnavailable
@@ -23,15 +24,32 @@ enum GoogleDocsSummaryExportService {
             "dahliaKind": "summary",
             "dahliaMeetingId": context.meetingId.uuidString,
         ]
+        guard let accountID = driveStore.account?.id,
+              let exportFolderID = settings.googleDriveExportFolderID(forAccountID: accountID) else {
+            throw GoogleDriveAPIError.exportFolderNotConfigured
+        }
 
-        return try await driveStore.performAuthorizedOperation { session in
-            try await apiClient.upsertGoogleDocument(
-                accessToken: session.accessToken,
-                fileName: fileName,
-                data: rendered.data,
-                dataMimeType: rendered.mimeType,
-                appProperties: properties
-            )
+        do {
+            return try await driveStore.performAuthorizedOperation { session in
+                guard session.account.id == accountID else {
+                    throw GoogleDriveAPIError.exportFolderNotConfigured
+                }
+                return try await apiClient.upsertGoogleDocument(
+                    accessToken: session.accessToken,
+                    fileName: fileName,
+                    data: rendered.data,
+                    dataMimeType: rendered.mimeType,
+                    appProperties: properties,
+                    parentFolderID: exportFolderID
+                )
+            }
+        } catch {
+            if case let .httpError(statusCode, _) = error as? GoogleDriveAPIError,
+               [403, 404].contains(statusCode) {
+                settings.clearGoogleDriveExportFolderID(forAccountID: accountID)
+                throw GoogleDriveAPIError.exportFolderNotConfigured
+            }
+            throw error
         }
     }
 }

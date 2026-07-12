@@ -20,6 +20,7 @@ import Foundation
             )
             let store = GoogleDriveStore(
                 signInProvider: signInProvider,
+                exportFolderConfiguration: MockGoogleDriveExportFolderConfiguration(),
                 presentingWindowProvider: { NSWindow() }
             )
 
@@ -36,7 +37,10 @@ import Foundation
                 hasPreviousSignIn: true,
                 restoreResult: .failure(GoogleSignInError.authorizationFailed("Expired session"))
             )
-            let store = GoogleDriveStore(signInProvider: signInProvider)
+            let store = GoogleDriveStore(
+                signInProvider: signInProvider,
+                exportFolderConfiguration: MockGoogleDriveExportFolderConfiguration()
+            )
 
             await store.restoreSessionIfNeeded()
             signInProvider.restoreResult = .success(driveSession)
@@ -49,7 +53,10 @@ import Foundation
 
         @Test
         func authorizedOperationReportsBusyUntilCompletion() async throws {
-            let store = GoogleDriveStore(signInProvider: MockGoogleSignInProvider())
+            let store = GoogleDriveStore(
+                signInProvider: MockGoogleSignInProvider(),
+                exportFolderConfiguration: MockGoogleDriveExportFolderConfiguration()
+            )
 
             let wasBusy = try await store.performAuthorizedOperation { _ in
                 await MainActor.run { store.isBusy }
@@ -64,14 +71,35 @@ import Foundation
             let signInProvider = MockGoogleSignInProvider(
                 signInResult: .success(driveSession)
             )
+            let folderConfiguration = MockGoogleDriveExportFolderConfiguration()
             let store = GoogleDriveStore(
                 signInProvider: signInProvider,
+                exportFolderConfiguration: folderConfiguration,
                 presentingWindowProvider: { NSWindow() }
             )
 
             await store.signIn()
 
             #expect(signInProvider.signInRequestedScopes == [GoogleOAuthScope.drive])
+            #expect(folderConfiguration.configureIfNeededCallCount == 1)
+        }
+
+        @Test
+        func folderConfigurationFailureKeepsAuthorizedSessionAndReportsError() async {
+            let folderConfiguration = MockGoogleDriveExportFolderConfiguration(
+                result: .failure(GoogleDriveAPIError.httpError(statusCode: 503, detail: "Unavailable"))
+            )
+            let store = GoogleDriveStore(
+                signInProvider: MockGoogleSignInProvider(signInResult: .success(driveSession)),
+                exportFolderConfiguration: folderConfiguration,
+                presentingWindowProvider: { NSWindow() }
+            )
+
+            await store.signIn()
+
+            #expect(store.isAuthorized)
+            #expect(store.state == .connected)
+            #expect(store.exportFolderErrorMessage != nil)
         }
 
         @Test
@@ -83,7 +111,10 @@ import Foundation
                 sessionDidChangeNotification: watchedNotification,
                 restoreResult: .success(driveSession)
             )
-            let store = GoogleDriveStore(signInProvider: signInProvider)
+            let store = GoogleDriveStore(
+                signInProvider: signInProvider,
+                exportFolderConfiguration: MockGoogleDriveExportFolderConfiguration()
+            )
 
             NotificationCenter.default.post(name: ignoredNotification, object: nil)
             await Task.yield()
@@ -147,6 +178,25 @@ import Foundation
         }
 
         func disconnect() async throws {}
+    }
+
+    @MainActor
+    private final class MockGoogleDriveExportFolderConfiguration: GoogleDriveExportFolderConfiguring {
+        private let result: Result<Void, Error>
+        private(set) var configureIfNeededCallCount = 0
+
+        init(result: Result<Void, Error> = .success(())) {
+            self.result = result
+        }
+
+        func configure(folderName _: String, session _: GoogleSession) async throws {
+            try result.get()
+        }
+
+        func configureIfNeeded(session _: GoogleSession) async throws {
+            configureIfNeededCallCount += 1
+            try result.get()
+        }
     }
 
 #endif

@@ -411,6 +411,14 @@
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.";
 "Sign in with Google to export summaries to Google Docs." = "Sign in with Google to export summaries to Google Docs.";
 "Google Docs connected" = "Google Docs connected";
+"Export Destination" = "Export Destination";
+"Export Folder" = "Export Folder";
+"Folder name" = "Folder name";
+"My Drive" = "My Drive";
+"Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used." = "Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used.";
+"The Google Drive export folder has not been configured." = "The Google Drive export folder has not been configured.";
+"Could not configure the Google Drive export folder." = "Could not configure the Google Drive export folder.";
+"Open Cloud Storage Settings" = "Open Cloud Storage Settings";
 "No previous Google session was found." = "No previous Google session was found.";
 "Set GOOGLE_CLIENT_ID before connecting Google services." = "Set GOOGLE_CLIENT_ID in Developer Settings or the environment before connecting Google services.";
 "Unexpected response from Google" = "Unexpected response from Google";

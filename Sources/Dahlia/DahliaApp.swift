@@ -65,12 +65,14 @@ struct DahliaApp: App {
                 _ = liveSubtitleOverlayCoordinator
                 initializeAppIfNeeded()
                 let settings = AppSettings.shared
+                async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
                 if settings.isCalendarSourceEnabled(.google) {
                     await GoogleCalendarStore.shared.restoreSessionIfNeeded()
                 }
                 if settings.isCalendarSourceEnabled(.macOS) {
                     await MacCalendarStore.shared.refreshIfNeeded()
                 }
+                await driveRestore
             }
         }
         .windowResizability(.contentMinSize)

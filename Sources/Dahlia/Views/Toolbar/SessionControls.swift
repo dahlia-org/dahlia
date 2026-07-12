@@ -124,9 +124,13 @@ struct ShareSummaryToolbarButton: View {
 }
 
 private struct SummarySharePopover: View {
+    @Environment(\.openSettings) private var openSettings
     @ObservedObject var viewModel: CaptionViewModel
     @ObservedObject private var driveStore = GoogleDriveStore.shared
+    @ObservedObject private var settings = AppSettings.shared
     @State private var isGoogleDocsExportRunning = false
+    @State private var exportFolderAlertMessage = ""
+    @State private var isShowingExportFolderAlert = false
     let dismiss: () -> Void
 
     private var title: String {
@@ -164,7 +168,7 @@ private struct SummarySharePopover: View {
                 SummarySharePopoverRow(
                     title: L10n.exportToGoogleDocs,
                     systemImage: "doc.badge.arrow.up",
-                    isDisabled: isGoogleDocsExportRunning || driveStore.isBusy,
+                    isDisabled: isGoogleDocsExportRunning || driveStore.isBusy || !canExportToGoogleDocs,
                     isLoading: isGoogleDocsExportRunning || driveStore.isBusy
                 ) {
                     exportToGoogleDocs()
@@ -174,6 +178,14 @@ private struct SummarySharePopover: View {
                 }
                 SummarySharePopoverRow(title: L10n.copySummaryForSlack, systemImage: "message") {
                     copySummary(for: .slack)
+                }
+                if needsGoogleDriveSetup {
+                    SummarySharePopoverRow(
+                        title: L10n.openCloudStorageSettings,
+                        systemImage: "gearshape"
+                    ) {
+                        openCloudStorageSettings()
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -189,8 +201,21 @@ private struct SummarySharePopover: View {
         }
         .frame(width: 320)
         .padding(.vertical, 8)
-        .task {
-            await driveStore.restoreSessionIfNeeded()
+        .onAppear {
+            guard let message = driveStore.exportFolderErrorMessage else { return }
+            exportFolderAlertMessage = message
+            isShowingExportFolderAlert = true
+        }
+        .onChange(of: driveStore.exportFolderErrorMessage) { _, message in
+            guard let message else { return }
+            exportFolderAlertMessage = message
+            isShowingExportFolderAlert = true
+        }
+        .alert(L10n.googleDriveExportFolderConfigurationFailed, isPresented: $isShowingExportFolderAlert) {
+            Button(L10n.close, role: .cancel) {}
+            Button(L10n.openCloudStorageSettings, action: openCloudStorageSettings)
+        } message: {
+            Text(exportFolderAlertMessage)
         }
     }
 
@@ -200,7 +225,18 @@ private struct SummarySharePopover: View {
     }
 
     private var googleDocsErrorMessage: String? {
-        viewModel.googleDocsExportError ?? driveStore.lastErrorMessage
+        viewModel.googleDocsExportError ?? driveStore.exportFolderErrorMessage ?? driveStore.lastErrorMessage
+    }
+
+    private var canExportToGoogleDocs: Bool {
+        guard driveStore.isAuthorized,
+              driveStore.exportFolderErrorMessage == nil,
+              let accountID = driveStore.account?.id else { return false }
+        return settings.googleDriveExportFolderID(forAccountID: accountID) != nil
+    }
+
+    private var needsGoogleDriveSetup: Bool {
+        !driveStore.isBusy && !canExportToGoogleDocs
     }
 
     private func exportToGoogleDocs() {
@@ -208,15 +244,20 @@ private struct SummarySharePopover: View {
         isGoogleDocsExportRunning = true
         Task { @MainActor in
             defer { isGoogleDocsExportRunning = false }
-            await driveStore.restoreSessionIfNeeded()
-            if !driveStore.isAuthorized {
-                await driveStore.signIn()
-            }
-            guard driveStore.isAuthorized else { return }
+            guard canExportToGoogleDocs else { return }
             if await viewModel.exportCurrentSummaryToGoogleDocs() {
                 dismiss()
             }
         }
+    }
+
+    private func openCloudStorageSettings() {
+        UserDefaults.standard.set(
+            SettingsCategory.cloudStorage.rawValue,
+            forKey: SettingsNavigation.selectedCategoryDefaultsKey
+        )
+        openSettings()
+        dismiss()
     }
 }
 

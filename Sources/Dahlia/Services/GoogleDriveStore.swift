@@ -16,6 +16,7 @@ final class GoogleDriveStore: ObservableObject {
     @Published private(set) var state: State
     @Published private(set) var account: GoogleCalendarAccount?
     @Published private(set) var lastErrorMessage: String?
+    @Published private(set) var exportFolderErrorMessage: String?
 
     var isConfigured: Bool {
         signInProvider.isConfigured
@@ -30,6 +31,7 @@ final class GoogleDriveStore: ObservableObject {
     }
 
     private let signInProvider: any GoogleSignInProviding
+    private let exportFolderConfiguration: any GoogleDriveExportFolderConfiguring
     private let presentingWindowProvider: @MainActor () -> NSWindow?
     private var currentSession: GoogleSession?
     private var didAttemptRestore = false
@@ -37,9 +39,11 @@ final class GoogleDriveStore: ObservableObject {
 
     init(
         signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(sessionKind: .drive),
+        exportFolderConfiguration: any GoogleDriveExportFolderConfiguring = GoogleDriveExportFolderConfigurationService.shared,
         presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow }
     ) {
         self.signInProvider = signInProvider
+        self.exportFolderConfiguration = exportFolderConfiguration
         self.presentingWindowProvider = presentingWindowProvider
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
@@ -74,6 +78,7 @@ final class GoogleDriveStore: ObservableObject {
         do {
             let session = try await signInProvider.restorePreviousSignIn()
             applySession(session)
+            await configureExportFolderIfNeeded(for: session)
         } catch GoogleSignInError.noPreviousSignIn {
             clearRuntimeState()
             recomputeState()
@@ -103,6 +108,7 @@ final class GoogleDriveStore: ObservableObject {
                 requestedScopes: GoogleOAuthScope.drive
             )
             applySession(session)
+            await configureExportFolderIfNeeded(for: session)
         } catch {
             handle(error)
             recomputeStateIfNeeded()
@@ -117,7 +123,34 @@ final class GoogleDriveStore: ObservableObject {
             handle(error)
         }
         clearRuntimeState()
+        exportFolderErrorMessage = nil
         recomputeState()
+    }
+
+    func configureExportFolder(named folderName: String) async throws {
+        let session = try await refreshedAuthorizedSession()
+        state = .loading
+        defer { recomputeState() }
+        do {
+            try await exportFolderConfiguration.configure(
+                folderName: folderName,
+                session: session
+            )
+            exportFolderErrorMessage = nil
+        } catch {
+            recordExportFolderError(error)
+            throw error
+        }
+    }
+
+    func refreshExportFolderConfiguration() async {
+        guard isAuthorized else { return }
+        do {
+            let session = try await refreshedAuthorizedSession()
+            await configureExportFolderIfNeeded(for: session)
+        } catch {
+            recordExportFolderError(error)
+        }
     }
 
     func performAuthorizedOperation<T: Sendable>(
@@ -150,6 +183,26 @@ final class GoogleDriveStore: ObservableObject {
         if account != nil { account = nil }
     }
 
+    private func configureExportFolderIfNeeded(for session: GoogleSession) async {
+        guard session.hasScopes(GoogleOAuthScope.drive) else { return }
+        state = .loading
+        defer { recomputeState() }
+        do {
+            try await exportFolderConfiguration.configureIfNeeded(session: session)
+            exportFolderErrorMessage = nil
+        } catch {
+            recordExportFolderError(error)
+        }
+    }
+
+    private func recordExportFolderError(_ error: Error) {
+        exportFolderErrorMessage = GoogleAuthErrorFormatter.message(
+            for: error,
+            defaultMessage: L10n.googleDriveUnexpectedResponse
+        )
+        ErrorReportingService.capture(error, context: ["source": "googleDriveExportFolder"])
+    }
+
     private func handle(_ error: Error) {
         lastErrorMessage = GoogleAuthErrorFormatter.message(for: error, defaultMessage: L10n.googleDriveUnexpectedResponse)
         state = .failed
@@ -178,6 +231,7 @@ final class GoogleDriveStore: ObservableObject {
 
     private func transitionToUnconfiguredState() {
         clearRuntimeState()
+        exportFolderErrorMessage = nil
         state = .unconfigured
     }
 
@@ -187,6 +241,7 @@ final class GoogleDriveStore: ObservableObject {
             await restoreSessionIfNeeded()
         } else {
             clearRuntimeState()
+            exportFolderErrorMessage = nil
             recomputeState()
         }
     }
