@@ -20,6 +20,8 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
+Databricks AI Gateway authentication uses OAuth U2M through the Databricks CLI. Install a current CLI release before signing in from Model Settings. Dahlia reads short-lived tokens on demand with `databricks auth token`; it does not store Databricks tokens itself.
+
 ## Build & Run
 
 ```bash

@@ -376,6 +376,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage("llmProvider") var llmProviderRawValue = ""
     @AppStorage("llmDatabricksWorkspaceID") var llmDatabricksWorkspaceID = ""
+    @AppStorage("llmDatabricksProfile") var llmDatabricksProfile = ""
     @AppStorage("llmModelName") var llmModelRawValue = LLMModel.defaultModel.rawValue
     @AppStorage("llmMaxTokens") private var storedLLMMaxTokens = AppSettings.defaultLLMMaxTokens
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
@@ -513,7 +514,14 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     /// LLM の接続設定が揃っているかどうか。
     var isLLMConfigComplete: Bool {
-        resolvedLLMEndpointURL.nilIfBlank != nil && llmAPIToken.nilIfBlank != nil
+        guard resolvedLLMEndpointURL.nilIfBlank != nil else { return false }
+
+        switch llmProvider {
+        case .openAI:
+            return llmAPIToken.nilIfBlank != nil
+        case .databricks:
+            return llmDatabricksProfile.nilIfBlank != nil
+        }
     }
 
     nonisolated static let openAIEndpointURL = "https://api.openai.com/v1/chat/completions"
