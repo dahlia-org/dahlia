@@ -38,6 +38,16 @@ import Foundation
             #expect(CalendarMeetingNotificationPlanner.notificationDate(for: allDayEvent, now: now) == nil)
             #expect(CalendarMeetingNotificationPlanner.notificationDate(for: startedEvent, now: now) == nil)
         }
+
+        @Test
+        func identifiesDeliveredNotificationsMissingFromTheCurrentSchedule() {
+            let staleIdentifiers = CalendarMeetingNotificationPlanner.staleDeliveredIdentifiers(
+                from: ["current", "canceled", "moved"],
+                scheduledIdentifiers: ["current", "rescheduled"]
+            )
+
+            #expect(staleIdentifiers == ["canceled", "moved"])
+        }
     }
 #endif
 

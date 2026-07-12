@@ -12,4 +12,11 @@ enum CalendarMeetingNotificationPlanner {
         let preferredDate = event.startDate.addingTimeInterval(-leadTime)
         return max(preferredDate, now.addingTimeInterval(minimumSchedulingDelay))
     }
+
+    static func staleDeliveredIdentifiers(
+        from deliveredIdentifiers: Set<String>,
+        scheduledIdentifiers: Set<String>
+    ) -> [String] {
+        deliveredIdentifiers.subtracting(scheduledIdentifiers).sorted()
+    }
 }

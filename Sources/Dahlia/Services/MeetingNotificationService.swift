@@ -145,6 +145,9 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
 
         let now = Date.now
         let schedule = calendarSchedule(for: events, now: now)
+        let scheduledIdentifiers = Set(
+            schedule.map { Self.calendarNotificationIdentifier(for: $0.event) }
+        )
 
         let pendingRequests = await notificationCenter.pendingNotificationRequests()
         guard !Task.isCancelled else { return }
@@ -162,6 +165,11 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
                 .map(\.request.identifier)
                 .filter(Self.isCalendarNotificationIdentifier)
         )
+        let staleDeliveredIdentifiers = CalendarMeetingNotificationPlanner.staleDeliveredIdentifiers(
+            from: deliveredIdentifiers,
+            scheduledIdentifiers: scheduledIdentifiers
+        )
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: staleDeliveredIdentifiers)
 
         registerCategories()
 
