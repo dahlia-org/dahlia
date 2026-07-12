@@ -74,7 +74,6 @@ else
     codesign_path "${APP_BUNDLE}"
 fi
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
-"${SCRIPT_DIR}/upload-dsyms.sh" "${BUILD_DIR}" "${APP_NAME}"
 
 echo "=== Running ${APP_NAME} ==="
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"

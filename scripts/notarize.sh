@@ -5,17 +5,17 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 APP_BUNDLE="${PROJECT_DIR}/${APP_NAME}.app"
-ZIP_PATH="${PROJECT_DIR}/${APP_NAME}.zip"
-NOTARY_PROFILE="${NOTARY_PROFILE:-dahlia-notary}"
+STAGING_DIR=""
 
-require_command() {
-    local command_name="$1"
+source "${SCRIPT_DIR}/common.sh"
 
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-        echo "error: required command not found: ${command_name}" >&2
-        exit 1
+cleanup() {
+    if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
+        rm -rf "$STAGING_DIR"
     fi
 }
+
+trap cleanup EXIT
 
 check_notary_profile() {
     if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
@@ -34,10 +34,16 @@ EOF
 
 cd "$PROJECT_DIR"
 
-require_command xcrun
-require_command codesign
-require_command ditto
-require_command spctl
+if [ -f .env.local ]; then
+    set -a
+    source .env.local
+    set +a
+fi
+
+NOTARY_PROFILE="${NOTARY_PROFILE:-dahlia-notary}"
+SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
+
+require_commands xcrun codesign ditto hdiutil spctl
 
 check_notary_profile
 
@@ -47,22 +53,43 @@ echo "=== Building signed app ==="
 echo "=== Verifying signature ==="
 codesign -dvvv --entitlements - --xml "$APP_BUNDLE"
 
-echo "=== Creating notarization archive ==="
-rm -f "$ZIP_PATH"
-ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+MARKETING_VERSION="$(read_marketing_version "${APP_BUNDLE}/Contents/Info.plist")"
+DMG_PATH="${DMG_PATH:-${PROJECT_DIR}/${APP_NAME}-${MARKETING_VERSION}.dmg}"
+if [[ "$DMG_PATH" != *.dmg ]]; then
+    echo "error: DMG_PATH must end in .dmg: ${DMG_PATH}" >&2
+    exit 1
+fi
+
+echo "=== Creating signed DMG: $(basename "$DMG_PATH") ==="
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-dmg.XXXXXX")"
+ditto "$APP_BUNDLE" "${STAGING_DIR}/${APP_NAME}.app"
+ln -s /Applications "${STAGING_DIR}/Applications"
+hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$STAGING_DIR" \
+    -ov \
+    -format UDZO \
+    "$DMG_PATH"
+codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
 
 echo "=== Submitting for notarization ==="
-xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
 
 echo "=== Stapling notarization ticket ==="
-xcrun stapler staple "$APP_BUNDLE"
-xcrun stapler validate "$APP_BUNDLE"
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
 
-echo "=== Verifying Gatekeeper assessment ==="
-spctl -a -vvv -t exec "$APP_BUNDLE"
+echo "=== Verifying notarized DMG ==="
+hdiutil verify "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
+spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH"
 
-echo "=== Repacking stapled app ==="
-rm -f "$ZIP_PATH"
-ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+if [ -n "${SENTRY_DSN:-}" ]; then
+    echo "=== Uploading release dSYM to Sentry ==="
+    "${SCRIPT_DIR}/upload-dsyms.sh" "${PROJECT_DIR}/.build/release" "$APP_NAME"
+else
+    echo "=== Skipping Sentry dSYM upload: SENTRY_DSN is not configured ==="
+fi
 
-echo "=== Notarization complete: ${ZIP_PATH} ==="
+echo "=== Notarization complete: ${DMG_PATH} ==="

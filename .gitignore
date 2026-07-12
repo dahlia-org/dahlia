@@ -2,6 +2,7 @@
 .swiftpm/
 *.app
 Dahlia.zip
+Dahlia-*.dmg
 DerivedData/
 .DS_Store
 .env.local

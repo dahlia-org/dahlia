@@ -10,3 +10,8 @@ name = "run-dev"
 icon = "run"
 command = "./scripts/run-dev.sh"
 platform = "darwin"
+
+[[actions]]
+name = "Lint"
+icon = "tool"
+command = "./scripts/lint.sh"

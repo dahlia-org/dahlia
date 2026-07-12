@@ -34,5 +34,29 @@ struct ErrorReportingServiceTests {
 
         #expect(dsn == nil)
     }
+
+    @Test
+    func resolveReleaseMetadataUsesBundleVersions() {
+        let metadata = ErrorReportingService.resolveReleaseMetadata(infoDictionary: [
+            "CFBundleIdentifier": "com.dahlia.app",
+            "CFBundleShortVersionString": "0.3.1",
+            "CFBundleVersion": "12",
+        ])
+
+        #expect(metadata == ErrorReportingService.ReleaseMetadata(
+            name: "com.dahlia.app@0.3.1+12",
+            distribution: "12"
+        ))
+    }
+
+    @Test
+    func resolveReleaseMetadataRequiresEveryBundleValue() {
+        let metadata = ErrorReportingService.resolveReleaseMetadata(infoDictionary: [
+            "CFBundleIdentifier": "com.dahlia.app",
+            "CFBundleShortVersionString": "0.3.1",
+        ])
+
+        #expect(metadata == nil)
+    }
 }
 #endif
