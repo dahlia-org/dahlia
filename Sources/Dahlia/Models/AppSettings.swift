@@ -127,6 +127,17 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         return googleDriveExportFolderID.nilIfBlank
     }
 
+    func googleDriveExportFolderURL(forAccountID accountID: String) -> URL? {
+        guard let folderID = googleDriveExportFolderID(forAccountID: accountID) else { return nil }
+        return Self.googleDriveExportFolderURL(folderID: folderID)
+    }
+
+    nonisolated static func googleDriveExportFolderURL(folderID: String) -> URL? {
+        guard !folderID.isEmpty,
+              let baseURL = URL(string: "https://drive.google.com/drive/folders") else { return nil }
+        return baseURL.appending(path: folderID)
+    }
+
     func setGoogleDriveExportFolder(
         name: String,
         id: String,

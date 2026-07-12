@@ -414,8 +414,10 @@
 "Export Destination" = "Export Destination";
 "Export Folder" = "Export Folder";
 "Folder name" = "Folder name";
+"Change Folder" = "Change Folder";
+"Open in Google Drive" = "Open in Google Drive";
 "My Drive" = "My Drive";
-"Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used." = "Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used.";
+"Dahlia creates this folder directly under My Drive and exports Google Docs into it. Change the name to switch the destination. If left blank, Meeting Notes is used." = "Dahlia creates this folder directly under My Drive and exports Google Docs into it. Change the name to switch the destination. If left blank, Meeting Notes is used.";
 "The Google Drive export folder has not been configured." = "The Google Drive export folder has not been configured.";
 "Could not configure the Google Drive export folder." = "Could not configure the Google Drive export folder.";
 "Open Cloud Storage Settings" = "Open Cloud Storage Settings";

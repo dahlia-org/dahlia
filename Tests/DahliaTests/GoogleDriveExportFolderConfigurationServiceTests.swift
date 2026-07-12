@@ -21,6 +21,14 @@ import Foundation
         }
 
         @Test
+        func exportFolderURLUsesGoogleDriveFolderID() {
+            let url = AppSettings.googleDriveExportFolderURL(folderID: "folder-1_abc")
+
+            #expect(url?.absoluteString == "https://drive.google.com/drive/folders/folder-1_abc")
+            #expect(AppSettings.googleDriveExportFolderURL(folderID: "") == nil)
+        }
+
+        @Test
         func existingAvailableFolderIDSkipsFolderLookup() async throws {
             let apiClient = FolderConfigurationAPIClient(folderID: "unused-folder")
             let settings = FolderConfigurationSettings()

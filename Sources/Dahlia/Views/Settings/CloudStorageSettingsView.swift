@@ -33,12 +33,18 @@ struct CloudStorageSettingsView: View {
                         TextField(L10n.googleDriveExportFolderName, text: $exportFolderName)
                             .multilineTextAlignment(.trailing)
                             .disabled(!canConfigureExportFolder)
-                        Button(L10n.apply, action: configureExportFolder)
+                        Button(L10n.googleDriveChangeExportFolder, action: configureExportFolder)
                             .disabled(!canConfigureExportFolder)
                     }
                 } label: {
                     Text(L10n.googleDriveExportFolder)
                     Text(L10n.myDrive)
+                }
+
+                if let exportFolderURL {
+                    Link(destination: exportFolderURL) {
+                        Label(L10n.openInGoogleDrive, systemImage: "arrow.up.right.square")
+                    }
                 }
 
                 if let exportFolderStatusMessage {
@@ -131,6 +137,11 @@ struct CloudStorageSettingsView: View {
 
     private var canConfigureExportFolder: Bool {
         driveStore.isAuthorized && !driveStore.isBusy
+    }
+
+    private var exportFolderURL: URL? {
+        guard let accountID = driveStore.account?.id else { return nil }
+        return settings.googleDriveExportFolderURL(forAccountID: accountID)
     }
 
     private func configureExportFolder() {

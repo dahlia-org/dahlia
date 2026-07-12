@@ -414,8 +414,10 @@
 "Export Destination" = "書き出し先";
 "Export Folder" = "書き出しフォルダ";
 "Folder name" = "フォルダ名";
+"Change Folder" = "フォルダを変更";
+"Open in Google Drive" = "Google Drive で開く";
 "My Drive" = "マイドライブ";
-"Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used." = "マイドライブ直下にこのフォルダを作成し、Google Docs を書き出します。空欄の場合は Meeting Notes を使用します。";
+"Dahlia creates this folder directly under My Drive and exports Google Docs into it. Change the name to switch the destination. If left blank, Meeting Notes is used." = "マイドライブ直下にこのフォルダを作成し、Google Docs を書き出します。フォルダ名を変更すると書き出し先を切り替えます。空欄の場合は Meeting Notes を使用します。";
 "The Google Drive export folder has not been configured." = "Google Drive の書き出しフォルダが設定されていません。";
 "Could not configure the Google Drive export folder." = "Google Drive の書き出しフォルダを設定できませんでした。";
 "Open Cloud Storage Settings" = "Cloud Storage 設定を開く";

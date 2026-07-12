@@ -464,9 +464,11 @@ enum L10n {
     static var googleDriveExportDestination: String { String(localized: "Export Destination", bundle: bundle) }
     static var googleDriveExportFolder: String { String(localized: "Export Folder", bundle: bundle) }
     static var googleDriveExportFolderName: String { String(localized: "Folder name", bundle: bundle) }
+    static var googleDriveChangeExportFolder: String { String(localized: "Change Folder", bundle: bundle) }
+    static var openInGoogleDrive: String { String(localized: "Open in Google Drive", bundle: bundle) }
     static var myDrive: String { String(localized: "My Drive", bundle: bundle) }
     static var googleDriveExportDestinationDescription: String { String(
-        localized: "Dahlia creates this folder directly under My Drive and exports Google Docs into it. If left blank, Meeting Notes is used.",
+        localized: "Dahlia creates this folder directly under My Drive and exports Google Docs into it. Change the name to switch the destination. If left blank, Meeting Notes is used.",
         bundle: bundle
     ) }
     static var googleDriveExportFolderNotConfigured: String { String(
