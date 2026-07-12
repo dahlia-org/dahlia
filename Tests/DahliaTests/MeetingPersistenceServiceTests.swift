@@ -455,7 +455,7 @@ import GRDB
             #expect(linkedMeetingCount == 2)
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            #expect(try repository.fetchMeetingIdForCalendarEvent(event) == secondMeetingId)
+            #expect(try repository.fetchMeetingIdForCalendarEvent(event, vaultId: testVault.id) == secondMeetingId)
 
             #expect(throws: Error.self) {
                 try database.dbQueue.write { db in
@@ -500,7 +500,7 @@ import GRDB
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let resolvedMeetingId = try repository.fetchMeetingIdForCalendarEvent(event)
+            let resolvedMeetingId = try repository.fetchMeetingIdForCalendarEvent(event, vaultId: testVault.id)
 
             #expect(resolvedMeetingId == meetingId)
         }
@@ -729,7 +729,10 @@ import GRDB
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            XCTAssertEqual(try repository.fetchMeetingIdForCalendarEvent(event), secondMeetingId)
+            XCTAssertEqual(
+                try repository.fetchMeetingIdForCalendarEvent(event, vaultId: testVault.id),
+                secondMeetingId
+            )
             try repository.deleteMeeting(id: firstMeetingId)
 
             let calendarEventCount = try database.dbQueue.read { db in
@@ -763,7 +766,7 @@ import GRDB
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let resolvedMeetingId = try repository.fetchMeetingIdForCalendarEvent(event)
+            let resolvedMeetingId = try repository.fetchMeetingIdForCalendarEvent(event, vaultId: testVault.id)
 
             XCTAssertEqual(resolvedMeetingId, meetingId)
         }

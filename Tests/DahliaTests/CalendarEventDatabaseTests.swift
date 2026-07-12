@@ -110,6 +110,62 @@ import GRDB
         }
 
         @Test
+        func meetingLookupIsScopedToTheActiveVault() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let activeVault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/calendar-active-vault",
+                name: "Active Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let otherVault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/calendar-other-vault",
+                name: "Other Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let event = calendarEvent(recurrenceId: "")
+            let key = try #require(event.key)
+            let activeMeetingId = UUID.v7()
+            let otherMeetingId = UUID.v7()
+            let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
+
+            try database.dbQueue.write { db in
+                try activeVault.insert(db)
+                try otherVault.insert(db)
+                try CalendarEventRecord.upsert(event: event, now: createdAt, in: db)
+                try insertCalendarMeeting(
+                    id: activeMeetingId,
+                    named: "Active vault meeting",
+                    vaultId: activeVault.id,
+                    createdAt: createdAt,
+                    key: key,
+                    in: db
+                )
+                try insertCalendarMeeting(
+                    id: otherMeetingId,
+                    named: "Newer meeting in another vault",
+                    vaultId: otherVault.id,
+                    createdAt: createdAt.addingTimeInterval(60),
+                    key: key,
+                    in: db
+                )
+            }
+
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            #expect(
+                try repository.fetchMeetingIdForCalendarEvent(event, vaultId: activeVault.id)
+                    == activeMeetingId
+            )
+            #expect(
+                try repository.fetchMeetingIdForCalendarEvent(event, vaultId: otherVault.id)
+                    == otherMeetingId
+            )
+        }
+
+        @Test
         func migrationPreservesMeetingsAndDiscardsLegacyCalendarRows() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: UUID().uuidString)
@@ -184,6 +240,26 @@ import GRDB
                 calendarEventRecurrenceId: recurrenceId
             ).insert(db)
         }
+    }
+
+    private func insertCalendarMeeting(
+        id: UUID,
+        named name: String,
+        vaultId: UUID,
+        createdAt: Date,
+        key: CalendarEventKey,
+        in db: Database
+    ) throws {
+        try MeetingRecord(
+            id: id,
+            vaultId: vaultId,
+            projectId: nil,
+            name: name,
+            createdAt: createdAt,
+            updatedAt: createdAt,
+            calendarEventIcalUid: key.icalUid,
+            calendarEventRecurrenceId: key.recurrenceId
+        ).insert(db)
     }
 
     private func calendarEvent(recurrenceId: String, url: URL? = nil) -> CalendarEvent {

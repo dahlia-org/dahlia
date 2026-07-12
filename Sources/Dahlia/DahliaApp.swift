@@ -167,7 +167,7 @@ struct DahliaApp: App {
 
         if let event = meeting.calendarEvent {
             let repository = MeetingRepository(dbQueue: db.dbQueue)
-            if let existingMeetingId = try? repository.fetchMeetingIdForCalendarEvent(event) {
+            if let existingMeetingId = try? repository.fetchMeetingIdForCalendarEvent(event, vaultId: vault.id) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 if startTranscription {
                     startTranscriptionForMeeting(existingMeetingId, in: db, vault: vault)

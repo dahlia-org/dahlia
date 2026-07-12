@@ -254,11 +254,12 @@ final class MeetingRepository {
         }
     }
 
-    func fetchMeetingIdForCalendarEvent(_ event: CalendarEvent) throws -> UUID? {
+    func fetchMeetingIdForCalendarEvent(_ event: CalendarEvent, vaultId: UUID) throws -> UUID? {
         guard let key = event.key else { return nil }
         return try dbQueue.read { db in
             try MeetingRecord
                 .select(Column("id"))
+                .filter(Column("vaultId") == vaultId)
                 .filter(Column("calendar_event_ical_uid") == key.icalUid)
                 .filter(Column("calendar_event_recurrence_id") == key.recurrenceId)
                 .order(Column("createdAt").desc)

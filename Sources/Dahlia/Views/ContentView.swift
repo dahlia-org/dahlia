@@ -122,7 +122,7 @@ struct ContentView: View {
               let vault = sidebarViewModel.currentVault else { return }
 
         let repository = MeetingRepository(dbQueue: dbQueue)
-        if let existingMeetingId = try? repository.fetchMeetingIdForCalendarEvent(event),
+        if let existingMeetingId = try? repository.fetchMeetingIdForCalendarEvent(event, vaultId: vault.id),
            sidebarViewModel.allMeetings.contains(where: { $0.meetingId == existingMeetingId }) {
             sidebarViewModel.selectMeeting(existingMeetingId)
             return
