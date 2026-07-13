@@ -4,6 +4,8 @@ import SwiftUI
 /// 設定画面「文字起こし」タブ。認識言語の表示フィルタを管理する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
+    private var generateSummaryAfterBatchTranscription = false
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = false
     @State private var localeSearchText = ""
@@ -24,7 +26,7 @@ struct TranscriptionSettingsView: View {
                     }
                     .toggleStyle(.switch)
 
-                    Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
+                    Toggle(isOn: $generateSummaryAfterBatchTranscription) {
                         Text(L10n.generateSummaryAfterBatchTranscription)
                         Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
                     }

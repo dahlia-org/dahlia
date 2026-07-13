@@ -5,7 +5,8 @@ struct BatchTranscriptionConfirmationView: View {
     let onStart: (String, Bool) -> Void
     let onPostpone: () -> Void
 
-    @ObservedObject private var settings = AppSettings.shared
+    @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
+    private var generateSummaryAfterBatchTranscription = false
     @State private var selectedLocaleIdentifier: String
     @State private var deleteAudioAfterTranscription: Bool
 
@@ -49,7 +50,7 @@ struct BatchTranscriptionConfirmationView: View {
             }
             .toggleStyle(.checkbox)
 
-            Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
+            Toggle(isOn: $generateSummaryAfterBatchTranscription) {
                 VStack(alignment: .leading) {
                     Text(L10n.generateSummaryAfterBatchTranscription)
                     Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
