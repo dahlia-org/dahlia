@@ -26,10 +26,24 @@ import GRDB
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 101)
+            #expect(viewModel.microphoneCaptureDeviceID == nil)
 
             inputProvider.defaultDeviceID = 202
 
             #expect(viewModel.selectedMicrophoneID == 202)
+            #expect(viewModel.microphoneCaptureDeviceID == nil)
+        }
+
+        @Test
+        func explicitMicrophoneSelectionPinsCaptureDevice() {
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [MicrophoneDevice(id: 101, name: "USB Mic")] },
+                defaultInputDeviceIDProvider: { AudioDeviceID(202) }
+            )
+
+            viewModel.microphoneSelection = .device(101)
+
+            #expect(viewModel.microphoneCaptureDeviceID == 101)
         }
 
         @Test
@@ -687,7 +701,7 @@ import GRDB
             XCTAssertFalse(viewModel.hasDraftMeeting)
             XCTAssertEqual(viewModel.currentMeetingId, meetingId)
         }
-}
+    }
 #endif
 
 private func linkedCalendarEvent(meetingId: UUID, in db: Database) throws -> CalendarEventRecord? {

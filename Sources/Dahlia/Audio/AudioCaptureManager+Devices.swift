@@ -101,6 +101,6 @@ extension AudioCaptureManager {
             return nil
         }
 
-        return name.takeUnretainedValue() as String
+        return name.takeRetainedValue() as String
     }
 }

@@ -6,14 +6,6 @@ extension AudioCaptureManager {
         prefersVoiceProcessing ? [true, false] : [false]
     }
 
-    static func shouldConfigureInputDevice(
-        _ selectedDeviceID: AudioDeviceID,
-        defaultDeviceID: AudioDeviceID?,
-        enablesVoiceProcessing: Bool
-    ) -> Bool {
-        !enablesVoiceProcessing || selectedDeviceID != defaultDeviceID
-    }
-
     static func captureSourceFormat(
         hardwareFormat: AVAudioFormat,
         voiceProcessingFormat: AVAudioFormat?,
@@ -24,5 +16,10 @@ extension AudioCaptureManager {
         } else {
             hardwareFormat
         }
+    }
+
+    static func voiceProcessingFormatsMatch(_ inputFormat: AVAudioFormat, _ outputFormat: AVAudioFormat) -> Bool {
+        inputFormat.sampleRate == outputFormat.sampleRate
+            && inputFormat.channelCount == outputFormat.channelCount
     }
 }

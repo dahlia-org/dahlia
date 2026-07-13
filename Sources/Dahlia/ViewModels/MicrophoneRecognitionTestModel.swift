@@ -77,9 +77,9 @@ final class MicrophoneRecognitionTestModel {
             resetRunningState()
             return
         }
-        await session.stop()
         self.session = nil
         resetRunningState()
+        await session.stop()
         refreshMicrophoneModes()
     }
 
@@ -102,12 +102,17 @@ final class MicrophoneRecognitionTestModel {
             ) { [weak self] event in
                 self?.handle(event)
             }
+            guard self.session === session else {
+                await session.stop()
+                return
+            }
             self.startInfo = startInfo
             isRunning = true
             isPreparing = false
             refreshMicrophoneModes()
         } catch {
             await session.stop()
+            guard self.session === session else { return }
             self.session = nil
             errorMessage = error.localizedDescription
             resetRunningState()

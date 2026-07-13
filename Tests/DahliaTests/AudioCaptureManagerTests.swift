@@ -17,37 +17,6 @@ import CoreAudio
         }
 
         @Test
-        func defaultDeviceIsNotExplicitlyConfiguredForVoiceProcessing() {
-            let deviceID = AudioDeviceID(42)
-
-            #expect(!AudioCaptureManager.shouldConfigureInputDevice(
-                deviceID,
-                defaultDeviceID: deviceID,
-                enablesVoiceProcessing: true
-            ))
-        }
-
-        @Test
-        func defaultDeviceIsExplicitlyConfiguredForRawInput() {
-            let deviceID = AudioDeviceID(42)
-
-            #expect(AudioCaptureManager.shouldConfigureInputDevice(
-                deviceID,
-                defaultDeviceID: deviceID,
-                enablesVoiceProcessing: false
-            ))
-        }
-
-        @Test
-        func nondefaultDeviceIsExplicitlyConfiguredForVoiceProcessing() {
-            #expect(AudioCaptureManager.shouldConfigureInputDevice(
-                AudioDeviceID(42),
-                defaultDeviceID: AudioDeviceID(7),
-                enablesVoiceProcessing: true
-            ))
-        }
-
-        @Test
         func voiceProcessingUsesNegotiatedOutputFormat() throws {
             let hardwareFormat = try #require(AVAudioFormat(
                 standardFormatWithSampleRate: 48000,
@@ -85,6 +54,30 @@ import CoreAudio
             )
 
             #expect(result === hardwareFormat)
+        }
+
+        @Test
+        func voiceProcessingRequiresMatchingSampleRateAndChannelCount() throws {
+            let input = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 48000,
+                channels: 1
+            ))
+            let matching = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 48000,
+                channels: 1
+            ))
+            let differentRate = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 44100,
+                channels: 1
+            ))
+            let differentChannels = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 48000,
+                channels: 2
+            ))
+
+            #expect(AudioCaptureManager.voiceProcessingFormatsMatch(input, matching))
+            #expect(!AudioCaptureManager.voiceProcessingFormatsMatch(input, differentRate))
+            #expect(!AudioCaptureManager.voiceProcessingFormatsMatch(input, differentChannels))
         }
     }
 #endif

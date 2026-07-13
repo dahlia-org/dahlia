@@ -266,6 +266,11 @@ final class CaptionViewModel: ObservableObject {
         microphoneSelection.resolvedDeviceID(defaultDeviceID: defaultInputDeviceIDProvider())
     }
 
+    var microphoneCaptureDeviceID: AudioDeviceID? {
+        guard case let .device(deviceID) = microphoneSelection else { return nil }
+        return deviceID
+    }
+
     var systemDefaultMicrophoneTitle: String {
         guard let defaultDeviceID = defaultInputDeviceIDProvider(),
               let deviceName = availableMicrophones.first(where: { $0.id == defaultDeviceID })?.name else {
@@ -2446,7 +2451,7 @@ final class CaptionViewModel: ObservableObject {
         let effectivePlan = plan ?? activeTranscriptionPlan
         return RecordingSessionController.SourceConfiguration(
             source: source,
-            captureDeviceID: source == .microphone ? selectedMicrophoneID : nil,
+            captureDeviceID: source == .microphone ? microphoneCaptureDeviceID : nil,
             captureBufferSize: effectivePlan?.recordsBatchAudio == true ? 1024 : 4096
         )
     }

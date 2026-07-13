@@ -7,11 +7,17 @@ actor MicrophoneRecognitionTestSession {
     typealias EventHandler = @MainActor @Sendable (MicrophoneRecognitionTestEvent) -> Void
 
     private static let logger = Logger(subsystem: "com.dahlia", category: "MicrophoneRecognitionTest")
+    private static let registry = MicrophoneRecognitionTestRegistry()
 
     private var manager: AudioCaptureManager?
     private var service: SpeechTranscriberService?
     private var bridge: AudioBufferBridge?
     private var eventHandler: EventHandler?
+    private var startGeneration = 0
+
+    static func stopActiveSession() async {
+        await registry.stopActiveSession()
+    }
 
     func start(
         deviceID: AudioDeviceID?,
@@ -21,31 +27,46 @@ actor MicrophoneRecognitionTestSession {
         guard manager == nil else {
             throw AudioCaptureError.microphoneDeviceUnavailable
         }
-        guard await AudioCaptureManager.requestMicrophonePermission() else {
-            throw AudioCaptureError.microphonePermissionDenied
-        }
-
-        let (service, bridge, targetFormat) = try await prepareRecognition(locale: locale, onEvent: onEvent)
-        let manager = makeManager(targetFormat: targetFormat, bridge: bridge, onEvent: onEvent)
-        manager.onUnexpectedStop = { [weak self] in
-            Task {
-                await self?.captureStoppedUnexpectedly()
-            }
-        }
+        startGeneration &+= 1
+        let generation = startGeneration
+        await Self.registry.activate(self)
 
         do {
-            let startInfo = try manager.startCapture(
-                targetFormat: targetFormat,
-                selectedDeviceID: deviceID
-            )
-            self.manager = manager
-            self.service = service
-            self.bridge = bridge
-            eventHandler = onEvent
-            return startInfo
+            guard await AudioCaptureManager.requestMicrophonePermission() else {
+                throw AudioCaptureError.microphonePermissionDenied
+            }
+            try ensureCurrentStart(generation)
+
+            let (service, bridge, targetFormat) = try await prepareRecognition(locale: locale, onEvent: onEvent)
+            guard generation == startGeneration else {
+                bridge.finish()
+                await service.cancel()
+                throw CancellationError()
+            }
+            let manager = makeManager(targetFormat: targetFormat, bridge: bridge, onEvent: onEvent)
+            manager.onUnexpectedStop = { [weak self] _ in
+                Task {
+                    await self?.captureStoppedUnexpectedly()
+                }
+            }
+
+            do {
+                let startInfo = try manager.startCapture(
+                    targetFormat: targetFormat,
+                    selectedDeviceID: deviceID
+                )
+                self.manager = manager
+                self.service = service
+                self.bridge = bridge
+                eventHandler = onEvent
+                return startInfo
+            } catch {
+                bridge.finish()
+                await service.cancel()
+                throw error
+            }
         } catch {
-            bridge.finish()
-            await service.cancel()
+            await Self.registry.deactivate(self)
             throw error
         }
     }
@@ -127,6 +148,13 @@ actor MicrophoneRecognitionTestSession {
     }
 
     func stop() async {
+        startGeneration &+= 1
+        let manager = manager
+        let bridge = bridge
+        let service = service
+        let eventHandler = eventHandler
+        clear()
+
         manager?.stopCapture()
         bridge?.finish()
         do {
@@ -135,7 +163,7 @@ actor MicrophoneRecognitionTestSession {
             await eventHandler?(.failure(error.localizedDescription))
         }
         await service?.reset()
-        clear()
+        await Self.registry.deactivate(self)
     }
 
     private func captureStoppedUnexpectedly() async {
@@ -147,5 +175,32 @@ actor MicrophoneRecognitionTestSession {
         service = nil
         bridge = nil
         eventHandler = nil
+    }
+
+    private func ensureCurrentStart(_ generation: Int) throws {
+        guard generation == startGeneration else { throw CancellationError() }
+    }
+}
+
+private actor MicrophoneRecognitionTestRegistry {
+    private var activeSession: MicrophoneRecognitionTestSession?
+
+    func activate(_ session: MicrophoneRecognitionTestSession) async {
+        guard activeSession !== session else { return }
+        let previousSession = activeSession
+        activeSession = session
+        await previousSession?.stop()
+    }
+
+    func deactivate(_ session: MicrophoneRecognitionTestSession) {
+        if activeSession === session {
+            activeSession = nil
+        }
+    }
+
+    func stopActiveSession() async {
+        let session = activeSession
+        activeSession = nil
+        await session?.stop()
     }
 }
