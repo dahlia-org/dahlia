@@ -566,7 +566,6 @@
 
         func makeSession(
             for pipeline: AudioSourcePipeline,
-            onInterruption _: @escaping AudioCaptureInterruptionHandler,
             onUnexpectedStop _: @escaping AudioCaptureUnexpectedStopHandler
         ) -> any AudioCaptureSession {
             let deviceShouldFail = failingDeviceID.map { pipeline.captureDeviceID == $0 } ?? false

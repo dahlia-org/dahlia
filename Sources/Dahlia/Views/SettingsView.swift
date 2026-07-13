@@ -49,7 +49,6 @@ enum SettingsNavigation {
 
 /// 設定画面（Cmd+, で表示）。
 struct SettingsView: View {
-    @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
@@ -127,7 +126,7 @@ struct SettingsView: View {
                 systemImage: SettingsCategory.audioDiagnostics.systemImage,
                 value: SettingsCategory.audioDiagnostics
             ) {
-                AudioDiagnosticsSettingsView(captionViewModel: captionViewModel)
+                DebugSettingsView()
             }
         }
         .frame(minWidth: 680, minHeight: 500)

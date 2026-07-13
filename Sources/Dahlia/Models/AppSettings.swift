@@ -282,10 +282,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("microphoneMeetingNotificationsEnabled") var microphoneMeetingNotificationsEnabled = true
     @AppStorage("calendarEventMeetingNotificationsEnabled") var calendarEventMeetingNotificationsEnabled = false
 
-    // MARK: - 録音設定
-
-    @AppStorage("automaticallyStopRecordingWhenMicrophoneStops") var automaticallyStopRecordingWhenMicrophoneStops = false
-
     // MARK: - カレンダー設定
 
     @AppStorage("calendarSource") var calendarSourceRawValue = CalendarSource.google.rawValue

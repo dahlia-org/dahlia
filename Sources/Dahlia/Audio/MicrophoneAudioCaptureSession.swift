@@ -7,7 +7,6 @@ actor MicrophoneAudioCaptureSession: AudioCaptureSession {
 
     init(
         pipeline: AudioSourcePipeline,
-        onInterruption: @escaping AudioCaptureInterruptionHandler,
         onUnexpectedStop: @escaping AudioCaptureUnexpectedStopHandler
     ) {
         self.pipeline = pipeline
@@ -17,7 +16,6 @@ actor MicrophoneAudioCaptureSession: AudioCaptureSession {
             pipeline.router.route(pipeline.capture(buffer))
         }
         self.manager = manager
-        manager.onInterruption = onInterruption
         manager.onUnexpectedStop = { [weak self] error in
             Task {
                 await self?.captureStoppedUnexpectedly(error)

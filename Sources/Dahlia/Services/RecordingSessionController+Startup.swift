@@ -46,7 +46,6 @@ extension RecordingSessionController {
         )
         let capture = captureFactory.makeSession(
             for: pipeline,
-            onInterruption: captureInterruptionHandler(source: configuration.source, runtimeID: runtimeID, sessionId: snapshot.sessionId),
             onUnexpectedStop: captureFailureHandler(
                 source: configuration.source,
                 runtimeID: runtimeID,

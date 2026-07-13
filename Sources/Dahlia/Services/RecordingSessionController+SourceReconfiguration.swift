@@ -134,11 +134,6 @@ extension RecordingSessionController {
             runtimeID = newRuntimeID
             let newCapture = captureFactory.makeSession(
                 for: preparation.pipeline,
-                onInterruption: captureInterruptionHandler(
-                    source: preparation.source,
-                    runtimeID: newRuntimeID,
-                    sessionId: snapshot.sessionId
-                ),
                 onUnexpectedStop: captureFailureHandler(
                     source: preparation.source,
                     runtimeID: newRuntimeID,
@@ -321,11 +316,6 @@ extension RecordingSessionController {
             runtimeID = replacementRuntimeID
             let replacementCapture = captureFactory.makeSession(
                 for: preparation.pipeline,
-                onInterruption: captureInterruptionHandler(
-                    source: preparation.source,
-                    runtimeID: replacementRuntimeID,
-                    sessionId: snapshot.sessionId
-                ),
                 onUnexpectedStop: captureFailureHandler(
                     source: preparation.source,
                     runtimeID: replacementRuntimeID,

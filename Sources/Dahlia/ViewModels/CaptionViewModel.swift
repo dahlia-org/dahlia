@@ -8,6 +8,8 @@ import os
 import Speech
 import SwiftUI
 
+private let captionViewModelLogger = Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
+
 private enum ScreenshotError: LocalizedError {
     case encodingFailed
     case displayUnavailable
@@ -797,8 +799,7 @@ final class CaptionViewModel: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
-                    .error("Failed to load meeting \(meetingId): \(error)")
+                captionViewModelLogger.error("Failed to load meeting \(meetingId): \(error)")
                 ErrorReportingService.capture(error, context: ["source": "loadMeeting"])
                 return
             }
@@ -1364,11 +1365,6 @@ final class CaptionViewModel: ObservableObject {
             )
         ) { [weak self] event in
             self?.handleTranscriptionEvent(event)
-        } onCaptureInterruption: { [weak self] source in
-            self?.handleControllerCaptureInterruption(
-                source: source,
-                recordingSessionId: request.sessionId
-            )
         } onRuntimeFailure: { [weak self] source, message, isFatal in
             self?.handleControllerRuntimeFailure(
                 source: source,
@@ -2384,8 +2380,7 @@ final class CaptionViewModel: ObservableObject {
             }
             lastSavedNoteText = text
         } catch {
-            Logger(subsystem: "com.dahlia", category: "CaptionViewModel")
-                .error("Failed to save note: \(error)")
+            captionViewModelLogger.error("Failed to save note: \(error)")
         }
     }
 
@@ -2502,13 +2497,8 @@ final class CaptionViewModel: ObservableObject {
     ) {
         guard activeRecordingSessionId == recordingSessionId else { return }
         errorMessage = message
-        let shouldStopRecording = Self.shouldStopRecording(
-            afterFailureFrom: source,
-            isFatal: isFatal,
-            autoStopOnMicrophoneFailure: AppSettings.shared.automaticallyStopRecordingWhenMicrophoneStops
-        )
         if case .starting = recordingLifecycle {
-            if shouldStopRecording {
+            if isFatal {
                 pendingRealtimeRecognitionFailure = (source, message)
             } else {
                 pendingLiveSubtitleWarning = message
@@ -2523,46 +2513,10 @@ final class CaptionViewModel: ObservableObject {
                snapshot.sessionId == recordingSessionId {
                 self.activeControllerSources = snapshot.enabledSources
             }
-            if shouldStopRecording {
+            if isFatal {
                 self.stopListening()
             }
         }
-    }
-
-    private func handleControllerCaptureInterruption(
-        source: RecordingAudioSource,
-        recordingSessionId: UUID
-    ) {
-        guard activeRecordingSessionId == recordingSessionId else { return }
-        let shouldStop = Self.shouldStopRecording(
-            afterInterruptionFrom: source,
-            autoStopOnMicrophoneInterruption: AppSettings.shared.automaticallyStopRecordingWhenMicrophoneStops
-        )
-        guard shouldStop else { return }
-
-        switch recordingLifecycle {
-        case .recording:
-            stopListening()
-        case .starting:
-            pendingRealtimeRecognitionFailure = (source, L10n.microphoneCaptureStopped)
-        case .stopping, .idle:
-            break
-        }
-    }
-
-    nonisolated static func shouldStopRecording(
-        afterInterruptionFrom source: RecordingAudioSource,
-        autoStopOnMicrophoneInterruption: Bool
-    ) -> Bool {
-        source == .microphone && autoStopOnMicrophoneInterruption
-    }
-
-    nonisolated static func shouldStopRecording(
-        afterFailureFrom source: RecordingAudioSource?,
-        isFatal: Bool,
-        autoStopOnMicrophoneFailure: Bool
-    ) -> Bool {
-        isFatal || (source == .microphone && autoStopOnMicrophoneFailure)
     }
 
     private func handleLiveSubtitleSettingChange(isEnabled: Bool) {

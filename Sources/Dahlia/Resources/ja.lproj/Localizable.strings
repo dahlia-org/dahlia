@@ -394,9 +394,7 @@
 "Speech recognition is not ready" = "音声認識が準備されていません";
 "System audio capture stopped" = "システム音声キャプチャが停止しました";
 "Microphone capture stopped" = "マイクのキャプチャが停止しました";
-"Automatically Stop Recording" = "録音を自動停止";
 "Recording" = "録音";
-"Stop and save the recording when Dahlia's microphone capture stops unexpectedly." = "Dahlia のマイクキャプチャが予期せず停止したときに、録音を停止して保存します。";
 
 /* Sidebar Footer */
 "Switch Vault" = "保管庫を切り替え";
@@ -486,6 +484,16 @@
 "Debug" = "デバッグ";
 "Microphone & Speech Recognition Test" = "マイク・音声認識テスト";
 "Test microphone input and speech recognition without creating a recording." = "録音データを作成せずに、マイク入力と音声認識を確認します。";
+"Open Test…" = "テストを開く…";
+"Application Logs" = "アプリケーションログ";
+"Open Logs…" = "ログを開く…";
+"View Dahlia logs from the current app session. Private values remain redacted." = "現在のアプリセッションに記録された Dahlia のログを表示します。非公開の値はマスクされたままです。";
+"Logs Unavailable" = "ログを取得できません";
+"No Logs" = "ログがありません";
+"Use Dahlia, then refresh to load new log entries." = "Dahlia を操作してから再読み込みすると、新しいログを確認できます。";
+"Search logs…" = "ログを検索…";
+"Refresh Logs" = "ログを再読み込み";
+"Copy Displayed Logs" = "表示中のログをコピー";
 "System Microphone Mode" = "システムのマイクモード";
 "Selected Mode" = "選択中のモード";
 "Active Mode" = "動作中のモード";

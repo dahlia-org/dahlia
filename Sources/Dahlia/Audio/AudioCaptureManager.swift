@@ -63,7 +63,6 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     private struct HandlerState {
         var audioBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
         var inputLevels: (@Sendable ([Double]) -> Void)?
-        var interruption: AudioCaptureInterruptionHandler?
         var unexpectedStop: (@Sendable (AudioCaptureError?) -> Void)?
     }
 
@@ -85,11 +84,6 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     var onInputLevels: (@Sendable ([Double]) -> Void)? {
         get { handlerState.withLock { $0.inputLevels } }
         set { handlerState.withLock { $0.inputLevels = newValue } }
-    }
-
-    var onInterruption: AudioCaptureInterruptionHandler? {
-        get { handlerState.withLock { $0.interruption } }
-        set { handlerState.withLock { $0.interruption = newValue } }
     }
 
     var onUnexpectedStop: (@Sendable (AudioCaptureError?) -> Void)? {
@@ -324,22 +318,28 @@ extension AudioCaptureManager {
     }
 
     @objc private func engineConfigurationDidChange() {
+        Self.logger.notice("Received microphone engine configuration change notification")
         lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
             self?.recoverFromConfigurationChangeIfNeeded()
         }
     }
 
     private func recoverFromConfigurationChangeIfNeeded() {
+        let lifecycleDescription = String(describing: lifecycleState)
+        let engineIsRunning = engine.isRunning
+        let hasActiveRequest = activeRequest != nil
+        Self.logger.notice(
+            "Evaluating microphone configuration change; lifecycle=\(lifecycleDescription, privacy: .public), engineRunning=\(engineIsRunning), activeRequest=\(hasActiveRequest)"
+        )
         guard lifecycleState == .running,
-              !engine.isRunning,
-              let request = activeRequest else { return }
+              !engineIsRunning,
+              let request = activeRequest else {
+            Self.logger.notice("Microphone configuration change did not interrupt active capture")
+            return
+        }
         lifecycleState = .restarting
         activeRequest = nil
-        if let onInterruption {
-            Task {
-                await onInterruption()
-            }
-        }
+        Self.logger.notice("Microphone capture interruption detected; restarting capture")
         restartCaptureAfterConfigurationChange(request)
     }
 

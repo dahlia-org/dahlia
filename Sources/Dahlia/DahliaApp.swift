@@ -5,6 +5,8 @@ enum WindowID {
     static let main = "main"
     static let vaultManager = "vault-manager"
     static let projectManager = "project-manager"
+    static let audioRecognitionTest = "audio-recognition-test"
+    static let applicationLogs = "application-logs"
 }
 
 private enum MainWindowMetrics {
@@ -92,9 +94,22 @@ struct DahliaApp: App {
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
 
+        Window(L10n.audioRecognitionTest, id: WindowID.audioRecognitionTest) {
+            MicrophoneRecognitionTestView(captionViewModel: viewModel)
+        }
+        .defaultSize(width: 720, height: 700)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+
+        Window(L10n.applicationLogs, id: WindowID.applicationLogs) {
+            ApplicationLogView()
+        }
+        .defaultSize(width: 900, height: 600)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+
         Settings {
             SettingsView(
-                captionViewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 onSelectVault: { vault in openVault(vault) }
             )

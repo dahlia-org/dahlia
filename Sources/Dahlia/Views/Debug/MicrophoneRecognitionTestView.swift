@@ -1,7 +1,7 @@
 import CoreAudio
 import SwiftUI
 
-struct AudioDiagnosticsSettingsView: View {
+struct MicrophoneRecognitionTestView: View {
     @ObservedObject var captionViewModel: CaptionViewModel
     @State private var model = MicrophoneRecognitionTestModel()
 
@@ -114,9 +114,7 @@ struct AudioDiagnosticsSettingsView: View {
             model.refreshDevices()
             await model.monitorMicrophoneModes()
         }
-        .onDisappear {
-            stopTest()
-        }
+        .onDisappear(perform: stopTest)
         .onChange(of: captionViewModel.isListening) { _, isListening in
             if isListening {
                 stopTest()

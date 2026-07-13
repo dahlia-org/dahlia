@@ -793,6 +793,22 @@ enum L10n {
         localized: "Test microphone input and speech recognition without creating a recording.",
         bundle: bundle
     ) }
+    static var openAudioRecognitionTest: String { String(localized: "Open Test…", bundle: bundle) }
+    static var applicationLogs: String { String(localized: "Application Logs", bundle: bundle) }
+    static var openApplicationLogs: String { String(localized: "Open Logs…", bundle: bundle) }
+    static var applicationLogsDescription: String { String(
+        localized: "View Dahlia logs from the current app session. Private values remain redacted.",
+        bundle: bundle
+    ) }
+    static var applicationLogsUnavailable: String { String(localized: "Logs Unavailable", bundle: bundle) }
+    static var noApplicationLogs: String { String(localized: "No Logs", bundle: bundle) }
+    static var noApplicationLogsDescription: String { String(
+        localized: "Use Dahlia, then refresh to load new log entries.",
+        bundle: bundle
+    ) }
+    static var searchApplicationLogs: String { String(localized: "Search logs…", bundle: bundle) }
+    static var refreshApplicationLogs: String { String(localized: "Refresh Logs", bundle: bundle) }
+    static var copyDisplayedLogs: String { String(localized: "Copy Displayed Logs", bundle: bundle) }
     static var systemMicrophoneMode: String { String(localized: "System Microphone Mode", bundle: bundle) }
     static var preferredMicrophoneMode: String { String(localized: "Selected Mode", bundle: bundle) }
     static var activeMicrophoneMode: String { String(localized: "Active Mode", bundle: bundle) }
@@ -856,12 +872,7 @@ enum L10n {
     static var speechRecognitionNotReady: String { String(localized: "Speech recognition is not ready", bundle: bundle) }
     static var systemAudioCaptureStopped: String { String(localized: "System audio capture stopped", bundle: bundle) }
     static var microphoneCaptureStopped: String { String(localized: "Microphone capture stopped", bundle: bundle) }
-    static var automaticallyStopRecording: String { String(localized: "Automatically Stop Recording", bundle: bundle) }
     static var recording: String { String(localized: "Recording", bundle: bundle) }
-    static var automaticallyStopRecordingDescription: String { String(
-        localized: "Stop and save the recording when Dahlia's microphone capture stops unexpectedly.",
-        bundle: bundle
-    ) }
 
     // MARK: - Sidebar Footer
 

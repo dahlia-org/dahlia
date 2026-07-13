@@ -394,9 +394,7 @@
 "Speech recognition is not ready" = "Speech recognition is not ready";
 "System audio capture stopped" = "System audio capture stopped";
 "Microphone capture stopped" = "Microphone capture stopped";
-"Automatically Stop Recording" = "Automatically Stop Recording";
 "Recording" = "Recording";
-"Stop and save the recording when Dahlia's microphone capture stops unexpectedly." = "Stop and save the recording when Dahlia's microphone capture stops unexpectedly.";
 
 /* Sidebar Footer */
 "Switch Vault" = "Switch Vault";
@@ -486,6 +484,16 @@
 "Debug" = "Debug";
 "Microphone & Speech Recognition Test" = "Microphone & Speech Recognition Test";
 "Test microphone input and speech recognition without creating a recording." = "Test microphone input and speech recognition without creating a recording.";
+"Open Test…" = "Open Test…";
+"Application Logs" = "Application Logs";
+"Open Logs…" = "Open Logs…";
+"View Dahlia logs from the current app session. Private values remain redacted." = "View Dahlia logs from the current app session. Private values remain redacted.";
+"Logs Unavailable" = "Logs Unavailable";
+"No Logs" = "No Logs";
+"Use Dahlia, then refresh to load new log entries." = "Use Dahlia, then refresh to load new log entries.";
+"Search logs…" = "Search logs…";
+"Refresh Logs" = "Refresh Logs";
+"Copy Displayed Logs" = "Copy Displayed Logs";
 "System Microphone Mode" = "System Microphone Mode";
 "Selected Mode" = "Selected Mode";
 "Active Mode" = "Active Mode";
