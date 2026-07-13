@@ -185,7 +185,6 @@ private extension DatabricksCLIClient.CommandOutput {
         guard let message = String(data: messageData, encoding: .utf8)?.lowercased() else { return false }
 
         return [
-            "databricks auth login",
             "invalid_grant",
             "not logged in",
             "oauth session expired",
@@ -194,7 +193,6 @@ private extension DatabricksCLIClient.CommandOutput {
             "refresh token has been revoked",
             "token not found in cache",
             "no token found",
-            "reauthenticate",
         ].contains { message.contains($0) }
     }
 }

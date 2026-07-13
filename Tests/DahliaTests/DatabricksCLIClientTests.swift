@@ -98,13 +98,15 @@ import Foundation
         }
 
         @Test
-        func accessTokenDoesNotOpenLoginForUnrelatedCommandFailure() async {
+        func accessTokenDoesNotOpenLoginForNetworkFailureWithLoginSuggestion() async {
             let recorder = CommandRecorder()
             let client = DatabricksCLIClient { arguments in
                 await recorder.record(arguments)
                 return .init(
                     standardOutput: Data(),
-                    standardError: Data("dial tcp: network is unreachable".utf8),
+                    standardError: Data(
+                        "dial tcp: network is unreachable\nTry logging in again with: databricks auth login --profile WORK".utf8
+                    ),
                     terminationStatus: 1
                 )
             }
