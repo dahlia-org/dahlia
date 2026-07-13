@@ -91,6 +91,10 @@ import GRDB
 
         @Test
         func discardingFailedBatchCancelsPendingSummaryGeneration() async throws {
+            let previouslyGeneratesSummary = AppSettings.shared.generateSummaryAfterBatchTranscription
+            AppSettings.shared.generateSummaryAfterBatchTranscription = true
+            defer { AppSettings.shared.generateSummaryAfterBatchTranscription = previouslyGeneratesSummary }
+
             let batch = try BatchAudioTestFixture(
                 name: "discard-cancels-summary",
                 meetingStatus: .ready,
@@ -142,13 +146,11 @@ import GRDB
                 sessionId: batch.session.id,
                 meetingId: batch.meeting.id,
                 suggestedLocaleIdentifier: "ja_JP",
-                retainAudioAfterBatch: false,
-                generateSummaryAfterTranscription: true
+                retainAudioAfterBatch: false
             )
             viewModel.confirmBatchTranscription(
                 localeIdentifier: "ja_JP",
-                retainAudioAfterBatch: false,
-                generateSummaryAfterTranscription: true
+                retainAudioAfterBatch: false
             )
             #expect(await waitUntil {
                 if case .failed = viewModel.batchTranscriptionState {
