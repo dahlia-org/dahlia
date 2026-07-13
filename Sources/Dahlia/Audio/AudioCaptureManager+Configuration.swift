@@ -18,8 +18,20 @@ extension AudioCaptureManager {
         }
     }
 
-    static func voiceProcessingFormatsMatch(_ inputFormat: AVAudioFormat, _ outputFormat: AVAudioFormat) -> Bool {
-        inputFormat.sampleRate == outputFormat.sampleRate
-            && inputFormat.channelCount == outputFormat.channelCount
+    static func voiceProcessingHardwareFormatsAreCompatible(
+        _ inputFormat: AVAudioFormat,
+        _ outputHardwareFormat: AVAudioFormat
+    ) -> Bool {
+        inputFormat.sampleRate == outputHardwareFormat.sampleRate
+            && inputFormat.channelCount > 0
+            && outputHardwareFormat.channelCount > 0
+    }
+
+    static func voiceProcessingOutputClientFormat(
+        inputFormat: AVAudioFormat,
+        outputHardwareFormat: AVAudioFormat
+    ) -> AVAudioFormat? {
+        guard voiceProcessingHardwareFormatsAreCompatible(inputFormat, outputHardwareFormat) else { return nil }
+        return inputFormat
     }
 }

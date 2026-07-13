@@ -53,7 +53,8 @@ actor MicrophoneRecognitionTestSession {
             do {
                 let startInfo = try manager.startCapture(
                     targetFormat: targetFormat,
-                    selectedDeviceID: deviceID
+                    selectedDeviceID: deviceID,
+                    context: .audioTest
                 )
                 self.manager = manager
                 self.service = service

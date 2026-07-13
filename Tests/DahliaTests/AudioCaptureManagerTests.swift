@@ -16,6 +16,7 @@ import CoreAudio
             let inputNode = FakeVoiceProcessingInput()
 
             try AudioCaptureManager.enableVoiceProcessing(inputNode: inputNode)
+            AudioCaptureManager.configureVoiceProcessingDucking(inputNode: inputNode)
 
             #expect(inputNode.enableRequests == [true])
             #expect(inputNode.duckingConfigurationSetCount == 1)
@@ -69,7 +70,7 @@ import CoreAudio
         }
 
         @Test
-        func voiceProcessingRequiresMatchingSampleRateAndChannelCount() throws {
+        func voiceProcessingAllowsDifferentHardwareChannelCountAtMatchingSampleRate() throws {
             let input = try #require(AVAudioFormat(
                 standardFormatWithSampleRate: 48000,
                 channels: 1
@@ -87,9 +88,28 @@ import CoreAudio
                 channels: 2
             ))
 
-            #expect(AudioCaptureManager.voiceProcessingFormatsMatch(input, matching))
-            #expect(!AudioCaptureManager.voiceProcessingFormatsMatch(input, differentRate))
-            #expect(!AudioCaptureManager.voiceProcessingFormatsMatch(input, differentChannels))
+            #expect(AudioCaptureManager.voiceProcessingHardwareFormatsAreCompatible(input, matching))
+            #expect(!AudioCaptureManager.voiceProcessingHardwareFormatsAreCompatible(input, differentRate))
+            #expect(AudioCaptureManager.voiceProcessingHardwareFormatsAreCompatible(input, differentChannels))
+        }
+
+        @Test
+        func voiceProcessingUsesProcessedInputAsOutputClientFormat() throws {
+            let input = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 48000,
+                channels: 1
+            ))
+            let stereoOutputHardware = try #require(AVAudioFormat(
+                standardFormatWithSampleRate: 48000,
+                channels: 2
+            ))
+
+            let outputClientFormat = try #require(AudioCaptureManager.voiceProcessingOutputClientFormat(
+                inputFormat: input,
+                outputHardwareFormat: stereoOutputHardware
+            ))
+
+            #expect(outputClientFormat === input)
         }
     }
 #endif

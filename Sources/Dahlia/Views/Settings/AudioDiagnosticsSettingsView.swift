@@ -51,6 +51,22 @@ struct AudioDiagnosticsSettingsView: View {
                 Text(L10n.systemMicrophoneModeDescription)
             }
 
+            if !model.captureDiagnostics.isEmpty {
+                Section {
+                    ForEach(model.captureDiagnostics) { snapshot in
+                        MicrophoneCaptureDiagnosticRowView(
+                            title: model.captureDiagnosticTitle(snapshot),
+                            timestamp: model.captureDiagnosticTimestamp(snapshot),
+                            details: model.captureDiagnosticDetails(snapshot)
+                        )
+                    }
+                } header: {
+                    Text(L10n.microphoneCaptureLog)
+                } footer: {
+                    Text(L10n.microphoneCaptureLogDescription)
+                }
+            }
+
             Section(L10n.audioRecognitionTestStatus) {
                 LabeledContent(L10n.status, value: model.statusText)
 

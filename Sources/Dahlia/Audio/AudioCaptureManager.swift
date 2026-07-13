@@ -36,6 +36,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         let selectedDeviceID: AudioDeviceID?
         let bufferSize: AVAudioFrameCount
         let prefersVoiceProcessing: Bool
+        let context: MicrophoneCaptureContext
     }
 
     private enum LifecycleState {
@@ -65,13 +66,13 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         var unexpectedStop: (@Sendable (AudioCaptureError?) -> Void)?
     }
 
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()
     private let lifecycleQueue = DispatchQueue(label: "com.dahlia.microphone-capture.lifecycle")
     private let conversionState = OSAllocatedUnfairLock(initialState: ConversionState())
     private let handlerState = OSAllocatedUnfairLock(initialState: HandlerState())
     private var lifecycleState = LifecycleState.stopped
     private var activeRequest: CaptureRequest?
-    private var hasInputTap = false
+    var hasInputTap = false
     private var hasVoiceProcessingOutputConnection = false
 
     /// 変換済み AVAudioPCMBuffer のコールバック（オーディオスレッドから呼ばれる）
@@ -127,13 +128,15 @@ extension AudioCaptureManager {
         targetFormat: AVAudioFormat,
         selectedDeviceID: AudioDeviceID? = nil,
         bufferSize: AVAudioFrameCount = 4096,
-        prefersVoiceProcessing: Bool = true
+        prefersVoiceProcessing: Bool = true,
+        context: MicrophoneCaptureContext = .recording
     ) throws -> AudioCaptureStartInfo {
         let request = CaptureRequest(
             targetFormat: targetFormat,
             selectedDeviceID: selectedDeviceID,
             bufferSize: bufferSize,
-            prefersVoiceProcessing: prefersVoiceProcessing
+            prefersVoiceProcessing: prefersVoiceProcessing,
+            context: context
         )
         return try lifecycleQueue.sync {
             guard lifecycleState == .stopped else {
@@ -156,6 +159,7 @@ extension AudioCaptureManager {
     private func startCapture(_ request: CaptureRequest) throws -> AudioCaptureStartInfo {
         var lastError: (any Error)?
         let selectedDeviceDescription = request.selectedDeviceID.map(String.init) ?? "system-default"
+        let diagnosticCaptureID = MicrophoneCaptureDiagnostics.shared.beginCapture(context: request.context)
 
         Self.logger.info(
             "Starting microphone capture; device=\(selectedDeviceDescription, privacy: .public), voiceProcessing=\(request.prefersVoiceProcessing)"
@@ -164,15 +168,26 @@ extension AudioCaptureManager {
         for enablesVoiceProcessing in Self.voiceProcessingAttemptOrder(
             prefersVoiceProcessing: request.prefersVoiceProcessing
         ) {
+            MicrophoneCaptureDiagnostics.shared.record(
+                captureID: diagnosticCaptureID,
+                stage: enablesVoiceProcessing ? .voiceProcessingAttempt : .rawInputFallbackAttempt
+            )
             do {
                 return try startCaptureAttempt(
                     targetFormat: request.targetFormat,
                     selectedDeviceID: request.selectedDeviceID,
                     bufferSize: request.bufferSize,
-                    enablesVoiceProcessing: enablesVoiceProcessing
+                    enablesVoiceProcessing: enablesVoiceProcessing,
+                    diagnosticCaptureID: diagnosticCaptureID
                 )
             } catch {
                 lastError = error
+                recordDiagnosticSnapshot(
+                    captureID: diagnosticCaptureID,
+                    stage: .attemptFailed,
+                    inputNode: engine.inputNode,
+                    detail: error.localizedDescription
+                )
                 Self.logger.error(
                     "Microphone capture attempt failed; voiceProcessing=\(enablesVoiceProcessing), error=\(error.localizedDescription, privacy: .public)"
                 )
@@ -187,41 +202,38 @@ extension AudioCaptureManager {
         targetFormat: AVAudioFormat,
         selectedDeviceID: AudioDeviceID?,
         bufferSize: AVAudioFrameCount,
-        enablesVoiceProcessing: Bool
+        enablesVoiceProcessing: Bool,
+        diagnosticCaptureID: UUID
     ) throws -> AudioCaptureStartInfo {
         let inputNode = engine.inputNode
-        if inputNode.isVoiceProcessingEnabled {
-            try inputNode.setVoiceProcessingEnabled(false)
-        }
-
-        if enablesVoiceProcessing {
-            try Self.enableVoiceProcessing(inputNode: inputNode)
-        }
-
-        // Enabling Voice Processing replaces AUHAL with AUVoiceIO. Apply an
-        // explicitly selected device after that replacement so it remains pinned.
-        if let selectedDeviceID {
-            try Self.configureInputDevice(selectedDeviceID, for: inputNode)
-        }
-
-        let voiceProcessingFormat = try configureVoiceProcessingGraph(
-            enabled: enablesVoiceProcessing,
+        recordDiagnosticSnapshot(
+            captureID: diagnosticCaptureID,
+            stage: .inputNodeReady,
             inputNode: inputNode
         )
+        try configureVoiceProcessingInput(
+            inputNode,
+            enabled: enablesVoiceProcessing,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
 
-        let hardwareFormat = inputNode.inputFormat(forBus: 0)
-        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0 else {
-            throw AudioCaptureError.invalidHardwareFormat
-        }
-
-        let sourceFormat = Self.captureSourceFormat(
-            hardwareFormat: hardwareFormat,
+        try configureInputDeviceForCapture(
+            selectedDeviceID,
+            inputNode: inputNode,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
+        let voiceProcessingFormat = try configureVoiceProcessingGraphForCapture(
+            enabled: enablesVoiceProcessing,
+            inputNode: inputNode,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
+        let captureFormats = try Self.validatedCaptureFormats(
+            inputNode: inputNode,
             voiceProcessingFormat: voiceProcessingFormat,
             enablesVoiceProcessing: enablesVoiceProcessing
         )
-        guard sourceFormat.sampleRate > 0, sourceFormat.channelCount > 0 else {
-            throw AudioCaptureError.invalidHardwareFormat
-        }
+        let hardwareFormat = captureFormats.hardware
+        let sourceFormat = captureFormats.source
 
         Self.logger.info("Microphone hardware format: \(hardwareFormat.diagnosticDescription, privacy: .public)")
         Self.logger.info("Microphone source format: \(sourceFormat.diagnosticDescription, privacy: .public)")
@@ -232,13 +244,13 @@ extension AudioCaptureManager {
         }
         audioConverter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
 
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: sourceFormat) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer)
-        }
-        hasInputTap = true
-
-        engine.prepare()
-        try engine.start()
+        installInputTap(
+            on: inputNode,
+            bufferSize: bufferSize,
+            sourceFormat: sourceFormat,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
+        try prepareAndStartEngine(inputNode: inputNode, diagnosticCaptureID: diagnosticCaptureID)
         conversionState.withLock { state in
             state.converter = audioConverter
             state.targetFormat = targetFormat
@@ -259,6 +271,9 @@ extension AudioCaptureManager {
 
     static func enableVoiceProcessing(inputNode: any VoiceProcessingInputConfiguring) throws {
         try inputNode.setVoiceProcessingEnabled(true)
+    }
+
+    static func configureVoiceProcessingDucking(inputNode: any VoiceProcessingInputConfiguring) {
         // Leave bypass, mute, and AGC at their system-managed defaults. Writing
         // them here reconfigures AUVoiceIO after macOS applies the user's mode.
         inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
@@ -267,23 +282,26 @@ extension AudioCaptureManager {
         )
     }
 
-    private func configureVoiceProcessingGraph(
+    func configureVoiceProcessingGraph(
         enabled: Bool,
         inputNode: AVAudioInputNode
     ) throws -> AVAudioFormat? {
         guard enabled else { return nil }
         let outputNode = engine.outputNode
-        let outputFormat = outputNode.inputFormat(forBus: 0)
+        let outputHardwareFormat = outputNode.outputFormat(forBus: 0)
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard Self.voiceProcessingFormatsMatch(inputFormat, outputFormat) else {
+        guard let outputClientFormat = Self.voiceProcessingOutputClientFormat(
+            inputFormat: inputFormat,
+            outputHardwareFormat: outputHardwareFormat
+        ) else {
             throw AudioCaptureError.invalidHardwareFormat
         }
 
-        // Voice Processing requires the input node's output format and output
-        // node's input format to match. Use the output device's accepted format
-        // for both sides instead of the built-in microphone's multi-channel
-        // hardware format.
-        engine.connect(engine.mainMixerNode, to: outputNode, format: outputFormat)
+        // AUVoiceIO requires matching client-side input and output formats. Its
+        // processed microphone stream is mono, while built-in speakers are often
+        // stereo. Drive the output client side with the processed input format;
+        // the output node adapts that to its hardware channel layout.
+        engine.connect(engine.mainMixerNode, to: outputNode, format: outputClientFormat)
         hasVoiceProcessingOutputConnection = true
         return inputFormat
     }
@@ -328,7 +346,11 @@ extension AudioCaptureManager {
         }
     }
 
-    private func processAudioBuffer(_ inputBuffer: AVAudioPCMBuffer) {
+    func processAudioBuffer(
+        _ inputBuffer: AVAudioPCMBuffer,
+        inputNode: AVAudioInputNode,
+        diagnosticCaptureID: UUID
+    ) {
         let levelsHandler = onInputLevels
         levelsHandler?(AudioLevelCalculator.normalizedLevels(in: inputBuffer))
 
@@ -338,6 +360,11 @@ extension AudioCaptureManager {
             return true
         }
         if shouldLogFirstBuffer {
+            Self.recordFirstAudioBufferDiagnostic(
+                captureID: diagnosticCaptureID,
+                inputNode: inputNode,
+                frameLength: inputBuffer.frameLength
+            )
             let formatDescription = inputBuffer.format.diagnosticDescription
             Self.logger.info(
                 "Received first microphone buffer; frames=\(inputBuffer.frameLength), format=\(formatDescription, privacy: .public)"
@@ -375,7 +402,7 @@ extension AudioCaptureManager {
         }
     }
 
-    private static func configureInputDevice(_ deviceID: AudioDeviceID, for inputNode: AVAudioInputNode) throws {
+    static func configureInputDevice(_ deviceID: AudioDeviceID, for inputNode: AVAudioInputNode) throws {
         guard let audioUnit = inputNode.audioUnit else {
             throw AudioCaptureError.microphoneDeviceUnavailable
         }

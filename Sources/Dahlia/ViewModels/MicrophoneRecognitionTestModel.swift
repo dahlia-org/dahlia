@@ -19,6 +19,7 @@ final class MicrophoneRecognitionTestModel {
     private(set) var previewText = ""
     private(set) var errorMessage: String?
     private(set) var startInfo: AudioCaptureStartInfo?
+    private(set) var captureDiagnostics: [MicrophoneCaptureDiagnosticSnapshot] = []
 
     private var session: MicrophoneRecognitionTestSession?
     private let microphoneModeProvider: () -> (
@@ -26,6 +27,7 @@ final class MicrophoneRecognitionTestModel {
         active: AVCaptureDevice.MicrophoneMode
     )
     private let microphoneModeRefreshDelay: () async throws -> Void
+    private let captureDiagnosticsProvider: () -> [MicrophoneCaptureDiagnosticSnapshot]
 
     init(
         microphoneModeProvider: @escaping () -> (
@@ -36,13 +38,18 @@ final class MicrophoneRecognitionTestModel {
         },
         microphoneModeRefreshDelay: @escaping () async throws -> Void = {
             try await Task.sleep(for: .milliseconds(250))
+        },
+        captureDiagnosticsProvider: @escaping () -> [MicrophoneCaptureDiagnosticSnapshot] = {
+            MicrophoneCaptureDiagnostics.shared.snapshots()
         }
     ) {
         self.microphoneModeProvider = microphoneModeProvider
         self.microphoneModeRefreshDelay = microphoneModeRefreshDelay
+        self.captureDiagnosticsProvider = captureDiagnosticsProvider
         let microphoneModes = microphoneModeProvider()
         preferredMicrophoneMode = microphoneModes.preferred
         activeMicrophoneMode = microphoneModes.active
+        captureDiagnostics = captureDiagnosticsProvider()
     }
 
     var isActive: Bool {
@@ -76,6 +83,7 @@ final class MicrophoneRecognitionTestModel {
     func refreshDevices() {
         devices = AudioCaptureManager.availableInputDevices()
         refreshMicrophoneModes()
+        refreshCaptureDiagnostics()
     }
 
     func refreshMicrophoneModes() {
@@ -87,6 +95,7 @@ final class MicrophoneRecognitionTestModel {
     func monitorMicrophoneModes() async {
         while !Task.isCancelled {
             refreshMicrophoneModes()
+            refreshCaptureDiagnostics()
             do {
                 try await microphoneModeRefreshDelay()
             } catch {
@@ -97,6 +106,37 @@ final class MicrophoneRecognitionTestModel {
 
     func showMicrophoneModes() {
         AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    }
+
+    func captureDiagnosticTitle(_ snapshot: MicrophoneCaptureDiagnosticSnapshot) -> String {
+        "\(captureContextDisplayName(snapshot.context)) · \(L10n.microphoneCaptureStage(snapshot.stage))"
+    }
+
+    func captureDiagnosticTimestamp(_ snapshot: MicrophoneCaptureDiagnosticSnapshot) -> String {
+        snapshot.timestamp.formatted(date: .omitted, time: .standard)
+    }
+
+    func captureDiagnosticDetails(_ snapshot: MicrophoneCaptureDiagnosticSnapshot) -> String {
+        var components = [
+            "\(L10n.preferredMicrophoneMode)=\(Self.microphoneModeDisplayName(snapshot.preferredMicrophoneMode))",
+            "\(L10n.activeMicrophoneMode)=\(Self.microphoneModeDisplayName(snapshot.activeMicrophoneMode))",
+        ]
+        if let enabled = snapshot.voiceProcessingEnabled {
+            components.append("VP=\(enabled)")
+        }
+        if let bypassed = snapshot.voiceProcessingBypassed {
+            components.append("bypass=\(bypassed)")
+        }
+        if let muted = snapshot.voiceProcessingInputMuted {
+            components.append("mute=\(muted)")
+        }
+        if let agcEnabled = snapshot.voiceProcessingAGCEnabled {
+            components.append("AGC=\(agcEnabled)")
+        }
+        if let detail = snapshot.detail {
+            components.append(detail)
+        }
+        return components.joined(separator: " · ")
     }
 
     func toggle() async {
@@ -145,6 +185,7 @@ final class MicrophoneRecognitionTestModel {
             isRunning = true
             isPreparing = false
             refreshMicrophoneModes()
+            refreshCaptureDiagnostics()
         } catch {
             await session.stop()
             guard self.session === session else { return }
@@ -188,6 +229,17 @@ final class MicrophoneRecognitionTestModel {
         isRunning = false
         inputLevel = 0
         inputChannelLevels = []
+    }
+
+    private func refreshCaptureDiagnostics() {
+        captureDiagnostics = captureDiagnosticsProvider()
+    }
+
+    private func captureContextDisplayName(_ context: MicrophoneCaptureContext) -> String {
+        switch context {
+        case .recording: L10n.microphoneCaptureRecording
+        case .audioTest: L10n.microphoneCaptureAudioTest
+        }
     }
 
     static func microphoneModeDisplayName(_ mode: AVCaptureDevice.MicrophoneMode) -> String {

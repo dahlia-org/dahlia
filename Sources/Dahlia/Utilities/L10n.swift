@@ -800,6 +800,18 @@ enum L10n {
     static var microphoneModeWideSpectrum: String { String(localized: "Wide Spectrum", bundle: bundle) }
     static var microphoneModeVoiceIsolation: String { String(localized: "Voice Isolation", bundle: bundle) }
     static var microphoneModeUnknown: String { String(localized: "Unknown Mode", bundle: bundle) }
+    static var microphoneCaptureLog: String { String(localized: "Microphone Capture Log", bundle: bundle) }
+    static var microphoneCaptureLogDescription: String { String(
+        localized: "Shows the startup sequence for the latest audio test or recording. Audio data is not stored.",
+        bundle: bundle
+    ) }
+    static var microphoneCaptureRecording: String { String(localized: "App Recording", bundle: bundle) }
+    static var microphoneCaptureAudioTest: String { String(localized: "Audio Test", bundle: bundle) }
+
+    static func microphoneCaptureStage(_ stage: MicrophoneCaptureDiagnosticStage) -> String {
+        String(localized: String.LocalizationValue(stage.rawValue), bundle: bundle)
+    }
+
     static var startAudioRecognitionTest: String { String(localized: "Start Test", bundle: bundle) }
     static var stopAudioRecognitionTest: String { String(localized: "Stop Test", bundle: bundle) }
     static var stopRecordingBeforeAudioTest: String { String(

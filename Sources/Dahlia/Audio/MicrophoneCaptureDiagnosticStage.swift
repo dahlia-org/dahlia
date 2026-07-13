@@ -1,0 +1,16 @@
+enum MicrophoneCaptureDiagnosticStage: String {
+    case captureRequested = "Capture Requested"
+    case voiceProcessingAttempt = "Voice Processing Attempt"
+    case rawInputFallbackAttempt = "Raw Input Fallback"
+    case inputNodeReady = "Input Node Ready"
+    case existingVoiceProcessingDisabled = "Existing Voice Processing Disabled"
+    case voiceProcessingEnabled = "Voice Processing Enabled"
+    case duckingConfigured = "Ducking Configured"
+    case inputDeviceConfigured = "Input Device Configured"
+    case voiceProcessingGraphConfigured = "Voice Processing Graph Configured"
+    case inputTapInstalled = "Input Tap Installed"
+    case enginePrepared = "Audio Engine Prepared"
+    case engineStarted = "Audio Engine Started"
+    case firstAudioBufferReceived = "First Audio Buffer Received"
+    case attemptFailed = "Capture Attempt Failed"
+}
