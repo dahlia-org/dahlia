@@ -6,6 +6,7 @@ struct VaultPickerView: View {
     let appDatabase: AppDatabaseManager?
     let onVaultSelected: (VaultRecord) -> Void
 
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var settings = AppSettings.shared
     @State private var vaults: [VaultRecord] = []
     @State private var selectedVaultId: UUID?
@@ -100,7 +101,7 @@ struct VaultPickerView: View {
         let normalizedURL = url.standardizedFileURL
         if let existingVault = vaults.first(where: { $0.url.standardizedFileURL == normalizedURL }) {
             selectedVaultId = existingVault.id
-            onVaultSelected(existingVault)
+            openVault(existingVault)
             return
         }
 
@@ -116,7 +117,7 @@ struct VaultPickerView: View {
         do {
             try repository.insertVault(vault)
             loadVaults(preferredSelection: vault.id)
-            onVaultSelected(vault)
+            openVault(vault)
         } catch {
             presentError(L10n.vaultAddFailed, error: error, source: "registerVault")
         }
@@ -138,7 +139,13 @@ struct VaultPickerView: View {
 
     private func openSelectedVault() {
         guard let selectedVault else { return }
-        onVaultSelected(selectedVault)
+        openVault(selectedVault)
+    }
+
+    private func openVault(_ vault: VaultRecord) {
+        onVaultSelected(vault)
+        openWindow(id: WindowID.main)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func presentError(_ message: String, error: any Error, source: String) {
