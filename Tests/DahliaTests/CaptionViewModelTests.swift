@@ -88,6 +88,22 @@ import GRDB
         }
 
         @Test
+        func microphoneCaptureInterruptionOnlyStopsRecordingWhenEnabled() {
+            #expect(CaptionViewModel.shouldStopRecording(
+                afterInterruptionFrom: .microphone,
+                autoStopOnMicrophoneInterruption: true
+            ))
+            #expect(!CaptionViewModel.shouldStopRecording(
+                afterInterruptionFrom: .microphone,
+                autoStopOnMicrophoneInterruption: false
+            ))
+            #expect(!CaptionViewModel.shouldStopRecording(
+                afterInterruptionFrom: .system,
+                autoStopOnMicrophoneInterruption: true
+            ))
+        }
+
+        @Test
         func fatalCaptureFailureAlwaysStopsRecording() {
             #expect(CaptionViewModel.shouldStopRecording(
                 afterFailureFrom: .system,

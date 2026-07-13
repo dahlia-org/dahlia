@@ -1366,6 +1366,11 @@ final class CaptionViewModel: ObservableObject {
             )
         ) { [weak self] event in
             self?.handleTranscriptionEvent(event)
+        } onCaptureInterruption: { [weak self] source in
+            self?.handleControllerCaptureInterruption(
+                source: source,
+                recordingSessionId: request.sessionId
+            )
         } onRuntimeFailure: { [weak self] source, message, isFatal in
             self?.handleControllerRuntimeFailure(
                 source: source,
@@ -2525,6 +2530,34 @@ final class CaptionViewModel: ObservableObject {
                 self.stopListening()
             }
         }
+    }
+
+    private func handleControllerCaptureInterruption(
+        source: RecordingAudioSource,
+        recordingSessionId: UUID
+    ) {
+        guard activeRecordingSessionId == recordingSessionId else { return }
+        let shouldStop = Self.shouldStopRecording(
+            afterInterruptionFrom: source,
+            autoStopOnMicrophoneInterruption: AppSettings.shared.automaticallyStopRecordingWhenMicrophoneStops
+        )
+        guard shouldStop else { return }
+
+        switch recordingLifecycle {
+        case .recording:
+            stopListening()
+        case .starting:
+            pendingRealtimeRecognitionFailure = (source, L10n.microphoneCaptureStopped)
+        case .stopping, .idle:
+            break
+        }
+    }
+
+    nonisolated static func shouldStopRecording(
+        afterInterruptionFrom source: RecordingAudioSource,
+        autoStopOnMicrophoneInterruption: Bool
+    ) -> Bool {
+        source == .microphone && autoStopOnMicrophoneInterruption
     }
 
     nonisolated static func shouldStopRecording(

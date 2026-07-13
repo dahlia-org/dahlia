@@ -1,6 +1,32 @@
 import Foundation
 
 extension RecordingSessionController {
+    func captureInterruptionHandler(
+        source: RecordingAudioSource,
+        runtimeID: UUID,
+        sessionId: UUID
+    ) -> AudioCaptureInterruptionHandler {
+        { [weak self] in
+            await self?.handleCaptureInterruption(
+                source: source,
+                runtimeID: runtimeID,
+                sessionId: sessionId
+            )
+        }
+    }
+
+    private func handleCaptureInterruption(
+        source: RecordingAudioSource,
+        runtimeID: UUID,
+        sessionId: UUID
+    ) async {
+        guard case let .capturing(snapshot) = state,
+              snapshot.sessionId == sessionId,
+              sourceRuntimeGenerations[source] == runtimeID,
+              sourceRuntimes[source]?.id == runtimeID else { return }
+        await onCaptureInterruption?(source)
+    }
+
     func startRecognition(
         _ recognition: any ProgressiveRecognitionSession,
         source: RecordingAudioSource,
