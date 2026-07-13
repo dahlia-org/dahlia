@@ -277,6 +277,14 @@ enum L10n {
         localized: "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.",
         bundle: bundle
     ) }
+    static var generateSummaryAfterBatchTranscription: String { String(
+        localized: "Generate Summary After Transcription",
+        bundle: bundle
+    ) }
+    static var generateSummaryAfterBatchTranscriptionDescription: String { String(
+        localized: "Automatically generate a summary when batch transcription succeeds.",
+        bundle: bundle
+    ) }
     static var later: String { String(localized: "Later", bundle: bundle) }
     static var discardFailedBatchRecording: String { String(localized: "Discard Failed Recording", bundle: bundle) }
     static var discardFailedBatchRecordingConfirmation: String { String(localized: "Discard this failed recording?", bundle: bundle) }

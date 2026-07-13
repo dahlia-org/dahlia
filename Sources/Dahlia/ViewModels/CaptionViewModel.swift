@@ -133,6 +133,7 @@ final class CaptionViewModel: ObservableObject {
 
     @Published var summaryGeneratingMeetingId: UUID?
     var isSummaryGenerating: Bool { summaryGeneratingMeetingId != nil }
+    private var pendingBatchSummaryMeetingIdsBySessionId: [UUID: UUID] = [:]
     @Published var summaryError: String?
     @Published private(set) var googleDocsExportError: String?
     private var isExportingCurrentSummaryToGoogleDocs = false
@@ -469,15 +470,25 @@ final class CaptionViewModel: ObservableObject {
         pendingBatchTranscriptionConfirmation = nil
     }
 
-    func confirmBatchTranscription(localeIdentifier: String, retainAudioAfterBatch: Bool) {
+    func confirmBatchTranscription(
+        localeIdentifier: String,
+        retainAudioAfterBatch: Bool,
+        generateSummaryAfterTranscription: Bool
+    ) {
         guard let confirmation = pendingBatchTranscriptionConfirmation,
               let coordinator = batchTranscriptionCoordinator else { return }
         let retryConfirmation = BatchTranscriptionConfirmation(
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
             suggestedLocaleIdentifier: localeIdentifier,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            generateSummaryAfterTranscription: generateSummaryAfterTranscription
         )
+        if generateSummaryAfterTranscription {
+            pendingBatchSummaryMeetingIdsBySessionId[confirmation.sessionId] = confirmation.meetingId
+        } else {
+            pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: confirmation.sessionId)
+        }
         pendingBatchTranscriptionConfirmation = nil
         if currentMeetingId == confirmation.meetingId {
             batchTranscriptionState = .queued(sessionId: confirmation.sessionId)
@@ -561,6 +572,7 @@ final class CaptionViewModel: ObservableObject {
             store.loadRecordingSessions(loaded.recordingSessions)
             store.loadSegments(loaded.segments)
             applyLoadedDetail(loaded)
+            generatePendingBatchSummaryIfReady(meetingId: meetingId)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -793,6 +805,7 @@ final class CaptionViewModel: ObservableObject {
             self.store.loadRecordingSessions(loaded.recordingSessions)
             self.store.loadSegments(loaded.segments)
             self.applyLoadedDetail(loaded)
+            self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
         }
     }
 
@@ -1765,7 +1778,8 @@ final class CaptionViewModel: ObservableObject {
             retainAudioAfterBatch: batchAudioRetentionPreference(
                 sessionId: sessionId,
                 dbQueue: dbQueue
-            )
+            ),
+            generateSummaryAfterTranscription: false
         )
         MainWindowOpener.shared.openMainWindow()
     }
@@ -1871,6 +1885,19 @@ final class CaptionViewModel: ObservableObject {
                 recordingSessions: recordingSessions
             )
         }
+    }
+
+    private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
+        let pendingSessionIds = pendingBatchSummaryMeetingIdsBySessionId.compactMap { sessionId, pendingMeetingId in
+            pendingMeetingId == meetingId ? sessionId : nil
+        }
+        guard currentMeetingId == meetingId,
+              canGenerateSummary,
+              !pendingSessionIds.isEmpty else { return }
+        for sessionId in pendingSessionIds {
+            pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: sessionId)
+        }
+        triggerManualSummary()
     }
 
     func generateSummary(

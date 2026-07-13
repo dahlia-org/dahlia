@@ -467,6 +467,8 @@
 "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds." = "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.";
 "Delete Recording Files After Transcription" = "Delete Recording Files After Transcription";
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.";
+"Generate Summary After Transcription" = "Generate Summary After Transcription";
+"Automatically generate a summary when batch transcription succeeds." = "Automatically generate a summary when batch transcription succeeds.";
 "Later" = "Later";
 "Discard Failed Recording" = "Discard Failed Recording";
 "Discard this failed recording?" = "Discard this failed recording?";

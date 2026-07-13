@@ -467,6 +467,8 @@
 "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds." = "単一言語の録音には選択した言語を使用します。録音中に切り替えた言語区間は保持されます。文字起こしが成功するまで音声データは保持されます。";
 "Delete Recording Files After Transcription" = "文字起こし後に録音ファイルを削除";
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "バッチ文字起こしが成功したら録音ファイルを削除します。失敗した場合は再試行のため保持されます。";
+"Generate Summary After Transcription" = "文字起こし後に要約を生成";
+"Automatically generate a summary when batch transcription succeeds." = "バッチ文字起こしが成功したら、自動的に要約を生成します。";
 "Later" = "あとで";
 "Discard Failed Recording" = "失敗した録音を破棄";
 "Discard this failed recording?" = "失敗した録音を破棄しますか？";

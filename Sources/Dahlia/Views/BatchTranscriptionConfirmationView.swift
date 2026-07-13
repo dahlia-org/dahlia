@@ -2,17 +2,19 @@ import SwiftUI
 
 struct BatchTranscriptionConfirmationView: View {
     let locales: [Locale]
-    let onStart: (String, Bool) -> Void
+    let onStart: (String, Bool, Bool) -> Void
     let onPostpone: () -> Void
 
     @State private var selectedLocaleIdentifier: String
     @State private var deleteAudioAfterTranscription: Bool
+    @State private var generateSummaryAfterTranscription: Bool
 
     init(
         locales: [Locale],
         initialLocaleIdentifier: String,
         initiallyRetainsAudioAfterBatch: Bool,
-        onStart: @escaping (String, Bool) -> Void,
+        initiallyGeneratesSummaryAfterTranscription: Bool,
+        onStart: @escaping (String, Bool, Bool) -> Void,
         onPostpone: @escaping () -> Void
     ) {
         self.locales = locales
@@ -20,6 +22,7 @@ struct BatchTranscriptionConfirmationView: View {
         self.onPostpone = onPostpone
         _selectedLocaleIdentifier = State(initialValue: initialLocaleIdentifier)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
+        _generateSummaryAfterTranscription = State(initialValue: initiallyGeneratesSummaryAfterTranscription)
     }
 
     var body: some View {
@@ -48,6 +51,16 @@ struct BatchTranscriptionConfirmationView: View {
             }
             .toggleStyle(.checkbox)
 
+            Toggle(isOn: $generateSummaryAfterTranscription) {
+                VStack(alignment: .leading) {
+                    Text(L10n.generateSummaryAfterBatchTranscription)
+                    Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+
             Divider()
 
             HStack {
@@ -69,6 +82,10 @@ struct BatchTranscriptionConfirmationView: View {
     }
 
     private func startTranscription() {
-        onStart(selectedLocaleIdentifier, !deleteAudioAfterTranscription)
+        onStart(
+            selectedLocaleIdentifier,
+            !deleteAudioAfterTranscription,
+            generateSummaryAfterTranscription
+        )
     }
 }
