@@ -10,6 +10,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case aiSummary
     case instructions
     case developer
+    case audioDiagnostics
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .calendar: L10n.calendar
         case .cloudStorage: L10n.cloudStorage
         case .transcription: L10n.transcription
+        case .audioDiagnostics: L10n.debug
         case .screenshots: L10n.screenshots
         case .aiSummary: L10n.foundationModels
         case .instructions: L10n.instructions
@@ -32,6 +34,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .calendar: "calendar"
         case .cloudStorage: "externaldrive.badge.icloud"
         case .transcription: "waveform"
+        case .audioDiagnostics: "ladybug"
         case .screenshots: "photo.on.rectangle.angled"
         case .aiSummary: "sparkles"
         case .instructions: "list.bullet.clipboard"
@@ -46,6 +49,7 @@ enum SettingsNavigation {
 
 /// 設定画面（Cmd+, で表示）。
 struct SettingsView: View {
+    @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
@@ -116,6 +120,14 @@ struct SettingsView: View {
                 value: SettingsCategory.developer
             ) {
                 DeveloperSettingsView()
+            }
+
+            Tab(
+                SettingsCategory.audioDiagnostics.label,
+                systemImage: SettingsCategory.audioDiagnostics.systemImage,
+                value: SettingsCategory.audioDiagnostics
+            ) {
+                AudioDiagnosticsSettingsView(captionViewModel: captionViewModel)
             }
         }
         .frame(minWidth: 680, minHeight: 500)

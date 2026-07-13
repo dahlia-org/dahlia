@@ -94,6 +94,7 @@ struct DahliaApp: App {
 
         Settings {
             SettingsView(
+                captionViewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 onSelectVault: { vault in openVault(vault) }
             )

@@ -16,15 +16,16 @@ actor MicrophoneAudioCaptureSession: AudioCaptureSession {
             pipeline.router.route(pipeline.capture(buffer))
         }
         self.manager = manager
-        manager.onUnexpectedStop = { [weak self] in
+        manager.onUnexpectedStop = { [weak self] error in
             Task {
-                await self?.captureStoppedUnexpectedly()
+                await self?.captureStoppedUnexpectedly(error)
             }
         }
     }
 
-    func start() throws {
+    func start() async throws {
         isStopping = false
+        await MicrophoneRecognitionTestSession.stopActiveSession()
         try manager.startCapture(
             targetFormat: pipeline.captureFormat,
             selectedDeviceID: pipeline.captureDeviceID,
@@ -37,8 +38,8 @@ actor MicrophoneAudioCaptureSession: AudioCaptureSession {
         manager.stopCapture()
     }
 
-    private func captureStoppedUnexpectedly() {
+    private func captureStoppedUnexpectedly(_ error: AudioCaptureError?) {
         guard !isStopping else { return }
-        onUnexpectedStop(nil)
+        onUnexpectedStop(error)
     }
 }

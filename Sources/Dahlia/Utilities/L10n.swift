@@ -785,6 +785,60 @@ enum L10n {
     static var microphoneUnavailable: String { String(localized: "The selected microphone is unavailable", bundle: bundle) }
     static var noAudioSourceSelected: String { String(localized: "Select at least one audio source", bundle: bundle) }
 
+    // MARK: - Debug
+
+    static var debug: String { String(localized: "Debug", bundle: bundle) }
+    static var audioRecognitionTest: String { String(localized: "Microphone & Speech Recognition Test", bundle: bundle) }
+    static var audioRecognitionTestDescription: String { String(
+        localized: "Test microphone input and speech recognition without creating a recording.",
+        bundle: bundle
+    ) }
+    static var systemMicrophoneMode: String { String(localized: "System Microphone Mode", bundle: bundle) }
+    static var preferredMicrophoneMode: String { String(localized: "Selected Mode", bundle: bundle) }
+    static var activeMicrophoneMode: String { String(localized: "Active Mode", bundle: bundle) }
+    static var openMicrophoneModes: String { String(localized: "Open Microphone Modes…", bundle: bundle) }
+    static var systemMicrophoneModeDescription: String { String(
+        localized: """
+        Dahlia uses the microphone mode selected in the macOS menu bar when the active audio route \
+        supports it. Voice Isolation reduces speaker audio and surrounding noise.
+        """,
+        bundle: bundle
+    ) }
+    static var microphoneModeStandard: String { String(localized: "Standard", bundle: bundle) }
+    static var microphoneModeWideSpectrum: String { String(localized: "Wide Spectrum", bundle: bundle) }
+    static var microphoneModeVoiceIsolation: String { String(localized: "Voice Isolation", bundle: bundle) }
+    static var microphoneModeUnknown: String { String(localized: "Unknown Mode", bundle: bundle) }
+    static var microphoneCaptureLog: String { String(localized: "Microphone Capture Log", bundle: bundle) }
+    static var microphoneCaptureLogDescription: String { String(
+        localized: "Shows the startup sequence for the latest audio test or recording. Audio data is not stored.",
+        bundle: bundle
+    ) }
+    static var microphoneCaptureRecording: String { String(localized: "App Recording", bundle: bundle) }
+    static var microphoneCaptureAudioTest: String { String(localized: "Audio Test", bundle: bundle) }
+
+    static func microphoneCaptureStage(_ stage: MicrophoneCaptureDiagnosticStage) -> String {
+        String(localized: String.LocalizationValue(stage.rawValue), bundle: bundle)
+    }
+
+    static var startAudioRecognitionTest: String { String(localized: "Start Test", bundle: bundle) }
+    static var stopAudioRecognitionTest: String { String(localized: "Stop Test", bundle: bundle) }
+    static var stopRecordingBeforeAudioTest: String { String(
+        localized: "Stop the current recording before starting an audio test.",
+        bundle: bundle
+    ) }
+    static var audioRecognitionTestStatus: String { String(localized: "Test Status", bundle: bundle) }
+    static var inputLevel: String { String(localized: "Input Level", bundle: bundle) }
+    static var audioBuffers: String { String(localized: "Audio Buffers", bundle: bundle) }
+    static func inputChannel(_ channel: Int) -> String { String(localized: "Input Channel \(channel)", bundle: bundle) }
+    static var hardwareFormat: String { String(localized: "Hardware Format", bundle: bundle) }
+    static var inputFormat: String { String(localized: "Input Format", bundle: bundle) }
+    static var recognitionFormat: String { String(localized: "Recognition Format", bundle: bundle) }
+    static var recognizedText: String { String(localized: "Recognized Text", bundle: bundle) }
+    static var speakIntoSelectedMicrophone: String { String(localized: "Speak into the selected microphone.", bundle: bundle) }
+    static var preparingAudioRecognitionTest: String { String(localized: "Preparing speech recognition…", bundle: bundle) }
+    static var audioRecognitionTestListening: String { String(localized: "Listening", bundle: bundle) }
+    static var audioRecognitionTestStopped: String { String(localized: "Stopped", bundle: bundle) }
+
     // MARK: - Error Messages (ViewModel)
 
     static var speechRecognitionUnavailable: String { String(localized: "Speech recognition is not available on this Mac", bundle: bundle) }
