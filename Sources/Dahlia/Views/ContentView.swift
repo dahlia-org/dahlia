@@ -61,7 +61,6 @@ struct ContentView: View {
                 ),
                 initialLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
                 initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
-                initiallyGeneratesSummaryAfterTranscription: confirmation.generateSummaryAfterTranscription,
                 onStart: viewModel.confirmBatchTranscription,
                 onPostpone: viewModel.postponeBatchTranscription
             )

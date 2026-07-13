@@ -23,6 +23,12 @@ struct TranscriptionSettingsView: View {
                         Text(L10n.retainBatchAudioDescription)
                     }
                     .toggleStyle(.switch)
+
+                    Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
+                        Text(L10n.generateSummaryAfterBatchTranscription)
+                        Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
+                    }
+                    .toggleStyle(.switch)
                 }
             } header: {
                 Text(L10n.transcriptionMethod)

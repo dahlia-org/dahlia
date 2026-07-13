@@ -150,6 +150,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("transcriptionLocale") var transcriptionLocale: String = Locale.current.identifier
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
+    @AppStorage("generateSummaryAfterBatchTranscription") var generateSummaryAfterBatchTranscription = false
     @AppStorage("transcriptTranslationEnabled") var transcriptTranslationEnabled = true
     @AppStorage("transcriptTranslationTargetLanguage") var transcriptTranslationTargetLanguage = TranscriptTranslationLanguage.defaultIdentifier
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false

@@ -2,19 +2,18 @@ import SwiftUI
 
 struct BatchTranscriptionConfirmationView: View {
     let locales: [Locale]
-    let onStart: (String, Bool, Bool) -> Void
+    let onStart: (String, Bool) -> Void
     let onPostpone: () -> Void
 
+    @ObservedObject private var settings = AppSettings.shared
     @State private var selectedLocaleIdentifier: String
     @State private var deleteAudioAfterTranscription: Bool
-    @State private var generateSummaryAfterTranscription: Bool
 
     init(
         locales: [Locale],
         initialLocaleIdentifier: String,
         initiallyRetainsAudioAfterBatch: Bool,
-        initiallyGeneratesSummaryAfterTranscription: Bool,
-        onStart: @escaping (String, Bool, Bool) -> Void,
+        onStart: @escaping (String, Bool) -> Void,
         onPostpone: @escaping () -> Void
     ) {
         self.locales = locales
@@ -22,7 +21,6 @@ struct BatchTranscriptionConfirmationView: View {
         self.onPostpone = onPostpone
         _selectedLocaleIdentifier = State(initialValue: initialLocaleIdentifier)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
-        _generateSummaryAfterTranscription = State(initialValue: initiallyGeneratesSummaryAfterTranscription)
     }
 
     var body: some View {
@@ -51,7 +49,7 @@ struct BatchTranscriptionConfirmationView: View {
             }
             .toggleStyle(.checkbox)
 
-            Toggle(isOn: $generateSummaryAfterTranscription) {
+            Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
                 VStack(alignment: .leading) {
                     Text(L10n.generateSummaryAfterBatchTranscription)
                     Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
@@ -84,8 +82,7 @@ struct BatchTranscriptionConfirmationView: View {
     private func startTranscription() {
         onStart(
             selectedLocaleIdentifier,
-            !deleteAudioAfterTranscription,
-            generateSummaryAfterTranscription
+            !deleteAudioAfterTranscription
         )
     }
 }

@@ -477,8 +477,7 @@ final class CaptionViewModel: ObservableObject {
 
     func confirmBatchTranscription(
         localeIdentifier: String,
-        retainAudioAfterBatch: Bool,
-        generateSummaryAfterTranscription: Bool
+        retainAudioAfterBatch: Bool
     ) {
         guard let confirmation = pendingBatchTranscriptionConfirmation,
               let coordinator = batchTranscriptionCoordinator else { return }
@@ -486,10 +485,9 @@ final class CaptionViewModel: ObservableObject {
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
             suggestedLocaleIdentifier: localeIdentifier,
-            retainAudioAfterBatch: retainAudioAfterBatch,
-            generateSummaryAfterTranscription: generateSummaryAfterTranscription
+            retainAudioAfterBatch: retainAudioAfterBatch
         )
-        if generateSummaryAfterTranscription {
+        if AppSettings.shared.generateSummaryAfterBatchTranscription {
             pendingBatchSummaryMeetingIdsBySessionId[confirmation.sessionId] = confirmation.meetingId
         } else {
             pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: confirmation.sessionId)
@@ -1789,8 +1787,7 @@ final class CaptionViewModel: ObservableObject {
             retainAudioAfterBatch: batchAudioRetentionPreference(
                 sessionId: sessionId,
                 dbQueue: dbQueue
-            ),
-            generateSummaryAfterTranscription: false
+            )
         )
         MainWindowOpener.shared.openMainWindow()
     }

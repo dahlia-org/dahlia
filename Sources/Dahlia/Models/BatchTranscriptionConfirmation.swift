@@ -5,7 +5,6 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let meetingId: UUID
     let suggestedLocaleIdentifier: String
     let retainAudioAfterBatch: Bool
-    let generateSummaryAfterTranscription: Bool
 
     var id: UUID { sessionId }
 }
