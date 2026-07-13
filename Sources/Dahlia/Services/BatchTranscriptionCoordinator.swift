@@ -89,14 +89,16 @@ actor BatchTranscriptionCoordinator {
         localeIdentifier: String,
         retainAudioAfterBatch: Bool
     ) async throws {
-        let meetingId = try await BatchTranscriptionConfirmationService.confirm(
+        let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
             localeIdentifier: localeIdentifier,
             retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
-        await notify(meetingId: meetingId, state: .queued(sessionId: sessionId))
-        enqueue(sessionId: sessionId)
+        for confirmedSessionId in result.sessionIds {
+            await notify(meetingId: result.meetingId, state: .queued(sessionId: confirmedSessionId))
+            enqueue(sessionId: confirmedSessionId)
+        }
     }
 
     func enqueue(sessionId: UUID) {

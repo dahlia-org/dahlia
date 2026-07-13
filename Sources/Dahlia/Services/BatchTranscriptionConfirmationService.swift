@@ -1,14 +1,19 @@
 import Foundation
 import GRDB
 
-/// バッチ正本の言語を確定し、再起動後も自動復旧できる状態へ原子的に移す。
+/// 同じミーティングの未確認バッチ録音を確定し、再起動後も自動復旧できる状態へ原子的に移す。
 enum BatchTranscriptionConfirmationService {
+    struct Result: Equatable {
+        let meetingId: UUID
+        let sessionIds: [UUID]
+    }
+
     static func confirm(
         sessionId: UUID,
         localeIdentifier: String,
         retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
-    ) async throws -> UUID {
+    ) async throws -> Result {
         let normalizedLocaleIdentifier = localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedLocaleIdentifier.isEmpty else {
             throw CocoaError(.validationMissingMandatoryProperty)
@@ -16,21 +21,24 @@ enum BatchTranscriptionConfirmationService {
 
         return try await dbQueue.write { db in
             let session = try validSession(id: sessionId, db: db)
-            try requireAudioRanges(sessionId: sessionId, db: db)
+            let sessions = try unconfirmedSessions(meetingId: session.meetingId, db: db)
             let confirmedAt = Date.now
-            try updateSingleRecordedLocale(
-                sessionId: sessionId,
-                localeIdentifier: normalizedLocaleIdentifier,
-                updatedAt: confirmedAt,
-                db: db
-            )
-            try markConfirmed(
-                sessionId: sessionId,
-                retainAudioAfterBatch: retainAudioAfterBatch,
-                confirmedAt: confirmedAt,
-                db: db
-            )
-            return session.meetingId
+            for unconfirmedSession in sessions {
+                try requireAudioRanges(sessionId: unconfirmedSession.id, db: db)
+                try updateSingleRecordedLocale(
+                    sessionId: unconfirmedSession.id,
+                    localeIdentifier: normalizedLocaleIdentifier,
+                    updatedAt: confirmedAt,
+                    db: db
+                )
+                try markConfirmed(
+                    sessionId: unconfirmedSession.id,
+                    retainAudioAfterBatch: retainAudioAfterBatch,
+                    confirmedAt: confirmedAt,
+                    db: db
+                )
+            }
+            return Result(meetingId: session.meetingId, sessionIds: sessions.map(\.id))
         }
     }
 
@@ -41,10 +49,25 @@ enum BatchTranscriptionConfirmationService {
               session.batchCompletedAt == nil,
               session.batchDiscardedAt == nil,
               session.batchLastError == nil,
+              session.batchLastAttemptAt == nil,
               session.batchAttemptCount == 0 else {
             throw CocoaError(.fileNoSuchFile)
         }
         return session
+    }
+
+    private static func unconfirmedSessions(meetingId: UUID, db: Database) throws -> [RecordingSessionRecord] {
+        try RecordingSessionRecord
+            .filter(Column("meetingId") == meetingId)
+            .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
+            .filter(Column("endedAt") != nil)
+            .filter(Column("batchCompletedAt") == nil)
+            .filter(Column("batchDiscardedAt") == nil)
+            .filter(Column("batchLastError") == nil)
+            .filter(Column("batchLastAttemptAt") == nil)
+            .filter(Column("batchAttemptCount") == 0)
+            .order(Column("startedAt").asc)
+            .fetchAll(db)
     }
 
     private static func requireAudioRanges(sessionId: UUID, db: Database) throws {

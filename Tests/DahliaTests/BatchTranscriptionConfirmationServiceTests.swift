@@ -24,7 +24,7 @@ import GRDB
             defer { fixture.removeFiles() }
             let otherFileId = try await insertConfirmationScenario(in: fixture)
 
-            let meetingId = try await BatchTranscriptionConfirmationService.confirm(
+            let confirmation = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 localeIdentifier: "en_US",
                 retainAudioAfterBatch: true,
@@ -37,7 +37,8 @@ import GRDB
                 from: fixture.database.dbQueue
             )
             let session = try #require(result.session)
-            #expect(meetingId == fixture.meeting.id)
+            #expect(confirmation.meetingId == fixture.meeting.id)
+            #expect(confirmation.sessionIds == [fixture.session.id])
             #expect(result.files.count == 2)
             #expect(result.ranges.count == 3)
             #expect(result.ranges.map(\.localeIdentifier).sorted() == ["fr_FR", "ja_JP", "ja_JP"])
@@ -86,10 +87,91 @@ import GRDB
             #expect(result.1?.retainAudioAfterBatch == false)
         }
 
+        @Test
+        func confirmationIncludesEveryEarlierUnconfirmedSessionInTheMeeting() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "BatchMultipleRecordingConfirmation",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_060),
+                duration: 60
+            )
+            defer { fixture.removeFiles() }
+            let earlierSession = makeSession(
+                meetingId: fixture.meeting.id,
+                startedAt: fixture.now.addingTimeInterval(-120),
+                endedAt: fixture.now.addingTimeInterval(-60),
+                now: fixture.now
+            )
+            let earlierFile = makeAudioFile(
+                sessionId: earlierSession.id,
+                source: .microphone,
+                name: "earlier.caf",
+                now: fixture.now
+            )
+            let earlierRange = makeRange(
+                audioFileId: earlierFile.id,
+                startFrame: 0,
+                localeIdentifier: "ja_JP",
+                now: fixture.now
+            )
+            let currentFile = fixture.makeAudioRecord(finalizedAt: fixture.now, totalFrameCount: 160)
+            let currentRange = makeRange(
+                audioFileId: currentFile.id,
+                startFrame: 0,
+                localeIdentifier: "ja_JP",
+                now: fixture.now
+            )
+            try await fixture.database.dbQueue.write { db in
+                try earlierSession.insert(db)
+                try earlierFile.insert(db)
+                try earlierRange.insert(db)
+                try currentFile.insert(db)
+                try currentRange.insert(db)
+            }
+
+            let confirmation = try await BatchTranscriptionConfirmationService.confirm(
+                sessionId: fixture.session.id,
+                localeIdentifier: "en_US",
+                retainAudioAfterBatch: true,
+                dbQueue: fixture.database.dbQueue
+            )
+
+            let sessions = try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord
+                    .filter([earlierSession.id, fixture.session.id].contains(Column("id")))
+                    .order(Column("startedAt").asc)
+                    .fetchAll(db)
+            }
+            let locales = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioRangeRecord
+                    .filter([earlierFile.id, currentFile.id].contains(Column("audioFileId")))
+                    .fetchAll(db)
+                    .map(\.localeIdentifier)
+            }
+            #expect(confirmation.sessionIds == [earlierSession.id, fixture.session.id])
+            #expect(sessions.allSatisfy { $0.batchLastAttemptAt != nil })
+            #expect(sessions.allSatisfy { $0.retainAudioAfterBatch })
+            #expect(locales.sorted() == ["en_US", "en_US"])
+        }
+
         private func insertConfirmationScenario(in fixture: BatchAudioTestFixture) async throws -> UUID {
             let microphoneFile = fixture.makeAudioRecord(finalizedAt: fixture.now, totalFrameCount: 320)
             let systemFile = makeAudioFile(sessionId: fixture.session.id, source: .system, name: "system.caf", now: fixture.now)
-            let otherSession = makeOtherSession(in: fixture)
+            let otherMeeting = MeetingRecord(
+                id: .v7(),
+                vaultId: fixture.meeting.vaultId,
+                projectId: nil,
+                name: "Other Meeting",
+                status: .transcriptNotFound,
+                duration: 60,
+                createdAt: fixture.now,
+                updatedAt: fixture.now
+            )
+            let otherSession = makeSession(
+                meetingId: otherMeeting.id,
+                startedAt: fixture.now.addingTimeInterval(-120),
+                endedAt: fixture.now.addingTimeInterval(-60),
+                now: fixture.now
+            )
             let otherFile = makeAudioFile(sessionId: otherSession.id, source: .microphone, name: "other.caf", now: fixture.now)
             let ranges = [
                 makeRange(audioFileId: microphoneFile.id, startFrame: 0, localeIdentifier: "ja_JP", now: fixture.now),
@@ -98,6 +180,7 @@ import GRDB
             ]
             let otherRange = makeRange(audioFileId: otherFile.id, startFrame: 0, localeIdentifier: "ja_JP", now: fixture.now)
             try await fixture.database.dbQueue.write { db in
+                try otherMeeting.insert(db)
                 try otherSession.insert(db)
                 try microphoneFile.insert(db)
                 try systemFile.insert(db)
@@ -127,16 +210,21 @@ import GRDB
             }
         }
 
-        private func makeOtherSession(in fixture: BatchAudioTestFixture) -> RecordingSessionRecord {
+        private func makeSession(
+            meetingId: UUID,
+            startedAt: Date,
+            endedAt: Date,
+            now: Date
+        ) -> RecordingSessionRecord {
             RecordingSessionRecord(
                 id: .v7(),
-                meetingId: fixture.meeting.id,
-                startedAt: fixture.now.addingTimeInterval(-120),
-                endedAt: fixture.now.addingTimeInterval(-60),
+                meetingId: meetingId,
+                startedAt: startedAt,
+                endedAt: endedAt,
                 duration: 60,
                 offsetSeconds: 0,
-                createdAt: fixture.now,
-                updatedAt: fixture.now,
+                createdAt: now,
+                updatedAt: now,
                 transcriptionMode: .batch
             )
         }
