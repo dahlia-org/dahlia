@@ -36,6 +36,7 @@ final class SidebarViewModel {
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
 
     @ObservationIgnored private var meetingRepository: MeetingRepository?
+    @ObservationIgnored private var projectWorkspaceService: ProjectWorkspaceService?
     @ObservationIgnored private var fileWatcher: TranscriptFileWatcher?
     @ObservationIgnored private var allMeetingsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
@@ -60,6 +61,7 @@ final class SidebarViewModel {
     func setAppDatabase(_ database: AppDatabaseManager?) {
         appDatabase = database
         meetingRepository = database.map { MeetingRepository(dbQueue: $0.dbQueue) }
+        projectWorkspaceService = nil
 
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
@@ -96,6 +98,9 @@ final class SidebarViewModel {
 
         let vaultURL = vault.url
         let vaultId = vault.id
+        if let meetingRepository {
+            projectWorkspaceService = ProjectWorkspaceService(repository: meetingRepository, vault: vault)
+        }
 
         let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
         vaultSyncService = syncService
@@ -379,6 +384,49 @@ final class SidebarViewModel {
     }
 
     // MARK: - Project Helpers
+
+    func createProject(leafName: String, parentProjectId: UUID?) -> ProjectRecord? {
+        guard let projectWorkspaceService else { return nil }
+        do {
+            let project = try projectWorkspaceService.createProject(
+                leafName: leafName,
+                parentProjectId: parentProjectId
+            )
+            lastError = nil
+            return project
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func renameProject(id: UUID, newLeafName: String) -> ProjectRecord? {
+        guard let projectWorkspaceService else { return nil }
+        do {
+            let project = try projectWorkspaceService.renameProject(id: id, newLeafName: newLeafName)
+            lastError = nil
+            return project
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    @discardableResult
+    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) -> Bool {
+        guard let projectWorkspaceService else { return false }
+        do {
+            try projectWorkspaceService.deleteProjectHierarchy(
+                id: id,
+                meetingDisposition: meetingDisposition
+            )
+            lastError = nil
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
 
     /// プロジェクトを取得または作成し、対応するフォルダ URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {

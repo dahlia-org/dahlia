@@ -237,8 +237,10 @@ final class VaultSyncService: @unchecked Sendable {
             .fetchAll(db)
 
         for relativePath in relativePaths {
+            let restoredURL = vaultURL.appending(path: relativePath, directoryHint: .isDirectory)
+            guard !fileManager.fileExists(atPath: restoredURL.path) else { continue }
             let matching = allProjects.filter {
-                $0.name == relativePath || $0.name.hasPrefix(relativePath + "/")
+                ProjectRecord.belongsToHierarchy($0.name, prefix: relativePath)
             }
             let hasTranscripts = matching.contains { idsWithMeetings.contains($0.id) }
 

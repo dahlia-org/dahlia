@@ -31,18 +31,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord {
 
     /// name が指定プレフィクスで始まるレコードを一括リネームする。
     static func renameByPrefix(oldPrefix: String, newPrefix: String, vaultId: UUID, in db: Database) throws {
-        if var record = try ProjectRecord
-            .filter(Column("vaultId") == vaultId)
-            .filter(Column("name") == oldPrefix)
-            .fetchOne(db) {
-            record.name = newPrefix
-            try record.update(db)
-        }
-        let childPrefix = oldPrefix + "/"
-        let records = try ProjectRecord
-            .filter(Column("vaultId") == vaultId)
-            .filter(Column("name").like("\(childPrefix)%"))
-            .fetchAll(db)
+        let records = try hierarchy(prefix: oldPrefix, vaultId: vaultId, in: db)
         for var record in records {
             record.name = newPrefix + record.name.dropFirst(oldPrefix.count)
             try record.update(db)
@@ -52,26 +41,31 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord {
     /// name が指定プレフィクスに一致するレコード、または配下のレコードを一括削除する。
     @discardableResult
     static func deleteByPrefix(_ prefix: String, vaultId: UUID, in db: Database) throws -> Int {
-        let childCount = try ProjectRecord
-            .filter(Column("vaultId") == vaultId)
-            .filter(Column("name").like(prefix + "/%"))
-            .deleteAll(db)
-        let selfCount = try ProjectRecord
-            .filter(Column("vaultId") == vaultId)
-            .filter(Column("name") == prefix)
-            .deleteAll(db)
-        return childCount + selfCount
+        let ids = try hierarchy(prefix: prefix, vaultId: vaultId, in: db).map(\.id)
+        guard !ids.isEmpty else { return 0 }
+        return try Self.filter(ids.contains(Column("id"))).deleteAll(db)
     }
 
     /// 指定プレフィクスに一致するプロジェクトの missingOnDisk を更新する。
     static func setMissingByPrefix(_ prefix: String, missing: Bool, vaultId: UUID, in db: Database) throws {
-        try db.execute(
-            sql: """
-            UPDATE projects SET missingOnDisk = ?
-            WHERE vaultId = ? AND (name = ? OR name LIKE ? || '/%')
-            """,
-            arguments: [missing, vaultId, prefix, prefix]
-        )
+        let ids = try hierarchy(prefix: prefix, vaultId: vaultId, in: db).map(\.id)
+        guard !ids.isEmpty else { return }
+        _ = try ProjectRecord
+            .filter(ids.contains(Column("id")))
+            .updateAll(db, Column("missingOnDisk").set(to: missing))
+    }
+
+    /// 指定パス自身と、その配下のプロジェクトを返す。
+    static func hierarchy(prefix: String, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+        try ProjectRecord
+            .filter(Column("vaultId") == vaultId)
+            .fetchAll(db)
+            .filter { belongsToHierarchy($0.name, prefix: prefix) }
+            .sorted { $0.name.count < $1.name.count }
+    }
+
+    static func belongsToHierarchy(_ name: String, prefix: String) -> Bool {
+        name == prefix || name.hasPrefix(prefix + "/")
     }
 
     /// パス文字列から中間パスを含む全パスを生成する。

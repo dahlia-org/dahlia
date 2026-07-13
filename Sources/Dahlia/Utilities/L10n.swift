@@ -29,6 +29,7 @@ enum L10n {
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
+    static var retry: String { String(localized: "Retry", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }
     static var auto: String { String(localized: "Auto", bundle: bundle) }
     static var apply: String { String(localized: "Apply", bundle: bundle) }
@@ -62,10 +63,26 @@ enum L10n {
     static var me: String { String(localized: "Me", bundle: bundle) }
     static var ask: String { String(localized: "Ask", bundle: bundle) }
     static var newProject: String { String(localized: "New Project", bundle: bundle) }
+    static var newSubproject: String { String(localized: "New Subproject", bundle: bundle) }
+    static var newTopLevelProject: String { String(localized: "New Project at Vault Top", bundle: bundle) }
+
+    static func projectCreationLocation(_ name: String) -> String {
+        String(localized: "Create a subproject inside \(name).", bundle: bundle)
+    }
+
+    static var projectCreationAtVaultTop: String { String(
+        localized: "Create a project at the top level of the vault.",
+        bundle: bundle
+    ) }
     static var projectCreationFailed: String { String(localized: "Could Not Create Project", bundle: bundle) }
     static var projectCreationFailedDescription: String { String(localized: "The project folder could not be created.", bundle: bundle) }
     static var newMeeting: String { String(localized: "New meeting", bundle: bundle) }
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
+    static var renameProject: String { String(localized: "Rename Project", bundle: bundle) }
+    static var projectNameHelp: String { String(
+        localized: "Renaming also updates the project folder and all subprojects.",
+        bundle: bundle
+    ) }
     static var location: String { String(localized: "Location", bundle: bundle) }
     static var latestMeeting: String { String(localized: "Latest Meeting", bundle: bundle) }
     static var openInFinder: String { String(localized: "Open in Finder", bundle: bundle) }
@@ -147,7 +164,79 @@ enum L10n {
     ) }
     static var projectDescriptionPlaceholder: String { String(localized: "Describe this project...", bundle: bundle) }
     static var projectDescriptionSaveFailed: String { String(localized: "Could not save the project description.", bundle: bundle) }
+    static var saving: String { String(localized: "Saving…", bundle: bundle) }
     static var saved: String { String(localized: "Saved", bundle: bundle) }
+    static var dangerZone: String { String(localized: "Danger Zone", bundle: bundle) }
+    static var deleteProject: String { String(localized: "Delete Project", bundle: bundle) }
+    static var deleteProjectHelp: String { String(
+        localized: "Deletes this project and all subprojects. The project folder is moved to the Trash.",
+        bundle: bundle
+    ) }
+
+    static func deleteProjectConfirmation(_ name: String) -> String {
+        String(localized: "Delete \(name)?", bundle: bundle)
+    }
+
+    static func projectDeletionSummary(projectCount: Int, meetingCount: Int) -> String {
+        String(localized: "This affects \(projectCount) projects and \(meetingCount) meetings.", bundle: bundle)
+    }
+
+    static var meetingHandling: String { String(localized: "Meeting History", bundle: bundle) }
+    static var moveMeetingsBeforeDeletingProject: String { String(
+        localized: "Move meetings to another project",
+        bundle: bundle
+    ) }
+    static var deleteMeetingsWithProject: String { String(
+        localized: "Delete meetings and their transcripts",
+        bundle: bundle
+    ) }
+    static var moveMeetingsTo: String { String(localized: "Move Meetings To", bundle: bundle) }
+    static var noProjectMoveDestination: String { String(
+        localized: "There are no other available projects to move meetings to.",
+        bundle: bundle
+    ) }
+    static var moveAndDeleteProject: String { String(localized: "Move Meetings and Delete Project", bundle: bundle) }
+    static var deleteProjectAndMeetings: String { String(localized: "Delete Project and Meetings", bundle: bundle) }
+    static var projectOperationFailed: String { String(localized: "Could Not Update Project", bundle: bundle) }
+    static var projectNotFound: String { String(localized: "The project could not be found.", bundle: bundle) }
+    static var projectParentFolderMissing: String { String(
+        localized: "The parent project folder is missing from disk.",
+        bundle: bundle
+    ) }
+    static var invalidProjectName: String { String(
+        localized: "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'.",
+        bundle: bundle
+    ) }
+    static var projectNameTooLong: String { String(localized: "The project name is too long.", bundle: bundle) }
+
+    static func projectAlreadyExists(_ name: String) -> String {
+        String(localized: "A project named \(name) already exists in this location.", bundle: bundle)
+    }
+
+    static func projectFolderAlreadyExists(_ name: String) -> String {
+        String(localized: "A folder named \(name) already exists in this location.", bundle: bundle)
+    }
+
+    static var projectFolderMissingForOperation: String { String(
+        localized: "The project folder must exist before it can be renamed.",
+        bundle: bundle
+    ) }
+    static var projectTrashLocationUnavailable: String { String(
+        localized: "The project folder could not be moved to a recoverable Trash location.",
+        bundle: bundle
+    ) }
+    static var invalidProjectMoveDestination: String { String(
+        localized: "Choose an available project outside the hierarchy being deleted.",
+        bundle: bundle
+    ) }
+
+    static func projectRollbackFailed(operation: String, rollback: String) -> String {
+        String(
+            localized: "The project operation failed (\(operation)), and Dahlia could not restore the folder (\(rollback)).",
+            bundle: bundle
+        )
+    }
+
     static var selectProjectToManageDescription: String { String(
         localized: "Select a project to manage summary destinations and instructions.",
         bundle: bundle

@@ -7,9 +7,15 @@ struct ProjectManagementView: View {
     @State private var selectedProjectId: UUID?
     @State private var projectSearchText = ""
     @State private var isShowingProjectCreation = false
+    @State private var projectCreationParentId: UUID?
     @State private var newProjectName = ""
     @State private var isShowingProjectCreationError = false
     @State private var projectCreationErrorMessage = ""
+    @State private var projectName = ""
+    @State private var projectPendingDeletion: ProjectOverviewItem?
+    @State private var requestedExpandedProjectIds: Set<UUID> = []
+    @State private var isShowingProjectOperationError = false
+    @State private var projectOperationErrorMessage = ""
     @State private var projectDescription = ""
     @State private var descriptionStatusMessage: String?
     @State private var descriptionSaveFailed = false
@@ -28,7 +34,7 @@ struct ProjectManagementView: View {
         .frame(minWidth: 900, minHeight: 580)
         .onAppear {
             selectInitialProjectIfNeeded()
-            loadProjectDescription(for: selectedProjectId)
+            loadProjectDetails(for: selectedProjectId)
         }
         .onChange(of: sidebarViewModel.allProjectItems) { _, projects in
             reconcileSelection(with: projects)
@@ -36,7 +42,7 @@ struct ProjectManagementView: View {
         .onChange(of: selectedProjectId) { oldProjectId, newProjectId in
             descriptionSaveTask?.cancel()
             persistProjectDescriptionIfNeeded(for: oldProjectId)
-            loadProjectDescription(for: newProjectId)
+            loadProjectDetails(for: newProjectId)
         }
         .onChange(of: projectDescription) { _, _ in
             scheduleProjectDescriptionSave()
@@ -44,6 +50,21 @@ struct ProjectManagementView: View {
         .onDisappear {
             descriptionSaveTask?.cancel()
             persistProjectDescriptionIfNeeded(for: selectedProjectId)
+        }
+        .sheet(item: $projectPendingDeletion) { project in
+            let hierarchy = projectHierarchy(for: project)
+            ProjectDeletionDialog(
+                project: project,
+                projectCount: hierarchy.count,
+                meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
+                moveDestinations: projectMoveDestinations(excluding: project),
+                onConfirm: { disposition in
+                    deleteProject(project, meetingDisposition: disposition)
+                }
+            )
+        }
+        .alert(L10n.projectOperationFailed, isPresented: $isShowingProjectOperationError) {} message: {
+            Text(projectOperationErrorMessage)
         }
     }
 
@@ -77,9 +98,12 @@ struct ProjectManagementView: View {
                 }
                 .listRowSeparator(.hidden)
             } else {
-                OutlineGroup(filteredProjectNodes, children: \.children) { node in
-                    ProjectManagementRow(node: node, isSelected: selectedProjectId == node.id)
-                        .tag(node.id)
+                ForEach(filteredProjectNodes) { node in
+                    ProjectManagementTreeRow(
+                        node: node,
+                        selectedProjectId: selectedProjectId,
+                        requestedExpandedProjectIds: requestedExpandedProjectIds
+                    )
                 }
             }
         }
@@ -88,16 +112,43 @@ struct ProjectManagementView: View {
         .searchable(text: $projectSearchText, prompt: L10n.searchProjects)
         .toolbar {
             ToolbarItem {
-                Button(L10n.newProject, systemImage: "plus", action: presentProjectCreation)
+                if let selectedProject {
+                    Menu(L10n.newProject, systemImage: "plus") {
+                        Button(
+                            L10n.newSubproject,
+                            systemImage: "folder.badge.plus",
+                            action: presentSubprojectCreation
+                        )
+                        .disabled(selectedProject.missingOnDisk)
+
+                        Button(
+                            L10n.newTopLevelProject,
+                            systemImage: "externaldrive.badge.plus",
+                            action: presentTopLevelProjectCreation
+                        )
+                    }
                     .disabled(AppSettings.shared.currentVault == nil)
                     .help(L10n.newProject)
+                } else {
+                    Button(L10n.newProject, systemImage: "plus", action: presentTopLevelProjectCreation)
+                        .disabled(AppSettings.shared.currentVault == nil)
+                        .help(L10n.newProject)
+                }
             }
         }
         .alert(L10n.newProject, isPresented: $isShowingProjectCreation) {
             TextField(L10n.projectName, text: $newProjectName)
-            Button(L10n.cancel, role: .cancel) {}
+            Button(L10n.cancel, role: .cancel) {
+                projectCreationParentId = nil
+            }
             Button(L10n.create, action: createProject)
                 .disabled(trimmedNewProjectName.isEmpty)
+        } message: {
+            if let parent = projectCreationParent {
+                Text(L10n.projectCreationLocation(parent.projectName))
+            } else {
+                Text(L10n.projectCreationAtVaultTop)
+            }
         }
         .alert(L10n.projectCreationFailed, isPresented: $isShowingProjectCreationError) {} message: {
             Text(projectCreationErrorMessage)
@@ -124,6 +175,10 @@ struct ProjectManagementView: View {
         }
     }
 
+}
+
+private extension ProjectManagementView {
+
     private func projectDetailForm(for project: ProjectOverviewItem) -> some View {
         Form {
             Section {
@@ -136,28 +191,72 @@ struct ProjectManagementView: View {
                 }
             }
 
+            projectNameSection(for: project)
             descriptionSection
             destinationSection(for: project)
+            projectDeletionSection
         }
         .formStyle(.grouped)
     }
 
+    private func projectNameSection(for project: ProjectOverviewItem) -> some View {
+        Section {
+            LabeledContent(L10n.projectName) {
+                HStack {
+                    TextField(L10n.projectName, text: $projectName)
+                        .onSubmit(renameSelectedProject)
+
+                    Button(L10n.renameProject, action: renameSelectedProject)
+                        .disabled(!canRename(project))
+                }
+            }
+        } footer: {
+            Text(L10n.projectNameHelp)
+        }
+    }
+
     private var descriptionSection: some View {
         Section {
-            TextField(L10n.projectDescriptionPlaceholder, text: $projectDescription, axis: .vertical)
-                .lineLimit(6 ... 12)
+            TextField(
+                L10n.projectDescription,
+                text: $projectDescription,
+                prompt: Text(L10n.projectDescriptionPlaceholder),
+                axis: .vertical
+            )
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(6 ... 12)
+            .accessibilityLabel(L10n.projectDescription)
 
             if let descriptionStatusMessage {
-                SettingsStatusMessage(
-                    text: descriptionStatusMessage,
-                    systemImage: descriptionSaveFailed ? "exclamationmark.triangle" : "checkmark.circle",
-                    tint: descriptionSaveFailed ? .orange : .secondary
-                )
+                HStack {
+                    SettingsStatusMessage(
+                        text: descriptionStatusMessage,
+                        systemImage: descriptionStatusImage,
+                        tint: descriptionSaveFailed ? .orange : .secondary
+                    )
+
+                    if descriptionSaveFailed {
+                        Button(L10n.retry) {
+                            persistProjectDescriptionIfNeeded(for: selectedProjectId)
+                        }
+                    }
+                }
             }
         } header: {
             Text(L10n.projectDescription)
         } footer: {
             Text(L10n.projectDescriptionHelp)
+        }
+    }
+
+    private var projectDeletionSection: some View {
+        Section {
+            Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: requestSelectedProjectDeletion)
+        } header: {
+            Text(L10n.dangerZone)
+        } footer: {
+            Text(L10n.deleteProjectHelp)
         }
     }
 
@@ -190,7 +289,17 @@ struct ProjectManagementView: View {
         selectedProjectId = sidebarViewModel.allProjectItems.first?.projectId
     }
 
-    private func presentProjectCreation() {
+    private func presentSubprojectCreation() {
+        guard let selectedProject else { return }
+        presentProjectCreation(parentProjectId: selectedProject.projectId)
+    }
+
+    private func presentTopLevelProjectCreation() {
+        presentProjectCreation(parentProjectId: nil)
+    }
+
+    private func presentProjectCreation(parentProjectId: UUID?) {
+        projectCreationParentId = parentProjectId
         newProjectName = ""
         isShowingProjectCreation = true
     }
@@ -198,23 +307,20 @@ struct ProjectManagementView: View {
     private func createProject() {
         let projectName = trimmedNewProjectName
         guard !projectName.isEmpty else { return }
+        defer { projectCreationParentId = nil }
 
-        let projectId: UUID
-        if let existingProject = sidebarViewModel.allProjectItems.first(where: {
-            $0.projectName.caseInsensitiveCompare(projectName) == .orderedSame
-        }) {
-            projectId = existingProject.projectId
-        } else {
-            guard let project = sidebarViewModel.fetchOrCreateProject(name: projectName) else {
-                projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
-                isShowingProjectCreationError = true
-                return
-            }
-            projectId = project.record.id
+        guard let project = sidebarViewModel.createProject(
+            leafName: projectName,
+            parentProjectId: projectCreationParentId
+        ) else {
+            projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
+            isShowingProjectCreationError = true
+            return
         }
 
         projectSearchText = ""
-        selectedProjectId = projectId
+        requestExpansion(toReveal: project.name)
+        selectedProjectId = project.id
     }
 
     private func reconcileSelection(with projects: [ProjectOverviewItem]) {
@@ -238,16 +344,22 @@ struct ProjectManagementView: View {
         NSWorkspace.shared.open(url)
     }
 
-    private func loadProjectDescription(for projectId: UUID?) {
+    private func loadProjectDetails(for projectId: UUID?) {
         let description = projectId.flatMap(sidebarViewModel.projectDescription(id:)) ?? ""
         projectDescription = description
         lastSavedProjectDescription = description
         descriptionStatusMessage = nil
+        projectName = projectId
+            .flatMap { id in sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) }
+            .map { leafName(for: $0.projectName) }
+            ?? ""
     }
 
     private func scheduleProjectDescriptionSave() {
         guard let selectedProjectId,
               projectDescription != lastSavedProjectDescription else { return }
+        descriptionStatusMessage = L10n.saving
+        descriptionSaveFailed = false
         descriptionSaveTask?.cancel()
         descriptionSaveTask = Task { @MainActor in
             do {
@@ -272,73 +384,94 @@ struct ProjectManagementView: View {
             descriptionSaveFailed = true
         }
     }
-}
 
-private struct ProjectManagementRow: View {
-    let node: ProjectTreeNode
-    let isSelected: Bool
-
-    private var project: ProjectOverviewItem {
-        node.project
+    private var projectCreationParent: ProjectOverviewItem? {
+        guard let projectCreationParentId else { return nil }
+        return sidebarViewModel.allProjectItems.first(where: { $0.projectId == projectCreationParentId })
     }
 
-    var body: some View {
-        Label {
-            HStack(spacing: 6) {
-                Text(node.displayName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(1)
-
-                ProjectMeetingCountBadge(count: node.meetingCount, isSelected: isSelected)
-
-                Spacer(minLength: 0)
-
-                if project.missingOnDisk {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption2)
-                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .orange)
-                        .help(L10n.missingOnDisk)
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel)
-        } icon: {
-            Image(systemName: project.missingOnDisk ? "folder.badge.questionmark" : "folder")
-                .foregroundStyle(project.missingOnDisk ? .orange : (isSelected ? .white : .secondary))
+    private var descriptionStatusImage: String {
+        if descriptionSaveFailed {
+            "exclamationmark.triangle"
+        } else if descriptionStatusMessage == L10n.saving {
+            "arrow.triangle.2.circlepath"
+        } else {
+            "checkmark.circle"
         }
     }
 
-    private var accessibilityLabel: String {
-        var label = "\(node.displayName), \(L10n.meetingCount(node.meetingCount))"
-        if project.missingOnDisk {
-            label += ", \(L10n.missingOnDisk)"
-        }
-        return label
-    }
-}
-
-private struct ProjectMeetingCountBadge: View {
-    let count: Int
-    let isSelected: Bool
-
-    var body: some View {
-        Text("\(count)")
-            .font(.caption2.weight(.semibold).monospacedDigit())
-            .foregroundStyle(isSelected ? Color.white : Color(nsColor: .secondaryLabelColor))
-            .lineLimit(1)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .frame(minWidth: 18)
-            .background(backgroundColor, in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityHidden(true)
+    private func canRename(_ project: ProjectOverviewItem) -> Bool {
+        let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !project.missingOnDisk
+            && !trimmedName.isEmpty
+            && trimmedName != leafName(for: project.projectName)
     }
 
-    private var backgroundColor: Color {
-        if isSelected {
-            return Color.white.opacity(0.20)
+    private func renameSelectedProject() {
+        guard let selectedProject else { return }
+        persistProjectDescriptionIfNeeded(for: selectedProject.projectId)
+        guard let renamed = sidebarViewModel.renameProject(
+            id: selectedProject.projectId,
+            newLeafName: projectName
+        ) else {
+            showProjectOperationError()
+            return
         }
-        return Color(nsColor: .secondaryLabelColor).opacity(0.14)
+        projectName = leafName(for: renamed.name)
+        projectSearchText = ""
+        requestExpansion(toReveal: renamed.name)
+    }
+
+    private func requestSelectedProjectDeletion() {
+        guard let selectedProject else { return }
+        projectPendingDeletion = selectedProject
+    }
+
+    private func deleteProject(
+        _ project: ProjectOverviewItem,
+        meetingDisposition: ProjectMeetingDisposition
+    ) -> Bool {
+        descriptionSaveTask?.cancel()
+        guard sidebarViewModel.deleteProjectHierarchy(
+            id: project.projectId,
+            meetingDisposition: meetingDisposition
+        ) else {
+            showProjectOperationError()
+            return false
+        }
+        if selectedProjectId == project.projectId
+            || projectHierarchy(for: project).contains(where: { $0.projectId == selectedProjectId }) {
+            selectedProjectId = nil
+        }
+        return true
+    }
+
+    private func projectHierarchy(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {
+        sidebarViewModel.allProjectItems.filter {
+            ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
+        }
+    }
+
+    private func projectMoveDestinations(excluding project: ProjectOverviewItem) -> [ProjectOverviewItem] {
+        sidebarViewModel.allProjectItems.filter {
+            !$0.missingOnDisk
+                && !ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
+        }
+    }
+
+    private func requestExpansion(toReveal projectName: String) {
+        let ancestorIds = sidebarViewModel.allProjectItems.compactMap { project -> UUID? in
+            projectName.hasPrefix(project.projectName + "/") ? project.projectId : nil
+        }
+        requestedExpandedProjectIds.formUnion(ancestorIds)
+    }
+
+    private func leafName(for projectName: String) -> String {
+        projectName.split(separator: "/").last.map(String.init) ?? projectName
+    }
+
+    private func showProjectOperationError() {
+        projectOperationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
+        isShowingProjectOperationError = true
     }
 }

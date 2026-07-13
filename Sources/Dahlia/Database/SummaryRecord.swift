@@ -72,6 +72,24 @@ struct SummaryRecord: Codable, FetchableRecord, PersistableRecord {
         )
     }
 
+    static func clearVaultRelativePaths(
+        meetingIds: Set<UUID>,
+        underProjectPrefix projectPrefix: String,
+        in db: Database
+    ) throws {
+        guard !meetingIds.isEmpty else { return }
+        let summaries = try SummaryRecord
+            .filter(meetingIds.contains(Column("meetingId")))
+            .fetchAll(db)
+        for var summary in summaries {
+            guard let path = summary.vaultRelativePath,
+                  ProjectRecord.belongsToHierarchy(path, prefix: projectPrefix)
+            else { continue }
+            summary.vaultRelativePath = nil
+            try summary.update(db)
+        }
+    }
+
     func loadDocument() -> SummaryDocument {
         if let document = document?.nilIfBlank,
            let data = document.data(using: .utf8),
