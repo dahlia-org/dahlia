@@ -12,6 +12,18 @@ import CoreAudio
         }
 
         @Test
+        func voiceProcessingPreservesSystemManagedMicrophoneModeSettings() throws {
+            let inputNode = FakeVoiceProcessingInput()
+
+            try AudioCaptureManager.enableVoiceProcessing(inputNode: inputNode)
+
+            #expect(inputNode.enableRequests == [true])
+            #expect(inputNode.duckingConfigurationSetCount == 1)
+            #expect(!inputNode.voiceProcessingOtherAudioDuckingConfiguration.enableAdvancedDucking.boolValue)
+            #expect(inputNode.voiceProcessingOtherAudioDuckingConfiguration.duckingLevel == .min)
+        }
+
+        @Test
         func rawInputDoesNotAttemptVoiceProcessing() {
             #expect(AudioCaptureManager.voiceProcessingAttemptOrder(prefersVoiceProcessing: false) == [false])
         }

@@ -195,7 +195,7 @@ extension AudioCaptureManager {
         }
 
         if enablesVoiceProcessing {
-            try enableVoiceProcessing(inputNode: inputNode)
+            try Self.enableVoiceProcessing(inputNode: inputNode)
         }
 
         // Enabling Voice Processing replaces AUHAL with AUVoiceIO. Apply an
@@ -257,13 +257,10 @@ extension AudioCaptureManager {
         )
     }
 
-    private func enableVoiceProcessing(inputNode: AVAudioInputNode) throws {
+    static func enableVoiceProcessing(inputNode: any VoiceProcessingInputConfiguring) throws {
         try inputNode.setVoiceProcessingEnabled(true)
-        // macOS microphone modes are implemented by the Voice Processing unit.
-        // Bypassing it would also bypass Voice Isolation selected by the user.
-        inputNode.isVoiceProcessingBypassed = false
-        inputNode.isVoiceProcessingInputMuted = false
-        inputNode.isVoiceProcessingAGCEnabled = true
+        // Leave bypass, mute, and AGC at their system-managed defaults. Writing
+        // them here reconfigures AUVoiceIO after macOS applies the user's mode.
         inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(
             enableAdvancedDucking: false,
             duckingLevel: .min
