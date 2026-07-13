@@ -89,6 +89,91 @@ import GRDB
             #expect(viewModel.recordingMeetingId == prepared.recordingMeeting.id)
         }
 
+        @Test
+        func discardingFailedBatchCancelsPendingSummaryGeneration() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "discard-cancels-summary",
+                meetingStatus: .ready,
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            let audioFile = batch.makeAudioRecord(finalizedAt: batch.now, totalFrameCount: 160)
+            let range = RecordingAudioRangeRecord(
+                id: .v7(),
+                audioFileId: audioFile.id,
+                startFrame: 0,
+                frameCount: 160,
+                sessionOffsetSeconds: 0,
+                localeIdentifier: "ja_JP",
+                createdAt: batch.now,
+                updatedAt: batch.now
+            )
+            let existingSegment = TranscriptSegmentRecord(
+                id: .v7(),
+                meetingId: batch.meeting.id,
+                startTime: batch.now,
+                endTime: nil,
+                text: "Existing transcript",
+                translatedText: nil,
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+            try await batch.database.dbQueue.write { db in
+                try audioFile.insert(db)
+                try range.insert(db)
+                try existingSegment.insert(db)
+            }
+
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(dbQueue: batch.database.dbQueue)
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: batch.vaultURL
+            )
+            #expect(await waitUntil {
+                viewModel.batchTranscriptionState == .awaitingConfirmation(sessionId: batch.session.id)
+            })
+
+            viewModel.pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                suggestedLocaleIdentifier: "ja_JP",
+                retainAudioAfterBatch: false,
+                generateSummaryAfterTranscription: true
+            )
+            viewModel.confirmBatchTranscription(
+                localeIdentifier: "ja_JP",
+                retainAudioAfterBatch: false,
+                generateSummaryAfterTranscription: true
+            )
+            #expect(await waitUntil {
+                if case .failed = viewModel.batchTranscriptionState {
+                    true
+                } else {
+                    false
+                }
+            })
+
+            viewModel.discardFailedBatchTranscription()
+            #expect(await waitUntil { viewModel.batchTranscriptionState == nil })
+
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: batch.vaultURL
+            )
+            #expect(await waitUntil {
+                viewModel.store.segments.contains(where: { $0.id == existingSegment.id })
+            })
+            #expect(!viewModel.requestShowSummaryTab)
+        }
+
         private func makeFixture(name: String) throws -> Fixture {
             let batch = try BatchAudioTestFixture(
                 name: name,

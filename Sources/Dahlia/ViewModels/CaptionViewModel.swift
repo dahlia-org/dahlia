@@ -520,6 +520,7 @@ final class CaptionViewModel: ObservableObject {
             do {
                 let repository = MeetingRepository(dbQueue: dbQueue)
                 guard try repository.discardFailedBatchSession(id: sessionId) else { return }
+                pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: sessionId)
                 try refreshBatchTranscriptionState(meetingId: meetingId, dbQueue: dbQueue)
             } catch {
                 errorMessage = error.localizedDescription
