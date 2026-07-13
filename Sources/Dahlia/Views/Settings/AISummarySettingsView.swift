@@ -5,7 +5,10 @@ struct AISummarySettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var apiToken = ""
     @State private var isTestingConnection = false
+    @State private var isLoadingDatabricksProfiles = false
+    @State private var databricksProfiles: [DatabricksCLIClient.Profile] = []
     @State private var connectionTestResult: ConnectionTestResult?
+    @State private var databricksProfileLoadError: String?
     private enum ConnectionTestResult {
         case success
         case failure(String)
@@ -44,13 +47,15 @@ struct AISummarySettingsView: View {
                     Text(L10n.maxTokensDescription)
                 }
 
-                LabeledContent {
-                    SecureField("", text: $apiToken)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { settings.llmAPIToken = apiToken }
-                } label: {
-                    Text(L10n.apiToken)
-                    Text(L10n.apiTokenStoredInKeychain)
+                if shouldShowAPITokenField {
+                    LabeledContent {
+                        SecureField("", text: $apiToken)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { settings.llmAPIToken = apiToken }
+                    } label: {
+                        Text(apiTokenLabel)
+                        Text(L10n.apiTokenStoredInKeychain)
+                    }
                 }
             } header: {
                 Text(L10n.llmSettings)
@@ -70,22 +75,69 @@ struct AISummarySettingsView: View {
         .formStyle(.grouped)
         .task {
             apiToken = settings.llmAPIToken
+            if shouldLoadDatabricksProfiles {
+                await loadDatabricksProfiles()
+            }
         }
         .onDisappear {
             settings.llmAPIToken = apiToken
         }
         .onChange(of: settings.llmProviderRawValue) { _, _ in
             connectionTestResult = nil
+            if shouldLoadDatabricksProfiles {
+                Task { await loadDatabricksProfiles() }
+            }
         }
         .onChange(of: settings.llmModelRawValue) { _, _ in
             connectionTestResult = nil
+        }
+        .onChange(of: settings.llmDatabricksProfile) { _, _ in
+            connectionTestResult = nil
+        }
+        .onChange(of: settings.llmDatabricksAuthenticationTypeRawValue) { _, _ in
+            connectionTestResult = nil
+            if shouldLoadDatabricksProfiles {
+                Task { await loadDatabricksProfiles() }
+            } else {
+                databricksProfileLoadError = nil
+            }
         }
     }
 
     // MARK: - Private
 
     private var isLLMConfigComplete: Bool {
-        settings.resolvedLLMEndpointURL.nilIfBlank != nil && apiToken.nilIfBlank != nil
+        guard settings.resolvedLLMEndpointURL.nilIfBlank != nil else { return false }
+
+        switch settings.llmProvider {
+        case .openAI:
+            return apiToken.nilIfBlank != nil
+        case .databricks:
+            switch settings.llmDatabricksAuthenticationType {
+            case .personalAccessToken:
+                return apiToken.nilIfBlank != nil
+            case .oauthCLI:
+                return databricksProfiles.contains { $0.name == settings.llmDatabricksProfile }
+            }
+        }
+    }
+
+    private var shouldShowAPITokenField: Bool {
+        switch settings.llmProvider {
+        case .openAI:
+            true
+        case .databricks:
+            settings.llmDatabricksAuthenticationType == .personalAccessToken
+        }
+    }
+
+    private var shouldLoadDatabricksProfiles: Bool {
+        settings.llmProvider == .databricks
+            && settings.llmDatabricksAuthenticationType == .oauthCLI
+    }
+
+    private var apiTokenLabel: String {
+        settings.llmProvider == .databricks ? L10n.personalAccessToken : L10n.apiToken
     }
 
     @ViewBuilder
@@ -154,6 +206,55 @@ struct AISummarySettingsView: View {
             LabeledContent(L10n.endpointURL) {
                 endpointPreview(settings.resolvedLLMEndpointURL)
             }
+
+            Picker(selection: $settings.llmDatabricksAuthenticationType) {
+                ForEach(DatabricksAuthenticationType.allCases) { authenticationType in
+                    Text(authenticationType.displayName).tag(authenticationType)
+                }
+            } label: {
+                Text(L10n.authenticationType)
+                Text(L10n.databricksAuthenticationTypeDescription)
+            }
+            .pickerStyle(.menu)
+
+            if settings.llmDatabricksAuthenticationType == .oauthCLI {
+                LabeledContent {
+                    HStack {
+                        if isLoadingDatabricksProfiles {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else if databricksProfiles.isEmpty {
+                            Text(L10n.noDatabricksProfiles)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Picker("", selection: $settings.llmDatabricksProfile) {
+                                ForEach(databricksProfiles) { profile in
+                                    Text(profile.name).tag(profile.name)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                        }
+
+                        Button(L10n.refreshDatabricksProfiles, systemImage: "arrow.clockwise") {
+                            Task { await loadDatabricksProfiles() }
+                        }
+                        .labelStyle(.iconOnly)
+                        .disabled(isLoadingDatabricksProfiles)
+                    }
+                } label: {
+                    Text(L10n.databricksProfile)
+                    Text(L10n.databricksProfileDescription)
+                }
+
+                if let databricksProfileLoadError {
+                    SettingsStatusMessage(
+                        text: databricksProfileLoadError,
+                        systemImage: "xmark.circle.fill",
+                        tint: .red
+                    )
+                }
+            }
         }
     }
 
@@ -168,21 +269,50 @@ struct AISummarySettingsView: View {
     }
 
     private func testConnection() {
-        settings.llmAPIToken = apiToken
+        if shouldShowAPITokenField {
+            settings.llmAPIToken = apiToken
+        }
         connectionTestResult = nil
         isTestingConnection = true
         Task {
             do {
+                let token = try await LLMCredentialResolver().accessToken(
+                    provider: settings.llmProvider,
+                    apiToken: apiToken,
+                    databricksAuthenticationType: settings.llmDatabricksAuthenticationType,
+                    databricksProfile: settings.llmDatabricksProfile
+                )
                 try await LLMService.testConnection(
                     endpoint: settings.resolvedLLMEndpointURL,
                     model: settings.resolvedLLMModelName,
-                    token: apiToken
+                    token: token
                 )
                 connectionTestResult = .success
             } catch {
                 connectionTestResult = .failure(error.localizedDescription)
             }
             isTestingConnection = false
+        }
+    }
+
+    private func loadDatabricksProfiles() async {
+        isLoadingDatabricksProfiles = true
+        databricksProfileLoadError = nil
+        defer { isLoadingDatabricksProfiles = false }
+
+        do {
+            let profiles = try await DatabricksCLIClient().profiles()
+            databricksProfiles = profiles
+            let selectedProfile = AppSettings.resolvedDatabricksProfileSelection(
+                current: settings.llmDatabricksProfile,
+                availableProfiles: profiles.map(\.name)
+            )
+            if selectedProfile != settings.llmDatabricksProfile {
+                settings.llmDatabricksProfile = selectedProfile
+            }
+        } catch {
+            databricksProfiles = []
+            databricksProfileLoadError = error.localizedDescription
         }
     }
 }

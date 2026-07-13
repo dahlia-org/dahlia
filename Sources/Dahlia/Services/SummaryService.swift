@@ -26,7 +26,12 @@ enum SummaryService {
         let endpoint = settings.resolvedLLMEndpointURL
         let model = settings.resolvedLLMModelName
         let maxTokens = settings.llmMaxTokens
-        let token = settings.llmAPIToken
+        let token = try await LLMCredentialResolver().accessToken(
+            provider: settings.llmProvider,
+            apiToken: settings.llmAPIToken,
+            databricksAuthenticationType: settings.llmDatabricksAuthenticationType,
+            databricksProfile: settings.llmDatabricksProfile
+        )
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
         let languageName = settings.llmSummaryLanguage.displayName
 
