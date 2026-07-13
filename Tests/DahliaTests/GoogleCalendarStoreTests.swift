@@ -249,7 +249,7 @@ struct GoogleCalendarStoreTests {
     }
 
     @Test
-    func allDayEventIsIgnored() throws {
+    func allDayEventIsAvailableForDisplayFiltering() throws {
         let allDayItem = GoogleCalendarAPIClient.EventItem(
             id: "event-2",
             summary: nil,
@@ -270,11 +270,11 @@ struct GoogleCalendarStoreTests {
             calendar: Calendar(identifier: .gregorian)
         )
 
-        #expect(event == nil)
+        #expect(event?.isAllDay == true)
     }
 
     @Test
-    func outOfOfficeEventIsIgnored() throws {
+    func outOfOfficeEventIsAvailableForDisplayFiltering() throws {
         let outOfOfficeItem = GoogleCalendarAPIClient.EventItem(
             id: "event-3",
             summary: "Out of office",
@@ -295,7 +295,7 @@ struct GoogleCalendarStoreTests {
             calendar: .current
         )
 
-        #expect(event == nil)
+        #expect(event?.isOutOfOffice == true)
     }
 }
 

@@ -48,17 +48,43 @@ import Foundation
 
             #expect(staleIdentifiers == ["canceled", "moved"])
         }
+
+        @Test
+        func appliesCalendarEventFilterToNotificationSchedule() {
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            let included = calendarEvent(id: "included", startDate: now.addingTimeInterval(600))
+            let outOfOffice = calendarEvent(
+                id: "out-of-office",
+                title: "Alex - OOTO",
+                startDate: now.addingTimeInterval(300)
+            )
+            let filter = CalendarEventFilter(excludesOutOfOfficeEvents: true)
+
+            let schedule = CalendarMeetingNotificationPlanner.schedule(
+                for: [outOfOffice, included],
+                filter: filter,
+                now: now,
+                limit: 50
+            )
+
+            #expect(schedule.map(\.event.id) == [included.id])
+        }
     }
 #endif
 
-private func calendarEvent(startDate: Date, isAllDay: Bool = false) -> CalendarEvent {
+private func calendarEvent(
+    id: String = "event-id",
+    title: String = "Planning",
+    startDate: Date,
+    isAllDay: Bool = false
+) -> CalendarEvent {
     CalendarEvent(
-        id: "event-id",
+        id: id,
         calendarID: "calendar-id",
         calendarName: "Calendar",
         calendarColorHex: nil,
-        platformId: "platform-id",
-        title: "Planning",
+        platformId: id,
+        title: title,
         description: "",
         icalUid: "uid",
         startDate: startDate,

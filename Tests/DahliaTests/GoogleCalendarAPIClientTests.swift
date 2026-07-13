@@ -63,8 +63,7 @@ struct GoogleCalendarAPIClientTests {
             .filter { $0.name == "eventTypes" }
             .compactMap(\.value)
 
-        #expect(Set(eventTypes) == Set(["default", "focusTime", "fromGmail"]))
-        #expect(!eventTypes.contains("outOfOffice"))
+        #expect(Set(eventTypes) == Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
     }
 
     @Test
@@ -133,6 +132,36 @@ struct GoogleCalendarAPIClientTests {
 
         #expect(event.recurrenceId == "20260417T003000Z")
         #expect(event.url?.absoluteString == "https://calendar.google.com/calendar/event?eid=instance")
+    }
+
+    @Test
+    func eventPayloadIncludesAttendeeAndDeclineMetadata() throws {
+        let data = Data("""
+        {
+          "items": [
+            {
+              "id": "declined-meeting",
+              "start": { "dateTime": "2026-04-17T01:00:00Z" },
+              "end": { "dateTime": "2026-04-17T02:00:00Z" },
+              "attendees": [
+                { "email": "me@example.com", "self": true, "responseStatus": "declined" },
+                { "email": "colleague@example.com", "responseStatus": "accepted" }
+              ]
+            }
+          ]
+        }
+        """.utf8)
+
+        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+        let item = try #require(response.items.first)
+        let transformed = try GoogleCalendarAPIClient.makeEvent(
+            from: item,
+            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+        )
+        let event = try #require(transformed)
+
+        #expect(event.hasOtherAttendees)
+        #expect(event.isDeclined)
     }
 
     @Test
@@ -246,8 +275,7 @@ final class GoogleCalendarAPIClientTests: XCTestCase {
             .filter { $0.name == "eventTypes" }
             .compactMap(\.value)
 
-        XCTAssertEqual(Set(eventTypes), Set(["default", "focusTime", "fromGmail"]))
-        XCTAssertFalse(eventTypes.contains("outOfOffice"))
+        XCTAssertEqual(Set(eventTypes), Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
     }
 
     func testMakeEventIncludesPersistenceFields() throws {

@@ -115,8 +115,6 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
         calendarItem: CalendarListItem,
         calendar: Calendar = .current
     ) throws -> CalendarEvent? {
-        guard !item.isIgnoredForUpcomingEvents else { return nil }
-
         guard let start = try item.start.resolvedDate(calendar: calendar),
               let end = try item.end.resolvedDate(calendar: calendar)
         else { return nil }
@@ -147,6 +145,9 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             startDate: start,
             endDate: max(end, start),
             isAllDay: item.start.date != nil,
+            hasOtherAttendees: item.hasOtherAttendees,
+            isDeclined: item.isDeclinedByCurrentUser,
+            isOutOfOffice: item.eventType == "outOfOffice",
             conferenceURI: conferenceURI(for: item),
             url: absoluteURL(from: item.htmlLink)
         )
@@ -266,6 +267,7 @@ extension GoogleCalendarAPIClient {
         "default",
         "focusTime",
         "fromGmail",
+        "outOfOffice",
     ]
 
     struct CalendarListResponse: Decodable {
@@ -412,6 +414,7 @@ extension GoogleCalendarAPIClient {
         let recurringEventId: String?
         let conferenceData: ConferenceData?
         let eventType: String?
+        let attendees: [GoogleCalendarAttendee]?
 
         init(
             id: String,
@@ -425,7 +428,8 @@ extension GoogleCalendarAPIClient {
             originalStartTime: EventDateTime?,
             recurringEventId: String? = nil,
             conferenceData: ConferenceData?,
-            eventType: String?
+            eventType: String?,
+            attendees: [GoogleCalendarAttendee]? = nil
         ) {
             self.id = id
             self.summary = summary
@@ -439,10 +443,15 @@ extension GoogleCalendarAPIClient {
             self.recurringEventId = recurringEventId
             self.conferenceData = conferenceData
             self.eventType = eventType
+            self.attendees = attendees
         }
 
-        var isIgnoredForUpcomingEvents: Bool {
-            start.date != nil || eventType == "outOfOffice"
+        var hasOtherAttendees: Bool {
+            attendees?.contains { !$0.isCurrentUser } == true
+        }
+
+        var isDeclinedByCurrentUser: Bool {
+            attendees?.first(where: \.isCurrentUser)?.responseStatus == "declined"
         }
     }
 }

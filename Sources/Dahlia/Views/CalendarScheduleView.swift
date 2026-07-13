@@ -69,7 +69,7 @@ struct CalendarScheduleView: View {
         VStack(alignment: .leading, spacing: 18) {
             sourceStatusCards
 
-            if selectedUpcomingEvents.isEmpty {
+            if visibleUpcomingEvents.isEmpty {
                 emptyScheduleContent
             } else {
                 eventList
@@ -188,6 +188,13 @@ struct CalendarScheduleView: View {
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
+        } else if !upcomingEventsFromEnabledSources.isEmpty {
+            statusCard(
+                title: L10n.calendarNoEventsMatchFiltersTitle,
+                message: L10n.calendarNoEventsMatchFiltersMessage,
+                actionTitle: L10n.settings,
+                action: { openSettings() }
+            )
         } else if hasLoadedEnabledSource || !hasEnabledSourceStatusCard {
             statusCard(
                 title: L10n.googleCalendarNoUpcomingEventsTitle,
@@ -210,7 +217,7 @@ struct CalendarScheduleView: View {
 
     private var eventSections: [CalendarScheduleEventSection] {
         let calendar = Calendar.autoupdatingCurrent
-        let grouped = Dictionary(grouping: selectedUpcomingEvents) {
+        let grouped = Dictionary(grouping: visibleUpcomingEvents) {
             calendar.startOfDay(for: $0.startDate)
         }
 
@@ -231,7 +238,7 @@ struct CalendarScheduleView: View {
         }
     }
 
-    private var selectedUpcomingEvents: [CalendarEvent] {
+    private var upcomingEventsFromEnabledSources: [CalendarEvent] {
         var events: [CalendarEvent] = []
         if settings.isCalendarSourceEnabled(.google) {
             events.append(contentsOf: googleCalendarStore.upcomingEvents)
@@ -240,21 +247,27 @@ struct CalendarScheduleView: View {
             events.append(contentsOf: macCalendarStore.upcomingEvents)
         }
 
-        return events.deduplicatedAcrossSources().sorted { lhs, rhs in
-            if lhs.startDate != rhs.startDate {
-                return lhs.startDate < rhs.startDate
+        return events.deduplicatedAcrossSources()
+    }
+
+    private var visibleUpcomingEvents: [CalendarEvent] {
+        upcomingEventsFromEnabledSources
+            .filter(settings.calendarEventFilter.includes)
+            .sorted { lhs, rhs in
+                if lhs.startDate != rhs.startDate {
+                    return lhs.startDate < rhs.startDate
+                }
+                if lhs.isAllDay != rhs.isAllDay {
+                    return lhs.isAllDay
+                }
+                if lhs.endDate != rhs.endDate {
+                    return lhs.endDate < rhs.endDate
+                }
+                if lhs.title != rhs.title {
+                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                }
+                return lhs.id < rhs.id
             }
-            if lhs.isAllDay != rhs.isAllDay {
-                return lhs.isAllDay
-            }
-            if lhs.endDate != rhs.endDate {
-                return lhs.endDate < rhs.endDate
-            }
-            if lhs.title != rhs.title {
-                return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
-            }
-            return lhs.id < rhs.id
-        }
     }
 
     private var isAnyEnabledSourceLoading: Bool {

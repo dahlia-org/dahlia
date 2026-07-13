@@ -21,6 +21,8 @@ struct CalendarSettingsView: View {
                 Text(L10n.calendarSourcesDescription)
             }
 
+            CalendarEventFilterSettingsView(settings: settings)
+
             if settings.isCalendarSourceEnabled(.google) {
                 googleCalendarSettings
             }

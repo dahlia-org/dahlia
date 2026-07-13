@@ -519,6 +519,47 @@ enum L10n {
         localized: "Choose which calendar services provide upcoming events.",
         bundle: bundle
     ) }
+    static var calendarEventFilters: String { String(localized: "Event Filters", bundle: bundle) }
+    static var calendarEventFiltersDescription: String { String(
+        localized: "Hide events from Home and calendar notifications when they match any selected condition.",
+        bundle: bundle
+    ) }
+    static var calendarFilterAllDayEvents: String { String(localized: "All-day events", bundle: bundle) }
+    static var calendarFilterAllDayEventsDescription: String { String(
+        localized: "Hide events marked as all-day.",
+        bundle: bundle
+    ) }
+    static var calendarFilterUserOnlyEvents: String { String(localized: "Events with only you", bundle: bundle) }
+    static var calendarFilterUserOnlyEventsDescription: String { String(
+        localized: "Hide events with no attendees other than you.",
+        bundle: bundle
+    ) }
+    static var calendarFilterEventsWithoutMeetingURL: String { String(
+        localized: "Events without a meeting URL",
+        bundle: bundle
+    ) }
+    static var calendarFilterEventsWithoutMeetingURLDescription: String { String(
+        localized: "Hide events that do not include a supported meeting URL.",
+        bundle: bundle
+    ) }
+    static var calendarFilterDeclinedEvents: String { String(localized: "Declined events", bundle: bundle) }
+    static var calendarFilterDeclinedEventsDescription: String { String(
+        localized: "Hide events you declined.",
+        bundle: bundle
+    ) }
+    static var calendarFilterOutOfOfficeEvents: String { String(localized: "OOO / OOTO events", bundle: bundle) }
+    static var calendarFilterOutOfOfficeEventsDescription: String { String(
+        localized: "Hide out-of-office events and events whose title includes OOO or OOTO.",
+        bundle: bundle
+    ) }
+    static var calendarNoEventsMatchFiltersTitle: String { String(
+        localized: "No events match your filters",
+        bundle: bundle
+    ) }
+    static var calendarNoEventsMatchFiltersMessage: String { String(
+        localized: "Upcoming events were found, but all of them are hidden by your event filters.",
+        bundle: bundle
+    ) }
     static var googleCalendarSourceDescription: String { String(
         localized: "Show events from Google Calendar.",
         bundle: bundle

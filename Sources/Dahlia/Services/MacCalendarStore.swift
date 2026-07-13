@@ -347,6 +347,9 @@ final class EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
             startDate: startDate,
             endDate: max(endDate, startDate),
             isAllDay: event.isAllDay,
+            hasOtherAttendees: event.attendees?.contains { !$0.isCurrentUser } == true,
+            isDeclined: event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .declined,
+            isOutOfOffice: event.availability == .unavailable,
             conferenceURI: CalendarConferenceURIExtractor.conferenceURI(
                 url: event.url,
                 textFields: [event.notes, event.location]

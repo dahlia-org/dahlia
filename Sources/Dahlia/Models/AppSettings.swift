@@ -286,6 +286,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage("calendarSource") var calendarSourceRawValue = CalendarSource.google.rawValue
     @AppStorage(CalendarSource.enabledSourcesUserDefaultsKey) var enabledCalendarSourcesJSON = CalendarSource.defaultEnabledSourcesJSON
+    @AppStorage("excludeAllDayCalendarEvents") var excludeAllDayCalendarEvents = true
+    @AppStorage("excludeCalendarEventsWithoutOtherAttendees") var excludeCalendarEventsWithoutOtherAttendees = false
+    @AppStorage("excludeCalendarEventsWithoutConferenceURI") var excludeCalendarEventsWithoutConferenceURI = false
+    @AppStorage("excludeDeclinedCalendarEvents") var excludeDeclinedCalendarEvents = true
+    @AppStorage("excludeOutOfOfficeCalendarEvents") var excludeOutOfOfficeCalendarEvents = true
     nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
     nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
     @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""
@@ -293,6 +298,16 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var calendarSource: CalendarSource {
         get { CalendarSource(rawValue: calendarSourceRawValue) ?? .google }
         set { calendarSourceRawValue = newValue.rawValue }
+    }
+
+    var calendarEventFilter: CalendarEventFilter {
+        CalendarEventFilter(
+            excludesAllDayEvents: excludeAllDayCalendarEvents,
+            excludesEventsWithoutOtherAttendees: excludeCalendarEventsWithoutOtherAttendees,
+            excludesEventsWithoutConferenceURI: excludeCalendarEventsWithoutConferenceURI,
+            excludesDeclinedEvents: excludeDeclinedCalendarEvents,
+            excludesOutOfOfficeEvents: excludeOutOfOfficeCalendarEvents
+        )
     }
 
     var enabledCalendarSources: Set<CalendarSource> {

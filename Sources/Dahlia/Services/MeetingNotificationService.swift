@@ -144,7 +144,7 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         }
 
         let now = Date.now
-        let schedule = calendarSchedule(for: events, now: now)
+        let schedule = calendarSchedule(for: events, filter: settings.calendarEventFilter, now: now)
         let scheduledIdentifiers = Set(
             schedule.map { Self.calendarNotificationIdentifier(for: $0.event) }
         )
@@ -251,24 +251,14 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
 
     private func calendarSchedule(
         for events: [CalendarEvent],
+        filter: CalendarEventFilter,
         now: Date
     ) -> [(event: CalendarEvent, notificationDate: Date)] {
-        Array(
-            events
-                .deduplicatedAcrossSources()
-                .compactMap { event -> (event: CalendarEvent, notificationDate: Date)? in
-                    guard let notificationDate = CalendarMeetingNotificationPlanner.notificationDate(for: event, now: now) else {
-                        return nil
-                    }
-                    return (event, notificationDate)
-                }
-                .sorted { lhs, rhs in
-                    if lhs.notificationDate != rhs.notificationDate {
-                        return lhs.notificationDate < rhs.notificationDate
-                    }
-                    return lhs.event.id < rhs.event.id
-                }
-                .prefix(Self.maximumScheduledCalendarNotifications)
+        CalendarMeetingNotificationPlanner.schedule(
+            for: events,
+            filter: filter,
+            now: now,
+            limit: Self.maximumScheduledCalendarNotifications
         )
     }
 

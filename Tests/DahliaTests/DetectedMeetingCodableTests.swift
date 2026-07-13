@@ -21,6 +21,9 @@ import Foundation
                 startDate: startDate,
                 endDate: startDate.addingTimeInterval(3600),
                 isAllDay: false,
+                hasOtherAttendees: true,
+                isDeclined: true,
+                isOutOfOffice: true,
                 conferenceURI: URL(string: "https://meet.example.com/planning"),
                 url: URL(string: "https://calendar.example.com/events/planning")
             )
@@ -61,6 +64,9 @@ import Foundation
             legacyObject["meetingURL"] = legacyObject.removeValue(forKey: "conferenceURI")
             legacyObject["sourceEventURL"] = legacyObject.removeValue(forKey: "url")
             legacyObject.removeValue(forKey: "recurrenceId")
+            legacyObject.removeValue(forKey: "hasOtherAttendees")
+            legacyObject.removeValue(forKey: "isDeclined")
+            legacyObject.removeValue(forKey: "isOutOfOffice")
             let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
 
             let decoded = try JSONDecoder().decode(CalendarEvent.self, from: legacyData)
@@ -68,6 +74,9 @@ import Foundation
             #expect(decoded.conferenceURI == event.conferenceURI)
             #expect(decoded.url == event.url)
             #expect(decoded.recurrenceId.isEmpty)
+            #expect(!decoded.hasOtherAttendees)
+            #expect(!decoded.isDeclined)
+            #expect(!decoded.isOutOfOffice)
         }
     }
 #endif

@@ -13,6 +13,32 @@ enum CalendarMeetingNotificationPlanner {
         return max(preferredDate, now.addingTimeInterval(minimumSchedulingDelay))
     }
 
+    static func schedule(
+        for events: [CalendarEvent],
+        filter: CalendarEventFilter,
+        now: Date,
+        limit: Int
+    ) -> [(event: CalendarEvent, notificationDate: Date)] {
+        Array(
+            events
+                .deduplicatedAcrossSources()
+                .filter(filter.includes)
+                .compactMap { event -> (event: CalendarEvent, notificationDate: Date)? in
+                    guard let notificationDate = notificationDate(for: event, now: now) else {
+                        return nil
+                    }
+                    return (event, notificationDate)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.notificationDate != rhs.notificationDate {
+                        return lhs.notificationDate < rhs.notificationDate
+                    }
+                    return lhs.event.id < rhs.event.id
+                }
+                .prefix(limit)
+        )
+    }
+
     static func staleDeliveredIdentifiers(
         from deliveredIdentifiers: Set<String>,
         scheduledIdentifiers: Set<String>

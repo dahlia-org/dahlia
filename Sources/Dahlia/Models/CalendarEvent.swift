@@ -19,6 +19,9 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
     let startDate: Date
     let endDate: Date
     let isAllDay: Bool
+    let hasOtherAttendees: Bool
+    let isDeclined: Bool
+    let isOutOfOffice: Bool
     let conferenceURI: URL?
     let url: URL?
 
@@ -36,6 +39,9 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         startDate: Date,
         endDate: Date,
         isAllDay: Bool,
+        hasOtherAttendees: Bool = false,
+        isDeclined: Bool = false,
+        isOutOfOffice: Bool = false,
         conferenceURI: URL?,
         url: URL? = nil
     ) {
@@ -52,6 +58,9 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         self.startDate = startDate
         self.endDate = endDate
         self.isAllDay = isAllDay
+        self.hasOtherAttendees = hasOtherAttendees
+        self.isDeclined = isDeclined
+        self.isOutOfOffice = isOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         self.conferenceURI = conferenceURI
         self.url = url
     }
@@ -65,6 +74,13 @@ extension CalendarEvent {
     var resolvedMeetingTitle: String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedTitle.isEmpty ? L10n.newMeeting : trimmedTitle
+    }
+
+    static func titleIndicatesOutOfOffice(_ title: String) -> Bool {
+        title
+            .uppercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .contains { $0 == "OOO" || $0 == "OOTO" }
     }
 }
 
@@ -118,6 +134,9 @@ private extension CalendarEvent {
             startDate: startDate,
             endDate: endDate,
             isAllDay: isAllDay,
+            hasOtherAttendees: hasOtherAttendees || fallback.hasOtherAttendees,
+            isDeclined: isDeclined || fallback.isDeclined,
+            isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
             conferenceURI: conferenceURI ?? fallback.conferenceURI,
             url: url ?? fallback.url
         )
@@ -139,6 +158,9 @@ extension CalendarEvent {
         case startDate
         case endDate
         case isAllDay
+        case hasOtherAttendees
+        case isDeclined
+        case isOutOfOffice
         case conferenceURI
         case url
     }
@@ -164,6 +186,10 @@ extension CalendarEvent {
         startDate = try container.decode(Date.self, forKey: .startDate)
         endDate = try container.decode(Date.self, forKey: .endDate)
         isAllDay = try container.decode(Bool.self, forKey: .isAllDay)
+        hasOtherAttendees = try container.decodeIfPresent(Bool.self, forKey: .hasOtherAttendees) ?? false
+        isDeclined = try container.decodeIfPresent(Bool.self, forKey: .isDeclined) ?? false
+        let decodedIsOutOfOffice = try container.decodeIfPresent(Bool.self, forKey: .isOutOfOffice) ?? false
+        isOutOfOffice = decodedIsOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         conferenceURI = try container.decodeIfPresent(URL.self, forKey: .conferenceURI)
             ?? legacyContainer.decodeIfPresent(URL.self, forKey: .meetingURL)
         url = try container.decodeIfPresent(URL.self, forKey: .url)
