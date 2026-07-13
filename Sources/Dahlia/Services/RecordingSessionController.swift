@@ -12,6 +12,7 @@ actor RecordingSessionController {
         _ message: String,
         _ isFatal: Bool
     ) -> Void
+    typealias CaptureInterruptionHandler = @MainActor @Sendable (_ source: RecordingAudioSource) -> Void
 
     struct SourceConfiguration: Equatable {
         let source: RecordingAudioSource
@@ -134,6 +135,7 @@ actor RecordingSessionController {
     var batchRecording: (any BatchRecordingSession)?
     private var batchScheduler: (any BatchTranscriptionScheduling)?
     var onEvent: EventHandler?
+    var onCaptureInterruption: CaptureInterruptionHandler?
     var onRuntimeFailure: RuntimeFailureHandler?
     var currentLocale: Locale?
     var batchRuntimeFailureMessage: String?
@@ -152,6 +154,7 @@ actor RecordingSessionController {
     func prepare(
         _ request: PreparationRequest,
         onEvent: @escaping EventHandler,
+        onCaptureInterruption: @escaping CaptureInterruptionHandler = { _ in },
         onRuntimeFailure: @escaping RuntimeFailureHandler
     ) async throws {
         guard case .idle = state else {
@@ -242,6 +245,7 @@ actor RecordingSessionController {
             )
             batchScheduler = request.batchScheduler
             self.onEvent = onEvent
+            self.onCaptureInterruption = onCaptureInterruption
             self.onRuntimeFailure = onRuntimeFailure
             currentLocale = request.locale
             state = .prepared(snapshot)
@@ -401,6 +405,7 @@ actor RecordingSessionController {
         batchRecording = nil
         batchScheduler = nil
         onEvent = nil
+        onCaptureInterruption = nil
         onRuntimeFailure = nil
         currentLocale = nil
         batchRuntimeFailureMessage = nil

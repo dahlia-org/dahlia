@@ -63,6 +63,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     private struct HandlerState {
         var audioBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
         var inputLevels: (@Sendable ([Double]) -> Void)?
+        var interruption: AudioCaptureInterruptionHandler?
         var unexpectedStop: (@Sendable (AudioCaptureError?) -> Void)?
     }
 
@@ -84,6 +85,11 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     var onInputLevels: (@Sendable ([Double]) -> Void)? {
         get { handlerState.withLock { $0.inputLevels } }
         set { handlerState.withLock { $0.inputLevels = newValue } }
+    }
+
+    var onInterruption: AudioCaptureInterruptionHandler? {
+        get { handlerState.withLock { $0.interruption } }
+        set { handlerState.withLock { $0.interruption = newValue } }
     }
 
     var onUnexpectedStop: (@Sendable (AudioCaptureError?) -> Void)? {
@@ -329,6 +335,16 @@ extension AudioCaptureManager {
               let request = activeRequest else { return }
         lifecycleState = .restarting
         activeRequest = nil
+        if let onInterruption {
+            Task {
+                await onInterruption()
+            }
+        }
+        restartCaptureAfterConfigurationChange(request)
+    }
+
+    private func restartCaptureAfterConfigurationChange(_ request: CaptureRequest) {
+        guard lifecycleState == .restarting else { return }
         Self.logger.notice("Restarting microphone engine after a configuration change")
         resetCaptureAttempt()
         do {
