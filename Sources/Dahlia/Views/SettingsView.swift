@@ -9,16 +9,22 @@ struct SettingsView: View {
     private var selection: SettingsCategory = .general
 
     var body: some View {
-        NavigationSplitView {
-            SettingsSidebarView(selection: $selection)
-        } detail: {
-            SettingsDetailView(
-                selection: selection,
-                sidebarViewModel: sidebarViewModel,
-                onSelectVault: onSelectVault
-            )
+        NavigationStack {
+            HStack(spacing: 0) {
+                SettingsSidebarView(selection: $selection)
+                    .frame(width: 180)
+
+                Divider()
+
+                SettingsDetailView(
+                    selection: selection,
+                    sidebarViewModel: sidebarViewModel,
+                    onSelectVault: onSelectVault
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle(selection.label)
         }
-        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 860, minHeight: 560)
     }
 }
