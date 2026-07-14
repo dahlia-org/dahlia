@@ -66,6 +66,7 @@ import Foundation
             legacyObject.removeValue(forKey: "recurrenceId")
             legacyObject.removeValue(forKey: "hasOtherAttendees")
             legacyObject.removeValue(forKey: "isDeclined")
+            legacyObject.removeValue(forKey: "isAttending")
             legacyObject.removeValue(forKey: "isOutOfOffice")
             let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
 
@@ -76,6 +77,7 @@ import Foundation
             #expect(decoded.recurrenceId.isEmpty)
             #expect(!decoded.hasOtherAttendees)
             #expect(!decoded.isDeclined)
+            #expect(!decoded.isAttending)
             #expect(!decoded.isOutOfOffice)
         }
     }

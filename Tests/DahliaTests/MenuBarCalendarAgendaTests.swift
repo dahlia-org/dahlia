@@ -48,7 +48,7 @@ import Foundation
                 googleEvents: [googleEvent, declined],
                 macEvents: [duplicateMacEvent],
                 enabledSources: [.google, .macOS],
-                filter: CalendarEventFilter(excludesDeclinedEvents: true),
+                filter: CalendarEventFilter(includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
@@ -102,6 +102,16 @@ import Foundation
         }
 
         @Test
+        func truncatesLongMenuBarTitlesWithoutTruncatingAccessibilityText() {
+            let title = "Office Hours for Japan PS/DSA/Training [Weekly]"
+            let upcoming = event(id: "upcoming", title: title, start: 3_600, end: 7_200)
+            let agenda = agenda(googleEvents: [upcoming])
+
+            #expect(agenda.labelText(showsTitle: true, showsCountdown: false, now: now) == "Office Hours for Japan P…")
+            #expect(agenda.accessibilityLabel(now: now)?.hasPrefix(title) == true)
+        }
+
+        @Test
         func usesSoonTextForEventsStartingOrEndingInLessThanOneMinute() {
             let startingSoon = event(id: "starting", start: 59, end: 3_600)
             let endingSoon = event(id: "ending", start: -3_600, end: 59)
@@ -115,7 +125,7 @@ import Foundation
                 googleEvents: googleEvents,
                 macEvents: [],
                 enabledSources: [.google],
-                filter: CalendarEventFilter(),
+                filter: CalendarEventFilter(includesAllDayEvents: true),
                 now: now,
                 calendar: calendar
             )
@@ -166,6 +176,7 @@ import Foundation
                 startDate: startDate,
                 endDate: endDate,
                 isAllDay: isAllDay,
+                hasOtherAttendees: true,
                 isDeclined: isDeclined,
                 conferenceURI: URL(string: "https://meet.example.com/\(id)")
             )

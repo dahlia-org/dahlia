@@ -162,6 +162,35 @@ struct GoogleCalendarAPIClientTests {
 
         #expect(event.hasOtherAttendees)
         #expect(event.isDeclined)
+        #expect(!event.isAttending)
+    }
+
+    @Test
+    func eventPayloadMarksAcceptedCurrentUserAsAttending() throws {
+        let data = Data("""
+        {
+          "items": [
+            {
+              "id": "accepted-meeting",
+              "start": { "dateTime": "2026-04-17T01:00:00Z" },
+              "end": { "dateTime": "2026-04-17T02:00:00Z" },
+              "attendees": [
+                { "email": "me@example.com", "self": true, "responseStatus": "accepted" },
+                { "email": "colleague@example.com", "responseStatus": "accepted" }
+              ]
+            }
+          ]
+        }
+        """.utf8)
+
+        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+        let item = try #require(response.items.first)
+        let transformed = try GoogleCalendarAPIClient.makeEvent(
+            from: item,
+            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+        )
+
+        #expect(transformed?.isAttending == true)
     }
 
     @Test

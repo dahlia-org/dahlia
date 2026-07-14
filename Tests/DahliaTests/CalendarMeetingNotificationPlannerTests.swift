@@ -58,7 +58,7 @@ import Foundation
                 title: "Alex - OOTO",
                 startDate: now.addingTimeInterval(300)
             )
-            let filter = CalendarEventFilter(excludesOutOfOfficeEvents: true)
+            let filter = CalendarEventFilter(includesOutOfOfficeEvents: false)
 
             let schedule = CalendarMeetingNotificationPlanner.schedule(
                 for: [outOfOffice, included],
@@ -90,6 +90,7 @@ private func calendarEvent(
         startDate: startDate,
         endDate: startDate.addingTimeInterval(3600),
         isAllDay: isAllDay,
+        hasOtherAttendees: true,
         conferenceURI: URL(string: "https://meet.example.com/planning")
     )
 }

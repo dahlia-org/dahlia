@@ -24,8 +24,9 @@ struct MenuBarMenuView: View {
                 MenuBarCalendarSectionView(
                     agenda: agenda,
                     now: calendarViewModel.currentDate,
-                    onOpenEvent: openEvent,
+                    onJoinAndRecordEvent: joinAndRecordEvent,
                     onJoinEvent: joinEvent,
+                    onShowEventInCalendar: showEventInCalendar,
                     onOpenCalendarSettings: openCalendarSettings
                 )
 
@@ -44,13 +45,18 @@ struct MenuBarMenuView: View {
         .frame(minWidth: 380, idealWidth: 420, maxWidth: 460)
     }
 
-    private func openEvent(_ event: CalendarEvent) {
-        recordingCoordinator.openCalendarEvent(event)
+    private func joinAndRecordEvent(_ event: CalendarEvent) {
+        recordingCoordinator.joinCalendarEventAndStartRecording(event)
     }
 
     private func joinEvent(_ event: CalendarEvent) {
         guard let conferenceURI = event.conferenceURI else { return }
         NSWorkspace.shared.open(conferenceURI)
+    }
+
+    private func showEventInCalendar(_ event: CalendarEvent) {
+        guard let eventURL = event.url else { return }
+        NSWorkspace.shared.open(eventURL)
     }
 
     private func openCalendarSettings() {

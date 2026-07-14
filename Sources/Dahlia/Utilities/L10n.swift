@@ -519,45 +519,45 @@ enum L10n {
         localized: "Choose which calendar services provide upcoming events.",
         bundle: bundle
     ) }
-    static var calendarEventFilters: String { String(localized: "Event Filters", bundle: bundle) }
-    static var calendarEventFiltersDescription: String { String(
-        localized: "Hide events from Home and calendar notifications when they match any selected condition.",
+    static var calendarEventsToInclude: String { String(localized: "Events to Include", bundle: bundle) }
+    static var calendarEventsToIncludeDescription: String { String(
+        localized: "Turn on the event types to show in Home, the menu bar, and calendar notifications.",
         bundle: bundle
     ) }
     static var calendarFilterAllDayEvents: String { String(localized: "All-day events", bundle: bundle) }
-    static var calendarFilterAllDayEventsDescription: String { String(
-        localized: "Hide events marked as all-day.",
+    static var calendarIncludeAllDayEventsDescription: String { String(
+        localized: "Include events marked as all-day.",
         bundle: bundle
     ) }
-    static var calendarFilterUserOnlyEvents: String { String(localized: "Events with only you", bundle: bundle) }
-    static var calendarFilterUserOnlyEventsDescription: String { String(
-        localized: "Hide events with no attendees other than you.",
+    static var calendarFilterUserOnlyEvents: String { String(localized: "Events without other attendees", bundle: bundle) }
+    static var calendarIncludeUserOnlyEventsDescription: String { String(
+        localized: "Include events with no attendees other than you.",
         bundle: bundle
     ) }
     static var calendarFilterEventsWithoutMeetingURL: String { String(
         localized: "Events without a meeting URL",
         bundle: bundle
     ) }
-    static var calendarFilterEventsWithoutMeetingURLDescription: String { String(
-        localized: "Hide events that do not include a supported meeting URL.",
+    static var calendarIncludeEventsWithoutMeetingURLDescription: String { String(
+        localized: "Include events that do not have a supported meeting URL.",
         bundle: bundle
     ) }
     static var calendarFilterDeclinedEvents: String { String(localized: "Declined events", bundle: bundle) }
-    static var calendarFilterDeclinedEventsDescription: String { String(
-        localized: "Hide events you declined.",
+    static var calendarIncludeDeclinedEventsDescription: String { String(
+        localized: "Include events you declined.",
         bundle: bundle
     ) }
     static var calendarFilterOutOfOfficeEvents: String { String(localized: "OOO / OOTO events", bundle: bundle) }
-    static var calendarFilterOutOfOfficeEventsDescription: String { String(
-        localized: "Hide out-of-office events and events whose title includes OOO or OOTO.",
+    static var calendarIncludeOutOfOfficeEventsDescription: String { String(
+        localized: "Include out-of-office events and events whose title includes OOO or OOTO.",
         bundle: bundle
     ) }
     static var calendarNoEventsMatchFiltersTitle: String { String(
-        localized: "No events match your filters",
+        localized: "No events match your inclusion settings",
         bundle: bundle
     ) }
     static var calendarNoEventsMatchFiltersMessage: String { String(
-        localized: "Upcoming events were found, but all of them are hidden by your event filters.",
+        localized: "Upcoming events were found, but none match the event types you chose to include.",
         bundle: bundle
     ) }
     static var googleCalendarSourceDescription: String { String(
@@ -1097,6 +1097,11 @@ enum L10n {
     static func menuBarMinutes(_ minutes: Int) -> String {
         String(localized: "\(minutes) min", bundle: bundle)
     }
+
+    static var menuBarJoinMeetingWithRecording: String { String(localized: "Join Meeting (with recording)", bundle: bundle) }
+    static var menuBarJoinMeeting: String { String(localized: "Join Meeting", bundle: bundle) }
+    static var menuBarShowEventInCalendar: String { String(localized: "Show Event in Calendar", bundle: bundle) }
+    static var calendarAttending: String { String(localized: "Attending", bundle: bundle) }
 
     // MARK: - Meeting Detection
 

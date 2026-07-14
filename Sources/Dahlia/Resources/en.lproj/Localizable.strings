@@ -256,18 +256,18 @@
 "Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
 "Calendar Sources" = "Calendar Sources";
 "Choose which calendar services provide upcoming events." = "Choose which calendar services provide upcoming events.";
-"Event Filters" = "Event Filters";
-"Hide events from Home and calendar notifications when they match any selected condition." = "Hide events from Home and calendar notifications when they match any selected condition.";
+"Events to Include" = "Events to Include";
+"Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Turn on the event types to show in Home, the menu bar, and calendar notifications.";
 "All-day events" = "All-day events";
-"Hide events marked as all-day." = "Hide events marked as all-day.";
-"Events with only you" = "Events with only you";
-"Hide events with no attendees other than you." = "Hide events with no attendees other than you.";
+"Include events marked as all-day." = "Include events marked as all-day.";
+"Events without other attendees" = "Events without other attendees";
+"Include events with no attendees other than you." = "Include events with no attendees other than you.";
 "Events without a meeting URL" = "Events without a meeting URL";
-"Hide events that do not include a supported meeting URL." = "Hide events that do not include a supported meeting URL.";
+"Include events that do not have a supported meeting URL." = "Include events that do not have a supported meeting URL.";
 "Declined events" = "Declined events";
-"Hide events you declined." = "Hide events you declined.";
+"Include events you declined." = "Include events you declined.";
 "OOO / OOTO events" = "OOO / OOTO events";
-"Hide out-of-office events and events whose title includes OOO or OOTO." = "Hide out-of-office events and events whose title includes OOO or OOTO.";
+"Include out-of-office events and events whose title includes OOO or OOTO." = "Include out-of-office events and events whose title includes OOO or OOTO.";
 "Show events from Google Calendar." = "Show events from Google Calendar.";
 "Show events from the Calendar app on this Mac." = "Show events from the Calendar app on this Mac.";
 "Upcoming schedule" = "Upcoming schedule";
@@ -305,8 +305,8 @@
 "Enable at least one calendar source in Settings to show upcoming events." = "Enable at least one calendar source in Settings to show upcoming events.";
 "No upcoming events" = "No upcoming events";
 "There are no events in the next 7 days for the selected calendars." = "There are no events in the next 7 days for the selected calendars.";
-"No events match your filters" = "No events match your filters";
-"Upcoming events were found, but all of them are hidden by your event filters." = "Upcoming events were found, but all of them are hidden by your event filters.";
+"No events match your inclusion settings" = "No events match your inclusion settings";
+"Upcoming events were found, but none match the event types you chose to include." = "Upcoming events were found, but none match the event types you chose to include.";
 "Could not load Google Calendar" = "Could not load Google Calendar";
 "Could not load macOS Calendar" = "Could not load macOS Calendar";
 "Allow macOS Calendar access" = "Allow macOS Calendar access";
@@ -483,6 +483,10 @@
 "%lld hr %lld min" = "%lld hr %lld min";
 "%lld hr" = "%lld hr";
 "%lld min" = "%lld min";
+"Join Meeting (with recording)" = "Join Meeting (with recording)";
+"Join Meeting" = "Join Meeting";
+"Show Event in Calendar" = "Show Event in Calendar";
+"Attending" = "Attending";
 
 /* Meeting Detection */
 "Meeting Notifications" = "Meeting Notifications";

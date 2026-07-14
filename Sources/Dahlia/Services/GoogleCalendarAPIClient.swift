@@ -147,6 +147,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             isAllDay: item.start.date != nil,
             hasOtherAttendees: item.hasOtherAttendees,
             isDeclined: item.isDeclinedByCurrentUser,
+            isAttending: item.isAcceptedByCurrentUser,
             isOutOfOffice: item.eventType == "outOfOffice",
             conferenceURI: conferenceURI(for: item),
             url: absoluteURL(from: item.htmlLink)
@@ -452,6 +453,10 @@ extension GoogleCalendarAPIClient {
 
         var isDeclinedByCurrentUser: Bool {
             attendees?.first(where: \.isCurrentUser)?.responseStatus == "declined"
+        }
+
+        var isAcceptedByCurrentUser: Bool {
+            attendees?.first(where: \.isCurrentUser)?.responseStatus == "accepted"
         }
     }
 }

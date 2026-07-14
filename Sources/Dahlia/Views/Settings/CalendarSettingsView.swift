@@ -33,8 +33,10 @@ struct CalendarSettingsView: View {
                 Text(L10n.menuBarCalendarDescription)
             }
 
+            CalendarEventFilterSettingsView(settings: settings)
+
             Section {
-                ForEach(CalendarSource.allCases) { source in
+                ForEach(displayedCalendarSources) { source in
                     Toggle(isOn: calendarSourceBinding(for: source)) {
                         Text(source.displayName)
                         Text(calendarSourceDescription(for: source))
@@ -47,14 +49,12 @@ struct CalendarSettingsView: View {
                 Text(L10n.calendarSourcesDescription)
             }
 
-            CalendarEventFilterSettingsView(settings: settings)
+            if settings.isCalendarSourceEnabled(.macOS) {
+                macCalendarSettings
+            }
 
             if settings.isCalendarSourceEnabled(.google) {
                 googleCalendarSettings
-            }
-
-            if settings.isCalendarSourceEnabled(.macOS) {
-                macCalendarSettings
             }
         }
         .task {
@@ -66,6 +66,10 @@ struct CalendarSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var displayedCalendarSources: [CalendarSource] {
+        [.macOS, .google]
     }
 
     @ViewBuilder

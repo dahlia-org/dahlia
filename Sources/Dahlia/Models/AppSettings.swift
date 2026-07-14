@@ -286,11 +286,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage("calendarSource") var calendarSourceRawValue = CalendarSource.google.rawValue
     @AppStorage(CalendarSource.enabledSourcesUserDefaultsKey) var enabledCalendarSourcesJSON = CalendarSource.defaultEnabledSourcesJSON
-    @AppStorage("excludeAllDayCalendarEvents") var excludeAllDayCalendarEvents = true
-    @AppStorage("excludeCalendarEventsWithoutOtherAttendees") var excludeCalendarEventsWithoutOtherAttendees = false
-    @AppStorage("excludeCalendarEventsWithoutConferenceURI") var excludeCalendarEventsWithoutConferenceURI = false
-    @AppStorage("excludeDeclinedCalendarEvents") var excludeDeclinedCalendarEvents = true
-    @AppStorage("excludeOutOfOfficeCalendarEvents") var excludeOutOfOfficeCalendarEvents = true
+    @AppStorage("includesAllDayCalendarEvents") var includesAllDayCalendarEvents = false
+    @AppStorage("includesCalendarEventsWithoutOtherAttendees") var includesCalendarEventsWithoutOtherAttendees = false
+    @AppStorage("includesCalendarEventsWithoutConferenceURI") var includesCalendarEventsWithoutConferenceURI = false
+    @AppStorage("includesDeclinedCalendarEvents") var includesDeclinedCalendarEvents = false
+    @AppStorage("includesOutOfOfficeCalendarEvents") var includesOutOfOfficeCalendarEvents = false
     @AppStorage("menuBarCalendarEnabled") var menuBarCalendarEnabled = true
     @AppStorage("menuBarCalendarShowsEventTitle") var menuBarCalendarShowsEventTitle = true
     @AppStorage("menuBarCalendarShowsCountdown") var menuBarCalendarShowsCountdown = true
@@ -305,11 +305,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     var calendarEventFilter: CalendarEventFilter {
         CalendarEventFilter(
-            excludesAllDayEvents: excludeAllDayCalendarEvents,
-            excludesEventsWithoutOtherAttendees: excludeCalendarEventsWithoutOtherAttendees,
-            excludesEventsWithoutConferenceURI: excludeCalendarEventsWithoutConferenceURI,
-            excludesDeclinedEvents: excludeDeclinedCalendarEvents,
-            excludesOutOfOfficeEvents: excludeOutOfOfficeCalendarEvents
+            includesAllDayEvents: includesAllDayCalendarEvents,
+            includesEventsWithoutOtherAttendees: includesCalendarEventsWithoutOtherAttendees,
+            includesEventsWithoutConferenceURI: includesCalendarEventsWithoutConferenceURI,
+            includesDeclinedEvents: includesDeclinedCalendarEvents,
+            includesOutOfOfficeEvents: includesOutOfOfficeCalendarEvents
         )
     }
 

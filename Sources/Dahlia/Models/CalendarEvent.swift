@@ -21,6 +21,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
     let isAllDay: Bool
     let hasOtherAttendees: Bool
     let isDeclined: Bool
+    let isAttending: Bool
     let isOutOfOffice: Bool
     let conferenceURI: URL?
     let url: URL?
@@ -41,6 +42,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         isAllDay: Bool,
         hasOtherAttendees: Bool = false,
         isDeclined: Bool = false,
+        isAttending: Bool = false,
         isOutOfOffice: Bool = false,
         conferenceURI: URL?,
         url: URL? = nil
@@ -60,6 +62,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         self.isAllDay = isAllDay
         self.hasOtherAttendees = hasOtherAttendees
         self.isDeclined = isDeclined
+        self.isAttending = isAttending && !isDeclined
         self.isOutOfOffice = isOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         self.conferenceURI = conferenceURI
         self.url = url
@@ -136,6 +139,7 @@ private extension CalendarEvent {
             isAllDay: isAllDay,
             hasOtherAttendees: hasOtherAttendees || fallback.hasOtherAttendees,
             isDeclined: isDeclined || fallback.isDeclined,
+            isAttending: isAttending || fallback.isAttending,
             isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
             conferenceURI: conferenceURI ?? fallback.conferenceURI,
             url: url ?? fallback.url
@@ -160,6 +164,7 @@ extension CalendarEvent {
         case isAllDay
         case hasOtherAttendees
         case isDeclined
+        case isAttending
         case isOutOfOffice
         case conferenceURI
         case url
@@ -188,6 +193,8 @@ extension CalendarEvent {
         isAllDay = try container.decode(Bool.self, forKey: .isAllDay)
         hasOtherAttendees = try container.decodeIfPresent(Bool.self, forKey: .hasOtherAttendees) ?? false
         isDeclined = try container.decodeIfPresent(Bool.self, forKey: .isDeclined) ?? false
+        let decodedIsAttending = try container.decodeIfPresent(Bool.self, forKey: .isAttending) ?? false
+        isAttending = decodedIsAttending && !isDeclined
         let decodedIsOutOfOffice = try container.decodeIfPresent(Bool.self, forKey: .isOutOfOffice) ?? false
         isOutOfOffice = decodedIsOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         conferenceURI = try container.decodeIfPresent(URL.self, forKey: .conferenceURI)

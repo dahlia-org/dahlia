@@ -23,20 +23,43 @@ struct MenuBarLabel: View {
                 now: calendarViewModel.currentDate
             )
             : nil
+        let calendarAccessibilityLabel = calendarText == nil
+            ? L10n.dahlia
+            : agenda.accessibilityLabel(now: calendarViewModel.currentDate) ?? L10n.dahlia
+        let accessibilityLabel = viewModel.isListening
+            ? "\(calendarAccessibilityLabel), \(L10n.recordingNow)"
+            : calendarAccessibilityLabel
 
-        Label {
-            Text(calendarText ?? L10n.dahlia)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: 320)
-        } icon: {
-            Image(systemName: viewModel.isListening ? "record.circle.fill" : "waveform")
+        Group {
+            if settings.menuBarCalendarEnabled,
+               let featuredEvent = agenda.featuredEvent,
+               let calendarText {
+                Label {
+                    Text(calendarText)
+                } icon: {
+                    if viewModel.isListening {
+                        Image(systemName: "record.circle.fill")
+                    } else {
+                        MenuBarCalendarParticipationIndicator(isAttending: featuredEvent.isAttending)
+                    }
+                }
+            } else if settings.menuBarCalendarEnabled {
+                if viewModel.isListening {
+                    Label(L10n.dahlia, systemImage: "record.circle.fill")
+                } else {
+                    Text(calendarText ?? L10n.dahlia)
+                }
+            } else {
+                Label(
+                    L10n.dahlia,
+                    systemImage: viewModel.isListening ? "record.circle.fill" : "waveform"
+                )
+            }
         }
-        .accessibilityLabel(
-            calendarText == nil
-                ? L10n.dahlia
-                : agenda.accessibilityLabel(now: calendarViewModel.currentDate) ?? L10n.dahlia
-        )
+        .labelStyle(.titleAndIcon)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .accessibilityLabel(accessibilityLabel)
         .task {
             await calendarViewModel.runRefreshLoop()
         }

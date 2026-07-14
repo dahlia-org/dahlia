@@ -1,6 +1,8 @@
 import Foundation
 
 struct MenuBarCalendarAgenda: Equatable {
+    private static let menuBarTitleLimit = 24
+
     let events: [CalendarEvent]
     let featuredEvent: CalendarEvent?
     let featuredEventIsOngoing: Bool
@@ -45,7 +47,7 @@ struct MenuBarCalendarAgenda: Equatable {
 
         var components: [String] = []
         if showsTitle {
-            components.append(featuredEvent.resolvedMeetingTitle)
+            components.append(Self.truncatedTitle(featuredEvent.resolvedMeetingTitle))
         }
         if showsCountdown {
             components.append(countdownText(now: now))
@@ -55,7 +57,8 @@ struct MenuBarCalendarAgenda: Equatable {
 
     func accessibilityLabel(now: Date) -> String? {
         guard let featuredEvent else { return nil }
-        return "\(featuredEvent.resolvedMeetingTitle), \(countdownText(now: now))"
+        let participation = featuredEvent.isAttending ? ", \(L10n.calendarAttending)" : ""
+        return "\(featuredEvent.resolvedMeetingTitle), \(countdownText(now: now))\(participation)"
     }
 
     func countdownText(now: Date) -> String {
@@ -86,6 +89,11 @@ struct MenuBarCalendarAgenda: Equatable {
             return L10n.menuBarHours(hours)
         }
         return L10n.menuBarMinutes(remainingMinutes)
+    }
+
+    private static func truncatedTitle(_ title: String) -> String {
+        guard title.count > menuBarTitleLimit else { return title }
+        return "\(title.prefix(menuBarTitleLimit))…"
     }
 
     private static func sortEvents(_ lhs: CalendarEvent, _ rhs: CalendarEvent) -> Bool {

@@ -3,8 +3,9 @@ import SwiftUI
 struct MenuBarCalendarSectionView: View {
     let agenda: MenuBarCalendarAgenda
     let now: Date
-    let onOpenEvent: (CalendarEvent) -> Void
+    let onJoinAndRecordEvent: (CalendarEvent) -> Void
     let onJoinEvent: (CalendarEvent) -> Void
+    let onShowEventInCalendar: (CalendarEvent) -> Void
     let onOpenCalendarSettings: () -> Void
 
     @ObservedObject private var settings = AppSettings.shared
@@ -12,62 +13,40 @@ struct MenuBarCalendarSectionView: View {
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(L10n.today, systemImage: "calendar")
-                .font(.headline)
-
+        Section(L10n.today) {
             if !settings.enabledCalendarSources.isEmpty, !agenda.events.isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: 6) {
-                        ForEach(agenda.events) { event in
-                            MenuBarCalendarEventRow(
-                                event: event,
-                                now: now,
-                                onOpen: { onOpenEvent(event) },
-                                onJoin: event.conferenceURI == nil ? nil : { onJoinEvent(event) }
-                            )
-                        }
-                    }
+                ForEach(agenda.events) { event in
+                    MenuBarCalendarEventRow(
+                        event: event,
+                        now: now,
+                        canJoin: event.conferenceURI != nil,
+                        canShowInCalendar: event.url != nil,
+                        onJoinAndRecord: { onJoinAndRecordEvent(event) },
+                        onJoin: { onJoinEvent(event) },
+                        onShowInCalendar: { onShowEventInCalendar(event) }
+                    )
                 }
-                .frame(maxHeight: 300)
+            } else if settings.enabledCalendarSources.isEmpty {
+                statusLabel(L10n.calendarNoSourcesEnabledTitle, systemImage: "calendar.badge.exclamationmark")
+                calendarSettingsButton
+            } else if isLoading {
+                statusLabel(L10n.calendarLoading, systemImage: "arrow.triangle.2.circlepath")
+            } else if let issueTitle = sourceIssueTitle {
+                statusLabel(issueTitle, systemImage: "calendar.badge.exclamationmark")
+                calendarSettingsButton
             } else {
-                emptyContent
+                statusLabel(L10n.menuBarNoMoreEventsToday, systemImage: "calendar.badge.checkmark")
             }
         }
-        .padding()
     }
 
-    @ViewBuilder
-    private var emptyContent: some View {
-        if settings.enabledCalendarSources.isEmpty {
-            unavailableView(
-                title: L10n.calendarNoSourcesEnabledTitle,
-                message: L10n.calendarNoSourcesEnabledMessage
-            )
-        } else if isLoading {
-            ProgressView(L10n.calendarLoading)
-                .frame(maxWidth: .infinity, minHeight: 120)
-        } else if let issue = sourceIssue {
-            unavailableView(title: issue.title, message: issue.message)
-        } else {
-            ContentUnavailableView(
-                L10n.menuBarNoMoreEventsToday,
-                systemImage: "calendar.badge.checkmark",
-                description: Text(L10n.menuBarNoMoreEventsTodayDescription)
-            )
-            .frame(minHeight: 120)
-        }
+    private func statusLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .disabled(true)
     }
 
-    private func unavailableView(title: String, message: String) -> some View {
-        ContentUnavailableView {
-            Label(title, systemImage: "calendar.badge.exclamationmark")
-        } description: {
-            Text(message)
-        } actions: {
-            Button(L10n.menuBarOpenCalendarSettings, action: onOpenCalendarSettings)
-        }
-        .frame(minHeight: 140)
+    private var calendarSettingsButton: some View {
+        Button(L10n.menuBarOpenCalendarSettings, systemImage: "gearshape", action: onOpenCalendarSettings)
     }
 
     private var isLoading: Bool {
@@ -75,20 +54,17 @@ struct MenuBarCalendarSectionView: View {
             || (settings.isCalendarSourceEnabled(.macOS) && macCalendarStore.state == .loading)
     }
 
-    private var sourceIssue: (title: String, message: String)? {
+    private var sourceIssueTitle: String? {
         if settings.isCalendarSourceEnabled(.google) {
             switch googleCalendarStore.state {
             case .unconfigured:
-                return (L10n.googleCalendarClientIDMissingTitle, L10n.googleCalendarClientIDMissingMessage)
+                return L10n.googleCalendarClientIDMissingTitle
             case .signedOut:
-                return (L10n.googleCalendarSignInRequiredTitle, L10n.googleCalendarScheduleSignInRequiredMessage)
+                return L10n.googleCalendarSignInRequiredTitle
             case .needsCalendarSelection:
-                return (L10n.calendarSelectionRequiredTitle, L10n.calendarScheduleSelectionRequiredMessage)
+                return L10n.calendarSelectionRequiredTitle
             case .failed:
-                return (
-                    L10n.googleCalendarLoadFailedTitle,
-                    googleCalendarStore.lastErrorMessage ?? L10n.googleCalendarUnexpectedResponse
-                )
+                return L10n.googleCalendarLoadFailedTitle
             case .loading, .loaded:
                 break
             }
@@ -97,16 +73,13 @@ struct MenuBarCalendarSectionView: View {
         if settings.isCalendarSourceEnabled(.macOS) {
             switch macCalendarStore.state {
             case .notDetermined:
-                return (L10n.macOSCalendarAccessRequiredTitle, L10n.macOSCalendarAccessRequiredMessage)
+                return L10n.macOSCalendarAccessRequiredTitle
             case .accessDenied:
-                return (L10n.macOSCalendarAccessDeniedTitle, L10n.macOSCalendarAccessDeniedMessage)
+                return L10n.macOSCalendarAccessDeniedTitle
             case .needsCalendarSelection:
-                return (L10n.calendarSelectionRequiredTitle, L10n.calendarScheduleSelectionRequiredMessage)
+                return L10n.calendarSelectionRequiredTitle
             case .failed:
-                return (
-                    L10n.macOSCalendarLoadFailedTitle,
-                    macCalendarStore.lastErrorMessage ?? L10n.macOSCalendarUnexpectedError
-                )
+                return L10n.macOSCalendarLoadFailedTitle
             case .loading, .loaded:
                 break
             }

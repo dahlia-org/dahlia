@@ -6,56 +6,54 @@ import Foundation
 
     struct CalendarEventFilterTests {
         @Test
-        func includesEventWhenNoFiltersAreEnabled() {
-            let event = makeEvent(
-                isAllDay: true,
-                hasOtherAttendees: false,
-                isDeclined: true,
-                isOutOfOffice: true,
-                conferenceURI: nil
-            )
-
-            #expect(CalendarEventFilter().includes(event))
+        func includesRegularEventsByDefault() {
+            #expect(CalendarEventFilter().includes(makeEvent()))
         }
 
         @Test
-        func excludesAllDayEvents() {
-            let filter = CalendarEventFilter(excludesAllDayEvents: true)
+        func excludesOptionalEventTypesByDefault() {
+            let filter = CalendarEventFilter()
 
             #expect(!filter.includes(makeEvent(isAllDay: true)))
-            #expect(filter.includes(makeEvent()))
-        }
-
-        @Test
-        func excludesEventsWithoutOtherAttendees() {
-            let filter = CalendarEventFilter(excludesEventsWithoutOtherAttendees: true)
-
             #expect(!filter.includes(makeEvent(hasOtherAttendees: false)))
-            #expect(filter.includes(makeEvent(hasOtherAttendees: true)))
-        }
-
-        @Test
-        func excludesEventsWithoutConferenceURI() {
-            let filter = CalendarEventFilter(excludesEventsWithoutConferenceURI: true)
-
             #expect(!filter.includes(makeEvent(conferenceURI: nil)))
-            #expect(filter.includes(makeEvent(conferenceURI: URL(string: "https://meet.example.com/room"))))
-        }
-
-        @Test
-        func excludesDeclinedEvents() {
-            let filter = CalendarEventFilter(excludesDeclinedEvents: true)
-
             #expect(!filter.includes(makeEvent(isDeclined: true)))
-            #expect(filter.includes(makeEvent(isDeclined: false)))
+            #expect(!filter.includes(makeEvent(isOutOfOffice: true)))
         }
 
         @Test
-        func excludesOutOfOfficeEvents() {
-            let filter = CalendarEventFilter(excludesOutOfOfficeEvents: true)
+        func includesAllDayEventsWhenEnabled() {
+            let filter = CalendarEventFilter(includesAllDayEvents: true)
 
-            #expect(!filter.includes(makeEvent(isOutOfOffice: true)))
-            #expect(filter.includes(makeEvent(isOutOfOffice: false)))
+            #expect(filter.includes(makeEvent(isAllDay: true)))
+        }
+
+        @Test
+        func includesEventsWithoutOtherAttendeesWhenEnabled() {
+            let filter = CalendarEventFilter(includesEventsWithoutOtherAttendees: true)
+
+            #expect(filter.includes(makeEvent(hasOtherAttendees: false)))
+        }
+
+        @Test
+        func includesEventsWithoutConferenceURIWhenEnabled() {
+            let filter = CalendarEventFilter(includesEventsWithoutConferenceURI: true)
+
+            #expect(filter.includes(makeEvent(conferenceURI: nil)))
+        }
+
+        @Test
+        func includesDeclinedEventsWhenEnabled() {
+            let filter = CalendarEventFilter(includesDeclinedEvents: true)
+
+            #expect(filter.includes(makeEvent(isDeclined: true)))
+        }
+
+        @Test
+        func includesOutOfOfficeEventsWhenEnabled() {
+            let filter = CalendarEventFilter(includesOutOfOfficeEvents: true)
+
+            #expect(filter.includes(makeEvent(isOutOfOffice: true)))
         }
 
         @Test(arguments: [

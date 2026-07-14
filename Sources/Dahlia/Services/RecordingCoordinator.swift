@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import GRDB
 
@@ -96,6 +97,13 @@ final class RecordingCoordinator {
         )
     }
 
+    func joinCalendarEventAndStartRecording(_ event: CalendarEvent) {
+        startRecording(forCalendarEvent: event)
+        if let conferenceURI = event.conferenceURI {
+            NSWorkspace.shared.open(conferenceURI)
+        }
+    }
+
     func startRecording(appendingTo meetingId: UUID) {
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
@@ -128,5 +136,35 @@ final class RecordingCoordinator {
 
     func stopRecording() {
         viewModel.stopListening()
+    }
+
+    private func startRecording(forCalendarEvent event: CalendarEvent) {
+        guard canStartNewMeeting,
+              let dbQueue = sidebarViewModel.dbQueue,
+              let vault = sidebarViewModel.currentVault else {
+            MainWindowOpener.shared.openMainWindow()
+            return
+        }
+
+        let repository = MeetingRepository(dbQueue: dbQueue)
+        do {
+            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
+                sidebarViewModel.selectMeeting(existingMeetingId)
+                startRecording(appendingTo: existingMeetingId)
+                return
+            }
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+            ErrorReportingService.capture(error, context: ["source": "calendarEventRecording"])
+            return
+        }
+
+        sidebarViewModel.clearMeetingSelection()
+        viewModel.beginDraftMeeting(
+            from: event,
+            dbQueue: dbQueue,
+            vaultURL: vault.url
+        )
+        startNewMeeting()
     }
 }

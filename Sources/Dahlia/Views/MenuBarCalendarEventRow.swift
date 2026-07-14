@@ -3,65 +3,53 @@ import SwiftUI
 struct MenuBarCalendarEventRow: View {
     let event: CalendarEvent
     let now: Date
-    let onOpen: () -> Void
-    let onJoin: (() -> Void)?
+    let canJoin: Bool
+    let canShowInCalendar: Bool
+    let onJoinAndRecord: () -> Void
+    let onJoin: () -> Void
+    let onShowInCalendar: () -> Void
+
+    var body: some View {
+        Menu {
+            Button(L10n.menuBarJoinMeetingWithRecording, systemImage: "record.circle", action: onJoinAndRecord)
+                .disabled(!canJoin)
+
+            Button(L10n.menuBarJoinMeeting, systemImage: "video.fill", action: onJoin)
+                .disabled(!canJoin)
+
+            Divider()
+
+            Button(L10n.menuBarShowEventInCalendar, systemImage: "calendar", action: onShowInCalendar)
+                .disabled(!canShowInCalendar)
+        } label: {
+            Label {
+                Text(menuTitle)
+            } icon: {
+                MenuBarCalendarParticipationIndicator(isAttending: event.isAttending)
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
 
     private var isOngoing: Bool {
         !event.isAllDay && event.startDate <= now && event.endDate > now
     }
 
-    var body: some View {
-        HStack(spacing: 10) {
-            Button(action: onOpen) {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(event.calendarColorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                        .frame(width: 9, height: 9)
-                        .accessibilityHidden(true)
+    private var menuTitle: String {
+        let progress = isOngoing ? " · \(L10n.menuBarInProgress)" : ""
+        return "\(timeText)  \(event.resolvedMeetingTitle)\(progress)"
+    }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(event.resolvedMeetingTitle)
-                                .font(.headline)
-                                .lineLimit(1)
-
-                            if isOngoing {
-                                Text(L10n.menuBarInProgress)
-                                    .font(.caption)
-                                    .bold()
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-
-                        Text("\(timeText) · \(event.calendarName)")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.menuBarOpenEventInDahlia(event.resolvedMeetingTitle))
-
-            if let onJoin {
-                Button(L10n.join, systemImage: "video.fill", action: onJoin)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.bordered)
-                    .help(L10n.join)
-            }
-        }
-        .padding(10)
-        .background(isOngoing ? Color.accentColor.opacity(0.1) : Color.clear, in: .rect(cornerRadius: 8))
+    private var accessibilityLabel: String {
+        let participation = event.isAttending ? ", \(L10n.calendarAttending)" : ""
+        return "\(event.resolvedMeetingTitle), \(timeText), \(event.calendarName)\(participation)"
     }
 
     private var timeText: String {
         if event.isAllDay {
             L10n.calendarAllDay
         } else {
-            "\(event.startDate.formatted(date: .omitted, time: .shortened))–\(event.endDate.formatted(date: .omitted, time: .shortened))"
+            event.startDate.formatted(date: .omitted, time: .shortened)
         }
     }
 }

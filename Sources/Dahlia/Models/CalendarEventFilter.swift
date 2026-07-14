@@ -1,38 +1,38 @@
 struct CalendarEventFilter: Equatable {
-    let excludesAllDayEvents: Bool
-    let excludesEventsWithoutOtherAttendees: Bool
-    let excludesEventsWithoutConferenceURI: Bool
-    let excludesDeclinedEvents: Bool
-    let excludesOutOfOfficeEvents: Bool
+    let includesAllDayEvents: Bool
+    let includesEventsWithoutOtherAttendees: Bool
+    let includesEventsWithoutConferenceURI: Bool
+    let includesDeclinedEvents: Bool
+    let includesOutOfOfficeEvents: Bool
 
     init(
-        excludesAllDayEvents: Bool = false,
-        excludesEventsWithoutOtherAttendees: Bool = false,
-        excludesEventsWithoutConferenceURI: Bool = false,
-        excludesDeclinedEvents: Bool = false,
-        excludesOutOfOfficeEvents: Bool = false
+        includesAllDayEvents: Bool = false,
+        includesEventsWithoutOtherAttendees: Bool = false,
+        includesEventsWithoutConferenceURI: Bool = false,
+        includesDeclinedEvents: Bool = false,
+        includesOutOfOfficeEvents: Bool = false
     ) {
-        self.excludesAllDayEvents = excludesAllDayEvents
-        self.excludesEventsWithoutOtherAttendees = excludesEventsWithoutOtherAttendees
-        self.excludesEventsWithoutConferenceURI = excludesEventsWithoutConferenceURI
-        self.excludesDeclinedEvents = excludesDeclinedEvents
-        self.excludesOutOfOfficeEvents = excludesOutOfOfficeEvents
+        self.includesAllDayEvents = includesAllDayEvents
+        self.includesEventsWithoutOtherAttendees = includesEventsWithoutOtherAttendees
+        self.includesEventsWithoutConferenceURI = includesEventsWithoutConferenceURI
+        self.includesDeclinedEvents = includesDeclinedEvents
+        self.includesOutOfOfficeEvents = includesOutOfOfficeEvents
     }
 
     func includes(_ event: CalendarEvent) -> Bool {
-        if excludesAllDayEvents, event.isAllDay {
+        if !includesAllDayEvents, event.isAllDay {
             return false
         }
-        if excludesEventsWithoutOtherAttendees, !event.hasOtherAttendees {
+        if !includesEventsWithoutOtherAttendees, !event.hasOtherAttendees {
             return false
         }
-        if excludesEventsWithoutConferenceURI, event.conferenceURI == nil {
+        if !includesEventsWithoutConferenceURI, event.conferenceURI == nil {
             return false
         }
-        if excludesDeclinedEvents, event.isDeclined {
+        if !includesDeclinedEvents, event.isDeclined {
             return false
         }
-        if excludesOutOfOfficeEvents, event.isOutOfOffice {
+        if !includesOutOfOfficeEvents, event.isOutOfOffice {
             return false
         }
         return true

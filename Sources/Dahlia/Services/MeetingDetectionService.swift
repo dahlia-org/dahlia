@@ -139,11 +139,11 @@ final class MeetingDetectionService: ObservableObject {
             settings.microphoneMeetingNotificationsEnabled.description,
             settings.calendarEventMeetingNotificationsEnabled.description,
             settings.enabledCalendarSourcesJSON,
-            settings.excludeAllDayCalendarEvents.description,
-            settings.excludeCalendarEventsWithoutOtherAttendees.description,
-            settings.excludeCalendarEventsWithoutConferenceURI.description,
-            settings.excludeDeclinedCalendarEvents.description,
-            settings.excludeOutOfOfficeCalendarEvents.description,
+            settings.includesAllDayCalendarEvents.description,
+            settings.includesCalendarEventsWithoutOtherAttendees.description,
+            settings.includesCalendarEventsWithoutConferenceURI.description,
+            settings.includesDeclinedCalendarEvents.description,
+            settings.includesOutOfOfficeCalendarEvents.description,
             settings.appLanguageRawValue,
         ].joined(separator: "|")
         guard notificationSettingsSignature != settingsSignature else { return }

@@ -256,18 +256,18 @@
 "Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
 "Calendar Sources" = "カレンダーソース";
 "Choose which calendar services provide upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
-"Event Filters" = "予定のフィルタ";
-"Hide events from Home and calendar notifications when they match any selected condition." = "選択した条件のいずれかに該当する予定を Home とカレンダー通知から除外します。";
+"Events to Include" = "イベントを含める";
+"Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Home、メニューバー、カレンダー通知に表示するイベントの種類をオンにします。";
 "All-day events" = "終日イベント";
-"Hide events marked as all-day." = "終日として設定された予定を非表示にします。";
-"Events with only you" = "参加者が自分だけのイベント";
-"Hide events with no attendees other than you." = "自分以外の参加者がいない予定を非表示にします。";
+"Include events marked as all-day." = "終日として設定されたイベントを含めます。";
+"Events without other attendees" = "参加者のいないイベント";
+"Include events with no attendees other than you." = "自分以外の参加者がいないイベントを含めます。";
 "Events without a meeting URL" = "会議 URL がないイベント";
-"Hide events that do not include a supported meeting URL." = "対応している会議 URL が含まれていない予定を非表示にします。";
+"Include events that do not have a supported meeting URL." = "対応している会議 URL がないイベントを含めます。";
 "Declined events" = "辞退済みのイベント";
-"Hide events you declined." = "自分が辞退した予定を非表示にします。";
+"Include events you declined." = "自分が辞退したイベントを含めます。";
 "OOO / OOTO events" = "OOO / OOTO のイベント";
-"Hide out-of-office events and events whose title includes OOO or OOTO." = "不在として設定された予定と、タイトルに OOO または OOTO を含む予定を除外します。";
+"Include out-of-office events and events whose title includes OOO or OOTO." = "不在として設定されたイベントと、タイトルに OOO または OOTO を含むイベントを含めます。";
 "Show events from Google Calendar." = "Google カレンダーの予定を表示します。";
 "Show events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を表示します。";
 "Upcoming schedule" = "今後の予定";
@@ -305,8 +305,8 @@
 "Enable at least one calendar source in Settings to show upcoming events." = "今後の予定を表示するには設定画面で少なくとも 1 つのカレンダーソースを有効にしてください。";
 "No upcoming events" = "今後の予定はありません";
 "There are no events in the next 7 days for the selected calendars." = "選択したカレンダーには今後 7 日間の予定がありません。";
-"No events match your filters" = "フィルタに一致する予定がありません";
-"Upcoming events were found, but all of them are hidden by your event filters." = "今後の予定はありますが、すべて予定のフィルタで非表示になっています。";
+"No events match your inclusion settings" = "含めるイベントがありません";
+"Upcoming events were found, but none match the event types you chose to include." = "今後の予定はありますが、「イベントを含める」の設定に一致しません。";
 "Could not load Google Calendar" = "Google カレンダーを読み込めませんでした";
 "Could not load macOS Calendar" = "macOS カレンダーを読み込めませんでした";
 "Allow macOS Calendar access" = "macOS カレンダーへのアクセスを許可";
@@ -483,6 +483,10 @@
 "%lld hr %lld min" = "%lld時間%lld分";
 "%lld hr" = "%lld時間";
 "%lld min" = "%lld分";
+"Join Meeting (with recording)" = "ミーティングに参加する（録音あり）";
+"Join Meeting" = "ミーティングに参加する";
+"Show Event in Calendar" = "イベントをカレンダーで表示する";
+"Attending" = "参加予定";
 
 /* Meeting Detection */
 "Meeting Notifications" = "ミーティング通知";

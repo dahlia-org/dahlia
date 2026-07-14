@@ -392,6 +392,7 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
             isAllDay: event.isAllDay,
             hasOtherAttendees: event.attendees?.contains { !$0.isCurrentUser } == true,
             isDeclined: event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .declined,
+            isAttending: event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .accepted,
             isOutOfOffice: event.availability == .unavailable,
             conferenceURI: CalendarConferenceURIExtractor.conferenceURI(
                 url: event.url,
