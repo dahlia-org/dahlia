@@ -64,11 +64,11 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
         self.process = process
         outputHandle = standardOutput.fileHandleForReading
-        inputChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedInput, queue: ioQueue) { descriptor in
-            Darwin.close(descriptor)
+        inputChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedInput, queue: ioQueue) { _ in
+            Darwin.close(duplicatedInput)
         }
-        errorChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedError, queue: ioQueue) { descriptor in
-            Darwin.close(descriptor)
+        errorChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedError, queue: ioQueue) { _ in
+            Darwin.close(duplicatedError)
         }
         errorChannel.setLimit(highWater: 4096)
     }
@@ -166,6 +166,10 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
         func bufferedOutputLineCountForTesting() -> Int {
             outputLines.count - outputLineOffset
+        }
+
+        func terminationStatusForTesting() -> Int32 {
+            process.terminationStatus
         }
     #endif
 
