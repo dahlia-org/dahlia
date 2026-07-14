@@ -138,7 +138,7 @@ cd "$PROJECT_DIR"
 
 require_commands codesign gh git hdiutil xcrun
 if [ -z "$NOTES_FILE" ]; then
-    require_commands codex
+    require_commands codex shasum
 fi
 
 MARKETING_VERSION="$(read_marketing_version "$INFO_PLIST")"
@@ -192,6 +192,11 @@ codesign --verify --verbose=2 "$DMG_PATH"
 xcrun stapler validate "$DMG_PATH"
 validate_dmg_version "$MARKETING_VERSION"
 
+DMG_CHECKSUM=""
+if [ -z "$NOTES_FILE" ]; then
+    DMG_CHECKSUM="$(shasum -a 256 "$DMG_PATH")"
+fi
+
 gh auth status >/dev/null
 git remote get-url origin >/dev/null
 
@@ -230,6 +235,7 @@ if [ -z "$NOTES_FILE" ]; then
         --sandbox danger-full-access \
         --ignore-user-config \
         --config 'approval_policy="untrusted"' \
+        --config 'web_search="disabled"' \
         --ephemeral \
         --color never \
         --output-last-message "$NOTES_FILE" \
@@ -237,6 +243,11 @@ if [ -z "$NOTES_FILE" ]; then
 
     if ! has_release_notes "$NOTES_FILE"; then
         echo "error: Codex did not generate release notes" >&2
+        exit 1
+    fi
+
+    if [ "$(shasum -a 256 "$DMG_PATH")" != "$DMG_CHECKSUM" ]; then
+        echo "error: release DMG changed while Codex generated release notes; refusing to publish" >&2
         exit 1
     fi
 
