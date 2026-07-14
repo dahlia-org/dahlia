@@ -32,7 +32,7 @@ struct MacCalendarStoreTests {
 
         await store.requestAccess()
 
-        #expect(provider.requestAccessCallCount == 1)
+        #expect(await provider.snapshot().requestAccessCallCount == 1)
         #expect(store.state == .accessDenied)
         #expect(store.availableCalendars.isEmpty)
         #expect(store.upcomingEvents.isEmpty)
@@ -54,13 +54,14 @@ struct MacCalendarStoreTests {
         )
 
         await store.refreshIfNeeded()
+        let providerSnapshot = await provider.snapshot()
 
         #expect(store.state == .loaded)
         #expect(store.availableCalendars == [primaryCalendar, secondaryCalendar])
         #expect(store.selectedCalendarIDs == [primaryCalendar.id, secondaryCalendar.id])
         #expect(store.upcomingEvents == [fixtureEvent])
-        #expect(provider.fetchEventsCallCount == 1)
-        #expect(provider.requestedCalendars == [primaryCalendar, secondaryCalendar])
+        #expect(providerSnapshot.fetchEventsCallCount == 1)
+        #expect(providerSnapshot.requestedCalendars == [primaryCalendar, secondaryCalendar])
         #expect(defaults.bool(forKey: MacCalendarStore.didInitializeSelectionKey))
     }
 
@@ -85,7 +86,7 @@ struct MacCalendarStoreTests {
         #expect(store.state == .needsCalendarSelection)
         #expect(store.selectedCalendarIDs.isEmpty)
         #expect(store.upcomingEvents.isEmpty)
-        #expect(provider.fetchEventsCallCount == 0)
+        #expect(await provider.snapshot().fetchEventsCallCount == 0)
     }
 
     @Test
@@ -111,6 +112,55 @@ struct MacCalendarStoreTests {
         let saved = defaults.string(forKey: MacCalendarStore.selectedCalendarIDsKey)
         #expect(saved?.contains(secondaryCalendar.id) == true)
         #expect(saved?.contains(primaryCalendar.id) == false)
+    }
+
+    @Test
+    func olderRefreshCannotOverwriteNewCalendarSelection() async {
+        let defaults = isolatedUserDefaults()
+        defaults.set(true, forKey: MacCalendarStore.didInitializeSelectionKey)
+        defaults.set("[\"home\"]", forKey: MacCalendarStore.selectedCalendarIDsKey)
+        let provider = OverlappingMacCalendarEventStore()
+        let store = MacCalendarStore(
+            eventStoreProvider: provider,
+            userDefaults: defaults,
+            now: { fixtureNow },
+            storeChangedNotification: nil
+        )
+
+        let olderRefresh = Task { await store.refreshIfNeeded(force: true) }
+        await provider.waitUntilBlockedEventFetchStarts()
+
+        let newerRefresh = store.setCalendarSelection([secondaryCalendar.id])
+        await newerRefresh?.value
+        await provider.resumeBlockedEventFetch()
+        await olderRefresh.value
+
+        #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
+        #expect(store.upcomingEvents.map(\.calendarID) == [secondaryCalendar.id])
+        #expect(store.state == .loaded)
+    }
+
+    @Test
+    func cachedRefreshDoesNotInvalidateForcedRefreshInProgress() async {
+        let provider = OverlappingMacCalendarEventStore(blockedFetchNumber: 2)
+        let store = MacCalendarStore(
+            eventStoreProvider: provider,
+            userDefaults: isolatedUserDefaults(),
+            now: { fixtureNow },
+            storeChangedNotification: nil
+        )
+
+        await store.refreshIfNeeded(force: true)
+
+        let forcedRefresh = Task { await store.refreshIfNeeded(force: true) }
+        await provider.waitUntilBlockedEventFetchStarts()
+        await store.refreshIfNeeded()
+        await provider.resumeBlockedEventFetch()
+        await forcedRefresh.value
+
+        #expect(await provider.eventFetchCount() == 2)
+        #expect(store.state == .loaded)
+        #expect(!store.upcomingEvents.isEmpty)
     }
 
     @Test
@@ -214,9 +264,15 @@ private let fixtureEvent = CalendarEvent(
     conferenceURI: URL(string: "https://meet.google.com/test-link")
 )
 
-@MainActor
-private final class MockMacCalendarEventStore: MacCalendarEventStoreProviding {
-    var authorizationStatus: MacCalendarAuthorizationStatus
+private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
+    struct Snapshot: Sendable {
+        let requestAccessCallCount: Int
+        let fetchEventsCallCount: Int
+        let requestedCalendars: [CalendarListItem]
+    }
+
+    nonisolated let initialAuthorizationStatus: MacCalendarAuthorizationStatus
+    private var currentAuthorizationStatus: MacCalendarAuthorizationStatus
     var requestAccessResult: Result<Bool, Error>
     var calendarsResult: Result<[CalendarListItem], Error>
     var eventsResult: Result<[CalendarEvent], Error>
@@ -230,16 +286,21 @@ private final class MockMacCalendarEventStore: MacCalendarEventStoreProviding {
         calendars: [CalendarListItem] = [],
         events: [CalendarEvent] = []
     ) {
-        self.authorizationStatus = authorizationStatus
+        self.initialAuthorizationStatus = authorizationStatus
+        self.currentAuthorizationStatus = authorizationStatus
         self.requestAccessResult = requestAccessResult
         self.calendarsResult = .success(calendars)
         self.eventsResult = .success(events)
     }
 
+    func authorizationStatus() -> MacCalendarAuthorizationStatus {
+        currentAuthorizationStatus
+    }
+
     func requestFullAccessToEvents() async throws -> Bool {
         requestAccessCallCount += 1
         let granted = try requestAccessResult.get()
-        authorizationStatus = granted ? .fullAccess : .denied
+        currentAuthorizationStatus = granted ? .fullAccess : .denied
         return granted
     }
 
@@ -251,6 +312,88 @@ private final class MockMacCalendarEventStore: MacCalendarEventStoreProviding {
         fetchEventsCallCount += 1
         requestedCalendars = calendars
         return try eventsResult.get()
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(
+            requestAccessCallCount: requestAccessCallCount,
+            fetchEventsCallCount: fetchEventsCallCount,
+            requestedCalendars: requestedCalendars
+        )
+    }
+}
+
+private actor OverlappingMacCalendarEventStore: MacCalendarEventStoreProviding {
+    nonisolated let initialAuthorizationStatus: MacCalendarAuthorizationStatus = .fullAccess
+    private let blockedFetchNumber: Int
+    private var fetchCount = 0
+    private var fetchCountWaiters: [CheckedContinuation<Void, Never>] = []
+    private var blockedFetchContinuation: CheckedContinuation<Void, Never>?
+
+    init(blockedFetchNumber: Int = 1) {
+        self.blockedFetchNumber = blockedFetchNumber
+    }
+
+    func authorizationStatus() -> MacCalendarAuthorizationStatus {
+        .fullAccess
+    }
+
+    func requestFullAccessToEvents() async throws -> Bool {
+        true
+    }
+
+    func fetchCalendarList() async throws -> [CalendarListItem] {
+        [primaryCalendar, secondaryCalendar]
+    }
+
+    func fetchUpcomingEvents(
+        calendars: [CalendarListItem],
+        now _: Date,
+        daysAhead _: Int
+    ) async throws -> [CalendarEvent] {
+        fetchCount += 1
+        if fetchCount == blockedFetchNumber {
+            let waiters = fetchCountWaiters
+            fetchCountWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            await withCheckedContinuation { continuation in
+                blockedFetchContinuation = continuation
+            }
+        }
+
+        return calendars.map { calendar in
+            CalendarEvent(
+                id: "\(calendar.id)::event",
+                calendarID: calendar.id,
+                calendarName: calendar.title,
+                calendarColorHex: calendar.colorHex,
+                platform: CalendarEventPlatform.macOSCalendar,
+                platformId: "event",
+                title: calendar.title,
+                description: "",
+                icalUid: nil,
+                startDate: fixtureNow.addingTimeInterval(3600),
+                endDate: fixtureNow.addingTimeInterval(7200),
+                isAllDay: false,
+                conferenceURI: nil
+            )
+        }
+    }
+
+    func waitUntilBlockedEventFetchStarts() async {
+        guard fetchCount < blockedFetchNumber else { return }
+        await withCheckedContinuation { continuation in
+            fetchCountWaiters.append(continuation)
+        }
+    }
+
+    func resumeBlockedEventFetch() {
+        blockedFetchContinuation?.resume()
+        blockedFetchContinuation = nil
+    }
+
+    func eventFetchCount() -> Int {
+        fetchCount
     }
 }
 

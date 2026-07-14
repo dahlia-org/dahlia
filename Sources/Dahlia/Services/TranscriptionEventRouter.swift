@@ -24,7 +24,8 @@ enum TranscriptionEventRouter {
             store.finalizeSegment(segment, forSource: segment.speakerLabel)
         case let .clearPreview(_, sourceLabel):
             store.clearUnconfirmedSegments(forSource: sourceLabel)
-        case let .translation(_, segmentID, translatedText):
+        case let .previewTranslation(_, segmentID, translatedText),
+             let .translation(_, segmentID, translatedText):
             store.updateTranslatedText(for: segmentID, translatedText: translatedText)
         case .failure:
             break

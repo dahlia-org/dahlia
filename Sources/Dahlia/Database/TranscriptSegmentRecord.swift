@@ -29,4 +29,15 @@ extension TranscriptSegmentRecord {
         self.isConfirmed = segment.isConfirmed
         self.speakerLabel = segment.speakerLabel
     }
+
+    static func updateTranslatedText(
+        _ translatedText: String?,
+        id: UUID,
+        in db: Database
+    ) throws {
+        try db.execute(
+            sql: "UPDATE transcript_segments SET translatedText = ? WHERE id = ?",
+            arguments: [translatedText, id]
+        )
+    }
 }

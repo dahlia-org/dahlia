@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import GRDB
 
@@ -23,28 +22,15 @@ enum MeetingPersistenceStopResult {
 /// 確定済みセグメントを差分で INSERT する。
 @MainActor
 final class MeetingPersistenceService {
-    private enum StopError: LocalizedError {
-        case recordingSessionMissing
-
-        var errorDescription: String? {
-            L10n.recordingSessionNotActive
-        }
-    }
-
     private let store: TranscriptStore
     private let dbQueue: DatabaseQueue
-    let meetingId: UUID
+    nonisolated let meetingId: UUID
+    nonisolated let recordingSessionId: UUID
     private(set) var projectId: UUID?
-    private var cancellable: AnyCancellable?
-    private var persistedSegmentIds: Set<UUID> = []
-    private var persistedSegmentTranslations: [UUID: String?] = [:]
     private var recordingSession: RecordingSessionRecord
     private let createsMeeting: Bool
     private let persistencePolicy: TranscriptPersistencePolicy
-
-    var recordingSessionId: UUID {
-        recordingSession.id
-    }
+    private nonisolated let transcriptWriter: TranscriptPersistenceWriter
 
     /// 新規ミーティングを作成して録音を開始する。
     init(
@@ -63,6 +49,7 @@ final class MeetingPersistenceService {
         self.store = store
         self.dbQueue = dbQueue
         self.meetingId = .v7()
+        self.recordingSessionId = recordingSessionId
         self.projectId = projectId
         self.createsMeeting = true
         self.persistencePolicy = persistencePolicy
@@ -77,6 +64,12 @@ final class MeetingPersistenceService {
             retainAudioAfterBatch: retainAudioAfterBatch
         )
         self.recordingSession = session
+        self.transcriptWriter = TranscriptPersistenceWriter(
+            dbQueue: dbQueue,
+            meetingId: meetingId,
+            recordingSessionId: recordingSessionId,
+            persistencePolicy: persistencePolicy
+        )
         let trimmedInitialName = initialName.trimmingCharacters(in: .whitespacesAndNewlines)
         let calendarEventKey = calendarEvent?.key
 
@@ -109,7 +102,6 @@ final class MeetingPersistenceService {
         self.projectId = resolvedProjectId
 
         store.upsertRecordingSession(RecordingSessionTimeline(from: session))
-        startObserving()
     }
 
     /// 既存のミーティングに追記する（追記モード）。
@@ -128,10 +120,10 @@ final class MeetingPersistenceService {
         self.store = store
         self.dbQueue = dbQueue
         self.meetingId = existingMeetingId
+        self.recordingSessionId = recordingSessionId
         self.projectId = nil
         self.createsMeeting = false
         self.persistencePolicy = persistencePolicy
-        self.persistedSegmentIds = existingSegmentIds
         let session = Self.makeRecordingSession(
             id: recordingSessionId,
             meetingId: existingMeetingId,
@@ -141,64 +133,33 @@ final class MeetingPersistenceService {
             retainAudioAfterBatch: retainAudioAfterBatch
         )
         self.recordingSession = session
+        self.transcriptWriter = TranscriptPersistenceWriter(
+            dbQueue: dbQueue,
+            meetingId: existingMeetingId,
+            recordingSessionId: recordingSessionId,
+            persistencePolicy: persistencePolicy,
+            existingSegmentIds: existingSegmentIds
+        )
 
         try dbQueue.write { db in
             try session.insert(db)
         }
         store.upsertRecordingSession(RecordingSessionTimeline(from: session))
-        startObserving()
     }
 
-    private func startObserving() {
-        guard persistencePolicy.persistsStreamingSegments else { return }
-        cancellable = store.$segments
-            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
-            .sink { [weak self] segments in
-                self?.persistNewConfirmedSegments(segments)
-            }
+    nonisolated func persist(_ event: TranscriptionEvent) async throws {
+        try await transcriptWriter.persist(event)
     }
 
-    private func persistNewConfirmedSegments(_ segments: [TranscriptSegment]) {
-        var recordsToInsert: [TranscriptSegmentRecord] = []
-        var translationUpdates: [(id: UUID, translatedText: String?)] = []
-
-        for segment in segments where segment.isConfirmed {
-            if !persistedSegmentIds.contains(segment.id) {
-                recordsToInsert.append(TranscriptSegmentRecord(from: segment, meetingId: meetingId, defaultSessionId: recordingSession.id))
-                persistedSegmentIds.insert(segment.id)
-                persistedSegmentTranslations[segment.id] = segment.translatedText
-            } else if persistedSegmentTranslations[segment.id] != segment.translatedText {
-                persistedSegmentTranslations[segment.id] = segment.translatedText
-                translationUpdates.append((id: segment.id, translatedText: segment.translatedText))
-            }
-        }
-
-        guard !recordsToInsert.isEmpty || !translationUpdates.isEmpty else { return }
-
-        let queue = dbQueue
-        Task.detached {
-            try? queue.write { db in
-                for record in recordsToInsert {
-                    try record.insert(db)
-                }
-                for update in translationUpdates {
-                    try db.execute(
-                        sql: "UPDATE transcript_segments SET translatedText = ? WHERE id = ?",
-                        arguments: [update.translatedText, update.id]
-                    )
-                }
-            }
-        }
+    nonisolated func persist(_ events: [TranscriptionEvent]) async throws {
+        try await transcriptWriter.persist(events)
     }
 
-    /// 監視を停止し、最終保存とミーティング完了の記録を行う。
+    /// 最終保存とミーティング完了の記録を行う。
     @discardableResult
-    func stop() -> MeetingPersistenceStopResult {
-        cancellable = nil
-        let finalSegmentRecords = persistencePolicy.persistsStreamingSegments
-            ? store.segments
-            .filter(\.isConfirmed)
-            .map { TranscriptSegmentRecord(from: $0, meetingId: meetingId, defaultSessionId: recordingSession.id) }
+    func stop() async -> MeetingPersistenceStopResult {
+        let finalSegments = persistencePolicy.persistsStreamingSegments
+            ? store.segments.filter(\.isConfirmed)
             : []
 
         let now = Date.now
@@ -206,50 +167,18 @@ final class MeetingPersistenceService {
         recordingSession.endedAt = now
         recordingSession.duration = duration
         recordingSession.updatedAt = now
-
         do {
-            let persistedSession = try dbQueue.write { db -> RecordingSessionRecord in
-                // debounce中だった最終セグメントもsession終了と同じtransactionで確定する。
-                for record in finalSegmentRecords {
-                    if let existing = try TranscriptSegmentRecord.fetchOne(db, key: record.id) {
-                        // 既存行のmeeting/session/timeは変更せず、この録音中に更新され得る翻訳だけを反映する。
-                        if existing.translatedText != record.translatedText {
-                            try db.execute(
-                                sql: "UPDATE transcript_segments SET translatedText = ? WHERE id = ?",
-                                arguments: [record.translatedText, record.id]
-                            )
-                        }
-                    } else {
-                        try record.insert(db)
-                    }
-                }
-                // バッチ処理が先に記録したエラーや試行情報を、録音開始時点の値で上書きしない。
-                try db.execute(
-                    sql: """
-                    UPDATE recording_sessions
-                    SET endedAt = ?, duration = ?, updatedAt = ?
-                    WHERE id = ?
-                    """,
-                    arguments: [now, duration, now, recordingSession.id]
-                )
-                let totalDuration = try Double.fetchOne(
-                    db,
-                    sql: "SELECT COALESCE(SUM(duration), 0) FROM recording_sessions WHERE meetingId = ?",
-                    arguments: [meetingId]
-                ) ?? duration
-                if var record = try MeetingRecord.fetchOne(db, key: meetingId) {
-                    if persistencePolicy.persistsStreamingSegments {
-                        record.status = .ready
-                    }
-                    record.duration = totalDuration
-                    record.updatedAt = now
-                    try record.update(db)
-                }
-                guard let persistedSession = try RecordingSessionRecord.fetchOne(db, key: recordingSession.id) else {
-                    throw StopError.recordingSessionMissing
-                }
-                return persistedSession
-            }
+            try await transcriptWriter.persistConfirmedSegments(finalSegments)
+            let persistedSession = try await MeetingPersistenceFinalizer.finish(
+                MeetingPersistenceFinalizer.Request(
+                    recordingSessionId: recordingSession.id,
+                    meetingId: meetingId,
+                    endedAt: now,
+                    duration: duration,
+                    persistsStreamingSegments: persistencePolicy.persistsStreamingSegments
+                ),
+                dbQueue: dbQueue
+            )
             recordingSession = persistedSession
             store.upsertRecordingSession(RecordingSessionTimeline(from: recordingSession))
             return .success
@@ -258,22 +187,23 @@ final class MeetingPersistenceService {
         }
     }
 
-    /// 保存済みセグメント追跡をリセットし、監視を再開する。
-    func reset() {
-        persistedSegmentIds.removeAll()
-        startObserving()
+    /// 保存済みセグメント追跡をリセットする。
+    func reset() async {
+        await transcriptWriter.resetTracking()
     }
 
     /// 録音開始に失敗したセッションを取り消す。
-    func cancel() {
-        cancellable = nil
+    func cancel() async {
         let sessionId = recordingSession.id
         let meetingId = meetingId
         let createsMeeting = createsMeeting
-        try? dbQueue.write { db in
+        try? await dbQueue.write { db in
             if createsMeeting {
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
+                _ = try TranscriptSegmentRecord
+                    .filter(Column("sessionId") == sessionId)
+                    .deleteAll(db)
                 _ = try RecordingSessionRecord.deleteOne(db, key: sessionId)
             }
         }

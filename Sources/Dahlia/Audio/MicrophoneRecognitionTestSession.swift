@@ -88,7 +88,7 @@ actor MicrophoneRecognitionTestSession {
             recordingStartTime: .now,
             recordingSessionId: .v7()
         ) { event in
-            Self.forward(event, to: onEvent)
+            await Self.forward(event, to: onEvent)
         }
         return (service, bridge, targetFormat)
     }
@@ -143,7 +143,7 @@ actor MicrophoneRecognitionTestSession {
             onEvent(.transcript(segment.text, isFinal: true))
         case let .failure(_, _, _, message):
             onEvent(.failure(message))
-        case .clearPreview, .translation:
+        case .clearPreview, .previewTranslation, .translation:
             break
         }
     }

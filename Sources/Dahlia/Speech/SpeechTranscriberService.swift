@@ -7,7 +7,7 @@ import Speech
 /// AudioBufferBridge から受け取った AsyncStream<AnalyzerInput> を SpeechAnalyzer に渡し、
 /// SpeechTranscriber の結果を保存先に依存しないイベントとして通知する。
 actor SpeechTranscriberService {
-    typealias EventHandler = @MainActor @Sendable (TranscriptionEvent) async -> Void
+    typealias EventHandler = ProgressiveTranscriptionEventHandler
     typealias SegmentTranslationHandler = @Sendable (TranscriptSegment) async -> String?
 
     private enum ServiceError: LocalizedError {
@@ -258,7 +258,7 @@ actor SpeechTranscriberService {
                     await onEvent(.preview(segment))
                     await previewTranslationCoordinator?.unconfirmedSegmentDidChange(segment) { segmentID, translatedText in
                         await onEvent(
-                            .translation(
+                            .previewTranslation(
                                 sessionId: recordingSessionId,
                                 segmentID: segmentID,
                                 translatedText: translatedText

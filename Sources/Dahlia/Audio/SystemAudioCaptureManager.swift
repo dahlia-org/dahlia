@@ -121,7 +121,7 @@ final class SystemAudioCaptureManager: NSObject, @unchecked Sendable {
             guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) else { return }
             guard let newFormat = AVAudioFormat(streamDescription: asbd) else { return }
             sourceFormat = newFormat
-            converter = AVAudioConverter(from: newFormat, to: targetFormat)
+            converter = AudioConverter.makeConverter(from: newFormat, to: targetFormat)
             converter?.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
         }
         guard let converter, let sourceFormat else { return }

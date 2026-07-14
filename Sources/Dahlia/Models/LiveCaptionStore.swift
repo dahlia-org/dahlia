@@ -30,7 +30,8 @@ final class LiveCaptionStore: ObservableObject {
         case let .clearPreview(sessionId, sourceLabel):
             guard activeSessionId == sessionId else { return }
             clearPreview(forSource: sourceLabel)
-        case let .translation(sessionId, segmentID, translatedText):
+        case let .previewTranslation(sessionId, segmentID, translatedText),
+             let .translation(sessionId, segmentID, translatedText):
             guard activeSessionId == sessionId,
                   let index = segments.firstIndex(where: { $0.id == segmentID }) else { return }
             segments[index].translatedText = translatedText

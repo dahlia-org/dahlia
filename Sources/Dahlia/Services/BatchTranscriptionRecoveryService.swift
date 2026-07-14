@@ -42,25 +42,16 @@ enum BatchTranscriptionRecoveryService {
             let endedAt = job.session.startedAt.addingTimeInterval(maximumDuration)
             try dbQueue.write { db in
                 let updatedAt = Date.now
-                try db.execute(
-                    sql: """
-                    UPDATE recording_sessions
-                    SET endedAt = ?, duration = ?, updatedAt = ?
-                    WHERE id = ?
-                    """,
-                    arguments: [endedAt, maximumDuration, updatedAt, job.session.id]
-                )
-                try db.execute(
-                    sql: """
-                    UPDATE meetings
-                    SET duration = (
-                        SELECT COALESCE(SUM(duration), 0)
-                        FROM recording_sessions
-                        WHERE meetingId = ?
-                    ), updatedAt = ?
-                    WHERE id = ?
-                    """,
-                    arguments: [job.session.meetingId, updatedAt, job.session.meetingId]
+                _ = try RecordingSessionCompletionWriter.finish(
+                    RecordingSessionCompletionWriter.Request(
+                        recordingSessionId: job.session.id,
+                        meetingId: job.session.meetingId,
+                        endedAt: endedAt,
+                        duration: maximumDuration,
+                        updatedAt: updatedAt,
+                        meetingStatus: nil
+                    ),
+                    in: db
                 )
             }
         }

@@ -1,18 +1,17 @@
-import AppKit
 import SwiftUI
 
 struct SummaryDocumentView: View {
     let document: SummaryDocument
-    let imageProvider: (UUID) -> NSImage?
+    let imageDataProvider: (UUID) -> Data?
     let transcriptTextProvider: (TranscriptReference) -> String?
 
     init(
         document: SummaryDocument,
-        imageProvider: @escaping (UUID) -> NSImage?,
+        imageDataProvider: @escaping (UUID) -> Data?,
         transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil }
     ) {
         self.document = document
-        self.imageProvider = imageProvider
+        self.imageDataProvider = imageDataProvider
         self.transcriptTextProvider = transcriptTextProvider
     }
 
@@ -149,12 +148,8 @@ struct SummaryDocumentView: View {
 
     private func imageView(screenshotId: UUID, caption: SummaryText) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let image = imageProvider(screenshotId) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: 360, alignment: .leading)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            if let data = imageDataProvider(screenshotId) {
+                SummaryScreenshotImageView(screenshotID: screenshotId, data: data)
             } else {
                 Text(L10n.summaryImageUnavailable)
                     .font(.callout)
@@ -248,6 +243,38 @@ struct SummaryDocumentView: View {
         }
     }
 
+}
+
+private struct SummaryScreenshotImageView: View {
+    let screenshotID: UUID
+    let data: Data
+    @StateObject private var imageLoader = ScreenshotImageLoadModel()
+
+    var body: some View {
+        Group {
+            if case let .loaded(image) = imageLoader.state {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFit()
+            } else if case .failed = imageLoader.state {
+                Text(L10n.summaryImageUnavailable)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, minHeight: 120)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: 360, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .task(id: screenshotID) {
+            await imageLoader.load(
+                screenshotID: screenshotID,
+                data: data,
+                targetSize: .maxPixelSize(1200)
+            )
+        }
+    }
 }
 
 private struct TranscriptReferenceChip: View {

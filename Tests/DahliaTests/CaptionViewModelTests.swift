@@ -11,7 +11,7 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
-        func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() {
+        func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(101),
                 devices: [
@@ -23,12 +23,14 @@ import GRDB
                 availableInputDevicesProvider: { inputProvider.devices },
                 defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 101)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
 
             inputProvider.defaultDeviceID = 202
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.selectedMicrophoneID == 202)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
@@ -47,7 +49,7 @@ import GRDB
         }
 
         @Test
-        func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() {
+        func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(202),
                 devices: [
@@ -59,13 +61,35 @@ import GRDB
                 availableInputDevicesProvider: { inputProvider.devices },
                 defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
+            await viewModel.refreshAvailableMicrophones()
 
             viewModel.microphoneSelection = .device(101)
             inputProvider.devices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
-            viewModel.refreshAvailableMicrophones()
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 202)
+        }
+
+        @Test
+        func transientEmptyDeviceListDoesNotDiscardExplicitSelection() async {
+            let inputProvider = MutableMicrophoneInputProvider(
+                defaultDeviceID: AudioDeviceID(101),
+                devices: [MicrophoneDevice(id: 101, name: "USB Mic")]
+            )
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { inputProvider.devices },
+                defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
+            )
+            await viewModel.refreshAvailableMicrophones()
+            viewModel.microphoneSelection = .device(101)
+
+            inputProvider.devices = []
+            inputProvider.defaultDeviceID = nil
+            await viewModel.refreshAvailableMicrophones()
+
+            #expect(viewModel.microphoneSelection == .device(101))
+            #expect(viewModel.isMicEnabled)
         }
 
         @Test
@@ -469,10 +493,10 @@ import GRDB
     }
 
     private final class MutableMicrophoneInputProvider: @unchecked Sendable {
-        var defaultDeviceID: AudioDeviceID
+        var defaultDeviceID: AudioDeviceID?
         var devices: [MicrophoneDevice]
 
-        init(defaultDeviceID: AudioDeviceID, devices: [MicrophoneDevice]) {
+        init(defaultDeviceID: AudioDeviceID?, devices: [MicrophoneDevice]) {
             self.defaultDeviceID = defaultDeviceID
             self.devices = devices
         }

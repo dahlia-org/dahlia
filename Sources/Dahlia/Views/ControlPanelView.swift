@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import SwiftUI
 
 private extension View {
@@ -87,8 +86,9 @@ private struct DetailTabBar: View {
 
 /// スクリーンショット拡大表示オーバーレイ。
 private struct ScreenshotOverlayView: View {
-    let image: NSImage
+    let screenshot: MeetingScreenshotRecord
     let onDismiss: () -> Void
+    @StateObject private var imageLoader = ScreenshotImageLoadModel()
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -100,12 +100,19 @@ private struct ScreenshotOverlayView: View {
             .pointerStyle(.link)
             .accessibilityLabel(L10n.close)
 
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(radius: 20)
-                .padding(24)
+            if case let .loaded(image) = imageLoader.state {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(radius: 20)
+                    .padding(24)
+            } else if case .failed = imageLoader.state {
+                Text(L10n.summaryImageUnavailable)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+            }
 
             Button(L10n.close, systemImage: "xmark.circle.fill", action: onDismiss)
                 .labelStyle(.iconOnly)
@@ -113,6 +120,13 @@ private struct ScreenshotOverlayView: View {
                 .padding(16)
                 .buttonStyle(.plain)
                 .pointerStyle(.link)
+        }
+        .task(id: screenshot.id) {
+            await imageLoader.load(
+                screenshotID: screenshot.id,
+                data: screenshot.imageData,
+                targetSize: .original
+            )
         }
     }
 }
@@ -123,11 +137,11 @@ private struct ScreenshotThumbnailView: View {
     let timestamp: String
     let viewModel: CaptionViewModel
     @Binding var expandedScreenshot: MeetingScreenshotRecord?
-    @State private var thumbnailImage: CGImage?
+    @StateObject private var imageLoader = ScreenshotImageLoadModel()
 
     var body: some View {
         VStack(spacing: 4) {
-            if let thumbnailImage {
+            if case let .loaded(thumbnailImage) = imageLoader.state {
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) {
                         expandedScreenshot = screenshot
@@ -165,24 +179,12 @@ private struct ScreenshotThumbnailView: View {
         .padding(6)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         .task(id: screenshot.id) {
-            thumbnailImage = nil
-            thumbnailImage = await Self.makeThumbnail(from: screenshot.imageData)
+            await imageLoader.load(
+                screenshotID: screenshot.id,
+                data: screenshot.imageData,
+                targetSize: .maxPixelSize(600)
+            )
         }
-    }
-
-    private nonisolated static func makeThumbnail(from data: Data) async -> CGImage? {
-        await Task.detached(priority: .userInitiated) {
-            let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-            guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
-
-            let thumbnailOptions = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceThumbnailMaxPixelSize: 600,
-            ] as CFDictionary
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions)
-        }.value
     }
 }
 
@@ -523,9 +525,8 @@ struct ControlPanelView: View {
             }
         }
         .overlay {
-            if let screenshot = expandedScreenshot,
-               let nsImage = NSImage(data: screenshot.imageData) {
-                ScreenshotOverlayView(image: nsImage) {
+            if let screenshot = expandedScreenshot {
+                ScreenshotOverlayView(screenshot: screenshot) {
                     withAnimation(.easeOut(duration: 0.15)) {
                         expandedScreenshot = nil
                     }
@@ -588,9 +589,9 @@ struct ControlPanelView: View {
 
                     SummaryDocumentView(
                         document: document,
-                        imageProvider: { screenshotId in
+                        imageDataProvider: { screenshotId in
                             guard let record = viewModel.screenshots.first(where: { $0.id == screenshotId }) else { return nil }
-                            return NSImage(data: record.imageData)
+                            return record.imageData
                         },
                         transcriptTextProvider: summaryTranscriptText
                     )

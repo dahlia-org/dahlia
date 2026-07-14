@@ -15,14 +15,18 @@ AudioSourcePipeline → CapturedAudioChunk (セッション相対時刻付き)
     ├─ BatchAudioFileWriter (欠落禁止)
     └─ AudioBufferBridge → SpeechTranscriberService (低遅延、音源ごとに最大 1 つ)
         ↓ TranscriptionEvent
-        ├─ TranscriptStore (リアルタイム状態の正本)
-        └─ LiveCaptionStore (録音中だけの一時字幕)
-    ↓ Combine.debounce(500ms)
-MeetingPersistenceService → GRDB/SQLite (確定済みセグメントを差分 INSERT)
+        ↓ TranscriptionEventPipeline
+        ├─ UI lane (preview は音源ごとに最新値へ集約)
+        │   ├─ TranscriptStore (リアルタイム状態の正本)
+        │   └─ LiveCaptionStore (録音中だけの一時字幕)
+        └─ persistence lane (確定・翻訳イベントは欠落禁止)
+            ↓ TranscriptPersistenceWriter
+            GRDB/SQLite (確定済みセグメントを順序どおり差分保存)
 ```
 
 - `RecordingSessionController` actor が capture、recognizer、CAF recorder、batch scheduler の実行リソースを所有する。
 - `CaptionViewModel` はセッション要求、UI 状態、store へのイベント投影、Meeting persistence を担当し、AVFoundation / Speech の実行リソースを保持しない。
+- 認識イベントは `TranscriptionEventPipeline` で UI と永続化へ分岐し、MainActor の描画停滞を確定セグメントの保存へ伝播させない。
 
 ## コンポーネントの配置
 

@@ -100,7 +100,7 @@ import GRDB
         }
 
         @Test
-        func cancellingNewMeetingDeletesUnreferencedCalendarEvent() throws {
+        func cancellingNewMeetingDeletesUnreferencedCalendarEvent() async throws {
             let (database, vault) = try makeDatabase(named: "Cancellation Cleanup")
             let calendarEvent = event()
             let service = try MeetingPersistenceService(
@@ -112,9 +112,9 @@ import GRDB
                 calendarEvent: calendarEvent
             )
 
-            service.cancel()
+            await service.cancel()
 
-            let meetingCount = try database.dbQueue.read { db in
+            let meetingCount = try await database.dbQueue.read { db in
                 try MeetingRecord.fetchCount(db)
             }
             let calendarCounts = try calendarRecordCounts(in: database)

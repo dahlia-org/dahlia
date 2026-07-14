@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 typealias AudioCaptureUnexpectedStopHandler = @Sendable (Error?) -> Void
-typealias ProgressiveTranscriptionEventHandler = @MainActor @Sendable (TranscriptionEvent) async -> Void
+typealias ProgressiveTranscriptionEventHandler = @Sendable (TranscriptionEvent) async -> Void
 typealias ProgressiveSegmentTranslationHandler = @Sendable (TranscriptSegment) async -> String?
 
 /// 1音源につき1つだけ生成される、物理 capture の実行単位。
@@ -54,7 +54,6 @@ protocol ProgressiveRecognitionSessionFactory: Sendable {
 }
 
 /// 音源別CAFとlocale rangeを管理するバッチ録音の実行単位。
-@MainActor
 protocol BatchRecordingSession: AnyObject, Sendable {
     var targetFormat: AVAudioFormat { get }
 
@@ -76,7 +75,6 @@ protocol BatchRecordingSession: AnyObject, Sendable {
 
 /// バッチ録音の実装を、DBや保存先を含めて生成する境界。
 protocol BatchRecordingSessionFactory: Sendable {
-    @MainActor
     func makeSession(
         dbQueue: DatabaseQueue,
         managedRootURL: URL,

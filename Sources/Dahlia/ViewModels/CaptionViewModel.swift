@@ -108,6 +108,8 @@ final class CaptionViewModel: ObservableObject {
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
     @Published var errorMessage: String?
     @Published var availableMicrophones: [MicrophoneDevice] = []
+    @Published private(set) var defaultInputDeviceID: AudioDeviceID?
+    @Published private var hasResolvedDefaultInputDevice = false
     @Published var microphoneSelection: MicrophoneSelection = .systemDefault
     @Published var isSystemAudioEnabled = true
     @Published var selectedLocale: String = AppSettings.shared.transcriptionLocale {
@@ -266,7 +268,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     var selectedMicrophoneID: AudioDeviceID? {
-        microphoneSelection.resolvedDeviceID(defaultDeviceID: defaultInputDeviceIDProvider())
+        microphoneSelection.resolvedDeviceID(defaultDeviceID: defaultInputDeviceID)
     }
 
     var microphoneCaptureDeviceID: AudioDeviceID? {
@@ -275,15 +277,24 @@ final class CaptionViewModel: ObservableObject {
     }
 
     var systemDefaultMicrophoneTitle: String {
-        guard let defaultDeviceID = defaultInputDeviceIDProvider(),
+        guard let defaultDeviceID = defaultInputDeviceID,
               let deviceName = availableMicrophones.first(where: { $0.id == defaultDeviceID })?.name else {
             return L10n.sameAsSystem
         }
         return L10n.sameAsSystem(deviceName)
     }
 
-    /// マイクが有効か。
-    var isMicEnabled: Bool { selectedMicrophoneID != nil }
+    /// 初回の HAL 問い合わせ中は system default を楽観的に有効とみなし、起動操作を妨げない。
+    var isMicEnabled: Bool {
+        switch microphoneSelection {
+        case .systemDefault:
+            !hasResolvedDefaultInputDevice || defaultInputDeviceID != nil
+        case .device:
+            true
+        case .none:
+            false
+        }
+    }
 
     var isBatchRecording: Bool {
         isListening && activeTranscriptionMode == .batch
@@ -343,6 +354,7 @@ final class CaptionViewModel: ObservableObject {
 
     private var currentDbQueue: DatabaseQueue?
     private var persistenceService: MeetingPersistenceService?
+    private var transcriptionEventPipeline: TranscriptionEventPipeline?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private let recordingSessionController = RecordingSessionController()
     private var activeTranscriptionPlan: TranscriptionSessionPlan?
@@ -364,10 +376,8 @@ final class CaptionViewModel: ObservableObject {
     private var automaticScreenshotTask: Task<Void, Never>?
     private var lastSavedAutomaticScreenshotFingerprint: ScreenshotFingerprint?
     private var meetingLoadTask: Task<Void, Never>?
-    private var screenshotReloadGeneration = 0
     private var isSynchronizingSelectedLocale = false
-    private let availableInputDevicesProvider: @Sendable () -> [MicrophoneDevice]
-    private let defaultInputDeviceIDProvider: @Sendable () -> AudioDeviceID?
+    private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
 
     private nonisolated static let preferredTranscriptionLocaleFallbacksByLanguage = [
@@ -379,14 +389,12 @@ final class CaptionViewModel: ObservableObject {
         recordingContext?.dbQueue ?? currentDbQueue
     }
 
-    init(
-        availableInputDevicesProvider: @escaping @Sendable () -> [MicrophoneDevice] = AudioCaptureManager.availableInputDevices,
-        defaultInputDeviceIDProvider: @escaping @Sendable () -> AudioDeviceID? = AudioCaptureManager.defaultInputDeviceID
-    ) {
-        self.availableInputDevicesProvider = availableInputDevicesProvider
-        self.defaultInputDeviceIDProvider = defaultInputDeviceIDProvider
+    init(audioHardwareQueryService: AudioHardwareQueryService = .shared) {
+        self.audioHardwareQueryService = audioHardwareQueryService
         bindStoreSegments()
-        refreshAvailableMicrophones()
+        Task { [weak self] in
+            await self?.refreshAvailableMicrophones()
+        }
 
         // AppSettings の表示言語設定変更を監視
         settingsCancellable = UserDefaults.standard
@@ -432,6 +440,16 @@ final class CaptionViewModel: ObservableObject {
                 self?.handleAutomaticScreenshotIntervalChange()
             }
             .store(in: &automaticScreenshotSettingsCancellables)
+    }
+
+    convenience init(
+        availableInputDevicesProvider: @escaping @Sendable () -> [MicrophoneDevice],
+        defaultInputDeviceIDProvider: @escaping @Sendable () -> AudioDeviceID?
+    ) {
+        self.init(audioHardwareQueryService: AudioHardwareQueryService(
+            availableInputDevicesProvider: availableInputDevicesProvider,
+            defaultInputDeviceIDProvider: defaultInputDeviceIDProvider
+        ))
     }
 
     func configureBatchTranscription(dbQueue: DatabaseQueue) {
@@ -680,17 +698,33 @@ final class CaptionViewModel: ObservableObject {
         AppSettings.shared.transcriptionLocale = localeIdentifier
     }
 
-    func refreshAvailableMicrophones() {
-        let devices = availableInputDevicesProvider()
+    func refreshAvailableMicrophones() async {
+        let snapshot = await audioHardwareQueryService.microphoneSnapshot()
+        guard !Task.isCancelled else { return }
+        let devices = snapshot.devices
 
         if devices != availableMicrophones {
             availableMicrophones = devices
         }
+        if defaultInputDeviceID != snapshot.defaultDeviceID {
+            defaultInputDeviceID = snapshot.defaultDeviceID
+        }
+        hasResolvedDefaultInputDevice = true
 
         if case let .device(currentMicrophoneID) = microphoneSelection,
+           !devices.isEmpty,
            !devices.contains(where: { $0.id == currentMicrophoneID }) {
             microphoneSelection = .systemDefault
         }
+    }
+
+    private func refreshDefaultInputDevice() async {
+        let deviceID = await audioHardwareQueryService.defaultInputDeviceID()
+        guard !Task.isCancelled else { return }
+        if defaultInputDeviceID != deviceID {
+            defaultInputDeviceID = deviceID
+        }
+        hasResolvedDefaultInputDevice = true
     }
 
     private static let fileDateFormatter: DateFormatter = {
@@ -1320,6 +1354,7 @@ final class CaptionViewModel: ObservableObject {
         recordingStartTime: Date
     ) -> MeetingRepository.AppendRecordingContext? {
         persistenceService = nil
+        transcriptionEventPipeline = nil
         stopAutomaticScreenshotCapture()
 
         guard let existingMeetingId else {
@@ -1350,6 +1385,10 @@ final class CaptionViewModel: ObservableObject {
     private func prepareAndStartRecordingController(
         _ request: RecordingControllerStartRequest
     ) async throws {
+        guard let transcriptionEventPipeline else {
+            throw RecordingSessionControllerError.sessionNotPrepared
+        }
+        await transcriptionEventPipeline.start()
         try await recordingSessionController.prepare(
             RecordingSessionController.PreparationRequest(
                 sessionId: request.sessionId,
@@ -1363,8 +1402,8 @@ final class CaptionViewModel: ObservableObject {
                 translateSegment: translationHandler(for: request.locale),
                 batchScheduler: batchTranscriptionCoordinator
             )
-        ) { [weak self] event in
-            self?.handleTranscriptionEvent(event)
+        ) { event in
+            await transcriptionEventPipeline.enqueue(event)
         } onRuntimeFailure: { [weak self] source, message, isFatal in
             self?.handleControllerRuntimeFailure(
                 source: source,
@@ -1402,7 +1441,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func startPersistence(_ request: PersistenceStartRequest) throws {
         if let existingMeetingId = request.existingMeetingId {
-            persistenceService = try MeetingPersistenceService(
+            let service = try MeetingPersistenceService(
                 store: store,
                 dbQueue: request.dbQueue,
                 existingMeetingId: existingMeetingId,
@@ -1414,6 +1453,8 @@ final class CaptionViewModel: ObservableObject {
                 persistencePolicy: request.persistencePolicy,
                 retainAudioAfterBatch: request.retainAudioAfterBatch
             )
+            persistenceService = service
+            installTranscriptionEventPipeline(persistenceService: service)
             currentMeetingId = existingMeetingId
             return
         }
@@ -1433,6 +1474,7 @@ final class CaptionViewModel: ObservableObject {
             retainAudioAfterBatch: request.retainAudioAfterBatch
         )
         persistenceService = service
+        installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
 
         let resolvedProject = currentVaultURL.flatMap { vaultURL in
@@ -1453,6 +1495,22 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    private func installTranscriptionEventPipeline(persistenceService: MeetingPersistenceService) {
+        transcriptionEventPipeline = TranscriptionEventPipeline(
+            uiSink: { [weak self] events in
+                for event in events {
+                    self?.handleTranscriptionEvent(event)
+                }
+            },
+            persistenceSink: { events in
+                try await persistenceService.persist(events)
+            },
+            persistenceResetSink: {
+                await persistenceService.reset()
+            }
+        )
+    }
+
     private func completePersistenceStart(existingMeetingId: UUID?) {
         guard existingMeetingId == nil else { return }
         draftMeeting = nil
@@ -1471,8 +1529,16 @@ final class CaptionViewModel: ObservableObject {
         errorMessage = error.localizedDescription
         ErrorReportingService.capture(error, context: ["source": "startListening"])
         await recordingSessionController.abort()
+        if let transcriptionEventPipeline {
+            do {
+                try await transcriptionEventPipeline.finish()
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "startTranscriptionPersistence"])
+            }
+        }
+        transcriptionEventPipeline = nil
         stopAutomaticScreenshotCapture()
-        persistenceService?.cancel()
+        await persistenceService?.cancel()
         persistenceService = nil
         activeTranscriptionMode = nil
         activeTranscriptionPlan = nil
@@ -1537,6 +1603,10 @@ final class CaptionViewModel: ObservableObject {
         appendingTo existingMeetingId: UUID? = nil
     ) async {
         guard recordingLifecycle == .idle, !isFinalizingRecording else { return }
+        await refreshDefaultInputDevice()
+        guard recordingLifecycle == .idle,
+              !isFinalizingRecording,
+              canStartRecording() else { return }
         let previousBatchTranscriptionState = batchTranscriptionState
 
         self.currentProjectURL = projectURL
@@ -1546,7 +1616,6 @@ final class CaptionViewModel: ObservableObject {
         self.currentDbQueue = dbQueue
         resetSummaryState()
         let activeDraftMeeting = draftMeeting
-        guard canStartRecording() else { return }
 
         let recordingSessionId = UUID.v7()
         let rollbackState = RecordingStartRollbackState(
@@ -1623,6 +1692,7 @@ final class CaptionViewModel: ObservableObject {
                 transcriptionPlan,
                 recordingSessionId: recordingSessionId
             )
+            await transcriptionEventPipeline?.flushUI()
 
             if let failure = pendingRealtimeRecognitionFailure {
                 throw RecordingPipelineFailure(message: failure.message)
@@ -1677,7 +1747,15 @@ final class CaptionViewModel: ObservableObject {
             for task in configurationTasks {
                 await task.value
             }
-            let persistenceResult = persistenceService?.stop()
+            if let transcriptionEventPipeline {
+                do {
+                    try await transcriptionEventPipeline.finish()
+                } catch {
+                    ErrorReportingService.capture(error, context: ["source": "stopTranscriptionPersistence"])
+                }
+            }
+            transcriptionEventPipeline = nil
+            let persistenceResult = await persistenceService?.stop()
                 ?? .failure(message: L10n.recordingSessionNotActive)
             persistenceService = nil
             recordingContext = nil
@@ -2090,11 +2168,11 @@ final class CaptionViewModel: ObservableObject {
         _ = await screenshotExport
     }
 
-    func clearText() {
+    func clearText() async {
         guard !isFinalizingRecording else { return }
 
         store.clear()
-        persistenceService?.reset()
+        await transcriptionEventPipeline?.resetPersistence()
     }
 
     // MARK: - Screenshot
@@ -2390,28 +2468,6 @@ final class CaptionViewModel: ObservableObject {
         saveNote(text: noteText)
     }
 
-    /// DB からスクリーンショット一覧を再読み込みする。
-    func reloadScreenshots() {
-        screenshotReloadGeneration += 1
-        let generation = screenshotReloadGeneration
-
-        guard let meetingId = currentMeetingId,
-              let dbQueue = currentDbQueue else {
-            screenshots = []
-            return
-        }
-        Task { [weak self, meetingId, dbQueue] in
-            let screenshots = await Task.detached(priority: .userInitiated) {
-                let repo = MeetingRepository(dbQueue: dbQueue)
-                return (try? repo.fetchScreenshots(forMeetingId: meetingId)) ?? []
-            }.value
-            guard let self,
-                  self.currentMeetingId == meetingId,
-                  self.screenshotReloadGeneration == generation else { return }
-            self.screenshots = screenshots
-        }
-    }
-
     private func appendVisibleScreenshot(_ screenshot: MeetingScreenshotRecord) {
         guard currentMeetingId == screenshot.meetingId else { return }
         if let index = screenshots.firstIndex(where: { $0.id == screenshot.id }) {
@@ -2424,10 +2480,16 @@ final class CaptionViewModel: ObservableObject {
 
     func deleteScreenshot(_ screenshot: MeetingScreenshotRecord) {
         guard let dbQueue = activeDbQueueForSessionControls else { return }
-        let repo = MeetingRepository(dbQueue: dbQueue)
-        try? repo.deleteScreenshot(id: screenshot.id)
-        if currentMeetingId == screenshot.meetingId {
-            reloadScreenshots()
+        Task { [weak self] in
+            do {
+                try await MeetingRepository(dbQueue: dbQueue).deleteScreenshot(id: screenshot.id)
+                await ScreenshotImageLoader.shared.remove(screenshotID: screenshot.id)
+                guard let self, self.currentMeetingId == screenshot.meetingId else { return }
+                self.screenshots.removeAll { $0.id == screenshot.id }
+            } catch {
+                captionViewModelLogger.error("Failed to delete screenshot \(screenshot.id): \(error)")
+                ErrorReportingService.capture(error, context: ["source": "deleteScreenshot"])
+            }
         }
     }
 

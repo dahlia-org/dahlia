@@ -288,13 +288,7 @@ enum GoogleDocsSummaryRenderer {
     }
 
     private static func prepareImage(_ data: Data) -> PreparedImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: imageMaxLongEdge,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        guard let image = CGImageDecoder.decode(data, maxPixelSize: imageMaxLongEdge) else { return nil }
 
         let encoded = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(

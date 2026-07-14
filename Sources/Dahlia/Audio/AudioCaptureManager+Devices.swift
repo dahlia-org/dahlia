@@ -4,6 +4,17 @@ import Foundation
 extension AudioCaptureManager {
     /// 利用可能なマイク入力デバイス一覧を返す。
     static func availableInputDevices() -> [MicrophoneDevice] {
+        inputDeviceIDs()
+            .compactMap { deviceID in
+                guard let name = deviceName(for: deviceID) else { return nil }
+                return MicrophoneDevice(id: deviceID, name: name)
+            }
+            .sorted { lhs, rhs in
+                lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+    }
+
+    static func inputDeviceIDs() -> [AudioDeviceID] {
         var address = globalAddress(kAudioHardwarePropertyDevices)
         var propertySize: UInt32 = 0
 
@@ -31,15 +42,7 @@ extension AudioCaptureManager {
             return []
         }
 
-        return deviceIDs
-            .filter(Self.hasInputStreams)
-            .compactMap { deviceID in
-                guard let name = Self.deviceName(for: deviceID) else { return nil }
-                return MicrophoneDevice(id: deviceID, name: name)
-            }
-            .sorted { lhs, rhs in
-                lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
-            }
+        return deviceIDs.filter(Self.hasInputStreams)
     }
 
     /// 現在のデフォルト入力デバイス ID を返す。
@@ -81,6 +84,23 @@ extension AudioCaptureManager {
         var propertySize: UInt32 = 0
 
         return AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &propertySize) == noErr && propertySize > 0
+    }
+
+    static func isDeviceRunningSomewhere(_ deviceID: AudioDeviceID) -> Bool {
+        var address = globalAddress(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        var isRunning: UInt32 = 0
+        var propertySize = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &propertySize,
+            &isRunning
+        ) == noErr else {
+            return false
+        }
+        return isRunning != 0
     }
 
     private static func deviceName(for deviceID: AudioDeviceID) -> String? {

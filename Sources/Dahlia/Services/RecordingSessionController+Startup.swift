@@ -87,7 +87,7 @@ extension RecordingSessionController {
 
     private func preparedCaptureFormat(for source: PreparedSource) async throws -> AVAudioFormat {
         if let batchRecording {
-            return await batchRecording.targetFormat
+            return batchRecording.targetFormat
         }
         guard let recognition = source.recognition else {
             throw AudioCaptureError.converterCreationFailed

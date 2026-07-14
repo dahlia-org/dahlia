@@ -78,16 +78,7 @@ enum ImageEncoder {
     /// 画像データを長辺 maxLongEdge 以下にリサイズして再エンコードする。
     /// リサイズ不要またはエラー時は再エンコードのみ行い形式を統一する。
     static func resized(_ data: Data, maxLongEdge: Int, quality: CGFloat = 0.70) -> Data {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-            return data
-        }
-
-        let options: [CFString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: maxLongEdge,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        guard let thumbnail = CGImageDecoder.decode(data, maxPixelSize: maxLongEdge) else {
             return data
         }
 

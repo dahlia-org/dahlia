@@ -2,7 +2,7 @@ import Foundation
 
 actor PreviewTranslationCoordinator {
     typealias TranslationHandler = @Sendable (TranscriptSegment) async -> String?
-    typealias ApplyTranslationHandler = @MainActor @Sendable (UUID, String?) async -> Void
+    typealias ApplyTranslationHandler = @Sendable (UUID, String?) async -> Void
     typealias SleepHandler = @Sendable (Duration) async -> Void
 
     private let debounceDuration: Duration

@@ -8,7 +8,7 @@ import GRDB
     @MainActor
     struct MeetingPersistenceStopTests {
         @Test
-        func stopPersistsFinalConfirmedSegmentsBeforeReportingSuccess() throws {
+        func stopPersistsFinalConfirmedSegmentsBeforeReportingSuccess() async throws {
             let fixture = try makeDatabase()
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
@@ -28,9 +28,9 @@ import GRDB
             )
             store.addSegment(segment)
 
-            let result = service.stop()
+            let result = await service.stop()
 
-            let persisted = try fixture.database.dbQueue.read { db in
+            let persisted = try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentRecord.fetchOne(db, key: segment.id)
             }
             #expect(result.succeeded)
@@ -39,7 +39,7 @@ import GRDB
         }
 
         @Test
-        func stopReportsSessionPersistenceFailure() throws {
+        func stopReportsSessionPersistenceFailure() async throws {
             let fixture = try makeDatabase()
             let store = TranscriptStore()
             store.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
@@ -50,7 +50,7 @@ import GRDB
                 projectId: nil,
                 initialName: "Persistence failure"
             )
-            try fixture.database.dbQueue.write { db in
+            try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_recording_session_stop
                 BEFORE UPDATE OF endedAt ON recording_sessions
@@ -60,9 +60,9 @@ import GRDB
                 """)
             }
 
-            let result = service.stop()
+            let result = await service.stop()
 
-            let session = try fixture.database.dbQueue.read { db in
+            let session = try await fixture.database.dbQueue.read { db in
                 let record = try RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
                 return try #require(record)
             }
@@ -73,7 +73,7 @@ import GRDB
         }
 
         @Test
-        func appendStopDoesNotAssignLegacySegmentsToNewSession() throws {
+        func appendStopDoesNotAssignLegacySegmentsToNewSession() async throws {
             let fixture = try makeDatabase()
             let meetingId = UUID.v7()
             let legacySegment = TranscriptSegment(
@@ -84,7 +84,7 @@ import GRDB
                 isConfirmed: true,
                 speakerLabel: "mic"
             )
-            try fixture.database.dbQueue.write { db in
+            try await fixture.database.dbQueue.write { db in
                 try MeetingRecord(
                     id: meetingId,
                     vaultId: fixture.vault.id,
@@ -113,9 +113,9 @@ import GRDB
             )
             store.addSegment(newSegment)
 
-            let result = service.stop()
+            let result = await service.stop()
 
-            let records = try fixture.database.dbQueue.read { db in
+            let records = try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentRecord.order(Column("startTime").asc).fetchAll(db)
             }
             #expect(result.succeeded)

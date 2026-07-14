@@ -9,7 +9,7 @@ final class AVAudioAnalyzerInputConverter: AnalyzerInputConverting {
     private let converter: AVAudioConverter
 
     init(sourceFormat: AVAudioFormat, analyzerFormat: AVAudioFormat) throws {
-        guard let converter = AVAudioConverter(from: sourceFormat, to: analyzerFormat) else {
+        guard let converter = AudioConverter.makeConverter(from: sourceFormat, to: analyzerFormat) else {
             throw AudioCaptureError.converterCreationFailed
         }
         converter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue

@@ -68,8 +68,10 @@ struct MenuBarMenuView: View {
         }
         .onAppear {
             MainWindowOpener.shared.register(openWindow: openWindow)
-            viewModel.refreshAvailableMicrophones()
             viewModel.refreshAvailableWindows()
+        }
+        .task {
+            await viewModel.refreshAvailableMicrophones()
         }
     }
 
@@ -101,8 +103,8 @@ struct MenuBarMenuView: View {
         } label: {
             Label(L10n.microphone, systemImage: "mic.fill")
         }
-        .onAppear {
-            viewModel.refreshAvailableMicrophones()
+        .task {
+            await viewModel.refreshAvailableMicrophones()
         }
 
         Menu {

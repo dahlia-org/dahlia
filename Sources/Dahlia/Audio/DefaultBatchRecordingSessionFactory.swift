@@ -3,7 +3,6 @@ import GRDB
 
 /// CAF batch recorderを生成するdefault factory。
 struct DefaultBatchRecordingSessionFactory: BatchRecordingSessionFactory {
-    @MainActor
     func makeSession(
         dbQueue: DatabaseQueue,
         managedRootURL: URL,

@@ -50,7 +50,7 @@ extension RecordingSessionController {
         let isCurrent = sourceRuntimes[expectedSource]?.recognition?.pipelineID == expectedPipelineID
 
         switch event {
-        case .preview, .clearPreview:
+        case .preview, .clearPreview, .previewTranslation:
             guard isPending || isCurrent else { return }
             await onEvent(event)
         case .finalized, .translation:
@@ -352,6 +352,7 @@ private extension TranscriptionEvent {
         case let .preview(segment), let .finalized(segment):
             segment.sessionId == sessionId
         case let .clearPreview(eventSessionId, _),
+             let .previewTranslation(eventSessionId, _, _),
              let .translation(eventSessionId, _, _),
              let .failure(eventSessionId, _, _, _):
             eventSessionId == sessionId

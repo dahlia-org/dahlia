@@ -3,6 +3,25 @@
 /// AVAudioConverter を使用して入力バッファをターゲットフォーマットに変換する。
 /// AudioCaptureManager と SystemAudioCaptureManager の共通処理を集約。
 enum AudioConverter {
+    static func makeConverter(
+        from sourceFormat: AVAudioFormat,
+        to targetFormat: AVAudioFormat
+    ) -> AVAudioConverter? {
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+            return nil
+        }
+
+        // AVAudioConverter does not infer a downmix for discrete multichannel
+        // layouts such as the 9-channel format exposed by AUVoiceIO. Without an
+        // explicit map it reports success while producing silent mono buffers.
+        if sourceFormat.channelCount > 2,
+           targetFormat.channelCount == 1,
+           converter.channelMap.first?.intValue == -1 {
+            converter.channelMap = [0]
+        }
+        return converter
+    }
+
     static func convert(
         _ inputBuffer: AVAudioPCMBuffer,
         to targetFormat: AVAudioFormat,

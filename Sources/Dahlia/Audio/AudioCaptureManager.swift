@@ -66,7 +66,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         var unexpectedStop: (@Sendable (AudioCaptureError?) -> Void)?
     }
 
-    let engine = AVAudioEngine()
+    private(set) var engine = AVAudioEngine()
     private let lifecycleQueue = DispatchQueue(label: "com.dahlia.microphone-capture.lifecycle")
     private let conversionState = OSAllocatedUnfairLock(initialState: ConversionState())
     private let handlerState = OSAllocatedUnfairLock(initialState: HandlerState())
@@ -93,6 +93,10 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
 
     override init() {
         super.init()
+        observeEngineConfigurationChanges()
+    }
+
+    private func observeEngineConfigurationChanges() {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(engineConfigurationDidChange),
@@ -239,7 +243,7 @@ extension AudioCaptureManager {
         Self.logger.info("Microphone source format: \(sourceFormat.diagnosticDescription, privacy: .public)")
         Self.logger.info("Microphone target format: \(targetFormat.diagnosticDescription, privacy: .public)")
 
-        guard let audioConverter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+        guard let audioConverter = AudioConverter.makeConverter(from: sourceFormat, to: targetFormat) else {
             throw AudioCaptureError.converterCreationFailed
         }
         audioConverter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
@@ -390,7 +394,10 @@ extension AudioCaptureManager {
         let conversionResult = conversionState.withLock { state -> (AVAudioPCMBuffer?, AudioCaptureError?) in
             guard let targetFormat = state.targetFormat else { return (nil, nil) }
             if state.converter?.inputFormat != inputBuffer.format {
-                guard let converter = AVAudioConverter(from: inputBuffer.format, to: targetFormat) else {
+                guard let converter = AudioConverter.makeConverter(
+                    from: inputBuffer.format,
+                    to: targetFormat
+                ) else {
                     return (nil, state.markConversionFailure())
                 }
                 converter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
@@ -454,6 +461,17 @@ extension AudioCaptureManager {
         if engine.inputNode.isVoiceProcessingEnabled {
             try? engine.inputNode.setVoiceProcessingEnabled(false)
         }
+        replaceEngine()
+    }
+
+    private func replaceEngine() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
+        engine = AVAudioEngine()
+        observeEngineConfigurationChanges()
     }
 
     private func failActiveCapture(_ error: AudioCaptureError) {

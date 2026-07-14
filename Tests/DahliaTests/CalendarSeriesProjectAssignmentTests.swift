@@ -8,7 +8,7 @@ import GRDB
     @MainActor
     struct CalendarSeriesProjectAssignmentTests {
         @Test
-        func newMeetingInheritsProjectFromMostRecentEarlierOccurrence() throws {
+        func newMeetingInheritsProjectFromMostRecentEarlierOccurrence() async throws {
             let (database, vault) = try makeDatabase()
             let olderProject = project(named: "Older project", vaultId: vault.id)
             let recentProject = project(named: "Recent project", vaultId: vault.id)
@@ -18,7 +18,7 @@ import GRDB
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
             let futureStart = Date(timeIntervalSince1970: 1_776_500_000)
 
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 try olderProject.insert(db)
                 try recentProject.insert(db)
                 try futureProject.insert(db)
@@ -53,7 +53,7 @@ import GRDB
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
             )
-            service.stop()
+            await service.stop()
 
             let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
             #expect(meeting.projectId == recentProject.id)
@@ -61,16 +61,17 @@ import GRDB
         }
 
         @Test
-        func newMeetingSkipsMostRecentProjectWhenItsFolderIsMissing() throws {
+        func newMeetingSkipsMostRecentProjectWhenItsFolderIsMissing() async throws {
             let (database, vault) = try makeDatabase()
             let availableProject = project(named: "Available project", vaultId: vault.id)
-            var missingProject = project(named: "Missing project", vaultId: vault.id)
-            missingProject.missingOnDisk = true
+            var unavailableProject = project(named: "Missing project", vaultId: vault.id)
+            unavailableProject.missingOnDisk = true
+            let missingProject = unavailableProject
             let olderStart = Date(timeIntervalSince1970: 1_776_200_000)
             let recentStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 try availableProject.insert(db)
                 try missingProject.insert(db)
                 try insertSeriesMeeting(
@@ -97,7 +98,7 @@ import GRDB
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
             )
-            service.stop()
+            await service.stop()
 
             let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
             #expect(meeting.projectId == availableProject.id)
@@ -105,14 +106,14 @@ import GRDB
         }
 
         @Test
-        func explicitlySelectedProjectOverridesSeriesProject() throws {
+        func explicitlySelectedProjectOverridesSeriesProject() async throws {
             let (database, vault) = try makeDatabase()
             let seriesProject = project(named: "Series project", vaultId: vault.id)
             let selectedProject = project(named: "Selected project", vaultId: vault.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 try seriesProject.insert(db)
                 try selectedProject.insert(db)
                 try insertSeriesMeeting(
@@ -132,7 +133,7 @@ import GRDB
                 initialName: "Current occurrence",
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
             )
-            service.stop()
+            await service.stop()
 
             let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
             #expect(meeting.projectId == selectedProject.id)
@@ -140,13 +141,13 @@ import GRDB
         }
 
         @Test
-        func explicitNoProjectPreventsSeriesInheritanceWhenRecordingStarts() throws {
+        func explicitNoProjectPreventsSeriesInheritanceWhenRecordingStarts() async throws {
             let (database, vault) = try makeDatabase()
             let inheritedProject = project(named: "Planning", vaultId: vault.id)
             let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 try inheritedProject.insert(db)
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
@@ -166,7 +167,7 @@ import GRDB
                 allowsCalendarSeriesProjectInheritance: false,
                 calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
             )
-            service.stop()
+            await service.stop()
 
             let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
             #expect(meeting.projectId == nil)
