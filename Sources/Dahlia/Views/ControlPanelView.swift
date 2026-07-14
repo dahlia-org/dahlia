@@ -336,10 +336,13 @@ private struct MeetingDetailHeader: View {
     private var metadataStack: some View {
         VStack(alignment: .leading, spacing: 8) {
             FlowLayout(spacing: 8, rowSpacing: 8) {
-                MeetingMetadataPill(systemImage: "calendar", text: metadataText)
-
                 if let calendarEvent {
-                    CalendarEventOriginIcon(event: calendarEvent)
+                    CalendarEventMetadataButton(
+                        text: metadataText,
+                        event: calendarEvent
+                    )
+                } else {
+                    MeetingMetadataPill(systemImage: "calendar", text: metadataText)
                 }
 
                 MeetingProjectPicker(

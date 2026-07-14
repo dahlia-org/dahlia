@@ -600,14 +600,8 @@ private struct MeetingSidebarRow: View {
                         .onSubmit(onCommitRename)
                         .onExitCommand(perform: onCancelRename)
                 } else {
-                    HStack(spacing: 4) {
-                        Text(displayTitle)
-                            .lineLimit(1)
-
-                        if let calendarEvent = item.calendarEvent {
-                            CalendarEventOriginIcon(event: calendarEvent)
-                        }
-                    }
+                    Text(displayTitle)
+                        .lineLimit(1)
                 }
 
                 HStack(spacing: 6) {
@@ -641,7 +635,7 @@ private struct MeetingSidebarRow: View {
                 .frame(width: 8, height: 8)
                 .accessibilityLabel(L10n.recordingNow)
         } else {
-            Image(systemName: "waveform")
+            Image(systemName: item.calendarEvent == nil ? "waveform" : "calendar")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 12)
