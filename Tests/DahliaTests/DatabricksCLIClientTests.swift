@@ -54,6 +54,33 @@ import Foundation
             }
         }
 
+        @Test
+        func commandLineToolSearchPathIncludesHomebrewLocationsOnce() {
+            let searchPath = CommandLineToolLocator.searchPath(environment: [
+                "PATH": "/usr/bin:/opt/homebrew/bin",
+            ])
+
+            #expect(searchPath == "/usr/bin:/opt/homebrew/bin:/usr/local/bin")
+        }
+
+        @Test
+        func executableRunnerReadsProfileJSONWithoutBlockingTasks() async throws {
+            let executableURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-databricks-cli-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: executableURL) }
+            let script = """
+            #!/bin/sh
+            printf '%s' '{"profiles":[{"name":"DEFAULT","host":"https://dbc.example.com","auth_type":"databricks-cli"}]}'
+            """
+            try Data(script.utf8).write(to: executableURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
+            let client = DatabricksCLIClient(executableURL: executableURL)
+
+            let profiles = try await client.profiles()
+
+            #expect(profiles.map(\.name) == ["DEFAULT"])
+        }
+
         private actor CommandRecorder {
             private(set) var commands: [[String]] = []
 

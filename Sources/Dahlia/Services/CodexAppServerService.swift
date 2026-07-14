@@ -3,6 +3,7 @@ import OSLog
 
 actor CodexAppServerService {
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
+    typealias ConfigurationReadiness = @Sendable () async -> Bool
 
     struct AccountStatus: Equatable {
         let isAuthenticated: Bool
@@ -50,6 +51,7 @@ actor CodexAppServerService {
     }
 
     private let transportFactory: TransportFactory
+    private let configurationReadiness: ConfigurationReadiness
     private let clock: any CodexAppServerClock
     private let transportTimeout: Duration
     private let summaryTimeout: Duration
@@ -64,6 +66,7 @@ actor CodexAppServerService {
     private var bufferedTurnMessages: [TurnKey: [JSONValue]] = [:]
     private var startupWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var generations: [UUID: GenerationContext] = [:]
+    private var generationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var cachedModels: [CodexModel]?
     private var cachedAccountStatus: AccountStatus?
     private var cachedConfigReadResult: JSONValue?
@@ -78,15 +81,20 @@ actor CodexAppServerService {
     private var isShuttingDown = false
     #if DEBUG
         private var activeTurnTestWaiters: [CheckedContinuation<Void, Never>] = []
+        private var generationDrainTestWaiters: [CheckedContinuation<Void, Never>] = []
     #endif
 
     init(
         launcher: any CodexAppServerLaunching = BundledCodexAppServerLauncher(),
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
-        summaryTimeout: Duration = .seconds(270)
+        summaryTimeout: Duration = .seconds(270),
+        configurationReadiness: @escaping ConfigurationReadiness = {
+            await MainActor.run { AppSettings.shared.isCodexAccountConfigurationCurrent }
+        }
     ) {
         transportFactory = { try launcher.launch() }
+        self.configurationReadiness = configurationReadiness
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
@@ -96,9 +104,11 @@ actor CodexAppServerService {
         transportFactory: @escaping TransportFactory,
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
-        summaryTimeout: Duration = .seconds(270)
+        summaryTimeout: Duration = .seconds(270),
+        configurationReadiness: @escaping ConfigurationReadiness = { true }
     ) {
         self.transportFactory = transportFactory
+        self.configurationReadiness = configurationReadiness
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
@@ -136,11 +146,13 @@ actor CodexAppServerService {
         cachedAccountStatus = nil
         await stopConnection(error: CancellationError())
         resumeStartupWaiters(throwing: CancellationError())
+        resumeGenerationDrainWaiters(throwing: CancellationError())
         isStarting = false
     }
 
     func reloadConfiguration() async throws {
         guard !isShuttingDown else { throw CancellationError() }
+        try await waitForGenerationsToFinish()
         await stopConnection(error: CancellationError())
         try Task.checkCancellation()
         try await start()
@@ -159,7 +171,13 @@ actor CodexAppServerService {
         )
     }
 
-    func models(forceRefresh: Bool = false) async throws -> [CodexModel] {
+    func models(
+        forceRefresh: Bool = false,
+        bypassConfigurationCheck: Bool = false
+    ) async throws -> [CodexModel] {
+        if !bypassConfigurationCheck {
+            try await requireCurrentConfiguration()
+        }
         let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         if !forceRefresh, let cachedModels { return cachedModels }
@@ -294,7 +312,13 @@ actor CodexAppServerService {
         }
     }
 
-    func generate(_ request: CodexAppServerRequest) async throws -> String {
+    func generate(
+        _ request: CodexAppServerRequest,
+        bypassConfigurationCheck: Bool = false
+    ) async throws -> String {
+        if !bypassConfigurationCheck {
+            try await requireCurrentConfiguration()
+        }
         let generationID = UUID()
         generations[generationID] = GenerationContext()
 
@@ -497,6 +521,7 @@ private extension CodexAppServerService {
         if let temporaryDirectory = context.temporaryDirectory {
             try? FileManager.default.removeItem(at: temporaryDirectory)
         }
+        resumeGenerationDrainWaitersIfIdle()
     }
 
     private func requestOnCurrentConnection(
@@ -891,6 +916,12 @@ private extension CodexAppServerService {
         return result
     }
 
+    private func requireCurrentConfiguration() async throws {
+        guard await configurationReadiness() else {
+            throw CodexConfigurationError.accountNotReady
+        }
+    }
+
     private func timeoutTurnWaiter(_ key: TurnKey) {
         guard let waiter = turnWaiters.removeValue(forKey: key) else { return }
         waiter.continuation.resume(throwing: CodexAppServerError.requestTimedOut("summary"))
@@ -925,6 +956,50 @@ private extension CodexAppServerService {
 
     private func cancelStartupWaiter(_ waiterID: UUID) {
         startupWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func waitForGenerationsToFinish() async throws {
+        guard !generations.isEmpty else { return }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if generations.isEmpty {
+                    continuation.resume()
+                } else {
+                    generationDrainWaiters[waiterID] = continuation
+                    #if DEBUG
+                        let testWaiters = generationDrainTestWaiters
+                        generationDrainTestWaiters.removeAll()
+                        testWaiters.forEach { $0.resume() }
+                    #endif
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelGenerationDrainWaiter(waiterID) }
+        }
+    }
+
+    private func cancelGenerationDrainWaiter(_ waiterID: UUID) {
+        generationDrainWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func resumeGenerationDrainWaitersIfIdle() {
+        guard generations.isEmpty else { return }
+        resumeGenerationDrainWaiters()
+    }
+
+    private func resumeGenerationDrainWaiters(throwing error: (any Error)? = nil) {
+        let waiters = generationDrainWaiters.values
+        generationDrainWaiters.removeAll()
+        for waiter in waiters {
+            if let error {
+                waiter.resume(throwing: error)
+            } else {
+                waiter.resume()
+            }
+        }
     }
 
     private func interruptGeneration(_ generationID: UUID) async {
@@ -1015,6 +1090,13 @@ private extension CodexAppServerService {
             if generations.values.contains(where: { $0.key != nil }) { return }
             await withCheckedContinuation { continuation in
                 activeTurnTestWaiters.append(continuation)
+            }
+        }
+
+        func waitUntilConfigurationReloadIsWaitingForTesting() async {
+            if !generationDrainWaiters.isEmpty { return }
+            await withCheckedContinuation { continuation in
+                generationDrainTestWaiters.append(continuation)
             }
         }
     }

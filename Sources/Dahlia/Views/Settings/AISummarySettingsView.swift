@@ -44,7 +44,7 @@ struct AISummarySettingsView: View {
                     )
                 }
 
-                if catalog.errorMessage != nil {
+                if catalog.canRetry {
                     Button(L10n.retry, action: reload)
                         .disabled(catalog.isLoading)
                 }

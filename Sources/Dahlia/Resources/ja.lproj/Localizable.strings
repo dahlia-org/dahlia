@@ -621,8 +621,8 @@
 "Databricks CLI returned an invalid profiles response." = "Databricks CLI から無効なプロファイルレスポンスが返されました。";
 "Select a Databricks CLI profile." = "Databricks CLI プロファイルを選択してください。";
 "The selected Databricks CLI profile does not provide a valid HTTPS workspace URL." = "選択した Databricks CLI プロファイルから有効な HTTPS ワークスペース URL を取得できません。";
-"Databricks Workspace URL" = "Databricks Workspace URL";
-"Databricks Workspace ID" = "Databricks Workspace ID";
+"Databricks Workspace URL" = "Databricks ワークスペース URL";
+"Databricks Workspace ID" = "Databricks ワークスペース ID";
 "Workspace URL unavailable from profile" = "プロファイルからワークスペース URL を取得できません";
 "Workspace ID unavailable from profile" = "プロファイルからワークスペース ID を取得できません";
 "Codex Configuration" = "Codex 設定";

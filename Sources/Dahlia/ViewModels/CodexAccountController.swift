@@ -31,21 +31,6 @@ final class CodexAccountController {
         isCheckingStatus || isSigningIn || isSigningOut
     }
 
-    func loadStatus() async {
-        isCheckingStatus = true
-        errorMessage = nil
-        defer { isCheckingStatus = false }
-
-        do {
-            accountStatus = try await service.accountStatus(forceRefresh: true)
-        } catch is CancellationError {
-            // SwiftUI cancels this operation when the settings screen disappears.
-        } catch {
-            accountStatus = nil
-            errorMessage = error.localizedDescription
-        }
-    }
-
     func activateChatGPTSubscription() async {
         isCheckingStatus = true
         errorMessage = nil

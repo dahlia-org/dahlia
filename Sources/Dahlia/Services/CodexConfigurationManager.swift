@@ -27,7 +27,8 @@ struct CodexConfigurationManager {
         }
         let workspaceURL = try normalizedWorkspaceURL(profile.host)
         let baseURL = workspaceURL.appending(path: "ai-gateway/codex/v1").absoluteString
-        let tokenCommand = "databricks auth token --profile \(shellQuote(profileName)) --output json | jq -r '.access_token'"
+        let tokenCommand = "databricks auth token --profile \(shellQuote(profileName)) --output json "
+            + "| /usr/bin/plutil -extract access_token raw -o - -"
         let configuration = """
         model_provider = "Databricks"
 

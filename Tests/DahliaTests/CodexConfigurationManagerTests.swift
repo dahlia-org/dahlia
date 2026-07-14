@@ -30,6 +30,8 @@ import Foundation
             #expect(configuration.contains(#"base_url = "https://dbc.example.com/ai-gateway/codex/v1""#))
             #expect(configuration.contains(#"wire_api = "responses""#))
             #expect(configuration.contains(#"--profile 'Team'\"'\"'s Profile'"#))
+            #expect(configuration.contains("/usr/bin/plutil -extract access_token raw -o - -"))
+            #expect(!configuration.contains("jq"))
             #expect(configuration.contains("refresh_interval_ms = 1800000"))
             let attributes = try FileManager.default.attributesOfItem(atPath: configURL.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)

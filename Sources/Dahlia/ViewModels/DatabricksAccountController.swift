@@ -87,7 +87,7 @@ final class DatabricksAccountController {
                 try await service.reloadConfiguration()
             }
             try Task.checkCancellation()
-            _ = try await service.models(forceRefresh: true)
+            _ = try await service.models(forceRefresh: true, bypassConfigurationCheck: true)
             try Task.checkCancellation()
             configurationStore.markCodexAccountConfigurationCurrent(
                 provider: .databricks,

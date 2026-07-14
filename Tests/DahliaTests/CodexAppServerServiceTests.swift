@@ -204,6 +204,87 @@ import Foundation
         }
 
         @Test
+        func configurationReloadWaitsForActiveSummary() async throws {
+            let first = TestCodexAppServerTransport(mode: .generationBlocks)
+            let second = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([first, second])
+            let launchCount = Mutex(0)
+            let service = CodexAppServerService(transportFactory: {
+                launchCount.withLock { $0 += 1 }
+                return transports.withLock { $0.removeFirst() }
+            })
+            let generation = Task {
+                try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            await service.waitUntilActiveTurnForTesting()
+            let reload = Task { try await service.reloadConfiguration() }
+            await service.waitUntilConfigurationReloadIsWaitingForTesting()
+
+            #expect(launchCount.withLock { $0 } == 1)
+            #expect(await !first.isClosed)
+
+            await first.sendFromServer(.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                    "item": .object([
+                        "type": .string("agentMessage"),
+                        "text": .string(#"{"status":"ok"}"#),
+                    ]),
+                ]),
+            ]))
+            await first.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            #expect(try await generation.value == #"{"status":"ok"}"#)
+            try await reload.value
+            #expect(launchCount.withLock { $0 } == 2)
+            #expect(await first.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func modelListRequiresCurrentAccountConfigurationUnlessBypassed() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = CodexAppServerService(
+                transportFactory: { transport },
+                configurationReadiness: { false }
+            )
+
+            await #expect(throws: CodexConfigurationError.accountNotReady) {
+                _ = try await service.models()
+            }
+            await #expect(throws: CodexConfigurationError.accountNotReady) {
+                _ = try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+            #expect(await transport.messages().isEmpty)
+
+            let models = try await service.models(bypassConfigurationCheck: true)
+            #expect(models.map(\.model) == ["default-model"])
+            await service.shutdown()
+        }
+
+        @Test
         func shutdownWaitsForCloseAndPermanentlyPreventsRestart() async throws {
             let blocked = TestCodexAppServerTransport(mode: .blockClose)
             let launchCount = Mutex(0)
@@ -777,6 +858,23 @@ import Foundation
         func emptyCatalogDoesNotReplaceSavedEffort() {
             let catalog = CodexModelCatalog()
             #expect(catalog.resolvedEffort(current: "high", modelID: "missing") == nil)
+        }
+
+        @Test
+        func cancelledInitialCatalogLoadCanBeRetried() async {
+            let transport = TestCodexAppServerTransport(mode: .blockFirstModelList)
+            let service = CodexAppServerService(transportFactory: { transport })
+            let catalog = CodexModelCatalog(service: service)
+            let load = Task { await catalog.load(forceRefresh: true) }
+
+            await transport.waitUntilSent("model/list")
+            load.cancel()
+            await load.value
+
+            #expect(catalog.models.isEmpty)
+            #expect(catalog.errorMessage == nil)
+            #expect(catalog.canRetry)
+            await service.shutdown()
         }
 
         @Test

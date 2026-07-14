@@ -96,9 +96,11 @@ Databricks:
 1. `databricks auth profiles --skip-validate --output json` から OAuth U2M プロファイルだけを列挙する。
 2. 選択したプロファイルの HTTPS workspace host を Databricks AI Gateway の `/ai-gateway/codex/v1` に変換する。
 3. Dahlia 専用 `config.toml` に `model_provider = "Databricks"` と Responses wire API を設定する。
-4. provider の auth command は `databricks auth token --profile <profile> --output json` の出力から `jq` で短期アクセストークンを取得する。Dahlia はトークンを保存しない。
+4. provider の auth command は `databricks auth token --profile <profile> --output json` の出力から macOS 標準の `plutil` で短期アクセストークンを取得する。Dahlia はトークンを保存しない。
 5. 設定変更後は共有 app-server connection を閉じて再初期化し、`model/list` が成功した場合だけ設定完了とする。
 6. 成功後に account と model cache を無効化し、`account/read` で表示状態を更新する。
+
+設定変更による connection の再初期化は、進行中の要約 generation が完了して unsubscribe されるまで待機する。account 設定が検証済みの選択と一致しない間は、service 層が通常の `model/list` と generation を拒否し、設定 controller の検証 request だけが明示的にこの guard を迂回する。
 
 ログイン待機 Task のキャンセル、ブラウザを開けなかった場合、ユーザーのキャンセルでは `account/login/cancel` を送る。notification が waiter 登録より先に到着する場合に備え、直近 10 件の login outcome を一時保持する。ログアウトは `account/logout` を明示的に呼ぶ。
 

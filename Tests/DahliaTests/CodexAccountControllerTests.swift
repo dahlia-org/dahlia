@@ -13,9 +13,6 @@ import Foundation
             let urlOpener = TestCodexLoginURLOpener()
             let controller = CodexAccountController(service: service, urlOpener: urlOpener)
 
-            await controller.loadStatus()
-            #expect(controller.accountStatus?.isAuthenticated == false)
-
             await controller.signIn()
 
             #expect(urlOpener.openedURLs == [URL(string: "https://chatgpt.com/auth/test")])
@@ -31,7 +28,6 @@ import Foundation
             let urlOpener = TestCodexLoginURLOpener(result: false)
             let controller = CodexAccountController(service: service, urlOpener: urlOpener)
 
-            await controller.loadStatus()
             await controller.signIn()
 
             #expect(controller.errorMessage == L10n.codexLoginPageCouldNotOpen)

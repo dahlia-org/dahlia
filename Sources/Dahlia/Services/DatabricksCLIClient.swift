@@ -50,31 +50,7 @@ struct DatabricksCLIClient {
             guard let executableURL else {
                 throw DatabricksCLIError.cliNotInstalled
             }
-
-            return try await Task.detached(priority: .userInitiated) {
-                let process = Process()
-                let standardOutput = Pipe()
-                let standardError = Pipe()
-                process.executableURL = executableURL
-                process.arguments = arguments
-                process.standardOutput = standardOutput
-                process.standardError = standardError
-
-                try process.run()
-                let standardOutputTask = Task.detached {
-                    standardOutput.fileHandleForReading.readDataToEndOfFile()
-                }
-                let standardErrorTask = Task.detached {
-                    standardError.fileHandleForReading.readDataToEndOfFile()
-                }
-                process.waitUntilExit()
-
-                return await CommandOutput(
-                    standardOutput: standardOutputTask.value,
-                    standardError: standardErrorTask.value,
-                    terminationStatus: process.terminationStatus
-                )
-            }.value
+            return try await Self.execute(executableURL: executableURL, arguments: arguments)
         }
     }
 
@@ -102,17 +78,59 @@ struct DatabricksCLIClient {
     }
 
     static func locateExecutable(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
-        var candidatePaths = environment["PATH"]?
-            .split(separator: ":")
-            .map { String($0) + "/databricks" } ?? []
-        candidatePaths.append(contentsOf: [
-            "/opt/homebrew/bin/databricks",
-            "/usr/local/bin/databricks",
-        ])
+        CommandLineToolLocator.executableURL(named: "databricks", environment: environment)
+    }
 
-        return candidatePaths.lazy
-            .map { URL(fileURLWithPath: $0) }
-            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    private static func execute(executableURL: URL, arguments: [String]) async throws -> CommandOutput {
+        let process = Process()
+        let standardOutput = Pipe()
+        let standardError = Pipe()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = standardOutput
+        process.standardError = standardError
+
+        let standardOutputTask = Task { try await readToEnd(standardOutput.fileHandleForReading) }
+        let standardErrorTask = Task { try await readToEnd(standardError.fileHandleForReading) }
+        defer {
+            standardOutputTask.cancel()
+            standardErrorTask.cancel()
+        }
+
+        try Task.checkCancellation()
+        let terminationStatus = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                process.terminationHandler = { process in
+                    continuation.resume(returning: process.terminationStatus)
+                }
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        } onCancel: {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+        try Task.checkCancellation()
+
+        let outputData = try await standardOutputTask.value
+        let errorData = try await standardErrorTask.value
+        return CommandOutput(
+            standardOutput: outputData,
+            standardError: errorData,
+            terminationStatus: terminationStatus
+        )
+    }
+
+    private static func readToEnd(_ handle: FileHandle) async throws -> Data {
+        var data = Data()
+        for try await byte in handle.bytes {
+            data.append(byte)
+        }
+        return data
     }
 
     private func validate(_ output: CommandOutput) throws {
