@@ -59,6 +59,8 @@ final class MeetingDetectionService: ObservableObject {
     private var calendarSettingsRefreshTask: Task<Void, Never>?
     private var calendarSchedulingTask: Task<Void, Never>?
     private var notificationAuthorizationTask: Task<Void, Never>?
+    private var microphoneDeviceRegistrationTask: Task<Void, Never>?
+    private var microphoneStatusCheckTask: Task<Void, Never>?
     private var isStarted = false
     private var isMicrophoneDetectionRunning = false
     /// CoreAudio のリスナー API が専用 DispatchQueue を要求するために使用する。
@@ -245,15 +247,19 @@ final class MeetingDetectionService: ObservableObject {
         windowDetectedMeetingName = nil
         suppressed = false
         microphoneNotificationAttemptID = nil
+        microphoneDeviceRegistrationTask?.cancel()
+        microphoneDeviceRegistrationTask = nil
+        microphoneStatusCheckTask?.cancel()
+        microphoneStatusCheckTask = nil
     }
 
     private func startMicrophoneMonitoring() {
-        registerListenersForAllInputDevices()
+        scheduleDeviceListenerRegistration()
 
         var address = Self.globalAddress(kAudioHardwarePropertyDevices)
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor in
-                self?.registerListenersForAllInputDevices()
+                self?.scheduleDeviceListenerRegistration()
             }
         }
         deviceListChangeBlock = block
@@ -265,25 +271,45 @@ final class MeetingDetectionService: ObservableObject {
         )
     }
 
-    private func registerListenersForAllInputDevices() {
+    private func scheduleDeviceListenerRegistration() {
+        microphoneDeviceRegistrationTask?.cancel()
+        microphoneDeviceRegistrationTask = Task { [weak self] in
+            let deviceIDs = await AudioHardwareQueryService.shared.inputDeviceIDs()
+            guard !Task.isCancelled else { return }
+            self?.installDeviceListeners(for: deviceIDs)
+        }
+    }
+
+    private func installDeviceListeners(for deviceIDs: [AudioDeviceID]) {
+        guard isMicrophoneDetectionRunning else { return }
         removeAllDeviceListeners()
 
-        for deviceID in Self.getAllInputDevices() {
+        for deviceID in deviceIDs {
             var address = Self.globalAddress(kAudioDevicePropertyDeviceIsRunningSomewhere)
             let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
                 Task { @MainActor in
-                    self?.recheckAllDevices()
+                    self?.scheduleMicrophoneStatusCheck()
                 }
             }
             AudioObjectAddPropertyListenerBlock(deviceID, &address, micMonitorQueue, block)
             deviceListeners.append((id: deviceID, block: block))
         }
 
-        recheckAllDevices()
+        scheduleMicrophoneStatusCheck()
     }
 
-    private func recheckAllDevices() {
-        let running = Self.getAllInputDevices().contains { Self.isDeviceRunningSomewhere($0) }
+    private func scheduleMicrophoneStatusCheck() {
+        microphoneStatusCheckTask?.cancel()
+        let deviceIDs = deviceListeners.map(\.id)
+        microphoneStatusCheckTask = Task { [weak self] in
+            let running = await AudioHardwareQueryService.shared.isAnyInputDeviceRunning(in: deviceIDs)
+            guard !Task.isCancelled else { return }
+            self?.applyMicrophoneRunningState(running)
+        }
+    }
+
+    private func applyMicrophoneRunningState(_ running: Bool) {
+        guard isMicrophoneDetectionRunning else { return }
         if isMicrophoneInUse != running {
             isMicrophoneInUse = running
         }
@@ -428,50 +454,6 @@ final class MeetingDetectionService: ObservableObject {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-    }
-
-    private nonisolated static func getAllInputDevices() -> [AudioDeviceID] {
-        var address = globalAddress(kAudioHardwarePropertyDevices)
-        var propertySize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &propertySize
-        ) == noErr else { return [] }
-
-        let count = Int(propertySize) / MemoryLayout<AudioDeviceID>.size
-        var devices = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &propertySize,
-            &devices
-        ) == noErr else { return [] }
-
-        return devices.filter { device in
-            var inputAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyStreams,
-                mScope: kAudioObjectPropertyScopeInput,
-                mElement: kAudioObjectPropertyElementMain
-            )
-            var streamSize: UInt32 = 0
-            AudioObjectGetPropertyDataSize(device, &inputAddress, 0, nil, &streamSize)
-            return streamSize > 0
-        }
-    }
-
-    private nonisolated static func isDeviceRunningSomewhere(_ deviceID: AudioDeviceID) -> Bool {
-        var address = globalAddress(kAudioDevicePropertyDeviceIsRunningSomewhere)
-        var isRunning: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &isRunning) == noErr else {
-            return false
-        }
-        return isRunning != 0
     }
 
     // MARK: - Window Title Helpers

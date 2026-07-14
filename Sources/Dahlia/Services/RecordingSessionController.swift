@@ -187,7 +187,7 @@ actor RecordingSessionController {
                       let sampleRate = request.batchSampleRate else {
                     throw RecordingSessionControllerError.invalidBatchConfiguration
                 }
-                batchRecording = try await batchRecordingFactory.makeSession(
+                batchRecording = try batchRecordingFactory.makeSession(
                     dbQueue: dbQueue,
                     managedRootURL: request.managedAudioRootURL,
                     meetingId: meetingId,
@@ -197,7 +197,7 @@ actor RecordingSessionController {
                 )
             }
 
-            let batchFormat = await batchRecording?.targetFormat
+            let batchFormat = batchRecording?.targetFormat
             var preparedSources: [PreparedSource] = []
             for configuration in configurations {
                 let recognition: PreparedProgressiveRecognitionSession?

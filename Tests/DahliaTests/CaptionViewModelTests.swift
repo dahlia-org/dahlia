@@ -11,7 +11,7 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
-        func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() {
+        func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(101),
                 devices: [
@@ -23,12 +23,14 @@ import GRDB
                 availableInputDevicesProvider: { inputProvider.devices },
                 defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 101)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
 
             inputProvider.defaultDeviceID = 202
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.selectedMicrophoneID == 202)
             #expect(viewModel.microphoneCaptureDeviceID == nil)
@@ -47,7 +49,7 @@ import GRDB
         }
 
         @Test
-        func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() {
+        func missingSelectedMicrophoneFallsBackToSystemDefaultSelection() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(202),
                 devices: [
@@ -59,10 +61,11 @@ import GRDB
                 availableInputDevicesProvider: { inputProvider.devices },
                 defaultInputDeviceIDProvider: { inputProvider.defaultDeviceID }
             )
+            await viewModel.refreshAvailableMicrophones()
 
             viewModel.microphoneSelection = .device(101)
             inputProvider.devices = [MicrophoneDevice(id: 202, name: "MacBook Pro Mic")]
-            viewModel.refreshAvailableMicrophones()
+            await viewModel.refreshAvailableMicrophones()
 
             #expect(viewModel.microphoneSelection == MicrophoneSelection.systemDefault)
             #expect(viewModel.selectedMicrophoneID == 202)

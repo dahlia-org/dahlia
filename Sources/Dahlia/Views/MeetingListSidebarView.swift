@@ -281,8 +281,8 @@ private struct RecordingStatusBar: View {
             viewModel.handleMicrophoneSelectionChange(from: oldValue, to: newValue)
         }
         .help(L10n.microphone)
-        .onAppear {
-            viewModel.refreshAvailableMicrophones()
+        .task {
+            await viewModel.refreshAvailableMicrophones()
         }
     }
 

@@ -199,7 +199,7 @@
                     locale: Locale(identifier: "ja_JP"),
                     sources: [.init(source: .microphone)]
                 ),
-                onEvent: { event in events.append(event) },
+                onEvent: { event in await events.append(event) },
                 onRuntimeFailure: { _, _, _ in }
             )
             _ = try await controller.startPrepared()
@@ -538,8 +538,7 @@
         }
     }
 
-    @MainActor
-    private final class TranscriptionEventRecorder {
+    private actor TranscriptionEventRecorder {
         private(set) var events: [TranscriptionEvent] = []
 
         func append(_ event: TranscriptionEvent) {
@@ -836,7 +835,6 @@
     private struct FakeBatchFactory: BatchRecordingSessionFactory {
         let probe: RecordingRuntimeProbe
 
-        @MainActor
         func makeSession(
             dbQueue _: DatabaseQueue,
             managedRootURL _: URL,
@@ -849,7 +847,6 @@
         }
     }
 
-    @MainActor
     private final class FakeBatchSession: BatchRecordingSession {
         let targetFormat: AVAudioFormat
         private let probe: RecordingRuntimeProbe

@@ -88,7 +88,7 @@ actor MicrophoneRecognitionTestSession {
             recordingStartTime: .now,
             recordingSessionId: .v7()
         ) { event in
-            Self.forward(event, to: onEvent)
+            await Self.forward(event, to: onEvent)
         }
         return (service, bridge, targetFormat)
     }

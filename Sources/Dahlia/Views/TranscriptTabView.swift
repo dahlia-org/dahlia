@@ -13,8 +13,9 @@ struct TranscriptTabView: View {
     }
 
     private enum WindowMetrics {
-        static let initialWindowSize = 150
-        static let loadMoreCount = 100
+        /// SwiftUI の差分計算量を抑え、録音中の MainActor 占有時間に上限を設ける。
+        static let initialWindowSize = 100
+        static let loadMoreCount = 50
     }
 
     @ObservedObject var store: TranscriptStore
@@ -100,7 +101,8 @@ struct TranscriptTabView: View {
                                 sessions: recordingSessions,
                                 fallbackTimeBase: timeBase
                             ),
-                            showsTranslatedText: showsTranslatedText
+                            showsTranslatedText: showsTranslatedText,
+                            allowsTextSelection: !isListening
                         )
                         .equatable()
                     }

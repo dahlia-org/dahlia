@@ -34,11 +34,10 @@ private struct RangePersistence {
 }
 
 /// ひとつのバッチ録音セッションで、音源ごとの単一CAFとrangeを管理する。
-@MainActor
-final class BatchAudioRecordingSession {
+actor BatchAudioRecordingSession {
     static let standardSampleRate = 16000.0
 
-    let targetFormat: AVAudioFormat
+    nonisolated let targetFormat: AVAudioFormat
 
     private let dbQueue: DatabaseQueue
     private let managedRootURL: URL

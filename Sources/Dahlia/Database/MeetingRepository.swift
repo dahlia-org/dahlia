@@ -411,8 +411,8 @@ final class MeetingRepository {
         }
     }
 
-    func deleteScreenshot(id: UUID) throws {
-        try dbQueue.write { db in
+    func deleteScreenshot(id: UUID) async throws {
+        try await dbQueue.write { db in
             _ = try MeetingScreenshotRecord.deleteOne(db, key: id)
         }
     }

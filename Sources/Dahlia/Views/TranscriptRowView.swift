@@ -5,6 +5,7 @@ struct TranscriptRowView: View, Equatable {
     let segment: TranscriptSegment
     let timestamp: String
     let showsTranslatedText: Bool
+    let allowsTextSelection: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -37,7 +38,9 @@ struct TranscriptRowView: View, Equatable {
                         .foregroundStyle(.blue)
                 }
             }
-            .textSelection(.enabled)
+            // 録音中は AppKit の選択範囲管理を作らず、連続更新・スクロール時の
+            // MainActor 負荷を録音停止後へ先送りする。
+            .modifier(ConditionalTextSelectionModifier(isEnabled: allowsTextSelection))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)

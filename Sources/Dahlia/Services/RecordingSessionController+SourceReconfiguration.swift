@@ -78,7 +78,7 @@ extension RecordingSessionController {
             throw Self.permissionError(for: source)
         }
         try await batchRecording?.prepare(source: source)
-        let batchFormat = await batchRecording?.targetFormat
+        let batchFormat = batchRecording?.targetFormat
         let preparedRecognition = try await prepareRecognitionForNewPipeline(
             source: source,
             sourceFormat: batchFormat,

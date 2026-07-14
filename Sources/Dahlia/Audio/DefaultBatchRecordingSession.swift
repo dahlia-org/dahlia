@@ -2,7 +2,6 @@
 import Foundation
 
 /// BatchAudioRecordingSessionをrouter consumer中心のprotocolへ接続するadapter。
-@MainActor
 final class DefaultBatchRecordingSession: BatchRecordingSession {
     var targetFormat: AVAudioFormat {
         session.targetFormat

@@ -15,13 +15,13 @@ enum MacCalendarAuthorizationStatus: Equatable {
     }
 }
 
-@MainActor
-protocol MacCalendarEventStoreProviding: AnyObject {
-    var authorizationStatus: MacCalendarAuthorizationStatus { get }
+protocol MacCalendarEventStoreProviding: Sendable {
+    var initialAuthorizationStatus: MacCalendarAuthorizationStatus { get }
 
+    func authorizationStatus() async -> MacCalendarAuthorizationStatus
     func requestFullAccessToEvents() async throws -> Bool
-    func fetchCalendarList() throws -> [CalendarListItem]
-    func fetchUpcomingEvents(calendars: [CalendarListItem], now: Date, daysAhead: Int) throws -> [CalendarEvent]
+    func fetchCalendarList() async throws -> [CalendarListItem]
+    func fetchUpcomingEvents(calendars: [CalendarListItem], now: Date, daysAhead: Int) async throws -> [CalendarEvent]
 }
 
 @MainActor
@@ -45,9 +45,10 @@ final class MacCalendarStore: ObservableObject {
     @Published private(set) var upcomingEvents: [CalendarEvent] = []
     @Published private(set) var lastErrorMessage: String?
     @Published private(set) var selectedCalendarIDs: Set<String>
+    @Published private(set) var authorizationStatus: MacCalendarAuthorizationStatus
 
     var isAuthorized: Bool {
-        eventStoreProvider.authorizationStatus.canReadEvents
+        authorizationStatus.canReadEvents
     }
 
     var isBusy: Bool {
@@ -78,7 +79,8 @@ final class MacCalendarStore: ObservableObject {
         self.daysAhead = daysAhead
         self.storeChangedNotification = storeChangedNotification
         self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
-        self.state = Self.state(for: eventStoreProvider.authorizationStatus)
+        self.authorizationStatus = eventStoreProvider.initialAuthorizationStatus
+        self.state = Self.state(for: eventStoreProvider.initialAuthorizationStatus)
 
         if let storeChangedNotification {
             storeChangedTask = Task { [weak self] in
@@ -97,6 +99,7 @@ final class MacCalendarStore: ObservableObject {
         beginLoading()
         do {
             let granted = try await eventStoreProvider.requestFullAccessToEvents()
+            authorizationStatus = await eventStoreProvider.authorizationStatus()
             guard granted else {
                 clearRuntimeState()
                 state = .accessDenied
@@ -110,9 +113,10 @@ final class MacCalendarStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) async {
-        guard eventStoreProvider.authorizationStatus.canReadEvents else {
+        authorizationStatus = await eventStoreProvider.authorizationStatus()
+        guard authorizationStatus.canReadEvents else {
             clearRuntimeState()
-            state = Self.state(for: eventStoreProvider.authorizationStatus)
+            state = Self.state(for: authorizationStatus)
             return
         }
 
@@ -125,7 +129,7 @@ final class MacCalendarStore: ObservableObject {
 
         beginLoading()
         do {
-            availableCalendars = try eventStoreProvider.fetchCalendarList()
+            availableCalendars = try await eventStoreProvider.fetchCalendarList()
             initializeSelectionIfNeeded()
             pruneSelectedCalendars()
 
@@ -138,7 +142,7 @@ final class MacCalendarStore: ObservableObject {
             }
 
             let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
-            upcomingEvents = try eventStoreProvider.fetchUpcomingEvents(
+            upcomingEvents = try await eventStoreProvider.fetchUpcomingEvents(
                 calendars: selectedCalendars,
                 now: now(),
                 daysAhead: daysAhead
@@ -183,8 +187,8 @@ final class MacCalendarStore: ObservableObject {
     }
 
     private func recomputeState() {
-        let newState: State = if !eventStoreProvider.authorizationStatus.canReadEvents {
-            Self.state(for: eventStoreProvider.authorizationStatus)
+        let newState: State = if !authorizationStatus.canReadEvents {
+            Self.state(for: authorizationStatus)
         } else if !availableCalendars.isEmpty, selectedCalendarIDs.isEmpty {
             .needsCalendarSelection
         } else {
@@ -266,22 +270,24 @@ final class MacCalendarStore: ObservableObject {
     }
 }
 
-@MainActor
-final class EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
-    private let eventStore: EKEventStore
+actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
+    nonisolated let initialAuthorizationStatus: MacCalendarAuthorizationStatus
+    private var eventStore: EKEventStore?
     private let calendar: Calendar
 
-    init(eventStore: EKEventStore = EKEventStore(), calendar: Calendar = .current) {
+    init(eventStore: EKEventStore? = nil, calendar: Calendar = .current) {
+        self.initialAuthorizationStatus = Self.currentAuthorizationStatus()
         self.eventStore = eventStore
         self.calendar = calendar
     }
 
-    var authorizationStatus: MacCalendarAuthorizationStatus {
-        Self.authorizationStatus(from: EKEventStore.authorizationStatus(for: .event))
+    func authorizationStatus() -> MacCalendarAuthorizationStatus {
+        Self.currentAuthorizationStatus()
     }
 
     func requestFullAccessToEvents() async throws -> Bool {
-        try await withCheckedThrowingContinuation { continuation in
+        let eventStore = resolvedEventStore()
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
             eventStore.requestFullAccessToEvents { granted, error in
                 if let error {
                     continuation.resume(throwing: error)
@@ -293,6 +299,8 @@ final class EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
     }
 
     func fetchCalendarList() throws -> [CalendarListItem] {
+        try Task.checkCancellation()
+        let eventStore = resolvedEventStore()
         let defaultCalendarID = eventStore.defaultCalendarForNewEvents?.calendarIdentifier
         return eventStore.calendars(for: .event)
             .map { calendar in
@@ -312,6 +320,8 @@ final class EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
     }
 
     func fetchUpcomingEvents(calendars: [CalendarListItem], now: Date, daysAhead: Int) throws -> [CalendarEvent] {
+        try Task.checkCancellation()
+        let eventStore = resolvedEventStore()
         let intervalEnd = calendar.date(byAdding: .day, value: daysAhead, to: now) ?? now
         let selectedCalendars = calendars.compactMap { eventStore.calendar(withIdentifier: $0.id) }
         guard !selectedCalendars.isEmpty else { return [] }
@@ -401,6 +411,19 @@ final class EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
         @unknown default:
             .denied
         }
+    }
+
+    private static func currentAuthorizationStatus() -> MacCalendarAuthorizationStatus {
+        authorizationStatus(from: EKEventStore.authorizationStatus(for: .event))
+    }
+
+    private func resolvedEventStore() -> EKEventStore {
+        if let eventStore {
+            return eventStore
+        }
+        let newStore = EKEventStore()
+        eventStore = newStore
+        return newStore
     }
 }
 
