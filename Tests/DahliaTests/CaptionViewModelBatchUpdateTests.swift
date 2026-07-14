@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     struct CaptionViewModelBatchUpdateTests {
         private struct Fixture {
             let batch: BatchAudioTestFixture

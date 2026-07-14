@@ -804,99 +804,88 @@ enum L10n {
 
     static var model: String { String(localized: "Model", bundle: bundle) }
     static var templates: String { String(localized: "Templates", bundle: bundle) }
-    static var openAI: String { String(localized: "OpenAI", bundle: bundle) }
-    static var databricks: String { String(localized: "Databricks", bundle: bundle) }
-    static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
-    static var modelProviderDescription: String { String(
-        localized: "Choose OpenAI or Databricks AI Gateway.",
+    static var codexHelperNotBundled: String { String(
+        localized: "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
         bundle: bundle
     ) }
-    static var endpointURL: String { String(localized: "Endpoint URL", bundle: bundle) }
-    static var openAIEndpointDescription: String { String(localized: "Uses OpenAI's Chat Completions API.", bundle: bundle) }
-    static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
-    static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
-    static var databricksWorkspaceURLDescription: String { String(
-        localized: "Enter the Workspace URL associated with this personal access token.",
+    static func codexLaunchFailed(_ detail: String) -> String { String(
+        localized: "Could not start Codex: \(detail)",
         bundle: bundle
     ) }
-    static var authenticationType: String { String(localized: "Authentication Type", bundle: bundle) }
-    static var databricksAuthenticationTypeDescription: String { String(
-        localized: "Choose a Personal Access Token or OAuth through Databricks CLI.",
+    static var codexNotLoggedIn: String { String(
+        localized: "Codex is not signed in. Open AI Connection in Settings and sign in, then try again.",
         bundle: bundle
     ) }
-    static var personalAccessToken: String { String(localized: "Personal Access Token", bundle: bundle) }
-    static var oauthDatabricksCLI: String { String(localized: "OAuth (Databricks CLI)", bundle: bundle) }
-    static var databricksProfile: String { String(localized: "Databricks CLI Profile", bundle: bundle) }
-    static var databricksProfileDescription: String { String(
-        localized: "OAuth credentials are read from this Databricks CLI profile.",
+    static func codexLoginFailed(_ detail: String) -> String { String(
+        localized: "Codex sign-in failed: \(detail)",
         bundle: bundle
     ) }
-    static var noDatabricksProfiles: String { String(
-        localized: "No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh.",
+    static var codexLoginFailedWithoutDetail: String { String(localized: "Codex sign-in failed.", bundle: bundle) }
+    static var codexLoginPageCouldNotOpen: String { String(
+        localized: "Could not open the Codex sign-in page.",
         bundle: bundle
     ) }
-    static var refreshDatabricksProfiles: String { String(localized: "Refresh Profiles", bundle: bundle) }
-    static var databricksCLINotInstalled: String { String(
-        localized: "Databricks CLI was not found. Install it and relaunch Dahlia.",
+    static var codexProcessExited: String { String(localized: "Codex app-server exited unexpectedly.", bundle: bundle) }
+    static func codexProcessExitedWithDetail(_ detail: String) -> String { String(
+        localized: "Codex app-server exited unexpectedly: \(detail)",
         bundle: bundle
     ) }
-    static var databricksProfileRequired: String { String(localized: "Enter a Databricks CLI profile.", bundle: bundle) }
-    static var databricksProfileNotFound: String { String(localized: "The selected Databricks CLI profile was not found.", bundle: bundle) }
-    static var databricksWorkspaceURLInvalid: String { String(localized: "Enter a valid HTTPS Databricks Workspace URL.", bundle: bundle) }
-    static var workspaceIDUnavailableFromProfile: String { String(
-        localized: "The selected Databricks CLI profile does not provide a Workspace ID.",
+    static func codexRequestTimedOut(_ operation: String) -> String { String(
+        localized: "Codex did not respond in time (\(operation)). Try again.",
         bundle: bundle
     ) }
-    static var workspaceHostUnavailableFromProfile: String { String(
-        localized: "The selected Databricks CLI profile does not provide a valid workspace URL.",
+    static var codexInvalidResponse: String { String(localized: "Codex returned an invalid response.", bundle: bundle) }
+    static var codexOutputBufferOverflow: String { String(
+        localized: "Codex produced output faster than Dahlia could process it.",
         bundle: bundle
     ) }
-    static func databricksCLICommandFailed(_ detail: String) -> String { String(
-        localized: "Databricks CLI authentication failed: \(detail)",
+    static func codexRequestFailed(_ detail: String) -> String { String(
+        localized: "Codex request failed: \(detail)",
         bundle: bundle
     ) }
-    static var databricksCLICommandFailedWithoutDetail: String { String(
-        localized: "Databricks CLI authentication failed.",
+    static var codexTurnFailed: String { String(localized: "Codex could not complete the request.", bundle: bundle) }
+    static var codexTurnInterrupted: String { String(localized: "Codex generation was interrupted.", bundle: bundle) }
+    static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
+    static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
+    static var codexAccount: String { String(localized: "Codex Account", bundle: bundle) }
+    static var codexAppServer: String { String(localized: "Codex app-server", bundle: bundle) }
+    static var codexAccountDescription: String { String(
+        localized: "Dahlia stores a separate Codex sign-in for this app. Signing in opens your browser.",
         bundle: bundle
     ) }
-    static var databricksCLIInvalidTokenResponse: String { String(
-        localized: "Databricks CLI returned an invalid OAuth token response.",
+    static var codexSignedIn: String { String(localized: "Signed in to Codex", bundle: bundle) }
+    static func codexSignedInAs(_ account: String) -> String { String(
+        localized: "Signed in to Codex as \(account)",
         bundle: bundle
     ) }
-    static var databricksCLIInvalidProfilesResponse: String { String(
-        localized: "Databricks CLI returned an invalid profiles response.",
+    static var codexNotSignedIn: String { String(localized: "Not signed in to Codex", bundle: bundle) }
+    static var codexSignInNotRequired: String { String(localized: "Codex does not require sign-in", bundle: bundle) }
+    static var signInWithChatGPT: String { String(localized: "Sign in with ChatGPT", bundle: bundle) }
+    static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
+    static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
+    static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
+    static var codexNoModels: String { String(localized: "Codex returned no available models. Try again.", bundle: bundle) }
+    static var codexModelDescription: String { String(
+        localized: "Models are loaded from the bundled Codex app-server.",
         bundle: bundle
     ) }
-    static var openAIAPITokenRequired: String { String(localized: "Enter an OpenAI API token.", bundle: bundle) }
-    static var databricksPersonalAccessTokenRequired: String { String(
-        localized: "Enter a Databricks personal access token.",
+    static var reasoningEffort: String { String(localized: "Reasoning Effort", bundle: bundle) }
+    static var reasoningEffortDescription: String { String(
+        localized: "Controls how much reasoning Codex uses for each summary.",
         bundle: bundle
     ) }
-    static var endpointGeneratedFromWorkspaceURL: String { String(
-        localized: "Endpoint will be generated after entering a Workspace URL.",
+    static var reasoningEffortNone: String { String(localized: "None", bundle: bundle) }
+    static var reasoningEffortMinimal: String { String(localized: "Minimal", bundle: bundle) }
+    static var reasoningEffortLow: String { String(localized: "Low", bundle: bundle) }
+    static var reasoningEffortMedium: String { String(localized: "Medium", bundle: bundle) }
+    static var reasoningEffortHigh: String { String(localized: "High", bundle: bundle) }
+    static var reasoningEffortExtraHigh: String { String(localized: "Extra High", bundle: bundle) }
+    static var reasoningEffortMax: String { String(localized: "Max", bundle: bundle) }
+    static var reasoningEffortUltra: String { String(localized: "Ultra", bundle: bundle) }
+    static var codexSummaryModelFooter: String { String(
+        localized: "The saved model is used when available; otherwise Codex's default model is selected.",
         bundle: bundle
     ) }
-    static var modelDescription: String { String(
-        localized: "The selected model is mapped to the provider's model ID.",
-        bundle: bundle
-    ) }
-    static var gpt56Sol: String { String(localized: "GPT-5.6 Sol", bundle: bundle) }
-    static var gpt56Terra: String { String(localized: "GPT-5.6 Terra", bundle: bundle) }
-    static var gpt56Luna: String { String(localized: "GPT-5.6 Luna", bundle: bundle) }
-    static var gpt55: String { String(localized: "GPT-5.5", bundle: bundle) }
-    static var maxTokens: String { String(localized: "Maximum Output Tokens", bundle: bundle) }
-    static var maxTokensDescription: String { String(
-        localized: "Limits the number of tokens generated for each summary.",
-        bundle: bundle
-    ) }
-    static var apiToken: String { String(localized: "API Token", bundle: bundle) }
-    static var apiTokenStoredInKeychain: String { String(localized: "Token is stored securely in Keychain.", bundle: bundle) }
-    static var testConnection: String { String(localized: "Test Connection", bundle: bundle) }
-    static var testing: String { String(localized: "Testing...", bundle: bundle) }
-    static var connectionSuccess: String { String(localized: "Connection successful", bundle: bundle) }
-    static var llmErrorInvalidURL: String { String(localized: "Invalid endpoint URL", bundle: bundle) }
-    static var llmErrorUnexpectedResponse: String { String(localized: "Unexpected response from server", bundle: bundle) }
-    static func llmErrorHTTP(_ code: Int, _ detail: String) -> String { String(localized: "HTTP \(code): \(detail)", bundle: bundle) }
     static var llmErrorEmptyResponse: String { String(localized: "Empty response from server", bundle: bundle) }
 
     // MARK: - Summary
@@ -919,10 +908,6 @@ enum L10n {
     static var openTemplatesFolder: String { String(localized: "Open Templates Folder", bundle: bundle) }
     static var resetPresets: String { String(localized: "Reset Presets", bundle: bundle) }
     static var summaryTemplateDescription: String { String(localized: "Select a template from _custom_instructions/ in the vault.", bundle: bundle) }
-    static var llmConfigIncomplete: String { String(
-        localized: "LLM configuration is incomplete. Please set endpoint, model, and API token in Settings.",
-        bundle: bundle
-    ) }
 
     // MARK: - Error Messages (Audio)
 

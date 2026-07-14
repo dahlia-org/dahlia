@@ -51,7 +51,7 @@ struct SummaryDocumentResponse: Decodable {
         }
     }
 
-    static let responseFormat: LLMService.ResponseFormat = {
+    static let outputSchema: Data = {
         let summaryTextSchema: [String: Any] = [
             "type": "object",
             "properties": [
@@ -141,11 +141,10 @@ struct SummaryDocumentResponse: Decodable {
             "required": ["title", "sections", "tags", "action_items"],
             "additionalProperties": false,
         ]
-        let schemaData = try! JSONSerialization.data(withJSONObject: schema)
-        return LLMService.ResponseFormat(
-            type: "json_schema",
-            json_schema: .init(name: "summary_document", strict: true, schemaData: schemaData)
-        )
+        guard let schemaData = try? JSONSerialization.data(withJSONObject: schema) else {
+            preconditionFailure("Summary JSON schema must be serializable")
+        }
+        return schemaData
     }()
 
     private enum CodingKeys: String, CodingKey {

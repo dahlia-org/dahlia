@@ -1,6 +1,7 @@
 import Foundation
 @testable import Dahlia
 
+// swiftformat:disable indent
 #if canImport(Testing)
 import Testing
 
@@ -37,7 +38,7 @@ struct SummaryServiceTests {
 
     @Test
     func summaryDocumentResponseSchemaRequiresTextContainersWithoutExtraFields() throws {
-        let schemaData = try #require(SummaryDocumentResponse.responseFormat.json_schema?.schemaData)
+        let schemaData = SummaryDocumentResponse.outputSchema
         let schemaObject = try JSONSerialization.jsonObject(with: schemaData)
         let schema = try #require(schemaObject as? [String: Any])
         let required = try #require(schema["required"] as? [String])
@@ -387,111 +388,6 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func llmDefaultsUseConfiguredModelAndTokenLimit() {
-        #expect(LLMModel.defaultModel == .gpt56Sol)
-        #expect(AppSettings.defaultLLMMaxTokens == 16000)
-    }
-
-    @Test
-    func llmModelsMapToProviderIdentifiers() {
-        #expect(LLMModel.gpt56Sol.identifier(for: .openAI) == "gpt-5-6-sol")
-        #expect(LLMModel.gpt56Sol.identifier(for: .databricks) == "system.ai.gpt-5-6-sol")
-        #expect(LLMModel.gpt56Terra.identifier(for: .openAI) == "gpt-5-6-terra")
-        #expect(LLMModel.gpt56Terra.identifier(for: .databricks) == "system.ai.gpt-5-6-terra")
-        #expect(LLMModel.gpt56Luna.identifier(for: .openAI) == "gpt-5-6-luna")
-        #expect(LLMModel.gpt56Luna.identifier(for: .databricks) == "system.ai.gpt-5-6-luna")
-        #expect(LLMModel.gpt55.identifier(for: .openAI) == "gpt-5-5")
-        #expect(LLMModel.gpt55.identifier(for: .databricks) == "system.ai.gpt-5-5")
-    }
-
-    @Test
-    func llmMaxTokensRequiresPositiveValue() {
-        let settings = AppSettings.shared
-        let previousMaxTokens = settings.llmMaxTokens
-        defer { settings.llmMaxTokens = previousMaxTokens }
-
-        settings.llmMaxTokens = 0
-
-        #expect(settings.llmMaxTokens == 1)
-    }
-
-    @Test
-    func llmProviderDefaultsToOpenAI() {
-        let settings = AppSettings.shared
-        let previousProviderRawValue = settings.llmProviderRawValue
-        defer { settings.llmProviderRawValue = previousProviderRawValue }
-
-        settings.llmProviderRawValue = ""
-
-        #expect(settings.llmProvider == .openAI)
-        #expect(settings.resolvedLLMEndpointURL == AppSettings.openAIEndpointURL)
-    }
-
-    @Test
-    func removedCustomEndpointProviderFallsBackToOpenAI() {
-        let settings = AppSettings.shared
-        let previousProviderRawValue = settings.llmProviderRawValue
-        defer { settings.llmProviderRawValue = previousProviderRawValue }
-
-        settings.llmProviderRawValue = "customEndpoint"
-
-        #expect(settings.llmProvider == .openAI)
-        #expect(settings.resolvedLLMEndpointURL == AppSettings.openAIEndpointURL)
-    }
-
-    @Test
-    func selectedLLMModelIsIndependentFromProvider() {
-        let settings = AppSettings.shared
-        let previousProviderRawValue = settings.llmProviderRawValue
-        let previousModelRawValue = settings.llmModelRawValue
-        defer {
-            settings.llmProviderRawValue = previousProviderRawValue
-            settings.llmModelRawValue = previousModelRawValue
-        }
-
-        settings.llmModel = .gpt56Terra
-        settings.llmProvider = .openAI
-        #expect(settings.resolvedLLMModelName == "gpt-5-6-terra")
-
-        settings.llmProvider = .databricks
-        #expect(settings.llmModel == .gpt56Terra)
-        #expect(settings.resolvedLLMModelName == "system.ai.gpt-5-6-terra")
-    }
-
-    @Test
-    func persistedDatabricksModelNameMigratesToIndependentSelection() {
-        let settings = AppSettings.shared
-        let previousModelRawValue = settings.llmModelRawValue
-        defer { settings.llmModelRawValue = previousModelRawValue }
-
-        settings.llmModelRawValue = "system.ai.gpt-5-6-luna"
-
-        #expect(settings.llmModel == .gpt56Luna)
-    }
-
-    @Test
-    func llmProviderBuildsDatabricksAIGatewayEndpointFromWorkspaceURL() {
-        let settings = AppSettings.shared
-        let previousProviderRawValue = settings.llmProviderRawValue
-        let previousWorkspaceURL = settings.llmDatabricksWorkspaceURL
-        let previousAuthenticationTypeRawValue = settings.llmDatabricksAuthenticationTypeRawValue
-        defer {
-            settings.llmProviderRawValue = previousProviderRawValue
-            settings.llmDatabricksWorkspaceURL = previousWorkspaceURL
-            settings.llmDatabricksAuthenticationTypeRawValue = previousAuthenticationTypeRawValue
-        }
-
-        settings.llmProvider = .databricks
-        settings.llmDatabricksAuthenticationType = .personalAccessToken
-        settings.llmDatabricksWorkspaceURL = " https://adb-984752964297111.11.azuredatabricks.net/ "
-
-        #expect(
-            settings.resolvedLLMEndpointURL
-                == "https://adb-984752964297111.11.azuredatabricks.net/ai-gateway/mlflow/v1/chat/completions"
-        )
-    }
-
-    @Test
     func resolvedTagsDoesNotInjectAISummary() {
         let tags = SummaryService.resolvedTags(["follow_up", "customer_meeting"])
 
@@ -600,3 +496,4 @@ struct SummaryServiceTests {
 
 }
 #endif
+// swiftformat:enable indent

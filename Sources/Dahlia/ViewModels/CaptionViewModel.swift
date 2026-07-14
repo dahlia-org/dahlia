@@ -1994,11 +1994,6 @@ final class CaptionViewModel: ObservableObject {
     ) async {
         guard !transcriptText.isEmpty else { return }
 
-        guard AppSettings.shared.isLLMConfigComplete else {
-            summaryError = L10n.llmConfigIncomplete
-            return
-        }
-
         // 要約前にノートを即座に保存してから取得
         saveNoteImmediately()
         let currentNoteText = noteText
@@ -2094,7 +2089,9 @@ final class CaptionViewModel: ObservableObject {
             }
             summaryProgress.summaryGeneration = .failed(error.localizedDescription)
             summaryProgress.vaultExport = .skipped
-            ErrorReportingService.capture(error, context: ["source": "summaryGeneration"])
+            if Self.shouldCaptureSummaryGenerationError(error) {
+                ErrorReportingService.capture(error, context: ["source": "summaryGeneration"])
+            }
         }
 
         if summaryGeneratingMeetingId == meetingId {
@@ -2107,6 +2104,17 @@ final class CaptionViewModel: ObservableObject {
             withAnimation(.easeOut(duration: 0.3)) {
                 summaryProgress.dismiss()
             }
+        }
+    }
+
+    nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {
+        if error is CancellationError { return false }
+        guard let error = error as? CodexAppServerError else { return true }
+        return switch error {
+        case .helperNotBundled, .notLoggedIn, .requestTimedOut, .turnInterrupted:
+            false
+        default:
+            true
         }
     }
 

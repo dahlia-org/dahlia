@@ -1,6 +1,6 @@
 import Foundation
 
-/// 文字起こしテキストを LLM で要約し、Obsidian 互換の Markdown を生成するサービス。
+/// Codex app-server で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。
 enum SummaryService {
     struct GeneratedSummary {
         let document: SummaryDocument
@@ -23,96 +23,28 @@ enum SummaryService {
         repository: MeetingRepository? = nil
     ) async throws -> GeneratedSummary {
         let settings = AppSettings.shared
-        let endpoint = try await LLMEndpointResolver().endpoint(
-            provider: settings.llmProvider,
-            databricksAuthenticationType: settings.llmDatabricksAuthenticationType,
-            databricksWorkspaceURL: settings.llmDatabricksWorkspaceURL,
-            databricksProfile: settings.llmDatabricksProfile
-        )
-        let model = settings.resolvedLLMModelName
-        let maxTokens = settings.llmMaxTokens
-        let token = try await LLMCredentialResolver().accessToken(
-            provider: settings.llmProvider,
-            apiToken: settings.llmAPIToken,
-            databricksAuthenticationType: settings.llmDatabricksAuthenticationType,
-            databricksProfile: settings.llmDatabricksProfile
-        )
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
         let languageName = settings.llmSummaryLanguage.displayName
 
-        let structuredInstruction = """
+        let systemPrompt = prompt + "\n\n# Language\nWrite the summary in \(languageName)." + codexStructuredInstruction
+        let inputs = await makeCodexInputs(.init(
+            projectName: projectName,
+            projectDescription: projectDescription,
+            meetingId: meetingId,
+            createdAt: createdAt,
+            transcriptText: transcriptText,
+            noteText: noteText,
+            screenshots: screenshots,
+            recordingSessions: recordingSessions
+        ))
 
-        # Response Format
-        Your response MUST be a JSON object with exactly four keys:
-        - "title": a concise title for this meeting/transcript (one line, no quotes)
-        - "sections": an array of summary body sections that exclude action items. Each section has:
-          - "heading": the section heading, or an empty string for an intro section
-          - "blocks": an array of content blocks in reading order
-        - "tags": an array of relevant short Obsidian-compatible tags for categorization (empty array if none)
-          - Tags MUST contain no spaces.
-          - Tags MUST not be numeric-only.
-          - Tags MUST use only letters, numbers, "_" and "-".
-          - Use "_" or "-" to join words instead of spaces or punctuation.
-          - Do not include "#", slashes, emojis, quotes, brackets, commas, or other symbols.
-        - "action_items": the only location for action items; an array of objects with exactly two keys:
-          - "title": the concrete action item
-          - "assignee": who owns it, or an empty string if unclear
-
-        Each block MUST be one object with all of these keys:
-        - "type": one of "paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading"
-        - "level": heading level for "heading"; otherwise 0
-        - "content": paragraph/quote/heading text, code body, or image caption; otherwise {"text":"","transcript_ref":null}
-          - "content.text": the actual text
-          - "content.transcript_ref": the most relevant HH:MM:SS timestamp for this text, or null
-        - "items": list/checklist items; otherwise []
-          - Each item has "text", "transcript_ref" as HH:MM:SS or null, and "checked" as true/false.
-          - Use "checked": false for bulleted_list and numbered_list items.
-        - "language": code language for "code"; otherwise empty string
-        - "image_id": screenshot UUID for "image"; otherwise empty string
-
-        Do not put transcript links inside text fields. Use content.transcript_ref or item.transcript_ref instead.
-        Use inline Markdown only for emphasis and ordinary links inside text fields. Do not output tables; express them as lists.
-        """
-        let systemPrompt = prompt + "\n\n# Language\nWrite the summary in \(languageName)." + structuredInstruction
-        var messages: [LLMService.ChatMessage] = [
-            .init(role: "system", content: systemPrompt),
-        ]
-        if let projectContent = projectPromptContent(name: projectName, description: projectDescription) {
-            messages.append(.init(role: "user", content: projectContent))
-        }
-
-        var transcriptContent = "<meeting_id>\(meetingId.uuidString)</meeting_id>\n<transcript>\n\(transcriptText)\n</transcript>"
-        if let noteText, !noteText.isEmpty {
-            transcriptContent += "\n<note>\n\(noteText)\n</note>"
-        }
-
-        if screenshots.isEmpty {
-            messages.append(.init(role: "user", content: transcriptContent))
-        } else {
-            // マルチモーダル: テキスト + スクリーンショット画像（MainActor 外でリサイズ・エンコード）
-            let preparedImageDataURIs = await Task.detached(priority: .userInitiated) {
-                screenshots.map { screenshot in
-                    let imageData = ImageEncoder.resized(screenshot.imageData, maxLongEdge: 1024)
-                    let mimeType = ImageEncoder.mimeType(for: imageData) ?? screenshot.mimeType
-                    return "data:\(mimeType);base64,\(imageData.base64EncodedString())"
-                }
-            }.value
-            var parts: [LLMService.ContentPart] = [.text(transcriptContent)]
-            for (screenshot, preparedImageDataURI) in zip(screenshots, preparedImageDataURIs) {
-                parts.append(.text(screenshotMetadata(for: screenshot, relativeTo: createdAt, recordingSessions: recordingSessions)))
-                parts.append(.imageURL(preparedImageDataURI))
-            }
-            messages.append(.init(role: "user", parts: parts))
-        }
-
-        let responseText = try await LLMService.chatCompletion(
-            endpoint: endpoint,
-            model: model,
-            token: token,
-            messages: messages,
-            maxTokens: maxTokens,
-            responseFormat: SummaryDocumentResponse.responseFormat
-        )
+        let responseText = try await CodexAppServerService.shared.generate(.init(
+            model: settings.codexModelID.nilIfBlank,
+            reasoningEffort: settings.codexReasoningEffort,
+            developerInstructions: systemPrompt,
+            inputs: inputs,
+            outputSchema: SummaryDocumentResponse.outputSchema
+        ))
 
         let context = SummaryRenderContext(meetingId: meetingId, createdAt: createdAt, screenshots: screenshots)
         var document = decodeSummaryDocument(from: responseText, context: context)
@@ -252,10 +184,12 @@ enum SummaryService {
                 ),
             ]
         case "heading":
-            return content.text.isEmpty ? [] : [.heading(
-                level: max(3, dto.level),
-                content: content
-            )]
+            return content.text.isEmpty ? [] : [
+                .heading(
+                    level: max(3, dto.level),
+                    content: content
+                ),
+            ]
         default:
             return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
         }

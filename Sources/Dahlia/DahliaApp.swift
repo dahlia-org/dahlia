@@ -274,11 +274,27 @@ struct DahliaApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var isWaitingForCodexShutdown = false
+
     func applicationDidFinishLaunching(_: Notification) {
         MeetingNotificationService.shared.install()
         ErrorReportingService.start()
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        Task {
+            // Connection errors are surfaced by the AI settings and summary actions.
+            try? await CodexAppServerService.shared.start()
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isWaitingForCodexShutdown else { return .terminateLater }
+        isWaitingForCodexShutdown = true
+        Task {
+            await CodexAppServerService.shared.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {

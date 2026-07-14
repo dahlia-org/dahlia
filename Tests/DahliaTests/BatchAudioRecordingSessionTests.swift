@@ -7,6 +7,7 @@ import GRDB
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     struct BatchAudioRecordingSessionTests {
         @Test
         func localeChangesCreateRangesInOneCAF() async throws {

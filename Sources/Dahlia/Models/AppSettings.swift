@@ -60,20 +60,6 @@ enum CalendarSource: String, CaseIterable, Identifiable {
     }
 }
 
-enum LLMProvider: String, CaseIterable, Identifiable {
-    case openAI
-    case databricks
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .openAI: L10n.openAI
-        case .databricks: L10n.databricks
-        }
-    }
-}
-
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
 final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProviding {
@@ -97,7 +83,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
-    nonisolated static let defaultLLMMaxTokens = 16000
 
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
@@ -413,51 +398,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - LLM 設定
 
-    @AppStorage("llmProvider") var llmProviderRawValue = ""
-    @AppStorage("llmDatabricksWorkspaceURL") var llmDatabricksWorkspaceURL = ""
-    @AppStorage("llmDatabricksAuthenticationType") var llmDatabricksAuthenticationTypeRawValue =
-        DatabricksAuthenticationType.personalAccessToken.rawValue
-    @AppStorage("llmDatabricksProfile") var llmDatabricksProfile = ""
-    @AppStorage("llmModelName") var llmModelRawValue = LLMModel.defaultModel.rawValue
-    @AppStorage("llmMaxTokens") private var storedLLMMaxTokens = AppSettings.defaultLLMMaxTokens
+    @AppStorage("codexModelID") var codexModelID = ""
+    @AppStorage("codexReasoningEffort") var codexReasoningEffort = CodexReasoningEffortOption.defaultValue
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
-
-    var llmMaxTokens: Int {
-        get { max(1, storedLLMMaxTokens) }
-        set { storedLLMMaxTokens = max(1, newValue) }
-    }
-
-    var llmProvider: LLMProvider {
-        get { LLMProvider(rawValue: llmProviderRawValue) ?? .openAI }
-        set { llmProviderRawValue = newValue.rawValue }
-    }
-
-    var llmDatabricksAuthenticationType: DatabricksAuthenticationType {
-        get {
-            DatabricksAuthenticationType(rawValue: llmDatabricksAuthenticationTypeRawValue)
-                ?? .personalAccessToken
-        }
-        set { llmDatabricksAuthenticationTypeRawValue = newValue.rawValue }
-    }
-
-    var llmModel: LLMModel {
-        get { LLMModel.fromPersistedValue(llmModelRawValue) ?? .defaultModel }
-        set { llmModelRawValue = newValue.rawValue }
-    }
-
-    var resolvedLLMModelName: String {
-        llmModel.identifier(for: llmProvider)
-    }
-
-    var resolvedLLMEndpointURL: String {
-        switch llmProvider {
-        case .openAI:
-            return Self.openAIEndpointURL
-        case .databricks:
-            guard llmDatabricksAuthenticationType == .personalAccessToken else { return "" }
-            return Self.databricksEndpointURL(workspaceURL: llmDatabricksWorkspaceURL) ?? ""
-        }
-    }
 
     var llmSummaryLanguage: SummaryLanguage {
         get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }
@@ -561,58 +504,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     </format>
     """
 
-    /// LLM の接続設定が揃っているかどうか。
-    var isLLMConfigComplete: Bool {
-        switch (llmProvider, llmDatabricksAuthenticationType) {
-        case (.openAI, _), (.databricks, .personalAccessToken):
-            resolvedLLMEndpointURL.nilIfBlank != nil && llmAPIToken.nilIfBlank != nil
-        case (.databricks, .oauthCLI):
-            llmDatabricksProfile.nilIfBlank != nil
-        }
-    }
-
-    nonisolated static let openAIEndpointURL = "https://api.openai.com/v1/chat/completions"
-
-    nonisolated static func databricksEndpointURL(workspaceURL: String) -> String? {
-        let trimmedURL = workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard var components = URLComponents(string: trimmedURL),
-              components.scheme == "https",
-              components.host?.isEmpty == false
-        else {
-            return nil
-        }
-
-        components.path = "/ai-gateway/mlflow/v1/chat/completions"
-        components.query = nil
-        components.fragment = nil
-        return components.url?.absoluteString
-    }
-
-    nonisolated static func resolvedDatabricksProfileSelection(
-        current: String,
-        availableProfiles: [String]
-    ) -> String {
-        let current = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let firstAvailableProfile = availableProfiles.first else { return "" }
-        return availableProfiles.contains(current) ? current : firstAvailableProfile
-    }
-
-    /// API トークン（Keychain に保存）。
-    var llmAPIToken: String {
-        get { KeychainService.load(key: "llmAPIToken") ?? "" }
-        set {
-            if newValue.isEmpty {
-                KeychainService.delete(key: "llmAPIToken")
-            } else {
-                do {
-                    try KeychainService.save(key: "llmAPIToken", value: newValue)
-                } catch {
-                    print("[KeychainService] Failed to save API token: \(error)")
-                }
-            }
-            objectWillChange.send()
-        }
-    }
 }
 
 // MARK: - UserDefaults KVO キーパス
