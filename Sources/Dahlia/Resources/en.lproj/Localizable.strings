@@ -589,6 +589,7 @@
 "Codex app-server exited unexpectedly: %@" = "Codex app-server exited unexpectedly: %@";
 "Codex did not respond in time (%@). Try again." = "Codex did not respond in time (%@). Try again.";
 "Codex returned an invalid response." = "Codex returned an invalid response.";
+"Codex produced output faster than Dahlia could process it." = "Codex produced output faster than Dahlia could process it.";
 "Codex request failed: %@" = "Codex request failed: %@";
 "Codex could not complete the request." = "Codex could not complete the request.";
 "Codex generation was interrupted." = "Codex generation was interrupted.";

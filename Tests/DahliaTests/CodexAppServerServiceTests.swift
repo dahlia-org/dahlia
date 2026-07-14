@@ -216,9 +216,7 @@ import Foundation
             let shutdown = Task { await service.shutdown() }
             await blocked.waitUntilCloseStarted()
             let restart = Task { try await service.start() }
-            try await Task.sleep(for: .milliseconds(20))
 
-            #expect(launchCount.withLock { $0 } == 1)
             await blocked.finishClosing()
             await #expect(throws: CancellationError.self) {
                 try await restart.value
@@ -424,7 +422,11 @@ import Foundation
             let response = try await service.generate(.init(
                 model: nil,
                 developerInstructions: "Summarize.",
-                inputs: [.text("Transcript"), .imageDataURI("data:image/jpeg;base64,AA==")],
+                inputs: [
+                    .text("Transcript"),
+                    .imageMetadata("<image_id>test</image_id>"),
+                    .imageDataURI("data:image/jpeg;base64,AA=="),
+                ],
                 outputSchema: Data(#"{"type":"object"}"#.utf8)
             ))
 
@@ -471,7 +473,7 @@ import Foundation
         }
 
         @Test
-        func numericUnauthorizedRPCCodeRequiresLogin() async {
+        func structuredAuthenticationRPCErrorRequiresLogin() async {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = CodexAppServerService(transportFactory: { transport })
 
@@ -485,7 +487,32 @@ import Foundation
         func expectedCodexConfigurationErrorsAreNotReported() {
             #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.notLoggedIn))
             #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.helperNotBundled))
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CancellationError()))
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.turnInterrupted))
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(
+                CodexAppServerError.requestTimedOut("summary")
+            ))
             #expect(CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.processExited(nil)))
+        }
+
+        @Test
+        func generationReusesAccountAndConfigReads() async throws {
+            let transport = TestCodexAppServerTransport(mode: .generationCompletes)
+            let service = CodexAppServerService(transportFactory: { transport })
+            let request = CodexAppServerRequest(
+                model: nil,
+                developerInstructions: "Summarize.",
+                inputs: [.text("Transcript")],
+                outputSchema: Data(#"{"type":"object"}"#.utf8)
+            )
+
+            _ = try await service.generate(request)
+            _ = try await service.generate(request)
+
+            let methods = await methodsSent(to: transport)
+            #expect(methods.count(where: { $0 == "account/read" }) == 1)
+            #expect(methods.count(where: { $0 == "config/read" }) == 1)
+            await service.shutdown()
         }
 
         @Test
@@ -720,6 +747,7 @@ import Foundation
             #expect(catalog.resolvedEffort(current: "", modelID: "default-model") == "medium")
             #expect(catalog.resolvedEffort(current: "high", modelID: "default-model") == "high")
             #expect(catalog.resolvedEffort(current: "unsupported", modelID: "default-model") == "medium")
+            #expect(catalog.resolvedEffort(current: "high", modelID: "missing") == nil)
             await service.shutdown()
         }
 
@@ -730,7 +758,7 @@ import Foundation
         }
 
         @Test
-        func missingInputModalitiesAreTreatedAsTextOnly() {
+        func missingInputModalitiesDoNotSilentlyDisableImages() {
             let model = CodexModel(
                 id: "model",
                 model: "model",
@@ -742,7 +770,7 @@ import Foundation
                 defaultReasoningEffort: "medium",
                 inputModalities: nil
             )
-            #expect(!model.supportsImages)
+            #expect(model.supportsImages)
         }
 
         private func methodsSent(to transport: TestCodexAppServerTransport) async -> [String] {

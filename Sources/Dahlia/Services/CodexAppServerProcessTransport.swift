@@ -13,7 +13,6 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var isErrorDrainStarted = false
     private var isErrorDrainFinished = false
     private var outputLines: [Data] = []
-    private var outputLineOffset = 0
     private var outputWaiter: (id: UUID, continuation: CheckedContinuation<Data?, any Error>)?
     private var outputError: (any Error)?
     private var didReachOutputEOF = false
@@ -21,6 +20,9 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var isClosed = false
     private var stderrTail = Data()
     private let maximumBufferedOutputLines = 256
+    #if DEBUG
+        private var outputBufferOverflowWaiters: [CheckedContinuation<Void, Never>] = []
+    #endif
 
     init(
         executableURL: URL,
@@ -105,11 +107,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
     func receiveLine() async throws -> Data? {
         startDrainsIfNeeded()
-        if outputLineOffset < outputLines.count {
-            let line = outputLines[outputLineOffset]
-            outputLineOffset += 1
-            compactOutputLinesIfNeeded()
-            return line
+        if !outputLines.isEmpty {
+            return outputLines.removeFirst()
         }
         if let outputError { throw outputError }
         if isClosed || didReachOutputEOF { return nil }
@@ -164,8 +163,11 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             process.processIdentifier
         }
 
-        func bufferedOutputLineCountForTesting() -> Int {
-            outputLines.count - outputLineOffset
+        func waitUntilOutputBufferOverflowForTesting() async {
+            if outputError as? CodexAppServerError == .outputBufferOverflow { return }
+            await withCheckedContinuation { continuation in
+                outputBufferOverflowWaiters.append(continuation)
+            }
         }
 
         func terminationStatusForTesting() -> Int32 {
@@ -235,10 +237,14 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             waiter.continuation.resume(returning: line)
         } else {
             guard outputError == nil else { return }
-            if outputLines.count - outputLineOffset >= maximumBufferedOutputLines {
+            if outputLines.count >= maximumBufferedOutputLines {
                 outputLines.removeAll(keepingCapacity: false)
-                outputLineOffset = 0
-                outputError = CodexAppServerError.invalidProtocolResponse
+                outputError = CodexAppServerError.outputBufferOverflow
+                #if DEBUG
+                    let waiters = outputBufferOverflowWaiters
+                    outputBufferOverflowWaiters.removeAll()
+                    waiters.forEach { $0.resume() }
+                #endif
                 return
             }
             outputLines.append(line)
@@ -246,10 +252,10 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     }
 
     private func finishOutput(throwing error: (any Error)? = nil) async {
-        didReachOutputEOF = true
         for _ in 0 ..< 20 where !isErrorDrainFinished {
             try? await Task.sleep(for: .milliseconds(5))
         }
+        didReachOutputEOF = true
         if !isClosed, outputError == nil {
             outputError = CodexAppServerError.processExited(
                 stderrDescription ?? error?.localizedDescription
@@ -262,14 +268,6 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         } else {
             waiter.continuation.resume(returning: nil)
         }
-    }
-
-    private func compactOutputLinesIfNeeded() {
-        guard outputLineOffset >= 64,
-              outputLineOffset * 2 >= outputLines.count
-        else { return }
-        outputLines.removeFirst(outputLineOffset)
-        outputLineOffset = 0
     }
 
     private func cancelOutputWaiter(_ waiterID: UUID) {

@@ -835,6 +835,10 @@ enum L10n {
         bundle: bundle
     ) }
     static var codexInvalidResponse: String { String(localized: "Codex returned an invalid response.", bundle: bundle) }
+    static var codexOutputBufferOverflow: String { String(
+        localized: "Codex produced output faster than Dahlia could process it.",
+        bundle: bundle
+    ) }
     static func codexRequestFailed(_ detail: String) -> String { String(
         localized: "Codex request failed: \(detail)",
         bundle: bundle

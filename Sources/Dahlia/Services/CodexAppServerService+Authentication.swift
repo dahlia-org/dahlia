@@ -1,6 +1,15 @@
 extension CodexAppServerService {
-    nonisolated static func isAuthenticationRPCError(code: Int?, message: String, method: String) -> Bool {
-        if code == 401 { return true }
+    nonisolated static func isAuthenticationRPCError(
+        data: JSONValue?,
+        message: String,
+        method: String
+    ) -> Bool {
+        if let data = data?.objectValue {
+            let requiresRelogin = data["action"]?.stringValue?.lowercased() == "relogin"
+                || data["errorCode"]?.stringValue?.lowercased() == "auth"
+                || data["statusCode"]?.intValue == 401
+            if requiresRelogin { return true }
+        }
         guard method.hasPrefix("account/") else { return false }
         let message = message.lowercased()
         return message.contains("not logged in")

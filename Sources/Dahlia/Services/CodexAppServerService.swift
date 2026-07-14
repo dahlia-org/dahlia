@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 actor CodexAppServerService {
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
@@ -52,6 +53,7 @@ actor CodexAppServerService {
     private let clock: any CodexAppServerClock
     private let transportTimeout: Duration
     private let summaryTimeout: Duration
+    private let logger = Logger(subsystem: "com.dahlia", category: "CodexAppServer")
     private var transport: (any CodexAppServerTransport)?
     private var readerTask: Task<Void, Never>?
     private var connectionGeneration = 0
@@ -64,6 +66,7 @@ actor CodexAppServerService {
     private var generations: [UUID: GenerationContext] = [:]
     private var cachedModels: [CodexModel]?
     private var cachedAccountStatus: AccountStatus?
+    private var cachedConfigReadResult: JSONValue?
     private var loginWaiters: [String: CheckedContinuation<Void, any Error>] = [:]
     private var bufferedLoginOutcomes: [String: LoginOutcome] = [:]
     private var bufferedLoginOutcomeOrder: [String] = []
@@ -393,22 +396,28 @@ private extension CodexAppServerService {
         try await start()
         try Task.checkCancellation()
 
-        let account = try await accountStatus(forceRefresh: true)
+        let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         let availableModels = try await models()
         let selectedModel = request.model
             .flatMap { requestedModel in availableModels.first { $0.model == requestedModel } }
             ?? availableModels.first(where: \CodexModel.isDefault)
-        let generationInputs = request.inputs.contains(where: \CodexAppServerInput.isImage)
-            && selectedModel?.supportsImages != true
-            ? request.inputs.filter { !$0.isImage }
-            : request.inputs
+        let shouldOmitImages = request.inputs.contains(where: \CodexAppServerInput.isImage)
+            && selectedModel?.supportsImages == false
+        let generationInputs: [CodexAppServerInput]
+        if shouldOmitImages {
+            let imageCount = request.inputs.count(where: \CodexAppServerInput.isImage)
+            logger.notice("Omitting \(imageCount, privacy: .public) screenshot image(s) for a text-only Codex model")
+            generationInputs = request.inputs.filter { !$0.isImageRelated }
+        } else {
+            generationInputs = request.inputs
+        }
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-codex-\(generationID.uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         generations[generationID]?.temporaryDirectory = temporaryDirectory
 
-        let configResult = try await self.request(method: "config/read")
+        let configResult = try await configReadResult()
         var threadParams: [String: JSONValue] = try [
             "approvalPolicy": .string("never"),
             "config": Self.summaryThreadConfig(from: configResult, reasoningEffort: request.reasoningEffort),
@@ -430,7 +439,7 @@ private extension CodexAppServerService {
 
         let inputs = generationInputs.map { input in
             switch input {
-            case let .text(text):
+            case let .text(text), let .imageMetadata(text):
                 JSONValue.object(["type": .string("text"), "text": .string(text)])
             case let .imageDataURI(uri):
                 JSONValue.object(["type": .string("image"), "url": .string(uri)])
@@ -578,7 +587,11 @@ private extension CodexAppServerService {
             if let error = object["error"]?.objectValue {
                 let message = error["message"]?.stringValue ?? L10n.codexUnknownError
                 let code = error["code"]?.intValue
-                if Self.isAuthenticationRPCError(code: code, message: message, method: pending.method) {
+                if Self.isAuthenticationRPCError(
+                    data: error["data"],
+                    message: message,
+                    method: pending.method
+                ) {
                     pending.continuation.resume(throwing: CodexAppServerError.notLoggedIn)
                 } else {
                     pending.continuation.resume(throwing: CodexAppServerError.rpcError(
@@ -801,6 +814,7 @@ private extension CodexAppServerService {
         isInitialized = false
         cachedModels = nil
         cachedAccountStatus = nil
+        cachedConfigReadResult = nil
         let currentTransport = transport
         transport = nil
         readerTask?.cancel()
@@ -855,10 +869,19 @@ private extension CodexAppServerService {
     private func cancelLoginAfterWaiterCancellation(_ loginID: String) async {
         ignoredLoginIDs.insert(loginID)
         cancelLoginWaiter(loginID)
-        _ = try? await request(
+        guard !isShuttingDown, isInitialized, transport != nil else { return }
+        _ = try? await requestOnCurrentConnection(
             method: "account/login/cancel",
-            params: .object(["loginId": .string(loginID)])
+            params: .object(["loginId": .string(loginID)]),
+            timeout: transportTimeout
         )
+    }
+
+    private func configReadResult() async throws -> JSONValue {
+        if let cachedConfigReadResult { return cachedConfigReadResult }
+        let result = try await request(method: "config/read")
+        cachedConfigReadResult = result
+        return result
     }
 
     private func timeoutTurnWaiter(_ key: TurnKey) {

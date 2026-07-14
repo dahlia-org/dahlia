@@ -62,12 +62,13 @@ import Foundation
         func stdoutBufferHasAnUpperBound() async throws {
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "i=0; while [ $i -lt 400 ]; do printf '%s\\n' $i; i=$((i+1)); done"]
+                arguments: ["-c", "i=0; while [ $i -lt 400 ]; do printf '%s\\n' $i; i=$((i+1)); done; read _"]
             )
 
-            _ = try await transport.receiveLine()
-            try await Task.sleep(for: .milliseconds(100))
-            #expect(await transport.bufferedOutputLineCountForTesting() <= 256)
+            await transport.waitUntilOutputBufferOverflowForTesting()
+            await #expect(throws: CodexAppServerError.outputBufferOverflow) {
+                _ = try await transport.receiveLine()
+            }
             await transport.close()
         }
     }

@@ -270,8 +270,14 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
             enqueue(jsonValue: .object([
                 "id": .number(Double(requestID)),
                 "error": .object([
-                    "code": .number(401),
-                    "message": .string("authentication failed"),
+                    "code": .number(-32600),
+                    "message": .string("failed to load configuration"),
+                    "data": .object([
+                        "reason": .string("cloudConfigBundle"),
+                        "errorCode": .string("Auth"),
+                        "action": .string("relogin"),
+                        "statusCode": .number(401),
+                    ]),
                 ]),
             ]))
         case "test/first" where mode == .outOfOrder:

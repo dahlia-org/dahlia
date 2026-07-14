@@ -59,6 +59,7 @@ final class CodexModelCatalog {
     }
 
     func resolvedEffort(current: String, modelID: String) -> String? {
+        guard models.contains(where: { $0.model == modelID }) else { return nil }
         let options = effortOptions(modelID: modelID)
         guard !options.isEmpty else { return nil }
         let current = current.trimmingCharacters(in: .whitespacesAndNewlines)

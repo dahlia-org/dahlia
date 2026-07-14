@@ -589,6 +589,7 @@
 "Codex app-server exited unexpectedly: %@" = "Codex app-server が予期せず終了しました: %@";
 "Codex did not respond in time (%@). Try again." = "Codex から時間内に応答がありませんでした（%@）。再試行してください。";
 "Codex returned an invalid response." = "Codex から不正な応答が返されました。";
+"Codex produced output faster than Dahlia could process it." = "Codex の出力速度が Dahlia の処理速度を超えました。";
 "Codex request failed: %@" = "Codex リクエストに失敗しました: %@";
 "Codex could not complete the request." = "Codex がリクエストを完了できませんでした。";
 "Codex generation was interrupted." = "Codex の生成が中断されました。";

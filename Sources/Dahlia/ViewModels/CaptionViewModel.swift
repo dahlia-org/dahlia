@@ -2108,9 +2108,10 @@ final class CaptionViewModel: ObservableObject {
     }
 
     nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {
+        if error is CancellationError { return false }
         guard let error = error as? CodexAppServerError else { return true }
         return switch error {
-        case .helperNotBundled, .notLoggedIn:
+        case .helperNotBundled, .notLoggedIn, .requestTimedOut, .turnInterrupted:
             false
         default:
             true

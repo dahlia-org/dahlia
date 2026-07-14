@@ -12,6 +12,6 @@ struct CodexModel: Codable, Hashable, Identifiable {
     let inputModalities: [String]?
 
     var supportsImages: Bool {
-        inputModalities?.contains("image") ?? false
+        inputModalities?.contains("image") ?? true
     }
 }

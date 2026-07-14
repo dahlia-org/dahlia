@@ -70,7 +70,7 @@ extension SummaryService {
             }
         }.value
         for (screenshot, imageDataURI) in zip(context.screenshots, imageDataURIs) {
-            inputs.append(.text(screenshotMetadata(
+            inputs.append(.imageMetadata(screenshotMetadata(
                 for: screenshot,
                 relativeTo: context.createdAt,
                 recordingSessions: context.recordingSessions
