@@ -463,6 +463,26 @@
 "Live Subtitles" = "ライブ字幕";
 "Settings..." = "設定...";
 "Quit Dahlia" = "Dahlia を終了";
+"Menu Bar Calendar" = "メニューバーのカレンダー";
+"Choose which event details appear in the menu bar. Calendar selection and event filters above are shared." = "メニューバーに表示する予定の詳細を選びます。表示するカレンダーと予定のフィルタは上の設定を共有します。";
+"Show today's events" = "今日の予定を表示";
+"Show ongoing and upcoming events in the menu bar popover." = "進行中と今後の予定をメニューバーのポップオーバーに表示します。";
+"Event title" = "予定のタイトル";
+"Show the current or next event title in the menu bar." = "進行中または次の予定のタイトルをメニューバーに表示します。";
+"Time remaining" = "開始・終了までの時間";
+"Show the time until the event starts or ends." = "予定が開始または終了するまでの時間を表示します。";
+"No more events today" = "今日の予定はもうありません";
+"There are no ongoing or upcoming events today." = "今日の進行中または今後の予定はありません。";
+"Open Calendar Settings" = "カレンダー設定を開く";
+"In progress" = "進行中";
+"Starting soon" = "まもなく開始";
+"Ending soon" = "まもなく終了";
+"Open %@ in Dahlia" = "「%@」を Dahlia で開く";
+"Starts in %@" = "開始まで %@";
+"Ends in %@" = "終了まで %@";
+"%lld hr %lld min" = "%lld時間%lld分";
+"%lld hr" = "%lld時間";
+"%lld min" = "%lld分";
 
 /* Meeting Detection */
 "Meeting Notifications" = "ミーティング通知";

@@ -71,6 +71,31 @@ final class RecordingCoordinator {
         }
     }
 
+    func openCalendarEvent(_ event: CalendarEvent) {
+        MainWindowOpener.shared.openMainWindow()
+        guard let dbQueue = sidebarViewModel.dbQueue,
+              let vault = sidebarViewModel.currentVault else { return }
+
+        let repository = MeetingRepository(dbQueue: dbQueue)
+        do {
+            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
+                sidebarViewModel.selectMeeting(existingMeetingId)
+                return
+            }
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+            ErrorReportingService.capture(error, context: ["source": "calendarEventSelection"])
+            return
+        }
+
+        sidebarViewModel.clearMeetingSelection()
+        viewModel.beginDraftMeeting(
+            from: event,
+            dbQueue: dbQueue,
+            vaultURL: vault.url
+        )
+    }
+
     func startRecording(appendingTo meetingId: UUID) {
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,

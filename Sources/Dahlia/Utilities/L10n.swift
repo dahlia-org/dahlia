@@ -1044,6 +1044,59 @@ enum L10n {
     static var menuBarShowLiveSubtitles: String { String(localized: "Live Subtitles", bundle: bundle) }
     static var settingsMenuItem: String { String(localized: "Settings...", bundle: bundle) }
     static var menuBarQuitDahlia: String { String(localized: "Quit Dahlia", bundle: bundle) }
+    static var menuBarCalendar: String { String(localized: "Menu Bar Calendar", bundle: bundle) }
+    static var menuBarCalendarDescription: String { String(
+        localized: "Choose which event details appear in the menu bar. Calendar selection and event filters above are shared.",
+        bundle: bundle
+    ) }
+    static var menuBarCalendarDisplay: String { String(localized: "Show today's events", bundle: bundle) }
+    static var menuBarCalendarDisplayDescription: String { String(
+        localized: "Show ongoing and upcoming events in the menu bar popover.",
+        bundle: bundle
+    ) }
+    static var menuBarCalendarEventTitle: String { String(localized: "Event title", bundle: bundle) }
+    static var menuBarCalendarEventTitleDescription: String { String(
+        localized: "Show the current or next event title in the menu bar.",
+        bundle: bundle
+    ) }
+    static var menuBarCalendarCountdown: String { String(localized: "Time remaining", bundle: bundle) }
+    static var menuBarCalendarCountdownDescription: String { String(
+        localized: "Show the time until the event starts or ends.",
+        bundle: bundle
+    ) }
+    static var menuBarNoMoreEventsToday: String { String(localized: "No more events today", bundle: bundle) }
+    static var menuBarNoMoreEventsTodayDescription: String { String(
+        localized: "There are no ongoing or upcoming events today.",
+        bundle: bundle
+    ) }
+    static var menuBarOpenCalendarSettings: String { String(localized: "Open Calendar Settings", bundle: bundle) }
+    static var menuBarInProgress: String { String(localized: "In progress", bundle: bundle) }
+    static var menuBarStartingSoon: String { String(localized: "Starting soon", bundle: bundle) }
+    static var menuBarEndingSoon: String { String(localized: "Ending soon", bundle: bundle) }
+
+    static func menuBarOpenEventInDahlia(_ title: String) -> String {
+        String(localized: "Open \(title) in Dahlia", bundle: bundle)
+    }
+
+    static func menuBarStartsIn(_ duration: String) -> String {
+        String(localized: "Starts in \(duration)", bundle: bundle)
+    }
+
+    static func menuBarEndsIn(_ duration: String) -> String {
+        String(localized: "Ends in \(duration)", bundle: bundle)
+    }
+
+    static func menuBarHoursAndMinutes(_ hours: Int, _ minutes: Int) -> String {
+        String(localized: "\(hours) hr \(minutes) min", bundle: bundle)
+    }
+
+    static func menuBarHours(_ hours: Int) -> String {
+        String(localized: "\(hours) hr", bundle: bundle)
+    }
+
+    static func menuBarMinutes(_ minutes: Int) -> String {
+        String(localized: "\(minutes) min", bundle: bundle)
+    }
 
     // MARK: - Meeting Detection
 

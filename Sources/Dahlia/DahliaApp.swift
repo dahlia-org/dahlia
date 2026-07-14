@@ -23,6 +23,7 @@ struct DahliaApp: App {
     @StateObject private var liveSubtitleOverlayService: LiveSubtitleOverlayService
     @State private var liveSubtitleOverlayCoordinator: LiveSubtitleOverlayCoordinator
     @State private var recordingCoordinator: RecordingCoordinator
+    @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
     @State private var appDatabase: AppDatabaseManager?
     @State private var showVaultPicker = true
 
@@ -35,6 +36,7 @@ struct DahliaApp: App {
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel
         )
+        let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
             viewModel: viewModel,
             liveSubtitleOverlayService: liveSubtitleOverlayService
@@ -44,6 +46,7 @@ struct DahliaApp: App {
         _sidebarViewModel = State(initialValue: sidebarViewModel)
         _liveSubtitleOverlayService = StateObject(wrappedValue: liveSubtitleOverlayService)
         _recordingCoordinator = State(initialValue: recordingCoordinator)
+        _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
         _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
     }
 
@@ -118,10 +121,14 @@ struct DahliaApp: App {
         MenuBarExtra {
             MenuBarMenuView(
                 viewModel: viewModel,
-                recordingCoordinator: recordingCoordinator
+                recordingCoordinator: recordingCoordinator,
+                calendarViewModel: menuBarCalendarViewModel
             )
         } label: {
-            MenuBarLabel(viewModel: viewModel)
+            MenuBarLabel(
+                viewModel: viewModel,
+                calendarViewModel: menuBarCalendarViewModel
+            )
         }
         .menuBarExtraStyle(.menu)
     }

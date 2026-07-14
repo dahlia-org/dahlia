@@ -463,6 +463,26 @@
 "Live Subtitles" = "Live Subtitles";
 "Settings..." = "Settings...";
 "Quit Dahlia" = "Quit Dahlia";
+"Menu Bar Calendar" = "Menu Bar Calendar";
+"Choose which event details appear in the menu bar. Calendar selection and event filters above are shared." = "Choose which event details appear in the menu bar. Calendar selection and event filters above are shared.";
+"Show today's events" = "Show today's events";
+"Show ongoing and upcoming events in the menu bar popover." = "Show ongoing and upcoming events in the menu bar popover.";
+"Event title" = "Event title";
+"Show the current or next event title in the menu bar." = "Show the current or next event title in the menu bar.";
+"Time remaining" = "Time remaining";
+"Show the time until the event starts or ends." = "Show the time until the event starts or ends.";
+"No more events today" = "No more events today";
+"There are no ongoing or upcoming events today." = "There are no ongoing or upcoming events today.";
+"Open Calendar Settings" = "Open Calendar Settings";
+"In progress" = "In progress";
+"Starting soon" = "Starting soon";
+"Ending soon" = "Ending soon";
+"Open %@ in Dahlia" = "Open %@ in Dahlia";
+"Starts in %@" = "Starts in %@";
+"Ends in %@" = "Ends in %@";
+"%lld hr %lld min" = "%lld hr %lld min";
+"%lld hr" = "%lld hr";
+"%lld min" = "%lld min";
 
 /* Meeting Detection */
 "Meeting Notifications" = "Meeting Notifications";

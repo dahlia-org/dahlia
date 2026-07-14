@@ -291,6 +291,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("excludeCalendarEventsWithoutConferenceURI") var excludeCalendarEventsWithoutConferenceURI = false
     @AppStorage("excludeDeclinedCalendarEvents") var excludeDeclinedCalendarEvents = true
     @AppStorage("excludeOutOfOfficeCalendarEvents") var excludeOutOfOfficeCalendarEvents = true
+    @AppStorage("menuBarCalendarEnabled") var menuBarCalendarEnabled = true
+    @AppStorage("menuBarCalendarShowsEventTitle") var menuBarCalendarShowsEventTitle = true
+    @AppStorage("menuBarCalendarShowsCountdown") var menuBarCalendarShowsCountdown = true
     nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
     nonisolated static let googleOAuthClientSecretOverrideKey = "googleOAuthClientSecretOverride"
     @AppStorage(AppSettings.googleOAuthClientIDOverrideUserDefaultsKey) var googleOAuthClientIDOverride = ""

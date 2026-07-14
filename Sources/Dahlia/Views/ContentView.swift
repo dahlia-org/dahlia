@@ -94,7 +94,7 @@ struct ContentView: View {
             )
         } else {
             CalendarScheduleView(
-                onSelectEvent: handleCalendarEventSelection,
+                onSelectEvent: recordingCoordinator.openCalendarEvent,
                 onCreateMeeting: recordingCoordinator.createEmptyMeeting
             )
         }
@@ -115,29 +115,6 @@ struct ContentView: View {
             viewModel.clearCurrentMeeting()
         }
         sidebarViewModel.clearMeetingSelection()
-    }
-
-    private func handleCalendarEventSelection(_ event: CalendarEvent) {
-        guard let dbQueue = sidebarViewModel.dbQueue,
-              let vault = sidebarViewModel.currentVault else { return }
-
-        let repository = MeetingRepository(dbQueue: dbQueue)
-        do {
-            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
-                sidebarViewModel.selectMeeting(existingMeetingId)
-                return
-            }
-        } catch {
-            viewModel.errorMessage = error.localizedDescription
-            return
-        }
-
-        sidebarViewModel.clearMeetingSelection()
-        viewModel.beginDraftMeeting(
-            from: event,
-            dbQueue: dbQueue,
-            vaultURL: vault.url
-        )
     }
 
     private func handleMeetingSelection(_ meetingId: UUID) {
