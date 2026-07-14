@@ -23,8 +23,8 @@ Dahlia は、マイクとシステム音声を同時にキャプチャし、Appl
 
 - Swift 6.2 / SwiftUI / macOS 26+ / Swift 6 strict concurrency。
 - ビルドシステムは Swift Package Manager のみ。Xcode プロジェクトは生成しない。
-- SwiftPM の外部依存は GRDB.swift と sentry-cocoa の 2 つだけ。加えて、固定バージョンの OpenAI Codex CLI を
-  Cargo でビルドし、アプリの実行時ヘルパーとして同梱する。依存の追加・更新は事前に確認を取る。
+- SwiftPM の外部依存は GRDB.swift と sentry-cocoa の 2 つだけ。加えて、固定バージョンの OpenAI Codex CLI の
+  公式 arm64 Release バイナリを検証し、アプリの実行時ヘルパーとして同梱する。依存の追加・更新は事前に確認を取る。
 - リリース済みユーザーの DB を破壊しない。登録済みマイグレーションは変更せず、Database の `AGENTS.md` に従って新しいマイグレーションを追加する。
 
 ## 作業範囲と承認

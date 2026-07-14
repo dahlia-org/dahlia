@@ -87,6 +87,7 @@ if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
     codesign_path "$SIGNED_RESOURCE_BUNDLE"
 fi
 
+codesign --remove-signature "${HELPERS}/codex"
 codesign_path "${HELPERS}/codex"
 
 if has_entitlements "$ENTITLEMENTS_PATH"; then

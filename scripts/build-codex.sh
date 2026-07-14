@@ -2,19 +2,16 @@
 set -euo pipefail
 
 CODEX_VERSION="0.144.4"
-CODEX_TAG="rust-v${CODEX_VERSION}"
-CODEX_COMMIT="8c68d4c87dc54d38861f5114e920c3de2efa5876"
-RUST_TOOLCHAIN="1.95.0"
 TARGET="aarch64-apple-darwin"
-REPOSITORY="https://github.com/openai/codex.git"
-UPSTREAM_CARGO_LOCK_SHA256="175793a40a3147db1fee08fd9db0acc59312c344b3513dd7ee316f5446d8119e"
-NORMALIZED_CARGO_LOCK_SHA256="01b177dee91b76aa82cb1fdd67ae202794cabdbe3f71846960263433a7cdd6cc"
-WORKSPACE_CRATE_COUNT=132
+ASSET_NAME="codex-${TARGET}.tar.gz"
+ASSET_SHA256="77c8969a481302f9db1d9ea2a6c21c083abae3f1a8fc8a7275dc38323699391e"
+ARCHIVE_BINARY="codex-${TARGET}"
+DOWNLOAD_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/${ASSET_NAME}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-SOURCE_DIR="${PROJECT_DIR}/.build/codex-src"
-TARGET_DIR="${PROJECT_DIR}/.build/codex-cargo"
+CACHE_DIR="${PROJECT_DIR}/.build/codex-download"
+ARCHIVE_PATH="${CACHE_DIR}/${ASSET_NAME}"
 OUTPUT_DIR="${PROJECT_DIR}/.build/codex-helper"
 OUTPUT_BINARY="${OUTPUT_DIR}/codex"
 MODE="${1:-build}"
@@ -33,25 +30,36 @@ if [ "$MODE" = "--print-version" ]; then
 fi
 
 if [ "$MODE" = "--print-cache-key" ]; then
-    echo "codex-${CODEX_VERSION}-${CODEX_COMMIT}-rust-${RUST_TOOLCHAIN}-${TARGET}-v1"
+    echo "codex-release-${CODEX_VERSION}-${TARGET}-${ASSET_SHA256}-v1"
     exit 0
 fi
 
 if [ "$(uname -m)" != "arm64" ]; then
-    echo "error: Dahlia's bundled Codex helper is built for Apple Silicon only" >&2
+    echo "error: Dahlia's bundled Codex helper supports Apple Silicon only" >&2
     exit 1
 fi
 
+for command in chmod cmp codesign file grep lipo mkdir shasum; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "error: required command not found: ${command}" >&2
+        exit 1
+    fi
+done
+
 validate_output() {
+    local expected file_path reference validation_home
+
     for reference in \
         "${PROJECT_DIR}/Sources/Dahlia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Codex CLI ${CODEX_VERSION}" \
+        "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Asset: ${ASSET_NAME}" \
+        "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:SHA-256: ${ASSET_SHA256}" \
         "${PROJECT_DIR}/README.md:Codex ${CODEX_VERSION}" \
         "${PROJECT_DIR}/README_ja.md:Codex ${CODEX_VERSION}"; do
-        file="${reference%%:*}"
+        file_path="${reference%%:*}"
         expected="${reference#*:}"
-        if ! grep -Fq "$expected" "$file"; then
-            echo "error: ${file} does not reference bundled Codex ${CODEX_VERSION}" >&2
+        if ! grep -Fq "$expected" "$file_path"; then
+            echo "error: ${file_path} does not reference bundled Codex ${CODEX_VERSION}" >&2
             exit 1
         fi
     done
@@ -59,121 +67,100 @@ validate_output() {
         echo "error: bundled Codex helper is missing: ${OUTPUT_BINARY}" >&2
         exit 1
     fi
+    case "$(file -b "$OUTPUT_BINARY")" in
+        "Mach-O 64-bit executable arm64"*) ;;
+        *)
+            echo "error: bundled Codex is not an arm64 Mach-O executable" >&2
+            exit 1
+            ;;
+    esac
     if [ "$(lipo -archs "$OUTPUT_BINARY")" != "arm64" ]; then
         echo "error: bundled Codex must contain only arm64" >&2
         exit 1
     fi
-    if [ "$("$OUTPUT_BINARY" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
+    validation_home="${CACHE_DIR}/validation-home"
+    mkdir -p "$validation_home"
+    chmod 700 "$validation_home"
+    if [ "$(CODEX_HOME="$validation_home" "$OUTPUT_BINARY" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
         echo "error: bundled Codex must report exactly codex-cli ${CODEX_VERSION}" >&2
         exit 1
     fi
-    for notice in LICENSE NOTICE.txt; do
-        if [ ! -s "${OUTPUT_DIR}/${notice}" ]; then
-            echo "error: bundled Codex ${notice} is missing" >&2
-            exit 1
-        fi
-    done
+    if ! codesign --verify --strict "$OUTPUT_BINARY"; then
+        echo "error: cached Codex validation signature is invalid" >&2
+        exit 1
+    fi
+    if ! cmp -s "${PROJECT_DIR}/Resources/Codex-LICENSE" "${OUTPUT_DIR}/LICENSE"; then
+        echo "error: bundled Codex LICENSE is missing or outdated" >&2
+        exit 1
+    fi
+    if ! cmp -s "${PROJECT_DIR}/Resources/Codex-NOTICE.txt" "${OUTPUT_DIR}/NOTICE.txt"; then
+        echo "error: bundled Codex NOTICE.txt is missing or outdated" >&2
+        exit 1
+    fi
 }
 
 if [ "$MODE" = "--validate-only" ]; then
-    command -v lipo >/dev/null 2>&1 || {
-        echo "error: required command not found: lipo" >&2
-        exit 1
-    }
     validate_output
     echo "=== Cached Codex helper verified: ${OUTPUT_BINARY} ==="
     exit 0
 fi
 
-for command in git cargo rustup lipo shasum sed grep; do
+for command in cp curl cut mv rm tar; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "error: required command not found: ${command}" >&2
         exit 1
     fi
 done
 
-if ! cargo "+${RUST_TOOLCHAIN}" --version >/dev/null 2>&1; then
-    cat >&2 <<EOF
-error: Rust ${RUST_TOOLCHAIN} is required to build bundled Codex.
+archive_sha256() {
+    shasum -a 256 "$1" | cut -d ' ' -f 1
+}
 
-Install the pinned toolchain, then retry:
-  rustup toolchain install ${RUST_TOOLCHAIN} --profile minimal
-EOF
-    exit 1
+verify_archive() {
+    [ -f "$ARCHIVE_PATH" ] && [ "$(archive_sha256 "$ARCHIVE_PATH")" = "$ASSET_SHA256" ]
+}
+
+mkdir -p "$CACHE_DIR"
+if [ -f "$ARCHIVE_PATH" ] && ! verify_archive; then
+    echo "warning: discarding cached Codex archive with an invalid SHA-256" >&2
+    rm -f "$ARCHIVE_PATH"
 fi
 
-mkdir -p "$(dirname "$SOURCE_DIR")" "$TARGET_DIR" "$OUTPUT_DIR"
-if [ ! -d "${SOURCE_DIR}/.git" ]; then
-    git clone --depth 1 --branch "$CODEX_TAG" "$REPOSITORY" "$SOURCE_DIR"
-fi
-
-ACTUAL_COMMIT="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
-if [ "$ACTUAL_COMMIT" != "$CODEX_COMMIT" ]; then
-    echo "error: ${CODEX_TAG} resolved to ${ACTUAL_COMMIT}, expected ${CODEX_COMMIT}" >&2
-    exit 1
-fi
-
-# The rust-v0.144.4 release commit updates workspace.package.version to 0.144.4,
-# but its checked-in Cargo.lock still records the 132 workspace crates as 0.0.0.
-# Cargo therefore rejects the otherwise pinned lockfile when --locked is used.
-# Normalize only that known release artifact mismatch, guarded by hashes before
-# and after the transformation so dependency versions and checksums cannot drift.
-CARGO_LOCK="${SOURCE_DIR}/codex-rs/Cargo.lock"
-CARGO_LOCK_SHA256="$(shasum -a 256 "$CARGO_LOCK" | cut -d ' ' -f 1)"
-if [ "$CARGO_LOCK_SHA256" = "$UPSTREAM_CARGO_LOCK_SHA256" ]; then
-    WORKSPACE_CRATES="$(grep -c '^version = "0\.0\.0"$' "$CARGO_LOCK")"
-    if [ "$WORKSPACE_CRATES" -ne "$WORKSPACE_CRATE_COUNT" ]; then
-        echo "error: expected ${WORKSPACE_CRATE_COUNT} unreleased workspace crates, found ${WORKSPACE_CRATES}" >&2
+if [ ! -f "$ARCHIVE_PATH" ]; then
+    TEMP_ARCHIVE="${ARCHIVE_PATH}.download"
+    rm -f "$TEMP_ARCHIVE"
+    echo "=== Downloading Codex ${CODEX_VERSION} (${TARGET}) ==="
+    curl --fail --location --proto '=https' --proto-redir '=https' --retry 3 \
+        --output "$TEMP_ARCHIVE" "$DOWNLOAD_URL"
+    if [ "$(archive_sha256 "$TEMP_ARCHIVE")" != "$ASSET_SHA256" ]; then
+        rm -f "$TEMP_ARCHIVE"
+        echo "error: downloaded Codex archive SHA-256 did not match the pinned release" >&2
         exit 1
     fi
+    mv "$TEMP_ARCHIVE" "$ARCHIVE_PATH"
+fi
 
-    CARGO_LOCK_TEMP="${CARGO_LOCK}.dahlia.tmp"
-    sed "s/^version = \"0\\.0\\.0\"$/version = \"${CODEX_VERSION}\"/" "$CARGO_LOCK" > "$CARGO_LOCK_TEMP"
-    CARGO_LOCK_NORMALIZED_SHA256="$(shasum -a 256 "$CARGO_LOCK_TEMP" | cut -d ' ' -f 1)"
-    if [ "$CARGO_LOCK_NORMALIZED_SHA256" != "$NORMALIZED_CARGO_LOCK_SHA256" ]; then
-        rm -f "$CARGO_LOCK_TEMP"
-        echo "error: normalized Cargo.lock checksum did not match the pinned release lockfile" >&2
-        exit 1
-    fi
-    mv "$CARGO_LOCK_TEMP" "$CARGO_LOCK"
-elif [ "$CARGO_LOCK_SHA256" != "$NORMALIZED_CARGO_LOCK_SHA256" ]; then
-    echo "error: Cargo.lock does not match the pinned ${CODEX_TAG} release" >&2
+if [ "$(tar -tzf "$ARCHIVE_PATH")" != "$ARCHIVE_BINARY" ]; then
+    echo "error: Codex release archive has an unexpected layout" >&2
     exit 1
 fi
 
 if [ "$MODE" = "--prepare-only" ]; then
-    echo "=== Codex source ready for Cargo cache restore: ${SOURCE_DIR} ==="
+    echo "=== Codex release archive cached: ${ARCHIVE_PATH} ==="
     exit 0
 fi
 
-echo "=== Building Codex ${CODEX_VERSION} (${TARGET}) ==="
-(
-    cd "${SOURCE_DIR}/codex-rs"
-    CARGO_TARGET_DIR="$TARGET_DIR" cargo "+${RUST_TOOLCHAIN}" build \
-        --locked \
-        --release \
-        --bin codex \
-        --target "$TARGET"
-)
-
-BUILT_BINARY="${TARGET_DIR}/${TARGET}/release/codex"
-if [ ! -x "$BUILT_BINARY" ]; then
-    echo "error: Cargo did not produce ${BUILT_BINARY}" >&2
-    exit 1
-fi
-if [ "$(lipo -archs "$BUILT_BINARY")" != "arm64" ]; then
-    echo "error: bundled Codex must contain only arm64" >&2
-    exit 1
-fi
-if [ "$("$BUILT_BINARY" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
-    echo "error: built Codex does not report exactly codex-cli ${CODEX_VERSION}" >&2
-    exit 1
-fi
-
-cp "$BUILT_BINARY" "$OUTPUT_BINARY"
+EXTRACT_DIR="${CACHE_DIR}/extracted-${CODEX_VERSION}-${TARGET}"
+rm -rf "$EXTRACT_DIR"
+mkdir -p "$EXTRACT_DIR" "$OUTPUT_DIR"
+tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
+cp "${EXTRACT_DIR}/${ARCHIVE_BINARY}" "$OUTPUT_BINARY"
+codesign --remove-signature "$OUTPUT_BINARY"
+codesign --force --sign - "$OUTPUT_BINARY"
 chmod 755 "$OUTPUT_BINARY"
-cp "${SOURCE_DIR}/LICENSE" "${OUTPUT_DIR}/LICENSE"
+cp "${PROJECT_DIR}/Resources/Codex-LICENSE" "${OUTPUT_DIR}/LICENSE"
 cp "${PROJECT_DIR}/Resources/Codex-NOTICE.txt" "${OUTPUT_DIR}/NOTICE.txt"
-validate_output
+rm -rf "$EXTRACT_DIR"
 
+validate_output
 echo "=== Codex helper ready: ${OUTPUT_BINARY} ==="

@@ -20,7 +20,6 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Apple Silicon (arm64)
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
-- Rust 1.95.0 via rustup (for signed app bundles)
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. Sign in explicitly from **Settings → AI Connection** before generating a summary. The browser-based ChatGPT login is stored under Dahlia's Application Support directory.
 
@@ -51,7 +50,7 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **Note:** `swift run` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. On its first run, the app-bundle scripts fetch the pinned Codex source and build Codex 0.144.4 with Cargo for `aarch64-apple-darwin`.
+> **Note:** `swift run` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. On their first run, the app-bundle scripts download the pinned official Codex 0.144.4 GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
 
 If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run` and `run-dev.sh` do not send Sentry events by default.
 
