@@ -3,6 +3,10 @@ import AppKit
 @MainActor
 enum CalendarEventDescriptionFormatter {
     private static let allowedLinkSchemes = Set(["http", "https", "mailto"])
+    private static let supportedHTMLTags = Set([
+        "a", "b", "blockquote", "body", "br", "code", "del", "div", "em", "font", "h1", "h2", "h3", "h4", "h5", "h6",
+        "hr", "html", "i", "li", "ol", "p", "pre", "span", "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
+    ])
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
     static func attributedString(from description: String) -> AttributedString {
@@ -51,7 +55,8 @@ enum CalendarEventDescriptionFormatter {
     }
 
     private static func containsHTML(_ text: String) -> Bool {
-        text.contains(#/<\/?[A-Za-z][^>]*>/#)
+        text.matches(of: #/<\s*\/?\s*([A-Za-z][A-Za-z0-9]*)\b[^>]*>/#)
+            .contains { supportedHTMLTags.contains($0.1.lowercased()) }
     }
 
     private static func isAllowed(_ link: URL?) -> Bool {

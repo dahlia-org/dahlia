@@ -39,6 +39,15 @@ import Foundation
         }
 
         @Test
+        func preservesAngleBracketedPlainText() {
+            let description = "Discuss <launch>\nAlice <alice@example.com>"
+
+            let attributed = CalendarEventDescriptionFormatter.attributedString(from: description)
+
+            #expect(String(attributed.characters) == description)
+        }
+
+        @Test
         func removesUnsupportedLinkSchemes() {
             let description = #"<a href="javascript:alert(1)">Unsafe</a>"#
 
