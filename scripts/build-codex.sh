@@ -20,12 +20,17 @@ OUTPUT_BINARY="${OUTPUT_DIR}/codex"
 MODE="${1:-build}"
 
 case "$MODE" in
-    build|--prepare-only|--validate-only|--print-cache-key) ;;
+    build|--prepare-only|--validate-only|--print-cache-key|--print-version) ;;
     *)
-        echo "error: usage: $0 [--prepare-only|--validate-only|--print-cache-key]" >&2
+        echo "error: usage: $0 [--prepare-only|--validate-only|--print-cache-key|--print-version]" >&2
         exit 1
         ;;
 esac
+
+if [ "$MODE" = "--print-version" ]; then
+    echo "$CODEX_VERSION"
+    exit 0
+fi
 
 if [ "$MODE" = "--print-cache-key" ]; then
     echo "codex-${CODEX_VERSION}-${CODEX_COMMIT}-rust-${RUST_TOOLCHAIN}-${TARGET}-v1"
@@ -38,6 +43,18 @@ if [ "$(uname -m)" != "arm64" ]; then
 fi
 
 validate_output() {
+    for reference in \
+        "${PROJECT_DIR}/Sources/Dahlia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
+        "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Codex CLI ${CODEX_VERSION}" \
+        "${PROJECT_DIR}/README.md:Codex ${CODEX_VERSION}" \
+        "${PROJECT_DIR}/README_ja.md:Codex ${CODEX_VERSION}"; do
+        file="${reference%%:*}"
+        expected="${reference#*:}"
+        if ! grep -Fq "$expected" "$file"; then
+            echo "error: ${file} does not reference bundled Codex ${CODEX_VERSION}" >&2
+            exit 1
+        fi
+    done
     if [ ! -x "$OUTPUT_BINARY" ]; then
         echo "error: bundled Codex helper is missing: ${OUTPUT_BINARY}" >&2
         exit 1

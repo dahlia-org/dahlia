@@ -372,51 +372,6 @@
 "Only selected languages will appear in the language picker. All languages are shown if none are selected." = "Only selected languages will appear in the language picker. All languages are shown if none are selected.";
 
 /* Settings - LLM */
-"OpenAI" = "OpenAI";
-"Databricks" = "Databricks";
-"Model Provider" = "Model Provider";
-"Choose OpenAI or Databricks AI Gateway." = "Choose OpenAI or Databricks AI Gateway.";
-"Endpoint URL" = "Endpoint URL";
-"Uses OpenAI's Chat Completions API." = "Uses OpenAI's Chat Completions API.";
-"Databricks Workspace ID" = "Databricks Workspace ID";
-"Databricks Workspace URL" = "Databricks Workspace URL";
-"Enter the Workspace URL associated with this personal access token." = "Enter the Workspace URL associated with this personal access token.";
-"Authentication Type" = "Authentication Type";
-"Choose a Personal Access Token or OAuth through Databricks CLI." = "Choose a Personal Access Token or OAuth through Databricks CLI.";
-"Personal Access Token" = "Personal Access Token";
-"OAuth (Databricks CLI)" = "OAuth (Databricks CLI)";
-"Databricks CLI Profile" = "Databricks CLI Profile";
-"OAuth credentials are read from this Databricks CLI profile." = "OAuth credentials are read from this Databricks CLI profile.";
-"No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh." = "No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh.";
-"Refresh Profiles" = "Refresh Profiles";
-"Databricks CLI was not found. Install it and relaunch Dahlia." = "Databricks CLI was not found. Install it and relaunch Dahlia.";
-"Enter a Databricks CLI profile." = "Enter a Databricks CLI profile.";
-"The selected Databricks CLI profile was not found." = "The selected Databricks CLI profile was not found.";
-"Enter a valid HTTPS Databricks Workspace URL." = "Enter a valid HTTPS Databricks Workspace URL.";
-"The selected Databricks CLI profile does not provide a Workspace ID." = "The selected Databricks CLI profile does not provide a Workspace ID.";
-"The selected Databricks CLI profile does not provide a valid workspace URL." = "The selected Databricks CLI profile does not provide a valid workspace URL.";
-"Databricks CLI authentication failed: %@" = "Databricks CLI authentication failed: %@";
-"Databricks CLI authentication failed." = "Databricks CLI authentication failed.";
-"Databricks CLI returned an invalid OAuth token response." = "Databricks CLI returned an invalid OAuth token response.";
-"Databricks CLI returned an invalid profiles response." = "Databricks CLI returned an invalid profiles response.";
-"Enter an OpenAI API token." = "Enter an OpenAI API token.";
-"Enter a Databricks personal access token." = "Enter a Databricks personal access token.";
-"Endpoint will be generated after entering a Workspace URL." = "Endpoint will be generated after entering a Workspace URL.";
-"The selected model is mapped to the provider's model ID." = "The selected model is mapped to the provider's model ID.";
-"GPT-5.6 Sol" = "GPT-5.6 Sol";
-"GPT-5.6 Terra" = "GPT-5.6 Terra";
-"GPT-5.6 Luna" = "GPT-5.6 Luna";
-"GPT-5.5" = "GPT-5.5";
-"Maximum Output Tokens" = "Maximum Output Tokens";
-"Limits the number of tokens generated for each summary." = "Limits the number of tokens generated for each summary.";
-"API Token" = "API Token";
-"Token is stored securely in Keychain." = "Token is stored securely in Keychain.";
-"Test Connection" = "Test Connection";
-"Testing..." = "Testing...";
-"Connection successful" = "Connection successful";
-"Invalid endpoint URL" = "Invalid endpoint URL";
-"Unexpected response from server" = "Unexpected response from server";
-"HTTP %lld: %@" = "HTTP %lld: %@";
 "Empty response from server" = "Empty response from server";
 
 /* Summary */
@@ -438,7 +393,6 @@
 "Open Templates Folder" = "Open Templates Folder";
 "Reset Presets" = "Reset Presets";
 "Select a template from _custom_instructions/ in the vault." = "Select a template from _custom_instructions/ in the vault.";
-"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM configuration is incomplete. Please set provider settings, model, and API token in Settings.";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording.";
@@ -638,7 +592,6 @@
 "Codex request failed: %@" = "Codex request failed: %@";
 "Codex could not complete the request." = "Codex could not complete the request.";
 "Codex generation was interrupted." = "Codex generation was interrupted.";
-"The selected Codex model does not support screenshot input." = "The selected Codex model does not support screenshot input.";
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Codex Version" = "Codex Version";
 "Codex Account" = "Codex Account";

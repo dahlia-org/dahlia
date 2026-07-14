@@ -13,17 +13,6 @@ enum CodexAppServerError: LocalizedError, Equatable {
     case turnFailed(String?)
     case turnInterrupted
     case emptyResponse
-    case selectedModelDoesNotSupportImages
-
-    var isRetryable: Bool {
-        switch self {
-        case .helperNotBundled, .notLoggedIn, .selectedModelDoesNotSupportImages:
-            false
-        case .launchFailed, .loginFailed, .loginPageCouldNotOpen, .processExited, .requestTimedOut, .invalidProtocolResponse,
-             .rpcError, .turnFailed, .turnInterrupted, .emptyResponse:
-            true
-        }
-    }
 
     var errorDescription: String? {
         switch self {
@@ -40,7 +29,6 @@ enum CodexAppServerError: LocalizedError, Equatable {
         case let .turnFailed(detail): detail.map(L10n.codexRequestFailed) ?? L10n.codexTurnFailed
         case .turnInterrupted: L10n.codexTurnInterrupted
         case .emptyResponse: L10n.llmErrorEmptyResponse
-        case .selectedModelDoesNotSupportImages: L10n.codexModelDoesNotSupportImages
         }
     }
 }

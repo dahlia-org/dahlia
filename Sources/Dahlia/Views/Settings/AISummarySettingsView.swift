@@ -15,7 +15,7 @@ struct AISummarySettingsView: View {
                             .controlSize(.small)
                     }
                 } else if !catalog.models.isEmpty {
-                    Picker(selection: $settings.codexModelID) {
+                    Picker(selection: modelSelection) {
                         ForEach(catalog.models) { model in
                             Text(model.displayName).tag(model.model)
                         }
@@ -71,16 +71,28 @@ struct AISummarySettingsView: View {
 
     private func loadModels(forceRefresh: Bool) async {
         await catalog.load(forceRefresh: forceRefresh)
-        if let selection = catalog.resolvedSelection(current: settings.codexModelID) {
+        guard !catalog.models.isEmpty else { return }
+        if let selection = catalog.selectionToPersist(current: settings.codexModelID) {
             settings.codexModelID = selection
         }
         resolveEffortSelection()
     }
 
     private func resolveEffortSelection() {
-        settings.codexReasoningEffort = catalog.resolvedEffort(
+        guard let effort = catalog.resolvedEffort(
             current: settings.codexReasoningEffort,
             modelID: settings.codexModelID
+        ) else { return }
+        settings.codexReasoningEffort = effort
+    }
+
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: {
+                catalog.resolvedSelection(current: settings.codexModelID)
+                    ?? settings.codexModelID
+            },
+            set: { settings.codexModelID = $0 }
         )
     }
 }

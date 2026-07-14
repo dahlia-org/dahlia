@@ -134,7 +134,6 @@ actor CodexAppServerService {
         await stopConnection(error: CancellationError())
         resumeStartupWaiters(throwing: CancellationError())
         isStarting = false
-        isShuttingDown = false
     }
 
     func request(
@@ -143,18 +142,11 @@ actor CodexAppServerService {
         timeout: Duration? = nil
     ) async throws -> JSONValue {
         try await start()
-        do {
-            return try await requestOnCurrentConnection(
-                method: method,
-                params: params,
-                timeout: timeout ?? transportTimeout
-            )
-        } catch let error as CodexAppServerError {
-            if case .requestTimedOut = error {
-                await stopConnection(error: error)
-            }
-            throw error
-        }
+        return try await requestOnCurrentConnection(
+            method: method,
+            params: params,
+            timeout: timeout ?? transportTimeout
+        )
     }
 
     func models(forceRefresh: Bool = false) async throws -> [CodexModel] {
@@ -407,11 +399,10 @@ private extension CodexAppServerService {
         let selectedModel = request.model
             .flatMap { requestedModel in availableModels.first { $0.model == requestedModel } }
             ?? availableModels.first(where: \CodexModel.isDefault)
-        if request.inputs.contains(where: \CodexAppServerInput.isImage),
-           let selectedModel,
-           !selectedModel.supportsImages {
-            throw CodexAppServerError.selectedModelDoesNotSupportImages
-        }
+        let generationInputs = request.inputs.contains(where: \CodexAppServerInput.isImage)
+            && selectedModel?.supportsImages != true
+            ? request.inputs.filter { !$0.isImage }
+            : request.inputs
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-codex-\(generationID.uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
@@ -426,7 +417,7 @@ private extension CodexAppServerService {
                 request.developerInstructions + "\nDo not call tools. Return only the requested JSON."
             ),
             "ephemeral": .bool(true),
-            "sandbox": .string("read-only"),
+            "sandbox": .string("readOnly"),
         ]
         if let selectedModel {
             threadParams["model"] = .string(selectedModel.model)
@@ -437,7 +428,7 @@ private extension CodexAppServerService {
         }
         generations[generationID]?.threadID = threadID
 
-        let inputs = request.inputs.map { input in
+        let inputs = generationInputs.map { input in
             switch input {
             case let .text(text):
                 JSONValue.object(["type": .string("text"), "text": .string(text)])
@@ -477,10 +468,14 @@ private extension CodexAppServerService {
             cancelTurnWaiter(key)
             bufferedTurnMessages.removeValue(forKey: key)
         }
-        if let threadID = context.threadID {
-            _ = try? await request(
+        if !isShuttingDown,
+           isInitialized,
+           transport != nil,
+           let threadID = context.threadID {
+            _ = try? await requestOnCurrentConnection(
                 method: "thread/unsubscribe",
-                params: .object(["threadId": .string(threadID)])
+                params: .object(["threadId": .string(threadID)]),
+                timeout: transportTimeout
             )
         }
         if let temporaryDirectory = context.temporaryDirectory {
@@ -582,11 +577,12 @@ private extension CodexAppServerService {
             guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
             if let error = object["error"]?.objectValue {
                 let message = error["message"]?.stringValue ?? L10n.codexUnknownError
-                if Self.isAuthenticationError(message) {
+                let code = error["code"]?.intValue
+                if Self.isAuthenticationRPCError(code: code, message: message, method: pending.method) {
                     pending.continuation.resume(throwing: CodexAppServerError.notLoggedIn)
                 } else {
                     pending.continuation.resume(throwing: CodexAppServerError.rpcError(
-                        code: error["code"]?.intValue,
+                        code: code,
                         message: message
                     ))
                 }
@@ -774,8 +770,9 @@ private extension CodexAppServerService {
         case "interrupted":
             waiter.continuation.resume(throwing: CodexAppServerError.turnInterrupted)
         case "failed":
-            let detail = turn["error"]?.objectValue?["message"]?.stringValue
-            if Self.isAuthenticationError(detail) {
+            let turnError = turn["error"]?.objectValue
+            let detail = turnError?["message"]?.stringValue
+            if Self.isAuthenticationTurnError(turnError) {
                 waiter.continuation.resume(throwing: CodexAppServerError.notLoggedIn)
             } else {
                 waiter.continuation.resume(throwing: CodexAppServerError.turnFailed(detail))
@@ -906,12 +903,14 @@ private extension CodexAppServerService {
               let key = context.key
         else { return }
         generations[generationID]?.didSendInterrupt = true
-        _ = try? await request(
+        guard !isShuttingDown, isInitialized, transport != nil else { return }
+        _ = try? await requestOnCurrentConnection(
             method: "turn/interrupt",
             params: .object([
                 "threadId": .string(key.threadID),
                 "turnId": .string(key.turnID),
-            ])
+            ]),
+            timeout: transportTimeout
         )
     }
 
@@ -955,14 +954,6 @@ private extension CodexAppServerService {
 
     private func decode<T: Decodable>(_ value: JSONValue) throws -> T {
         try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
-    }
-
-    private static func isAuthenticationError(_ message: String?) -> Bool {
-        guard let message = message?.lowercased() else { return false }
-        return message.contains("not logged in")
-            || message.contains("login required")
-            || message.contains("sign in required")
-            || message.contains("unauthorized")
     }
 
     private static func isSummaryTimeout(_ error: any Error) -> Bool {

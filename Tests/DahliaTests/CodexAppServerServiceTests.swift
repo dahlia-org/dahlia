@@ -139,37 +139,77 @@ import Foundation
         }
 
         @Test
-        func timeoutClosesTransportAndNextRequestRestarts() async throws {
-            let blocked = TestCodexAppServerTransport(mode: .blockFirstModelList)
-            let replacement = TestCodexAppServerTransport(mode: .models)
-            let transports = Mutex([blocked, replacement])
+        func requestTimeoutKeepsHealthySharedTransport() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockFirstModelList)
             let service = CodexAppServerService(
-                transportFactory: {
-                    transports.withLock { available in available.removeFirst() }
-                },
+                transportFactory: { transport },
                 transportTimeout: .milliseconds(20)
             )
 
             await #expect(throws: CodexAppServerError.self) {
                 _ = try await service.models(forceRefresh: true)
             }
-            #expect(await blocked.isClosed)
+            #expect(await !transport.isClosed)
 
             let models = try await service.models(forceRefresh: true)
             #expect(models.map(\.model) == ["default-model"])
-            #expect(await (methodsSent(to: replacement)).contains("initialize"))
+            #expect(await (methodsSent(to: transport)).count(where: { $0 == "initialize" }) == 1)
             await service.shutdown()
         }
 
         @Test
-        func restartWaitsUntilPreviousTransportHasFinishedClosing() async throws {
+        func lightweightRequestTimeoutDoesNotInterruptActiveSummary() async throws {
+            let transport = TestCodexAppServerTransport(mode: .generationBlocks)
+            let service = CodexAppServerService(transportFactory: { transport })
+            let generation = Task {
+                try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            await service.waitUntilActiveTurnForTesting()
+            await #expect(throws: CodexAppServerError.requestTimedOut("test/blocked")) {
+                _ = try await service.request(method: "test/blocked", timeout: .milliseconds(20))
+            }
+            #expect(await !transport.isClosed)
+
+            await transport.sendFromServer(.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                    "item": .object([
+                        "type": .string("agentMessage"),
+                        "text": .string(#"{"status":"ok"}"#),
+                    ]),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            #expect(try await generation.value == #"{"status":"ok"}"#)
+            #expect(await (methodsSent(to: transport)).count(where: { $0 == "initialize" }) == 1)
+            await service.shutdown()
+        }
+
+        @Test
+        func shutdownWaitsForCloseAndPermanentlyPreventsRestart() async throws {
             let blocked = TestCodexAppServerTransport(mode: .blockClose)
-            let replacement = TestCodexAppServerTransport(mode: .models)
-            let transports = Mutex([blocked, replacement])
             let launchCount = Mutex(0)
             let service = CodexAppServerService(transportFactory: {
                 launchCount.withLock { $0 += 1 }
-                return transports.withLock { available in available.removeFirst() }
+                return blocked
             })
             try await service.start()
 
@@ -180,13 +220,14 @@ import Foundation
 
             #expect(launchCount.withLock { $0 } == 1)
             await blocked.finishClosing()
-            _ = try? await restart.value
+            await #expect(throws: CancellationError.self) {
+                try await restart.value
+            }
             await shutdown.value
-            if launchCount.withLock({ $0 }) == 1 {
+            await #expect(throws: CancellationError.self) {
                 try await service.start()
             }
-            #expect(launchCount.withLock { $0 } == 2)
-            await service.shutdown()
+            #expect(launchCount.withLock { $0 } == 1)
         }
 
         @Test
@@ -323,7 +364,7 @@ import Foundation
             }?.objectValue?["params"]?.objectValue)
             #expect(threadParams["ephemeral"] == .bool(true))
             #expect(threadParams["approvalPolicy"] == .string("never"))
-            #expect(threadParams["sandbox"] == .string("read-only"))
+            #expect(threadParams["sandbox"] == .string("readOnly"))
             let threadConfig = try #require(threadParams["config"]?.objectValue)
             #expect(threadConfig["features.apps"] == .bool(false))
             #expect(threadConfig["features.plugins"] == .bool(false))
@@ -376,21 +417,75 @@ import Foundation
         }
 
         @Test
-        func defaultTextOnlyModelRejectsScreenshotBeforeStartingThread() async {
+        func defaultTextOnlyModelDropsImagesAndStillGenerates() async throws {
             let transport = TestCodexAppServerTransport(mode: .textOnlyGenerationCompletes)
             let service = CodexAppServerService(transportFactory: { transport })
 
-            await #expect(throws: CodexAppServerError.selectedModelDoesNotSupportImages) {
+            let response = try await service.generate(.init(
+                model: nil,
+                developerInstructions: "Summarize.",
+                inputs: [.text("Transcript"), .imageDataURI("data:image/jpeg;base64,AA==")],
+                outputSchema: Data(#"{"type":"object"}"#.utf8)
+            ))
+
+            #expect(response == #"{"status":"ok"}"#)
+            let turnParams = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/start"
+            }?.objectValue?["params"]?.objectValue)
+            let input = try #require(turnParams["input"]?.arrayValue)
+            #expect(input.count == 1)
+            #expect(input.first?.objectValue?["type"] == .string("text"))
+            await service.shutdown()
+        }
+
+        @Test
+        func structuredUnauthorizedTurnFailureRequiresLogin() async {
+            let transport = TestCodexAppServerTransport(mode: .generationFailsUnauthorized)
+            let service = CodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CodexAppServerError.notLoggedIn) {
                 _ = try await service.generate(.init(
                     model: nil,
                     developerInstructions: "Summarize.",
-                    inputs: [.imageDataURI("data:image/jpeg;base64,AA==")],
+                    inputs: [.text("Transcript")],
                     outputSchema: Data(#"{"type":"object"}"#.utf8)
                 ))
             }
-
-            #expect(await !(methodsSent(to: transport)).contains("thread/start"))
             await service.shutdown()
+        }
+
+        @Test
+        func unrelatedUnauthorizedTextRemainsTurnFailure() async {
+            let transport = TestCodexAppServerTransport(mode: .generationFailsMessageOnlyUnauthorized)
+            let service = CodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CodexAppServerError.turnFailed("unauthorized while generating")) {
+                _ = try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+            await service.shutdown()
+        }
+
+        @Test
+        func numericUnauthorizedRPCCodeRequiresLogin() async {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = CodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CodexAppServerError.notLoggedIn) {
+                _ = try await service.request(method: "test/auth")
+            }
+            await service.shutdown()
+        }
+
+        @Test
+        func expectedCodexConfigurationErrorsAreNotReported() {
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.notLoggedIn))
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.helperNotBundled))
+            #expect(CaptionViewModel.shouldCaptureSummaryGenerationError(CodexAppServerError.processExited(nil)))
         }
 
         @Test
@@ -441,6 +536,36 @@ import Foundation
             #expect(methods.count(where: { $0 == "turn/interrupt" }) == 1)
             #expect(methods.contains("thread/unsubscribe"))
             #expect(await !(transport.isClosed))
+            await service.shutdown()
+        }
+
+        @Test
+        func processExitCleanupDoesNotLaunchReplacementForUnsubscribe() async {
+            let crashed = TestCodexAppServerTransport(mode: .generationBlocks)
+            let replacement = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([crashed, replacement])
+            let launchCount = Mutex(0)
+            let service = CodexAppServerService(transportFactory: {
+                launchCount.withLock { $0 += 1 }
+                return transports.withLock { $0.removeFirst() }
+            })
+            let generation = Task {
+                try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+
+            await service.waitUntilActiveTurnForTesting()
+            await crashed.endOutput()
+            await #expect(throws: CodexAppServerError.self) {
+                _ = try await generation.value
+            }
+
+            #expect(launchCount.withLock { $0 } == 1)
+            #expect(await (methodsSent(to: replacement)).isEmpty)
             await service.shutdown()
         }
 
@@ -499,12 +624,13 @@ import Foundation
         func bundledCodexAccountReadCompletes() async throws {
             let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appending(path: ".build/codex-helper/codex")
-            let environment = try dedicatedCodexEnvironment()
+            let testEnvironment = try dedicatedCodexEnvironment()
+            defer { try? FileManager.default.removeItem(at: testEnvironment.rootURL) }
             let service = CodexAppServerService(
                 transportFactory: {
                     try CodexAppServerProcessTransport(
                         executableURL: executableURL,
-                        environment: environment
+                        environment: testEnvironment.environment
                     )
                 }
             )
@@ -523,12 +649,13 @@ import Foundation
         func bundledCodexSummaryThreadStartsWithMCPDisabled() async throws {
             let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appending(path: ".build/codex-helper/codex")
-            let environment = try dedicatedCodexEnvironment()
+            let testEnvironment = try dedicatedCodexEnvironment()
+            defer { try? FileManager.default.removeItem(at: testEnvironment.rootURL) }
             let service = CodexAppServerService(
                 transportFactory: {
                     try CodexAppServerProcessTransport(
                         executableURL: executableURL,
-                        environment: environment
+                        environment: testEnvironment.environment
                     )
                 }
             )
@@ -550,7 +677,7 @@ import Foundation
                         "cwd": .string(temporaryDirectory.path),
                         "developerInstructions": .string("Do not call tools."),
                         "ephemeral": .bool(true),
-                        "sandbox": .string("read-only"),
+                        "sandbox": .string("readOnly"),
                     ])
                 )
                 let threadID = try #require(result.objectValue?["thread"]?.objectValue?["id"]?.stringValue)
@@ -586,6 +713,8 @@ import Foundation
 
             #expect(catalog.resolvedSelection(current: " default-model ") == "default-model")
             #expect(catalog.resolvedSelection(current: "missing") == "default-model")
+            #expect(catalog.selectionToPersist(current: "missing") == nil)
+            #expect(catalog.selectionToPersist(current: "") == "default-model")
             #expect(catalog.effortOptions(modelID: "default-model").map(\.reasoningEffort) == [
                 "low",
                 "medium",
@@ -597,14 +726,39 @@ import Foundation
             await service.shutdown()
         }
 
+        @Test
+        func emptyCatalogDoesNotReplaceSavedEffort() {
+            let catalog = CodexModelCatalog()
+            #expect(catalog.resolvedEffort(current: "high", modelID: "missing") == nil)
+        }
+
+        @Test
+        func missingInputModalitiesAreTreatedAsTextOnly() {
+            let model = CodexModel(
+                id: "model",
+                model: "model",
+                displayName: "Model",
+                description: "",
+                hidden: false,
+                isDefault: true,
+                supportedReasoningEfforts: [],
+                defaultReasoningEffort: "medium",
+                inputModalities: nil
+            )
+            #expect(!model.supportsImages)
+        }
+
         private func methodsSent(to transport: TestCodexAppServerTransport) async -> [String] {
             await transport.messages().compactMap { $0.objectValue?["method"]?.stringValue }
         }
 
-        private func dedicatedCodexEnvironment() throws -> [String: String] {
+        private func dedicatedCodexEnvironment() throws -> (environment: [String: String], rootURL: URL) {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-codex-integration-\(UUID().uuidString)", directoryHint: .isDirectory)
+            let homeURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL).homeURL()
             var environment = ProcessInfo.processInfo.environment
-            environment["CODEX_HOME"] = try ApplicationSupportCodexHomeLocator().homeURL().path
-            return environment
+            environment["CODEX_HOME"] = homeURL.path
+            return (environment, rootURL)
         }
     }
 #endif

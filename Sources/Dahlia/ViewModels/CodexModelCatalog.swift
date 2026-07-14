@@ -40,19 +40,27 @@ final class CodexModelCatalog {
         return models.first(where: \CodexModel.isDefault)?.model ?? models.first?.model
     }
 
+    func selectionToPersist(current: String) -> String? {
+        guard current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return resolvedSelection(current: current)
+    }
+
     func effortOptions(modelID: String) -> [CodexReasoningEffortOption] {
         guard let model = resolvedModel(modelID: modelID) else { return [] }
         if !model.supportedReasoningEfforts.isEmpty {
             return model.supportedReasoningEfforts
         }
-        return [CodexReasoningEffortOption(
-            reasoningEffort: model.defaultReasoningEffort,
-            description: ""
-        )]
+        return [
+            CodexReasoningEffortOption(
+                reasoningEffort: model.defaultReasoningEffort,
+                description: ""
+            ),
+        ]
     }
 
-    func resolvedEffort(current: String, modelID: String) -> String {
+    func resolvedEffort(current: String, modelID: String) -> String? {
         let options = effortOptions(modelID: modelID)
+        guard !options.isEmpty else { return nil }
         let current = current.trimmingCharacters(in: .whitespacesAndNewlines)
         if options.contains(where: { $0.reasoningEffort == current }) {
             return current
@@ -64,7 +72,7 @@ final class CodexModelCatalog {
            options.contains(where: { $0.reasoningEffort == modelDefault }) {
             return modelDefault
         }
-        return options.first?.reasoningEffort ?? CodexReasoningEffortOption.defaultValue
+        return options.first?.reasoningEffort
     }
 
     private func resolvedModel(modelID: String) -> CodexModel? {

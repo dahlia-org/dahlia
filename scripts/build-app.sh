@@ -23,6 +23,7 @@ mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} ==="
 bash "${SCRIPT_DIR}/build-codex.sh"
+CODEX_VERSION="$(bash "${SCRIPT_DIR}/build-codex.sh" --print-version)"
 swift build -c release --arch arm64
 BUILD_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
 dsymutil "${BUILD_DIR}/${APP_NAME}" -o "${BUILD_DIR}/${APP_NAME}.dSYM"
@@ -47,8 +48,8 @@ if [ "$(lipo -archs "${HELPERS}/codex")" != "arm64" ]; then
     echo "error: bundled Codex must contain only arm64" >&2
     exit 1
 fi
-if [ "$("${HELPERS}/codex" --version)" != "codex-cli 0.144.4" ]; then
-    echo "error: bundled Codex must report exactly codex-cli 0.144.4" >&2
+if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
+    echo "error: bundled Codex must report exactly codex-cli ${CODEX_VERSION}" >&2
     exit 1
 fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"

@@ -11,6 +11,8 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
         case serverRequests
         case generationCompletes
         case generationBlocks
+        case generationFailsUnauthorized
+        case generationFailsMessageOnlyUnauthorized
         case signedOut
         case loginCompletes
         case loginBlocks
@@ -216,6 +218,24 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
                 "status": .string("inProgress"),
             ]),
         ])))
+        if mode == .generationFailsUnauthorized || mode == .generationFailsMessageOnlyUnauthorized {
+            var error: [String: JSONValue] = ["message": .string("unauthorized while generating")]
+            if mode == .generationFailsUnauthorized {
+                error["codexErrorInfo"] = .string("unauthorized")
+            }
+            enqueue(jsonValue: .object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("failed"),
+                        "error": .object(error),
+                    ]),
+                ]),
+            ]))
+            return
+        }
         guard mode == .generationCompletes || mode == .textOnlyGenerationCompletes else { return }
         enqueue(jsonValue: .object([
             "method": .string("item/completed"),
@@ -244,6 +264,16 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     private func enqueueTestResponse(to requestID: Int, method: String) {
         switch method {
+        case "test/blocked":
+            return
+        case "test/auth":
+            enqueue(jsonValue: .object([
+                "id": .number(Double(requestID)),
+                "error": .object([
+                    "code": .number(401),
+                    "message": .string("authentication failed"),
+                ]),
+            ]))
         case "test/first" where mode == .outOfOrder:
             heldRequestID = requestID
         case "test/second" where mode == .outOfOrder:

@@ -11,13 +11,16 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private let ioQueue = DispatchQueue(label: "app.dahlia.codex-app-server-stdio")
     private var outputDrainTask: Task<Void, Never>?
     private var isErrorDrainStarted = false
+    private var isErrorDrainFinished = false
     private var outputLines: [Data] = []
+    private var outputLineOffset = 0
     private var outputWaiter: (id: UUID, continuation: CheckedContinuation<Data?, any Error>)?
     private var outputError: (any Error)?
     private var didReachOutputEOF = false
     private var pendingWrites: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var isClosed = false
     private var stderrTail = Data()
+    private let maximumBufferedOutputLines = 256
 
     init(
         executableURL: URL,
@@ -102,8 +105,11 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
     func receiveLine() async throws -> Data? {
         startDrainsIfNeeded()
-        if !outputLines.isEmpty {
-            return outputLines.removeFirst()
+        if outputLineOffset < outputLines.count {
+            let line = outputLines[outputLineOffset]
+            outputLineOffset += 1
+            compactOutputLinesIfNeeded()
+            return line
         }
         if let outputError { throw outputError }
         if isClosed || didReachOutputEOF { return nil }
@@ -157,6 +163,10 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         func processIdentifierForTesting() -> pid_t {
             process.processIdentifier
         }
+
+        func bufferedOutputLineCountForTesting() -> Int {
+            outputLines.count - outputLineOffset
+        }
     #endif
 
     private var stderrDescription: String? {
@@ -198,12 +208,20 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private func startErrorDrainIfNeeded() {
         guard !isErrorDrainStarted else { return }
         isErrorDrainStarted = true
-        errorChannel.read(offset: 0, length: Int.max, queue: ioQueue) { [weak self] _, data, _ in
-            guard let data, !data.isEmpty else { return }
-            let chunk = Data(data)
+        errorChannel.read(offset: 0, length: Int.max, queue: ioQueue) { [weak self] done, data, _ in
+            let chunk = data.map { Data($0) } ?? Data()
             Task {
-                await self?.appendStderr(chunk)
+                await self?.consumeStderr(chunk, done: done)
             }
+        }
+    }
+
+    private func consumeStderr(_ data: Data, done: Bool) {
+        if !data.isEmpty {
+            appendStderr(data)
+        }
+        if done {
+            isErrorDrainFinished = true
         }
     }
 
@@ -212,15 +230,25 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             outputWaiter = nil
             waiter.continuation.resume(returning: line)
         } else {
+            guard outputError == nil else { return }
+            if outputLines.count - outputLineOffset >= maximumBufferedOutputLines {
+                outputLines.removeAll(keepingCapacity: false)
+                outputLineOffset = 0
+                outputError = CodexAppServerError.invalidProtocolResponse
+                return
+            }
             outputLines.append(line)
         }
     }
 
-    private func finishOutput(throwing error: (any Error)? = nil) {
+    private func finishOutput(throwing error: (any Error)? = nil) async {
         didReachOutputEOF = true
-        if !isClosed, let error {
+        for _ in 0 ..< 20 where !isErrorDrainFinished {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        if !isClosed, outputError == nil {
             outputError = CodexAppServerError.processExited(
-                stderrDescription ?? error.localizedDescription
+                stderrDescription ?? error?.localizedDescription
             )
         }
         guard let waiter = outputWaiter else { return }
@@ -230,6 +258,14 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         } else {
             waiter.continuation.resume(returning: nil)
         }
+    }
+
+    private func compactOutputLinesIfNeeded() {
+        guard outputLineOffset >= 64,
+              outputLineOffset * 2 >= outputLines.count
+        else { return }
+        outputLines.removeFirst(outputLineOffset)
+        outputLineOffset = 0
     }
 
     private func cancelOutputWaiter(_ waiterID: UUID) {

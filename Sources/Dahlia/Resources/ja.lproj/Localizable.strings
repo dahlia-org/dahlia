@@ -372,51 +372,6 @@
 "Only selected languages will appear in the language picker. All languages are shown if none are selected." = "選択した言語のみが言語ピッカーに表示されます。未選択の場合はすべての言語が表示されます。";
 
 /* Settings - LLM */
-"OpenAI" = "OpenAI";
-"Databricks" = "Databricks";
-"Model Provider" = "Model Provider";
-"Choose OpenAI or Databricks AI Gateway." = "OpenAI または Databricks AI Gateway を選択します。";
-"Endpoint URL" = "エンドポイント URL";
-"Uses OpenAI's Chat Completions API." = "OpenAI の Chat Completions API を使用します。";
-"Databricks Workspace ID" = "Databricks Workspace ID";
-"Databricks Workspace URL" = "Databricks Workspace URL";
-"Enter the Workspace URL associated with this personal access token." = "この Personal Access Token に対応する Workspace URL を入力します。";
-"Authentication Type" = "認証方式";
-"Choose a Personal Access Token or OAuth through Databricks CLI." = "Personal Access Token または Databricks CLI 経由の OAuth を選択します。";
-"Personal Access Token" = "Personal Access Token";
-"OAuth (Databricks CLI)" = "OAuth (Databricks CLI)";
-"Databricks CLI Profile" = "Databricks CLI プロファイル";
-"OAuth credentials are read from this Databricks CLI profile." = "この Databricks CLI プロファイルから OAuth 認証情報を取得します。";
-"No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh." = "Databricks CLI プロファイルが見つかりません。ターミナルで databricks auth login を実行してから再読み込みしてください。";
-"Refresh Profiles" = "プロファイルを再読み込み";
-"Databricks CLI was not found. Install it and relaunch Dahlia." = "Databricks CLI が見つかりません。インストールして Dahlia を再起動してください。";
-"Enter a Databricks CLI profile." = "Databricks CLI プロファイルを入力してください。";
-"The selected Databricks CLI profile was not found." = "選択した Databricks CLI プロファイルが見つかりません。";
-"Enter a valid HTTPS Databricks Workspace URL." = "有効な HTTPS の Databricks Workspace URL を入力してください。";
-"The selected Databricks CLI profile does not provide a Workspace ID." = "選択した Databricks CLI プロファイルから Workspace ID を取得できません。";
-"The selected Databricks CLI profile does not provide a valid workspace URL." = "選択した Databricks CLI プロファイルから有効な Workspace URL を取得できません。";
-"Databricks CLI authentication failed: %@" = "Databricks CLI 認証に失敗しました: %@";
-"Databricks CLI authentication failed." = "Databricks CLI 認証に失敗しました。";
-"Databricks CLI returned an invalid OAuth token response." = "Databricks CLI から無効な OAuth トークンレスポンスが返されました。";
-"Databricks CLI returned an invalid profiles response." = "Databricks CLI から無効なプロファイルレスポンスが返されました。";
-"Enter an OpenAI API token." = "OpenAI API トークンを入力してください。";
-"Enter a Databricks personal access token." = "Databricks の Personal Access Token を入力してください。";
-"Endpoint will be generated after entering a Workspace URL." = "Workspace URL を入力するとエンドポイントが生成されます。";
-"The selected model is mapped to the provider's model ID." = "選択したモデルをプロバイダー固有のモデル ID に変換します。";
-"GPT-5.6 Sol" = "GPT-5.6 Sol";
-"GPT-5.6 Terra" = "GPT-5.6 Terra";
-"GPT-5.6 Luna" = "GPT-5.6 Luna";
-"GPT-5.5" = "GPT-5.5";
-"Maximum Output Tokens" = "最大出力トークン数";
-"Limits the number of tokens generated for each summary." = "要約ごとに生成するトークン数の上限を指定します。";
-"API Token" = "API トークン";
-"Token is stored securely in Keychain." = "トークンはキーチェーンに安全に保存されます。";
-"Test Connection" = "疎通確認";
-"Testing..." = "テスト中...";
-"Connection successful" = "接続成功";
-"Invalid endpoint URL" = "エンドポイント URL が無効です";
-"Unexpected response from server" = "サーバーから予期しないレスポンスが返されました";
-"HTTP %lld: %@" = "HTTP %lld: %@";
 "Empty response from server" = "サーバーから空のレスポンスが返されました";
 
 /* Summary */
@@ -438,7 +393,6 @@
 "Open Templates Folder" = "テンプレートフォルダを開く";
 "Reset Presets" = "プリセットに戻す";
 "Select a template from _custom_instructions/ in the vault." = "保管庫内の _custom_instructions/ からテンプレートを選択します。";
-"LLM configuration is incomplete. Please set endpoint, model, and API token in Settings." = "LLM の設定が不完全です。設定画面でプロバイダー設定、モデル、API トークンを設定してください。";
 
 /* Error Messages - Audio */
 "Screen recording access denied. Please allow it in System Settings > Privacy & Security > Screen Recording." = "画面収録のアクセスが拒否されました。システム設定 > プライバシーとセキュリティ > 画面収録 で許可してください";
@@ -638,7 +592,6 @@
 "Codex request failed: %@" = "Codex リクエストに失敗しました: %@";
 "Codex could not complete the request." = "Codex がリクエストを完了できませんでした。";
 "Codex generation was interrupted." = "Codex の生成が中断されました。";
-"The selected Codex model does not support screenshot input." = "選択した Codex モデルはスクリーンショット入力に対応していません。";
 "Unknown Codex app-server error." = "Codex app-server で不明なエラーが発生しました。";
 "Codex Version" = "Codex バージョン";
 "Codex Account" = "Codex アカウント";

@@ -2089,7 +2089,9 @@ final class CaptionViewModel: ObservableObject {
             }
             summaryProgress.summaryGeneration = .failed(error.localizedDescription)
             summaryProgress.vaultExport = .skipped
-            ErrorReportingService.capture(error, context: ["source": "summaryGeneration"])
+            if Self.shouldCaptureSummaryGenerationError(error) {
+                ErrorReportingService.capture(error, context: ["source": "summaryGeneration"])
+            }
         }
 
         if summaryGeneratingMeetingId == meetingId {
@@ -2102,6 +2104,16 @@ final class CaptionViewModel: ObservableObject {
             withAnimation(.easeOut(duration: 0.3)) {
                 summaryProgress.dismiss()
             }
+        }
+    }
+
+    nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {
+        guard let error = error as? CodexAppServerError else { return true }
+        return switch error {
+        case .helperNotBundled, .notLoggedIn:
+            false
+        default:
+            true
         }
     }
 
