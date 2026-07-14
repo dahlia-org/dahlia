@@ -100,12 +100,21 @@ struct DatabricksCLIClient {
         try Task.checkCancellation()
         let terminationStatus = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
+                // Process duplicates these descriptors during launch. Closing the parent's
+                // write ends when this setup completes lets the async readers receive EOF.
+                defer {
+                    closeParentWriteHandles(
+                        standardOutput: standardOutput,
+                        standardError: standardError
+                    )
+                }
                 process.terminationHandler = { process in
                     continuation.resume(returning: process.terminationStatus)
                 }
                 do {
                     try process.run()
                 } catch {
+                    process.terminationHandler = nil
                     continuation.resume(throwing: error)
                 }
             }
@@ -125,10 +134,38 @@ struct DatabricksCLIClient {
         )
     }
 
+    private static func closeParentWriteHandles(
+        standardOutput: Pipe,
+        standardError: Pipe
+    ) {
+        try? standardOutput.fileHandleForWriting.close()
+        try? standardError.fileHandleForWriting.close()
+    }
+
     private static func readToEnd(_ handle: FileHandle) async throws -> Data {
+        let chunks = AsyncThrowingStream<Data, any Error> { continuation in
+            handle.readabilityHandler = { readableHandle in
+                do {
+                    guard let chunk = try readableHandle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
+                        readableHandle.readabilityHandler = nil
+                        continuation.finish()
+                        return
+                    }
+                    continuation.yield(chunk)
+                } catch {
+                    readableHandle.readabilityHandler = nil
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+        defer {
+            handle.readabilityHandler = nil
+            try? handle.close()
+        }
+
         var data = Data()
-        for try await byte in handle.bytes {
-            data.append(byte)
+        for try await chunk in chunks {
+            data.append(chunk)
         }
         return data
     }
