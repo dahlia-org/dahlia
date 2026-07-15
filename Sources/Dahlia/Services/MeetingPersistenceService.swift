@@ -61,7 +61,10 @@ final class MeetingPersistenceService {
             startedAt: now,
             offsetSeconds: 0,
             transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            audioRetentionPolicy: transcriptionMode == .batch
+                ? (retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription)
+                : nil
         )
         self.recordingSession = session
         self.transcriptWriter = TranscriptPersistenceWriter(
@@ -130,7 +133,10 @@ final class MeetingPersistenceService {
             startedAt: recordingStartDate,
             offsetSeconds: recordingOffsetSeconds,
             transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            audioRetentionPolicy: transcriptionMode == .batch
+                ? (retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription)
+                : nil
         )
         self.recordingSession = session
         self.transcriptWriter = TranscriptPersistenceWriter(
@@ -215,7 +221,8 @@ final class MeetingPersistenceService {
         startedAt: Date,
         offsetSeconds: TimeInterval,
         transcriptionMode: TranscriptionMode,
-        retainAudioAfterBatch: Bool
+        retainAudioAfterBatch: Bool,
+        audioRetentionPolicy: RecordingAudioRetentionPolicy? = nil
     ) -> RecordingSessionRecord {
         RecordingSessionRecord(
             id: id,
@@ -227,7 +234,8 @@ final class MeetingPersistenceService {
             createdAt: startedAt,
             updatedAt: startedAt,
             transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            audioRetentionPolicy: audioRetentionPolicy
         )
     }
 }

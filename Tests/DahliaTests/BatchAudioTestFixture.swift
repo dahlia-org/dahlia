@@ -1,4 +1,3 @@
-@preconcurrency import AVFoundation
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -62,48 +61,8 @@ import GRDB
             }
         }
 
-        var managedRelativePath: String {
-            BatchAudioStorage.managedRelativePath(
-                meetingId: meeting.id,
-                sessionId: session.id,
-                source: .microphone
-            )
-        }
-
-        func makeAudioRecord(finalizedAt: Date?, totalFrameCount: Int64?) -> RecordingAudioFileRecord {
-            RecordingAudioFileRecord(
-                id: .v7(),
-                recordingSessionId: session.id,
-                source: .microphone,
-                storageLocation: .managed,
-                relativePath: managedRelativePath,
-                sampleRate: 16000,
-                channelCount: 1,
-                finalizedAt: finalizedAt,
-                totalFrameCount: totalFrameCount,
-                createdAt: now,
-                updatedAt: now
-            )
-        }
-
         func removeFiles() {
             try? FileManager.default.removeItem(at: testRootURL)
-        }
-
-        static func writeCAF(url: URL, frameCount: AVAudioFrameCount) throws {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let format = try #require(
-                AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)
-            )
-            let file = try AVAudioFile(
-                forWriting: url,
-                settings: format.settings,
-                commonFormat: .pcmFormatInt16,
-                interleaved: false
-            )
-            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
-            buffer.frameLength = frameCount
-            try file.write(from: buffer)
         }
     }
 #endif

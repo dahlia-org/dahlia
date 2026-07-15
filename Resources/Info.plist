@@ -18,6 +18,8 @@
     <string>Dahlia</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>会議予定を表示し、文字起こしするミーティングを選択するためにカレンダーへのアクセスが必要です。</string>
     <key>NSMicrophoneUsageDescription</key>

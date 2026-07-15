@@ -12,7 +12,7 @@ SystemAudioCaptureManager (システム音声 / ScreenCaptureKit)
     ↓ onAudioBuffer
 AudioSourcePipeline → CapturedAudioChunk (セッション相対時刻付き)
     ↓ AudioFrameRouter
-    ├─ BatchAudioFileWriter (欠落禁止)
+    ├─ SegmentedAudioSourceWriter (欠落禁止、bounded immutable segment)
     └─ AudioBufferBridge → SpeechTranscriberService (低遅延、音源ごとに最大 1 つ)
         ↓ TranscriptionEvent
         ↓ TranscriptionEventPipeline

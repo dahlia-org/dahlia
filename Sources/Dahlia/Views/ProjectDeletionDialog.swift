@@ -5,18 +5,19 @@ struct ProjectDeletionDialog: View {
     let projectCount: Int
     let meetingCount: Int
     let moveDestinations: [ProjectOverviewItem]
-    let onConfirm: (ProjectMeetingDisposition) -> Bool
+    let onConfirm: (ProjectMeetingDisposition) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var deletesMeetings: Bool
     @State private var selectedDestinationId: UUID?
+    @State private var isDeleting = false
 
     init(
         project: ProjectOverviewItem,
         projectCount: Int,
         meetingCount: Int,
         moveDestinations: [ProjectOverviewItem],
-        onConfirm: @escaping (ProjectMeetingDisposition) -> Bool
+        onConfirm: @escaping (ProjectMeetingDisposition) async -> Bool
     ) {
         self.project = project
         self.projectCount = projectCount
@@ -74,6 +75,7 @@ struct ProjectDeletionDialog: View {
                 Button(L10n.cancel, role: .cancel, action: dismiss.callAsFunction)
                 Button(confirmButtonTitle, role: .destructive, action: confirmDeletion)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(isDeleting)
             }
             .padding()
         }
@@ -101,8 +103,13 @@ struct ProjectDeletionDialog: View {
             return
         }
 
-        if onConfirm(disposition) {
-            dismiss()
+        isDeleting = true
+        Task {
+            if await onConfirm(disposition) {
+                dismiss()
+            } else {
+                isDeleting = false
+            }
         }
     }
 }

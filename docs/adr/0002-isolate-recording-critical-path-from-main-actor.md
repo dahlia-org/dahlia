@@ -31,7 +31,7 @@ Dahlia では UI の一時的な停止より録音データの欠落の方が重
 ```mermaid
 flowchart LR
     Capture["Audio capture actors"] --> Router["AudioFrameRouter"]
-    Router --> CAF["BatchAudioFileWriter<br/>lossless"]
+    Router --> CAF["SegmentedAudioSourceWriter<br/>lossless / immutable"]
     Router --> Speech["SpeechTranscriberService"]
     Speech --> Pipeline["TranscriptionEventPipeline"]
     Pipeline -->|"UI lane"| Main["MainActor<br/>TranscriptStore / LiveCaptionStore"]

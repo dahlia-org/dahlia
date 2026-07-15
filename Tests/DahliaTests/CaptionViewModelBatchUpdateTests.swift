@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+@preconcurrency import AVFoundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -103,17 +104,40 @@ import GRDB
                 duration: 1
             )
             defer { batch.removeFiles() }
-            let audioFile = batch.makeAudioRecord(finalizedAt: batch.now, totalFrameCount: 160)
-            let range = RecordingAudioRangeRecord(
-                id: .v7(),
-                audioFileId: audioFile.id,
-                startFrame: 0,
-                frameCount: 160,
-                sessionOffsetSeconds: 0,
-                localeIdentifier: "ja_JP",
-                createdAt: batch.now,
-                updatedAt: batch.now
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                meetingId: batch.meeting.id,
+                recordingSessionId: batch.session.id,
+                recordingStartTime: batch.now,
+                sampleRate: 16000,
+                configuration: RecordingAudioStore.Configuration(
+                    targetSegmentDuration: .seconds(60),
+                    maximumFinalizingSegmentCountPerSource: 2,
+                    maximumActiveSegmentDuration: .seconds(600),
+                    maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                    minimumAvailableCapacity: 0,
+                    capacityCheckInterval: .seconds(5)
+                )
             )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: batch.now
+            )
+            let buffer = try #require(
+                AVAudioPCMBuffer(pcmFormat: recorder.targetFormat, frameCapacity: 160)
+            )
+            buffer.frameLength = 160
+            writer.appendBuffer(buffer)
+            try await recorder.finish()
+            let audioSegment = try await batch.database.dbQueue.read { db in
+                try #require(try RecordingAudioSegmentRecord.fetchOne(db))
+            }
+            let finalURL = batch.managedRootURL.appending(path: audioSegment.finalRelativePath)
+            var damagedBytes = try Data(contentsOf: finalURL)
+            damagedBytes[damagedBytes.index(before: damagedBytes.endIndex)] ^= 0x01
+            try damagedBytes.write(to: finalURL)
             let existingSegment = TranscriptSegmentRecord(
                 id: .v7(),
                 meetingId: batch.meeting.id,
@@ -125,13 +149,15 @@ import GRDB
                 speakerLabel: "mic"
             )
             try await batch.database.dbQueue.write { db in
-                try audioFile.insert(db)
-                try range.insert(db)
                 try existingSegment.insert(db)
             }
 
             let viewModel = CaptionViewModel()
-            viewModel.configureBatchTranscription(dbQueue: batch.database.dbQueue)
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
             viewModel.loadMeeting(
                 batch.meeting.id,
                 dbQueue: batch.database.dbQueue,

@@ -6,17 +6,20 @@ final class ProjectWorkspaceService {
 
     private let repository: MeetingRepository
     private let vault: VaultRecord
+    private let managedAudioRootURL: URL
     private let fileManager: FileManager
     private let trashHandler: TrashHandler
 
     init(
         repository: MeetingRepository,
         vault: VaultRecord,
+        managedAudioRootURL: URL = BatchAudioStorage.managedRootURL,
         fileManager: FileManager = .default,
         trashHandler: @escaping TrashHandler = ProjectWorkspaceService.moveToTrash
     ) {
         self.repository = repository
         self.vault = vault
+        self.managedAudioRootURL = managedAudioRootURL
         self.fileManager = fileManager
         self.trashHandler = trashHandler
     }
@@ -89,7 +92,7 @@ final class ProjectWorkspaceService {
         return renamed
     }
 
-    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) throws {
+    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) async throws {
         guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
@@ -102,6 +105,14 @@ final class ProjectWorkspaceService {
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
+        }
+
+        if meetingDisposition == .deleteMeetings {
+            try await repository.prepareSegmentedAudioForProjectDeletion(
+                name: project.name,
+                vaultId: vault.id,
+                managedRootURL: managedAudioRootURL
+            )
         }
 
         let originalURL = projectURL(name: project.name)

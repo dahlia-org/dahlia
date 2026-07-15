@@ -66,6 +66,12 @@ enum BatchTranscriptionConfirmationService {
             .filter(Column("batchLastError") == nil)
             .filter(Column("batchLastAttemptAt") == nil)
             .filter(Column("batchAttemptCount") == 0)
+            .filter(sql: """
+            EXISTS (
+                SELECT 1 FROM recording_audio_segments
+                WHERE recording_audio_segments.recordingSessionId = recording_sessions.id
+            )
+            """)
             .order(Column("startedAt").asc)
             .fetchAll(db)
     }
@@ -75,9 +81,9 @@ enum BatchTranscriptionConfirmationService {
             db,
             sql: """
             SELECT COUNT(*)
-            FROM recording_audio_ranges
-            WHERE audioFileId IN (
-                SELECT id FROM recording_audio_files WHERE recordingSessionId = ?
+            FROM recording_audio_segment_ranges
+            WHERE audioSegmentId IN (
+                SELECT id FROM recording_audio_segments WHERE recordingSessionId = ?
             )
             """,
             arguments: [sessionId]
@@ -97,9 +103,9 @@ enum BatchTranscriptionConfirmationService {
             db,
             sql: """
             SELECT DISTINCT localeIdentifier
-            FROM recording_audio_ranges
-            WHERE audioFileId IN (
-                SELECT id FROM recording_audio_files WHERE recordingSessionId = ?
+            FROM recording_audio_segment_ranges
+            WHERE audioSegmentId IN (
+                SELECT id FROM recording_audio_segments WHERE recordingSessionId = ?
             )
             """,
             arguments: [sessionId]
@@ -108,10 +114,10 @@ enum BatchTranscriptionConfirmationService {
         guard recordedLocales.count <= 1 else { return }
         try db.execute(
             sql: """
-            UPDATE recording_audio_ranges
+            UPDATE recording_audio_segment_ranges
             SET localeIdentifier = ?, updatedAt = ?
-            WHERE audioFileId IN (
-                SELECT id FROM recording_audio_files WHERE recordingSessionId = ?
+            WHERE audioSegmentId IN (
+                SELECT id FROM recording_audio_segments WHERE recordingSessionId = ?
             )
             """,
             arguments: [localeIdentifier, updatedAt, sessionId]
@@ -128,10 +134,19 @@ enum BatchTranscriptionConfirmationService {
         try db.execute(
             sql: """
             UPDATE recording_sessions
-            SET retainAudioAfterBatch = ?, batchLastAttemptAt = ?, updatedAt = ?
+            SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
+                batchLastAttemptAt = ?, updatedAt = ?
             WHERE id = ?
             """,
-            arguments: [retainAudioAfterBatch, confirmedAt, confirmedAt, sessionId]
+            arguments: [
+                retainAudioAfterBatch,
+                retainAudioAfterBatch
+                    ? RecordingAudioRetentionPolicy.keepInApp.rawValue
+                    : RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
+                confirmedAt,
+                confirmedAt,
+                sessionId,
+            ]
         )
     }
 }

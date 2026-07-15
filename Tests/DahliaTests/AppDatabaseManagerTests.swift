@@ -8,6 +8,19 @@ import GRDB
     @MainActor
     struct AppDatabaseManagerTests {
         @Test
+        func databaseFileUsesPrivatePermissions() throws {
+            let databaseURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-database-permissions-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+            _ = try AppDatabaseManager(path: databaseURL.path)
+            let attributes = try FileManager.default.attributesOfItem(atPath: databaseURL.path)
+            let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+            #expect(permissions.intValue == 0o600)
+        }
+
+        @Test
         func initializesInMemoryDatabaseWithGoogleDriveFolderColumn() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
@@ -158,6 +171,120 @@ import GRDB
             #expect(result.0.contains("batchDiscardedAt"))
             #expect(result.1.contains("storageLocation"))
             #expect(result.2)
+        }
+
+        @Test
+        func initializesSegmentedRecordingAudioSchema() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+
+            let result = try database.dbQueue.read { db in
+                try (
+                    db.tableExists("recording_audio_segments"),
+                    db.tableExists("recording_audio_segment_ranges"),
+                    db.tableExists("recording_audio_source_progress"),
+                    db.tableExists("recording_audio_reconciliation_issues"),
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_sessions')")
+                )
+            }
+
+            #expect(result.0)
+            #expect(result.1)
+            #expect(result.2)
+            #expect(result.3)
+            #expect(result.4.contains("audioRetentionPolicy"))
+            #expect(result.4.contains("retentionExpiresAt"))
+            #expect(result.4.contains("batchFailureKind"))
+        }
+
+        @Test
+        func existingV17AudioRowsSurviveSegmentedAudioMigration() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: UUID.v7().uuidString)
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let sessionId = UUID.v7()
+            let fileId = UUID.v7()
+            let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try queue.write { db in
+                try db.create(table: "recording_sessions") { table in
+                    table.primaryKey("id", .blob)
+                }
+                try db.create(table: "recording_audio_files") { table in
+                    table.primaryKey("id", .blob)
+                    table.column("recordingSessionId", .blob).notNull()
+                    table.column("source", .text).notNull()
+                    table.column("storageLocation", .text).notNull()
+                    table.column("relativePath", .text).notNull()
+                    table.column("sampleRate", .double).notNull()
+                    table.column("channelCount", .integer).notNull()
+                    table.column("finalizedAt", .datetime)
+                    table.column("totalFrameCount", .integer)
+                    table.column("createdAt", .datetime).notNull()
+                    table.column("updatedAt", .datetime).notNull()
+                    table.uniqueKey(["recordingSessionId", "source"])
+                }
+                try db.create(table: "grdb_migrations") { table in
+                    table.column("identifier", .text).primaryKey()
+                }
+                let migrations = [
+                    "v3_googleDriveFolderSchema",
+                    "v4_instructionsSchema",
+                    "v5_summaryGoogleFileId",
+                    "v6_transcriptSegmentTranslation",
+                    "v7_normalizeLegacyMeetingStatus",
+                    "v8_recordingSessions",
+                    "v9_summaryDocument",
+                    "v10_batchTranscription",
+                    "v11_batchAudioStorageLocation",
+                    "v12_batchTranscriptionDiscard",
+                    "v13_summaryVaultRelativePath",
+                    "v14_projectDescription",
+                    "v15_calendarEventIdentity",
+                    "v16_calendarEventURL",
+                    "v17_calendarEventIntegrity",
+                ]
+                for migration in migrations {
+                    try db.execute(
+                        sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
+                        arguments: [migration]
+                    )
+                }
+                try db.execute(sql: "INSERT INTO recording_sessions (id) VALUES (?)", arguments: [sessionId])
+                try db.execute(
+                    sql: """
+                    INSERT INTO recording_audio_files (
+                        id, recordingSessionId, source, storageLocation, relativePath,
+                        sampleRate, channelCount, finalizedAt, totalFrameCount, createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        fileId,
+                        sessionId,
+                        RecordingAudioSource.microphone.rawValue,
+                        RecordingAudioStorageLocation.managed.rawValue,
+                        "legacy/microphone.caf",
+                        16000,
+                        1,
+                        createdAt,
+                        320,
+                        createdAt,
+                        createdAt,
+                    ]
+                )
+            }
+
+            let migrated = try AppDatabaseManager(path: databaseURL.path)
+            let result = try migrated.dbQueue.read { db in
+                try (
+                    Row.fetchOne(db, sql: "SELECT * FROM recording_audio_files WHERE id = ?", arguments: [fileId]),
+                    db.tableExists("recording_audio_segments")
+                )
+            }
+            let row = try #require(result.0)
+            #expect(row["relativePath"] == "legacy/microphone.caf")
+            #expect(row["totalFrameCount"] == 320 as Int64?)
+            #expect(result.1)
         }
 
         @Test

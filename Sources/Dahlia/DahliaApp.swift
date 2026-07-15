@@ -135,6 +135,7 @@ struct DahliaApp: App {
 
     private func initializeAppIfNeeded() {
         guard appDatabase == nil else { return }
+        guard AppDelegate.hasMutationOwnership else { return }
         guard let db = try? AppDatabaseManager() else { return }
         appDatabase = db
         sidebarViewModel.setAppDatabase(db)
@@ -274,9 +275,35 @@ struct DahliaApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor private(set) static var hasMutationOwnership = false
+
     private var isWaitingForCodexShutdown = false
+    private var processLock: AdvisoryFileLock?
+
+    func applicationWillFinishLaunching(_: Notification) {
+        do {
+            processLock = try AdvisoryFileLock.acquire(
+                at: AppDatabaseManager.databaseURL
+                    .deletingLastPathComponent()
+                    .appending(path: ".process.lock")
+            )
+            Self.hasMutationOwnership = true
+        } catch AdvisoryFileLockError.alreadyLocked {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = L10n.anotherDahliaInstanceTitle
+            alert.informativeText = L10n.anotherDahliaInstanceMessage
+            alert.runModal()
+            NSApplication.shared.terminate(nil)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+            NSApplication.shared.terminate(nil)
+        }
+    }
 
     func applicationDidFinishLaunching(_: Notification) {
+        guard Self.hasMutationOwnership else { return }
         MeetingNotificationService.shared.install()
         ErrorReportingService.start()
         NSApplication.shared.setActivationPolicy(.regular)

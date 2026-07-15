@@ -24,7 +24,8 @@ enum BatchTranscriptionPersistence {
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
-                SET batchCompletedAt = ?, batchLastError = NULL, updatedAt = ?
+                SET batchCompletedAt = ?, batchLastError = NULL,
+                    batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
                 """,
                 arguments: [completedAt, completedAt, sessionId]

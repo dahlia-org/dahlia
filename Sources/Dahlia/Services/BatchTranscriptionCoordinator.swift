@@ -18,8 +18,6 @@ actor BatchTranscriptionCoordinator {
         let meeting: MeetingRecord
         let vault: VaultRecord
         let projectName: String
-        let files: [RecordingAudioFileRecord]
-        let rangesByFileId: [UUID: [RecordingAudioRangeRecord]]
     }
 
     private struct TranslationConfiguration {
@@ -28,7 +26,7 @@ actor BatchTranscriptionCoordinator {
     }
 
     private let dbQueue: DatabaseQueue
-    private let managedRootURL: URL
+    private let recordingAudioStore: RecordingAudioStore?
     private let translationService = TranscriptTranslationService()
     private let onStateChange: StateHandler
     private var pendingSessionIds: [UUID] = []
@@ -41,22 +39,15 @@ actor BatchTranscriptionCoordinator {
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
-        self.managedRootURL = managedRootURL
+        recordingAudioStore = try? RecordingAudioStore(
+            dbQueue: dbQueue,
+            managedRootURL: managedRootURL
+        )
         self.onStateChange = onStateChange
     }
 
     func recoverAndEnqueue() async {
-        BatchTranscriptionRecoveryService.reconcileCompletedAudioFiles(
-            dbQueue: dbQueue,
-            managedRootURL: managedRootURL
-        )
-        let recoveryFailures = await BatchInterruptedRecordingRecoveryService.recover(
-            dbQueue: dbQueue,
-            managedRootURL: managedRootURL
-        )
-        for failure in recoveryFailures {
-            await persistFailure(sessionId: failure.sessionId, message: failure.message)
-        }
+        _ = await recordingAudioStore?.reconcileStartup()
         let sessionIds = await (try? dbQueue.read { db in
             try RecordingSessionRecord
                 .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
@@ -77,6 +68,8 @@ actor BatchTranscriptionCoordinator {
         guard session.transcriptionMode == .batch,
               session.batchCompletedAt == nil,
               session.batchDiscardedAt == nil else { return false }
+        guard session.batchFailureKind != .recordingRecovery,
+              session.batchFailureKind != .recordingAudioPermanent else { return false }
         guard session.batchLastAttemptAt != nil || session.batchLastError?.nilIfBlank != nil else {
             return false
         }
@@ -115,7 +108,7 @@ actor BatchTranscriptionCoordinator {
     }
 
     func recordRecordingFailure(sessionId: UUID, message: String) async {
-        await persistFailure(sessionId: sessionId, message: message)
+        await persistFailure(sessionId: sessionId, message: message, kind: .recordingStorage)
         ErrorReportingService.capture(
             BatchRecordingFailure(message: message),
             context: ["source": "batchRecording"]
@@ -141,12 +134,6 @@ actor BatchTranscriptionCoordinator {
 
     private func process(sessionId: UUID) async throws {
         try await markAttemptStarted(sessionId: sessionId)
-        // 手動再試行でもpartial CAFを確定し、実フレーム数へメタデータを揃えてから解析する。
-        try BatchTranscriptionRecoveryService.recoverAudioMetadataIfNeeded(
-            sessionId: sessionId,
-            dbQueue: dbQueue,
-            managedRootURL: managedRootURL
-        )
         let job = try fetchJob(sessionId: sessionId)
         let segments = try await transcribe(job: job)
         let records = segments.map { TranscriptSegmentRecord(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
@@ -159,31 +146,20 @@ actor BatchTranscriptionCoordinator {
             dbQueue: dbQueue
         )
 
-        performPostProcessing(for: job)
+        await performPostProcessing(for: job)
     }
 
-    private func performPostProcessing(for job: Job) {
+    private func performPostProcessing(for job: Job) async {
         do {
             try exportTranscript(for: job)
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptExport"])
         }
-        guard job.session.retainAudioAfterBatch else {
-            BatchAudioStorage.removeFiles(
-                job.files,
-                managedRootURL: managedRootURL,
-                vaultURL: job.vault.url
-            )
-            return
-        }
+        guard !job.session.retainAudioAfterBatch else { return }
         do {
-            try BatchAudioRetentionService.retainCompletedAudio(
-                sessionId: job.session.id,
-                dbQueue: dbQueue,
-                managedRootURL: managedRootURL
-            )
+            try await recordingAudioStore?.requestPurge(sessionId: job.session.id)
         } catch {
-            ErrorReportingService.capture(error, context: ["source": "batchAudioRetention"])
+            ErrorReportingService.capture(error, context: ["source": "batchAudioPurge"])
         }
     }
 
@@ -194,7 +170,7 @@ actor BatchTranscriptionCoordinator {
                 sql: """
                 UPDATE recording_sessions
                 SET batchLastAttemptAt = ?, batchAttemptCount = batchAttemptCount + 1,
-                    batchLastError = NULL, updatedAt = ?
+                    batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
                 """,
                 arguments: [attemptDate, attemptDate, sessionId]
@@ -203,7 +179,6 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func transcribe(job: Job) async throws -> [TranscriptSegment] {
-        var segments: [TranscriptSegment] = []
         let translationConfiguration = await MainActor.run {
             TranslationConfiguration(
                 isEnabled: AppSettings.shared.transcriptTranslationEnabled,
@@ -211,25 +186,36 @@ actor BatchTranscriptionCoordinator {
             )
         }
 
-        for file in job.files {
-            guard let audioURL = BatchAudioStorage.existingURL(
-                for: file,
-                managedRootURL: managedRootURL,
-                vaultURL: job.vault.url
-            ) else {
-                throw CocoaError(.fileNoSuchFile)
-            }
-            for range in job.rangesByFileId[file.id] ?? [] {
-                try await segments.append(contentsOf: transcribe(
+        guard let recordingAudioStore else {
+            throw RecordingAudioStoreError.storageUnavailable
+        }
+        return try await recordingAudioStore.withVerifiedReadySegments(sessionId: job.session.id) { verified in
+            try await self.transcribe(
+                verifiedSegments: verified,
+                job: job,
+                translationConfiguration: translationConfiguration
+            )
+        }
+    }
+
+    private func transcribe(
+        verifiedSegments: [RecordingAudioStore.VerifiedSegment],
+        job: Job,
+        translationConfiguration: TranslationConfiguration
+    ) async throws -> [TranscriptSegment] {
+        var transcriptSegments: [TranscriptSegment] = []
+        for verified in verifiedSegments {
+            for range in verified.ranges {
+                try await transcriptSegments.append(contentsOf: transcribe(
                     range: range,
-                    file: file,
-                    audioURL: audioURL,
+                    segment: verified.segment,
+                    audioURL: verified.url,
                     session: job.session,
                     translationConfiguration: translationConfiguration
                 ))
             }
         }
-        return segments.sorted { lhs, rhs in
+        return transcriptSegments.sorted { lhs, rhs in
             if lhs.startTime == rhs.startTime {
                 return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
             }
@@ -238,8 +224,8 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func transcribe(
-        range: RecordingAudioRangeRecord,
-        file: RecordingAudioFileRecord,
+        range: RecordingAudioSegmentRangeRecord,
+        segment: RecordingAudioSegmentRecord,
         audioURL: URL,
         session: RecordingSessionRecord,
         translationConfiguration: TranslationConfiguration
@@ -253,7 +239,7 @@ actor BatchTranscriptionCoordinator {
                 startFrame: range.startFrame,
                 frameCount: frameCount,
                 locale: Locale(identifier: range.localeIdentifier),
-                source: file.source,
+                source: segment.source,
                 recordingSessionId: session.id,
                 recordingStartTime: session.startedAt,
                 sessionOffsetSeconds: range.sessionOffsetSeconds
@@ -288,27 +274,17 @@ actor BatchTranscriptionCoordinator {
             } else {
                 ""
             }
-            let files = try RecordingAudioFileRecord
+            let segmentCount = try RecordingAudioSegmentRecord
                 .filter(Column("recordingSessionId") == sessionId)
-                .order(Column("source").asc)
-                .fetchAll(db)
-            guard !files.isEmpty else {
+                .fetchCount(db)
+            guard segmentCount > 0 else {
                 throw CocoaError(.fileNoSuchFile)
-            }
-            var rangesByFileId: [UUID: [RecordingAudioRangeRecord]] = [:]
-            for file in files {
-                rangesByFileId[file.id] = try RecordingAudioRangeRecord
-                    .filter(Column("audioFileId") == file.id)
-                    .order(Column("startFrame").asc)
-                    .fetchAll(db)
             }
             return Job(
                 session: session,
                 meeting: meeting,
                 vault: vault,
-                projectName: projectName,
-                files: files,
-                rangesByFileId: rangesByFileId
+                projectName: projectName
             )
         }
     }
@@ -350,15 +326,25 @@ actor BatchTranscriptionCoordinator {
 
     private func recordFailure(sessionId: UUID, error: Error) async {
         let message = error.localizedDescription
-        await persistFailure(sessionId: sessionId, message: message)
+        let kind: BatchFailureKind = switch error as? RecordingAudioStoreError {
+        case .ambiguousFiles, .integrityMismatch, .invalidPath, .invalidState, .missingFile:
+            .recordingAudioPermanent
+        default:
+            .transcription
+        }
+        await persistFailure(sessionId: sessionId, message: message, kind: kind)
         ErrorReportingService.capture(error, context: ["source": "batchTranscription"])
     }
 
-    private func persistFailure(sessionId: UUID, message: String) async {
+    private func persistFailure(sessionId: UUID, message: String, kind: BatchFailureKind? = nil) async {
         try? await dbQueue.write { db in
             try db.execute(
-                sql: "UPDATE recording_sessions SET batchLastError = ?, updatedAt = ? WHERE id = ?",
-                arguments: [message, Date.now, sessionId]
+                sql: """
+                UPDATE recording_sessions
+                SET batchLastError = ?, batchFailureKind = ?, updatedAt = ?
+                WHERE id = ?
+                """,
+                arguments: [message, kind, Date.now, sessionId]
             )
         }
         if let meetingId = try? meetingId(for: sessionId) {

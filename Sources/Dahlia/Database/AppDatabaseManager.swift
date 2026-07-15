@@ -21,6 +21,12 @@ final class AppDatabaseManager: Sendable {
         }
         dbQueue = try DatabaseQueue(path: path)
         try Self.migrator.migrate(dbQueue)
+        if path != ":memory:" {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: path
+            )
+        }
     }
 
     /// DB ファイルの URL。
@@ -97,8 +103,133 @@ final class AppDatabaseManager: Sendable {
             try strengthenCalendarEventIntegrity(in: db)
         }
 
+        migrator.registerMigration("v18_segmentedRecordingAudio") { db in
+            try addSegmentedRecordingAudioSchema(in: db)
+        }
+
         return migrator
     }()
+
+    private static func addSegmentedRecordingAudioSchema(in db: Database) throws {
+        // Some early development databases can legitimately contain only a subset of
+        // the v3 schema. Keep those databases migratable without manufacturing parent
+        // rows or weakening the foreign-key relationships of the segmented store.
+        guard try db.tableExists("recording_sessions") else { return }
+
+        try addColumnIfNeeded(
+            in: db,
+            table: "recording_sessions",
+            column: "audioRetentionPolicy",
+            type: .text
+        )
+        try addColumnIfNeeded(
+            in: db,
+            table: "recording_sessions",
+            column: "retentionExpiresAt",
+            type: .datetime
+        )
+        try addColumnIfNeeded(
+            in: db,
+            table: "recording_sessions",
+            column: "batchFailureKind",
+            type: .text
+        )
+        if try !db.tableExists("recording_audio_segments") {
+            try db.create(table: "recording_audio_segments") { table in
+                table.primaryKey("id", .blob)
+                table.column("recordingSessionId", .blob).notNull()
+                    .references("recording_sessions", onDelete: .cascade)
+                table.column("source", .text).notNull()
+                table.column("segmentIndex", .integer).notNull()
+                table.column("generationId", .blob).notNull().unique()
+                table.column("state", .text).notNull()
+                table.column("partialRelativePath", .text).notNull().unique()
+                table.column("finalRelativePath", .text).notNull().unique()
+                table.column("sampleRate", .double).notNull()
+                table.column("channelCount", .integer).notNull()
+                table.column("sealedFrameCount", .integer)
+                table.column("sessionStartOffsetSeconds", .double).notNull()
+                table.column("sessionEndOffsetSeconds", .double)
+                table.column("byteCount", .integer)
+                table.column("sha256", .blob)
+                table.column("finalizationStartedAt", .datetime)
+                table.column("integrityVerifiedAt", .datetime)
+                table.column("finalizedAt", .datetime)
+                table.column("purgeRequestedAt", .datetime)
+                table.column("purgedAt", .datetime)
+                table.column("failureStage", .text)
+                table.column("failureCode", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+                table.uniqueKey(["recordingSessionId", "source", "segmentIndex"])
+            }
+            try db.create(
+                index: "recording_audio_segments_on_session_state",
+                on: "recording_audio_segments",
+                columns: ["recordingSessionId", "state"]
+            )
+            try db.create(
+                index: "recording_audio_segments_on_source_index",
+                on: "recording_audio_segments",
+                columns: ["recordingSessionId", "source", "segmentIndex"]
+            )
+        }
+
+        if try !db.tableExists("recording_audio_segment_ranges") {
+            try db.create(table: "recording_audio_segment_ranges") { table in
+                table.primaryKey("id", .blob)
+                table.column("audioSegmentId", .blob).notNull()
+                    .references("recording_audio_segments", onDelete: .cascade)
+                table.column("startFrame", .integer).notNull()
+                table.column("frameCount", .integer)
+                table.column("sessionOffsetSeconds", .double).notNull()
+                table.column("localeIdentifier", .text).notNull()
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+            }
+            try db.create(
+                index: "recording_audio_segment_ranges_on_segment_frame",
+                on: "recording_audio_segment_ranges",
+                columns: ["audioSegmentId", "startFrame"]
+            )
+        }
+
+        if try !db.tableExists("recording_audio_source_progress") {
+            try db.create(table: "recording_audio_source_progress") { table in
+                table.column("recordingSessionId", .blob).notNull()
+                    .references("recording_sessions", onDelete: .cascade)
+                table.column("source", .text).notNull()
+                table.column("isRequired", .boolean).notNull().defaults(to: false)
+                table.column("captureState", .text).notNull()
+                table.column("durableThroughOffsetSeconds", .double).notNull().defaults(to: 0)
+                table.column("lastContiguousReadySegmentIndex", .integer)
+                table.column("failureCode", .text)
+                table.column("createdAt", .datetime).notNull()
+                table.column("updatedAt", .datetime).notNull()
+                table.primaryKey(["recordingSessionId", "source"])
+            }
+        }
+
+        if try !db.tableExists("recording_audio_reconciliation_issues") {
+            try db.create(table: "recording_audio_reconciliation_issues") { table in
+                table.primaryKey("id", .blob)
+                table.column("recordingSessionId", .blob)
+                    .references("recording_sessions", onDelete: .cascade)
+                table.column("audioSegmentId", .blob)
+                    .references("recording_audio_segments", onDelete: .cascade)
+                table.column("relativePath", .text)
+                table.column("reason", .text).notNull()
+                table.column("firstObservedAt", .datetime).notNull()
+                table.column("lastObservedAt", .datetime).notNull()
+                table.column("resolvedAt", .datetime)
+            }
+            try db.create(
+                index: "recording_audio_reconciliation_issues_on_session",
+                on: "recording_audio_reconciliation_issues",
+                columns: ["recordingSessionId", "resolvedAt"]
+            )
+        }
+    }
 
     private static func createSchema(in db: Database) throws {
         try createVaultsTable(in: db)

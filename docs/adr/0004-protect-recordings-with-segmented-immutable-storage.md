@@ -6,6 +6,9 @@ Accepted
 
 この ADR は実装方針を定めるものであり、現行実装がすでに以下の保証を満たしていることを示さない。
 
+実装時の判断として、既存ミーティングは文字起こし済みとみなし、旧 managed single-CAF の読み取り、復旧、再文字起こし、
+retention 移行は提供しない。既存の Meeting、録音セッション、文字起こし結果は維持し、新規録音だけを本 ADR の状態機械で扱う。
+
 ## Date
 
 2026-07-15
@@ -187,7 +190,7 @@ Application Support/Dahlia/BatchAudio/<meeting-id>/<session-id>/
 
 - segment index と generation ID は DB に先に登録し、ファイル名を再利用しない。
 - 作成には一意な path と排他的 create を使う。既存 partial を録音開始時に削除しない。
-- `recording_audio_files` は 1 session / 1 source ではなく 1 physical segment を表す。
+- `recording_audio_segments` は 1 row で 1 physical segment を表す。
 - unique key は `(recordingSessionId, source, segmentIndex)` とし、generation ID はその segment の一意な物理ファイル名として保持する。
 - range は file-local frame と session offset の両方を保持し、segment をまたぐ locale range は segment ごとの range に分割する。
 - `ready` になった CAF は不変とする。後から検証に失敗した file は `failed` にし、同じ logical segment の自動修復や上書きを行わない。
@@ -325,14 +328,9 @@ session 単位の frame cursor は作らない。`sealedFrameCount` は物理 se
 `fullyDurableThroughOffsetSeconds` は required source の progress から問い合わせ時に導出する。cache が必要になった場合も派生値として扱い、
 source progress と別 transaction で更新しない。
 
-既存の app-managed データは破壊的に一括変換しない。
-
-- 既存の managed finalized CAF は 1 本の legacy segment として読み、初回検証時に digest を lazy backfill する。
-- 既存の managed partial は session lease を取得できた場合だけ legacy recovery する。
-- migration 中に managed source が見つからない、partial と final が異なる、volume が unavailable の場合は DB 参照を消さず、
-  移行待ちとして残す。
-- `storageLocation == .vault` の行と既存 Vault 音声は本 migration の入力に含めず、移動、書き換え、削除、特別な互換処理を行わない。
-  Vault 保存機能の削除は本 ADR の実装範囲外とする。
+既存の app-managed データは変換しない。`recording_audio_files` / `recording_audio_ranges` の既存行と Meeting、録音セッション、
+文字起こし結果は migration で変更せず、新しい segment table へ backfill しない。旧 managed / Vault CAF は新しい文字起こし、復旧、
+retention 処理の入力に含めない。親 Meeting / Vault をユーザーが削除する際の既存 cleanup だけは維持する。
 
 ## Recovery and Durability Objectives
 
@@ -354,16 +352,17 @@ source progress と別 transaction で更新しない。
    起点（baseline）とする。
 2. 単一インスタンス設定、process-wide lock、`RecordingAudioStore`、session lease、active-session deletion guard を導入し、復旧・削除・
    finalization の mutation を集約する。
-3. 新しい DB migration、`recording → finalizing` の永続化 barrier、bounded segment rotation を導入する。既存の managed single-CAF
-   reader は互換用に残す。
+3. 新しい DB migration、`recording → finalizing` の永続化 barrier、bounded segment rotation を導入し、新規録音を segment 方式へ
+   一括で切り替える。既存の managed single-CAF reader は残さない。
 4. `F_FULLFSYNC`、CAF metadata、byte count、SHA-256 の確定 protocol と startup reconciler を導入する。
 5. 段階的縮退、finite safety budget、音源別 `durableThroughOffsetSeconds` とユーザー通知を、fault injection と性能測定で閾値を決めて
    導入する。
 6. POSIX permission と canonical-root guard を導入する。
-7. crash test と実 process 競合 test が安定した後に、旧 mutation API と legacy managed cleanup を削除する。
+7. crash test と実 process 競合 test が安定した後に、旧 mutation API と旧録音の処理経路を削除する。
 
-各段階は、それ以前の完成済み managed 音声を読める状態で release する。schema reset や既存 managed CAF の一括削除を rollout 手段に
-しない。Data Protection、FileVault UI、backup eligibility、App Sandbox、app-level encryption はこの rollout に含めず、別 ADR で扱う。
+schema reset や既存 managed CAF の一括削除を rollout 手段にしない。既存の文字起こし結果はそのまま利用できる一方、旧 CAF の再処理は
+提供しない。Data Protection、FileVault UI、backup eligibility、App Sandbox、app-level encryption はこの rollout に含めず、
+別 ADR で扱う。
 
 ## Verification
 
@@ -389,7 +388,7 @@ source progress と別 transaction で更新しない。
   file がなければ `purged` へ進み、path が曖昧なら自動削除しない。
 - active / failed / ambiguous session を Meeting、Project、一括削除から消せない。
 - root が `0700`、file が `0600` であり、canonical root 外の path と symlink を destructive operation が拒否する。
-- legacy managed CAF の migration が、source 不在や中断後もデータ参照を失わない。
+- migration が旧録音行と既存文字起こし結果を変更せず、旧 CAF を新しい処理対象として自動選択しない。
 
 ## Consequences
 
@@ -411,7 +410,7 @@ source progress と別 transaction で更新しない。
 - range が segment をまたぐため、batch request と timeline の組み立てが複雑になる。
 - app-managed audio を削除しても、Time Machine、APFS snapshot、同期サービス等が削除前に作成した copy は残存し得る。
 - アプリ管理領域だけでは volume failure に対する冗長性を提供できない。
-- legacy managed single-CAF の互換 reader / migration を移行期間中は維持する必要がある。
+- 旧 managed single-CAF は再文字起こしや復旧の対象にならない。
 
 ## Alternatives Considered
 

@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import GRDB
 #if canImport(Testing)
@@ -82,14 +83,14 @@ import GRDB
         }
 
         @Test
-        func deletingNameWithSQLWildcardDoesNotDeleteSiblingPrefix() throws {
+        func deletingNameWithSQLWildcardDoesNotDeleteSiblingPrefix() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let source = try context.service.createProject(leafName: "100%", parentProjectId: nil)
             let sibling = try context.service.createProject(leafName: "1000", parentProjectId: nil)
 
-            try context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .deleteMeetings)
+            try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .deleteMeetings)
 
             #expect(try context.repository.fetchProject(id: source.id) == nil)
             #expect(try context.repository.fetchProject(id: sibling.id)?.name == "1000")
@@ -159,7 +160,7 @@ import GRDB
         }
 
         @Test
-        func deletesHierarchyAfterMovingMeetings() throws {
+        func deletesHierarchyAfterMovingMeetings() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -170,11 +171,11 @@ import GRDB
             try insertSummary(meetingId: meeting.id, path: "Source/Child/Summary.md", context: context)
             try insertSegment(meetingId: meeting.id, context: context)
             try context.repository.addTag(name: "important", toMeetingId: meeting.id, colorHex: "#FF0000")
-            let audioURL = try insertAudio(meetingId: meeting.id, context: context)
+            let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
 
-            try context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
+            try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
 
-            let fetchedMeeting = try context.database.dbQueue.read { db in
+            let fetchedMeeting = try await context.database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
@@ -191,7 +192,7 @@ import GRDB
         }
 
         @Test
-        func movingMeetingsPreservesSummaryPathsOutsideDeletedHierarchy() throws {
+        func movingMeetingsPreservesSummaryPathsOutsideDeletedHierarchy() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -200,7 +201,7 @@ import GRDB
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(meetingId: meeting.id, path: "Archive/Summary.md", context: context)
 
-            try context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
+            try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
 
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
             let summary = try #require(fetchedSummary)
@@ -208,7 +209,7 @@ import GRDB
         }
 
         @Test
-        func deletesMeetingsAndDependentContentWithHierarchy() throws {
+        func deletesMeetingsAndDependentContentWithHierarchy() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -216,11 +217,11 @@ import GRDB
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(meetingId: meeting.id, path: "Source/Summary.md", context: context)
             try insertSegment(meetingId: meeting.id, context: context)
-            let audioURL = try insertAudio(meetingId: meeting.id, context: context)
+            let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
 
-            try context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .deleteMeetings)
+            try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .deleteMeetings)
 
-            let counts = try context.database.dbQueue.read { db in
+            let counts = try await context.database.dbQueue.read { db in
                 try (
                     MeetingRecord.filter(Column("id") == meeting.id).fetchCount(db),
                     SummaryRecord.filter(Column("meetingId") == meeting.id).fetchCount(db),
@@ -235,12 +236,12 @@ import GRDB
         }
 
         @Test
-        func restoresFolderWhenDeleteDatabaseUpdateFails() throws {
+        func restoresFolderWhenDeleteDatabaseUpdateFails() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
-            try context.database.dbQueue.write { db in
+            try await context.database.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_project_delete
                 BEFORE DELETE ON projects
@@ -250,8 +251,8 @@ import GRDB
                 """)
             }
 
-            #expect(throws: (any Error).self) {
-                try context.service.deleteProjectHierarchy(id: project.id, meetingDisposition: .deleteMeetings)
+            await #expect(throws: (any Error).self) {
+                try await context.service.deleteProjectHierarchy(id: project.id, meetingDisposition: .deleteMeetings)
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Project")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Project").path))
@@ -281,6 +282,7 @@ import GRDB
             let service = ProjectWorkspaceService(
                 repository: repository,
                 vault: vault,
+                managedAudioRootURL: rootURL.appending(path: "ManagedAudio", directoryHint: .isDirectory),
                 trashHandler: { sourceURL in
                     let destinationURL = trashURL.appending(path: sourceURL.lastPathComponent, directoryHint: .isDirectory)
                     try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
@@ -348,7 +350,7 @@ import GRDB
         private func insertAudio(
             meetingId: UUID,
             context: ProjectWorkspaceTestContext
-        ) throws -> URL {
+        ) async throws -> URL {
             let now = Date.now
             let session = RecordingSessionRecord(
                 id: .v7(),
@@ -360,36 +362,46 @@ import GRDB
                 createdAt: now,
                 updatedAt: now
             )
-            let relativePath = BatchAudioStorage.vaultRelativePath(
-                meetingId: meetingId,
-                sessionId: session.id,
-                source: .microphone
-            )
-            let audio = RecordingAudioFileRecord(
-                id: .v7(),
-                recordingSessionId: session.id,
-                source: .microphone,
-                storageLocation: .vault,
-                relativePath: relativePath,
-                sampleRate: 16000,
-                channelCount: 1,
-                finalizedAt: now,
-                totalFrameCount: 1,
-                createdAt: now,
-                updatedAt: now
-            )
-            try context.database.dbQueue.write { db in
+            try await context.database.dbQueue.write { db in
                 try session.insert(db)
-                try audio.insert(db)
             }
-
-            let audioURL = context.vaultURL.appending(path: relativePath)
-            try FileManager.default.createDirectory(
-                at: audioURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+            let configuration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .seconds(60),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5)
             )
-            try Data("audio".utf8).write(to: audioURL)
-            return audioURL
+            let managedRootURL = context.rootURL.appending(path: "ManagedAudio", directoryHint: .isDirectory)
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: context.database.dbQueue,
+                managedRootURL: managedRootURL,
+                meetingId: meetingId,
+                recordingSessionId: session.id,
+                recordingStartTime: now,
+                sampleRate: 16000,
+                configuration: configuration
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: now
+            )
+            let buffer = try #require(
+                AVAudioPCMBuffer(pcmFormat: recorder.targetFormat, frameCapacity: 160)
+            )
+            buffer.frameLength = 160
+            writer.appendBuffer(buffer)
+            try await recorder.finish()
+            let audioSegment = try await context.database.dbQueue.read { db in
+                try #require(
+                    try RecordingAudioSegmentRecord
+                        .filter(Column("recordingSessionId") == session.id)
+                        .fetchOne(db)
+                )
+            }
+            return managedRootURL.appending(path: audioSegment.finalRelativePath)
         }
     }
 #endif

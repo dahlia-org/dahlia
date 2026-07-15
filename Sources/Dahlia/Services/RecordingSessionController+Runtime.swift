@@ -218,7 +218,7 @@ extension RecordingSessionController {
         sourceRuntimeGenerations.removeAll()
         pendingRecognitionStarts.removeAll()
         if deleteBatchRecording {
-            await batchRecording?.cancelAndDelete()
+            await batchRecording?.cancelPreservingAudio()
         }
         batchRecording = nil
     }

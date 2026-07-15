@@ -421,10 +421,10 @@ final class SidebarViewModel {
     }
 
     @discardableResult
-    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) -> Bool {
+    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) async -> Bool {
         guard let projectWorkspaceService else { return false }
         do {
-            try projectWorkspaceService.deleteProjectHierarchy(
+            try await projectWorkspaceService.deleteProjectHierarchy(
                 id: id,
                 meetingDisposition: meetingDisposition
             )
@@ -500,17 +500,27 @@ final class SidebarViewModel {
     }
 
     func deleteMeeting(id: UUID) {
-        try? meetingRepository?.deleteMeeting(id: id)
-        selectedMeetingIds.remove(id)
+        guard let meetingRepository else { return }
+        Task {
+            do {
+                try await meetingRepository.deleteMeetingSafely(id: id)
+                selectedMeetingIds.remove(id)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
     }
 
     func deleteMeetings(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
-        do {
-            try meetingRepository?.deleteMeetings(ids: ids)
-            selectedMeetingIds.subtract(ids)
-        } catch {
-            lastError = error.localizedDescription
+        guard let meetingRepository else { return }
+        Task {
+            do {
+                try await meetingRepository.deleteMeetingsSafely(ids: ids)
+                selectedMeetingIds.subtract(ids)
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
     }
 

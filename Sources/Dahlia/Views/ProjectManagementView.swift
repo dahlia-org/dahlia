@@ -59,7 +59,7 @@ struct ProjectManagementView: View {
                 meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
                 moveDestinations: projectMoveDestinations(excluding: project),
                 onConfirm: { disposition in
-                    deleteProject(project, meetingDisposition: disposition)
+                    await deleteProject(project, meetingDisposition: disposition)
                 }
             )
         }
@@ -430,9 +430,9 @@ private extension ProjectManagementView {
     private func deleteProject(
         _ project: ProjectOverviewItem,
         meetingDisposition: ProjectMeetingDisposition
-    ) -> Bool {
+    ) async -> Bool {
         descriptionSaveTask?.cancel()
-        guard sidebarViewModel.deleteProjectHierarchy(
+        guard await sidebarViewModel.deleteProjectHierarchy(
             id: project.projectId,
             meetingDisposition: meetingDisposition
         ) else {

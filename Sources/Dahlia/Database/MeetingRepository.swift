@@ -62,11 +62,25 @@ final class MeetingRepository {
 
     /// 保管庫を登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
     func deleteVault(id: UUID) throws {
+        let meetingIds = try meetingIds(vaultId: id)
+        try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(vaultId: id, dbQueue: dbQueue)
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
             _ = try VaultRecord.deleteOne(db, key: id)
         }
-        BatchAudioCleanupService.deleteFiles(audioTargets)
+    }
+
+    func deleteVaultSafely(
+        id: UUID,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        let ids = try meetingIds(vaultId: id)
+        try await prepareSegmentedAudioForDeletion(
+            meetingIds: Set(ids),
+            managedRootURL: managedRootURL
+        )
+        try deleteVault(id: id)
     }
 
     /// 保管庫の最終オープン日時を更新する。
@@ -186,20 +200,29 @@ final class MeetingRepository {
     }
 
     func deleteMeeting(id: UUID) throws {
+        try ensureNoLiveSegmentedAudio(meetingIds: [id])
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
             _ = try MeetingRecord.deleteOne(db, key: id)
         }
-        BatchAudioCleanupService.deleteFiles(audioTargets)
+    }
+
+    func deleteMeetingSafely(
+        id: UUID,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        try await prepareSegmentedAudioForDeletion(meetingIds: [id], managedRootURL: managedRootURL)
+        try deleteMeeting(id: id)
     }
 
     /// 復旧不能なバッチ録音を明示的に破棄し、要約生成のブロック対象から外す。
     @discardableResult
-    func discardFailedBatchSession(
+    func discardFailedBatchSessionSafely(
         id: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
-    ) throws -> Bool {
-        try BatchTranscriptionDiscardService.discardFailedSession(
+    ) async throws -> Bool {
+        try await BatchTranscriptionDiscardService.discardFailedSessionSafely(
             id: id,
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
@@ -209,11 +232,21 @@ final class MeetingRepository {
     /// 複数のミーティングを一括削除する。
     func deleteMeetings(ids: Set<UUID>) throws {
         guard !ids.isEmpty else { return }
+        try ensureNoLiveSegmentedAudio(meetingIds: ids)
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
         }
-        BatchAudioCleanupService.deleteFiles(audioTargets)
+    }
+
+    func deleteMeetingsSafely(
+        ids: Set<UUID>,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        guard !ids.isEmpty else { return }
+        try await prepareSegmentedAudioForDeletion(meetingIds: ids, managedRootURL: managedRootURL)
+        try deleteMeetings(ids: ids)
     }
 
     func moveMeeting(id: UUID, toProjectId: UUID?) throws {
@@ -639,11 +672,14 @@ extension MeetingRepository {
             )
         }
 
-        let audioTargets: [BatchAudioCleanupService.DeletionTarget] = if meetingDisposition == .deleteMeetings {
-            try BatchAudioCleanupService.deletionTargets(meetingIds: meetingIds, dbQueue: dbQueue)
+        let audioTargets: [BatchAudioCleanupService.DeletionTarget]
+        if meetingDisposition == .deleteMeetings {
+            try ensureNoLiveSegmentedAudio(meetingIds: meetingIds)
+            audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: meetingIds, dbQueue: dbQueue)
         } else {
-            []
+            audioTargets = []
         }
+        try BatchAudioCleanupService.deleteFiles(audioTargets)
 
         try dbQueue.write { db in
             let projectIds = try Set(ProjectRecord.hierarchy(prefix: name, vaultId: vaultId, in: db).map(\.id))
@@ -675,7 +711,62 @@ extension MeetingRepository {
 
             _ = try ProjectRecord.deleteByPrefix(name, vaultId: vaultId, in: db)
         }
+    }
 
-        BatchAudioCleanupService.deleteFiles(audioTargets)
+    func prepareSegmentedAudioForProjectDeletion(
+        name: String,
+        vaultId: UUID,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws {
+        let ids = try await dbQueue.read { db in
+            let projectIds = try ProjectRecord.hierarchy(prefix: name, vaultId: vaultId, in: db).map(\.id)
+            guard !projectIds.isEmpty else { return Set<UUID>() }
+            return try UUID.fetchSet(
+                db,
+                sql: "SELECT id FROM meetings WHERE projectId IN (\(projectIds.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(projectIds)
+            )
+        }
+        try await prepareSegmentedAudioForDeletion(meetingIds: ids, managedRootURL: managedRootURL)
+    }
+
+    private func prepareSegmentedAudioForDeletion(
+        meetingIds: Set<UUID>,
+        managedRootURL: URL
+    ) async throws {
+        let sessionIds = try recordingSessionIds(meetingIds: meetingIds)
+        guard !sessionIds.isEmpty else { return }
+        let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: managedRootURL)
+        try await store.prepareForParentDeletion(sessionIds: sessionIds)
+    }
+
+    private func ensureNoLiveSegmentedAudio(meetingIds: Set<UUID>) throws {
+        guard !meetingIds.isEmpty else { return }
+        let sessionIds = try recordingSessionIds(meetingIds: meetingIds)
+        guard !sessionIds.isEmpty else { return }
+        let count = try dbQueue.read { db in
+            try RecordingAudioSegmentRecord
+                .filter(sessionIds.contains(Column("recordingSessionId")))
+                .filter(Column("state") != RecordingAudioSegmentState.purged.rawValue)
+                .fetchCount(db)
+        }
+        guard count == 0 else { throw RecordingAudioStoreError.invalidState }
+    }
+
+    private func recordingSessionIds(meetingIds: Set<UUID>) throws -> [UUID] {
+        guard !meetingIds.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: "SELECT id FROM recording_sessions WHERE meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(meetingIds)
+            )
+        }
+    }
+
+    private func meetingIds(vaultId: UUID) throws -> [UUID] {
+        try dbQueue.read { db in
+            try UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId])
+        }
     }
 }

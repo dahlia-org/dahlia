@@ -3,6 +3,10 @@ import Foundation
 
 /// BatchAudioRecordingSessionをrouter consumer中心のprotocolへ接続するadapter。
 final class DefaultBatchRecordingSession: BatchRecordingSession {
+    var events: AsyncStream<BatchRecordingEvent> {
+        session.events
+    }
+
     var targetFormat: AVAudioFormat {
         session.targetFormat
     }
@@ -13,8 +17,8 @@ final class DefaultBatchRecordingSession: BatchRecordingSession {
         self.session = session
     }
 
-    func prepare(source: RecordingAudioSource) async throws {
-        _ = try await session.prepareWriter(for: source)
+    func freezeRequiredSources() async {
+        await session.freezeRequiredSources()
     }
 
     func beginRangeConsumer(
@@ -53,11 +57,15 @@ final class DefaultBatchRecordingSession: BatchRecordingSession {
         try await session.finish()
     }
 
-    func cancelAndDelete() async {
-        await session.cancelAndDelete()
+    func cancelPreservingAudio() async {
+        await session.cancelPreservingAudio()
     }
 
-    private static func consumer(writer: BatchAudioFileWriter) -> AudioFrameRouter.BatchConsumer {
+    func fullyDurableThroughOffsetSeconds() async -> TimeInterval {
+        await session.fullyDurableThroughOffsetSeconds()
+    }
+
+    private static func consumer(writer: SegmentedAudioSourceWriter) -> AudioFrameRouter.BatchConsumer {
         { chunk in
             writer.appendBuffer(chunk.buffer)
         }
