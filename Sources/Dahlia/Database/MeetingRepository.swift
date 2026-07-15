@@ -284,11 +284,14 @@ final class MeetingRepository {
                 title: trimmedTitle.isEmpty ? (existingSummary?.title ?? "") : trimmedTitle,
                 summary: renderedBody,
                 document: document.databaseJSONString(),
-                vaultRelativePath: existingSummary?.vaultRelativePath,
-                googleFileId: existingSummary?.googleFileId,
+                vaultRelativePath: nil,
+                googleFileId: nil,
                 createdAt: existingSummary?.createdAt ?? Date()
             )
             try record.save(db)
+            _ = try SummaryExportRecord
+                .filter(Column("meetingId") == meetingId)
+                .deleteAll(db)
 
             let tagNames = tags.filter { !$0.isEmpty }
             if !tagNames.isEmpty {
@@ -460,19 +463,52 @@ final class MeetingRepository {
 
     func updateSummaryGoogleFileId(forMeetingId meetingId: UUID, googleFileId: String?) throws {
         try dbQueue.write { db in
+            guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }
+            let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
+                SummaryExportRecord.googleDocsURL(fileId: fileId)
+            }
             try db.execute(
                 sql: "UPDATE summaries SET googleFileId = ? WHERE meetingId = ?",
                 arguments: [googleFileId?.nilIfBlank, meetingId]
+            )
+            try SummaryExportRecord.setURL(
+                googleDocsURL,
+                meetingId: meetingId,
+                type: .googleDocs,
+                in: db
             )
         }
     }
 
     nonisolated func updateSummaryVaultRelativePath(forMeetingId meetingId: UUID, relativePath: String?) throws {
         try dbQueue.write { db in
+            guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }
             try db.execute(
                 sql: "UPDATE summaries SET vaultRelativePath = ? WHERE meetingId = ?",
                 arguments: [relativePath?.nilIfBlank, meetingId]
             )
+            try SummaryExportRecord.setURL(
+                relativePath?.nilIfBlank.flatMap(SummaryExportRecord.vaultURL(relativePath:)),
+                meetingId: meetingId,
+                type: .vault,
+                in: db
+            )
+        }
+    }
+
+    func fetchSummaryVaultRelativePath(forMeetingId meetingId: UUID) throws -> String? {
+        try dbQueue.read { db in
+            try SummaryExportRecord.fetchOne(meetingId: meetingId, type: .vault, in: db)?.vaultRelativePath
+                ?? SummaryRecord.fetchOne(db, key: meetingId)?.vaultRelativePath
+        }
+    }
+
+    func fetchSummaryExport(
+        forMeetingId meetingId: UUID,
+        type: SummaryExportType
+    ) throws -> SummaryExportRecord? {
+        try dbQueue.read { db in
+            try SummaryExportRecord.fetchOne(meetingId: meetingId, type: type, in: db)
         }
     }
 
@@ -486,7 +522,22 @@ final class MeetingRepository {
     /// サマリーを保存する（insert or update）。
     nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
         try dbQueue.write { db in
+            let googleDocsURL = summary.googleFileId?.nilIfBlank.flatMap { fileId in
+                SummaryExportRecord.googleDocsURL(fileId: fileId)
+            }
             try summary.save(db)
+            try SummaryExportRecord.setURL(
+                summary.vaultRelativePath?.nilIfBlank.flatMap(SummaryExportRecord.vaultURL(relativePath:)),
+                meetingId: summary.meetingId,
+                type: .vault,
+                in: db
+            )
+            try SummaryExportRecord.setURL(
+                googleDocsURL,
+                meetingId: summary.meetingId,
+                type: .googleDocs,
+                in: db
+            )
         }
     }
 
@@ -501,6 +552,7 @@ final class MeetingRepository {
         let screenshots: [MeetingScreenshotRecord]
         let note: MeetingNoteRecord?
         let summary: SummaryRecord?
+        let summaryExports: [SummaryExportRecord]
     }
 
     nonisolated func fetchMeetingDetail(id meetingId: UUID) throws -> MeetingDetail {
@@ -521,6 +573,9 @@ final class MeetingRepository {
                 .fetchAll(db)
             let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
             let summary = try SummaryRecord.fetchOne(db, key: meetingId)
+            let summaryExports = try SummaryExportRecord
+                .filter(Column("meetingId") == meetingId)
+                .fetchAll(db)
             return MeetingDetail(
                 meeting: meeting,
                 calendarEvent: calendarEvent,
@@ -528,7 +583,8 @@ final class MeetingRepository {
                 recordingSessions: recordingSessions,
                 screenshots: screenshots,
                 note: note,
-                summary: summary
+                summary: summary,
+                summaryExports: summaryExports
             )
         }
     }
@@ -624,6 +680,12 @@ extension MeetingRepository {
                 vaultId: vaultId,
                 in: db
             )
+            try SummaryExportRecord.renameVaultPathsByPrefix(
+                oldPrefix: oldPrefix,
+                newPrefix: newPrefix,
+                vaultId: vaultId,
+                in: db
+            )
         }
     }
 
@@ -698,6 +760,11 @@ extension MeetingRepository {
                         .filter(meetingIds.contains(Column("id")))
                         .updateAll(db, Column("projectId").set(to: destinationId))
                     try SummaryRecord.clearVaultRelativePaths(
+                        meetingIds: meetingIds,
+                        underProjectPrefix: name,
+                        in: db
+                    )
+                    try SummaryExportRecord.clearVaultPaths(
                         meetingIds: meetingIds,
                         underProjectPrefix: name,
                         in: db

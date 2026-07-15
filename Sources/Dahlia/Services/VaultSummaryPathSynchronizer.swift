@@ -13,11 +13,23 @@ struct VaultSummaryPathSynchronizer {
                 vaultId: vaultId,
                 in: db
             )
+            try SummaryExportRecord.renameVaultPath(
+                from: oldPath,
+                to: newPath,
+                vaultId: vaultId,
+                in: db
+            )
         }
     }
 
     func renamePathsByPrefix(oldPrefix: String, newPrefix: String, in db: Database) throws {
         try SummaryRecord.renameVaultRelativePathsByPrefix(
+            oldPrefix: oldPrefix,
+            newPrefix: newPrefix,
+            vaultId: vaultId,
+            in: db
+        )
+        try SummaryExportRecord.renameVaultPathsByPrefix(
             oldPrefix: oldPrefix,
             newPrefix: newPrefix,
             vaultId: vaultId,
@@ -30,6 +42,7 @@ struct VaultSummaryPathSynchronizer {
         try? dbQueue.write { db in
             for relativePath in relativePaths {
                 try SummaryRecord.clearVaultRelativePath(relativePath, vaultId: vaultId, in: db)
+                try SummaryExportRecord.clearVaultPath(relativePath, vaultId: vaultId, in: db)
             }
         }
     }

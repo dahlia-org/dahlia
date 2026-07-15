@@ -107,6 +107,10 @@ final class AppDatabaseManager: Sendable {
             try addSegmentedRecordingAudioSchema(in: db)
         }
 
+        migrator.registerMigration("v19_summaryExports") { db in
+            try SummaryExportsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

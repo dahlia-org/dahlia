@@ -26,8 +26,14 @@ import GRDB
             )
 
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: context.meeting.id)
+            let vaultExport = try context.repository.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .vault
+            )
             let summary = try #require(fetchedSummary)
             #expect(summary.vaultRelativePath == "Project/Renamed.md")
+            #expect(vaultExport?.url == "vault:///Project/Renamed.md")
+            #expect(vaultExport?.vaultRelativePath == "Project/Renamed.md")
         }
 
         @Test
@@ -48,10 +54,16 @@ import GRDB
 
             let fetchedProject = try context.repository.fetchProject(id: context.project.id)
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: context.meeting.id)
+            let vaultExport = try context.repository.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .vault
+            )
             let project = try #require(fetchedProject)
             let summary = try #require(fetchedSummary)
             #expect(project.name == "Renamed")
             #expect(summary.vaultRelativePath == "Renamed/Summary.md")
+            #expect(vaultExport?.url == "vault:///Renamed/Summary.md")
+            #expect(vaultExport?.vaultRelativePath == "Renamed/Summary.md")
         }
 
         @Test
@@ -101,15 +113,17 @@ import GRDB
             )
             try manager.dbQueue.write { db in
                 try meeting.insert(db)
-                try SummaryRecord(
+            }
+            try repository.upsertSummary(
+                SummaryRecord(
                     meetingId: meeting.id,
                     title: "Summary",
                     summary: "Body",
                     vaultRelativePath: summaryRelativePath,
                     googleFileId: nil,
                     createdAt: .now
-                ).insert(db)
-            }
+                )
+            )
 
             return TestContext(
                 vaultURL: vaultURL,

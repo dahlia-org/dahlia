@@ -112,12 +112,18 @@ import GRDB
 
             let fetchedChildRecord = try context.repository.fetchProject(id: child.id)
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
+            let vaultExport = try context.repository.fetchSummaryExport(
+                forMeetingId: meeting.id,
+                type: .vault
+            )
             let fetchedChild = try #require(fetchedChildRecord)
             let summary = try #require(fetchedSummary)
             #expect(renamed.name == "Renamed")
             #expect(fetchedChild.name == "Renamed/Child")
             #expect(fetchedChild.description == "Keep me")
             #expect(summary.vaultRelativePath == "Renamed/Child/Summary.md")
+            #expect(vaultExport?.url == "vault:///Renamed/Child/Summary.md")
+            #expect(vaultExport?.vaultRelativePath == "Renamed/Child/Summary.md")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Child").path))
             #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original").path))
         }
@@ -179,9 +185,14 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
+            let vaultExport = try context.repository.fetchSummaryExport(
+                forMeetingId: meeting.id,
+                type: .vault
+            )
             let summary = try #require(fetchedSummary)
             #expect(fetchedMeeting?.projectId == destination.id)
             #expect(summary.vaultRelativePath == nil)
+            #expect(vaultExport == nil)
             #expect(summary.summary == "Body")
             #expect(try context.repository.fetchSegments(forMeetingId: meeting.id).count == 1)
             #expect(try context.repository.fetchTagsForMeeting(id: meeting.id).map(\.name) == ["important"])
@@ -321,15 +332,15 @@ import GRDB
             path: String,
             context: ProjectWorkspaceTestContext
         ) throws {
-            try context.database.dbQueue.write { db in
-                try SummaryRecord(
+            try context.repository.upsertSummary(
+                SummaryRecord(
                     meetingId: meetingId,
                     title: "Summary",
                     summary: "Body",
                     vaultRelativePath: path,
                     createdAt: .now
-                ).insert(db)
-            }
+                )
+            )
         }
 
         private func insertSegment(

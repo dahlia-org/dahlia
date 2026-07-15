@@ -76,6 +76,8 @@
 "Tags" = "タグ";
 "Assigned to me" = "自分担当";
 "Completed" = "完了";
+"Waiting" = "待機中";
+"Skipped" = "スキップ";
 "Project is" = "プロジェクト";
 "Tag is" = "タグ";
 "Add tag" = "タグを追加";
@@ -522,6 +524,11 @@
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "バッチ文字起こしが成功したら録音ファイルを削除します。失敗した場合は再試行のため保持されます。";
 "Generate Summary After Transcription" = "文字起こし後に要約を生成";
 "Automatically generate a summary when batch transcription succeeds." = "バッチ文字起こしが成功したら、自動的に要約を生成します。";
+"Summary and Export" = "要約と書き出し";
+"Export Summary to Vault" = "要約を Vault へ書き出す";
+"Write the generated summary and related files to the current Vault." = "生成した要約と関連ファイルを現在の Vault へ書き出します。";
+"Export Summary to Google Docs" = "要約を Google Docs へ書き出す";
+"Export the generated summary to the configured Google Docs folder." = "生成した要約を設定済みの Google Docs フォルダへ書き出します。";
 "Later" = "あとで";
 "Discard Failed Recording" = "失敗した録音を破棄";
 "Discard this failed recording?" = "失敗した録音を破棄しますか？";

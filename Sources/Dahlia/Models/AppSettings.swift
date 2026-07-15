@@ -80,6 +80,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let automaticScreenshotIntervalSecondsUserDefaultsKey = "automaticScreenshotIntervalSeconds"
     nonisolated static let automaticScreenshotChangeThresholdPercentUserDefaultsKey = "automaticScreenshotChangeThresholdPercent"
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
+    nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
+    nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
@@ -141,6 +143,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
+    @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
+    @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
     @AppStorage("transcriptTranslationEnabled") var transcriptTranslationEnabled = true
     @AppStorage("transcriptTranslationTargetLanguage") var transcriptTranslationTargetLanguage = TranscriptTranslationLanguage.defaultIdentifier
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
@@ -160,6 +164,13 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var isRealtimeTranscriptionEnabled: Bool {
         get { transcriptionMode == .realtime }
         set { transcriptionMode = newValue ? .realtime : .batch }
+    }
+
+    var batchSummaryExportOptions: SummaryExportOptions {
+        SummaryExportOptions(
+            exportsToVault: exportBatchSummaryToVault,
+            exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
+        )
     }
 
     var automaticScreenshotIntervalSeconds: Int {

@@ -76,6 +76,8 @@
 "Tags" = "Tags";
 "Assigned to me" = "Assigned to me";
 "Completed" = "Completed";
+"Waiting" = "Waiting";
+"Skipped" = "Skipped";
 "Project is" = "Project is";
 "Tag is" = "Tag is";
 "Add tag" = "Add tag";
@@ -522,6 +524,11 @@
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.";
 "Generate Summary After Transcription" = "Generate Summary After Transcription";
 "Automatically generate a summary when batch transcription succeeds." = "Automatically generate a summary when batch transcription succeeds.";
+"Summary and Export" = "Summary and Export";
+"Export Summary to Vault" = "Export Summary to Vault";
+"Write the generated summary and related files to the current Vault." = "Write the generated summary and related files to the current Vault.";
+"Export Summary to Google Docs" = "Export Summary to Google Docs";
+"Export the generated summary to the configured Google Docs folder." = "Export the generated summary to the configured Google Docs folder.";
 "Later" = "Later";
 "Discard Failed Recording" = "Discard Failed Recording";
 "Discard this failed recording?" = "Discard this failed recording?";

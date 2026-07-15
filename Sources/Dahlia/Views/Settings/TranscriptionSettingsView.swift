@@ -6,6 +6,10 @@ struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
     private var generateSummaryAfterBatchTranscription = false
+    @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey)
+    private var exportBatchSummaryToVault = true
+    @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey)
+    private var exportBatchSummaryToGoogleDocs = false
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = false
     @State private var localeSearchText = ""
@@ -31,6 +35,20 @@ struct TranscriptionSettingsView: View {
                         Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
                     }
                     .toggleStyle(.switch)
+
+                    Toggle(isOn: $exportBatchSummaryToVault) {
+                        Text(L10n.exportBatchSummaryToVault)
+                        Text(L10n.exportBatchSummaryToVaultDescription)
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!generateSummaryAfterBatchTranscription)
+
+                    Toggle(isOn: $exportBatchSummaryToGoogleDocs) {
+                        Text(L10n.exportBatchSummaryToGoogleDocs)
+                        Text(L10n.exportBatchSummaryToGoogleDocsDescription)
+                    }
+                    .toggleStyle(.switch)
+                    .disabled(!generateSummaryAfterBatchTranscription)
                 }
             } header: {
                 Text(L10n.transcriptionMethod)

@@ -168,6 +168,8 @@ enum L10n {
     static var tags: String { String(localized: "Tags", bundle: bundle) }
     static var assignedToMe: String { String(localized: "Assigned to me", bundle: bundle) }
     static var completed: String { String(localized: "Completed", bundle: bundle) }
+    static var waiting: String { String(localized: "Waiting", bundle: bundle) }
+    static var skipped: String { String(localized: "Skipped", bundle: bundle) }
     static var projectIs: String { String(localized: "Project is", bundle: bundle) }
     static var tagIs: String { String(localized: "Tag is", bundle: bundle) }
     static var today: String { String(localized: "Today", bundle: bundle) }
@@ -439,6 +441,23 @@ enum L10n {
     ) }
     static var generateSummaryAfterBatchTranscriptionDescription: String { String(
         localized: "Automatically generate a summary when batch transcription succeeds.",
+        bundle: bundle
+    ) }
+    static var summaryAndExport: String { String(localized: "Summary and Export", bundle: bundle) }
+    static var exportBatchSummaryToVault: String { String(
+        localized: "Export Summary to Vault",
+        bundle: bundle
+    ) }
+    static var exportBatchSummaryToVaultDescription: String { String(
+        localized: "Write the generated summary and related files to the current Vault.",
+        bundle: bundle
+    ) }
+    static var exportBatchSummaryToGoogleDocs: String { String(
+        localized: "Export Summary to Google Docs",
+        bundle: bundle
+    ) }
+    static var exportBatchSummaryToGoogleDocsDescription: String { String(
+        localized: "Export the generated summary to the configured Google Docs folder.",
         bundle: bundle
     ) }
     static var later: String { String(localized: "Later", bundle: bundle) }

@@ -5,8 +5,6 @@ struct BatchTranscriptionConfirmationView: View {
     let onStart: (String, Bool) -> Void
     let onPostpone: () -> Void
 
-    @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
-    private var generateSummaryAfterBatchTranscription = false
     @State private var selectedLocaleIdentifier: String
     @State private var deleteAudioAfterTranscription: Bool
 
@@ -25,40 +23,24 @@ struct BatchTranscriptionConfirmationView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(L10n.batchTranscriptionConfirmationTitle)
-                .font(.headline)
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.batchTranscriptionConfirmationTitle)
+                    .font(.headline)
 
-            Text(L10n.batchTranscriptionConfirmationDescription)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Picker(L10n.language, selection: $selectedLocaleIdentifier) {
-                ForEach(locales, id: \.identifier) { locale in
-                    Text(displayName(for: locale)).tag(locale.identifier)
-                }
+                Text(L10n.batchTranscriptionConfirmationDescription)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding([.horizontal, .top], 20)
+            .padding(.bottom, 8)
 
-            Toggle(isOn: $deleteAudioAfterTranscription) {
-                VStack(alignment: .leading) {
-                    Text(L10n.deleteBatchAudioAfterTranscription)
-                    Text(L10n.deleteBatchAudioAfterTranscriptionDescription)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.checkbox)
-
-            Toggle(isOn: $generateSummaryAfterBatchTranscription) {
-                VStack(alignment: .leading) {
-                    Text(L10n.generateSummaryAfterBatchTranscription)
-                    Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.checkbox)
+            BatchTranscriptionOptionsForm(
+                locales: locales,
+                selectedLocaleIdentifier: $selectedLocaleIdentifier,
+                deleteAudioAfterTranscription: $deleteAudioAfterTranscription
+            )
 
             Divider()
 
@@ -69,15 +51,9 @@ struct BatchTranscriptionConfirmationView: View {
                 Button(L10n.startTranscription, action: startTranscription)
                     .keyboardShortcut(.defaultAction)
             }
+            .padding(20)
         }
-        .padding(20)
-        .frame(minWidth: 420)
-    }
-
-    private func displayName(for locale: Locale) -> String {
-        locale.localizedString(forIdentifier: locale.identifier)
-            ?? Locale.current.localizedString(forIdentifier: locale.identifier)
-            ?? locale.identifier
+        .frame(minWidth: 500, idealWidth: 520, minHeight: 440, idealHeight: 500)
     }
 
     private func startTranscription() {

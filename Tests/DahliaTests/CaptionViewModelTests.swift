@@ -209,6 +209,17 @@ import GRDB
         }
 
         @Test
+        func canGenerateSummaryIsDisabledWhileAnotherSummaryIsGenerating() {
+            let viewModel = summaryReadyViewModel()
+
+            #expect(viewModel.canGenerateSummary)
+
+            viewModel.summaryGeneratingMeetingId = UUID.v7()
+
+            #expect(!viewModel.canGenerateSummary)
+        }
+
+        @Test
         func manualSummaryDoesNotStartWhileFinalizingRecording() {
             let viewModel = summaryReadyViewModel()
             viewModel.isFinalizingRecording = true

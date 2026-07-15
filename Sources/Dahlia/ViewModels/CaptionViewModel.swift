@@ -137,10 +137,12 @@ final class CaptionViewModel: ObservableObject {
 
     @Published var summaryGeneratingMeetingId: UUID?
     var isSummaryGenerating: Bool { summaryGeneratingMeetingId != nil }
-    private var pendingBatchSummaryMeetingIdsBySessionId: [UUID: UUID] = [:]
+    private var pendingBatchSummaryRequestsBySessionId: [UUID: (meetingId: UUID, exportOptions: SummaryExportOptions)] = [:]
     @Published var summaryError: String?
     @Published private(set) var googleDocsExportError: String?
     private var isExportingCurrentSummaryToGoogleDocs = false
+    private var isGoogleDocsExportBusy = false
+    private var googleDocsExportWaiters: [CheckedContinuation<Void, Never>] = []
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
     @Published var currentSummaryDocument: SummaryDocument?
@@ -229,24 +231,15 @@ final class CaptionViewModel: ObservableObject {
         )
         let fileName = lastSummaryURL?.lastPathComponent
             ?? "\(document.title.nilIfBlank ?? L10n.summary).rtf"
+        let dbQueue = currentDbQueue
 
         do {
-            let fileId = try await GoogleDocsSummaryExportService.exportSummary(
+            let fileId = try await exportSummaryToGoogleDocs(
                 document: document,
                 context: context,
                 fileName: fileName
             )
-            if let currentDbQueue {
-                do {
-                    try MeetingRepository(dbQueue: currentDbQueue)
-                        .updateSummaryGoogleFileId(forMeetingId: meetingId, googleFileId: fileId)
-                } catch {
-                    ErrorReportingService.capture(error, context: ["source": "persistGoogleDocsFileId"])
-                }
-            }
-            if currentMeetingId == meetingId {
-                currentSummaryGoogleFileId = fileId
-            }
+            try persistGoogleDocsFileId(fileId, meetingId: meetingId, dbQueue: dbQueue)
             if let url = URL(string: "https://docs.google.com/document/d/\(fileId)/edit") {
                 NSWorkspace.shared.open(url)
             }
@@ -515,10 +508,14 @@ final class CaptionViewModel: ObservableObject {
             suggestedLocaleIdentifier: localeIdentifier,
             retainAudioAfterBatch: retainAudioAfterBatch
         )
-        if AppSettings.shared.generateSummaryAfterBatchTranscription {
-            pendingBatchSummaryMeetingIdsBySessionId[confirmation.sessionId] = confirmation.meetingId
+        let settings = AppSettings.shared
+        if settings.generateSummaryAfterBatchTranscription {
+            pendingBatchSummaryRequestsBySessionId[confirmation.sessionId] = (
+                meetingId: confirmation.meetingId,
+                exportOptions: settings.batchSummaryExportOptions
+            )
         } else {
-            pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: confirmation.sessionId)
+            pendingBatchSummaryRequestsBySessionId.removeValue(forKey: confirmation.sessionId)
         }
         pendingBatchTranscriptionConfirmation = nil
         if currentMeetingId == confirmation.meetingId {
@@ -551,7 +548,7 @@ final class CaptionViewModel: ObservableObject {
             do {
                 let repository = MeetingRepository(dbQueue: dbQueue)
                 guard try await repository.discardFailedBatchSessionSafely(id: sessionId) else { return }
-                pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: sessionId)
+                pendingBatchSummaryRequestsBySessionId.removeValue(forKey: sessionId)
                 try refreshBatchTranscriptionState(meetingId: meetingId, dbQueue: dbQueue)
             } catch {
                 errorMessage = error.localizedDescription
@@ -762,10 +759,12 @@ final class CaptionViewModel: ObservableObject {
         let detail = try repo.fetchMeetingDetail(id: meetingId)
         let recordingSessions = detail.recordingSessions.map(RecordingSessionTimeline.init)
         let segments = detail.segments.map(TranscriptSegment.init(from:))
+        let vaultExport = detail.summaryExports.first(where: { $0.type == .vault })
+        let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
 
         let lastSummaryURL: URL? = if let summary = detail.summary {
             SummaryService.findSummaryFile(
-                storedRelativePath: summary.vaultRelativePath,
+                storedRelativePath: vaultExport?.vaultRelativePath ?? summary.vaultRelativePath,
                 vaultURL: vaultURL
             )
         } else {
@@ -779,7 +778,7 @@ final class CaptionViewModel: ObservableObject {
             segments: segments,
             screenshots: detail.screenshots,
             summaryDocument: detail.summary?.loadDocument(),
-            googleFileId: detail.summary?.googleFileId,
+            googleFileId: googleDocsExport?.googleDocumentID ?? detail.summary?.googleFileId,
             lastSummaryURL: lastSummaryURL,
             note: detail.note
         )
@@ -1945,6 +1944,7 @@ final class CaptionViewModel: ObservableObject {
     var canGenerateSummary: Bool {
         guard !isListening,
               !isFinalizingRecording,
+              !isSummaryGenerating,
               currentMeetingId != nil,
               currentVaultURL != nil,
               batchTranscriptionState?.blocksSummaryGeneration != true else { return false }
@@ -1953,6 +1953,10 @@ final class CaptionViewModel: ObservableObject {
 
     /// プルダウンメニューから手動で要約を実行する。
     func triggerManualSummary() {
+        triggerSummary(exportOptions: .manual)
+    }
+
+    private func triggerSummary(exportOptions: SummaryExportOptions) {
         guard canGenerateSummary,
               let meetingId = currentMeetingId,
               let vaultURL = currentVaultURL else { return }
@@ -1972,22 +1976,26 @@ final class CaptionViewModel: ObservableObject {
                 vaultURL: vaultURL,
                 projectName: projectName,
                 segments: segments,
-                recordingSessions: recordingSessions
+                recordingSessions: recordingSessions,
+                exportOptions: exportOptions
             )
         }
     }
 
     private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
-        let pendingSessionIds = pendingBatchSummaryMeetingIdsBySessionId.compactMap { sessionId, pendingMeetingId in
-            pendingMeetingId == meetingId ? sessionId : nil
+        let pendingRequests = pendingBatchSummaryRequestsBySessionId.compactMap { sessionId, request in
+            request.meetingId == meetingId
+                ? (sessionId: sessionId, exportOptions: request.exportOptions)
+                : nil
         }
         guard currentMeetingId == meetingId,
               canGenerateSummary,
-              !pendingSessionIds.isEmpty else { return }
-        for sessionId in pendingSessionIds {
-            pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: sessionId)
+              !pendingRequests.isEmpty else { return }
+        for request in pendingRequests {
+            pendingBatchSummaryRequestsBySessionId.removeValue(forKey: request.sessionId)
         }
-        triggerManualSummary()
+        let exportOptions = SummaryExportOptions.merging(pendingRequests.map(\.exportOptions))
+        triggerSummary(exportOptions: exportOptions)
     }
 
     func generateSummary(
@@ -1998,7 +2006,8 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL,
         projectName: String,
         segments: [TranscriptSegment],
-        recordingSessions: [RecordingSessionTimeline]
+        recordingSessions: [RecordingSessionTimeline],
+        exportOptions: SummaryExportOptions
     ) async {
         guard !transcriptText.isEmpty else { return }
 
@@ -2010,6 +2019,7 @@ final class CaptionViewModel: ObservableObject {
         summaryError = nil
         googleDocsExportError = nil
         lastSummaryURL = nil
+        var progressPresentationID: UUID?
 
         do {
             let dbQueue = currentDbQueue
@@ -2027,7 +2037,9 @@ final class CaptionViewModel: ObservableObject {
                 }
             }
 
-            summaryProgress.show()
+            progressPresentationID = summaryProgress.show()
+            summaryProgress.vaultExport = exportOptions.exportsToVault ? .pending : .skipped
+            summaryProgress.googleDocsExport = exportOptions.exportsToGoogleDocs ? .pending : .skipped
 
             // LLM 要約
             summaryProgress.summaryGeneration = .running
@@ -2044,6 +2056,10 @@ final class CaptionViewModel: ObservableObject {
                 repository: repo
             )
 
+            // Regeneration invalidates the previous export locations. Keep the old
+            // Vault path only long enough to overwrite the existing file when selected.
+            let storedSummaryRelativePath = try repo?.fetchSummaryVaultRelativePath(forMeetingId: meetingId)
+
             if let repo {
                 try repo.applyGeneratedSummary(
                     toMeetingId: meetingId,
@@ -2055,40 +2071,66 @@ final class CaptionViewModel: ObservableObject {
             summaryProgress.summaryGeneration = .completed
             if currentMeetingId == meetingId {
                 currentSummaryDocument = generatedSummary.document
+                currentSummaryGoogleFileId = nil
             }
-            let storedSummaryRelativePath = try repo?.fetchSummary(forMeetingId: meetingId)?.vaultRelativePath
 
-            summaryProgress.vaultExport = .running
+            if exportOptions.exportsToVault {
+                summaryProgress.vaultExport = .running
+                do {
+                    let fileURL = try await VaultSummaryExportService.exportSummaryBundle(
+                        projectURL: projectURL,
+                        vaultURL: vaultURL,
+                        storedSummaryRelativePath: storedSummaryRelativePath,
+                        meetingId: meetingId,
+                        createdAt: createdAt,
+                        projectName: projectName,
+                        segments: segments,
+                        recordingSessions: recordingSessions,
+                        screenshots: screenshots,
+                        summaryFileName: generatedSummary.fileName,
+                        summaryMarkdown: generatedSummary.markdown
+                    )
+                    if let relativePath = VaultSummaryFileLocator.relativePath(for: fileURL, vaultURL: vaultURL) {
+                        try repo?.updateSummaryVaultRelativePath(forMeetingId: meetingId, relativePath: relativePath)
+                    }
+                    summaryProgress.vaultExport = .completed
+                    if currentMeetingId == meetingId {
+                        lastSummaryURL = fileURL
+                    }
+                } catch {
+                    summaryProgress.vaultExport = .failed(error.localizedDescription)
+                    if currentMeetingId == meetingId {
+                        summaryError = error.localizedDescription
+                    }
+                    ErrorReportingService.capture(error, context: ["source": "vaultSummaryExport"])
+                }
+            }
 
-            async let vaultExport: URL = VaultSummaryExportService.exportSummaryBundle(
-                projectURL: projectURL,
-                vaultURL: vaultURL,
-                storedSummaryRelativePath: storedSummaryRelativePath,
-                meetingId: meetingId,
-                createdAt: createdAt,
-                projectName: projectName,
-                segments: segments,
-                recordingSessions: recordingSessions,
-                screenshots: screenshots,
-                summaryFileName: generatedSummary.fileName,
-                summaryMarkdown: generatedSummary.markdown
-            )
-
-            do {
-                let fileURL = try await vaultExport
-                if let relativePath = VaultSummaryFileLocator.relativePath(for: fileURL, vaultURL: vaultURL) {
-                    try repo?.updateSummaryVaultRelativePath(forMeetingId: meetingId, relativePath: relativePath)
+            if exportOptions.exportsToGoogleDocs {
+                summaryProgress.googleDocsExport = .running
+                do {
+                    let fileId = try await exportSummaryToGoogleDocs(
+                        document: generatedSummary.document,
+                        context: SummaryRenderContext(
+                            meetingId: meetingId,
+                            createdAt: createdAt,
+                            screenshots: screenshots
+                        ),
+                        fileName: generatedSummary.fileName
+                    )
+                    try persistGoogleDocsFileId(fileId, meetingId: meetingId, dbQueue: dbQueue)
+                    summaryProgress.googleDocsExport = .completed
+                } catch {
+                    let message = GoogleAuthErrorFormatter.message(
+                        for: error,
+                        defaultMessage: L10n.googleDocsExportFailed
+                    )
+                    summaryProgress.googleDocsExport = .failed(message)
+                    if currentMeetingId == meetingId {
+                        googleDocsExportError = message
+                    }
+                    ErrorReportingService.capture(error, context: ["source": "batchGoogleDocsExport"])
                 }
-                summaryProgress.vaultExport = .completed
-                if currentMeetingId == meetingId {
-                    lastSummaryURL = fileURL
-                }
-            } catch {
-                summaryProgress.vaultExport = .failed(error.localizedDescription)
-                if currentMeetingId == meetingId {
-                    summaryError = error.localizedDescription
-                }
-                ErrorReportingService.capture(error, context: ["source": "vaultSummaryExport"])
             }
         } catch {
             if currentMeetingId == meetingId {
@@ -2097,6 +2139,7 @@ final class CaptionViewModel: ObservableObject {
             }
             summaryProgress.summaryGeneration = .failed(error.localizedDescription)
             summaryProgress.vaultExport = .skipped
+            summaryProgress.googleDocsExport = .skipped
             if Self.shouldCaptureSummaryGenerationError(error) {
                 ErrorReportingService.capture(error, context: ["source": "summaryGeneration"])
             }
@@ -2107,12 +2150,62 @@ final class CaptionViewModel: ObservableObject {
         }
 
         // 全完了後に自動で非表示
-        if summaryProgress.isAllDone {
+        if summaryProgress.isAllDone, let progressPresentationID {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.3)) {
-                summaryProgress.dismiss()
+                summaryProgress.dismiss(ifCurrent: progressPresentationID)
             }
         }
+
+        if let currentMeetingId {
+            generatePendingBatchSummaryIfReady(meetingId: currentMeetingId)
+        }
+    }
+
+    private func persistGoogleDocsFileId(
+        _ fileId: String,
+        meetingId: UUID,
+        dbQueue: DatabaseQueue?
+    ) throws {
+        if let dbQueue {
+            try MeetingRepository(dbQueue: dbQueue)
+                .updateSummaryGoogleFileId(forMeetingId: meetingId, googleFileId: fileId)
+        }
+        if currentMeetingId == meetingId {
+            currentSummaryGoogleFileId = fileId
+        }
+    }
+
+    private func exportSummaryToGoogleDocs(
+        document: SummaryDocument,
+        context: SummaryRenderContext,
+        fileName: String
+    ) async throws -> String {
+        await acquireGoogleDocsExport()
+        defer { releaseGoogleDocsExport() }
+        return try await GoogleDocsSummaryExportService.exportSummary(
+            document: document,
+            context: context,
+            fileName: fileName
+        )
+    }
+
+    private func acquireGoogleDocsExport() async {
+        if !isGoogleDocsExportBusy {
+            isGoogleDocsExportBusy = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            googleDocsExportWaiters.append(continuation)
+        }
+    }
+
+    private func releaseGoogleDocsExport() {
+        guard !googleDocsExportWaiters.isEmpty else {
+            isGoogleDocsExportBusy = false
+            return
+        }
+        googleDocsExportWaiters.removeFirst().resume()
     }
 
     nonisolated static func shouldCaptureSummaryGenerationError(_ error: any Error) -> Bool {

@@ -79,7 +79,7 @@ import GRDB
         }
 
         @Test
-        func regeneratingSummaryPreservesStoredVaultRelativePath() throws {
+        func regeneratingSummaryClearsStaleExportLocations() throws {
             let context = try makeRepositoryContext()
             try context.repo.upsertSummary(
                 SummaryRecord(
@@ -87,7 +87,7 @@ import GRDB
                     title: "Old",
                     summary: "Old body",
                     vaultRelativePath: "Acme/Existing.md",
-                    googleFileId: nil,
+                    googleFileId: "old-google-file",
                     createdAt: .now
                 )
             )
@@ -106,7 +106,67 @@ import GRDB
 
             let fetchedSummary = try context.repo.fetchSummary(forMeetingId: context.meeting.id)
             let summary = try #require(fetchedSummary)
-            #expect(summary.vaultRelativePath == "Acme/Existing.md")
+            #expect(summary.vaultRelativePath == nil)
+            #expect(summary.googleFileId == nil)
+            #expect(try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .vault
+            ) == nil)
+            #expect(try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .googleDocs
+            ) == nil)
+        }
+
+        @Test
+        func storesVaultAndGoogleDocsExportsIndependently() throws {
+            let context = try makeRepositoryContext()
+            try context.repo.upsertSummary(
+                SummaryRecord(
+                    meetingId: context.meeting.id,
+                    title: "Summary",
+                    summary: "Body",
+                    vaultRelativePath: nil,
+                    googleFileId: nil,
+                    createdAt: .now
+                )
+            )
+
+            try context.repo.updateSummaryVaultRelativePath(
+                forMeetingId: context.meeting.id,
+                relativePath: "Acme/Summary.md"
+            )
+            try context.repo.updateSummaryGoogleFileId(
+                forMeetingId: context.meeting.id,
+                googleFileId: "google-123"
+            )
+
+            let vault = try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .vault
+            )
+            let googleDocs = try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .googleDocs
+            )
+
+            #expect(vault?.url == "vault:///Acme/Summary.md")
+            #expect(vault?.vaultRelativePath == "Acme/Summary.md")
+            #expect(googleDocs?.url == "https://docs.google.com/document/d/google-123/edit")
+
+            try context.repo.updateSummaryVaultRelativePath(
+                forMeetingId: context.meeting.id,
+                relativePath: nil
+            )
+
+            #expect(try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .vault
+            ) == nil)
+            #expect(try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .googleDocs
+            )?.googleDocumentID == "google-123")
         }
 
         private func makeRepositoryContext() throws -> RepositoryContext {
