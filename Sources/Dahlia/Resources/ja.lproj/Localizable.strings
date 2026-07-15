@@ -629,3 +629,24 @@
 "Codex returned no available models. Try again." = "Codex から利用可能なモデルが返されませんでした。再試行してください。";
 "Models are loaded from the bundled Codex app-server." = "モデルは同梱 Codex app-server から取得します。";
 "The saved model is used when available; otherwise Codex's default model is selected." = "保存済みモデルが利用可能なら使用し、それ以外は Codex のデフォルトモデルを選択します。";
+
+/* Codex Chat */
+"Chat" = "チャット";
+"New chat" = "新しいチャット";
+"Chat history" = "チャット履歴";
+"Recent chats" = "最近のチャット";
+"No recent chats" = "最近のチャットはありません";
+"Load more" = "さらに読み込む";
+"Open chat in a new window" = "チャットを新しいウィンドウで開く";
+"Hide chat" = "チャットを隠す";
+"Send message" = "メッセージを送信";
+"Stop generating" = "生成を停止";
+"Message Codex" = "Codex にメッセージ";
+"Open AI Connection Settings" = "AI 接続設定を開く";
+"Loading models…" = "モデルを読み込み中…";
+"This chat is no longer available." = "このチャットは利用できなくなりました。";
+"Resize" = "サイズを変更";
+"Show all chats" = "すべて表示";
+"Copy message" = "メッセージをコピー";
+"Selected" = "選択中";
+"Response performance" = "応答性能";

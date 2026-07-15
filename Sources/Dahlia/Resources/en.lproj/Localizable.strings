@@ -629,3 +629,24 @@
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
 "Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
 "The saved model is used when available; otherwise Codex's default model is selected." = "The saved model is used when available; otherwise Codex's default model is selected.";
+
+/* Codex Chat */
+"Chat" = "Chat";
+"New chat" = "New chat";
+"Chat history" = "Chat history";
+"Recent chats" = "Recent chats";
+"No recent chats" = "No recent chats";
+"Load more" = "Load more";
+"Open chat in a new window" = "Open chat in a new window";
+"Hide chat" = "Hide chat";
+"Send message" = "Send message";
+"Stop generating" = "Stop generating";
+"Message Codex" = "Message Codex";
+"Open AI Connection Settings" = "Open AI Connection Settings";
+"Loading models…" = "Loading models…";
+"This chat is no longer available." = "This chat is no longer available.";
+"Resize" = "Resize";
+"Show all chats" = "Show all";
+"Copy message" = "Copy message";
+"Selected" = "Selected";
+"Response performance" = "Response performance";
