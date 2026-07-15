@@ -305,8 +305,13 @@ import GRDB
             #expect(delayed.pendingByteCount == 320)
             #expect(delayed.oldestFinalizationStartedAt != nil)
 
-            try await Task.sleep(for: .milliseconds(600))
-            let recovered = await writer.backlogSnapshot()
+            let clock = ContinuousClock()
+            let deadline = clock.now + .seconds(2)
+            var recovered = await writer.backlogSnapshot()
+            while recovered.segmentCount > 0, clock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+                recovered = await writer.backlogSnapshot()
+            }
             #expect(recovered.segmentCount == 0)
             try writer.appendBuffer(makeBuffer(
                 format: recorder.targetFormat,
