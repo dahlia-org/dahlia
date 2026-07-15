@@ -37,20 +37,11 @@ struct CalendarEventMetadataButton: View {
         .accessibilityLabel(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityValue(detailLines.joined(separator: ", "))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(event.resolvedTitle, systemImage: "calendar")
-                    .font(.headline)
-
-                Text(dateText)
-                    .foregroundStyle(.secondary)
-
-                if let attributedDescription {
-                    Text(attributedDescription)
-                        .textSelection(.enabled)
-                }
-            }
-            .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .leading)
-            .padding()
+            CalendarEventPopoverContent(
+                title: event.resolvedTitle,
+                dateText: dateText,
+                attributedDescription: attributedDescription
+            )
         }
     }
 
