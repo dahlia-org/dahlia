@@ -477,18 +477,6 @@ enum L10n {
         localized: "Translation is automatically disabled when the target language matches the transcription language.",
         bundle: bundle
     ) }
-    static var modelProviderSettingsDescription: String { String(
-        localized: "Configure credentials and connection settings for the model provider used by AI summaries.",
-        bundle: bundle
-    ) }
-    static var aiSummaryModelSettingsDescription: String { String(
-        localized: "Choose the model and output limit used to generate AI summaries.",
-        bundle: bundle
-    ) }
-    static var connectionDiagnosticsDescription: String { String(
-        localized: "Run a quick request to validate your endpoint, model, and token.",
-        bundle: bundle
-    ) }
     static var developerSettingsDescription: String { String(
         localized: "Override developer-managed credentials used by external service integrations.",
         bundle: bundle
@@ -1178,7 +1166,4 @@ enum L10n {
     ) }
     static var noScreenshotsYet: String { String(localized: "No screenshots yet.", bundle: bundle) }
 
-    // MARK: - Keychain
-
-    static var keychainAuthReason: String { String(localized: "Authenticate to access your API token stored in Keychain.", bundle: bundle) }
 }

@@ -250,9 +250,6 @@
 "Target Language" = "翻訳先の言語";
 "Choose which language translated transcript lines should use." = "翻訳済みの文字起こし行に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
-"Configure credentials and connection settings for the model provider used by AI summaries." = "AI 要約に使用するモデルプロバイダーの認証情報と接続設定を管理します。";
-"Choose the model and output limit used to generate AI summaries." = "AI 要約の生成に使用するモデルと出力上限を設定します。";
-"Run a quick request to validate your endpoint, model, and token." = "プロバイダー設定、モデル、トークンの組み合わせを簡易的に検証します。";
 "Override developer-managed credentials used by external service integrations." = "外部サービス連携で使用する開発者管理の認証情報を上書きします。";
 "Google OAuth Client ID" = "Google OAuth クライアント ID";
 "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "空欄の場合はバンドル済み、または環境変数の GOOGLE_CLIENT_ID を使用します。";
@@ -466,7 +463,6 @@
 "No screenshots yet." = "スクリーンショットはまだありません。";
 
 /* Keychain */
-"Authenticate to access your API token stored in Keychain." = "キーチェーンに保存された API トークンにアクセスするために認証が必要です。";
 "Cloud Storage" = "Cloud Storage";
 "Google Docs" = "Google Docs";
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Google アカウントを接続し、共有メニューから画像を含む要約を Google Docs に書き出します。";

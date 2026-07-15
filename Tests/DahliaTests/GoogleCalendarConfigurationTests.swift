@@ -182,7 +182,7 @@ private func withTemporaryUserDefaultsValue(_ key: String, value: String?, opera
 }
 
 private func withTemporaryKeychainValue(_ key: String, value: String?, operation: () -> Void) {
-    let original = KeychainService.load(key: key, accessPolicy: .standard)
+    let original = KeychainService.load(key: key)
     setTemporaryKeychainValue(key: key, value: value)
     defer {
         setTemporaryKeychainValue(key: key, value: original)
@@ -192,7 +192,7 @@ private func withTemporaryKeychainValue(_ key: String, value: String?, operation
 
 private func setTemporaryKeychainValue(key: String, value: String?) {
     if let value {
-        try? KeychainService.save(key: key, value: value, accessPolicy: .standard)
+        try? KeychainService.save(key: key, value: value)
     } else {
         KeychainService.delete(key: key)
     }

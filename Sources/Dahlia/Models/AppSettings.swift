@@ -380,14 +380,14 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     /// Google OAuth client secret override（Keychain に保存）。
     var googleOAuthClientSecretOverride: String {
-        get { KeychainService.load(key: Self.googleOAuthClientSecretOverrideKey, accessPolicy: .standard) ?? "" }
+        get { KeychainService.load(key: Self.googleOAuthClientSecretOverrideKey) ?? "" }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 KeychainService.delete(key: Self.googleOAuthClientSecretOverrideKey)
             } else {
                 do {
-                    try KeychainService.save(key: Self.googleOAuthClientSecretOverrideKey, value: trimmed, accessPolicy: .standard)
+                    try KeychainService.save(key: Self.googleOAuthClientSecretOverrideKey, value: trimmed)
                 } catch {
                     print("[KeychainService] Failed to save Google OAuth client secret override: \(error)")
                 }

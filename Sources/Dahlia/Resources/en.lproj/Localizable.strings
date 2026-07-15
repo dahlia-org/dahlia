@@ -250,9 +250,6 @@
 "Target Language" = "Target Language";
 "Choose which language translated transcript lines should use." = "Choose which language translated transcript lines should use.";
 "Translation is automatically disabled when the target language matches the transcription language." = "Translation is automatically disabled when the target language matches the transcription language.";
-"Configure credentials and connection settings for the model provider used by AI summaries." = "Configure credentials and connection settings for the model provider used by AI summaries.";
-"Choose the model and output limit used to generate AI summaries." = "Choose the model and output limit used to generate AI summaries.";
-"Run a quick request to validate your endpoint, model, and token." = "Run a quick request to validate your provider settings, model, and token.";
 "Override developer-managed credentials used by external service integrations." = "Override developer-managed credentials used by external service integrations.";
 "Google OAuth Client ID" = "Google OAuth Client ID";
 "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID.";
@@ -466,7 +463,6 @@
 "No screenshots yet." = "No screenshots yet.";
 
 /* Keychain */
-"Authenticate to access your API token stored in Keychain." = "Authenticate to access your API token stored in Keychain.";
 "Cloud Storage" = "Cloud Storage";
 "Google Docs" = "Google Docs";
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Connect a Google account to export summaries, including images, to Google Docs from the Share menu.";

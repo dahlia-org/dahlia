@@ -1,9 +1,8 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 /// macOS Keychain への保存・読み込み・削除を行うラッパー。
-/// エンタイトルメント付き署名済みビルドでは Data Protection Keychain + Touch ID を使用し、
+/// エンタイトルメント付き署名済みビルドでは Data Protection Keychain を使用し、
 /// 未署名ビルド（`swift run`）ではレガシーキーチェーンに自動フォールバックする。
 ///
 /// - Note: Data Protection Keychain には Apple Developer 証明書での署名が必要。
@@ -28,14 +27,9 @@ enum KeychainService {
         case encodingFailed
     }
 
-    enum AccessPolicy: Equatable {
-        case standard
-        case userPresence
-    }
-
     // MARK: - Public API
 
-    static func save(key: String, value: String, accessPolicy: AccessPolicy = .userPresence) throws {
+    static func save(key: String, value: String) throws {
         guard let data = value.data(using: .utf8) else {
             throw KeychainError.encodingFailed
         }
@@ -44,7 +38,7 @@ enum KeychainService {
         deleteFromBothKeychains(key: key)
 
         if dataProtectionAvailable != false {
-            let status = saveProtected(key: key, data: data, accessPolicy: accessPolicy)
+            let status = saveProtected(key: key, data: data)
             if status == errSecSuccess {
                 dataProtectionAvailable = true
                 return
@@ -62,9 +56,9 @@ enum KeychainService {
         }
     }
 
-    static func load(key: String, accessPolicy: AccessPolicy = .userPresence) -> String? {
+    static func load(key: String) -> String? {
         if dataProtectionAvailable != false {
-            let (data, status) = loadProtected(key: key, accessPolicy: accessPolicy)
+            let (data, status) = loadProtected(key: key)
             if status == errSecSuccess, let data {
                 dataProtectionAvailable = true
                 return String(data: data, encoding: .utf8)
@@ -100,54 +94,21 @@ enum KeychainService {
         ]
     }
 
-    private static func makeAuthContext() -> LAContext {
-        let context = LAContext()
-        context.localizedReason = L10n.keychainAuthReason
-        context.touchIDAuthenticationAllowableReuseDuration = 300
-        return context
-    }
-
-    private static func makeAccessControl() -> SecAccessControl? {
-        var error: Unmanaged<CFError>?
-        let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .userPresence,
-            &error
-        )
-        if access == nil, let cfError = error?.takeRetainedValue() {
-            print("[KeychainService] SecAccessControlCreateWithFlags failed: \(cfError)")
-        }
-        return access
-    }
-
     // MARK: - Data Protection Keychain (Protected)
 
-    private static func saveProtected(key: String, data: Data, accessPolicy: AccessPolicy) -> OSStatus {
+    private static func saveProtected(key: String, data: Data) -> OSStatus {
         var query = baseQuery(key: key)
         query[kSecValueData as String] = data
         query[kSecUseDataProtectionKeychain as String] = true
-        switch accessPolicy {
-        case .standard:
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        case .userPresence:
-            guard let accessControl = makeAccessControl() else {
-                return errSecInternalComponent
-            }
-            query[kSecAttrAccessControl as String] = accessControl
-            query[kSecUseAuthenticationContext as String] = makeAuthContext()
-        }
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(query as CFDictionary, nil)
     }
 
-    private static func loadProtected(key: String, accessPolicy: AccessPolicy) -> (Data?, OSStatus) {
+    private static func loadProtected(key: String) -> (Data?, OSStatus) {
         var query = baseQuery(key: key)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         query[kSecUseDataProtectionKeychain as String] = true
-        if accessPolicy == .userPresence {
-            query[kSecUseAuthenticationContext as String] = makeAuthContext()
-        }
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         return (result as? Data, status)

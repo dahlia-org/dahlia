@@ -234,7 +234,9 @@ if [ -z "$NOTES_FILE" ]; then
         --cd "$PROJECT_DIR" \
         --sandbox danger-full-access \
         --ignore-user-config \
+        --model gpt-5.6-terra \
         --config 'approval_policy="untrusted"' \
+        --config 'model_reasoning_effort="medium"' \
         --config 'web_search="disabled"' \
         --ephemeral \
         --color never \

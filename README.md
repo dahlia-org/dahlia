@@ -23,15 +23,13 @@ A macOS native real-time transcription app. Captures microphone and system audio
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI Connection**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Dahlia's Application Support directory; Databricks tokens remain managed by Databricks CLI.
 
-The previous OpenAI/Databricks maximum-output-token setting is not applied to Codex app-server summaries because this pinned protocol has no equivalent per-turn parameter. Existing API-token settings and Keychain values are preserved but remain unused.
-
 ## Build & Run
 
 ```bash
 # Debug build and run (unsigned; bundled Codex summaries unavailable)
 swift build && swift run
 
-# Debug build with code signing (enables Data Protection Keychain + Touch ID)
+# Debug build with code signing (enables Data Protection Keychain)
 ./scripts/run-dev.sh
 
 # Build release .app bundle

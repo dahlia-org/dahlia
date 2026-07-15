@@ -246,11 +246,11 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
               let json = String(data: data, encoding: .utf8)
         else { return }
 
-        try? KeychainService.save(key: key, value: json, accessPolicy: .standard)
+        try? KeychainService.save(key: key, value: json)
     }
 
     private static func loadStoredSession(key: String) -> StoredGoogleSession? {
-        guard let json = KeychainService.load(key: key, accessPolicy: .standard),
+        guard let json = KeychainService.load(key: key),
               let data = json.data(using: .utf8)
         else {
             return nil
