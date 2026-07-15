@@ -6,6 +6,7 @@ import Observation
 final class CodexModelCatalog {
     private(set) var models: [CodexModel] = []
     private(set) var isLoading = false
+    private(set) var hasAttemptedLoad = false
     private(set) var errorMessage: String?
 
     private let service: CodexAppServerService
@@ -15,6 +16,7 @@ final class CodexModelCatalog {
     }
 
     func load(forceRefresh: Bool = false) async {
+        hasAttemptedLoad = true
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -30,6 +32,10 @@ final class CodexModelCatalog {
             models = []
             errorMessage = error.localizedDescription
         }
+    }
+
+    var canRetry: Bool {
+        hasAttemptedLoad && models.isEmpty
     }
 
     func resolvedSelection(current: String) -> String? {

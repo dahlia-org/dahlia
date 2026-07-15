@@ -847,6 +847,17 @@ enum L10n {
     static var codexTurnInterrupted: String { String(localized: "Codex generation was interrupted.", bundle: bundle) }
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
+    static var account: String { String(localized: "Account", bundle: bundle) }
+    static var aiAccountDescription: String { String(
+        localized: "Choose the account used by Codex.",
+        bundle: bundle
+    ) }
+    static var aiAccountSettingsDescription: String { String(
+        localized: "AI summaries use the selected account and its available models.",
+        bundle: bundle
+    ) }
+    static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
+    static var databricks: String { String(localized: "Databricks", bundle: bundle) }
     static var codexAccount: String { String(localized: "Codex Account", bundle: bundle) }
     static var codexAppServer: String { String(localized: "Codex app-server", bundle: bundle) }
     static var codexAccountDescription: String { String(
@@ -864,6 +875,61 @@ enum L10n {
     static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
+    static var databricksProfile: String { String(localized: "Databricks CLI Profile", bundle: bundle) }
+    static var databricksProfileDescription: String { String(
+        localized: "Codex obtains the workspace and credentials from this Databricks CLI profile.",
+        bundle: bundle
+    ) }
+    static var refreshDatabricksProfiles: String { String(localized: "Refresh Profiles", bundle: bundle) }
+    static var noDatabricksProfiles: String { String(
+        localized: "No Databricks CLI profiles found. Run databricks auth login in Terminal, then refresh.",
+        bundle: bundle
+    ) }
+    static var databricksCLINotInstalled: String { String(
+        localized: "Databricks CLI was not found. Install it and relaunch Dahlia.",
+        bundle: bundle
+    ) }
+    static func databricksCLICommandFailed(_ detail: String) -> String { String(
+        localized: "Databricks CLI authentication failed: \(detail)",
+        bundle: bundle
+    ) }
+    static var databricksCLICommandFailedWithoutDetail: String { String(
+        localized: "Databricks CLI authentication failed.",
+        bundle: bundle
+    ) }
+    static var databricksCLIInvalidProfilesResponse: String { String(
+        localized: "Databricks CLI returned an invalid profiles response.",
+        bundle: bundle
+    ) }
+    static var databricksProfileRequired: String { String(localized: "Select a Databricks CLI profile.", bundle: bundle) }
+    static var databricksWorkspaceURLInvalid: String { String(
+        localized: "The selected Databricks CLI profile does not provide a valid HTTPS workspace URL.",
+        bundle: bundle
+    ) }
+    static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
+    static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
+    static var workspaceHostUnavailableFromProfile: String { String(
+        localized: "Workspace URL unavailable from profile",
+        bundle: bundle
+    ) }
+    static var workspaceIDUnavailableFromProfile: String { String(
+        localized: "Workspace ID unavailable from profile",
+        bundle: bundle
+    ) }
+    static var codexConfiguration: String { String(localized: "Codex Configuration", bundle: bundle) }
+    static func codexConfigurationUpdateFailed(_ detail: String) -> String { String(
+        localized: "Could not update the Codex configuration: \(detail)",
+        bundle: bundle
+    ) }
+    static var databricksConfigured: String { String(localized: "Codex is configured for Databricks", bundle: bundle) }
+    static var codexAccountConfigurationNotReady: String { String(
+        localized: "The selected AI account is not ready. Open AI Connection in Settings and finish its configuration.",
+        bundle: bundle
+    ) }
+    static var databricksCodexDescription: String { String(
+        localized: "Dahlia writes the selected profile to its Codex configuration. Tokens remain managed by Databricks CLI.",
+        bundle: bundle
+    ) }
     static var codexNoModels: String { String(localized: "Codex returned no available models. Try again.", bundle: bundle) }
     static var codexModelDescription: String { String(
         localized: "Models are loaded from the bundled Codex app-server.",

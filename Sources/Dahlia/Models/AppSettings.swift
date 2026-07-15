@@ -398,9 +398,51 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - LLM 設定
 
+    @AppStorage("codexAccountProvider") var codexAccountProviderRawValue = AIAccountProvider.chatGPTSubscription.rawValue
+    @AppStorage("codexConfiguredAccountProvider") var codexConfiguredAccountProviderRawValue =
+        AIAccountProvider.chatGPTSubscription.rawValue
+    @AppStorage("llmDatabricksProfile") var codexDatabricksProfile = ""
+    @AppStorage("codexConfiguredDatabricksProfile") var codexConfiguredDatabricksProfile = ""
     @AppStorage("codexModelID") var codexModelID = ""
     @AppStorage("codexReasoningEffort") var codexReasoningEffort = CodexReasoningEffortOption.defaultValue
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+
+    var codexAccountProvider: AIAccountProvider {
+        get { AIAccountProvider(rawValue: codexAccountProviderRawValue) ?? .chatGPTSubscription }
+        set { codexAccountProviderRawValue = newValue.rawValue }
+    }
+
+    var isCodexAccountConfigurationCurrent: Bool {
+        Self.isCodexAccountConfigurationCurrent(
+            selectedProvider: codexAccountProvider,
+            selectedDatabricksProfile: codexDatabricksProfile,
+            configuredProviderRawValue: codexConfiguredAccountProviderRawValue,
+            configuredDatabricksProfile: codexConfiguredDatabricksProfile
+        )
+    }
+
+    nonisolated static func isCodexAccountConfigurationCurrent(
+        selectedProvider: AIAccountProvider,
+        selectedDatabricksProfile: String,
+        configuredProviderRawValue: String,
+        configuredDatabricksProfile: String
+    ) -> Bool {
+        guard configuredProviderRawValue == selectedProvider.rawValue else { return false }
+        return selectedProvider != .databricks || configuredDatabricksProfile == selectedDatabricksProfile
+    }
+
+    func invalidateCodexAccountConfiguration() {
+        codexConfiguredAccountProviderRawValue = ""
+        codexConfiguredDatabricksProfile = ""
+    }
+
+    func markCodexAccountConfigurationCurrent(
+        provider: AIAccountProvider,
+        databricksProfile: String
+    ) {
+        codexConfiguredAccountProviderRawValue = provider.rawValue
+        codexConfiguredDatabricksProfile = provider == .databricks ? databricksProfile : ""
+    }
 
     var llmSummaryLanguage: SummaryLanguage {
         get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }

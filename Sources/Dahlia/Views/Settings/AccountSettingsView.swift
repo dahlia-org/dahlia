@@ -1,101 +1,35 @@
 import SwiftUI
 
-/// Bundled Codex app-server and Dahlia-specific ChatGPT account status.
 struct AccountSettingsView: View {
-    @State private var controller = CodexAccountController()
-    @State private var actionTask: Task<Void, Never>?
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         Form {
             Section {
-                LabeledContent(L10n.codexVersion, value: CodexBundle.version)
-
-                if controller.isCheckingStatus || controller.isSigningOut {
-                    LabeledContent(L10n.codexAccount) {
-                        ProgressView()
-                            .controlSize(.small)
+                Picker(selection: $settings.codexAccountProvider) {
+                    ForEach(AIAccountProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
                     }
-                } else if let accountStatus = controller.accountStatus {
-                    SettingsStatusMessage(
-                        text: statusText(accountStatus),
-                        systemImage: accountStatus.canUseCodex ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark",
-                        tint: accountStatus.canUseCodex ? .green : .orange
-                    )
+                } label: {
+                    Text(L10n.account)
+                    Text(L10n.aiAccountDescription)
                 }
+                .pickerStyle(.menu)
 
-                if controller.isSigningIn {
-                    SettingsStatusMessage(
-                        text: L10n.codexWaitingForBrowserSignIn,
-                        systemImage: "safari",
-                        tint: .secondary
-                    )
-                }
-
-                if let errorMessage = controller.errorMessage {
-                    SettingsStatusMessage(
-                        text: errorMessage,
-                        systemImage: "exclamationmark.triangle.fill",
-                        tint: .red
-                    )
-                }
-
-                if controller.isSigningIn {
-                    Button(L10n.cancelSignIn, action: cancelSignIn)
-                } else if controller.accountStatus?.isAuthenticated == true {
-                    Button(L10n.signOut, action: signOut)
-                        .disabled(controller.isBusy)
-                } else if controller.accountStatus?.requiresOpenAIAuth != false {
-                    Button(L10n.signInWithChatGPT, action: signIn)
-                        .disabled(controller.isBusy)
-                }
-
-                Button(L10n.retry, action: refresh)
-                    .disabled(controller.isBusy)
+                LabeledContent(L10n.codexVersion, value: CodexBundle.version)
             } header: {
-                Text(L10n.codexAppServer)
+                Text(L10n.aiConnection)
             } footer: {
-                Text(L10n.codexAccountDescription)
+                Text(L10n.aiAccountSettingsDescription)
+            }
+
+            switch settings.codexAccountProvider {
+            case .chatGPTSubscription:
+                ChatGPTAccountSettingsView()
+            case .databricks:
+                DatabricksAccountSettingsView()
             }
         }
         .formStyle(.grouped)
-        .task {
-            await controller.loadStatus()
-        }
-        .onDisappear {
-            actionTask?.cancel()
-            actionTask = nil
-        }
-    }
-
-    private func statusText(_ status: CodexAppServerService.AccountStatus) -> String {
-        if status.isAuthenticated {
-            status.label.map(L10n.codexSignedInAs) ?? L10n.codexSignedIn
-        } else if !status.requiresOpenAIAuth {
-            L10n.codexSignInNotRequired
-        } else {
-            L10n.codexNotSignedIn
-        }
-    }
-
-    private func refresh() {
-        startAction { await controller.loadStatus() }
-    }
-
-    private func signIn() {
-        startAction { await controller.signIn() }
-    }
-
-    private func cancelSignIn() {
-        actionTask?.cancel()
-        actionTask = nil
-    }
-
-    private func signOut() {
-        startAction { await controller.signOut() }
-    }
-
-    private func startAction(_ action: @escaping @MainActor () async -> Void) {
-        actionTask?.cancel()
-        actionTask = Task { await action() }
     }
 }

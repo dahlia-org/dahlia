@@ -20,9 +20,11 @@ struct BundledCodexAppServerLauncher: CodexAppServerLaunching {
         let homeURL = try homeLocator.homeURL()
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = homeURL.path
+        environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
         return try CodexAppServerProcessTransport(
             executableURL: executableLocator.executableURL(),
             environment: environment
         )
     }
+
 }

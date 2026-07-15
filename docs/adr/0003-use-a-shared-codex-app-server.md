@@ -81,14 +81,26 @@ service の lifecycle、timeout、キャンセル、順不同 response は fake 
 
 ### 認証
 
-認証は設定画面から明示的に操作する。
+認証は設定画面から明示的に操作し、ChatGPT Subscription または Databricks を選択する。
+
+ChatGPT Subscription:
 
 1. 起動時と状態更新時に `account/read` を `refreshToken: false` で呼ぶ。
 2. 未認証で OpenAI 認証が必要な場合だけ「ChatGPT でサインイン」を表示する。
 3. ユーザー操作で `account/login/start` を `type: chatgpt`、`useHostedLoginSuccessPage: true`、`appBrand: codex` として呼ぶ。
 4. 返された HTTPS の `authUrl` を `NSWorkspace` で開く。
 5. 対応する `account/login/completed` notification を `loginId` で待つ。
+
+Databricks:
+
+1. `databricks auth profiles --skip-validate --output json` から OAuth U2M プロファイルだけを列挙する。
+2. 選択したプロファイルの HTTPS workspace host を Databricks AI Gateway の `/ai-gateway/codex/v1` に変換する。
+3. Dahlia 専用 `config.toml` に `model_provider = "Databricks"` と Responses wire API を設定する。
+4. provider の auth command は `databricks auth token --profile <profile> --output json` の出力から macOS 標準の `plutil` で短期アクセストークンを取得する。Dahlia はトークンを保存しない。
+5. 設定変更後は共有 app-server connection を閉じて再初期化し、`model/list` が成功した場合だけ設定完了とする。
 6. 成功後に account と model cache を無効化し、`account/read` で表示状態を更新する。
+
+設定変更による connection の再初期化は、進行中の要約 generation が完了して unsubscribe されるまで待機する。account 設定が検証済みの選択と一致しない間は、service 層が通常の `model/list` と generation を拒否し、設定 controller の検証 request だけが明示的にこの guard を迂回する。
 
 ログイン待機 Task のキャンセル、ブラウザを開けなかった場合、ユーザーのキャンセルでは `account/login/cancel` を送る。notification が waiter 登録より先に到着する場合に備え、直近 10 件の login outcome を一時保持する。ログアウトは `account/logout` を明示的に呼ぶ。
 
@@ -198,7 +210,7 @@ sequenceDiagram
     Client->>Server: account/read
     Client->>Server: model/list
     Client->>Server: config/read
-    Client->>Server: thread/start(ephemeral, readOnly, never)
+    Client->>Server: thread/start(ephemeral, read-only, never)
     Server-->>Client: threadId
     Client->>Server: turn/start(input, outputSchema)
     Server-->>Client: turnId
@@ -212,7 +224,7 @@ sequenceDiagram
 
 - `ephemeral: true`。
 - isolated temporary working directory。
-- `sandbox: readOnly`、`approvalPolicy: never`。
+- `sandbox: read-only`、`approvalPolicy: never`。
 - developer instruction に tool を呼ばず requested JSON だけを返すよう追記。
 - apps、hooks、memory、plugins、skills、orchestrator MCP を無効化。
 - user config の MCP server を列挙し、thread config 上ですべて無効化。
