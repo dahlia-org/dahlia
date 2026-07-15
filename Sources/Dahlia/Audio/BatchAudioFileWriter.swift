@@ -121,10 +121,7 @@ actor BatchAudioFileWriter {
             throw BatchAudioFileWriterError.writeFailed(writeError.localizedDescription)
         }
 
-        if FileManager.default.fileExists(atPath: finalURL.path) {
-            try FileManager.default.removeItem(at: finalURL)
-        }
-        try FileManager.default.moveItem(at: partialURL, to: finalURL)
+        try finalizeFile(expectedFrameCount: finalFrameCount)
         return finalFrameCount
     }
 
@@ -140,6 +137,27 @@ actor BatchAudioFileWriter {
         await writerTask?.value
         writerTask = nil
         audioFile = nil
+    }
+
+    private func finalizeFile(expectedFrameCount: Int64) throws {
+        let fileManager = FileManager.default
+        let partialExists = fileManager.fileExists(atPath: partialURL.path)
+        let finalExists = fileManager.fileExists(atPath: finalURL.path)
+        switch (partialExists, finalExists) {
+        case (true, true):
+            _ = try fileManager.replaceItemAt(finalURL, withItemAt: partialURL)
+        case (true, false):
+            try fileManager.moveItem(at: partialURL, to: finalURL)
+        case (false, true):
+            break
+        case (false, false):
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let actualFrameCount = try AVAudioFile(forReading: finalURL).length
+        guard actualFrameCount == expectedFrameCount else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
     }
 
     private func write(_ chunk: AudioChunk) throws {

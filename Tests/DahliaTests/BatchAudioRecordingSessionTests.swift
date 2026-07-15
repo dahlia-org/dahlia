@@ -289,6 +289,80 @@ import GRDB
         }
 
         @Test
+        func finishKeepsAudioWhenPartialFileWasAlreadyFinalized() async throws {
+            let fixture = try BatchAudioTestFixture(name: "BatchAlreadyFinalized")
+            defer { fixture.removeFiles() }
+
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id,
+                recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now,
+                sampleRate: 16000
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
+
+            let partialURL = BatchAudioStorage.partialURL(
+                baseURL: fixture.managedRootURL,
+                relativePath: fixture.managedRelativePath
+            )
+            let finalURL = BatchAudioStorage.finalURL(
+                baseURL: fixture.managedRootURL,
+                relativePath: fixture.managedRelativePath
+            )
+            try FileManager.default.moveItem(at: partialURL, to: finalURL)
+
+            try await recorder.finish()
+
+            let result = try await fixture.database.dbQueue.read { db in
+                let file = try RecordingAudioFileRecord
+                    .filter(Column("recordingSessionId") == fixture.session.id)
+                    .fetchOne(db)
+                let range = try RecordingAudioRangeRecord.fetchOne(db)
+                return (file, range)
+            }
+            #expect(FileManager.default.fileExists(atPath: finalURL.path))
+            #expect(!FileManager.default.fileExists(atPath: partialURL.path))
+            #expect(try AVAudioFile(forReading: finalURL).length == 160)
+            #expect(result.0?.finalizedAt != nil)
+            #expect(result.0?.totalFrameCount == 160)
+            #expect(result.1?.frameCount == 160)
+        }
+
+        @Test
+        func finishReplacesAnExistingFinalFileWithTheCurrentPartialFile() async throws {
+            let fixture = try BatchAudioTestFixture(name: "BatchReplaceFinal")
+            defer { fixture.removeFiles() }
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: 16000,
+                channels: 1,
+                interleaved: false
+            ))
+            let partialURL = fixture.managedRootURL.appending(path: "microphone.partial.caf")
+            let finalURL = fixture.managedRootURL.appending(path: "microphone.caf")
+            try BatchAudioTestFixture.writeCAF(url: finalURL, frameCount: 80)
+            let writer = BatchAudioFileWriter(
+                partialURL: partialURL,
+                finalURL: finalURL,
+                format: format
+            )
+
+            try await writer.start()
+            try writer.appendBuffer(makeBuffer(format: format, frameCount: 160))
+            #expect(try await writer.finish() == 160)
+
+            #expect(!FileManager.default.fileExists(atPath: partialURL.path))
+            #expect(try AVAudioFile(forReading: finalURL).length == 160)
+        }
+
+        @Test
         func writerQueueOverflowIsReportedAsRecordingFailure() async throws {
             let fixture = try BatchAudioTestFixture(name: "BatchWriterOverflow")
             defer { fixture.removeFiles() }
