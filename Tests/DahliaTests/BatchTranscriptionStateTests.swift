@@ -75,6 +75,12 @@ import Foundation
 
             #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
 
+            session.batchFailureKind = .recordingRecovery
+            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
+            session.batchFailureKind = .recordingAudioPermanent
+            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
+            session.batchFailureKind = nil
+
             session.batchAttemptCount = BatchTranscriptionCoordinator.maximumAutomaticAttemptCount
             #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
 

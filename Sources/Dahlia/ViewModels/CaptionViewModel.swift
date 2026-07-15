@@ -452,12 +452,20 @@ final class CaptionViewModel: ObservableObject {
         ))
     }
 
-    func configureBatchTranscription(dbQueue: DatabaseQueue) {
+    func configureBatchTranscription(
+        dbQueue: DatabaseQueue,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL,
+        recoverExistingSessions: Bool = true
+    ) {
         guard batchTranscriptionCoordinator == nil else { return }
-        let coordinator = BatchTranscriptionCoordinator(dbQueue: dbQueue) { [weak self] update in
+        let coordinator = BatchTranscriptionCoordinator(
+            dbQueue: dbQueue,
+            managedRootURL: managedRootURL
+        ) { [weak self] update in
             await self?.handleBatchTranscriptionUpdate(update)
         }
         batchTranscriptionCoordinator = coordinator
+        guard recoverExistingSessions else { return }
         Task {
             await coordinator.recoverAndEnqueue()
         }
@@ -542,7 +550,7 @@ final class CaptionViewModel: ObservableObject {
         Task {
             do {
                 let repository = MeetingRepository(dbQueue: dbQueue)
-                guard try repository.discardFailedBatchSession(id: sessionId) else { return }
+                guard try await repository.discardFailedBatchSessionSafely(id: sessionId) else { return }
                 pendingBatchSummaryMeetingIdsBySessionId.removeValue(forKey: sessionId)
                 try refreshBatchTranscriptionState(meetingId: meetingId, dbQueue: dbQueue)
             } catch {

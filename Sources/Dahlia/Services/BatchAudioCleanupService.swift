@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// DB削除前に一時CAFの場所を確保し、DBコミット後に対象ファイルだけを削除する。
+/// 旧形式の音声参照が残る親レコードを削除する前に、対象ファイルを安全に除去する。
 enum BatchAudioCleanupService {
     struct DeletionTarget {
         let baseURL: URL
@@ -68,43 +68,9 @@ enum BatchAudioCleanupService {
         )
     }
 
-    static func deletionTargets(
-        recordingSessionId: UUID,
-        dbQueue: DatabaseQueue,
-        managedRootURL: URL = BatchAudioStorage.managedRootURL
-    ) throws -> [DeletionTarget] {
-        try dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT vaults.path AS vaultPath,
-                       recording_audio_files.storageLocation AS storageLocation,
-                       recording_audio_files.relativePath AS relativePath
-                FROM recording_audio_files
-                JOIN recording_sessions ON recording_sessions.id = recording_audio_files.recordingSessionId
-                JOIN meetings ON meetings.id = recording_sessions.meetingId
-                JOIN vaults ON vaults.id = meetings.vaultId
-                WHERE recording_sessions.id = ?
-                """,
-                arguments: [recordingSessionId]
-            )
-            return rows.compactMap { row in
-                guard let location = RecordingAudioStorageLocation(rawValue: row["storageLocation"]) else { return nil }
-                return DeletionTarget(
-                    baseURL: BatchAudioStorage.baseURL(
-                        for: location,
-                        managedRootURL: managedRootURL,
-                        vaultURL: URL(fileURLWithPath: row["vaultPath"])
-                    ),
-                    relativePath: row["relativePath"]
-                )
-            }
-        }
-    }
-
-    static func deleteFiles(_ targets: [DeletionTarget]) {
+    static func deleteFiles(_ targets: [DeletionTarget]) throws {
         for target in targets {
-            BatchAudioStorage.removeFiles(
+            try BatchAudioStorage.removeFilesChecked(
                 baseURL: target.baseURL,
                 relativePaths: [target.relativePath]
             )

@@ -20,4 +20,7 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     var batchLastAttemptAt: Date?
     var batchAttemptCount = 0
     var batchDiscardedAt: Date?
+    var audioRetentionPolicy: RecordingAudioRetentionPolicy?
+    var retentionExpiresAt: Date?
+    var batchFailureKind: BatchFailureKind?
 }

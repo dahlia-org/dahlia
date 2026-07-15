@@ -6,84 +6,104 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
+    private actor BoundaryCompletionProbe {
+        private(set) var isCompleted = false
+
+        func complete() {
+            isCompleted = true
+        }
+    }
+
     @MainActor
     @Suite(.serialized)
     struct BatchAudioRecordingSessionTests {
         @Test
-        func localeChangesCreateRangesInOneCAF() async throws {
-            let fixture = try BatchAudioTestFixture(name: "Batch")
+        func finalizesImmutableSegmentWithIntegrityMetadataAndLocaleRanges() async throws {
+            let fixture = try BatchAudioTestFixture(name: "SegmentedBatch")
             defer { fixture.removeFiles() }
-
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
-            )
+            let recorder = try makeRecorder(fixture: fixture)
             let firstWriter = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now
             )
             try firstWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
-            try await recorder.endActiveRanges()
-
-            let secondWriter = try await recorder.beginRange(
+            let secondWriter = try await recorder.rotateRange(
                 source: .microphone,
-                locale: Locale(identifier: "en_US"),
-                at: fixture.now.addingTimeInterval(1)
+                locale: Locale(identifier: "en_US")
             )
             #expect(firstWriter === secondWriter)
             try secondWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
             try await recorder.finish()
 
             let result = try await fixture.database.dbQueue.read { db in
-                let files = try RecordingAudioFileRecord
-                    .filter(Column("recordingSessionId") == fixture.session.id)
-                    .fetchAll(db)
-                let ranges = try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
-                return (files, ranges)
+                let segments = try RecordingAudioSegmentRecord.fetchAll(db)
+                let ranges = try RecordingAudioSegmentRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+                let progress = try RecordingAudioSourceProgressRecord.fetchAll(db)
+                return (segments, ranges, progress)
             }
-            let file = try #require(result.0.first)
+            let segment = try #require(result.0.first)
             #expect(result.0.count == 1)
-            #expect(file.storageLocation == .managed)
-            #expect(file.totalFrameCount == 320)
-            #expect(result.1.count == 2)
+            #expect(segment.state == .ready)
+            #expect(segment.sealedFrameCount == 320)
+            #expect(segment.byteCount.map { $0 > 0 } == true)
+            #expect(segment.sha256?.count == 32)
+            #expect(segment.integrityVerifiedAt != nil)
+            #expect(segment.finalizedAt != nil)
             #expect(result.1.map(\.localeIdentifier) == ["ja_JP", "en_US"])
             #expect(result.1.map(\.startFrame) == [0, 160])
             #expect(result.1.map(\.frameCount) == [160, 160])
+            #expect(result.2.first?.durableThroughOffsetSeconds == 0.02)
+            #expect(result.2.first?.lastContiguousReadySegmentIndex == 0)
 
-            let finalURL = BatchAudioStorage.finalURL(baseURL: fixture.managedRootURL, relativePath: file.relativePath)
-            let partialURL = BatchAudioStorage.partialURL(baseURL: fixture.managedRootURL, relativePath: file.relativePath)
+            let finalURL = fixture.managedRootURL.appending(path: segment.finalRelativePath)
+            let partialURL = fixture.managedRootURL.appending(path: segment.partialRelativePath)
             #expect(FileManager.default.fileExists(atPath: finalURL.path))
             #expect(!FileManager.default.fileExists(atPath: partialURL.path))
-            let vaultAudioURL = BatchAudioStorage.finalURL(
-                baseURL: fixture.vaultURL,
-                relativePath: BatchAudioStorage.vaultRelativePath(
-                    meetingId: fixture.meeting.id,
-                    sessionId: fixture.session.id,
-                    source: .microphone
-                )
-            )
-            #expect(!FileManager.default.fileExists(atPath: vaultAudioURL.path))
-            let audioFile = try AVAudioFile(forReading: finalURL)
-            #expect(audioFile.length == 320)
+            #expect(try AVAudioFile(forReading: finalURL).length == 320)
         }
 
         @Test
-        func rotatingLocaleUsesOneExactFrameBoundaryWithoutStoppingWriter() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchRotate")
+        func rotatesAtBufferBoundaryWithoutFrameLossOrDuplication() async throws {
+            let fixture = try BatchAudioTestFixture(name: "SegmentRotation")
             defer { fixture.removeFiles() }
+            let recorder = try makeRecorder(
+                fixture: fixture,
+                configuration: configuration(targetMilliseconds: 5)
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80, startValue: 0))
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120, startValue: 80))
+            try await recorder.finish()
 
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
+            let segments = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
+            }
+            #expect(segments.count == 2)
+            #expect(segments.map(\.segmentIndex) == [0, 1])
+            #expect(segments.map(\.sealedFrameCount) == [80, 120])
+            #expect(segments.allSatisfy { $0.state == .ready && $0.sha256?.count == 32 })
+            #expect(segments[0].sessionEndOffsetSeconds == segments[1].sessionStartOffsetSeconds)
+
+            var samples: [Int16] = []
+            for segment in segments {
+                let url = fixture.managedRootURL.appending(path: segment.finalRelativePath)
+                try samples.append(contentsOf: readSamples(url: url))
+            }
+            #expect(samples == (0 ..< 200).map { Int16($0) })
+        }
+
+        @Test
+        func localeBoundaryPausesRolloverUntilLocaleIsCommitted() async throws {
+            let fixture = try BatchAudioTestFixture(name: "LocaleBoundaryPause")
+            defer { fixture.removeFiles() }
+            let recorder = try makeRecorder(
+                fixture: fixture,
+                configuration: configuration(targetMilliseconds: 5)
             )
             let writer = try await recorder.beginRange(
                 source: .microphone,
@@ -91,55 +111,60 @@ import GRDB
                 at: fixture.now
             )
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            let firstBoundary = try #require(await writer.captureLocaleBoundary())
 
-            let rotatedWriter = try await recorder.rotateRange(
-                source: .microphone,
-                locale: Locale(identifier: "en_US"),
-                at: fixture.now.addingTimeInterval(0.005)
-            )
-            #expect(rotatedWriter === writer)
-            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120))
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            let probe = BoundaryCompletionProbe()
+            let secondBoundaryTask = Task {
+                let boundary = await writer.captureLocaleBoundary()
+                await probe.complete()
+                return boundary
+            }
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(50))
+            #expect(await probe.isCompleted == false)
+
+            await writer.commitLocale(Locale(identifier: "en_US"))
+            let secondBoundary = try #require(await secondBoundaryTask.value)
+            #expect(secondBoundary.segmentId != firstBoundary.segmentId)
+            #expect(secondBoundary.frame == 80)
+            await writer.cancelLocaleBoundary()
             try await recorder.finish()
 
-            let ranges = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+            let result = try await fixture.database.dbQueue.read { db in
+                let segments = try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
+                let ranges = try RecordingAudioSegmentRangeRecord.fetchAll(db)
+                return (segments, ranges)
             }
-            #expect(ranges.map(\.startFrame) == [0, 80])
-            #expect(ranges.map(\.frameCount) == [80, 120])
+            #expect(result.0.count == 2)
+            let secondSegment = try #require(result.0.last)
+            #expect(result.1.filter { $0.audioSegmentId == secondSegment.id }.map(\.localeIdentifier) == ["en_US"])
         }
 
         @Test
-        func rotatingMultipleSourcesIsAtomicAndUsesEachSourceFrameBoundary() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchAtomicRotate")
+        func localeRotationAcrossSourcesIsAtomic() async throws {
+            let fixture = try BatchAudioTestFixture(name: "AtomicLocale")
             defer { fixture.removeFiles() }
-
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
-            )
-            let microphoneWriter = try await recorder.beginRange(
+            let recorder = try makeRecorder(fixture: fixture)
+            let microphone = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now.addingTimeInterval(0.25)
             )
-            let systemWriter = try await recorder.beginRange(
+            let system = try await recorder.beginRange(
                 source: .system,
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now.addingTimeInterval(0.5)
             )
-            try microphoneWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
-            try systemWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120))
+            try microphone.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try system.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120))
 
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: """
-                CREATE TRIGGER reject_second_english_range
-                BEFORE INSERT ON recording_audio_ranges
+                CREATE TRIGGER reject_second_segment_english_range
+                BEFORE INSERT ON recording_audio_segment_ranges
                 WHEN NEW.localeIdentifier = 'en_US'
-                    AND (SELECT COUNT(*) FROM recording_audio_ranges WHERE localeIdentifier = 'en_US') >= 1
+                    AND (SELECT COUNT(*) FROM recording_audio_segment_ranges WHERE localeIdentifier = 'en_US') >= 1
                 BEGIN
                     SELECT RAISE(ABORT, 'forced range rotation failure');
                 END
@@ -148,261 +173,177 @@ import GRDB
             await #expect(throws: (any Error).self) {
                 try await recorder.rotateRanges(
                     [
-                        BatchRecordingRangeOrigin(
-                            source: .microphone,
-                            startFrame: 0,
-                            sessionRelativeOriginSeconds: 0.25
-                        ),
-                        BatchRecordingRangeOrigin(
-                            source: .system,
-                            startFrame: 0,
-                            sessionRelativeOriginSeconds: 0.5
-                        ),
+                        BatchRecordingRangeOrigin(source: .microphone, startFrame: 0, sessionRelativeOriginSeconds: 0.25),
+                        BatchRecordingRangeOrigin(source: .system, startFrame: 0, sessionRelativeOriginSeconds: 0.5),
                     ],
                     locale: Locale(identifier: "en_US")
                 )
             }
-
             let rangesAfterFailure = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.fetchAll(db)
+                try RecordingAudioSegmentRangeRecord.fetchAll(db)
             }
             #expect(rangesAfterFailure.count == 2)
             #expect(rangesAfterFailure.allSatisfy { $0.localeIdentifier == "ja_JP" && $0.frameCount == nil })
 
             try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "DROP TRIGGER reject_second_english_range")
+                try db.execute(sql: "DROP TRIGGER reject_second_segment_english_range")
             }
-            try await recorder.rotateRanges(
+            _ = try await recorder.rotateRanges(
                 [
-                    BatchRecordingRangeOrigin(
-                        source: .microphone,
-                        startFrame: 0,
-                        sessionRelativeOriginSeconds: 0.25
-                    ),
-                    BatchRecordingRangeOrigin(
-                        source: .system,
-                        startFrame: 0,
-                        sessionRelativeOriginSeconds: 0.5
-                    ),
+                    BatchRecordingRangeOrigin(source: .microphone, startFrame: 0, sessionRelativeOriginSeconds: 0.25),
+                    BatchRecordingRangeOrigin(source: .system, startFrame: 0, sessionRelativeOriginSeconds: 0.5),
                 ],
                 locale: Locale(identifier: "en_US")
             )
-            try microphoneWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 40))
-            try systemWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 60))
+            try microphone.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 40))
+            try system.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 60))
             try await recorder.finish()
 
             let result = try await fixture.database.dbQueue.read { db in
-                let files = try RecordingAudioFileRecord
-                    .filter(Column("recordingSessionId") == fixture.session.id)
-                    .fetchAll(db)
-                let ranges = try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
-                return (files, ranges)
+                let segments = try RecordingAudioSegmentRecord.fetchAll(db)
+                let ranges = try RecordingAudioSegmentRangeRecord.order(Column("startFrame").asc).fetchAll(db)
+                return (segments, ranges)
             }
-            let fileBySource = Dictionary(uniqueKeysWithValues: result.0.map { ($0.source, $0) })
-            let microphoneFile = try #require(fileBySource[.microphone])
-            let systemFile = try #require(fileBySource[.system])
-            let microphoneRanges = result.1.filter { $0.audioFileId == microphoneFile.id }
-            let systemRanges = result.1.filter { $0.audioFileId == systemFile.id }
-
-            #expect(microphoneRanges.map(\.startFrame) == [0, 80])
-            #expect(microphoneRanges.map(\.frameCount) == [80, 40])
-            #expect(abs((microphoneRanges.last?.sessionOffsetSeconds ?? 0) - 0.255) < 0.000_001)
-            #expect(systemRanges.map(\.startFrame) == [0, 120])
-            #expect(systemRanges.map(\.frameCount) == [120, 60])
-            #expect(abs((systemRanges.last?.sessionOffsetSeconds ?? 0) - 0.5075) < 0.000_001)
+            let segmentBySource = Dictionary(uniqueKeysWithValues: result.0.map { ($0.source, $0) })
+            let microphoneSegment = try #require(segmentBySource[.microphone])
+            let systemSegment = try #require(segmentBySource[.system])
+            #expect(result.1.filter { $0.audioSegmentId == microphoneSegment.id }.map(\.frameCount) == [80, 40])
+            #expect(result.1.filter { $0.audioSegmentId == systemSegment.id }.map(\.frameCount) == [120, 60])
+            let durable = await recorder.fullyDurableThroughOffsetSeconds()
+            #expect(abs(durable - 0.2575) < 0.000_001)
         }
 
         @Test
-        func replacementRangeAndLaterLocaleRotationDoNotDoubleCountElapsedFrames() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchReplacementOrigin")
+        func sealingRejectsLateCallbackAndPreservesSealedFrameCount() async throws {
+            let fixture = try BatchAudioTestFixture(name: "SegmentSeal")
             defer { fixture.removeFiles() }
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
-            )
-            let initialWriter = try await recorder.beginRange(
-                source: .microphone,
-                locale: Locale(identifier: "ja_JP"),
-                at: fixture.now
-            )
-            try initialWriter.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 16000))
-
-            let replacement = try await recorder.beginRangeWithOrigin(
-                source: .microphone,
-                locale: Locale(identifier: "ja_JP"),
-                at: fixture.now.addingTimeInterval(60),
-                continuingFromActiveRange: true
-            )
-            #expect(replacement.origin.startFrame == 16000)
-            #expect(abs(replacement.origin.sessionRelativeOriginSeconds - 1) < 0.000_001)
-            try replacement.writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 8000))
-
-            _ = try await recorder.rotateRanges(
-                [replacement.origin],
-                locale: Locale(identifier: "en_US")
-            )
-            try await recorder.finish()
-
-            let ranges = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.order(Column("startFrame").asc).fetchAll(db)
-            }
-            #expect(ranges.map(\.startFrame) == [0, 16000, 24000])
-            #expect(abs(ranges[1].sessionOffsetSeconds - 1) < 0.000_001)
-            #expect(abs(ranges[2].sessionOffsetSeconds - 1.5) < 0.000_001)
-        }
-
-        @Test
-        func sealingWriterRejectsLateCallbackWithoutChangingFrameMetadata() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchSeal")
-            defer { fixture.removeFiles() }
-
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
-            )
-            let writer = try await recorder.beginRange(
-                source: .microphone,
-                locale: Locale(identifier: "ja_JP")
-            )
+            let recorder = try makeRecorder(fixture: fixture)
+            let writer = try await recorder.beginRange(source: .microphone, locale: Locale(identifier: "ja_JP"))
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 100))
             #expect(writer.seal() == 100)
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 50))
             try await recorder.finish()
 
-            let result = try await fixture.database.dbQueue.read { db in
-                let file = try RecordingAudioFileRecord
-                    .filter(Column("recordingSessionId") == fixture.session.id)
-                    .fetchOne(db)
-                let range = try RecordingAudioRangeRecord.fetchOne(db)
-                return (file, range)
+            let segment = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db)
             }
-            #expect(result.0?.totalFrameCount == 100)
-            #expect(result.1?.frameCount == 100)
+            #expect(segment?.state == .ready)
+            #expect(segment?.sealedFrameCount == 100)
         }
 
         @Test
-        func finishKeepsAudioWhenPartialFileWasAlreadyFinalized() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchAlreadyFinalized")
+        func sourceReconfigurationUsesNewGenerationWithoutReplacingReadySegment() async throws {
+            let fixture = try BatchAudioTestFixture(name: "SourceReconfiguration")
             defer { fixture.removeFiles() }
-
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
+            let recorder = try makeRecorder(fixture: fixture)
+            let first = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
             )
+            try first.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try await recorder.endRangeForReconfiguration(source: .microphone)
+            let second = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now.addingTimeInterval(1)
+            )
+            try second.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120))
+            try await recorder.finish()
+
+            let segments = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
+            }
+            #expect(segments.count == 2)
+            #expect(segments.map(\.segmentIndex) == [0, 1])
+            #expect(segments[0].generationId != segments[1].generationId)
+            #expect(segments.map(\.sealedFrameCount) == [80, 120])
+            #expect(segments.allSatisfy { $0.state == .ready })
+            let progress = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSourceProgressRecord.fetchOne(db)
+            }
+            #expect(progress?.isRequired == true)
+            #expect(progress?.durableThroughOffsetSeconds == 0.005)
+        }
+
+        @Test
+        func boundedBacklogExtendsActiveSegmentThenResumesRotation() async throws {
+            let fixture = try BatchAudioTestFixture(name: "FinalizationBacklog")
+            defer { fixture.removeFiles() }
+            let configuration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .milliseconds(5),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5),
+                simulatedFinalizationDelay: .milliseconds(250)
+            )
+            let recorder = try makeRecorder(fixture: fixture, configuration: configuration)
+            let eventTask = Task { () -> [BatchRecordingEvent] in
+                var events: [BatchRecordingEvent] = []
+                for await event in recorder.events {
+                    events.append(event)
+                }
+                return events
+            }
             let writer = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now
             )
-            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
+            for offset in 0 ..< 4 {
+                try writer.appendBuffer(makeBuffer(
+                    format: recorder.targetFormat,
+                    frameCount: 80,
+                    startValue: offset * 80
+                ))
+            }
+            try await Task.sleep(for: .milliseconds(75))
+            let delayed = await writer.backlogSnapshot()
+            #expect(delayed.segmentCount == 2)
+            #expect(delayed.pendingByteCount == 320)
+            #expect(delayed.oldestFinalizationStartedAt != nil)
 
-            let partialURL = BatchAudioStorage.partialURL(
-                baseURL: fixture.managedRootURL,
-                relativePath: fixture.managedRelativePath
-            )
-            let finalURL = BatchAudioStorage.finalURL(
-                baseURL: fixture.managedRootURL,
-                relativePath: fixture.managedRelativePath
-            )
-            try FileManager.default.moveItem(at: partialURL, to: finalURL)
-
+            try await Task.sleep(for: .milliseconds(600))
+            let recovered = await writer.backlogSnapshot()
+            #expect(recovered.segmentCount == 0)
+            try writer.appendBuffer(makeBuffer(
+                format: recorder.targetFormat,
+                frameCount: 80,
+                startValue: 320
+            ))
             try await recorder.finish()
+            let events = await eventTask.value
 
-            let result = try await fixture.database.dbQueue.read { db in
-                let file = try RecordingAudioFileRecord
-                    .filter(Column("recordingSessionId") == fixture.session.id)
-                    .fetchOne(db)
-                let range = try RecordingAudioRangeRecord.fetchOne(db)
-                return (file, range)
+            #expect(events.contains { event in
+                if case .finalizationDelayed(source: .microphone) = event { return true }
+                return false
+            })
+            #expect(events.contains { event in
+                if case .finalizationRecovered(source: .microphone) = event { return true }
+                return false
+            })
+            let segments = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
             }
-            #expect(FileManager.default.fileExists(atPath: finalURL.path))
-            #expect(!FileManager.default.fileExists(atPath: partialURL.path))
-            #expect(try AVAudioFile(forReading: finalURL).length == 160)
-            #expect(result.0?.finalizedAt != nil)
-            #expect(result.0?.totalFrameCount == 160)
-            #expect(result.1?.frameCount == 160)
+            #expect(segments.map(\.sealedFrameCount) == [80, 80, 160, 80])
+            #expect(segments.allSatisfy { $0.state == .ready })
         }
 
         @Test
-        func finishReplacesAnExistingFinalFileWithTheCurrentPartialFile() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchReplaceFinal")
+        func activeSafetyBudgetStopsAfterPreservingAcceptedFrames() async throws {
+            let fixture = try BatchAudioTestFixture(name: "ActiveSafetyBudget")
             defer { fixture.removeFiles() }
-            let format = try #require(AVAudioFormat(
-                commonFormat: .pcmFormatInt16,
-                sampleRate: 16000,
-                channels: 1,
-                interleaved: false
-            ))
-            let partialURL = fixture.managedRootURL.appending(path: "microphone.partial.caf")
-            let finalURL = fixture.managedRootURL.appending(path: "microphone.caf")
-            try BatchAudioTestFixture.writeCAF(url: finalURL, frameCount: 80)
-            let writer = BatchAudioFileWriter(
-                partialURL: partialURL,
-                finalURL: finalURL,
-                format: format
+            let configuration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .seconds(60),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 100,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5)
             )
-
-            try await writer.start()
-            try writer.appendBuffer(makeBuffer(format: format, frameCount: 160))
-            #expect(try await writer.finish() == 160)
-
-            #expect(!FileManager.default.fileExists(atPath: partialURL.path))
-            #expect(try AVAudioFile(forReading: finalURL).length == 160)
-        }
-
-        @Test
-        func writerQueueOverflowIsReportedAsRecordingFailure() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchWriterOverflow")
-            defer { fixture.removeFiles() }
-            let format = try #require(AVAudioFormat(
-                commonFormat: .pcmFormatInt16,
-                sampleRate: 16000,
-                channels: 1,
-                interleaved: false
-            ))
-            let partialURL = fixture.managedRootURL.appending(path: "overflow.partial.caf")
-            let finalURL = fixture.managedRootURL.appending(path: "overflow.caf")
-            let writer = BatchAudioFileWriter(
-                partialURL: partialURL,
-                finalURL: finalURL,
-                format: format,
-                maximumBufferedChunkCount: 1
-            )
-
-            try writer.appendBuffer(makeBuffer(format: format, frameCount: 16))
-            try writer.appendBuffer(makeBuffer(format: format, frameCount: 16))
-            try await writer.start()
-
-            await #expect(throws: BatchAudioFileWriterError.self) {
-                try await writer.finish()
-            }
-        }
-
-        @Test
-        func failedRangeCloseRemainsActiveAndFinishSucceedsAfterRetry() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BatchRangeCloseFailure")
-            defer { fixture.removeFiles() }
-
-            let recorder = try BatchAudioRecordingSession(
-                dbQueue: fixture.database.dbQueue,
-                managedRootURL: fixture.managedRootURL,
-                meetingId: fixture.meeting.id,
-                recordingSessionId: fixture.session.id,
-                recordingStartTime: fixture.now,
-                sampleRate: 16000
-            )
+            let recorder = try makeRecorder(fixture: fixture, configuration: configuration)
             let writer = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
@@ -410,56 +351,205 @@ import GRDB
             )
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
 
-            try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: """
-                CREATE TRIGGER reject_range_close
-                BEFORE UPDATE ON recording_audio_ranges
-                WHEN NEW.frameCount IS NOT NULL
-                BEGIN
-                    SELECT RAISE(ABORT, 'forced range close failure');
-                END
-                """)
+            await #expect(throws: RecordingAudioStoreError.activeSegmentSafetyLimit) {
+                try await recorder.finish()
             }
-            await #expect(throws: (any Error).self) {
-                try await recorder.endRangeForReconfiguration(source: .microphone)
+            let segment = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db)
             }
-
-            let rangeAfterFailure = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.fetchOne(db)
-            }
-            #expect(rangeAfterFailure?.frameCount == nil)
-
-            try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "DROP TRIGGER reject_range_close")
-            }
-            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 40))
-            try await recorder.endRangeForReconfiguration(source: .microphone)
-
-            let rangeAfterRetry = try await fixture.database.dbQueue.read { db in
-                try RecordingAudioRangeRecord.fetchOne(db)
-            }
-            #expect(rangeAfterRetry?.frameCount == 120)
-            try await recorder.finish()
-
-            let result = try await fixture.database.dbQueue.read { db in
-                let file = try RecordingAudioFileRecord
-                    .filter(Column("recordingSessionId") == fixture.session.id)
-                    .fetchOne(db)
-                let range = try RecordingAudioRangeRecord.fetchOne(db)
-                return (file, range)
-            }
-            #expect(result.0?.totalFrameCount == 120)
-            #expect(result.1?.frameCount == 120)
+            #expect(segment?.state == .ready)
+            #expect(segment?.sealedFrameCount == 80)
+            #expect(segment?.sha256?.count == 32)
         }
 
-        private func makeBuffer(format: AVAudioFormat, frameCount: AVAudioFrameCount) throws -> AVAudioPCMBuffer {
+        @Test
+        func writeFailureResumesPendingLocaleBoundary() async throws {
+            let fixture = try BatchAudioTestFixture(name: "WriteFailureBoundary")
+            defer { fixture.removeFiles() }
+            let configuration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .seconds(60),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 100,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5)
+            )
+            let recorder = try makeRecorder(fixture: fixture, configuration: configuration)
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+
+            #expect(await writer.captureLocaleBoundary() == nil)
+            await #expect(throws: RecordingAudioStoreError.activeSegmentSafetyLimit) {
+                try await recorder.finish()
+            }
+        }
+
+        @Test
+        func finalizationFailureKeepsSourceProgressFailed() async throws {
+            let fixture = try BatchAudioTestFixture(name: "FailedSourceProgress")
+            defer { fixture.removeFiles() }
+            let configuration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .seconds(60),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5),
+                simulatedFinalizationDelay: .milliseconds(250)
+            )
+            let recorder = try makeRecorder(fixture: fixture, configuration: configuration)
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
+            let finishTask = Task { try await recorder.finish() }
+
+            var finalizingSegment: RecordingAudioSegmentRecord?
+            for _ in 0 ..< 100 {
+                finalizingSegment = try await fixture.database.dbQueue.read { db in
+                    try RecordingAudioSegmentRecord.fetchOne(db)
+                }
+                if finalizingSegment?.state == .finalizing { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let segment = try #require(finalizingSegment)
+            #expect(segment.state == .finalizing)
+            try await Task.sleep(for: .milliseconds(50))
+            let partialURL = fixture.managedRootURL.appending(path: segment.partialRelativePath)
+            try Data("not a caf".utf8).write(to: partialURL)
+
+            await #expect(throws: RecordingAudioStoreError.integrityMismatch) {
+                try await finishTask.value
+            }
+            let progress = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSourceProgressRecord.fetchOne(db)
+            }
+            #expect(progress?.captureState == .failed)
+            #expect(progress?.failureCode == "integrityMismatch")
+        }
+
+        @Test
+        func writeQueueOverflowRejectsLaterBuffersAndPreservesAcceptedPrefix() async throws {
+            let fixture = try BatchAudioTestFixture(name: "WriteQueueOverflow")
+            defer { fixture.removeFiles() }
+            let recorder = try makeRecorder(fixture: fixture)
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            let buffer = try makeBuffer(format: recorder.targetFormat, frameCount: 1)
+            for _ in 0 ..< 300 {
+                writer.appendBuffer(buffer)
+            }
+            let acceptedPrefixFrameCount = writer.acceptedFrameCount
+            #expect(acceptedPrefixFrameCount < 300)
+
+            _ = await writer.captureLocaleBoundary()
+            for _ in 0 ..< 10 {
+                writer.appendBuffer(buffer)
+            }
+            #expect(writer.acceptedFrameCount == acceptedPrefixFrameCount)
+
+            await #expect(throws: RecordingAudioStoreError.writeQueueOverflow) {
+                try await recorder.finish()
+            }
+            let segment = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db)
+            }
+            #expect(segment?.state == .ready)
+            #expect(segment?.sealedFrameCount == acceptedPrefixFrameCount)
+        }
+
+        @Test
+        func durabilityUsesMinimumRequiredSourceAndExcludesLateSource() async throws {
+            let fixture = try BatchAudioTestFixture(name: "RequiredSourceDurability")
+            defer { fixture.removeFiles() }
+            let recorder = try makeRecorder(fixture: fixture)
+            let microphone = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try microphone.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
+            await recorder.freezeRequiredSources()
+            let lateSystem = try await recorder.beginRange(
+                source: .system,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try lateSystem.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try await recorder.finish()
+
+            let durable = await recorder.fullyDurableThroughOffsetSeconds()
+            let progress = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSourceProgressRecord
+                    .order(Column("source").asc)
+                    .fetchAll(db)
+            }
+            #expect(durable == 0.01)
+            #expect(progress.first(where: { $0.source == .microphone })?.isRequired == true)
+            #expect(progress.first(where: { $0.source == .system })?.isRequired == false)
+        }
+
+        private func makeRecorder(
+            fixture: BatchAudioTestFixture,
+            configuration: RecordingAudioStore.Configuration = .production
+        ) throws -> BatchAudioRecordingSession {
+            try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id,
+                recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now,
+                sampleRate: 16000,
+                configuration: configuration
+            )
+        }
+
+        private func configuration(targetMilliseconds: Int64) -> RecordingAudioStore.Configuration {
+            RecordingAudioStore.Configuration(
+                targetSegmentDuration: .milliseconds(targetMilliseconds),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5)
+            )
+        }
+
+        private func makeBuffer(
+            format: AVAudioFormat,
+            frameCount: AVAudioFrameCount,
+            startValue: Int = 0
+        ) throws -> AVAudioPCMBuffer {
             let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
             buffer.frameLength = frameCount
             let channel = try #require(buffer.int16ChannelData?[0])
             for index in 0 ..< Int(frameCount) {
-                channel[index] = Int16(index % 100)
+                channel[index] = Int16(startValue + index)
             }
             return buffer
+        }
+
+        private func readSamples(url: URL) throws -> [Int16] {
+            let file = try AVAudioFile(
+                forReading: url,
+                commonFormat: .pcmFormatInt16,
+                interleaved: false
+            )
+            let frameCount = AVAudioFrameCount(file.length)
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frameCount))
+            try file.read(into: buffer)
+            let channel = try #require(buffer.int16ChannelData?[0])
+            return (0 ..< Int(buffer.frameLength)).map { channel[$0] }
         }
     }
 #endif

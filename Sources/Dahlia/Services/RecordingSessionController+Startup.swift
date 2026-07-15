@@ -13,7 +13,6 @@ extension RecordingSessionController {
             source: configuration.source,
             sessionId: snapshot.sessionId
         )
-        try await batchRecording?.prepare(source: configuration.source)
         let captureFormat = try await preparedCaptureFormat(for: preparedSource)
         let captureOriginDate = Date.now
         let pipeline = AudioSourcePipeline(

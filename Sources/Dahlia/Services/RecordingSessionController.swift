@@ -132,6 +132,7 @@ actor RecordingSessionController {
     var sourceRuntimeGenerations: [RecordingAudioSource: UUID] = [:]
     var pendingRecognitionStarts: [UUID: PendingRecognitionStart] = [:]
     var batchRecording: (any BatchRecordingSession)?
+    var batchEventTask: Task<Void, Never>?
     private var batchScheduler: (any BatchTranscriptionScheduling)?
     var onEvent: EventHandler?
     var onRuntimeFailure: RuntimeFailureHandler?
@@ -245,6 +246,7 @@ actor RecordingSessionController {
             self.onRuntimeFailure = onRuntimeFailure
             currentLocale = request.locale
             state = .prepared(snapshot)
+            startBatchEventMonitoring()
         } catch {
             for recognition in preparedRecognitions {
                 await recognition.session.cancel()
@@ -270,6 +272,7 @@ actor RecordingSessionController {
                     snapshot: snapshot
                 )
             }
+            await batchRecording?.freezeRequiredSources()
             guard case let .capturing(currentSnapshot) = state,
                   currentSnapshot.sessionId == snapshot.sessionId else {
                 throw RecordingSessionControllerError.sessionNotActive
@@ -389,11 +392,13 @@ actor RecordingSessionController {
             }
         }
         preparation = nil
-        await batchRecording?.cancelAndDelete()
+        await batchRecording?.cancelPreservingAudio()
         batchRecording = nil
     }
 
     private func resetState() {
+        batchEventTask?.cancel()
+        batchEventTask = nil
         preparation = nil
         sourceRuntimes.removeAll()
         sourceRuntimeGenerations.removeAll()
@@ -405,6 +410,35 @@ actor RecordingSessionController {
         currentLocale = nil
         batchRuntimeFailureMessage = nil
         state = .idle
+    }
+
+    private func startBatchEventMonitoring() {
+        guard let batchRecording else { return }
+        batchEventTask?.cancel()
+        batchEventTask = Task { [weak self, events = batchRecording.events] in
+            for await event in events {
+                guard !Task.isCancelled else { return }
+                await self?.handleBatchRecordingEvent(event)
+            }
+        }
+    }
+
+    private func handleBatchRecordingEvent(_ event: BatchRecordingEvent) async {
+        switch event {
+        case let .finalizationDelayed(source):
+            await onRuntimeFailure?(source, L10n.recordingAudioFinalizationDelayed, false)
+        case .finalizationRecovered:
+            break
+        case let .failed(source, error):
+            let durableOffset = await batchRecording?.fullyDurableThroughOffsetSeconds() ?? 0
+            let durableDate = snapshot()?.startedAt.addingTimeInterval(durableOffset) ?? .now
+            let message = L10n.recordingAudioStoppedWithDurableTime(
+                reason: error.localizedDescription,
+                durableTime: durableDate.formatted(date: .omitted, time: .standard)
+            )
+            batchRuntimeFailureMessage = batchRuntimeFailureMessage ?? message
+            await onRuntimeFailure?(source, message, true)
+        }
     }
 
     func transition(to newState: State) {

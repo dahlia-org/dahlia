@@ -39,6 +39,73 @@ enum L10n {
     static var actions: String { String(localized: "Actions", bundle: bundle) }
     static var status: String { String(localized: "Status", bundle: bundle) }
     static var dahlia: String { String(localized: "Dahlia", bundle: bundle) }
+    static var anotherDahliaInstanceTitle: String { String(localized: "Dahlia Is Already Running", bundle: bundle) }
+    static var anotherDahliaInstanceMessage: String { String(
+        localized: "Another Dahlia process is already using the recording database. This process will now quit.",
+        bundle: bundle
+    ) }
+    static var recordingStorageUnavailable: String { String(
+        localized: "The recording storage is unavailable.",
+        bundle: bundle
+    ) }
+    static var recordingAudioSessionActive: String { String(
+        localized: "The recording is still active and cannot be changed.",
+        bundle: bundle
+    ) }
+    static var recordingAudioAmbiguous: String { String(
+        localized: "Multiple recording files exist and Dahlia cannot safely choose one.",
+        bundle: bundle
+    ) }
+    static var recordingAudioDiskSpaceLow: String { String(
+        localized: "Recording stopped because less than 1 GB of safe disk space remains.",
+        bundle: bundle
+    ) }
+    static var recordingAudioIntegrityMismatch: String { String(
+        localized: "The recording failed its integrity check.",
+        bundle: bundle
+    ) }
+    static var recordingAudioInvalidPath: String { String(
+        localized: "Dahlia refused an unsafe recording file path.",
+        bundle: bundle
+    ) }
+    static var recordingAudioInvalidState: String { String(
+        localized: "The recording is not in a state that allows this operation.",
+        bundle: bundle
+    ) }
+    static var recordingAudioMissingSessionLease: String { String(
+        localized: "The recording session lease is not held.",
+        bundle: bundle
+    ) }
+    static var recordingAudioMissing: String { String(
+        localized: "A recording file is missing.",
+        bundle: bundle
+    ) }
+    static var recordingAudioFinalizationDelayed: String { String(
+        localized: "Recording continues, but durable storage is temporarily delayed.",
+        bundle: bundle
+    ) }
+    static var recordingAudioSafetyLimit: String { String(
+        localized: "Recording stopped because the active segment reached its safety limit.",
+        bundle: bundle
+    ) }
+    static var recordingAudioWriteQueueOverflow: String { String(
+        localized: "Recording stopped because audio arrived faster than it could be stored.",
+        bundle: bundle
+    ) }
+    static func recordingAudioStoppedWithDurableTime(reason: String, durableTime: String) -> String {
+        String(
+            localized: "\(reason) Audio through \(durableTime) is durable for every required source.",
+            bundle: bundle
+        )
+    }
+
+    static func recordingAudioRecoveryIncomplete(durableTime: String) -> String {
+        String(
+            localized: "The interrupted recording contains a damaged or missing interval. Audio through \(durableTime) is durable for every required source.",
+            bundle: bundle
+        )
+    }
+
     static var language: String { String(localized: "Language", bundle: bundle) }
     static var join: String { String(localized: "Join", bundle: bundle) }
     static var expand: String { String(localized: "Expand", bundle: bundle) }
@@ -460,7 +527,7 @@ enum L10n {
     ) }
     static var retainBatchAudio: String { String(localized: "Keep Audio After Transcription", bundle: bundle) }
     static var retainBatchAudioDescription: String { String(
-        localized: "Keep the CAF audio files in the vault after batch transcription succeeds.",
+        localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",
         bundle: bundle
     ) }
     static var transcriptTranslation: String { String(localized: "Transcript Translation", bundle: bundle) }

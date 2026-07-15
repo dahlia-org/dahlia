@@ -56,8 +56,9 @@ protocol ProgressiveRecognitionSessionFactory: Sendable {
 /// 音源別CAFとlocale rangeを管理するバッチ録音の実行単位。
 protocol BatchRecordingSession: AnyObject, Sendable {
     var targetFormat: AVAudioFormat { get }
+    var events: AsyncStream<BatchRecordingEvent> { get }
 
-    func prepare(source: RecordingAudioSource) async throws
+    func freezeRequiredSources() async
     func beginRangeConsumer(
         source: RecordingAudioSource,
         locale: Locale,
@@ -70,7 +71,18 @@ protocol BatchRecordingSession: AnyObject, Sendable {
     ) async throws -> [RecordingAudioSource: BatchRecordingRangeOrigin]
     func endRangeForReconfiguration(source: RecordingAudioSource) async throws
     func finish() async throws
-    func cancelAndDelete() async
+    func cancelPreservingAudio() async
+    func fullyDurableThroughOffsetSeconds() async -> TimeInterval
+}
+
+extension BatchRecordingSession {
+    var events: AsyncStream<BatchRecordingEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    func freezeRequiredSources() async {}
+
+    func fullyDurableThroughOffsetSeconds() async -> TimeInterval { 0 }
 }
 
 /// バッチ録音の実装を、DBや保存先を含めて生成する境界。

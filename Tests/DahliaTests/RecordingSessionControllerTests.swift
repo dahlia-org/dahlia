@@ -861,8 +861,6 @@
             ))
         }
 
-        func prepare(source _: RecordingAudioSource) async throws {}
-
         func beginRangeConsumer(
             source: RecordingAudioSource,
             locale _: Locale,
@@ -892,7 +890,7 @@
             await probe.append(.batchFinish)
         }
 
-        func cancelAndDelete() async {
+        func cancelPreservingAudio() async {
             await probe.append(.batchCancel)
         }
     }

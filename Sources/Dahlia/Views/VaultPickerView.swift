@@ -125,15 +125,16 @@ struct VaultPickerView: View {
 
     private func removeVault(_ vault: VaultRecord) {
         guard let repository else { return }
-
-        do {
-            try repository.deleteVault(id: vault.id)
-            vaults.removeAll(where: { $0.id == vault.id })
-            if selectedVaultId == vault.id {
-                selectedVaultId = vaults.first?.id
+        Task {
+            do {
+                try await repository.deleteVaultSafely(id: vault.id)
+                vaults.removeAll(where: { $0.id == vault.id })
+                if selectedVaultId == vault.id {
+                    selectedVaultId = vaults.first?.id
+                }
+            } catch {
+                presentError(L10n.vaultRemoveFailed, error: error, source: "removeVault")
             }
-        } catch {
-            presentError(L10n.vaultRemoveFailed, error: error, source: "removeVault")
         }
     }
 
