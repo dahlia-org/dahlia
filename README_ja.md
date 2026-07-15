@@ -30,7 +30,7 @@ Dahlia は、同梱 Codex の状態と認証を他の Codex アプリや Codex C
 
 ```bash
 # デバッグビルド・実行（署名なし、同梱 Codex 要約は利用不可）
-swift build && swift run
+swift build && swift run Dahlia
 
 # コード署名付きデバッグビルド（Data Protection Keychain が有効）
 ./scripts/run-dev.sh
@@ -51,9 +51,9 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **注意:** `swift run` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。アプリバンドル用スクリプトの初回実行時は、固定した Codex 0.144.4 の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
+> **注意:** `swift run Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。アプリバンドル用スクリプトの初回実行時は、固定した Codex 0.144.4 の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
 
-`build-app.sh` または `notarize.sh` の実行前に `SENTRY_DSN` を設定すると、生成される release アプリの `Info.plist` に DSN を埋め込み、Finder 起動でも Sentry を有効化できます。Debug 実行では送信しないため、`swift run` と `run-dev.sh` は既定で Sentry イベントを送信しません。
+`build-app.sh` または `notarize.sh` の実行前に `SENTRY_DSN` を設定すると、生成される release アプリの `Info.plist` に DSN を埋め込み、Finder 起動でも Sentry を有効化できます。Debug 実行では送信しないため、`swift run Dahlia` と `run-dev.sh` は既定で Sentry イベントを送信しません。
 
 `build-app.sh` と `run-dev.sh` は外部へファイルをアップロードしません。`notarize.sh` で Sentry を有効にしたリリースを作る場合は、`SENTRY_AUTH_TOKEN` と `sentry-cli` を必須とし、実行ファイルと dSYM の UUID が一致することを検証してから、公証成功後に dSYM をアップロードします。
 

@@ -17,7 +17,7 @@
 - Dahlia は `./scripts/run-dev.sh` で起動した。
 - このスクリプトは Debug バイナリを `Dahlia.app` に格納し、`Dahlia.entitlements` を付けてコード署名した後、バンドル内の実行ファイルを起動する。
 - 親プロセスが Terminal であること自体は、CoreAudio が他プロセスの状態を公開するかどうかには影響しないと判断した。
-- `swift run` や `.build/debug/Dahlia` の直接実行は未署名なので、今回の権限切り分けには使用していない。
+- `swift run Dahlia` や `.build/debug/Dahlia` の直接実行は未署名なので、今回の権限切り分けには使用していない。
 
 ## 調査経緯
 
