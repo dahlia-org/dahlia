@@ -5,6 +5,7 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
+CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -88,8 +89,12 @@ if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
 fi
 
 codesign --remove-signature "${HELPERS}/codex"
-codesign_path "${HELPERS}/codex"
+codesign_path "${HELPERS}/codex" --entitlements "$CODEX_ENTITLEMENTS_PATH"
 codesign --verify --strict --verbose=2 "${HELPERS}/codex"
+if ! has_boolean_entitlement "${HELPERS}/codex" "com.apple.security.cs.allow-jit"; then
+    echo "error: bundled Codex must allow JIT under the hardened runtime" >&2
+    exit 1
+fi
 codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
 codesign_path "${HELPERS}/dahlia-mcp"
 codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"

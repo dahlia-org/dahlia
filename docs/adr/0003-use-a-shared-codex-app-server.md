@@ -80,6 +80,8 @@ service の lifecycle、timeout、キャンセル、順不同 response は fake 
 
 固定版 Codex 0.144.4 の account credential store は、専用 config で変更しない限り `file` が既定であり、`CODEX_HOME/auth.json` を使う。要約 thread では MCP OAuth store も `file` に上書きし、MCP credential の Keychain prompt を発生させない。将来、Dahlia 専用 `config.toml` で `cli_auth_credentials_store` または `mcp_oauth_credentials_store` を `keyring` / `auto` に変更した場合は OS credential store を利用し得るため、専用 `CODEX_HOME` だけで Keychain 利用を禁止できるとは扱わない。
 
+Codex helper は V8 の code range を確保するため JIT を必要とする。upstream 署名を除去した後は、helper 専用の `CodexHelper.entitlements` で `com.apple.security.cs.allow-jit` だけを付与し、Hardened Runtime と同時に再署名する。この entitlement を Dahlia 本体や `dahlia-mcp` へ付与しない。download cache の検証と app bundle の最終署名後に entitlement を読み戻し、欠落している build を失敗させる。
+
 ### 認証
 
 認証は設定画面から明示的に操作し、ChatGPT Subscription または Databricks を選択する。
