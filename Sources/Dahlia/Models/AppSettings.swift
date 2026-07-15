@@ -405,7 +405,15 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("codexConfiguredDatabricksProfile") var codexConfiguredDatabricksProfile = ""
     @AppStorage("codexModelID") var codexModelID = ""
     @AppStorage("codexReasoningEffort") var codexReasoningEffort = CodexReasoningEffortOption.defaultValue
+    @AppStorage("codexChatModelID") var codexChatModelID = ""
+    @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
+    @AppStorage("codexChatDockSide") var codexChatDockSideRawValue = CodexChatDockSide.right.rawValue
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+
+    var codexChatDockSide: CodexChatDockSide {
+        get { CodexChatDockSide(rawValue: codexChatDockSideRawValue) ?? .right }
+        set { codexChatDockSideRawValue = newValue.rawValue }
+    }
 
     var codexAccountProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: codexAccountProviderRawValue) ?? .chatGPTSubscription }

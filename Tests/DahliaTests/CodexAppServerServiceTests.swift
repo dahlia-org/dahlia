@@ -397,7 +397,7 @@ import Foundation
             let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
             let collected = Task {
                 var messages: [JSONValue] = []
-                for await message in notifications {
+                for try await message in notifications {
                     messages.append(message)
                 }
                 return messages
@@ -419,7 +419,7 @@ import Foundation
                 ]),
             ]))
 
-            #expect(await collected.value.count == 2)
+            #expect(try await collected.value.count == 2)
             await service.shutdown()
         }
 

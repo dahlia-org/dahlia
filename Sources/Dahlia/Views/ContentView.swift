@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    var chatCoordinator: CodexChatCoordinator
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
@@ -51,9 +52,31 @@ struct ContentView: View {
                 }
                 .labelStyle(.iconOnly)
                 .help(L10n.settingsMenuItem)
+
+                Button {
+                    if chatCoordinator.isFloatingVisible {
+                        chatCoordinator.hideFloating()
+                    } else {
+                        chatCoordinator.showFloating()
+                    }
+                } label: {
+                    Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.chat)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .overlay {
+            if chatCoordinator.isFloatingVisible {
+                CodexChatFloatingView(
+                    coordinator: chatCoordinator,
+                    onPopOut: openDetachedChat,
+                    onOpenDetachedSession: openDetachedChat
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
+            }
+        }
         .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
             BatchTranscriptionConfirmationView(
                 locales: viewModel.batchTranscriptionLocaleOptions(
@@ -80,6 +103,10 @@ struct ContentView: View {
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
         }
+    }
+
+    private func openDetachedChat(_ sessionID: CodexChatSessionID) {
+        openWindow(id: WindowID.codexChat, value: sessionID)
     }
 
     @ViewBuilder

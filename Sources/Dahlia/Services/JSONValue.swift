@@ -1,6 +1,7 @@
 import Foundation
 
-enum JSONValue: Codable, Equatable {
+// swiftformat:disable:next redundantSendable
+enum JSONValue: Codable, Equatable, Sendable {
     case object([String: Self])
     case array([Self])
     case string(String)

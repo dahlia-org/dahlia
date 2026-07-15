@@ -7,6 +7,7 @@ enum WindowID {
     static let projectManager = "project-manager"
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
+    static let codexChat = "codex-chat"
 }
 
 private enum MainWindowMetrics {
@@ -24,6 +25,7 @@ struct DahliaApp: App {
     @State private var liveSubtitleOverlayCoordinator: LiveSubtitleOverlayCoordinator
     @State private var recordingCoordinator: RecordingCoordinator
     @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
+    @State private var chatCoordinator: CodexChatCoordinator
     @State private var appDatabase: AppDatabaseManager?
     @State private var showVaultPicker = true
 
@@ -41,6 +43,7 @@ struct DahliaApp: App {
             viewModel: viewModel,
             liveSubtitleOverlayService: liveSubtitleOverlayService
         )
+        let chatCoordinator = CodexChatCoordinator()
 
         _viewModel = StateObject(wrappedValue: viewModel)
         _sidebarViewModel = State(initialValue: sidebarViewModel)
@@ -48,6 +51,7 @@ struct DahliaApp: App {
         _recordingCoordinator = State(initialValue: recordingCoordinator)
         _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
         _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
+        _chatCoordinator = State(initialValue: chatCoordinator)
     }
 
     var body: some Scene {
@@ -62,6 +66,7 @@ struct DahliaApp: App {
                         viewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
+                        chatCoordinator: chatCoordinator,
                         onSelectVault: { vault in openVault(vault) }
                     )
                 }
@@ -83,6 +88,23 @@ struct DahliaApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: MainWindowMetrics.defaultWidth, height: MainWindowMetrics.defaultHeight)
         .defaultLaunchBehavior(.presented)
+
+        WindowGroup(L10n.chat, id: WindowID.codexChat, for: CodexChatSessionID.self) { $sessionID in
+            if let sessionID {
+                CodexChatWindowView(
+                    coordinator: chatCoordinator,
+                    sessionID: sessionID
+                )
+            } else {
+                ContentUnavailableView(
+                    L10n.chatWindowUnavailable,
+                    systemImage: "bubble.left.and.bubble.right"
+                )
+            }
+        }
+        .defaultSize(width: 620, height: 720)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
 
         Window(L10n.vault, id: WindowID.vaultManager) {
             VaultPickerView(appDatabase: appDatabase) { vault in

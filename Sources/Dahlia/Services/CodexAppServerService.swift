@@ -62,7 +62,7 @@ actor CodexAppServerService {
     private var nextRequestID = 1
     private var pendingRequests: [Int: PendingRequest] = [:]
     private var turnWaiters: [TurnKey: TurnWaiter] = [:]
-    private var turnSubscribers: [TurnKey: [UUID: AsyncStream<JSONValue>.Continuation]] = [:]
+    private var turnSubscribers: [TurnKey: [UUID: AsyncThrowingStream<JSONValue, any Error>.Continuation]] = [:]
     private var bufferedTurnMessages: [TurnKey: [JSONValue]] = [:]
     private var startupWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var generations: [UUID: GenerationContext] = [:]
@@ -301,15 +301,38 @@ actor CodexAppServerService {
         )
     }
 
-    func notifications(threadID: String, turnID: String) -> AsyncStream<JSONValue> {
+    func notifications(threadID: String, turnID: String) -> AsyncThrowingStream<JSONValue, any Error> {
         let key = TurnKey(threadID: threadID, turnID: turnID)
         let subscriberID = UUID()
-        return AsyncStream { continuation in
+        return AsyncThrowingStream { continuation in
             turnSubscribers[key, default: [:]][subscriberID] = continuation
+            let bufferedMessages = bufferedTurnMessages.removeValue(forKey: key) ?? []
+            bufferedMessages.forEach { continuation.yield($0) }
+            if bufferedMessages.contains(where: Self.isTurnCompletionMessage) {
+                turnSubscribers[key]?.removeValue(forKey: subscriberID)
+                if turnSubscribers[key]?.isEmpty == true {
+                    turnSubscribers.removeValue(forKey: key)
+                }
+                continuation.finish()
+            }
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removeTurnSubscriber(subscriberID, for: key) }
             }
         }
+    }
+
+    // swiftformat:disable:next modifierOrder
+    nonisolated private static func isTurnCompletionMessage(_ message: JSONValue) -> Bool {
+        message.objectValue?["method"]?.stringValue == "turn/completed"
+    }
+
+    func chatThreadConfiguration(reasoningEffort: String) async throws -> JSONValue {
+        try await requireCurrentConfiguration()
+        let configuration = try await configReadResult()
+        return try Self.chatThreadConfig(
+            from: configuration,
+            reasoningEffort: reasoningEffort
+        )
     }
 
     func generate(
@@ -342,6 +365,26 @@ actor CodexAppServerService {
 
     nonisolated static func summaryThreadConfig(
         from configReadResult: JSONValue, reasoningEffort: String = CodexReasoningEffortOption.defaultValue
+    ) throws -> JSONValue {
+        try restrictedThreadConfig(
+            from: configReadResult,
+            reasoningEffort: reasoningEffort
+        )
+    }
+
+    nonisolated static func chatThreadConfig(
+        from configReadResult: JSONValue, reasoningEffort: String = CodexReasoningEffortOption.defaultValue
+    ) throws -> JSONValue {
+        try restrictedThreadConfig(
+            from: configReadResult,
+            reasoningEffort: reasoningEffort
+        )
+    }
+
+    // swiftformat:disable:next modifierOrder
+    nonisolated private static func restrictedThreadConfig(
+        from configReadResult: JSONValue,
+        reasoningEffort: String
     ) throws -> JSONValue {
         guard let config = configReadResult.objectValue?["config"]?.objectValue else {
             throw CodexAppServerError.invalidProtocolResponse
@@ -740,17 +783,38 @@ private extension CodexAppServerService {
         }
         guard let turnID else { return }
         let key = TurnKey(threadID: threadID, turnID: turnID)
+        let hasSubscribers = turnSubscribers[key]?.isEmpty == false
         turnSubscribers[key]?.values.forEach { $0.yield(message) }
         if turnWaiters[key] != nil {
             processTurnMessage(message, for: key)
-        } else {
-            var messages = bufferedTurnMessages[key, default: []]
-            messages.append(message)
-            bufferedTurnMessages[key] = Array(messages.suffix(100))
+        } else if !hasSubscribers {
+            bufferTurnMessage(message, for: key)
         }
         if method == "turn/completed" {
             finishTurnSubscribers(for: key)
         }
+    }
+
+    private func bufferTurnMessage(_ message: JSONValue, for key: TurnKey) {
+        var messages = bufferedTurnMessages[key, default: []]
+        if let object = message.objectValue,
+           object["method"]?.stringValue == "item/agentMessage/delta",
+           let params = object["params"]?.objectValue,
+           let itemID = params["itemId"]?.stringValue,
+           let delta = params["delta"]?.stringValue,
+           let last = messages.indices.last,
+           var lastObject = messages[last].objectValue,
+           lastObject["method"]?.stringValue == "item/agentMessage/delta",
+           var lastParams = lastObject["params"]?.objectValue,
+           lastParams["itemId"]?.stringValue == itemID,
+           let priorDelta = lastParams["delta"]?.stringValue {
+            lastParams["delta"] = .string(priorDelta + delta)
+            lastObject["params"] = .object(lastParams)
+            messages[last] = .object(lastObject)
+        } else {
+            messages.append(message)
+        }
+        bufferedTurnMessages[key] = Array(messages.suffix(100))
     }
 
     private func waitForTurn(_ key: TurnKey, timeout: Duration) async throws -> String {
@@ -874,7 +938,7 @@ private extension CodexAppServerService {
         }
         let subscribers = turnSubscribers.values.flatMap(\.values)
         turnSubscribers.removeAll()
-        subscribers.forEach { $0.finish() }
+        subscribers.forEach { $0.finish(throwing: error) }
         await currentTransport?.close()
     }
 

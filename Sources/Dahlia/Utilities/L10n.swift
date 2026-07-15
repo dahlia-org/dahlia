@@ -1233,4 +1233,25 @@ enum L10n {
     ) }
     static var noScreenshotsYet: String { String(localized: "No screenshots yet.", bundle: bundle) }
 
+    // MARK: - Codex Chat
+
+    static var chat: String { String(localized: "Chat", bundle: bundle) }
+    static var newChat: String { String(localized: "New chat", bundle: bundle) }
+    static var chatHistory: String { String(localized: "Chat history", bundle: bundle) }
+    static var recentChats: String { String(localized: "Recent chats", bundle: bundle) }
+    static var noRecentChats: String { String(localized: "No recent chats", bundle: bundle) }
+    static var loadMore: String { String(localized: "Load more", bundle: bundle) }
+    static var popOutChat: String { String(localized: "Open chat in a new window", bundle: bundle) }
+    static var hideChat: String { String(localized: "Hide chat", bundle: bundle) }
+    static var sendMessage: String { String(localized: "Send message", bundle: bundle) }
+    static var stopGenerating: String { String(localized: "Stop generating", bundle: bundle) }
+    static var messageCodex: String { String(localized: "Message Codex", bundle: bundle) }
+    static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }
+    static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
+    static var chatWindowUnavailable: String { String(localized: "This chat is no longer available.", bundle: bundle) }
+    static var resize: String { String(localized: "Resize", bundle: bundle) }
+    static var chatShowAll: String { String(localized: "Show all chats", bundle: bundle) }
+    static var copyChatMessage: String { String(localized: "Copy message", bundle: bundle) }
+    static var selected: String { String(localized: "Selected", bundle: bundle) }
+    static var responsePerformance: String { String(localized: "Response performance", bundle: bundle) }
 }
