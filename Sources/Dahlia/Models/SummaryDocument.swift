@@ -3,22 +3,44 @@ import Foundation
 struct SummaryDocument: Codable, Equatable {
     var schemaVersion: Int
     var title: String
+    var description: String
     var sections: [SummarySection]
     var tags: [String]
     var actionItems: [SummaryActionItem]
 
     init(
-        schemaVersion: Int = 2,
+        schemaVersion: Int = 3,
         title: String,
+        description: String = "",
         sections: [SummarySection],
         tags: [String] = [],
         actionItems: [SummaryActionItem] = []
     ) {
         self.schemaVersion = schemaVersion
         self.title = title
+        self.description = description
         self.sections = sections
         self.tags = tags
         self.actionItems = actionItems
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case title
+        case description
+        case sections
+        case tags
+        case actionItems
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        title = try container.decode(String.self, forKey: .title)
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        sections = try container.decode([SummarySection].self, forKey: .sections)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        actionItems = try container.decodeIfPresent([SummaryActionItem].self, forKey: .actionItems) ?? []
     }
 
     func databaseJSONString() throws -> String {

@@ -5,6 +5,7 @@ APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
+CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -40,11 +41,16 @@ mkdir -p "${HELPERS}"
 mkdir -p "${CONTENTS}/Resources/Licenses/Codex"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
+cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
 cp ".build/codex-helper/codex" "${HELPERS}/codex"
 cp ".build/codex-helper/LICENSE" "${CONTENTS}/Resources/Licenses/Codex/LICENSE"
 cp ".build/codex-helper/NOTICE.txt" "${CONTENTS}/Resources/Licenses/Codex/NOTICE.txt"
 if [ "$(lipo -archs "${HELPERS}/codex")" != "arm64" ]; then
     echo "error: bundled Codex must contain only arm64" >&2
+    exit 1
+fi
+if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
+    echo "error: bundled dahlia-mcp must contain only arm64" >&2
     exit 1
 fi
 if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
@@ -83,7 +89,15 @@ if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
 fi
 
 codesign --remove-signature "${HELPERS}/codex"
-codesign_path "${HELPERS}/codex"
+codesign_path "${HELPERS}/codex" --entitlements "$CODEX_ENTITLEMENTS_PATH"
+codesign --verify --strict --verbose=2 "${HELPERS}/codex"
+if ! has_boolean_entitlement "${HELPERS}/codex" "com.apple.security.cs.allow-jit"; then
+    echo "error: bundled Codex must allow JIT under the hardened runtime" >&2
+    exit 1
+fi
+codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
+codesign_path "${HELPERS}/dahlia-mcp"
+codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"
 
 if has_entitlements "$ENTITLEMENTS_PATH"; then
     codesign_path "${MACOS}/${APP_NAME}" --entitlements "$ENTITLEMENTS_PATH"

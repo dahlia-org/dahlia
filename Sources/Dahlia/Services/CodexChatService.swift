@@ -5,26 +5,31 @@ actor CodexChatService: CodexChatServicing {
 
     private static let developerInstructions = """
     You are a conversational assistant inside Dahlia. Respond directly to the user's message in clear Markdown.
-    Do not call tools, execute commands, access files, use external services, or request permissions.
+    You may use only the Dahlia meeting tools. Start with query_meetings, then use get_meeting for a selected meeting's summary.
+    Call get_meeting_transcript only when the original wording or detail is needed.
+    Do not execute commands, access files, use external services, or request permissions.
     """
 
     private let appServer: CodexAppServerService
     private let workspaceLocator: any CodexChatWorkspaceLocating
+    private let mcpExecutableURL: URL?
 
     init(
         appServer: CodexAppServerService = .shared,
-        workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator()
+        workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator(),
+        mcpExecutableURL: URL? = nil
     ) {
         self.appServer = appServer
         self.workspaceLocator = workspaceLocator
+        self.mcpExecutableURL = mcpExecutableURL
     }
 
     func models(forceRefresh: Bool = false) async throws -> [CodexModel] {
         try await appServer.models(forceRefresh: forceRefresh)
     }
 
-    func listThreads(cursor: String? = nil) async throws -> CodexChatThreadPage {
-        let workspaceURL = try workspaceLocator.workspaceURL()
+    func listThreads(cursor: String? = nil, vaultID: UUID) async throws -> CodexChatThreadPage {
+        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
         var params: [String: JSONValue] = [
             "archived": .bool(false),
             "cwd": .array([.string(workspaceURL.path)]),
@@ -65,12 +70,19 @@ actor CodexChatService: CodexChatServicing {
         return try Self.parseThread(thread, model: nil, reasoningEffort: nil)
     }
 
-    func resumeThread(id: String) async throws -> CodexChatThread {
-        let workspaceURL = try workspaceLocator.workspaceURL()
+    func resumeThread(id: String, vaultID: UUID) async throws -> CodexChatThread {
+        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
+        let helperURL = try resolvedMCPExecutableURL()
+        let config = try await appServer.chatThreadConfiguration(
+            reasoningEffort: CodexReasoningEffortOption.defaultValue,
+            vaultID: vaultID,
+            helperURL: helperURL
+        )
         let result = try await appServer.request(
             method: "thread/resume",
             params: .object([
                 "approvalPolicy": .string("never"),
+                "config": config,
                 "cwd": .string(workspaceURL.path),
                 "developerInstructions": .string(Self.developerInstructions),
                 "sandbox": .string("read-only"),
@@ -89,8 +101,9 @@ actor CodexChatService: CodexChatServicing {
         )
     }
 
-    func startThread(model: String?, effort: String) async throws -> CodexChatThread {
-        let workspaceURL = try workspaceLocator.workspaceURL()
+    func startThread(model: String?, effort: String, vaultID: UUID) async throws -> CodexChatThread {
+        let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
+        let helperURL = try resolvedMCPExecutableURL()
         let availableModels = try await appServer.models()
         let selectedModel = model
             .flatMap { requested in availableModels.first { $0.model == requested } }
@@ -100,7 +113,11 @@ actor CodexChatService: CodexChatServicing {
             throw CodexAppServerError.invalidProtocolResponse
         }
 
-        let config = try await appServer.chatThreadConfiguration(reasoningEffort: effort)
+        let config = try await appServer.chatThreadConfiguration(
+            reasoningEffort: effort,
+            vaultID: vaultID,
+            helperURL: helperURL
+        )
         let result = try await appServer.request(
             method: "thread/start",
             params: .object([
@@ -184,6 +201,13 @@ actor CodexChatService: CodexChatServicing {
             method: "thread/unsubscribe",
             params: .object(["threadId": .string(threadID)])
         )
+    }
+
+    private func resolvedMCPExecutableURL() throws -> URL {
+        if let mcpExecutableURL {
+            return mcpExecutableURL
+        }
+        return try DahliaMCPBundle.executableURL()
     }
 }
 

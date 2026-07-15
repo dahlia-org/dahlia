@@ -13,10 +13,12 @@ import Foundation
             let workspace = URL(filePath: "/tmp/dahlia-chat-tests", directoryHint: .isDirectory)
             let service = CodexChatService(
                 appServer: appServer,
-                workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace)
+                workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace),
+                mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
+            let vaultID = UUID.v7()
 
-            let thread = try await service.startThread(model: "default-model", effort: "medium")
+            let thread = try await service.startThread(model: "default-model", effort: "medium", vaultID: vaultID)
             let stream = try await service.send(
                 threadID: thread.id,
                 text: "Hi",
@@ -43,7 +45,7 @@ import Foundation
             #expect(threadParams["ephemeral"] == .bool(false))
             #expect(threadParams["approvalPolicy"] == .string("never"))
             #expect(threadParams["sandbox"] == .string("read-only"))
-            #expect(threadParams["cwd"] == .string(workspace.path))
+            #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
             #expect(config["features.apps"] == .bool(false))
             #expect(config["features.codex_hooks"] == .bool(false))
@@ -55,9 +57,14 @@ import Foundation
             #expect(config["orchestrator.mcp.enabled"] == .bool(false))
             #expect(config["skills.include_instructions"] == .bool(false))
             #expect(config["mcp_servers"] == .object([
+                "dahlia": .object([
+                    "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+                    "command": .string("/tmp/dahlia-mcp"),
+                    "enabled": .bool(true),
+                ]),
                 "docs": .object(["enabled": .bool(false)]),
             ]))
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("Do not call tools") == true)
+            #expect(threadParams["developerInstructions"]?.stringValue?.contains("query_meetings") == true)
 
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
@@ -116,12 +123,14 @@ import Foundation
             let workspace = URL(filePath: "/tmp/dahlia-chat-history", directoryHint: .isDirectory)
             let service = CodexChatService(
                 appServer: appServer,
-                workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace)
+                workspaceLocator: TestCodexChatWorkspaceLocator(url: workspace),
+                mcpExecutableURL: URL(filePath: "/tmp/dahlia-mcp")
             )
+            let vaultID = UUID.v7()
 
-            let page = try await service.listThreads()
+            let page = try await service.listThreads(vaultID: vaultID)
             let loaded = try await service.loadThread(id: "thread-history")
-            let resumed = try await service.resumeThread(id: "thread-history")
+            let resumed = try await service.resumeThread(id: "thread-history", vaultID: vaultID)
 
             #expect(page.threads.map(\.id) == ["thread-history"])
             #expect(page.nextCursor == "next-page")
@@ -132,7 +141,9 @@ import Foundation
             let listParams = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "thread/list"
             }?.objectValue?["params"]?.objectValue)
-            #expect(listParams["cwd"] == .array([.string(workspace.path)]))
+            #expect(listParams["cwd"] == .array([
+                .string(workspace.appending(path: vaultID.uuidString.lowercased()).path),
+            ]))
             #expect(listParams["sourceKinds"] == .array([.string("vscode")]))
             #expect(listParams["sortKey"] == .string("recency_at"))
             #expect(listParams["sortDirection"] == .string("desc"))
@@ -168,6 +179,8 @@ import Foundation
     private struct TestCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
         let url: URL
 
-        func workspaceURL() throws -> URL { url }
+        func workspaceURL(vaultID: UUID) throws -> URL {
+            url.appending(path: vaultID.uuidString.lowercased())
+        }
     }
 #endif

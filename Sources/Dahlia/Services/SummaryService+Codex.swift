@@ -15,8 +15,9 @@ extension SummaryService {
     static let codexStructuredInstruction = """
 
     # Response Format
-    Your response MUST be a JSON object with exactly four keys:
-    - "title": a concise title for this meeting/transcript (one line, no quotes)
+    Your response MUST be a JSON object with exactly five keys:
+    - "title": a concise title for this meeting/transcript (one line, no quotes, maximum 120 characters)
+    - "description": a concise one-line description that helps identify the meeting (maximum 240 characters)
     - "sections": an array of summary body sections that exclude action items. Each section has:
       - "heading": the section heading, or an empty string for an intro section
       - "blocks": an array of content blocks in reading order

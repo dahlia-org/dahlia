@@ -143,10 +143,19 @@ enum SummaryService {
 
         return SummaryDocument(
             title: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(response.title),
+            description: normalizedDescription(response.description),
             sections: sections,
             tags: response.tags,
             actionItems: normalizedActionItems(response.actionItems, context: context)
         )
+    }
+
+    private static func normalizedDescription(_ value: String) -> String {
+        let oneLine = value
+            .split(whereSeparator: \.isNewline)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(oneLine.prefix(240))
     }
 
     private static func blocks(from dto: SummaryDocumentResponse.BlockDTO, context: SummaryRenderContext) -> [SummaryBlock] {

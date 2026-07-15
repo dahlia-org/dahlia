@@ -9,6 +9,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case cloudStorage
     case modelProvider = "accounts"
     case aiSummary
+    case meetingDataAccess
     case instructions
     case developer
     case audioDiagnostics
@@ -24,6 +25,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: L10n.export
         case .modelProvider: L10n.aiConnection
         case .aiSummary: L10n.aiSummary
+        case .meetingDataAccess: L10n.meetingDataAccess
         case .instructions: L10n.instructions
         case .developer: L10n.developerSettings
         case .audioDiagnostics: L10n.diagnostics
@@ -39,6 +41,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .cloudStorage: "square.and.arrow.up"
         case .modelProvider: "link"
         case .aiSummary: "sparkles"
+        case .meetingDataAccess: "server.rack"
         case .instructions: "list.bullet.clipboard"
         case .developer: "wrench.and.screwdriver"
         case .audioDiagnostics: "stethoscope"

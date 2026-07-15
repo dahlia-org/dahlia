@@ -519,6 +519,24 @@ enum L10n {
     static var developerSettings: String { String(localized: "Developer Settings", bundle: bundle) }
     static var vault: String { String(localized: "Vault", bundle: bundle) }
     static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
+    static var meetingDataAccess: String { String(localized: "Meeting Data Access", bundle: bundle) }
+    static var vaultID: String { String(localized: "Vault ID", bundle: bundle) }
+    static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
+    static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
+    static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
+    static var meetingDataAccessHelperUnavailable: String { String(
+        localized: "The meeting access helper is not available in this app build.",
+        bundle: bundle
+    ) }
+    static var selectVaultForMeetingDataAccess: String { String(localized: "Select a vault before configuring meeting data access.", bundle: bundle) }
+    static var meetingDataAccessFooter: String { String(
+        localized: "Each command registers read-only access to only the selected vault. Run it again after switching vaults.",
+        bundle: bundle
+    ) }
+    static func registrationCommand(_ name: String) -> String {
+        String(format: String(localized: "%@ registration command", bundle: bundle), name)
+    }
+
     static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
     static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }

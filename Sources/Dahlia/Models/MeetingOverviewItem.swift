@@ -8,6 +8,7 @@ struct MeetingOverviewItem: Equatable, FetchableRecord, Identifiable {
     var projectId: UUID?
     var projectName: String?
     var meetingName: String
+    var meetingDescription: String
     var status: MeetingStatus
     var duration: TimeInterval?
     var createdAt: Date
@@ -29,6 +30,7 @@ struct MeetingOverviewItem: Equatable, FetchableRecord, Identifiable {
         projectId: UUID?,
         projectName: String?,
         meetingName: String,
+        meetingDescription: String = "",
         status: MeetingStatus,
         duration: TimeInterval?,
         createdAt: Date,
@@ -43,6 +45,7 @@ struct MeetingOverviewItem: Equatable, FetchableRecord, Identifiable {
         self.projectId = projectId
         self.projectName = projectName
         self.meetingName = meetingName
+        self.meetingDescription = meetingDescription
         self.status = status
         self.duration = duration
         self.createdAt = createdAt
@@ -59,6 +62,7 @@ struct MeetingOverviewItem: Equatable, FetchableRecord, Identifiable {
         projectId = row["projectId"]
         projectName = row["projectName"]
         meetingName = row["meetingName"]
+        meetingDescription = row["meetingDescription"]
         status = row["status"]
         duration = row["duration"]
         createdAt = row["createdAt"]
@@ -105,6 +109,7 @@ struct MeetingOverviewItem: Equatable, FetchableRecord, Identifiable {
             vaultId: vaultId,
             projectId: projectId,
             name: meetingName,
+            description: meetingDescription,
             status: status,
             duration: duration,
             createdAt: createdAt,

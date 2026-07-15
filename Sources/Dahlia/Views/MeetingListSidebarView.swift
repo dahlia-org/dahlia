@@ -24,14 +24,16 @@ struct MeetingListSidebarView: View {
     }
 
     private var filteredMeetings: [MeetingOverviewItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return sidebarViewModel.allMeetings }
 
         return sidebarViewModel.allMeetings.filter { item in
-            item.meetingName.localizedLowercase.contains(query)
-                || (item.projectName?.localizedLowercase.contains(query) ?? false)
-                || (item.latestSegmentText?.localizedLowercase.contains(query) ?? false)
-                || item.tags.contains { $0.name.localizedLowercase.contains(query) }
+            item.meetingName.localizedStandardContains(query)
+                || item.meetingDescription.localizedStandardContains(query)
+                || (item.projectName?.localizedStandardContains(query) ?? false)
+                || (item.calendarEvent?.title.localizedStandardContains(query) ?? false)
+                || (item.latestSegmentText?.localizedStandardContains(query) ?? false)
+                || item.tags.contains { $0.name.localizedStandardContains(query) }
         }
     }
 

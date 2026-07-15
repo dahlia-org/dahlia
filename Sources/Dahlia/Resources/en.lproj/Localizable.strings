@@ -673,3 +673,15 @@
 "Copy message" = "Copy message";
 "Selected" = "Selected";
 "Response performance" = "Response performance";
+
+/* Meeting Data Access */
+"Meeting Data Access" = "Meeting Data Access";
+"Vault Name" = "Vault Name";
+"Vault ID" = "Vault ID";
+"Copy Command" = "Copy Command";
+"Codex CLI" = "Codex CLI";
+"Claude Code" = "Claude Code";
+"The meeting access helper is not available in this app build." = "The meeting access helper is not available in this app build.";
+"Select a vault before configuring meeting data access." = "Select a vault before configuring meeting data access.";
+"Each command registers read-only access to only the selected vault. Run it again after switching vaults." = "Each command registers read-only access to only the selected vault. Run it again after switching vaults.";
+"%@ registration command" = "%@ registration command";

@@ -37,7 +37,7 @@ Dahlia は、マイクとシステム音声を同時にキャプチャし、Appl
 
 ```bash
 swift build                       # Debug ビルド
-swift run                         # 未署名 Debug 実行
+swift run Dahlia                  # 未署名 Debug 実行
 ./scripts/run-dev.sh              # Debug + codesign（フル機能の動作確認に推奨）
 ./scripts/build-app.sh            # Release .app バンドル
 swift test                        # 全テスト
@@ -45,7 +45,7 @@ swift test --filter SummaryServiceTests  # 対象スイートの例
 CI=true ./scripts/lint.sh         # 変更せず SwiftFormat / SwiftLint を検査
 ```
 
-`swift run` は未署名のため Data Protection Keychain を使えない。Keychain と Touch ID を含む動作確認には `run-dev.sh` を使う。
+`swift run Dahlia` は未署名のため Data Protection Keychain を使えない。Keychain と Touch ID を含む動作確認には `run-dev.sh` を使う。
 
 ## 完了条件
 

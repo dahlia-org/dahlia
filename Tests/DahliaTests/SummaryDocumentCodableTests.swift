@@ -11,6 +11,7 @@ import Foundation
             let sectionId = UUID.v7()
             let document = SummaryDocument(
                 title: "Weekly sync",
+                description: "Weekly product decisions",
                 sections: [
                     SummarySection(
                         id: sectionId,
@@ -46,6 +47,7 @@ import Foundation
             let decoded = try JSONDecoder().decode(SummaryDocument.self, from: data)
 
             #expect(decoded == document)
+            #expect(decoded.schemaVersion == 3)
         }
 
         @Test
@@ -99,6 +101,7 @@ import Foundation
             let document = try JSONDecoder().decode(SummaryDocument.self, from: Data(json.utf8))
 
             #expect(document.sections.first?.blocks == [.paragraph("Future block")])
+            #expect(document.description.isEmpty)
         }
 
         @Test

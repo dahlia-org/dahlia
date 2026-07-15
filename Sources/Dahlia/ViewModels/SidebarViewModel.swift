@@ -168,6 +168,7 @@ final class SidebarViewModel {
                     meetings.projectId AS projectId,
                     projects.name AS projectName,
                     meetings.name AS meetingName,
+                    meetings.description AS meetingDescription,
                     meetings.status AS status,
                     meetings.duration AS duration,
                     meetings.createdAt AS createdAt,

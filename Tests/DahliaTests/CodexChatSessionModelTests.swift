@@ -9,9 +9,10 @@ import Foundation
         @Test
         func firstSendCreatesThreadAndStreamsThenReconcilesRollout() async {
             let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings.shared
+            let settings = AppSettings()
             let oldModel = settings.codexChatModelID
             let oldEffort = settings.codexChatReasoningEffort
+            settings.currentVault = Self.testVault()
             defer {
                 settings.codexChatModelID = oldModel
                 settings.codexChatReasoningEffort = oldEffort
@@ -37,10 +38,13 @@ import Foundation
         @Test
         func stopKeepsPartialResponse() async {
             let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
-                service: service
+                service: service,
+                settings: settings
             )
             session.draft = "Question"
             session.sendDraft()
@@ -57,10 +61,13 @@ import Foundation
         @Test
         func staleRolloutDoesNotReplaceCompletedStream() async {
             let service = TestCodexChatService(mode: .staleRollout)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
-                service: service
+                service: service,
+                settings: settings
             )
 
             session.draft = "Question"
@@ -73,10 +80,13 @@ import Foundation
         @Test
         func multipleAgentMessageItemsUseSeparateBubbles() async {
             let service = TestCodexChatService(mode: .multipleMessages)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
-                service: service
+                service: service,
+                settings: settings
             )
 
             session.draft = "Question"
@@ -88,24 +98,54 @@ import Foundation
         }
 
         @Test
-        func releasedGeneratingSessionUnsubscribesAfterTurnFinishes() async {
+        func releasedGeneratingSessionInterruptsAndUnsubscribes() async {
             let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
-                service: service
+                service: service,
+                settings: settings
             )
             session.draft = "Question"
             session.sendDraft()
             await waitUntil { session.activeTurnID != nil }
 
             session.release()
-            #expect(await service.unsubscribeCount == 0)
-            session.stop()
             await waitUntil { !session.isGenerating }
+            await waitUntilAsync { await service.interruptCount == 1 }
             await waitUntilAsync { await service.unsubscribeCount == 1 }
 
             #expect(await service.unsubscribedThreadIDs == ["thread-1"])
+        }
+
+        @Test
+        func sessionCannotSendWhileAnotherVaultIsSelected() {
+            let settings = AppSettings()
+            let boundVault = Self.testVault()
+            settings.currentVault = boundVault
+            let session = CodexChatSessionModel(
+                vaultID: boundVault.id,
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+            settings.currentVault = Self.testVault()
+
+            session.draft = "Do not send"
+            #expect(!session.canSend)
+            session.sendDraft()
+            #expect(session.messages.isEmpty)
+        }
+
+        private static func testVault() -> VaultRecord {
+            VaultRecord(
+                id: .v7(),
+                path: "/tmp/chat-test-vault",
+                name: "Chat Test",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
         }
 
         private func waitUntil(
@@ -155,7 +195,7 @@ import Foundation
             [Self.model]
         }
 
-        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, vaultID _: UUID) async throws -> CodexChatThreadPage {
             CodexChatThreadPage(threads: [], nextCursor: nil)
         }
 
@@ -175,11 +215,11 @@ import Foundation
             )
         }
 
-        func resumeThread(id: String) async throws -> CodexChatThread {
+        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
             try await loadThread(id: id)
         }
 
-        func startThread(model _: String?, effort: String) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
             CodexChatThread(
                 id: "thread-1",
                 title: "",

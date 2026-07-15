@@ -7,11 +7,27 @@ let package = Package(
     platforms: [
         .macOS(.v26)
     ],
+    products: [
+        .executable(name: "Dahlia", targets: ["Dahlia"]),
+        .executable(name: "dahlia-mcp", targets: ["DahliaMCP"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.10.0"),
     ],
     targets: [
+        .target(
+            name: "DahliaMeetingAccess",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
+            path: "Sources/DahliaMeetingAccess"
+        ),
+        .executableTarget(
+            name: "DahliaMCP",
+            dependencies: ["DahliaMeetingAccess"],
+            path: "Sources/DahliaMCP"
+        ),
         .executableTarget(
             name: "Dahlia",
             dependencies: [
@@ -29,7 +45,7 @@ let package = Package(
         ),
         .testTarget(
             name: "DahliaTests",
-            dependencies: ["Dahlia"],
+            dependencies: ["Dahlia", "DahliaMeetingAccess"],
             path: "Tests/DahliaTests",
             exclude: [
                 "AGENTS.md",

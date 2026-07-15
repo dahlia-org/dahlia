@@ -27,7 +27,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     init(
         executableURL: URL,
         arguments: [String] = ["app-server"],
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        currentDirectoryURL: URL? = nil
     ) throws {
         let process = Process()
         let standardInput = Pipe()
@@ -38,6 +39,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         if let environment {
             process.environment = environment
         }
+        process.currentDirectoryURL = currentDirectoryURL
         process.standardInput = standardInput
         process.standardOutput = standardOutput
         process.standardError = standardError

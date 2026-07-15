@@ -5,6 +5,7 @@ import Observation
 @Observable
 final class CodexChatSessionModel: Identifiable {
     let id: CodexChatSessionID
+    let vaultID: UUID?
     private(set) var backendThreadID: String?
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
@@ -26,6 +27,7 @@ final class CodexChatSessionModel: Identifiable {
 
     init(
         id: CodexChatSessionID = CodexChatSessionID(),
+        vaultID: UUID? = nil,
         backendThreadID: String? = nil,
         title: String = "",
         messages: [CodexChatMessage] = [],
@@ -35,6 +37,7 @@ final class CodexChatSessionModel: Identifiable {
         settings: AppSettings = .shared
     ) {
         self.id = id
+        self.vaultID = vaultID ?? settings.currentVault?.id
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages
@@ -42,21 +45,6 @@ final class CodexChatSessionModel: Identifiable {
         self.selectedEffort = effort ?? settings.codexChatReasoningEffort
         self.service = service
         self.settings = settings
-    }
-
-    var displayTitle: String {
-        title.nilIfBlank ?? L10n.newChat
-    }
-
-    var canSend: Bool {
-        !isGenerating && draft.nilIfBlank != nil
-    }
-
-    var effortOptions: [CodexReasoningEffortOption] {
-        guard let model = models.first(where: { $0.model == selectedModelID }) else { return [] }
-        return model.supportedReasoningEfforts.isEmpty
-            ? [CodexReasoningEffortOption(reasoningEffort: model.defaultReasoningEffort, description: "")]
-            : model.supportedReasoningEfforts
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -90,7 +78,8 @@ final class CodexChatSessionModel: Identifiable {
         }
         do {
             async let availableModels = service.models(forceRefresh: false)
-            async let restoredThread = service.resumeThread(id: backendThreadID)
+            guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
+            async let restoredThread = service.resumeThread(id: backendThreadID, vaultID: vaultID)
             let (models, thread) = try await (availableModels, restoredThread)
             self.models = models
             apply(thread)
@@ -112,7 +101,7 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func sendDraft() {
-        guard let text = draft.nilIfBlank else { return }
+        guard canSend, let text = draft.nilIfBlank else { return }
         draft = ""
         send(text)
     }
@@ -132,11 +121,16 @@ final class CodexChatSessionModel: Identifiable {
     func release() {
         guard !isReleased else { return }
         isReleased = true
+        if isGenerating {
+            stop()
+        }
         unsubscribeIfPossible()
     }
 
     private func send(_ text: String) {
-        guard !isGenerating, text.nilIfBlank != nil else { return }
+        guard isBoundToCurrentVault,
+              !isGenerating,
+              text.nilIfBlank != nil else { return }
         isGenerating = true
         errorMessage = nil
         lastSubmittedText = text
@@ -157,9 +151,13 @@ final class CodexChatSessionModel: Identifiable {
             }
             try Task.checkCancellation()
             if backendThreadID == nil {
+                guard isBoundToCurrentVault, let vaultID else {
+                    throw CodexAppServerError.invalidProtocolResponse
+                }
                 let thread = try await service.startThread(
                     model: selectedModelID.nilIfBlank,
-                    effort: selectedEffort
+                    effort: selectedEffort,
+                    vaultID: vaultID
                 )
                 apply(thread, preservingPendingMessages: true)
             }
@@ -324,5 +322,28 @@ final class CodexChatSessionModel: Identifiable {
                 ?? options[0].reasoningEffort
         }
         settings.codexChatReasoningEffort = selectedEffort
+    }
+}
+
+extension CodexChatSessionModel {
+    var displayTitle: String {
+        title.nilIfBlank ?? L10n.newChat
+    }
+
+    var canSend: Bool {
+        isBoundToCurrentVault
+            && !isGenerating
+            && draft.nilIfBlank != nil
+    }
+
+    var effortOptions: [CodexReasoningEffortOption] {
+        guard let model = models.first(where: { $0.model == selectedModelID }) else { return [] }
+        return model.supportedReasoningEfforts.isEmpty
+            ? [CodexReasoningEffortOption(reasoningEffort: model.defaultReasoningEffort, description: "")]
+            : model.supportedReasoningEfforts
+    }
+
+    var isBoundToCurrentVault: Bool {
+        vaultID != nil && vaultID == settings.currentVault?.id
     }
 }

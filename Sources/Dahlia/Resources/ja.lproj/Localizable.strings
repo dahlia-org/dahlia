@@ -673,3 +673,15 @@
 "Copy message" = "メッセージをコピー";
 "Selected" = "選択中";
 "Response performance" = "応答性能";
+
+/* Meeting Data Access */
+"Meeting Data Access" = "議事録データアクセス";
+"Vault Name" = "保管庫名";
+"Vault ID" = "保管庫 ID";
+"Copy Command" = "コマンドをコピー";
+"Codex CLI" = "Codex CLI";
+"Claude Code" = "Claude Code";
+"The meeting access helper is not available in this app build." = "このアプリビルドでは議事録アクセス用ヘルパーを利用できません。";
+"Select a vault before configuring meeting data access." = "議事録データアクセスを設定する前に保管庫を選択してください。";
+"Each command registers read-only access to only the selected vault. Run it again after switching vaults." = "各コマンドは、選択中の保管庫だけへの読み取り専用アクセスを登録します。保管庫を切り替えた後は再実行してください。";
+"%@ registration command" = "%@ 登録コマンド";

@@ -66,6 +66,20 @@ has_entitlements() {
     plutil -convert xml1 -o - "$entitlements_path" 2>/dev/null | grep -q "<key>"
 }
 
+has_boolean_entitlement() {
+    local path="$1"
+    local entitlement_key="$2"
+    local escaped_key value
+
+    escaped_key="${entitlement_key//./\\.}"
+    value="$(
+        codesign -d --entitlements - --xml "$path" 2>/dev/null \
+            | plutil -extract "$escaped_key" raw -o - - 2>/dev/null \
+            || true
+    )"
+    [ "$value" = "true" ]
+}
+
 codesign_path() {
     local path="$1"
     shift

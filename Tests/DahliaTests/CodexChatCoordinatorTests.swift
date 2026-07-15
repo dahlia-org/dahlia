@@ -62,7 +62,17 @@ import Foundation
         @Test
         func refreshingHistoryRetriesFailedRequest() async {
             let service = CoordinatorTestCodexChatService(failFirstHistoryRequest: true)
-            let coordinator = CodexChatCoordinator(service: service)
+            let settings = AppSettings()
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/coordinator-test-vault",
+                name: "Coordinator Test",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            settings.currentVault = vault
+            coordinator.activateVault(vault.id)
 
             await coordinator.refreshHistory()
             #expect(coordinator.historyError != nil)
@@ -72,8 +82,38 @@ import Foundation
             #expect(coordinator.history.map(\.id) == ["history-thread"])
         }
 
+        @Test
+        func vaultSwitchDiscardsDelayedHistoryFromPreviousVault() async {
+            let service = DelayedHistoryCodexChatService()
+            let settings = AppSettings()
+            let oldVault = Self.vault(name: "Old")
+            let newVault = Self.vault(name: "New")
+            settings.currentVault = oldVault
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+
+            let oldRefresh = Task { await coordinator.refreshHistory() }
+            await waitUntil { await service.hasBlockedRequest }
+            settings.currentVault = newVault
+            coordinator.activateVault(newVault.id)
+            await coordinator.refreshHistory()
+            await service.releaseBlockedRequest()
+            await oldRefresh.value
+
+            #expect(coordinator.history.map(\.id) == ["history-\(newVault.id.uuidString)"])
+        }
+
         private static func threadSummary(id: String) -> CodexChatThreadSummary {
             CodexChatThreadSummary(id: id, title: "History", updatedAt: .now)
+        }
+
+        private static func vault(name: String) -> VaultRecord {
+            VaultRecord(
+                id: .v7(),
+                path: "/tmp/coordinator-\(name)",
+                name: name,
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
         }
 
         private func waitUntil(
@@ -84,6 +124,61 @@ import Foundation
                 await Task.yield()
             }
             Issue.record("Timed out waiting for coordinator state")
+        }
+    }
+
+    private actor DelayedHistoryCodexChatService: CodexChatServicing {
+        private var blockedContinuation: CheckedContinuation<CodexChatThreadPage, Never>?
+        private var didBlock = false
+
+        var hasBlockedRequest: Bool { blockedContinuation != nil }
+
+        func models(forceRefresh _: Bool) async throws -> [CodexModel] { [] }
+
+        func listThreads(cursor _: String?, vaultID: UUID) async throws -> CodexChatThreadPage {
+            if !didBlock {
+                didBlock = true
+                return await withCheckedContinuation { continuation in
+                    blockedContinuation = continuation
+                }
+            }
+            return Self.page(vaultID: vaultID)
+        }
+
+        func releaseBlockedRequest() {
+            blockedContinuation?.resume(returning: Self.page(vaultID: .v7()))
+            blockedContinuation = nil
+        }
+
+        func loadThread(id: String) async throws -> CodexChatThread { Self.thread(id: id) }
+        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread { Self.thread(id: id) }
+        func startThread(model _: String?, effort _: String, vaultID _: UUID) async throws -> CodexChatThread {
+            Self.thread(id: "new")
+        }
+
+        func send(
+            threadID _: String,
+            text _: String,
+            model _: String?,
+            effort _: String
+        ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
+            AsyncThrowingStream { $0.finish() }
+        }
+
+        func interrupt(threadID _: String, turnID _: String) async {}
+        func unsubscribe(threadID _: String) async {}
+
+        private static func page(vaultID: UUID) -> CodexChatThreadPage {
+            let thread = CodexChatThreadSummary(
+                id: "history-\(vaultID.uuidString)",
+                title: "History",
+                updatedAt: .now
+            )
+            return CodexChatThreadPage(threads: [thread], nextCursor: nil)
+        }
+
+        private static func thread(id: String) -> CodexChatThread {
+            CodexChatThread(id: id, title: "", messages: [], model: nil, reasoningEffort: nil)
         }
     }
 
@@ -100,7 +195,7 @@ import Foundation
             [Self.model]
         }
 
-        func listThreads(cursor _: String?) async throws -> CodexChatThreadPage {
+        func listThreads(cursor _: String?, vaultID _: UUID) async throws -> CodexChatThreadPage {
             historyRequestCount += 1
             if failFirstHistoryRequest, historyRequestCount == 1 {
                 throw CodexAppServerError.processExited(nil)
@@ -115,11 +210,11 @@ import Foundation
             Self.thread(id: id)
         }
 
-        func resumeThread(id: String) async throws -> CodexChatThread {
+        func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
             Self.thread(id: id)
         }
 
-        func startThread(model _: String?, effort: String) async throws -> CodexChatThread {
+        func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
             CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
         }
 

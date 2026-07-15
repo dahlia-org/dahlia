@@ -24,6 +24,7 @@ import GRDB
 
             let document = SummaryDocument(
                 title: "Weekly sync",
+                description: "Planning and launch decisions",
                 sections: [
                     SummarySection(id: UUID.v7(), heading: "Summary", blocks: [.paragraph("Summary body")]),
                 ],
@@ -49,6 +50,9 @@ import GRDB
 
             #expect(summary.summary == "Summary body")
             #expect(summary.loadDocument() == document)
+            let meeting = try #require(try context.repo.fetchMeeting(id: context.meeting.id))
+            #expect(meeting.name == "Weekly sync")
+            #expect(meeting.description == "Planning and launch decisions")
             #expect(result.count == 1)
             #expect(result.first?["title"] == "Legacy task")
             #expect(result.first?["assignee"] == "me")
@@ -167,6 +171,35 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 type: .googleDocs
             )?.googleDocumentID == "google-123")
+        }
+
+        @Test
+        func regeneratingSummaryUpdatesMeetingMetadataAndKeepsNameForBlankTitle() throws {
+            let context = try makeRepositoryContext()
+            try context.repo.applyGeneratedSummary(
+                toMeetingId: context.meeting.id,
+                document: SummaryDocument(
+                    title: "Renamed\nby AI",
+                    description: "First description",
+                    sections: []
+                ),
+                renderedBody: "First",
+                tags: []
+            )
+            try context.repo.applyGeneratedSummary(
+                toMeetingId: context.meeting.id,
+                document: SummaryDocument(
+                    title: "  ",
+                    description: "  ",
+                    sections: []
+                ),
+                renderedBody: "Second",
+                tags: []
+            )
+
+            let meeting = try #require(try context.repo.fetchMeeting(id: context.meeting.id))
+            #expect(meeting.name == "Renamed by AI")
+            #expect(meeting.description == "First description")
         }
 
         private func makeRepositoryContext() throws -> RepositoryContext {

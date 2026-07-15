@@ -111,8 +111,23 @@ final class AppDatabaseManager: Sendable {
             try SummaryExportsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v20_meetingDescription") { db in
+            try addMeetingDescriptionColumnIfNeeded(in: db)
+        }
+
         return migrator
     }()
+
+    private static func addMeetingDescriptionColumnIfNeeded(in db: Database) throws {
+        guard try db.tableExists("meetings") else { return }
+        let columns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
+        guard !columns.contains("description") else { return }
+        try db.alter(table: "meetings") { table in
+            table.add(column: "description", .text)
+                .notNull()
+                .defaults(to: "")
+        }
+    }
 
     private static func addSegmentedRecordingAudioSchema(in db: Database) throws {
         // Some early development databases can legitimately contain only a subset of

@@ -14,6 +14,7 @@
                 .cloudStorage,
                 .modelProvider,
                 .aiSummary,
+                .meetingDataAccess,
                 .instructions,
                 .developer,
                 .audioDiagnostics,

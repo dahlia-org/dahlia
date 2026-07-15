@@ -2,6 +2,7 @@ import Foundation
 
 struct SummaryDocumentResponse: Decodable {
     let title: String
+    let description: String
     let sections: [SectionDTO]
     let tags: [String]
     let actionItems: [SummaryActionItem]
@@ -111,7 +112,17 @@ struct SummaryDocumentResponse: Decodable {
         let schema: [String: Any] = [
             "type": "object",
             "properties": [
-                "title": ["type": "string"],
+                "title": [
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                ],
+                "description": [
+                    "type": "string",
+                    "description": "A one-line description for quickly identifying the meeting.",
+                    "minLength": 1,
+                    "maxLength": 240,
+                ],
                 "sections": [
                     "type": "array",
                     "description": "Summary body sections only. Do not include an Action Items section or repeat action items here.",
@@ -138,7 +149,7 @@ struct SummaryDocumentResponse: Decodable {
                     "items": actionItemSchema,
                 ],
             ],
-            "required": ["title", "sections", "tags", "action_items"],
+            "required": ["title", "description", "sections", "tags", "action_items"],
             "additionalProperties": false,
         ]
         guard let schemaData = try? JSONSerialization.data(withJSONObject: schema) else {
@@ -149,8 +160,18 @@ struct SummaryDocumentResponse: Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case title
+        case description
         case sections
         case tags
         case actionItems = "action_items"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        sections = try container.decode([SectionDTO].self, forKey: .sections)
+        tags = try container.decode([String].self, forKey: .tags)
+        actionItems = try container.decode([SummaryActionItem].self, forKey: .actionItems)
     }
 }

@@ -326,12 +326,14 @@ actor CodexAppServerService {
         message.objectValue?["method"]?.stringValue == "turn/completed"
     }
 
-    func chatThreadConfiguration(reasoningEffort: String) async throws -> JSONValue {
+    func chatThreadConfiguration(reasoningEffort: String, vaultID: UUID, helperURL: URL) async throws -> JSONValue {
         try await requireCurrentConfiguration()
         let configuration = try await configReadResult()
         return try Self.chatThreadConfig(
             from: configuration,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            helperURL: helperURL,
+            vaultID: vaultID
         )
     }
 
@@ -373,12 +375,25 @@ actor CodexAppServerService {
     }
 
     nonisolated static func chatThreadConfig(
-        from configReadResult: JSONValue, reasoningEffort: String = CodexReasoningEffortOption.defaultValue
+        from configReadResult: JSONValue,
+        reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
+        helperURL: URL,
+        vaultID: UUID
     ) throws -> JSONValue {
-        try restrictedThreadConfig(
+        guard case var .object(config) = try restrictedThreadConfig(
             from: configReadResult,
             reasoningEffort: reasoningEffort
-        )
+        ) else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        var servers = config["mcp_servers"]?.objectValue ?? [:]
+        servers["dahlia"] = .object([
+            "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+            "command": .string(helperURL.path),
+            "enabled": .bool(true),
+        ])
+        config["mcp_servers"] = .object(servers)
+        return .object(config)
     }
 
     // swiftformat:disable:next modifierOrder

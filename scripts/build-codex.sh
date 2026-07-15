@@ -10,11 +10,14 @@ DOWNLOAD_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 CACHE_DIR="${PROJECT_DIR}/.build/codex-download"
 ARCHIVE_PATH="${CACHE_DIR}/${ASSET_NAME}"
 OUTPUT_DIR="${PROJECT_DIR}/.build/codex-helper"
 OUTPUT_BINARY="${OUTPUT_DIR}/codex"
 MODE="${1:-build}"
+
+source "${SCRIPT_DIR}/common.sh"
 
 case "$MODE" in
     build|--prepare-only|--validate-only|--print-cache-key|--print-version) ;;
@@ -30,7 +33,7 @@ if [ "$MODE" = "--print-version" ]; then
 fi
 
 if [ "$MODE" = "--print-cache-key" ]; then
-    echo "codex-release-${CODEX_VERSION}-${TARGET}-${ASSET_SHA256}-v1"
+    echo "codex-release-${CODEX_VERSION}-${TARGET}-${ASSET_SHA256}-v2"
     exit 0
 fi
 
@@ -87,6 +90,10 @@ validate_output() {
     fi
     if ! codesign --verify --strict "$OUTPUT_BINARY"; then
         echo "error: cached Codex validation signature is invalid" >&2
+        exit 1
+    fi
+    if ! has_boolean_entitlement "$OUTPUT_BINARY" "com.apple.security.cs.allow-jit"; then
+        echo "error: cached Codex must allow JIT under the hardened runtime" >&2
         exit 1
     fi
     if ! cmp -s "${PROJECT_DIR}/Resources/Codex-LICENSE" "${OUTPUT_DIR}/LICENSE"; then
@@ -156,7 +163,7 @@ mkdir -p "$EXTRACT_DIR" "$OUTPUT_DIR"
 tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
 cp "${EXTRACT_DIR}/${ARCHIVE_BINARY}" "$OUTPUT_BINARY"
 codesign --remove-signature "$OUTPUT_BINARY"
-codesign --force --sign - "$OUTPUT_BINARY"
+codesign --force --options runtime --sign - --entitlements "$CODEX_ENTITLEMENTS_PATH" "$OUTPUT_BINARY"
 chmod 755 "$OUTPUT_BINARY"
 cp "${PROJECT_DIR}/Resources/Codex-LICENSE" "${OUTPUT_DIR}/LICENSE"
 cp "${PROJECT_DIR}/Resources/Codex-NOTICE.txt" "${OUTPUT_DIR}/NOTICE.txt"

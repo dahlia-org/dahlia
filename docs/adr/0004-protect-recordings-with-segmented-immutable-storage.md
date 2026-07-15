@@ -119,7 +119,7 @@ flowchart LR
 ### 1. 単一インスタンス、mutation 境界、lease
 
 Dahlia は製品仕様として単一の interactive instance だけを許可し、`Info.plist` に
-`LSMultipleInstancesProhibited = true` を設定する。ただし、これは Launch Services を経由しない `swift run`、実行ファイルの直接起動、
+`LSMultipleInstancesProhibited = true` を設定する。ただし、これは Launch Services を経由しない `swift run Dahlia`、実行ファイルの直接起動、
 異なる build の同時実行に対するデータ完全性の境界とは扱わない
 ([Apple: App execution](https://developer.apple.com/documentation/bundleresources/app-execution))。
 
@@ -368,7 +368,7 @@ schema reset や既存 managed CAF の一括削除を rollout 手段にしない
 
 実装時には unit test だけでなく、別 process と実 file system を使う integration test を追加する。
 
-- 通常の二重起動が拒否され、`swift run` と署名済み app 等が競合した場合も process-wide lock を取得できない側が DB と音声を変更しない。
+- 通常の二重起動が拒否され、`swift run Dahlia` と署名済み app 等が競合した場合も process-wide lock を取得できない側が DB と音声を変更しない。
 - 録音 process が session lease を保持中は、別 process の recovery と deletion が skip / fail する。
 - process kill 後は lease が解放され、完成済み segment を変更せず active / finalizing の partial だけを復旧する。
 - `recording → finalizing` commit、close、`F_FULLFSYNC`、integrity metadata commit、rename、`ready` commit の各直前・直後で crash しても、

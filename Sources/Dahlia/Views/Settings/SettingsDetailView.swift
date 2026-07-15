@@ -22,6 +22,8 @@ struct SettingsDetailView: View {
                 AccountSettingsView()
             case .aiSummary:
                 AISummarySettingsView()
+            case .meetingDataAccess:
+                MeetingDataAccessSettingsView()
             case .instructions:
                 InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
             case .developer:

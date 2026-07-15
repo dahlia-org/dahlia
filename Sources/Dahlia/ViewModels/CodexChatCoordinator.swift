@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 @MainActor
@@ -14,6 +15,7 @@ final class CodexChatCoordinator {
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private var historyGeneration = 0
 
     init(
         service: any CodexChatServicing = CodexChatService.shared,
@@ -50,6 +52,21 @@ final class CodexChatCoordinator {
         Task { await refreshHistory() }
     }
 
+    func activateVault(_ vaultID: UUID) {
+        guard floatingSession.vaultID != vaultID else { return }
+        let session = CodexChatSessionModel(vaultID: vaultID, service: service, settings: settings)
+        replaceFloatingSession(with: session, isVisible: isFloatingVisible)
+        historyGeneration += 1
+        history = []
+        historyCursor = nil
+        historyError = nil
+        isLoadingHistory = false
+        if isFloatingVisible {
+            Task { await session.prepare() }
+            Task { await refreshHistory() }
+        }
+    }
+
     func hideFloating() {
         isFloatingVisible = false
     }
@@ -83,7 +100,10 @@ final class CodexChatCoordinator {
     }
 
     func openHistoryThread(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        if let existing = sessions.values.first(where: { $0.backendThreadID == thread.id }) {
+        let vaultID = floatingSession.vaultID
+        if let existing = sessions.values.first(where: {
+            $0.backendThreadID == thread.id && $0.vaultID == vaultID
+        }) {
             if !detachedSessionIDs.contains(existing.id) {
                 replaceFloatingSession(with: existing, isVisible: true)
             }
@@ -91,6 +111,7 @@ final class CodexChatCoordinator {
         }
 
         let session = CodexChatSessionModel(
+            vaultID: vaultID,
             backendThreadID: thread.id,
             title: thread.title,
             service: service,
@@ -102,7 +123,10 @@ final class CodexChatCoordinator {
     }
 
     func openHistoryThreadInDetachedWindow(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        if let existing = sessions.values.first(where: { $0.backendThreadID == thread.id }) {
+        let vaultID = floatingSession.vaultID
+        if let existing = sessions.values.first(where: {
+            $0.backendThreadID == thread.id && $0.vaultID == vaultID
+        }) {
             if existing.id == floatingSessionID {
                 detachedSessionIDs.insert(existing.id)
                 let replacement = CodexChatSessionModel(service: service, settings: settings)
@@ -114,6 +138,7 @@ final class CodexChatCoordinator {
         }
 
         let session = CodexChatSessionModel(
+            vaultID: vaultID,
             backendThreadID: thread.id,
             title: thread.title,
             service: service,
@@ -126,23 +151,40 @@ final class CodexChatCoordinator {
     }
 
     func refreshHistory() async {
+        historyGeneration += 1
+        let generation = historyGeneration
         history = []
         historyCursor = nil
-        await loadMoreHistory()
+        isLoadingHistory = false
+        await loadMoreHistory(generation: generation)
     }
 
     func loadMoreHistory() async {
+        await loadMoreHistory(generation: historyGeneration)
+    }
+
+    private func loadMoreHistory(generation: Int) async {
         guard !isLoadingHistory else { return }
         isLoadingHistory = true
         historyError = nil
-        defer { isLoadingHistory = false }
+        defer {
+            if generation == historyGeneration {
+                isLoadingHistory = false
+            }
+        }
         do {
-            let page = try await service.listThreads(cursor: historyCursor)
+            guard floatingSession.isBoundToCurrentVault,
+                  let vaultID = floatingSession.vaultID else { return }
+            let page = try await service.listThreads(cursor: historyCursor, vaultID: vaultID)
+            guard generation == historyGeneration,
+                  floatingSession.isBoundToCurrentVault,
+                  floatingSession.vaultID == vaultID else { return }
             history.append(contentsOf: page.threads.filter { item in
                 !history.contains(where: { $0.id == item.id })
             })
             historyCursor = page.nextCursor
         } catch {
+            guard generation == historyGeneration else { return }
             historyError = error.localizedDescription
         }
     }

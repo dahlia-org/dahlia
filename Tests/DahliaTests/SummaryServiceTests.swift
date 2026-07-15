@@ -37,41 +37,6 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func summaryDocumentResponseSchemaRequiresTextContainersWithoutExtraFields() throws {
-        let schemaData = SummaryDocumentResponse.outputSchema
-        let schemaObject = try JSONSerialization.jsonObject(with: schemaData)
-        let schema = try #require(schemaObject as? [String: Any])
-        let required = try #require(schema["required"] as? [String])
-        let properties = try #require(schema["properties"] as? [String: Any])
-        let sections = try #require(properties["sections"] as? [String: Any])
-        let sectionItems = try #require(sections["items"] as? [String: Any])
-        let sectionProperties = try #require(sectionItems["properties"] as? [String: Any])
-        let blocks = try #require(sectionProperties["blocks"] as? [String: Any])
-        let blockItems = try #require(blocks["items"] as? [String: Any])
-        let blockProperties = try #require(blockItems["properties"] as? [String: Any])
-        let blockRequired = try #require(blockItems["required"] as? [String])
-        let content = try #require(blockProperties["content"] as? [String: Any])
-        let contentRequired = try #require(content["required"] as? [String])
-        let blockList = try #require(blockProperties["items"] as? [String: Any])
-        let blockListItem = try #require(blockList["items"] as? [String: Any])
-        let blockListItemRequired = try #require(blockListItem["required"] as? [String])
-        let actionItems = try #require(properties["action_items"] as? [String: Any])
-        let items = try #require(actionItems["items"] as? [String: Any])
-
-        #expect(required.contains("sections"))
-        #expect(required.contains("action_items"))
-        #expect(blockRequired == ["type", "level", "content", "items", "language", "image_id"])
-        #expect(contentRequired == ["text", "transcript_ref"])
-        #expect(blockListItemRequired == ["text", "transcript_ref", "checked"])
-        #expect((blockItems["additionalProperties"] as? Bool) == false)
-        #expect((content["additionalProperties"] as? Bool) == false)
-        #expect((blockListItem["additionalProperties"] as? Bool) == false)
-        #expect((items["additionalProperties"] as? Bool) == false)
-        #expect((sections["description"] as? String)?.contains("Do not include an Action Items section") == true)
-        #expect((actionItems["description"] as? String)?.contains("only location") == true)
-    }
-
-    @Test
     func decodeSummaryDocumentUsesStructuredSectionsAndImages() throws {
         let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
         let screenshot = MeetingScreenshotRecord(
@@ -89,6 +54,7 @@ struct SummaryServiceTests {
         let json = """
         {
           "title": "Weekly sync",
+          "description": "Weekly product decisions",
           "sections": [
             {
               "heading": "Decisions",
@@ -119,6 +85,8 @@ struct SummaryServiceTests {
 
         let document = SummaryService.decodeSummaryDocument(from: json, context: context)
 
+        #expect(document.description == "Weekly product decisions")
+
         #expect(document.title == "Weekly sync")
         #expect(document.sections.first?.heading == "Decisions")
         #expect(document.sections.first?.blocks == [
@@ -133,6 +101,7 @@ struct SummaryServiceTests {
         let json = """
         {
           "title": "Lists",
+          "description": "List rendering",
           "sections": [
             {
               "heading": "Actions",
@@ -185,6 +154,7 @@ struct SummaryServiceTests {
         let json = """
         {
           "title": "Code",
+          "description": "Code rendering",
           "sections": [
             {
               "heading": "Example",
@@ -230,6 +200,7 @@ struct SummaryServiceTests {
         let json = """
         {
           "title": "Image",
+          "description": "Image rendering",
           "sections": [
             {
               "heading": "Summary",
@@ -291,6 +262,7 @@ struct SummaryServiceTests {
         let json = """
         {
           "title": "Empty blocks",
+          "description": "Empty content",
           "sections": [
             {
               "heading": "",

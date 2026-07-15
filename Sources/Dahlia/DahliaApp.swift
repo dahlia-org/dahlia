@@ -179,6 +179,7 @@ struct DahliaApp: App {
         try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
 
         AppSettings.shared.currentVault = vault
+        chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
         sidebarViewModel.updateVaultLastOpened(vault.id)
         viewModel.prepareAnalyzer()

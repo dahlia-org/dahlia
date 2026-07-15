@@ -275,13 +275,22 @@ final class MeetingRepository {
         tags: [String]
     ) throws {
         try dbQueue.write { db in
-            guard try MeetingRecord.fetchOne(db, key: meetingId) != nil else { return }
+            guard var meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
 
             let existingSummary = try SummaryRecord.fetchOne(db, key: meetingId)
-            let trimmedTitle = document.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedTitle = Self.normalizedGeneratedMetadata(document.title, maximumLength: 120)
+            if let normalizedTitle {
+                meeting.name = normalizedTitle
+            }
+            if let description = Self.normalizedGeneratedMetadata(document.description, maximumLength: 240) {
+                meeting.description = description
+            }
+            meeting.updatedAt = Date()
+            try meeting.update(db)
+
             let record = try SummaryRecord(
                 meetingId: meetingId,
-                title: trimmedTitle.isEmpty ? (existingSummary?.title ?? "") : trimmedTitle,
+                title: normalizedTitle ?? existingSummary?.title ?? "",
                 summary: renderedBody,
                 document: document.databaseJSONString(),
                 vaultRelativePath: nil,
@@ -323,6 +332,14 @@ final class MeetingRepository {
                 }
             }
         }
+    }
+
+    private static func normalizedGeneratedMetadata(_ value: String, maximumLength: Int) -> String? {
+        let oneLine = value
+            .split(whereSeparator: \.isNewline)
+            .joined(separator: " ")
+            .nilIfBlank
+        return oneLine.map { String($0.prefix(maximumLength)) }
     }
 
     // MARK: - Tags

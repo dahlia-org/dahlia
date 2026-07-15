@@ -9,6 +9,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Dual Audio Capture** — Record microphone (AVAudioEngine) and system audio (ScreenCaptureKit) at the same time
 - **On-Device Transcription** — Real-time speech-to-text using Apple Speech framework
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
+- **AI Meeting Access** — Query summaries and confirmed original transcripts through a vault-scoped, read-only local MCP server
 - **Project Management** — Organize transcripts into vault/project hierarchy synced with filesystem folders
 - **Meeting Detection** — Automatically detect meeting sessions with 3-layer detection
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries
@@ -23,11 +24,13 @@ A macOS native real-time transcription app. Captures microphone and system audio
 
 Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI Connection**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Dahlia's Application Support directory; Databricks tokens remain managed by Databricks CLI.
 
+The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the currently selected vault. To give Claude Code or Codex CLI the same read-only access, open **Settings → Meeting Data Access** and copy the registration command. The command includes both the signed helper path and `--vault-id <UUID>`; rerun it after choosing another vault. The MCP tools expose compact meeting search, stored Markdown summaries, and paginated confirmed original transcript segments. They do not expose notes, screenshots, audio, translated text, or unconfirmed text.
+
 ## Build & Run
 
 ```bash
 # Debug build and run (unsigned; bundled Codex summaries unavailable)
-swift build && swift run
+swift build && swift run Dahlia
 
 # Debug build with code signing (enables Data Protection Keychain)
 ./scripts/run-dev.sh
@@ -48,9 +51,9 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **Note:** `swift run` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. On their first run, the app-bundle scripts download the pinned official Codex 0.144.4 GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
+> **Note:** `swift run Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. On their first run, the app-bundle scripts download the pinned official Codex 0.144.4 GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
 
-If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run` and `run-dev.sh` do not send Sentry events by default.
+If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
 
 `build-app.sh` and `run-dev.sh` never upload files externally. When `notarize.sh` builds a Sentry-enabled release, it requires `SENTRY_AUTH_TOKEN` and `sentry-cli`, verifies that the executable and dSYM UUIDs match, then uploads the dSYM after notarization succeeds:
 

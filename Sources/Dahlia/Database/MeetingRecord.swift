@@ -42,6 +42,7 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     var vaultId: UUID
     var projectId: UUID?
     var name: String
+    var description = ""
     var status: MeetingStatus = .transcriptNotFound
     var duration: TimeInterval?
     var createdAt: Date
@@ -54,6 +55,7 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         case vaultId
         case projectId
         case name
+        case description
         case status
         case duration
         case createdAt

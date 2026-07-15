@@ -1,7 +1,7 @@
 import Foundation
 
 protocol CodexChatWorkspaceLocating: Sendable {
-    func workspaceURL() throws -> URL
+    func workspaceURL(vaultID: UUID) throws -> URL
 }
 
 struct ApplicationSupportCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
@@ -11,11 +11,12 @@ struct ApplicationSupportCodexChatWorkspaceLocator: CodexChatWorkspaceLocating {
         self.applicationSupportURL = applicationSupportURL
     }
 
-    func workspaceURL() throws -> URL {
+    func workspaceURL(vaultID: UUID) throws -> URL {
         let baseURL = applicationSupportURL ?? URL.applicationSupportDirectory
         let workspaceURL = baseURL
             .appending(path: "Dahlia", directoryHint: .isDirectory)
             .appending(path: "CodexChatWorkspace", directoryHint: .isDirectory)
+            .appending(path: vaultID.uuidString.lowercased(), directoryHint: .isDirectory)
 
         do {
             try FileManager.default.createDirectory(

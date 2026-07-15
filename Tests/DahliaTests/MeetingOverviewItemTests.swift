@@ -25,6 +25,7 @@ import GRDB
                         NULL AS projectId,
                         NULL AS projectName,
                         'Weekly sync' AS meetingName,
+                        'AI description' AS meetingDescription,
                         'READY' AS status,
                         NULL AS duration,
                         ? AS createdAt,
@@ -51,6 +52,7 @@ import GRDB
                 endDate: eventEnd,
                 isAllDay: false
             ))
+            #expect(item.meetingDescription == "AI description")
         }
     }
 #endif

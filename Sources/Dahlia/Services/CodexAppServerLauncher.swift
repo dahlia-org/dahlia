@@ -23,8 +23,8 @@ struct BundledCodexAppServerLauncher: CodexAppServerLaunching {
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
         return try CodexAppServerProcessTransport(
             executableURL: executableLocator.executableURL(),
-            environment: environment
+            environment: environment,
+            currentDirectoryURL: homeURL
         )
     }
-
 }
