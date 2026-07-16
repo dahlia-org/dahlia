@@ -2612,32 +2612,28 @@ final class CaptionViewModel: ObservableObject {
         Task { [weak self] in
             defer { self?.isDeletingScreenshots = false }
             do {
-                guard let result = try await MeetingRepository(dbQueue: dbQueue).deleteScreenshots(
+                let deletedScreenshots = try await MeetingRepository(dbQueue: dbQueue).deleteScreenshots(
                     ids: screenshotIds,
                     meetingId: meetingId
-                ) else { return }
-                for screenshot in result.deletedScreenshots {
+                )
+                guard !deletedScreenshots.isEmpty else { return }
+                for screenshot in deletedScreenshots {
                     await ScreenshotImageLoader.shared.remove(screenshotID: screenshot.id)
                 }
                 do {
                     try await Task.detached(priority: .utility) {
-                        try VaultSummaryExportService.synchronizeScreenshotDeletion(
+                        try ScreenshotExportService.deleteExportedScreenshots(
                             vaultURL: vaultURL,
-                            storedSummaryRelativePath: result.storedSummaryRelativePath,
-                            updatedSummaryMarkdown: result.updatedSummaryMarkdown,
-                            deletedScreenshots: result.deletedScreenshots
+                            screenshots: deletedScreenshots
                         )
                     }.value
                 } catch {
-                    captionViewModelLogger.error("Failed to synchronize deleted screenshots with the Vault: \(error)")
-                    ErrorReportingService.capture(error, context: ["source": "synchronizeScreenshotDeletion"])
+                    captionViewModelLogger.error("Failed to delete exported screenshots from the Vault: \(error)")
+                    ErrorReportingService.capture(error, context: ["source": "deleteExportedScreenshots"])
                 }
                 guard let self, self.currentMeetingId == meetingId else { return }
-                let deletedIds = Set(result.deletedScreenshots.map(\.id))
+                let deletedIds = Set(deletedScreenshots.map(\.id))
                 self.screenshots.removeAll { deletedIds.contains($0.id) }
-                if let document = result.updatedDocument {
-                    self.currentSummaryDocument = document
-                }
             } catch {
                 captionViewModelLogger.error("Failed to delete screenshots: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "deleteScreenshots"])

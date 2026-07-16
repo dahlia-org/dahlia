@@ -105,6 +105,29 @@ import Foundation
         }
 
         @Test
+        func collectsReferencedScreenshotIds() {
+            let firstImageId = UUID.v7()
+            let secondImageId = UUID.v7()
+            let document = SummaryDocument(
+                title: "Summary",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Design",
+                        blocks: [
+                            .image(screenshotId: firstImageId, caption: "First"),
+                            .paragraph("Notes"),
+                            .image(screenshotId: secondImageId, caption: "Second"),
+                            .image(screenshotId: firstImageId, caption: "Duplicate"),
+                        ]
+                    ),
+                ]
+            )
+
+            #expect(document.referencedScreenshotIds == [firstImageId, secondImageId])
+        }
+
+        @Test
         func removingScreenshotReferencesPreservesCaptionsAsParagraphs() {
             let removedImageId = UUID.v7()
             let retainedImageId = UUID.v7()

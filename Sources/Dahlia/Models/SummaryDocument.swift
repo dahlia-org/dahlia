@@ -49,6 +49,13 @@ struct SummaryDocument: Codable, Equatable {
         return try String(decoding: encoder.encode(self), as: UTF8.self)
     }
 
+    var referencedScreenshotIds: Set<UUID> {
+        Set(sections.flatMap(\.blocks).compactMap { block in
+            guard case let .image(screenshotId, _) = block.content else { return nil }
+            return screenshotId
+        })
+    }
+
     func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {
         guard !screenshotIds.isEmpty else { return self }
 

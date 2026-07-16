@@ -203,17 +203,25 @@ import GRDB
         }
 
         @Test
-        func deletingScreenshotsAlsoRemovesPersistedSummaryImageReferences() async throws {
+        func deletingScreenshotsPreservesImagesReferencedBySummary() async throws {
             let context = try makeRepositoryContext()
-            let deletedScreenshot = MeetingScreenshotRecord(
+            let referencedScreenshot = MeetingScreenshotRecord(
                 id: .v7(),
                 meetingId: context.meeting.id,
                 capturedAt: .now,
                 imageData: Data([0x89, 0x50, 0x4E, 0x47]),
                 mimeType: "image/png"
             )
+            let unreferencedScreenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: context.meeting.id,
+                capturedAt: .now.addingTimeInterval(1),
+                imageData: Data([0x89, 0x50, 0x4E, 0x47]),
+                mimeType: "image/png"
+            )
             try await context.manager.dbQueue.write { db in
-                try deletedScreenshot.insert(db)
+                try referencedScreenshot.insert(db)
+                try unreferencedScreenshot.insert(db)
             }
             let caption = SummaryText("Launch screen", transcriptRef: TranscriptReference(time: "00:00:42"))
             let document = SummaryDocument(
@@ -222,7 +230,7 @@ import GRDB
                     SummarySection(
                         id: .v7(),
                         heading: "Launch",
-                        blocks: [.image(screenshotId: deletedScreenshot.id, caption: caption)]
+                        blocks: [.image(screenshotId: referencedScreenshot.id, caption: caption)]
                     ),
                 ]
             )
@@ -233,22 +241,14 @@ import GRDB
                 tags: []
             )
 
-            let result = try #require(try await context.repo.deleteScreenshots(
-                ids: [deletedScreenshot.id],
+            let deletedScreenshots = try await context.repo.deleteScreenshots(
+                ids: [referencedScreenshot.id, unreferencedScreenshot.id],
                 meetingId: context.meeting.id
-            ))
-            let updatedDocument = try #require(result.updatedDocument)
-            let updatedSummary = try #require(try context.repo.fetchSummary(forMeetingId: context.meeting.id))
+            )
 
-            #expect(try context.repo.fetchScreenshots(forMeetingId: context.meeting.id).isEmpty)
-            #expect(updatedDocument.sections[0].blocks == [.paragraph(caption)])
-            #expect(try context.repo.fetchSummary(forMeetingId: context.meeting.id)?.loadDocument() == updatedDocument)
-            #expect(updatedSummary.summary == """
-            ## Launch
-
-            Launch screen ([[\(context.meeting.id.uuidString)#00:00:42|00:00:42]])
-            """)
-            #expect(result.updatedSummaryMarkdown?.contains("![[") == false)
+            #expect(deletedScreenshots.map(\.id) == [unreferencedScreenshot.id])
+            #expect(try context.repo.fetchScreenshots(forMeetingId: context.meeting.id).map(\.id) == [referencedScreenshot.id])
+            #expect(try context.repo.fetchSummary(forMeetingId: context.meeting.id)?.loadDocument() == document)
         }
 
         @Test
@@ -276,13 +276,12 @@ import GRDB
                 )
             )
 
-            let result = try #require(try await context.repo.deleteScreenshots(
+            let deletedScreenshots = try await context.repo.deleteScreenshots(
                 ids: [screenshot.id],
                 meetingId: context.meeting.id
-            ))
+            )
 
-            #expect(result.updatedDocument == nil)
-            #expect(result.deletedScreenshots.map(\.id) == [screenshot.id])
+            #expect(deletedScreenshots.map(\.id) == [screenshot.id])
             #expect(try context.repo.fetchSummary(forMeetingId: context.meeting.id)?.document == nil)
         }
 

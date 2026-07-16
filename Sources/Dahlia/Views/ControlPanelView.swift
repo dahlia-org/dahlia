@@ -141,6 +141,7 @@ private struct ScreenshotThumbnailView: View {
     let timestamp: String
     let viewModel: CaptionViewModel
     let isSelecting: Bool
+    let isReferencedBySummary: Bool
     @Binding var expandedScreenshot: MeetingScreenshotRecord?
     @Binding var selectedScreenshotIds: Set<UUID>
     @StateObject private var imageLoader = ScreenshotImageLoadModel()
@@ -167,23 +168,29 @@ private struct ScreenshotThumbnailView: View {
                 }
                 .overlay(alignment: .topTrailing) {
                     if isSelecting {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        Image(systemName: selectionIndicatorSystemImage)
                             .font(.title2)
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(isSelected ? Color.accentColor : .white, .black.opacity(0.45))
+                            .foregroundStyle(selectionIndicatorColor, .black.opacity(0.45))
                             .padding(8)
                     }
                 }
             }
             .buttonStyle(.plain)
             .pointerStyle(.link)
-            .accessibilityLabel(isSelecting ? L10n.select : L10n.open)
+            .disabled(isSelecting && isReferencedBySummary)
+            .accessibilityLabel(imageActionAccessibilityLabel)
             .accessibilityValue(isSelected ? L10n.selected : "")
             HStack {
                 Text(timestamp)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if isReferencedBySummary {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .help(L10n.screenshotUsedInSummary)
+                }
                 if !isSelecting {
                     Button(L10n.download, systemImage: "arrow.down.circle") {
                         viewModel.downloadScreenshot(screenshot)
@@ -201,7 +208,8 @@ private struct ScreenshotThumbnailView: View {
                     .buttonStyle(.plain)
                     .pointerStyle(.link)
                     .foregroundStyle(.secondary)
-                    .disabled(viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots)
+                    .disabled(isReferencedBySummary || viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots)
+                    .help(isReferencedBySummary ? L10n.screenshotUsedInSummary : L10n.delete)
                 }
             }
         }
@@ -218,6 +226,7 @@ private struct ScreenshotThumbnailView: View {
 
     private func handleImageAction() {
         if isSelecting {
+            guard !isReferencedBySummary else { return }
             if isSelected {
                 selectedScreenshotIds.remove(screenshot.id)
             } else {
@@ -227,6 +236,36 @@ private struct ScreenshotThumbnailView: View {
             withAnimation(.easeOut(duration: 0.15)) {
                 expandedScreenshot = screenshot
             }
+        }
+    }
+
+    private var imageActionAccessibilityLabel: String {
+        if isSelecting, isReferencedBySummary {
+            L10n.screenshotUsedInSummary
+        } else if isSelecting {
+            L10n.select
+        } else {
+            L10n.open
+        }
+    }
+
+    private var selectionIndicatorSystemImage: String {
+        if isReferencedBySummary {
+            "lock.circle.fill"
+        } else if isSelected {
+            "checkmark.circle.fill"
+        } else {
+            "circle"
+        }
+    }
+
+    private var selectionIndicatorColor: Color {
+        if isReferencedBySummary {
+            .secondary
+        } else if isSelected {
+            .accentColor
+        } else {
+            .white
         }
     }
 }
@@ -733,7 +772,7 @@ struct ControlPanelView: View {
                     layout: $screenshotGridLayout,
                     isSelecting: $isSelectingScreenshots,
                     selectedCount: selectedScreenshotIds.count,
-                    canSelectAll: selectedScreenshotIds.count < viewModel.screenshots.count,
+                    canSelectAll: selectedScreenshotIds.count < deletableScreenshotIds.count,
                     isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
                     selectAll: selectAllScreenshots,
                     deleteSelected: deleteSelectedScreenshots
@@ -760,6 +799,7 @@ struct ControlPanelView: View {
                                 ),
                                 viewModel: viewModel,
                                 isSelecting: isSelectingScreenshots,
+                                isReferencedBySummary: referencedScreenshotIds.contains(screenshot.id),
                                 expandedScreenshot: $expandedScreenshot,
                                 selectedScreenshotIds: $selectedScreenshotIds
                             )
@@ -772,7 +812,7 @@ struct ControlPanelView: View {
     }
 
     private func selectAllScreenshots() {
-        selectedScreenshotIds = Set(viewModel.screenshots.map(\.id))
+        selectedScreenshotIds = deletableScreenshotIds
     }
 
     private func deleteSelectedScreenshots() {
@@ -799,6 +839,14 @@ struct ControlPanelView: View {
 
     private var screenshotTimeBase: Date {
         viewModel.store.timeBase
+    }
+
+    private var referencedScreenshotIds: Set<UUID> {
+        viewModel.currentSummaryDocument?.referencedScreenshotIds ?? []
+    }
+
+    private var deletableScreenshotIds: Set<UUID> {
+        Set(viewModel.screenshots.map(\.id)).subtracting(referencedScreenshotIds)
     }
 
     private func summaryTranscriptText(for reference: TranscriptReference) -> String? {
