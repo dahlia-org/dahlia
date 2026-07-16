@@ -73,7 +73,7 @@ struct CodexChatView: View {
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
         }
         .background(.background)
-        .task { await prepare() }
+        .task(id: session.id) { await prepare() }
         .onChange(of: meetings) {
             updateMeetingCatalog()
         }
