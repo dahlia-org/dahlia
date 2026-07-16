@@ -141,7 +141,10 @@ struct SummaryDocumentResponse: Decodable {
                 ],
                 "tags": [
                     "type": "array",
-                    "items": ["type": "string"],
+                    "items": [
+                        "type": "string",
+                        "pattern": "^[a-z0-9_]*[a-z][a-z0-9_]*$",
+                    ],
                 ],
                 "action_items": [
                     "type": "array",

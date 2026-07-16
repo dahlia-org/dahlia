@@ -32,11 +32,11 @@ extension SummaryService {
     - "sections": an array of summary body sections that exclude action items. Each section has:
       - "heading": the section heading, or an empty string for an intro section
       - "blocks": an array of content blocks in reading order
-    - "tags": an array of relevant short Obsidian-compatible tags for categorization (empty array if none)
+    - "tags": an array of relevant short English tags for categorization (empty array if none)
       - Tags MUST contain no spaces.
       - Tags MUST not be numeric-only.
-      - Tags MUST use only letters, numbers, "_" and "-".
-      - Use "_" or "-" to join words instead of spaces or punctuation.
+      - Tags MUST use only lowercase ASCII letters (a-z), ASCII numbers (0-9), and "_".
+      - Use "_" to join words instead of spaces or punctuation.
       - Do not include "#", slashes, emojis, quotes, brackets, commas, or other symbols.
     - "action_items": the only location for action items; an array of objects with exactly two keys:
       - "title": the concrete action item

@@ -370,14 +370,16 @@ struct SummaryServiceTests {
     @Test
     func resolvedTagsNormalizesObsidianIncompatibleTags() {
         let tags = SummaryService.resolvedTags([
-            "customer meeting",
+            "Customer Meeting",
             "customer_meeting",
-            "sales/enterprise",
-            "risk:high",
+            "sales/Enterprise",
+            "risk:HIGH",
             "team-check_in",
             "2026",
             "#123",
-            "2026-q1",
+            "2026-Q1",
+            "日本語",
+            "Ｆｕｌｌ１２３",
             "!!!",
         ])
 
@@ -385,9 +387,15 @@ struct SummaryServiceTests {
             "customer_meeting",
             "sales_enterprise",
             "risk_high",
-            "team-check_in",
-            "2026-q1",
+            "team_check_in",
+            "2026_q1",
         ])
+    }
+
+    @Test
+    func structuredPromptRequiresLowercaseASCIITags() {
+        #expect(SummaryService.codexStructuredInstruction.contains("lowercase ASCII letters (a-z), ASCII numbers (0-9), and \"_\""))
+        #expect(!SummaryService.codexStructuredInstruction.contains("and \"-\""))
     }
 
     @Test

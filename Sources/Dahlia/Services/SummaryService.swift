@@ -87,8 +87,8 @@ enum SummaryService {
         return tags
     }
 
-    private static let tagAllowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
-    private static let tagTrimCharacters = CharacterSet(charactersIn: "_-")
+    private static let tagAllowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_")
+    private static let tagTrimCharacters = CharacterSet(charactersIn: "_")
 
     static func decodeSummaryDocument(from responseText: String, context: SummaryRenderContext) -> SummaryDocument {
         guard let data = responseText.data(using: .utf8) else {
@@ -324,7 +324,7 @@ enum SummaryService {
         var normalized = ""
         var lastWasSeparator = false
 
-        for scalar in candidate.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars {
+        for scalar in candidate.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().unicodeScalars {
             if tagAllowedCharacters.contains(scalar) {
                 normalized.unicodeScalars.append(scalar)
                 lastWasSeparator = false
