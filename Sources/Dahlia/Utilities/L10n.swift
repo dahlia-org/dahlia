@@ -44,9 +44,10 @@ enum L10n {
     static var medium: String { String(localized: "Medium", bundle: bundle) }
     static var small: String { String(localized: "Small", bundle: bundle) }
     static var deleteSelectedScreenshotsConfirmation: String { String(
-        localized: "The selected screenshots will be permanently deleted. Referenced captions will remain in the summary.",
+        localized: "The selected screenshots will be permanently deleted. Screenshots used in the summary are protected.",
         bundle: bundle
     ) }
+    static var screenshotUsedInSummary: String { String(localized: "Used in summary", bundle: bundle) }
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var actions: String { String(localized: "Actions", bundle: bundle) }
     static var status: String { String(localized: "Status", bundle: bundle) }

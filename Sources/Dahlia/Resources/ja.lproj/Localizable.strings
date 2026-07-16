@@ -13,7 +13,8 @@
 "Layout" = "レイアウト";
 "Large" = "大";
 "Small" = "小";
-"The selected screenshots will be permanently deleted. Referenced captions will remain in the summary." = "選択したスクリーンショットは完全に削除されます。要約で参照されている画像の説明文は要約に残ります。";
+"The selected screenshots will be permanently deleted. Screenshots used in the summary are protected." = "選択したスクリーンショットは完全に削除されます。要約で使用中のスクリーンショットは保護されます。";
+"Used in summary" = "要約で使用中";
 "Search" = "検索";
 "Actions" = "操作";
 "Status" = "状態";

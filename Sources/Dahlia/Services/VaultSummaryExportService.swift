@@ -108,23 +108,4 @@ enum VaultSummaryExportService {
         try Data(markdown.utf8).write(to: fileURL, options: .atomic)
         return fileURL
     }
-
-    static func synchronizeScreenshotDeletion(
-        vaultURL: URL,
-        storedSummaryRelativePath: String?,
-        updatedSummaryMarkdown: String?,
-        deletedScreenshots: [MeetingScreenshotRecord]
-    ) throws {
-        if let updatedSummaryMarkdown,
-           let summaryURL = SummaryService.findSummaryFile(
-               storedRelativePath: storedSummaryRelativePath,
-               vaultURL: vaultURL
-           ) {
-            _ = try writeSummaryFile(fileURL: summaryURL, markdown: updatedSummaryMarkdown)
-        }
-        try ScreenshotExportService.deleteExportedScreenshots(
-            vaultURL: vaultURL,
-            screenshots: deletedScreenshots
-        )
-    }
 }

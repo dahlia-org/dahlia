@@ -147,17 +147,10 @@ import Foundation
         }
 
         @Test
-        func screenshotDeletionUpdatesStoredSummaryAndRemovesExportedImage() throws {
+        func screenshotDeletionRemovesExportedImage() throws {
             let vaultURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString, directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: vaultURL) }
-
-            let summaryURL = vaultURL.appending(path: "Project/Summary.md")
-            try FileManager.default.createDirectory(
-                at: summaryURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try Data("Old summary".utf8).write(to: summaryURL)
 
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
@@ -170,14 +163,11 @@ import Foundation
             let screenshotURL = ScreenshotExportService.screenshotsDirectoryURL(in: vaultURL)
                 .appending(path: ScreenshotExportService.filename(for: screenshot))
 
-            try VaultSummaryExportService.synchronizeScreenshotDeletion(
+            try ScreenshotExportService.deleteExportedScreenshots(
                 vaultURL: vaultURL,
-                storedSummaryRelativePath: "Project/Summary.md",
-                updatedSummaryMarkdown: "Updated summary",
-                deletedScreenshots: [screenshot]
+                screenshots: [screenshot]
             )
 
-            #expect(try String(contentsOf: summaryURL, encoding: .utf8) == "Updated summary")
             #expect(!FileManager.default.fileExists(atPath: screenshotURL.path))
         }
     }

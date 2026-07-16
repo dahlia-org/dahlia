@@ -13,7 +13,8 @@
 "Layout" = "Layout";
 "Large" = "Large";
 "Small" = "Small";
-"The selected screenshots will be permanently deleted. Referenced captions will remain in the summary." = "The selected screenshots will be permanently deleted. Referenced captions will remain in the summary.";
+"The selected screenshots will be permanently deleted. Screenshots used in the summary are protected." = "The selected screenshots will be permanently deleted. Screenshots used in the summary are protected.";
+"Used in summary" = "Used in summary";
 "Search" = "Search";
 "Actions" = "Actions";
 "Status" = "Status";
