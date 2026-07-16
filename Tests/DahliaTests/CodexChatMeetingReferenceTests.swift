@@ -32,6 +32,35 @@ import Foundation
         }
 
         @Test
+        func separatesStandaloneReferencesFromMessagePreview() throws {
+            let firstID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
+            let secondID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
+            let text = "meeting:\(firstID.uuidString) meeting:\(secondID.uuidString) Compare these\nmeetings"
+
+            let content = CodexChatMeetingReference.previewContent(in: text)
+
+            #expect(content.referenceIDs == [firstID, secondID])
+            #expect(content.instruction == "Compare these\nmeetings")
+            let embedded = CodexChatMeetingReference.previewContent(
+                in: "Compare meeting:\(firstID.uuidString)"
+            )
+            #expect(embedded.referenceIDs == [firstID])
+            #expect(embedded.instruction == "Compare")
+            let duplicate = CodexChatMeetingReference.previewContent(
+                in: "meeting:\(firstID.uuidString) Repeat meeting:\(firstID.uuidString)  "
+            )
+            #expect(duplicate.referenceIDs == [firstID, firstID])
+            #expect(duplicate.instruction == "Repeat")
+            let invalid = CodexChatMeetingReference.previewContent(in: "Keep meeting:not-a-uuid")
+            #expect(invalid.referenceIDs.isEmpty)
+            #expect(invalid.instruction == "Keep meeting:not-a-uuid")
+            let indented = CodexChatMeetingReference.previewContent(
+                in: "meeting:\(firstID.uuidString) \n  Keep indentation"
+            )
+            #expect(indented.instruction == "\n  Keep indentation")
+        }
+
+        @Test
         func resolvesDisplayNamesWithoutExposingUnknownIDs() throws {
             let knownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000001"))
             let unknownID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
@@ -101,7 +130,7 @@ import Foundation
         }
 
         @Test
-        func pickerSelectionMovesAndClamps() throws {
+        func pickerSelectionMovesAndClamps() {
             let first = CodexChatMeetingReference(id: .v7(), name: "First", createdAt: .now)
             let second = CodexChatMeetingReference(id: .v7(), name: "Second", createdAt: .now)
             let references = [first, second]

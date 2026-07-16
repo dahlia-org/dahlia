@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatMessageRow: View {
     let message: CodexChatMessage
     let meetingNamesByID: [UUID: String]
+    let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
     var body: some View {
         let visibleText = message.role == .user ? userVisibleText : message.text
@@ -15,11 +16,14 @@ struct CodexChatMessageRow: View {
             if message.role == .user {
                 Spacer(minLength: 72)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(displayText)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
+                    CodexChatUserMessageContent(
+                        rawText: visibleText,
+                        meetingNamesByID: meetingNamesByID,
+                        meetingReferencesByID: meetingReferencesByID
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
 
                     CodexChatCopyButton(text: displayText)
                 }

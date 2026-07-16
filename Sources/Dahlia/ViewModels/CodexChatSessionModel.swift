@@ -21,6 +21,7 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var availableMeetingReferences: [CodexChatMeetingReference] = []
     private(set) var selectedMeetingReferenceIDs: [UUID] = []
     private(set) var meetingNamesByID: [UUID: String] = [:]
+    private(set) var meetingReferencesByID: [UUID: CodexChatMeetingReference] = [:]
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
@@ -412,13 +413,14 @@ extension CodexChatSessionModel {
 
 extension CodexChatSessionModel {
     func updateAvailableMeetings(_ meetings: [MeetingOverviewItem], catalogVaultID: UUID?) {
-        guard catalogVaultID == vaultID else { return }
+        guard let vaultID, catalogVaultID == vaultID else { return }
         let references = meetings
             .filter { $0.vaultId == vaultID }
             .map(CodexChatMeetingReference.init)
         availableMeetingReferences = references
         for reference in references {
             meetingNamesByID[reference.id] = reference.name
+            meetingReferencesByID[reference.id] = reference
         }
         let availableIDs = Set(references.map(\.id))
         selectedMeetingReferenceIDs.removeAll { !availableIDs.contains($0) }
@@ -428,6 +430,7 @@ extension CodexChatSessionModel {
         guard !selectedMeetingReferenceIDs.contains(reference.id) else { return }
         selectedMeetingReferenceIDs.append(reference.id)
         meetingNamesByID[reference.id] = reference.name
+        meetingReferencesByID[reference.id] = reference
     }
 
     func removeMeetingReference(id: UUID) {

@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatConversationView: View {
     let messages: [CodexChatMessage]
     let meetingNamesByID: [UUID: String]
+    let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
     var body: some View {
         let items = CodexChatConversationItem.build(from: messages)
@@ -16,7 +17,8 @@ struct CodexChatConversationView: View {
                         case let .message(message):
                             CodexChatMessageRow(
                                 message: message,
-                                meetingNamesByID: meetingNamesByID
+                                meetingNamesByID: meetingNamesByID,
+                                meetingReferencesByID: meetingReferencesByID
                             )
                         }
                     }

@@ -47,6 +47,44 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
         tokens(in: text).compactMap(meetingID(from:))
     }
 
+    static func previewContent(in text: String) -> (referenceIDs: [UUID], instruction: String) {
+        var referenceIDs: [UUID] = []
+        var instruction = ""
+        var index = text.startIndex
+        var removedReference = false
+        var lastWordWasReference = false
+
+        while index < text.endIndex {
+            let separatorEnd = text[index...].firstIndex(where: { !$0.isWhitespace }) ?? text.endIndex
+            let separator = text[index ..< separatorEnd]
+            guard separatorEnd < text.endIndex else {
+                if !lastWordWasReference {
+                    instruction.append(contentsOf: separator)
+                }
+                break
+            }
+
+            let wordEnd = text[separatorEnd...].firstIndex(where: \Character.isWhitespace) ?? text.endIndex
+            let word = String(text[separatorEnd ..< wordEnd])
+            if let meetingID = meetingID(from: word) {
+                referenceIDs.append(meetingID)
+                removedReference = true
+                lastWordWasReference = true
+            } else {
+                if !instruction.isEmpty || !removedReference {
+                    instruction.append(contentsOf: separator)
+                } else if separator.count > 1 {
+                    instruction.append(contentsOf: separator.dropFirst())
+                }
+                instruction.append(word)
+                lastWordWasReference = false
+            }
+            index = wordEnd
+        }
+
+        return (referenceIDs, instruction)
+    }
+
     static func displayText(
         for text: String,
         namesByID: [UUID: String],
@@ -84,9 +122,12 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
     }
 
     static func trailingMentionQuery(in text: String) -> String? {
-        guard text.last?.isWhitespace == false,
-              let lastWord = text.split(whereSeparator: \.isWhitespace).last,
-              lastWord.first == "@" else { return nil }
+        guard text.last?.isWhitespace == false else { return nil }
+        let wordStart = text.lastIndex(where: \.isWhitespace)
+            .map { text.index(after: $0) }
+            ?? text.startIndex
+        let lastWord = text[wordStart...]
+        guard lastWord.first == "@" else { return nil }
         return String(lastWord.dropFirst())
     }
 

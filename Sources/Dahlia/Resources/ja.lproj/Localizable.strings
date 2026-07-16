@@ -692,6 +692,7 @@
 "Remove meeting reference %@" = "%@ の参照を削除";
 "No matching meetings" = "一致するミーティングはありません";
 "Meeting unavailable" = "利用できないミーティング";
+"Show meeting details" = "ミーティングの詳細を表示";
 
 /* MCP */
 "MCP" = "MCP";

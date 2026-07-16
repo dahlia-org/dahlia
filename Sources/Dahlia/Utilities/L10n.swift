@@ -1329,4 +1329,5 @@ enum L10n {
         bundle: bundle
     ) }
     static var meetingUnavailable: String { String(localized: "Meeting unavailable", bundle: bundle) }
+    static var showMeetingReferenceDetails: String { String(localized: "Show meeting details", bundle: bundle) }
 }

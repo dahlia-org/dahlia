@@ -14,12 +14,28 @@ struct CodexChatComposer: View {
             if !session.selectedMeetingReferenceIDs.isEmpty {
                 CodexChatMeetingReferenceBar(
                     referenceIDs: session.selectedMeetingReferenceIDs,
-                    name: session.meetingDisplayName,
+                    referencesByID: session.meetingReferencesByID,
                     onRemove: session.removeMeetingReference
                 )
             }
 
             HStack(alignment: .bottom, spacing: 10) {
+                Button(L10n.addMeetingReference, systemImage: "plus", action: showMeetingPicker)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
+                    .background(.quaternary, in: Circle())
+                    .contentShape(Circle())
+                    .help(L10n.addMeetingReference)
+                    .popover(isPresented: $isMeetingPickerPresented, arrowEdge: .bottom) {
+                        CodexChatMeetingPicker(
+                            references: suggestions,
+                            highlightedID: highlightedMeetingID,
+                            onSelect: selectMeeting
+                        )
+                    }
+
                 TextField(L10n.messageCodex, text: $session.draft, axis: .vertical)
                     .font(.body)
                     .textFieldStyle(.plain)
@@ -32,21 +48,6 @@ struct CodexChatComposer: View {
                     .onSubmit(handleSubmit)
                     .onMoveCommand(perform: handleMoveCommand)
                     .onExitCommand(perform: closeMeetingPicker)
-
-                Button(L10n.addMeetingReference, systemImage: "at", action: showMeetingPicker)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-                    .contentShape(Rectangle())
-                    .help(L10n.addMeetingReference)
-                    .popover(isPresented: $isMeetingPickerPresented, arrowEdge: .bottom) {
-                        CodexChatMeetingPicker(
-                            references: suggestions,
-                            highlightedID: highlightedMeetingID,
-                            onSelect: selectMeeting
-                        )
-                    }
 
                 if session.isLoading, session.models.isEmpty {
                     ProgressView()

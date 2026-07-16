@@ -692,6 +692,7 @@
 "Remove meeting reference %@" = "Remove meeting reference %@";
 "No matching meetings" = "No matching meetings";
 "Meeting unavailable" = "Meeting unavailable";
+"Show meeting details" = "Show meeting details";
 
 /* MCP */
 "MCP" = "MCP";

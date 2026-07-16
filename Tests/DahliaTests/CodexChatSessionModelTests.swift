@@ -141,6 +141,22 @@ import Foundation
         }
 
         @Test
+        func missingVaultCatalogDoesNotPruneReferences() {
+            let settings = AppSettings()
+            settings.currentVault = nil
+            let session = CodexChatSessionModel(
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+            let reference = CodexChatMeetingReference(id: .v7(), name: "Cached", createdAt: .now)
+            session.addMeetingReference(reference)
+
+            session.updateAvailableMeetings([], catalogVaultID: nil)
+
+            #expect(session.selectedMeetingReferenceIDs == [reference.id])
+        }
+
+        @Test
         func restoredRawReferencesUseCachedNamesAcrossTitleAndMessages() {
             let settings = AppSettings()
             let vault = Self.testVault()
