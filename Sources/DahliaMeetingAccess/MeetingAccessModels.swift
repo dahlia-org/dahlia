@@ -76,6 +76,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case vaultNotFound
     case meetingNotFound
     case databaseUpgradeRequired
+    case invalidSummaryDocument
     case invalidCursor
     case invalidLimit(maximum: Int)
 
@@ -87,6 +88,8 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The meeting was not found in the configured vault."
         case .databaseUpgradeRequired:
             "The Dahlia database must be upgraded before meeting access can start. Open Dahlia once, then try again."
+        case .invalidSummaryDocument:
+            "The stored summary document is invalid. Open Dahlia and regenerate the summary."
         case .invalidCursor:
             "The cursor is invalid for the configured vault or meeting."
         case let .invalidLimit(maximum):

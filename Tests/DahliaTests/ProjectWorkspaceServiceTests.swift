@@ -111,17 +111,14 @@ import GRDB
             let renamed = try context.service.renameProject(id: parent.id, newLeafName: "Renamed")
 
             let fetchedChildRecord = try context.repository.fetchProject(id: child.id)
-            let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
             let vaultExport = try context.repository.fetchSummaryExport(
                 forMeetingId: meeting.id,
                 type: .vault
             )
             let fetchedChild = try #require(fetchedChildRecord)
-            let summary = try #require(fetchedSummary)
             #expect(renamed.name == "Renamed")
             #expect(fetchedChild.name == "Renamed/Child")
             #expect(fetchedChild.description == "Keep me")
-            #expect(summary.vaultRelativePath == "Renamed/Child/Summary.md")
             #expect(vaultExport?.url == "vault:///Renamed/Child/Summary.md")
             #expect(vaultExport?.vaultRelativePath == "Renamed/Child/Summary.md")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Child").path))
@@ -191,9 +188,8 @@ import GRDB
             )
             let summary = try #require(fetchedSummary)
             #expect(fetchedMeeting?.projectId == destination.id)
-            #expect(summary.vaultRelativePath == nil)
             #expect(vaultExport == nil)
-            #expect(summary.summary == "Body")
+            #expect(try summary.loadDocument().sections.first?.blocks == [.paragraph("Body")])
             #expect(try context.repository.fetchSegments(forMeetingId: meeting.id).count == 1)
             #expect(try context.repository.fetchTagsForMeeting(id: meeting.id).map(\.name) == ["important"])
             #expect(FileManager.default.fileExists(atPath: audioURL.path))
@@ -214,9 +210,11 @@ import GRDB
 
             try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .move(to: destination.id))
 
-            let fetchedSummary = try context.repository.fetchSummary(forMeetingId: meeting.id)
-            let summary = try #require(fetchedSummary)
-            #expect(summary.vaultRelativePath == "Archive/Summary.md")
+            let vaultExport = try context.repository.fetchSummaryExport(
+                forMeetingId: meeting.id,
+                type: .vault
+            )
+            #expect(vaultExport?.vaultRelativePath == "Archive/Summary.md")
         }
 
         @Test
@@ -336,10 +334,16 @@ import GRDB
                 SummaryRecord(
                     meetingId: meetingId,
                     title: "Summary",
-                    summary: "Body",
-                    vaultRelativePath: path,
+                    document: try SummaryDocument(
+                        title: "Summary",
+                        sections: [SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("Body")])]
+                    ).databaseJSONString(),
                     createdAt: .now
                 )
+            )
+            try context.repository.updateSummaryVaultRelativePath(
+                forMeetingId: meetingId,
+                relativePath: path
             )
         }
 

@@ -101,14 +101,14 @@ import GRDB
         }
 
         @Test
-        func initializesInMemoryDatabaseWithSummaryGoogleFileIdColumn() throws {
+        func initializesInMemoryDatabaseWithoutLegacySummaryColumns() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns.contains("googleFileId"))
+            #expect(columns == ["meetingId", "title", "document", "createdAt"])
         }
 
         @Test
@@ -535,7 +535,7 @@ import GRDB
         }
 
         @Test
-        func existingV4DatabaseMigratesSummaryGoogleFileIdColumn() throws {
+        func existingV4DatabaseRemovesLegacySummaryColumns() throws {
             let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
@@ -564,7 +564,7 @@ import GRDB
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns.contains("googleFileId"))
+            #expect(columns == ["meetingId", "title", "document", "createdAt"])
         }
 
         @Test
@@ -623,7 +623,7 @@ import GRDB
         }
 
         @Test
-        func existingV8DatabaseAddsSummaryDocumentColumnWithoutBackfill() throws {
+        func existingV8DatabaseDropsSummaryWithoutDocument() throws {
             let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
@@ -694,15 +694,14 @@ import GRDB
             let result = try migrated.dbQueue.read { db in
                 try (
                     String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"),
-                    Row.fetchOne(db, sql: "SELECT title, summary, document, googleFileId FROM summaries WHERE meetingId = ?", arguments: [meetingID])
+                    SummaryRecord.fetchOne(db, key: meetingID),
+                    SummaryExportRecord.fetchCount(db)
                 )
             }
 
-            #expect(result.0.contains("document"))
-            #expect(result.1?["title"] == "Legacy")
-            #expect(result.1?["summary"] == "## Summary\n\n![[\(screenshotID.uuidString).jpeg|Valid]]\n\n![[\(missingScreenshotID.uuidString).jpeg]]")
-            #expect(result.1?["document"] == nil as String?)
-            #expect(result.1?["googleFileId"] == "google-123")
+            #expect(result.0 == ["meetingId", "title", "document", "createdAt"])
+            #expect(result.1 == nil)
+            #expect(result.2 == 0)
         }
     }
 
@@ -721,14 +720,14 @@ import GRDB
             XCTAssertTrue(columns.contains("googleDriveFolderId"))
         }
 
-        func testInitializesInMemoryDatabaseWithSummaryGoogleFileIdColumn() throws {
+        func testInitializesInMemoryDatabaseWithoutLegacySummaryColumns() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            XCTAssertTrue(columns.contains("googleFileId"))
+            XCTAssertEqual(columns, ["meetingId", "title", "document", "createdAt"])
         }
 
         func testInitializesInMemoryDatabaseWithTranscriptTranslatedTextColumn() throws {
@@ -870,7 +869,7 @@ import GRDB
             XCTAssertEqual(migratedVault?["name"], "Legacy Vault")
         }
 
-        func testExistingV4DatabaseMigratesSummaryGoogleFileIdColumn() throws {
+        func testExistingV4DatabaseRemovesLegacySummaryColumns() throws {
             let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension("sqlite")
@@ -899,7 +898,7 @@ import GRDB
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            XCTAssertTrue(columns.contains("googleFileId"))
+            XCTAssertEqual(columns, ["meetingId", "title", "document", "createdAt"])
         }
 
         func testExistingV5DatabaseMigratesTranscriptTranslatedTextColumnWithoutDataLoss() throws {

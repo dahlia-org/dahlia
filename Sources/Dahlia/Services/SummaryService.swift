@@ -6,7 +6,6 @@ enum SummaryService {
         let document: SummaryDocument
         let fileName: String
         let markdown: String
-        let renderedBody: String
     }
 
     /// 要約を生成し、Markdown と関連メタデータを返す。
@@ -54,8 +53,7 @@ enum SummaryService {
         return GeneratedSummary(
             document: document,
             fileName: rendered.fileName,
-            markdown: rendered.markdown,
-            renderedBody: rendered.body
+            markdown: rendered.markdown
         )
     }
 

@@ -112,7 +112,13 @@ public final class MeetingAccessStore: Sendable {
             guard let row = try meetingRow(id: id, in: db) else {
                 throw MeetingAccessError.meetingNotFound
             }
-            let summary: String? = row["summary"]
+            let document: String? = row["summaryDocument"]
+            let summary: String?
+            do {
+                summary = try document.map(StoredSummaryDocumentMarkdownRenderer.render(json:))
+            } catch {
+                throw MeetingAccessError.invalidSummaryDocument
+            }
             return MeetingDetail(vault: vault, meeting: Self.metadata(from: row), summary: summary)
         }
     }
@@ -218,7 +224,12 @@ public final class MeetingAccessStore: Sendable {
 
     private func fetchVault(in db: Database) throws -> ScopedVault {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
-        guard meetingColumns.contains("description") else {
+        let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
+        let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
+        guard meetingColumns.contains("description"),
+              summaryColumns.contains("document"),
+              summaryColumns.isDisjoint(with: legacySummaryColumns)
+        else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
         guard let row = try Row.fetchOne(
@@ -245,7 +256,7 @@ public final class MeetingAccessStore: Sendable {
                 meetings.duration,
                 meetings.createdAt,
                 summaries.meetingId IS NOT NULL AS hasSummary,
-                summaries.summary,
+                summaries.document AS summaryDocument,
                 (SELECT COUNT(*) FROM transcript_segments
                  WHERE transcript_segments.meetingId = meetings.id
                    AND transcript_segments.isConfirmed = 1) AS transcriptSegmentCount,

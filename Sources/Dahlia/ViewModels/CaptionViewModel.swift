@@ -764,23 +764,23 @@ final class CaptionViewModel: ObservableObject {
         let vaultExport = detail.summaryExports.first(where: { $0.type == .vault })
         let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
 
-        let lastSummaryURL: URL? = if let summary = detail.summary {
+        let lastSummaryURL: URL? = if detail.summary != nil {
             SummaryService.findSummaryFile(
-                storedRelativePath: vaultExport?.vaultRelativePath ?? summary.vaultRelativePath,
+                storedRelativePath: vaultExport?.vaultRelativePath,
                 vaultURL: vaultURL
             )
         } else {
             nil
         }
 
-        return LoadedMeetingData(
+        return try LoadedMeetingData(
             createdAt: detail.meeting?.createdAt,
             recordingSessionRecords: detail.recordingSessions,
             recordingSessions: recordingSessions,
             segments: segments,
             screenshots: detail.screenshots,
             summaryDocument: detail.summary?.loadDocument(),
-            googleFileId: googleDocsExport?.googleDocumentID ?? detail.summary?.googleFileId,
+            googleFileId: googleDocsExport?.googleDocumentID,
             lastSummaryURL: lastSummaryURL,
             note: detail.note
         )
@@ -2068,7 +2068,6 @@ final class CaptionViewModel: ObservableObject {
                 try repo.applyGeneratedSummary(
                     toMeetingId: meetingId,
                     document: generatedSummary.document,
-                    renderedBody: generatedSummary.renderedBody,
                     tags: generatedSummary.document.tags
                 )
             }
