@@ -412,7 +412,11 @@ extension CodexChatSessionModel {
 }
 
 extension CodexChatSessionModel {
-    func updateAvailableMeetings(_ meetings: [MeetingOverviewItem], catalogVaultID: UUID?) {
+    func updateAvailableMeetings(
+        _ meetings: [MeetingOverviewItem],
+        catalogVaultID: UUID?,
+        isCatalogLoaded: Bool = true
+    ) {
         guard let vaultID, catalogVaultID == vaultID else { return }
         let references = meetings
             .filter { $0.vaultId == vaultID }
@@ -422,6 +426,7 @@ extension CodexChatSessionModel {
             meetingNamesByID[reference.id] = reference.name
             meetingReferencesByID[reference.id] = reference
         }
+        guard isCatalogLoaded else { return }
         let availableIDs = Set(references.map(\.id))
         selectedMeetingReferenceIDs.removeAll { !availableIDs.contains($0) }
     }

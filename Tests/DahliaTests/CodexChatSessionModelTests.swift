@@ -62,14 +62,14 @@ import Foundation
 
             let expected = "meeting:\(first.meetingId.uuidString.lowercased()) "
                 + "meeting:\(second.meetingId.uuidString.lowercased()) Compare them"
-            #expect(await service.sentTexts == [expected])
+            #expect(await service.sentTextBlocks == [[expected]])
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
             #expect(session.draft.isEmpty)
             #expect(session.displayText(expected) == "First Second Compare them")
 
             session.retry()
             await waitUntil { !session.isGenerating }
-            #expect(await service.sentTexts == [expected, expected])
+            #expect(await service.sentTextBlocks == [[expected], [expected]])
         }
 
         @Test
@@ -92,7 +92,7 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            #expect(await service.sentTexts == ["meeting:\(meeting.meetingId.uuidString.lowercased())"])
+            #expect(await service.sentTextBlocks == [["meeting:\(meeting.meetingId.uuidString.lowercased())"]])
         }
 
         @Test
@@ -138,6 +138,31 @@ import Foundation
 
             session.updateAvailableMeetings([], catalogVaultID: vault.id)
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
+        }
+
+        @Test
+        func loadingSameVaultCatalogDoesNotPruneReferences() {
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+            let meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+
+            session.updateAvailableMeetings(
+                [],
+                catalogVaultID: vault.id,
+                isCatalogLoaded: false
+            )
+            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
+
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
         }
 
         @Test

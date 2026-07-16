@@ -32,6 +32,7 @@ struct CodexChatFloatingView: View {
                     coordinator: coordinator,
                     meetings: sidebarViewModel.allMeetings,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
+                    isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     allowsPopOut: true,
                     onNewChat: coordinator.newFloatingChat,
                     onPopOut: popOut,

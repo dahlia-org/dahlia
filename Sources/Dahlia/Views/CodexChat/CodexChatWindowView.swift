@@ -15,6 +15,7 @@ struct CodexChatWindowView: View {
                     coordinator: coordinator,
                     meetings: sidebarViewModel.allMeetings,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
+                    isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     allowsPopOut: false,
                     onNewChat: openNewWindow,
                     onPopOut: {},

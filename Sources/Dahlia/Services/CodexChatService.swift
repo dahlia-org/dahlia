@@ -12,7 +12,8 @@ actor CodexChatService: CodexChatServicing {
     When context has Type: MeetingDraft, do not call get_meeting for it because it has not been saved.
     A standalone meeting:<UUID> word directly identifies a meeting selected by the user.
     When one or more meeting:<UUID> words are present, call get_meeting with each UUID directly and do not call query_meetings first.
-    When neither a meeting:<UUID> word nor a Type: Meeting context is present, start with query_meetings, then use get_meeting for a selected meeting's summary.
+    When neither a meeting:<UUID> word nor a Type: Meeting context is present, start with query_meetings.
+    Then use get_meeting for a selected meeting's summary.
     Call get_meeting_transcript only when the original wording or detail is needed.
     Do not execute commands, access files, use external services, or request permissions.
     """

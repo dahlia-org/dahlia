@@ -5,6 +5,7 @@ struct CodexChatView: View {
     @Bindable var coordinator: CodexChatCoordinator
     let meetings: [MeetingOverviewItem]
     let meetingCatalogVaultID: UUID?
+    let isMeetingCatalogLoaded: Bool
     let allowsPopOut: Bool
     let onNewChat: () -> Void
     let onPopOut: () -> Void
@@ -79,6 +80,9 @@ struct CodexChatView: View {
         .onChange(of: meetingCatalogVaultID) {
             updateMeetingCatalog()
         }
+        .onChange(of: isMeetingCatalogLoaded) {
+            updateMeetingCatalog()
+        }
     }
 
     private func prepare() async {
@@ -90,7 +94,11 @@ struct CodexChatView: View {
     }
 
     private func updateMeetingCatalog() {
-        session.updateAvailableMeetings(meetings, catalogVaultID: meetingCatalogVaultID)
+        session.updateAvailableMeetings(
+            meetings,
+            catalogVaultID: meetingCatalogVaultID,
+            isCatalogLoaded: isMeetingCatalogLoaded
+        )
     }
 
     private func showHistory() {

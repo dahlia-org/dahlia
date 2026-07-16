@@ -50,11 +50,7 @@ import Foundation
             #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
             expectChatConfiguration(config, vaultID: vaultID)
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("query_meetings") == true)
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("meeting_id directly") == true)
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("MeetingDraft") == true)
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("meeting:<UUID>") == true)
-            #expect(threadParams["developerInstructions"]?.stringValue?.contains("get_meeting with each UUID directly") == true)
+            expectDeveloperInstructions(threadParams["developerInstructions"]?.stringValue)
 
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
@@ -222,6 +218,14 @@ import Foundation
                 ]),
                 "docs": .object(["enabled": .bool(false)]),
             ]))
+        }
+
+        private func expectDeveloperInstructions(_ instructions: String?) {
+            #expect(instructions?.contains("query_meetings") == true)
+            #expect(instructions?.contains("meeting_id directly") == true)
+            #expect(instructions?.contains("MeetingDraft") == true)
+            #expect(instructions?.contains("meeting:<UUID>") == true)
+            #expect(instructions?.contains("get_meeting with each UUID directly") == true)
         }
     }
 

@@ -15,6 +15,7 @@ final class SidebarViewModel {
     var selectedMeetingIds: Set<UUID> = []
     /// 現在の vault に属する全 meeting の一覧。
     var allMeetings: [MeetingOverviewItem] = []
+    private(set) var isMeetingCatalogLoaded = false
     /// 現在の vault に属する全 project の集約一覧。
     var allProjectItems: [ProjectOverviewItem] = []
     /// 現在の vault に属する全 instructions の一覧。
@@ -76,6 +77,7 @@ final class SidebarViewModel {
         fileWatcher = nil
         flatProjects.removeAll()
         allMeetings.removeAll()
+        isMeetingCatalogLoaded = false
         allProjectItems.removeAll()
         allInstructions.removeAll()
         allTags.removeAll()
@@ -208,12 +210,13 @@ final class SidebarViewModel {
             onError: { _ in },
             onChange: { [weak self] meetings in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.currentVault?.id == vaultId else { return }
                     // 挿入前に計算された古いスナップショットが選択直後に届くことがあるため、
                     // 「スナップショットに無い ID」ではなく「前回から消えた ID」だけを選択から外す。
                     let removedIds = Set(self.allMeetings.map(\.meetingId))
                         .subtracting(meetings.map(\.meetingId))
                     self.allMeetings = meetings
+                    self.isMeetingCatalogLoaded = true
                     if !removedIds.isEmpty {
                         self.selectedMeetingIds.subtract(removedIds)
                     }
