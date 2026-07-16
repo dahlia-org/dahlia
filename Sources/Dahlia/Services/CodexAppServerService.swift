@@ -1,3 +1,6 @@
+// JSON-RPC lifecycle and protocol handlers remain colocated behind one actor boundary.
+// swiftlint:disable file_length
+
 import Foundation
 import OSLog
 

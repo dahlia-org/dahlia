@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// 画像エンコードのユーティリティ。WebP 優先、非対応環境では JPEG にフォールバック。
 enum ImageEncoder {
     static let supportsWebP: Bool = {
-        let types = CGImageDestinationCopyTypeIdentifiers() as! [String]
+        let types = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
         return types.contains(UTType.webP.identifier)
     }()
 

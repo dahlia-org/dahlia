@@ -1,8 +1,12 @@
+// Migration order and helpers remain colocated so the complete schema history can be audited sequentially.
+// swiftlint:disable file_length
+
 import Foundation
 import GRDB
 
 /// アプリ全体で単一の SQLite データベースを管理する。
 /// `~/Library/Application Support/Dahlia/dahlia.sqlite` に配置する。
+// swiftlint:disable:next type_body_length
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
 
@@ -133,6 +137,8 @@ final class AppDatabaseManager: Sendable {
         }
     }
 
+    // The segmented recording tables form one atomic schema migration.
+    // swiftlint:disable:next function_body_length
     private static func addSegmentedRecordingAudioSchema(in db: Database) throws {
         // Some early development databases can legitimately contain only a subset of
         // the v3 schema. Keep those databases migratable without manufacturing parent

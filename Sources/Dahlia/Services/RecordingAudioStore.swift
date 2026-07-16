@@ -1,3 +1,6 @@
+// Audio mutation and reconciliation remain colocated behind this single actor boundary.
+// swiftlint:disable file_length type_body_length
+
 @preconcurrency import AVFoundation
 import CryptoKit
 import Darwin
@@ -109,6 +112,8 @@ actor RecordingAudioStore {
         sessionLeases[sessionId] = nil
     }
 
+    // Segment identity and durable audio metadata are accepted together to avoid partially initialized records.
+    // swiftlint:disable:next function_parameter_count
     func createSegment(
         meetingId: UUID,
         sessionId: UUID,

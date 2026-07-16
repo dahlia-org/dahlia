@@ -1,3 +1,6 @@
+// Recording, transcription, and persistence state remain under one established MainActor owner.
+// swiftlint:disable file_length
+
 import AppKit
 import Combine
 import CoreAudio
@@ -88,6 +91,7 @@ private struct RecordingPipelineFailure: LocalizedError {
 
 /// 音声キャプチャ → Speech フレームワーク文字起こし → UI 更新を統括するビューモデル。
 @MainActor
+// swiftlint:disable:next type_body_length
 final class CaptionViewModel: ObservableObject {
 
     // MARK: - Published State
@@ -2002,6 +2006,8 @@ final class CaptionViewModel: ObservableObject {
         triggerSummary(exportOptions: exportOptions)
     }
 
+    // Summary generation coordinates persistence and two optional export destinations as one user operation.
+    // swiftlint:disable:next function_body_length function_parameter_count
     func generateSummary(
         meetingId: UUID,
         transcriptText: String,

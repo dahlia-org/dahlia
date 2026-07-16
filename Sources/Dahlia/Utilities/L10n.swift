@@ -1,6 +1,10 @@
+// Localized accessors intentionally remain in one namespace for discoverability and key parity.
+// swiftlint:disable file_length
+
 import Foundation
 
 /// ローカライズ文字列への型安全なアクセスを提供する。
+// swiftlint:disable:next type_body_length
 enum L10n {
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。

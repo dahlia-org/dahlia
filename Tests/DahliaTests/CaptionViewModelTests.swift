@@ -347,7 +347,7 @@ import GRDB
         }
 
         @Test
-        func clearCurrentMeetingDiscardsDraftMeeting() {
+        func clearCurrentMeetingDiscardsDraftMeeting() throws {
             let viewModel = CaptionViewModel()
             let event = GoogleCalendarEvent(
                 id: "primary::event-1",
@@ -366,7 +366,7 @@ import GRDB
 
             viewModel.beginDraftMeeting(
                 from: event,
-                dbQueue: try! DatabaseQueue(path: ":memory:"),
+                dbQueue: try DatabaseQueue(path: ":memory:"),
                 vaultURL: testVaultURL
             )
             viewModel.clearCurrentMeeting()

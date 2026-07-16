@@ -3,9 +3,17 @@ import SwiftUI
 struct CodexChatWindowView: View {
     @Bindable var coordinator: CodexChatCoordinator
     @Bindable var sidebarViewModel: SidebarViewModel
-    let sessionID: CodexChatSessionID
+    @State private var sessionID: CodexChatSessionID
 
-    @Environment(\.openWindow) private var openWindow
+    init(
+        coordinator: CodexChatCoordinator,
+        sidebarViewModel: SidebarViewModel,
+        sessionID: CodexChatSessionID
+    ) {
+        self.coordinator = coordinator
+        self.sidebarViewModel = sidebarViewModel
+        _sessionID = State(initialValue: sessionID)
+    }
 
     var body: some View {
         Group {
@@ -17,9 +25,9 @@ struct CodexChatWindowView: View {
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     allowsPopOut: false,
-                    onNewChat: openNewWindow,
+                    onNewChat: startNewChat,
                     onPopOut: {},
-                    onHide: dismissWindow,
+                    onHide: nil,
                     onOpenHistory: openHistory
                 )
             } else {
@@ -33,21 +41,16 @@ struct CodexChatWindowView: View {
         }
     }
 
-    private func openNewWindow() {
-        let id = coordinator.newDetachedChat()
-        openWindow(id: WindowID.codexChat, value: id)
-    }
-
-    private func dismissWindow() {
-        NSApp.keyWindow?.performClose(nil)
+    private func startNewChat() {
+        sessionID = coordinator.newDetachedChat(replacing: sessionID)
     }
 
     private func openHistory(_ thread: CodexChatThreadSummary) {
         Task {
             let id = await coordinator.openHistoryThreadInDetachedWindow(thread)
             guard id != sessionID else { return }
-            dismissWindow()
-            openWindow(id: WindowID.codexChat, value: id)
+            coordinator.detachedWindowClosed(sessionID: sessionID)
+            sessionID = id
         }
     }
 }

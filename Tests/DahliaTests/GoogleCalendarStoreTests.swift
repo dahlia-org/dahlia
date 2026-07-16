@@ -495,6 +495,8 @@ private func isolatedUserDefaults() -> UserDefaults {
 
 @MainActor
 private func seedSelectedCalendars(_ ids: [String], defaults: UserDefaults) {
-    let data = try! JSONEncoder().encode(ids)
+    guard let data = try? JSONEncoder().encode(ids) else {
+        preconditionFailure("Static calendar identifiers must be JSON encodable")
+    }
     defaults.set(String(data: data, encoding: .utf8), forKey: GoogleCalendarStore.selectedCalendarIDsKey)
 }

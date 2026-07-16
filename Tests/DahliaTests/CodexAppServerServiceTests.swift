@@ -6,6 +6,8 @@ import Foundation
     import Testing
 
     @MainActor
+    // Protocol lifecycle scenarios share test doubles and are kept in one auditable suite.
+    // swiftlint:disable:next type_body_length
     struct CodexAppServerServiceTests {
         @Test
         func connectionIsInitializedOnceAndReused() async throws {

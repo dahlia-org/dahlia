@@ -92,6 +92,8 @@ import GRDB
         }
 
         @Test
+        // This regression test exercises the complete failed-batch recovery lifecycle.
+        // swiftlint:disable:next function_body_length
         func discardingFailedBatchCancelsPendingSummaryGeneration() async throws {
             let previouslyGeneratesSummary = AppSettings.shared.generateSummaryAfterBatchTranscription
             AppSettings.shared.generateSummaryAfterBatchTranscription = true

@@ -9,7 +9,7 @@ struct CodexChatHeader: View {
     let onShowHistory: () -> Void
     let onNewChat: () -> Void
     let onPopOut: () -> Void
-    let onHide: () -> Void
+    let onHide: (() -> Void)?
     var onDragChanged: ((CGSize) -> Void)?
     var onDragEnded: ((CGSize) -> Void)?
 
@@ -19,6 +19,7 @@ struct CodexChatHeader: View {
                 CodexChatIconButton(label: L10n.back, systemImage: "chevron.left", action: onBack)
                 Text(L10n.chatHistory)
                     .font(.body)
+                    .gesture(headerDragGesture, isEnabled: onDragChanged != nil)
             } else {
                 if hasConversation {
                     CodexChatIconButton(label: L10n.newChat, systemImage: "square.and.pencil", action: onNewChat)
@@ -29,9 +30,12 @@ struct CodexChatHeader: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .gesture(headerDragGesture, isEnabled: onDragChanged != nil)
             }
 
             Spacer(minLength: 8)
+                .contentShape(Rectangle())
+                .gesture(headerDragGesture, isEnabled: onDragChanged != nil)
 
             if !showsHistory {
                 CodexChatIconButton(
@@ -47,17 +51,17 @@ struct CodexChatHeader: View {
                     action: onPopOut
                 )
             }
-            CodexChatIconButton(label: L10n.hideChat, systemImage: "minus", action: onHide)
+            if let onHide {
+                CodexChatIconButton(label: L10n.hideChat, systemImage: "minus", action: onHide)
+            }
         }
         .padding(.horizontal, CodexChatDesign.headerHorizontalPadding)
         .frame(height: CodexChatDesign.headerHeight)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 3)
-                .onChanged { onDragChanged?($0.translation) }
-                .onEnded { onDragEnded?($0.translation) },
-            isEnabled: onDragChanged != nil
-        )
     }
 
+    private var headerDragGesture: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { onDragChanged?($0.translation) }
+            .onEnded { onDragEnded?($0.translation) }
+    }
 }

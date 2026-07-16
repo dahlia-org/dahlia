@@ -6,6 +6,8 @@ import GRDB
     import Testing
 
     @MainActor
+    // Migration coverage is intentionally kept in one suite so schema versions remain easy to audit together.
+    // swiftlint:disable:next type_body_length
     struct AppDatabaseManagerTests {
         @Test
         func databaseFileUsesPrivatePermissions() throws {
@@ -288,6 +290,8 @@ import GRDB
         }
 
         @Test
+        // This fixture spells out the complete v7 schema and migrated data assertions.
+        // swiftlint:disable:next function_body_length
         func existingV7DatabaseBackfillsRecordingSessionsWithoutDataLoss() throws {
             let databaseURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent(UUID().uuidString)

@@ -1,6 +1,8 @@
 import Foundation
 
 enum LegacyMarkdownSummaryParser {
+    // Markdown block recognition is intentionally centralized to preserve parsing precedence.
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func parse(
         markdown: String,
         title: String = "",
@@ -267,13 +269,20 @@ enum LegacyMarkdownSummaryParser {
         return (normalized, Array(refs.reversed()))
     }
 
-    private static let obsidianImageEmbedRegex = try! NSRegularExpression(
-        pattern: #"\!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
+    private static let obsidianImageEmbedRegex = regularExpression(
+        #"\!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
     )
 
-    private static let obsidianLinkRegex = try! NSRegularExpression(
-        pattern: #"(?<!!)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
+    private static let obsidianLinkRegex = regularExpression(
+        #"(?<!!)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"#
     )
+
+    private static func regularExpression(_ pattern: String) -> NSRegularExpression {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else {
+            preconditionFailure("Invalid static regular expression: \(pattern)")
+        }
+        return expression
+    }
 
     private static func bodyWithoutFrontmatter(_ markdown: String) -> String {
         let lines = markdown.components(separatedBy: "\n")

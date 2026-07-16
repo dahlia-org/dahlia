@@ -37,6 +37,19 @@ import Foundation
         }
 
         @Test
+        func replacingDetachedChatReusesWindowSessionSlot() {
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
+            let previousID = coordinator.newDetachedChat()
+
+            let replacementID = coordinator.newDetachedChat(replacing: previousID)
+
+            #expect(replacementID != previousID)
+            #expect(coordinator.session(for: previousID) == nil)
+            #expect(coordinator.detachedSessionIDs == [replacementID])
+            #expect(coordinator.sessions.count == 2)
+        }
+
+        @Test
         func closingDetachedThreadRemovesSessionAndUnsubscribes() async {
             let service = CoordinatorTestCodexChatService()
             let coordinator = CodexChatCoordinator(service: service)

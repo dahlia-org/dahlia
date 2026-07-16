@@ -1,3 +1,6 @@
+// Persistence lifecycle coverage is intentionally colocated for end-to-end readability.
+// swiftlint:disable file_length
+
 import Foundation
 import GRDB
 @testable import Dahlia

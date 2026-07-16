@@ -16,6 +16,8 @@ import GRDB
 
     @MainActor
     @Suite(.serialized)
+    // Segment lifecycle scenarios share one serialized suite and common fixtures.
+    // swiftlint:disable:next type_body_length
     struct BatchAudioRecordingSessionTests {
         @Test
         func finalizesImmutableSegmentWithIntegrityMetadataAndLocaleRanges() async throws {

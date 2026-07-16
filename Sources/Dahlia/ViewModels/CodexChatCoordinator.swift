@@ -108,6 +108,12 @@ final class CodexChatCoordinator {
         return session.id
     }
 
+    func newDetachedChat(replacing sessionID: CodexChatSessionID) -> CodexChatSessionID {
+        let replacementID = newDetachedChat()
+        detachedWindowClosed(sessionID: sessionID)
+        return replacementID
+    }
+
     func openHistoryThread(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
         let vaultID = floatingSession.vaultID
         if let existing = sessions.values.first(where: {

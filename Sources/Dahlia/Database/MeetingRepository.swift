@@ -3,6 +3,8 @@ import GRDB
 
 /// ミーティング・セグメント・プロジェクト・保管庫の DB クエリを集約するリポジトリ。
 @MainActor
+// Query methods share one MainActor-isolated database boundary.
+// swiftlint:disable:next type_body_length
 final class MeetingRepository {
     struct AppendRecordingContext {
         let meetingCreatedAt: Date?

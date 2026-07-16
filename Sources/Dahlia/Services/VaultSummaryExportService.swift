@@ -6,6 +6,8 @@ enum VaultSummaryExportService {
     typealias ScreenshotExporter = @Sendable (URL, [MeetingScreenshotRecord]) throws -> [String]
     typealias SummaryWriter = @Sendable (URL, String) throws -> URL
 
+    // The public export boundary mirrors the complete summary bundle payload.
+    // swiftlint:disable:next function_parameter_count
     static func exportSummaryBundle(
         projectURL: URL?,
         vaultURL: URL,
@@ -37,6 +39,8 @@ enum VaultSummaryExportService {
         )
     }
 
+    // Test seams add exporter closures to the same complete payload.
+    // swiftlint:disable:next function_parameter_count
     static func exportSummaryBundle(
         projectURL: URL?,
         vaultURL: URL,
