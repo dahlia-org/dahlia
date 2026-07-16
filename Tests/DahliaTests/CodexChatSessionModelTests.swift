@@ -159,6 +159,108 @@ import Foundation
             #expect(session.messages.isEmpty)
         }
 
+        @Test
+        func everyTurnUsesLatestContextWithoutExposingPromptMarkup() async throws {
+            let service = TestCodexChatService(mode: .staleRollout)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let firstContext = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
+                name: "First",
+                calendarEvent: nil
+            )
+            let secondContext = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")),
+                name: "Second",
+                calendarEvent: nil
+            )
+            let contextProvider = TestCodexChatContextProvider(context: firstContext)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+
+            session.draft = "First question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            contextProvider.context = secondContext
+            session.draft = "Second question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(await service.sentTexts == [
+                CodexChatPromptCodec.encode(text: "First question", context: firstContext),
+                CodexChatPromptCodec.encode(text: "Second question", context: secondContext),
+            ])
+            #expect(session.messages.filter { $0.role == .user }.map(\.text) == [
+                "First question", "Second question",
+            ])
+            #expect(session.messages.filter { $0.role == .user }.map(\.context) == [
+                firstContext, secondContext,
+            ])
+        }
+
+        @Test
+        func contextFailureKeepsDraftAndDoesNotSend() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider(
+                error: CodexAppServerError.invalidProtocolResponse
+            )
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Keep this"
+
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.draft == "Keep this")
+            #expect(session.messages.isEmpty)
+            #expect(session.errorMessage != nil)
+            #expect(await service.sentTexts.isEmpty)
+        }
+
+        @Test
+        func unavailableSelectedMeetingKeepsDraftAndDoesNotSend() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let contextProvider = CodexChatContextProvider()
+            contextProvider.update(
+                vaultID: vault.id,
+                meetingID: UUID.v7(),
+                draftMeeting: nil,
+                dbQueue: nil
+            )
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Keep selected meeting question"
+
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.draft == "Keep selected meeting question")
+            #expect(session.messages.isEmpty)
+            #expect(session.errorMessage == L10n.chatSelectedMeetingUnavailable)
+            #expect(await service.sentTexts.isEmpty)
+        }
+
         private static func testVault() -> VaultRecord {
             VaultRecord(
                 id: .v7(),
@@ -190,7 +292,7 @@ import Foundation
         }
     }
 
-    private actor TestCodexChatService: CodexChatServicing {
+    actor TestCodexChatService: CodexChatServicing {
         enum Mode {
             case complete
             case block
@@ -230,10 +332,17 @@ import Foundation
             case .staleRollout, .multipleMessages:
                 []
             }
+            let decoded = CodexChatPromptCodec.decode(sentTexts.last ?? "Question")
             return CodexChatThread(
                 id: id,
                 title: "Question",
-                messages: [CodexChatMessage(role: .user, text: sentTexts.last ?? "Question")] + assistantMessages,
+                messages: [
+                    CodexChatMessage(
+                        role: .user,
+                        text: decoded.text,
+                        context: decoded.context
+                    ),
+                ] + assistantMessages,
                 model: nil,
                 reasoningEffort: nil
             )
@@ -313,4 +422,26 @@ import Foundation
             inputModalities: ["text"]
         )
     }
+
+    @MainActor
+    private final class TestCodexChatContextProvider: CodexChatContextProviding {
+        var context: CodexChatContext?
+        private let error: CodexAppServerError?
+
+        init(
+            context: CodexChatContext? = nil,
+            error: CodexAppServerError? = nil
+        ) {
+            self.context = context
+            self.error = error
+        }
+
+        func currentContext(vaultID _: UUID) async throws -> CodexChatContext? {
+            if let error {
+                throw error
+            }
+            return context
+        }
+    }
+
 #endif

@@ -4,12 +4,17 @@ struct CodexChatConversationView: View {
     let messages: [CodexChatMessage]
 
     var body: some View {
+        let items = CodexChatConversationItem.build(from: messages)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
-                    ForEach(messages) { message in
-                        CodexChatMessageRow(message: message)
-                            .id(message.id)
+                    ForEach(items) { item in
+                        switch item {
+                        case let .contextDivider(_, context):
+                            CodexChatContextDivider(context: context)
+                        case let .message(message):
+                            CodexChatMessageRow(message: message)
+                        }
                     }
                     Color.clear
                         .frame(height: 1)

@@ -51,6 +51,8 @@ import Foundation
             let config = try #require(threadParams["config"]?.objectValue)
             expectChatConfiguration(config, vaultID: vaultID)
             #expect(threadParams["developerInstructions"]?.stringValue?.contains("query_meetings") == true)
+            #expect(threadParams["developerInstructions"]?.stringValue?.contains("meeting_id directly") == true)
+            #expect(threadParams["developerInstructions"]?.stringValue?.contains("MeetingDraft") == true)
 
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"
@@ -126,6 +128,13 @@ import Foundation
             #expect(loaded.messages[2].reasoning == "Reasoning without an answer")
             #expect(resumed.model == "default-model")
             #expect(resumed.reasoningEffort == "high")
+            guard case let .meeting(meetingID, meetingName, calendarEvent) = loaded.messages[0].context else {
+                Issue.record("Expected restored Meeting context")
+                return
+            }
+            #expect(meetingID.uuidString == "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")
+            #expect(meetingName == "History meeting")
+            #expect(calendarEvent == nil)
 
             let listParams = try #require(await transport.messages().first {
                 $0.objectValue?["method"]?.stringValue == "thread/list"

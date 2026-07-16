@@ -1,6 +1,17 @@
 @testable import Dahlia
 
 enum TestCodexChatFixtures {
+    private static let historyUserPrompt = """
+    <context>
+      You are viewing a meeting in the Dahlia App.
+      Type: Meeting
+      <meeting_id>AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA</meeting_id>
+      <meeting_name>History meeting</meeting_name>
+    </context>
+
+    Question
+    """
+
     nonisolated static var modelList: JSONValue {
         .object([
             "data": .array([
@@ -42,7 +53,10 @@ enum TestCodexChatFixtures {
                             "id": .string("user-1"),
                             "type": .string("userMessage"),
                             "content": .array([
-                                .object(["type": .string("text"), "text": .string("Question")]),
+                                .object([
+                                    "type": .string("text"),
+                                    "text": .string(historyUserPrompt),
+                                ]),
                             ]),
                         ]),
                         .object([

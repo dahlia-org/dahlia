@@ -157,6 +157,18 @@ enum L10n {
     static var projectCreationFailed: String { String(localized: "Could Not Create Project", bundle: bundle) }
     static var projectCreationFailedDescription: String { String(localized: "The project folder could not be created.", bundle: bundle) }
     static var newMeeting: String { String(localized: "New meeting", bundle: bundle) }
+    static func chatMeetingDraft(_ name: String) -> String {
+        String(localized: "Meeting draft: \(name)", bundle: bundle)
+    }
+
+    static func chatContextChanged(_ name: String) -> String {
+        String(localized: "Context changed to \(name)", bundle: bundle)
+    }
+
+    static var chatSelectedMeetingUnavailable: String {
+        String(localized: "The selected meeting is no longer available.", bundle: bundle)
+    }
+
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
     static var renameProject: String { String(localized: "Rename Project", bundle: bundle) }
     static var projectNameHelp: String { String(

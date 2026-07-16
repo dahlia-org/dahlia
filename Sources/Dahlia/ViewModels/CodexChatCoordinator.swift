@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 
 @MainActor
@@ -15,6 +16,7 @@ final class CodexChatCoordinator {
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private let contextProvider: CodexChatContextProvider
     @ObservationIgnored private var historyGeneration = 0
 
     init(
@@ -23,7 +25,13 @@ final class CodexChatCoordinator {
     ) {
         self.service = service
         self.settings = settings
-        let session = CodexChatSessionModel(service: service, settings: settings)
+        let contextProvider = CodexChatContextProvider()
+        self.contextProvider = contextProvider
+        let session = CodexChatSessionModel(
+            service: service,
+            settings: settings,
+            contextProvider: contextProvider
+        )
         floatingSessionID = session.id
         sessions[session.id] = session
     }
@@ -41,7 +49,7 @@ final class CodexChatCoordinator {
 
     func ensureDetachedSession(id: CodexChatSessionID) {
         if sessions[id] == nil {
-            sessions[id] = CodexChatSessionModel(id: id, service: service, settings: settings)
+            sessions[id] = makeSession(id: id)
         }
         detachedSessionIDs.insert(id)
     }
@@ -54,7 +62,8 @@ final class CodexChatCoordinator {
 
     func activateVault(_ vaultID: UUID) {
         guard floatingSession.vaultID != vaultID else { return }
-        let session = CodexChatSessionModel(vaultID: vaultID, service: service, settings: settings)
+        contextProvider.update(vaultID: vaultID, meetingID: nil, draftMeeting: nil, dbQueue: nil)
+        let session = makeSession(vaultID: vaultID)
         replaceFloatingSession(with: session, isVisible: isFloatingVisible)
         historyGeneration += 1
         history = []
@@ -72,7 +81,7 @@ final class CodexChatCoordinator {
     }
 
     func newFloatingChat() {
-        let session = CodexChatSessionModel(service: service, settings: settings)
+        let session = makeSession()
         replaceFloatingSession(with: session, isVisible: true)
         Task { await session.prepare() }
         Task { await refreshHistory() }
@@ -81,7 +90,7 @@ final class CodexChatCoordinator {
     func popOutFloating() -> CodexChatSessionID {
         let id = floatingSessionID
         detachedSessionIDs.insert(id)
-        let replacement = CodexChatSessionModel(service: service, settings: settings)
+        let replacement = makeSession()
         replaceFloatingSession(with: replacement, isVisible: false)
         return id
     }
@@ -92,7 +101,7 @@ final class CodexChatCoordinator {
     }
 
     func newDetachedChat() -> CodexChatSessionID {
-        let session = CodexChatSessionModel(service: service, settings: settings)
+        let session = makeSession()
         sessions[session.id] = session
         detachedSessionIDs.insert(session.id)
         Task { await session.prepare() }
@@ -110,12 +119,10 @@ final class CodexChatCoordinator {
             return existing.id
         }
 
-        let session = CodexChatSessionModel(
+        let session = makeSession(
             vaultID: vaultID,
             backendThreadID: thread.id,
-            title: thread.title,
-            service: service,
-            settings: settings
+            title: thread.title
         )
         replaceFloatingSession(with: session, isVisible: true)
         await session.restore()
@@ -129,7 +136,7 @@ final class CodexChatCoordinator {
         }) {
             if existing.id == floatingSessionID {
                 detachedSessionIDs.insert(existing.id)
-                let replacement = CodexChatSessionModel(service: service, settings: settings)
+                let replacement = makeSession()
                 replaceFloatingSession(with: replacement, isVisible: false)
             } else {
                 detachedSessionIDs.insert(existing.id)
@@ -137,17 +144,29 @@ final class CodexChatCoordinator {
             return existing.id
         }
 
-        let session = CodexChatSessionModel(
+        let session = makeSession(
             vaultID: vaultID,
             backendThreadID: thread.id,
-            title: thread.title,
-            service: service,
-            settings: settings
+            title: thread.title
         )
         sessions[session.id] = session
         detachedSessionIDs.insert(session.id)
         await session.restore()
         return session.id
+    }
+
+    func updateCurrentContext(
+        vaultID: UUID?,
+        meetingID: UUID?,
+        draftMeeting: DraftMeeting?,
+        dbQueue: DatabaseQueue?
+    ) {
+        contextProvider.update(
+            vaultID: vaultID,
+            meetingID: meetingID,
+            draftMeeting: draftMeeting,
+            dbQueue: dbQueue
+        )
     }
 
     func refreshHistory() async {
@@ -206,5 +225,22 @@ final class CodexChatCoordinator {
         floatingSessionID = session.id
         isFloatingVisible = isVisible
         removeSessionIfUnused(previousID)
+    }
+
+    private func makeSession(
+        id: CodexChatSessionID = CodexChatSessionID(),
+        vaultID: UUID? = nil,
+        backendThreadID: String? = nil,
+        title: String = ""
+    ) -> CodexChatSessionModel {
+        CodexChatSessionModel(
+            id: id,
+            vaultID: vaultID,
+            backendThreadID: backendThreadID,
+            title: title,
+            service: service,
+            settings: settings,
+            contextProvider: contextProvider
+        )
     }
 }

@@ -11,18 +11,21 @@ struct CodexChatMessage: Identifiable, Equatable {
     var text: String
     var reasoning: String
     var isStreaming: Bool
+    var context: CodexChatContext?
 
     init(
         id: String = UUID.v7().uuidString,
         role: Role,
         text: String,
         reasoning: String = "",
-        isStreaming: Bool = false
+        isStreaming: Bool = false,
+        context: CodexChatContext? = nil
     ) {
         self.id = id
         self.role = role
         self.text = text
         self.reasoning = reasoning
         self.isStreaming = isStreaming
+        self.context = context
     }
 }

@@ -64,6 +64,9 @@
 "Could Not Create Project" = "Could Not Create Project";
 "The project folder could not be created." = "The project folder could not be created.";
 "New meeting" = "New meeting";
+"Meeting draft: %@" = "Meeting draft: %@";
+"Context changed to %@" = "Context changed to %@";
+"The selected meeting is no longer available." = "The selected meeting is no longer available.";
 "Project Name" = "Project Name";
 "Rename Project" = "Rename Project";
 "Renaming also updates the project folder and all subprojects." = "Renaming also updates the project folder and all subprojects.";
