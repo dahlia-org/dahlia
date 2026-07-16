@@ -8,18 +8,18 @@ import GRDB
     @MainActor
     struct SummaryVaultPathMigrationTests {
         @Test
-        func initializesDatabaseWithSummaryVaultRelativePathColumn() throws {
+        func initializesDatabaseWithoutSummaryVaultRelativePathColumn() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
             }
 
-            #expect(columns.contains("vaultRelativePath"))
+            #expect(columns == ["meetingId", "title", "document", "createdAt"])
         }
 
         @Test
-        func existingV12DatabaseAddsColumnWithoutDataLoss() throws {
+        func existingV12DatabaseDropsRowsWithoutValidDocuments() throws {
             let databaseURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString)
                 .appendingPathExtension("sqlite")
@@ -37,16 +37,12 @@ import GRDB
             let migrated = try AppDatabaseManager(path: databaseURL.path)
             let result = try migrated.dbQueue.read { db in
                 let columns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')")
-                let row = try Row.fetchOne(db, sql: "SELECT * FROM summaries WHERE meetingId = ?", arguments: [meetingId])
-                return try (columns, #require(row))
+                let row = try SummaryRecord.fetchOne(db, key: meetingId)
+                return (columns, row)
             }
-            let vaultRelativePath: String? = result.1["vaultRelativePath"]
 
-            #expect(result.0.contains("vaultRelativePath"))
-            #expect(result.1["title"] == "Legacy")
-            #expect(result.1["summary"] == "Body")
-            #expect(result.1["googleFileId"] == "drive-id")
-            #expect(vaultRelativePath == nil)
+            #expect(result.0 == ["meetingId", "title", "document", "createdAt"])
+            #expect(result.1 == nil)
         }
 
         private func createV12SummaryDatabase(

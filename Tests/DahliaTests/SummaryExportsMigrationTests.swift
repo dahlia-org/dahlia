@@ -8,64 +8,98 @@ import GRDB
     @MainActor
     struct SummaryExportsMigrationTests {
         @Test
-        func initializesDatabaseWithSummaryExportsTable() throws {
+        func initializesDatabaseWithCanonicalSummarySchema() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
-            let columns = try database.dbQueue.read { db in
-                try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_exports')")
+            let result = try database.dbQueue.read { db in
+                try (
+                    db.columns(in: "summaries"),
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summary_exports')")
+                )
             }
 
-            #expect(columns == ["meetingId", "type", "url", "createdAt", "updatedAt"])
+            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
+            #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
+            #expect(result.1 == ["meetingId", "type", "url", "createdAt", "updatedAt"])
         }
 
         @Test
-        func migratesLegacyExportLocationsWithoutRemovingLegacyValues() throws {
+        func removesLegacyColumnsAndKeepsExportsForValidDocuments() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: UUID.v7().uuidString)
                 .appendingPathExtension("sqlite")
-            let meetingId = UUID.v7()
+            let validMeetingId = UUID.v7()
+            let legacyGoogleMeetingId = UUID.v7()
+            let nilDocumentMeetingId = UUID.v7()
+            let invalidDocumentMeetingId = UUID.v7()
             let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
             defer { try? FileManager.default.removeItem(at: databaseURL) }
 
             let legacyQueue = try DatabaseQueue(path: databaseURL.path)
-            try createV18SummaryDatabase(
+            try createV20SummaryDatabase(
                 in: legacyQueue,
-                meetingId: meetingId,
+                validMeetingId: validMeetingId,
+                legacyGoogleMeetingId: legacyGoogleMeetingId,
+                nilDocumentMeetingId: nilDocumentMeetingId,
+                invalidDocumentMeetingId: invalidDocumentMeetingId,
                 createdAt: createdAt
             )
 
             let migrated = try AppDatabaseManager(path: databaseURL.path)
             let result = try migrated.dbQueue.read { db in
-                let exports = try SummaryExportRecord
-                    .filter(Column("meetingId") == meetingId)
-                    .order(Column("type"))
-                    .fetchAll(db)
-                let legacy = try Row.fetchOne(
-                    db,
-                    sql: "SELECT vaultRelativePath, googleFileId FROM summaries WHERE meetingId = ?",
-                    arguments: [meetingId]
+                try (
+                    db.columns(in: "summaries"),
+                    SummaryRecord.fetchOne(db, key: validMeetingId),
+                    SummaryRecord.fetchOne(db, key: legacyGoogleMeetingId),
+                    SummaryExportRecord
+                        .filter(Column("meetingId") == validMeetingId)
+                        .order(Column("type"))
+                        .fetchAll(db),
+                    SummaryExportRecord
+                        .filter(Column("meetingId") == legacyGoogleMeetingId)
+                        .fetchAll(db),
+                    SummaryRecord.fetchCount(db),
+                    SummaryExportRecord.fetchCount(db)
                 )
-                return try (exports, #require(legacy))
             }
 
-            #expect(result.0 == [
+            #expect(result.0.map(\.name) == ["meetingId", "title", "document", "createdAt"])
+            #expect(result.0.first(where: { $0.name == "document" })?.isNotNull == true)
+            #expect(result.1?.title == "Stored SQL title")
+            #expect(result.1?.createdAt == createdAt)
+            #expect(try result.1?.loadDocument().title == "Canonical")
+            #expect(result.2?.meetingId == legacyGoogleMeetingId)
+            #expect(result.3 == [
                 SummaryExportRecord(
-                    meetingId: meetingId,
+                    meetingId: validMeetingId,
                     type: .googleDocs,
-                    url: "https://docs.google.com/document/d/google-123/edit",
+                    url: "https://example.com/canonical-google-doc",
                     createdAt: createdAt,
                     updatedAt: createdAt
                 ),
                 SummaryExportRecord(
-                    meetingId: meetingId,
+                    meetingId: validMeetingId,
                     type: .vault,
                     url: "vault:///Project/Summary.md",
                     createdAt: createdAt,
                     updatedAt: createdAt
                 ),
             ])
-            #expect(result.1["vaultRelativePath"] == "Project/Summary.md" as String?)
-            #expect(result.1["googleFileId"] == "google-123" as String?)
+            #expect(result.4.map(\.url) == ["https://docs.google.com/document/d/legacy-google-only/edit"])
+            #expect(result.5 == 2)
+            #expect(result.6 == 3)
+
+            try migrated.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM meetings WHERE id = ?", arguments: [validMeetingId])
+            }
+            let deletedCounts = try migrated.dbQueue.read { db in
+                try (
+                    SummaryRecord.filter(Column("meetingId") == validMeetingId).fetchCount(db),
+                    SummaryExportRecord.filter(Column("meetingId") == validMeetingId).fetchCount(db)
+                )
+            }
+            #expect(deletedCounts.0 == 0)
+            #expect(deletedCounts.1 == 0)
         }
 
         @Test
@@ -83,29 +117,49 @@ import GRDB
             #expect(record.vaultRelativePath == "Project/My Summary #1.md")
         }
 
-        private func createV18SummaryDatabase(
+        private func createV20SummaryDatabase(
             in dbQueue: DatabaseQueue,
-            meetingId: UUID,
+            validMeetingId: UUID,
+            legacyGoogleMeetingId: UUID,
+            nilDocumentMeetingId: UUID,
+            invalidDocumentMeetingId: UUID,
             createdAt: Date
         ) throws {
+            let validDocument = try SummaryDocument(
+                title: "Canonical",
+                sections: [SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("Body")])]
+            ).databaseJSONString()
             try dbQueue.write { db in
+                try db.create(table: "meetings") { table in
+                    table.primaryKey("id", .blob)
+                }
                 try db.execute(
-                    sql: """
-                    CREATE TABLE summaries (
-                        meetingId BLOB PRIMARY KEY,
-                        title TEXT NOT NULL DEFAULT '',
-                        summary TEXT NOT NULL,
-                        document TEXT,
-                        vaultRelativePath TEXT,
-                        googleFileId TEXT,
-                        createdAt DATETIME NOT NULL
-                    )
-                    """
+                    sql: "INSERT INTO meetings (id) VALUES (?), (?), (?), (?)",
+                    arguments: [validMeetingId, legacyGoogleMeetingId, nilDocumentMeetingId, invalidDocumentMeetingId]
                 )
+                try db.create(table: "summaries") { table in
+                    table.primaryKey("meetingId", .blob)
+                        .references("meetings", onDelete: .cascade)
+                    table.column("title", .text).notNull().defaults(to: "")
+                    table.column("summary", .text).notNull()
+                    table.column("document", .text)
+                    table.column("vaultRelativePath", .text)
+                    table.column("googleFileId", .text)
+                    table.column("createdAt", .datetime).notNull()
+                }
+                try db.create(table: "summary_exports") { table in
+                    table.column("meetingId", .blob).notNull()
+                        .references("summaries", column: "meetingId", onDelete: .cascade)
+                    table.column("type", .text).notNull()
+                    table.column("url", .text).notNull()
+                    table.column("createdAt", .datetime).notNull()
+                    table.column("updatedAt", .datetime).notNull()
+                    table.primaryKey(["meetingId", "type"])
+                }
                 try db.create(table: "grdb_migrations") { table in
                     table.column("identifier", .text).primaryKey()
                 }
-                for migration in Self.v18MigrationIdentifiers {
+                for migration in Self.v20MigrationIdentifiers {
                     try db.execute(
                         sql: "INSERT INTO grdb_migrations (identifier) VALUES (?)",
                         arguments: [migration]
@@ -115,22 +169,33 @@ import GRDB
                     sql: """
                     INSERT INTO summaries (
                         meetingId, title, summary, document, vaultRelativePath, googleFileId, createdAt
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES
+                        (?, 'Stored SQL title', 'Legacy body', ?, 'Project/Summary.md', 'legacy-google', ?),
+                        (?, 'Legacy Google', 'Legacy body', ?, NULL, 'legacy-google-only', ?),
+                        (?, 'No document', 'Ignored', NULL, 'Ignored/Nil.md', NULL, ?),
+                        (?, 'Invalid document', 'Ignored', 'not-json', 'Ignored/Invalid.md', NULL, ?)
                     """,
                     arguments: [
-                        meetingId,
-                        "Legacy",
-                        "Body",
-                        nil,
-                        "Project/Summary.md",
-                        "google-123",
-                        createdAt,
+                        validMeetingId, validDocument, createdAt,
+                        legacyGoogleMeetingId, validDocument, createdAt,
+                        nilDocumentMeetingId, createdAt,
+                        invalidDocumentMeetingId, createdAt,
+                    ]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO summary_exports (meetingId, type, url, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        validMeetingId, SummaryExportType.googleDocs, "https://example.com/canonical-google-doc", createdAt, createdAt,
+                        invalidDocumentMeetingId, SummaryExportType.googleDocs, "https://example.com/ignored", createdAt, createdAt,
                     ]
                 )
             }
         }
 
-        private static let v18MigrationIdentifiers = [
+        private static let v20MigrationIdentifiers = [
             "v3_googleDriveFolderSchema",
             "v4_instructionsSchema",
             "v5_summaryGoogleFileId",
@@ -147,6 +212,8 @@ import GRDB
             "v16_calendarEventURL",
             "v17_calendarEventIntegrity",
             "v18_segmentedRecordingAudio",
+            "v19_summaryExports",
+            "v20_meetingDescription",
         ]
     }
 #endif

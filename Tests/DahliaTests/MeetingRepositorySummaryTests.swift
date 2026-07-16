@@ -34,7 +34,6 @@ import GRDB
             try context.repo.applyGeneratedSummary(
                 toMeetingId: context.meeting.id,
                 document: document,
-                renderedBody: "Summary body",
                 tags: ["team"]
             )
 
@@ -48,8 +47,7 @@ import GRDB
             let fetchedSummary = try context.repo.fetchSummary(forMeetingId: context.meeting.id)
             let summary = try #require(fetchedSummary)
 
-            #expect(summary.summary == "Summary body")
-            #expect(summary.loadDocument() == document)
+            #expect(try summary.loadDocument() == document)
             let meeting = try #require(try context.repo.fetchMeeting(id: context.meeting.id))
             #expect(meeting.name == "Weekly sync")
             #expect(meeting.description == "Planning and launch decisions")
@@ -60,26 +58,17 @@ import GRDB
         }
 
         @Test
-        func legacySummaryRecordLoadsDocumentFromMarkdownFallback() {
+        func invalidSummaryDocumentThrows() {
             let record = SummaryRecord(
                 meetingId: UUID.v7(),
-                title: "Legacy",
-                summary: "## Summary\n\n- Decide [[meeting#00:10:00|00:10:00]]",
-                document: nil,
-                vaultRelativePath: nil,
-                googleFileId: nil,
-                createdAt: Date()
+                title: "Invalid",
+                document: "not-json",
+                createdAt: .now
             )
 
-            let document = record.loadDocument()
-
-            #expect(document.title == "Legacy")
-            #expect(document.sections.first?.heading == "Summary")
-            #expect(document.sections.first?.blocks == [
-                .bulletedList(
-                    items: [SummaryText("Decide", transcriptRef: TranscriptReference(time: "00:10:00"))]
-                ),
-            ])
+            #expect(throws: DecodingError.self) {
+                try record.loadDocument()
+            }
         }
 
         @Test
@@ -89,11 +78,17 @@ import GRDB
                 SummaryRecord(
                     meetingId: context.meeting.id,
                     title: "Old",
-                    summary: "Old body",
-                    vaultRelativePath: "Acme/Existing.md",
-                    googleFileId: "old-google-file",
+                    document: try SummaryDocument(title: "Old", sections: []).databaseJSONString(),
                     createdAt: .now
                 )
+            )
+            try context.repo.updateSummaryVaultRelativePath(
+                forMeetingId: context.meeting.id,
+                relativePath: "Acme/Existing.md"
+            )
+            try context.repo.updateSummaryGoogleFileId(
+                forMeetingId: context.meeting.id,
+                googleFileId: "old-google-file"
             )
             let document = SummaryDocument(
                 title: "Updated",
@@ -104,14 +99,9 @@ import GRDB
             try context.repo.applyGeneratedSummary(
                 toMeetingId: context.meeting.id,
                 document: document,
-                renderedBody: "New body",
                 tags: []
             )
 
-            let fetchedSummary = try context.repo.fetchSummary(forMeetingId: context.meeting.id)
-            let summary = try #require(fetchedSummary)
-            #expect(summary.vaultRelativePath == nil)
-            #expect(summary.googleFileId == nil)
             #expect(try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
                 type: .vault
@@ -129,9 +119,7 @@ import GRDB
                 SummaryRecord(
                     meetingId: context.meeting.id,
                     title: "Summary",
-                    summary: "Body",
-                    vaultRelativePath: nil,
-                    googleFileId: nil,
+                    document: try SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
                     createdAt: .now
                 )
             )
@@ -183,7 +171,6 @@ import GRDB
                     description: "First description",
                     sections: []
                 ),
-                renderedBody: "First",
                 tags: []
             )
             try context.repo.applyGeneratedSummary(
@@ -193,7 +180,6 @@ import GRDB
                     description: "  ",
                     sections: []
                 ),
-                renderedBody: "Second",
                 tags: []
             )
 
@@ -237,7 +223,6 @@ import GRDB
             try context.repo.applyGeneratedSummary(
                 toMeetingId: context.meeting.id,
                 document: document,
-                renderedBody: "Launch screen",
                 tags: []
             )
 
@@ -252,7 +237,7 @@ import GRDB
         }
 
         @Test
-        func deletingUnreferencedScreenshotDoesNotConvertLegacySummaryDocument() async throws {
+        func deletingUnreferencedScreenshotDoesNotChangeSummaryDocument() async throws {
             let context = try makeRepositoryContext()
             let screenshot = MeetingScreenshotRecord(
                 id: .v7(),
@@ -264,17 +249,16 @@ import GRDB
             try await context.manager.dbQueue.write { db in
                 try screenshot.insert(db)
             }
-            try context.repo.upsertSummary(
-                SummaryRecord(
-                    meetingId: context.meeting.id,
-                    title: "Legacy",
-                    summary: "## Notes\n\nNo screenshot reference",
-                    document: nil,
-                    vaultRelativePath: nil,
-                    googleFileId: nil,
-                    createdAt: .now
-                )
+            let document = SummaryDocument(
+                title: "Summary",
+                sections: [SummarySection(id: .v7(), heading: "Notes", blocks: [.paragraph("No screenshot reference")])]
             )
+            try context.repo.upsertSummary(SummaryRecord(
+                meetingId: context.meeting.id,
+                title: document.title,
+                document: try document.databaseJSONString(),
+                createdAt: .now
+            ))
 
             let deletedScreenshots = try await context.repo.deleteScreenshots(
                 ids: [screenshot.id],
@@ -282,7 +266,7 @@ import GRDB
             )
 
             #expect(deletedScreenshots.map(\.id) == [screenshot.id])
-            #expect(try context.repo.fetchSummary(forMeetingId: context.meeting.id)?.document == nil)
+            #expect(try context.repo.fetchSummary(forMeetingId: context.meeting.id)?.loadDocument() == document)
         }
 
         private func makeRepositoryContext() throws -> RepositoryContext {

@@ -270,7 +270,7 @@ public final class DahliaMCPServer {
         [
             "name": "get_meeting",
             "title": "Get meeting",
-            "description": "Get meeting metadata and its stored Markdown summary from the configured vault. Returns null when no summary exists.",
+            "description": "Get meeting metadata and a Markdown summary generated from its stored document. Returns null when no summary exists.",
             "inputSchema": [
                 "type": "object",
                 "properties": ["meeting_id": ["type": "string", "format": "uuid"]],

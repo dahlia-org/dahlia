@@ -115,6 +115,10 @@ final class AppDatabaseManager: Sendable {
             try addMeetingDescriptionColumnIfNeeded(in: db)
         }
 
+        migrator.registerMigration("v21_removeLegacySummaryColumns") { db in
+            try LegacySummaryColumnsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

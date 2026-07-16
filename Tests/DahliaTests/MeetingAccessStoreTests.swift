@@ -1,4 +1,4 @@
-import DahliaMeetingAccess
+@testable import DahliaMeetingAccess
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -50,8 +50,9 @@ import GRDB
             #expect(detail.meeting.name == "AI planning title")
             #expect(detail.meeting.description == "Product planning decisions")
             #expect(detail.meeting.calendarTitle == "Roadmap review")
-            #expect(detail.summary == "Markdown secret body")
+            #expect(detail.summary == "# AI planning title\n\n## Summary\n\nMarkdown secret body")
             #expect(detail.meeting.transcriptSegmentCount == 2)
+            #expect(try store.meeting(id: fixture.secondMeetingID).summary == nil)
             #expect(throws: MeetingAccessError.meetingNotFound) {
                 try store.meeting(id: fixture.otherVaultMeetingID)
             }
@@ -135,7 +136,7 @@ import GRDB
                 .uuidString)"}}}
             """#))
             #expect(((meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["summary"] as? String ==
-                "Markdown secret body")
+                "# AI planning title\n\n## Summary\n\nMarkdown secret body")
 
             let transcriptCall = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"get_meeting_transcript","arguments":{"meeting_id":"\#(fixture
@@ -186,6 +187,120 @@ import GRDB
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.scopedVault()
             }
+        }
+
+        @Test
+        func v20SummaryColumnsRequireOpeningDahliaForMigration() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v20-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vaultID = UUID.v7()
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try queue.write { db in
+                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, description TEXT NOT NULL)")
+                try db.execute(
+                    sql: """
+                    CREATE TABLE summaries (
+                        meetingId BLOB PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        summary TEXT NOT NULL,
+                        document TEXT,
+                        googleFileId TEXT,
+                        vaultRelativePath TEXT,
+                        createdAt DATETIME NOT NULL
+                    )
+                    """
+                )
+                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+            }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
+        }
+
+        @Test
+        func invalidSummaryDocumentReturnsDedicatedError() throws {
+            let fixture = try Fixture()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE summaries SET document = 'not-json' WHERE meetingId = ?",
+                    arguments: [fixture.firstMeetingID]
+                )
+            }
+
+            #expect(throws: MeetingAccessError.invalidSummaryDocument) {
+                try fixture.store(vaultID: fixture.primaryVaultID).meeting(id: fixture.firstMeetingID)
+            }
+        }
+
+        @Test
+        func storedDocumentRendererGeneratesGenericMarkdownForAllBlocks() throws {
+            let document = SummaryDocument(
+                title: "Release plan",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Decision",
+                        blocks: [
+                            .paragraph("Ship it", transcriptRef: TranscriptReference(time: "00:00:01")),
+                            .bulletedList(items: ["Alpha", "Beta"]),
+                            .numberedList(items: ["First", "Second"]),
+                            .checklist(items: [
+                                .init(text: "Done", checked: true),
+                                .init(text: "Pending", checked: false),
+                            ]),
+                            .quote("Quoted"),
+                            .code(language: "swift\n```evil", code: "let value = 1\n```breakout"),
+                            .image(screenshotId: .v7(), caption: "Screenshot"),
+                            .image(screenshotId: .v7(), caption: ""),
+                            .heading(level: 4, text: "Details"),
+                            .table(headers: ["Name", "State"], rows: [["A|B", "Ready\nNow"]]),
+                        ]
+                    ),
+                ],
+                actionItems: [SummaryActionItem(title: "Follow up", assignee: "Mina")]
+            )
+
+            let markdown = try StoredSummaryDocumentMarkdownRenderer.render(json: document.databaseJSONString())
+
+            #expect(markdown == """
+            # Release plan
+
+            ## Decision
+
+            Ship it
+
+            - Alpha
+            - Beta
+
+            1. First
+            2. Second
+
+            - [x] Done
+            - [ ] Pending
+
+            > Quoted
+
+            ````swiftevil
+            let value = 1
+            ```breakout
+            ````
+
+            Screenshot
+
+            #### Details
+
+            | Name | State |
+            | --- | --- |
+            | A\\|B | Ready<br>Now |
+
+            ## Action Items
+            - [ ] Follow up (Mina)
+            """)
         }
 
         private static func json(_ line: String?) throws -> [String: Any] {
@@ -305,7 +420,12 @@ import GRDB
             try SummaryRecord(
                 meetingId: firstMeetingID,
                 title: "AI planning title",
-                summary: "Markdown secret body",
+                document: SummaryDocument(
+                    title: "AI planning title",
+                    sections: [
+                        SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("Markdown secret body")]),
+                    ]
+                ).databaseJSONString(),
                 createdAt: createdAt
             ).insert(db)
             try RecordingSessionRecord(
