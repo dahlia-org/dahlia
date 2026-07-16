@@ -53,6 +53,8 @@ import Foundation
             #expect(threadParams["developerInstructions"]?.stringValue?.contains("query_meetings") == true)
             #expect(threadParams["developerInstructions"]?.stringValue?.contains("meeting_id directly") == true)
             #expect(threadParams["developerInstructions"]?.stringValue?.contains("MeetingDraft") == true)
+            #expect(threadParams["developerInstructions"]?.stringValue?.contains("meeting:<UUID>") == true)
+            #expect(threadParams["developerInstructions"]?.stringValue?.contains("get_meeting with each UUID directly") == true)
 
             let turnParams = try #require(messages.first {
                 $0.objectValue?["method"]?.stringValue == "turn/start"

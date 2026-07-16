@@ -93,6 +93,7 @@ struct DahliaApp: App {
             if let sessionID {
                 CodexChatWindowView(
                     coordinator: chatCoordinator,
+                    sidebarViewModel: sidebarViewModel,
                     sessionID: sessionID
                 )
             } else {

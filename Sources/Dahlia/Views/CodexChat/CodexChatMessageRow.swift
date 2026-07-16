@@ -2,25 +2,32 @@ import SwiftUI
 
 struct CodexChatMessageRow: View {
     let message: CodexChatMessage
+    let meetingNamesByID: [UUID: String]
 
     var body: some View {
+        let visibleText = message.role == .user ? userVisibleText : message.text
+        let displayText = CodexChatMeetingReference.displayText(for: visibleText, namesByID: meetingNamesByID)
+        let displayReasoning = CodexChatMeetingReference.displayText(
+            for: message.reasoning,
+            namesByID: meetingNamesByID
+        )
         HStack(alignment: .top) {
             if message.role == .user {
                 Spacer(minLength: 72)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(userVisibleText)
+                    Text(displayText)
                         .textSelection(.enabled)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
 
-                    CodexChatCopyButton(text: userVisibleText)
+                    CodexChatCopyButton(text: displayText)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    if !message.reasoning.isEmpty {
+                    if !displayReasoning.isEmpty {
                         CodexChatReasoningView(
-                            reasoning: message.reasoning,
+                            reasoning: displayReasoning,
                             isStreaming: message.isStreaming
                         )
                     }
@@ -28,17 +35,17 @@ struct CodexChatMessageRow: View {
                     if message.text.isEmpty, message.isStreaming {
                         ProgressView()
                             .controlSize(.small)
-                    } else if !message.text.isEmpty {
+                    } else if !displayText.isEmpty {
                         if message.isStreaming {
-                            Text(message.text)
+                            Text(displayText)
                                 .textSelection(.enabled)
                         } else {
-                            CodexChatMarkdownView(markdown: message.text)
+                            CodexChatMarkdownView(markdown: displayText)
                         }
                     }
 
-                    if !message.text.isEmpty, !message.isStreaming {
-                        CodexChatCopyButton(text: message.text)
+                    if !displayText.isEmpty, !message.isStreaming {
+                        CodexChatCopyButton(text: displayText)
                     }
                 }
                 Spacer(minLength: 40)

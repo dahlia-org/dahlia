@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatConversationView: View {
     let messages: [CodexChatMessage]
+    let meetingNamesByID: [UUID: String]
 
     var body: some View {
         let items = CodexChatConversationItem.build(from: messages)
@@ -13,7 +14,10 @@ struct CodexChatConversationView: View {
                         case let .contextDivider(_, context):
                             CodexChatContextDivider(context: context)
                         case let .message(message):
-                            CodexChatMessageRow(message: message)
+                            CodexChatMessageRow(
+                                message: message,
+                                meetingNamesByID: meetingNamesByID
+                            )
                         }
                     }
                     Color.clear

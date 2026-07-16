@@ -1318,4 +1318,15 @@ enum L10n {
     static var chatReasoning: String { String(localized: "Thought process", bundle: bundle) }
     static var selected: String { String(localized: "Selected", bundle: bundle) }
     static var responsePerformance: String { String(localized: "Response performance", bundle: bundle) }
+    static var meetingReferences: String { String(localized: "Meeting references", bundle: bundle) }
+    static var addMeetingReference: String { String(localized: "Add meeting reference", bundle: bundle) }
+    static func removeMeetingReference(_ name: String) -> String { String(
+        localized: "Remove meeting reference \(name)",
+        bundle: bundle
+    ) }
+    static var noMatchingMeetingReferences: String { String(
+        localized: "No matching meetings",
+        bundle: bundle
+    ) }
+    static var meetingUnavailable: String { String(localized: "Meeting unavailable", bundle: bundle) }
 }

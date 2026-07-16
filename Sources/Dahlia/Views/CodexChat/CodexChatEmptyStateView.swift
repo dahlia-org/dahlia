@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatEmptyStateView: View {
     let recentThreads: [CodexChatThreadSummary]
+    let meetingNamesByID: [UUID: String]
     let onOpenThread: (CodexChatThreadSummary) -> Void
     let onShowAll: () -> Void
 
@@ -18,7 +19,10 @@ struct CodexChatEmptyStateView: View {
                     Button {
                         onOpenThread(thread)
                     } label: {
-                        CodexChatThreadRow(thread: thread)
+                        CodexChatThreadRow(
+                            thread: thread,
+                            meetingNamesByID: meetingNamesByID
+                        )
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)

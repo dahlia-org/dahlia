@@ -71,6 +71,7 @@ struct ContentView: View {
             if chatCoordinator.isFloatingVisible {
                 CodexChatFloatingView(
                     coordinator: chatCoordinator,
+                    sidebarViewModel: sidebarViewModel,
                     onPopOut: openDetachedChat,
                     onOpenDetachedSession: openDetachedChat
                 )

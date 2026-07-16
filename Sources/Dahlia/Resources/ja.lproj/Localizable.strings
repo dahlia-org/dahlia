@@ -687,6 +687,11 @@
 "Thought process" = "思考プロセス";
 "Selected" = "選択中";
 "Response performance" = "応答性能";
+"Meeting references" = "ミーティング参照";
+"Add meeting reference" = "ミーティングを参照";
+"Remove meeting reference %@" = "%@ の参照を削除";
+"No matching meetings" = "一致するミーティングはありません";
+"Meeting unavailable" = "利用できないミーティング";
 
 /* MCP */
 "MCP" = "MCP";

@@ -38,6 +38,130 @@ import Foundation
         }
 
         @Test
+        func sendDraftSerializesMultipleMeetingReferencesBeforeInstruction() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            let first = Self.meetingReference(vaultID: vault.id, name: "First", offset: -60)
+            let second = Self.meetingReference(vaultID: vault.id, name: "Second", offset: 0)
+            session.updateAvailableMeetings([first, second], catalogVaultID: vault.id)
+            session.addMeetingReference(CodexChatMeetingReference(meeting: first))
+            session.addMeetingReference(CodexChatMeetingReference(meeting: second))
+            session.addMeetingReference(CodexChatMeetingReference(meeting: first))
+            session.draft = "Compare them"
+
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            let expected = "meeting:\(first.meetingId.uuidString.lowercased()) "
+                + "meeting:\(second.meetingId.uuidString.lowercased()) Compare them"
+            #expect(await service.sentTexts == [expected])
+            #expect(session.selectedMeetingReferenceIDs.isEmpty)
+            #expect(session.draft.isEmpty)
+            #expect(session.displayText(expected) == "First Second Compare them")
+
+            session.retry()
+            await waitUntil { !session.isGenerating }
+            #expect(await service.sentTexts == [expected, expected])
+        }
+
+        @Test
+        func meetingReferenceCanBeSentWithoutInstruction() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            let meeting = Self.meetingReference(vaultID: vault.id, name: "Reference Only", offset: 0)
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+
+            #expect(session.canSend)
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(await service.sentTexts == ["meeting:\(meeting.meetingId.uuidString.lowercased())"])
+        }
+
+        @Test
+        func meetingCatalogUpdatesNamesAndPrunesDeletedDraftReferences() {
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+            var meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+            meeting.meetingName = "Renamed"
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+
+            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Renamed")
+            session.updateAvailableMeetings([], catalogVaultID: vault.id)
+            #expect(session.selectedMeetingReferenceIDs.isEmpty)
+            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Renamed")
+        }
+
+        @Test
+        func anotherVaultCatalogDoesNotPruneDetachedSessionReferences() {
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+            let meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+
+            let otherVault = Self.testVault()
+            session.updateAvailableMeetings([], catalogVaultID: otherVault.id)
+
+            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
+            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Original")
+
+            session.updateAvailableMeetings([], catalogVaultID: vault.id)
+            #expect(session.selectedMeetingReferenceIDs.isEmpty)
+        }
+
+        @Test
+        func restoredRawReferencesUseCachedNamesAcrossTitleAndMessages() {
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let meeting = Self.meetingReference(vaultID: vault.id, name: "Weekly Sync", offset: 0)
+            let token = "meeting:\(meeting.meetingId.uuidString)"
+            let session = CodexChatSessionModel(
+                vaultID: vault.id,
+                title: "\(token) Review",
+                messages: [CodexChatMessage(role: .user, text: "Use (\(token)).")],
+                service: TestCodexChatService(mode: .complete),
+                settings: settings
+            )
+
+            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+
+            #expect(session.displayTitle == "Weekly Sync Review")
+            #expect(session.displayText(session.messages[0].text) == "Use (Weekly Sync).")
+        }
+
+        @Test
         func stopKeepsPartialResponse() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
@@ -305,6 +429,23 @@ import Foundation
                 name: "Chat Test",
                 createdAt: .now,
                 lastOpenedAt: .now
+            )
+        }
+
+        private static func meetingReference(vaultID: UUID, name: String, offset: TimeInterval) -> MeetingOverviewItem {
+            MeetingOverviewItem(
+                meetingId: .v7(),
+                vaultId: vaultID,
+                projectId: nil,
+                projectName: nil,
+                meetingName: name,
+                status: .ready,
+                duration: nil,
+                createdAt: .now.addingTimeInterval(offset),
+                hasSummary: false,
+                segmentCount: 0,
+                latestSegmentText: nil,
+                tags: []
             )
         }
 

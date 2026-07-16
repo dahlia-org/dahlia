@@ -18,6 +18,9 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var errorMessage: String?
     private(set) var activeTurnID: String?
     private(set) var lastSubmittedText: String?
+    private(set) var availableMeetingReferences: [CodexChatMeetingReference] = []
+    private(set) var selectedMeetingReferenceIDs: [UUID] = []
+    private(set) var meetingNamesByID: [UUID: String] = [:]
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
@@ -104,13 +107,33 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     func sendDraft() {
-        guard canSend, let text = draft.nilIfBlank else { return }
-        submit(text, clearsDraft: true)
+        guard canSend else { return }
+        let draftSnapshot = draft
+        let referenceIDsSnapshot = selectedMeetingReferenceIDs
+        let text = CodexChatMeetingReference.serializedText(
+            referenceIDs: referenceIDsSnapshot,
+            draft: draftSnapshot
+        )
+        submit(
+            text,
+            clearsDraft: true,
+            draftSnapshot: draftSnapshot,
+            referenceIDsSnapshot: referenceIDsSnapshot
+        )
     }
 
     func retry() {
         guard let lastSubmittedText else { return }
-        submit(lastSubmittedText, clearsDraft: draft == lastSubmittedText)
+        let currentText = CodexChatMeetingReference.serializedText(
+            referenceIDs: selectedMeetingReferenceIDs,
+            draft: draft
+        )
+        submit(
+            lastSubmittedText,
+            clearsDraft: currentText == lastSubmittedText,
+            draftSnapshot: draft,
+            referenceIDsSnapshot: selectedMeetingReferenceIDs
+        )
     }
 
     func stop() {
@@ -303,7 +326,12 @@ final class CodexChatSessionModel: Identifiable {
 }
 
 private extension CodexChatSessionModel {
-    func submit(_ text: String, clearsDraft: Bool) {
+    func submit(
+        _ text: String,
+        clearsDraft: Bool,
+        draftSnapshot: String? = nil,
+        referenceIDsSnapshot: [UUID] = []
+    ) {
         guard isBoundToCurrentVault,
               !isGenerating,
               text.nilIfBlank != nil else { return }
@@ -311,11 +339,21 @@ private extension CodexChatSessionModel {
         errorMessage = nil
 
         Task { [weak self] in
-            await self?.resolveContextAndRunTurn(text: text, clearsDraft: clearsDraft)
+            await self?.resolveContextAndRunTurn(
+                text: text,
+                clearsDraft: clearsDraft,
+                draftSnapshot: draftSnapshot ?? text,
+                referenceIDsSnapshot: referenceIDsSnapshot
+            )
         }
     }
 
-    func resolveContextAndRunTurn(text: String, clearsDraft: Bool) async {
+    func resolveContextAndRunTurn(
+        text: String,
+        clearsDraft: Bool,
+        draftSnapshot: String,
+        referenceIDsSnapshot: [UUID]
+    ) async {
         let context: CodexChatContext?
         do {
             guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
@@ -332,8 +370,13 @@ private extension CodexChatSessionModel {
             finishGeneration()
             return
         }
-        if clearsDraft, draft == text {
-            draft = ""
+        if clearsDraft {
+            if draft == draftSnapshot {
+                draft = ""
+            }
+            if selectedMeetingReferenceIDs == referenceIDsSnapshot {
+                selectedMeetingReferenceIDs = []
+            }
         }
         lastSubmittedText = text
         messages.append(CodexChatMessage(role: .user, text: text, context: context))
@@ -346,13 +389,13 @@ private extension CodexChatSessionModel {
 
 extension CodexChatSessionModel {
     var displayTitle: String {
-        title.nilIfBlank ?? L10n.newChat
+        displayText(title.nilIfBlank ?? L10n.newChat)
     }
 
     var canSend: Bool {
         isBoundToCurrentVault
             && !isGenerating
-            && draft.nilIfBlank != nil
+            && (draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty)
     }
 
     var effortOptions: [CodexReasoningEffortOption] {
@@ -364,5 +407,38 @@ extension CodexChatSessionModel {
 
     var isBoundToCurrentVault: Bool {
         vaultID != nil && vaultID == settings.currentVault?.id
+    }
+}
+
+extension CodexChatSessionModel {
+    func updateAvailableMeetings(_ meetings: [MeetingOverviewItem], catalogVaultID: UUID?) {
+        guard catalogVaultID == vaultID else { return }
+        let references = meetings
+            .filter { $0.vaultId == vaultID }
+            .map(CodexChatMeetingReference.init)
+        availableMeetingReferences = references
+        for reference in references {
+            meetingNamesByID[reference.id] = reference.name
+        }
+        let availableIDs = Set(references.map(\.id))
+        selectedMeetingReferenceIDs.removeAll { !availableIDs.contains($0) }
+    }
+
+    func addMeetingReference(_ reference: CodexChatMeetingReference) {
+        guard !selectedMeetingReferenceIDs.contains(reference.id) else { return }
+        selectedMeetingReferenceIDs.append(reference.id)
+        meetingNamesByID[reference.id] = reference.name
+    }
+
+    func removeMeetingReference(id: UUID) {
+        selectedMeetingReferenceIDs.removeAll { $0 == id }
+    }
+
+    func meetingDisplayName(for id: UUID) -> String {
+        meetingNamesByID[id] ?? L10n.meetingUnavailable
+    }
+
+    func displayText(_ text: String) -> String {
+        CodexChatMeetingReference.displayText(for: text, namesByID: meetingNamesByID)
     }
 }

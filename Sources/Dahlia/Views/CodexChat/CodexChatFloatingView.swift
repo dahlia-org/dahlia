@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatFloatingView: View {
     @Bindable var coordinator: CodexChatCoordinator
+    @Bindable var sidebarViewModel: SidebarViewModel
     let onPopOut: (CodexChatSessionID) -> Void
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
 
@@ -11,10 +12,12 @@ struct CodexChatFloatingView: View {
 
     init(
         coordinator: CodexChatCoordinator,
+        sidebarViewModel: SidebarViewModel,
         onPopOut: @escaping (CodexChatSessionID) -> Void,
         onOpenDetachedSession: @escaping (CodexChatSessionID) -> Void
     ) {
         self.coordinator = coordinator
+        self.sidebarViewModel = sidebarViewModel
         self.onPopOut = onPopOut
         self.onOpenDetachedSession = onOpenDetachedSession
         _layout = State(initialValue: CodexChatFloatingLayout(dockSide: AppSettings.shared.codexChatDockSide))
@@ -27,6 +30,8 @@ struct CodexChatFloatingView: View {
                 CodexChatView(
                     session: coordinator.floatingSession,
                     coordinator: coordinator,
+                    meetings: sidebarViewModel.allMeetings,
+                    meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     allowsPopOut: true,
                     onNewChat: coordinator.newFloatingChat,
                     onPopOut: popOut,

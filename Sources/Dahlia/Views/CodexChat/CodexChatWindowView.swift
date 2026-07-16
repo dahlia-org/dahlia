@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatWindowView: View {
     @Bindable var coordinator: CodexChatCoordinator
+    @Bindable var sidebarViewModel: SidebarViewModel
     let sessionID: CodexChatSessionID
 
     @Environment(\.openWindow) private var openWindow
@@ -12,6 +13,8 @@ struct CodexChatWindowView: View {
                 CodexChatView(
                     session: session,
                     coordinator: coordinator,
+                    meetings: sidebarViewModel.allMeetings,
+                    meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     allowsPopOut: false,
                     onNewChat: openNewWindow,
                     onPopOut: {},
