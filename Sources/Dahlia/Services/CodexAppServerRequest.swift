@@ -3,6 +3,7 @@ import Foundation
 struct CodexAppServerDahliaMCPConfiguration: Equatable {
     let executableURL: URL
     let vaultID: UUID
+    let allowedMeetingIDs: [UUID]
 }
 
 struct CodexAppServerRequest {

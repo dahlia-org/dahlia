@@ -14,9 +14,10 @@ struct MeetingRepositoryPreviousSummaryTests {
             name: "Current",
             icalUid: "weekly@example.com",
             recurrenceId: "current",
-            start: fixture.baseDate.addingTimeInterval(4 * 86_400)
+            start: fixture.baseDate.addingTimeInterval(4 * 86_400),
+            recordedAt: fixture.baseDate.addingTimeInterval(86_400)
         )
-        _ = try fixture.insertMeeting(
+        let recent = try fixture.insertMeeting(
             name: "Recent",
             icalUid: "weekly@example.com",
             recurrenceId: "recent",
@@ -30,7 +31,7 @@ struct MeetingRepositoryPreviousSummaryTests {
             start: fixture.baseDate.addingTimeInterval(2.5 * 86_400),
             invalidSummary: true
         )
-        _ = try fixture.insertMeeting(
+        let older = try fixture.insertMeeting(
             name: "Older",
             icalUid: "weekly@example.com",
             recurrenceId: "older",
@@ -58,14 +59,39 @@ struct MeetingRepositoryPreviousSummaryTests {
             start: fixture.baseDate.addingTimeInterval(5 * 86_400),
             summary: SummaryDocument(title: "Future", sections: [])
         )
-
         let summaries = try fixture.repository.fetchPreviousMeetingMetadata(
             forMeetingId: current.id,
             limit: 2
         )
 
+        #expect(summaries.map(\.meetingId) == [recent.id, older.id])
         #expect(summaries.map(\.name) == ["Recent", "Older"])
         #expect(summaries.allSatisfy { $0.calendarStart != nil && $0.calendarEnd != nil })
+    }
+
+    @Test
+    func excludesMatchingICalendarSeriesFromOtherVaults() throws {
+        let fixture = try PreviousSummaryTestFixture()
+        let current = try fixture.insertMeeting(
+            name: "Current",
+            icalUid: "weekly@example.com",
+            recurrenceId: "current",
+            start: fixture.baseDate.addingTimeInterval(2 * 86_400)
+        )
+        let otherVault = try fixture.insertVault(name: "Other Vault")
+        _ = try fixture.insertMeeting(
+            name: "Other vault",
+            icalUid: "weekly@example.com",
+            recurrenceId: "other-vault",
+            start: fixture.baseDate.addingTimeInterval(86_400),
+            vaultId: otherVault.id,
+            summary: SummaryDocument(title: "Other vault", sections: [])
+        )
+
+        #expect(try fixture.repository.fetchPreviousMeetingMetadata(
+            forMeetingId: current.id,
+            limit: 1
+        ).isEmpty)
     }
 
     @Test

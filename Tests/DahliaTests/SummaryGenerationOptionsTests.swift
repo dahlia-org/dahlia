@@ -4,6 +4,18 @@
 import Testing
 
 struct SummaryGenerationOptionsTests {
+    @Test(arguments: [
+        (-1, 0),
+        (0, 0),
+        (3, 3),
+        (5, 5),
+        (6, 5),
+        (Int.max, 5),
+    ])
+    func previousMeetingCountIsNormalizedForStorageAndPicker(input: Int, expected: Int) {
+        #expect(AppSettings.normalizedSummaryPreviousMeetingCount(input) == expected)
+    }
+
     @Test
     func mergingUsesLargestPreviousMeetingCountAndCombinesExports() {
         let merged = SummaryGenerationOptions.merging([

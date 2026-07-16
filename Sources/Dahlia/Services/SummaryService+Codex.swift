@@ -69,7 +69,8 @@ extension SummaryService {
         }
         return try CodexAppServerDahliaMCPConfiguration(
             executableURL: DahliaMCPBundle.executableURL(),
-            vaultID: meeting.vaultId
+            vaultID: meeting.vaultId,
+            allowedMeetingIDs: promptContext.previousMeetings.map(\.meetingId)
         )
     }
 

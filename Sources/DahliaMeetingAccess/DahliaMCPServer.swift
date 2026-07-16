@@ -2,10 +2,12 @@ import Foundation
 
 public final class DahliaMCPServer {
     private let store: MeetingAccessStore
+    private let allowedMeetingIDs: Set<UUID>?
     private var initialized = false
 
-    public init(store: MeetingAccessStore) {
+    public init(store: MeetingAccessStore, allowedMeetingIDs: Set<UUID>? = nil) {
         self.store = store
+        self.allowedMeetingIDs = allowedMeetingIDs
     }
 
     public func handleLine(_ line: String) -> String? {
@@ -41,7 +43,7 @@ public final class DahliaMCPServer {
         case "ping":
             return response(id: id, result: [:])
         case "tools/list":
-            return response(id: id, result: ["tools": Self.toolDefinitions])
+            return response(id: id, result: ["tools": toolDefinitions])
         case "tools/call":
             guard initialized else {
                 return response(id: id, errorCode: -32002, message: "Server is not initialized")
@@ -107,6 +109,9 @@ public final class DahliaMCPServer {
     }
 
     private func executeTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
+        if allowedMeetingIDs != nil, name != "get_meeting" {
+            throw ParameterError("Tool is not available in this session")
+        }
         switch name {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
@@ -137,7 +142,11 @@ public final class DahliaMCPServer {
     }
 
     private func getMeeting(_ arguments: [String: Any]) throws -> MeetingDetail {
-        try store.meeting(id: requiredUUID(arguments, key: "meeting_id"))
+        let meetingID = try requiredUUID(arguments, key: "meeting_id")
+        if let allowedMeetingIDs, !allowedMeetingIDs.contains(meetingID) {
+            throw ParameterError("meeting_id is not available in this session")
+        }
+        return try store.meeting(id: meetingID)
     }
 
     private func getMeetingTranscript(_ arguments: [String: Any]) throws -> TranscriptPage {
@@ -247,7 +256,14 @@ public final class DahliaMCPServer {
         ]
     }
 
-    private static var toolDefinitions: [[String: Any]] { [
+    private var toolDefinitions: [[String: Any]] {
+        guard allowedMeetingIDs != nil else { return Self.allToolDefinitions }
+        return Self.allToolDefinitions.filter { definition in
+            definition["name"] as? String == "get_meeting"
+        }
+    }
+
+    private static var allToolDefinitions: [[String: Any]] { [
         [
             "name": "query_meetings",
             "title": "Query meetings",

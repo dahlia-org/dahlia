@@ -498,10 +498,31 @@ import Foundation
         }
 
         @Test
-        func generationEnablesOnlyConfiguredDahliaMCP() async throws {
+        func summaryThreadConfigRejectsUnscopedDahliaMCP() throws {
+            let configReadResult = JSONValue.object([
+                "config": .object([:]),
+            ])
+            let vaultID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
+
+            #expect(throws: CodexAppServerError.invalidProtocolResponse) {
+                try CodexAppServerService.summaryThreadConfig(
+                    from: configReadResult,
+                    dahliaMCP: CodexAppServerDahliaMCPConfiguration(
+                        executableURL: URL(fileURLWithPath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                        vaultID: vaultID,
+                        allowedMeetingIDs: []
+                    )
+                )
+            }
+        }
+
+        @Test
+        func generationScopesDahliaMCPToConfiguredMeetings() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationCompletes)
             let service = CodexAppServerService(transportFactory: { transport })
             let vaultID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
+            let firstMeetingID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E7"))
+            let secondMeetingID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E8"))
             let executableURL = URL(fileURLWithPath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
 
             _ = try await service.generate(.init(
@@ -511,7 +532,8 @@ import Foundation
                 outputSchema: Data(#"{"type":"object"}"#.utf8),
                 dahliaMCP: CodexAppServerDahliaMCPConfiguration(
                     executableURL: executableURL,
-                    vaultID: vaultID
+                    vaultID: vaultID,
+                    allowedMeetingIDs: [firstMeetingID, secondMeetingID]
                 )
             ))
 
@@ -523,7 +545,14 @@ import Foundation
                 "docs": .object(["enabled": .bool(false)]),
                 "local.server": .object(["enabled": .bool(false)]),
                 "dahlia": .object([
-                    "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+                    "args": .array([
+                        .string("--vault-id"),
+                        .string(vaultID.uuidString),
+                        .string("--meeting-id"),
+                        .string(firstMeetingID.uuidString),
+                        .string("--meeting-id"),
+                        .string(secondMeetingID.uuidString),
+                    ]),
                     "command": .string(executableURL.path),
                     "enabled": .bool(true),
                 ]),

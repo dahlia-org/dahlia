@@ -26,6 +26,8 @@ struct PreviousSummaryTestFixture {
         icalUid: String?,
         recurrenceId: String?,
         start: Date,
+        recordedAt: Date? = nil,
+        vaultId: UUID? = nil,
         summary: SummaryDocument? = nil,
         invalidSummary: Bool = false
     ) throws -> MeetingRecord {
@@ -38,13 +40,14 @@ struct PreviousSummaryTestFixture {
             )
         }
 
+        let recordedAt = recordedAt ?? start
         let meeting = MeetingRecord(
             id: .v7(),
-            vaultId: vault.id,
+            vaultId: vaultId ?? vault.id,
             projectId: nil,
             name: name,
-            createdAt: start,
-            updatedAt: start,
+            createdAt: recordedAt,
+            updatedAt: recordedAt,
             calendarEventIcalUid: icalUid,
             calendarEventRecurrenceId: recurrenceId
         )
@@ -56,17 +59,29 @@ struct PreviousSummaryTestFixture {
                 meetingId: meeting.id,
                 title: summary.title,
                 document: try summary.databaseJSONString(),
-                createdAt: start
+                createdAt: recordedAt
             ))
         } else if invalidSummary {
             try repository.upsertSummary(SummaryRecord(
                 meetingId: meeting.id,
                 title: "Corrupt",
                 document: "not-json",
-                createdAt: start
+                createdAt: recordedAt
             ))
         }
         return meeting
+    }
+
+    func insertVault(name: String) throws -> VaultRecord {
+        let vault = VaultRecord(
+            id: .v7(),
+            path: "/tmp/previous-summary-tests-\(UUID().uuidString)",
+            name: name,
+            createdAt: baseDate,
+            lastOpenedAt: baseDate
+        )
+        try repository.insertVault(vault)
+        return vault
     }
 
     private func insertCalendarEvent(

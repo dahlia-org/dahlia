@@ -183,19 +183,19 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     var summaryPreviousMeetingCount: Int {
         get {
-            Self.normalizedOption(
-                storedSummaryPreviousMeetingCount,
-                options: Self.summaryPreviousMeetingCountOptions,
-                defaultValue: Self.defaultSummaryPreviousMeetingCount
-            )
+            Self.normalizedSummaryPreviousMeetingCount(storedSummaryPreviousMeetingCount)
         }
         set {
-            storedSummaryPreviousMeetingCount = Self.normalizedOption(
-                newValue,
-                options: Self.summaryPreviousMeetingCountOptions,
-                defaultValue: Self.defaultSummaryPreviousMeetingCount
-            )
+            storedSummaryPreviousMeetingCount = Self.normalizedSummaryPreviousMeetingCount(newValue)
         }
+    }
+
+    nonisolated static func normalizedSummaryPreviousMeetingCount(_ value: Int) -> Int {
+        normalizedOption(
+            value,
+            options: summaryPreviousMeetingCountOptions,
+            defaultValue: defaultSummaryPreviousMeetingCount
+        )
     }
 
     var automaticScreenshotIntervalSeconds: Int {

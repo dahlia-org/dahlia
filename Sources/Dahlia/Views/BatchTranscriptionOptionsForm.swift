@@ -39,7 +39,7 @@ struct BatchTranscriptionOptionsForm: View {
                 .toggleStyle(.checkbox)
 
                 SummaryGenerationOptionsControls(
-                    previousMeetingCount: $previousMeetingCount,
+                    previousMeetingCount: normalizedPreviousMeetingCount,
                     exportsToVault: $exportBatchSummaryToVault,
                     exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                     isEnabled: generateSummaryAfterBatchTranscription
@@ -53,5 +53,12 @@ struct BatchTranscriptionOptionsForm: View {
         locale.localizedString(forIdentifier: locale.identifier)
             ?? Locale.current.localizedString(forIdentifier: locale.identifier)
             ?? locale.identifier
+    }
+
+    private var normalizedPreviousMeetingCount: Binding<Int> {
+        Binding(
+            get: { AppSettings.normalizedSummaryPreviousMeetingCount(previousMeetingCount) },
+            set: { previousMeetingCount = AppSettings.normalizedSummaryPreviousMeetingCount($0) }
+        )
     }
 }

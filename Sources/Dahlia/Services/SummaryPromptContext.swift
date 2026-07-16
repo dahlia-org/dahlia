@@ -106,8 +106,13 @@ struct SummaryPromptContext {
     }
 
     private static func iso8601(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        date.formatted(
+            .iso8601
+                .year()
+                .month()
+                .day()
+                .time(includingFractionalSeconds: true)
+                .timeZone(separator: .colon)
+        )
     }
 }

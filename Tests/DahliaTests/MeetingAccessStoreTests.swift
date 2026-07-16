@@ -311,6 +311,51 @@ import GRDB
     }
 
     @MainActor
+    struct RestrictedMCPServerTests {
+        @Test
+        func exposesOnlyAllowedMeetingSummaries() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let server = DahliaMCPServer(
+                store: store,
+                allowedMeetingIDs: [fixture.firstMeetingID]
+            )
+
+            _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+
+            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            #expect(definitions.map { $0["name"] as? String } == ["get_meeting"])
+
+            let allowed = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)"}}}
+            """#))
+            #expect(((allowed["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["summary"] != nil)
+
+            let deniedMeeting = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture
+                .secondMeetingID.uuidString)"}}}
+            """#))
+            #expect((deniedMeeting["error"] as? [String: Any])?["code"] as? Int == -32602)
+
+            for (id, name) in [(5, "query_meetings"), (6, "get_meeting_transcript")] {
+                let deniedTool = try Self.json(server.handleLine("""
+                {"jsonrpc":"2.0","id":\(id),"method":"tools/call","params":{"name":"\(name)","arguments":{}}}
+                """))
+                #expect((deniedTool["error"] as? [String: Any])?["code"] as? Int == -32602)
+            }
+        }
+
+        private static func json(_ line: String?) throws -> [String: Any] {
+            let line = try #require(line)
+            let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
+            return try #require(value as? [String: Any])
+        }
+    }
+
+    @MainActor
     private final class Fixture {
         let databaseURL: URL
         let manager: AppDatabaseManager

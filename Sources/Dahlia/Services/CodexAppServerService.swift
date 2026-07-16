@@ -377,10 +377,14 @@ actor CodexAppServerService {
             throw CodexAppServerError.invalidProtocolResponse
         }
         if let dahliaMCP {
+            guard !dahliaMCP.allowedMeetingIDs.isEmpty else {
+                throw CodexAppServerError.invalidProtocolResponse
+            }
             var servers = config["mcp_servers"]?.objectValue ?? [:]
             servers["dahlia"] = dahliaMCPServer(
                 executableURL: dahliaMCP.executableURL,
-                vaultID: dahliaMCP.vaultID
+                vaultID: dahliaMCP.vaultID,
+                allowedMeetingIDs: dahliaMCP.allowedMeetingIDs
             )
             config["mcp_servers"] = .object(servers)
         }
@@ -400,14 +404,27 @@ actor CodexAppServerService {
             throw CodexAppServerError.invalidProtocolResponse
         }
         var servers = config["mcp_servers"]?.objectValue ?? [:]
-        servers["dahlia"] = dahliaMCPServer(executableURL: helperURL, vaultID: vaultID)
+        servers["dahlia"] = dahliaMCPServer(
+            executableURL: helperURL,
+            vaultID: vaultID
+        )
         config["mcp_servers"] = .object(servers)
         return .object(config)
     }
 
-    private nonisolated static func dahliaMCPServer(executableURL: URL, vaultID: UUID) -> JSONValue {
-        .object([
-            "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+    private nonisolated static func dahliaMCPServer(
+        executableURL: URL,
+        vaultID: UUID,
+        allowedMeetingIDs: [UUID] = []
+    ) -> JSONValue {
+        let meetingArguments = allowedMeetingIDs.flatMap { meetingID in
+            [JSONValue.string("--meeting-id"), .string(meetingID.uuidString)]
+        }
+        return .object([
+            "args": .array([
+                .string("--vault-id"),
+                .string(vaultID.uuidString),
+            ] + meetingArguments),
             "command": .string(executableURL.path),
             "enabled": .bool(true),
         ])
