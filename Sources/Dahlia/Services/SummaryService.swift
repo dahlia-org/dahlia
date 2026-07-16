@@ -11,10 +11,7 @@ enum SummaryService {
     /// 要約を生成し、Markdown と関連メタデータを返す。
     @MainActor
     static func generateSummary(
-        projectName: String?,
-        projectDescription: String?,
-        meetingId: UUID,
-        createdAt: Date,
+        promptContext: SummaryPromptContext,
         transcriptText: String,
         noteText: String? = nil,
         screenshots: [MeetingScreenshotRecord] = [],
@@ -25,27 +22,43 @@ enum SummaryService {
         let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
         let languageName = settings.llmSummaryLanguage.displayName
 
-        let systemPrompt = prompt + "\n\n# Language\nWrite the summary in \(languageName)." + codexStructuredInstruction
+        var systemPromptSections = [
+            prompt,
+            codexInputTrustInstruction,
+        ]
+        if !promptContext.previousMeetings.isEmpty {
+            systemPromptSections.append(codexPreviousMeetingsInstruction)
+        }
+        systemPromptSections.append("# Language\nWrite the summary in \(languageName).")
+        let systemPrompt = systemPromptSections.joined(separator: "\n\n")
+            + codexStructuredInstruction
         let inputs = await makeCodexInputs(.init(
-            projectName: projectName,
-            projectDescription: projectDescription,
-            meetingId: meetingId,
-            createdAt: createdAt,
+            promptContext: promptContext,
             transcriptText: transcriptText,
             noteText: noteText,
             screenshots: screenshots,
             recordingSessions: recordingSessions
         ))
 
+        let dahliaMCP = try dahliaMCPConfiguration(
+            for: promptContext,
+            repository: repository
+        )
+
         let responseText = try await CodexAppServerService.shared.generate(.init(
             model: settings.codexModelID.nilIfBlank,
             reasoningEffort: settings.codexReasoningEffort,
             developerInstructions: systemPrompt,
             inputs: inputs,
-            outputSchema: SummaryDocumentResponse.outputSchema
+            outputSchema: SummaryDocumentResponse.outputSchema,
+            dahliaMCP: dahliaMCP
         ))
 
-        let context = SummaryRenderContext(meetingId: meetingId, createdAt: createdAt, screenshots: screenshots)
+        let context = SummaryRenderContext(
+            meetingId: promptContext.meetingId,
+            createdAt: promptContext.recordedAt,
+            screenshots: screenshots
+        )
         var document = decodeSummaryDocument(from: responseText, context: context)
         document.tags = resolvedTags(document.tags)
         let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
@@ -55,21 +68,6 @@ enum SummaryService {
             fileName: rendered.fileName,
             markdown: rendered.markdown
         )
-    }
-
-    static func screenshotMetadata(
-        for screenshot: MeetingScreenshotRecord,
-        relativeTo timeBase: Date,
-        recordingSessions: [RecordingSessionTimeline] = []
-    ) -> String {
-        let time = Formatters.elapsedHHmmss(
-            at: screenshot.capturedAt,
-            sessionId: screenshot.sessionId,
-            sessions: recordingSessions,
-            fallbackTimeBase: timeBase
-        )
-        let imageFilename = ScreenshotExportService.filename(for: screenshot)
-        return "<time>\(time)</time> <image_id>\(screenshot.id.uuidString)</image_id> <image_filename>\(imageFilename)</image_filename>"
     }
 
     /// DB に保存した Vault 相対パスから要約ファイルを解決する。
@@ -87,19 +85,6 @@ enum SummaryService {
         var tags: [String] = []
         appendUniqueTags(resultTags, to: &tags)
         return tags
-    }
-
-    static func projectPromptContent(name: String?, description: String?) -> String? {
-        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
-            return nil
-        }
-        let description = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return """
-        <project>
-        <name>\(xmlEscaped(name))</name>
-        <description>\(xmlEscaped(description))</description>
-        </project>
-        """
     }
 
     private static let tagAllowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
@@ -354,14 +339,6 @@ enum SummaryService {
         return tag
     }
 
-    private static func xmlEscaped(_ value: String) -> String {
-        value
-            .replacing("&", with: "&amp;")
-            .replacing("<", with: "&lt;")
-            .replacing(">", with: "&gt;")
-            .replacing("\"", with: "&quot;")
-            .replacing("'", with: "&apos;")
-    }
 }
 
 private extension SummaryText {

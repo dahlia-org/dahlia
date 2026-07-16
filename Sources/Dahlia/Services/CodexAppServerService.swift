@@ -366,12 +366,25 @@ actor CodexAppServerService {
     }
 
     nonisolated static func summaryThreadConfig(
-        from configReadResult: JSONValue, reasoningEffort: String = CodexReasoningEffortOption.defaultValue
+        from configReadResult: JSONValue,
+        reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
+        dahliaMCP: CodexAppServerDahliaMCPConfiguration? = nil
     ) throws -> JSONValue {
-        try restrictedThreadConfig(
+        guard case var .object(config) = try restrictedThreadConfig(
             from: configReadResult,
             reasoningEffort: reasoningEffort
-        )
+        ) else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        if let dahliaMCP {
+            var servers = config["mcp_servers"]?.objectValue ?? [:]
+            servers["dahlia"] = dahliaMCPServer(
+                executableURL: dahliaMCP.executableURL,
+                vaultID: dahliaMCP.vaultID
+            )
+            config["mcp_servers"] = .object(servers)
+        }
+        return .object(config)
     }
 
     nonisolated static func chatThreadConfig(
@@ -387,13 +400,17 @@ actor CodexAppServerService {
             throw CodexAppServerError.invalidProtocolResponse
         }
         var servers = config["mcp_servers"]?.objectValue ?? [:]
-        servers["dahlia"] = .object([
-            "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
-            "command": .string(helperURL.path),
-            "enabled": .bool(true),
-        ])
+        servers["dahlia"] = dahliaMCPServer(executableURL: helperURL, vaultID: vaultID)
         config["mcp_servers"] = .object(servers)
         return .object(config)
+    }
+
+    private nonisolated static func dahliaMCPServer(executableURL: URL, vaultID: UUID) -> JSONValue {
+        .object([
+            "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+            "command": .string(executableURL.path),
+            "enabled": .bool(true),
+        ])
     }
 
     // swiftformat:disable:next modifierOrder
@@ -509,11 +526,15 @@ private extension CodexAppServerService {
         let configResult = try await configReadResult()
         var threadParams: [String: JSONValue] = try [
             "approvalPolicy": .string("never"),
-            "config": Self.summaryThreadConfig(from: configResult, reasoningEffort: request.reasoningEffort),
-            "cwd": .string(temporaryDirectory.path),
-            "developerInstructions": .string(
-                request.developerInstructions + "\nDo not call tools. Return only the requested JSON."
+            "config": Self.summaryThreadConfig(
+                from: configResult,
+                reasoningEffort: request.reasoningEffort,
+                dahliaMCP: request.dahliaMCP
             ),
+            "cwd": .string(temporaryDirectory.path),
+            "developerInstructions": .string(request.developerInstructions + Self.summaryToolInstruction(
+                allowsDahliaMCP: request.dahliaMCP != nil
+            )),
             "ephemeral": .bool(true),
             "sandbox": .string("read-only"),
         ]
@@ -555,6 +576,13 @@ private extension CodexAppServerService {
             testWaiters.forEach { $0.resume() }
         #endif
         return try await waitForTurn(key, timeout: summaryTimeout)
+    }
+
+    private nonisolated static func summaryToolInstruction(allowsDahliaMCP: Bool) -> String {
+        if allowsDahliaMCP {
+            return "\nYou may call only the Dahlia get_meeting tool. Do not call any other tool. Return only the requested JSON."
+        }
+        return "\nDo not call tools. Return only the requested JSON."
     }
 
     private func finishGeneration(_ generationID: UUID, interrupt: Bool = false) async {

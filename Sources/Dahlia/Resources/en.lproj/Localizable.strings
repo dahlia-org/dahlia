@@ -538,6 +538,10 @@
 "Generate Summary After Transcription" = "Generate Summary After Transcription";
 "Automatically generate a summary when batch transcription succeeds." = "Automatically generate a summary when batch transcription succeeds.";
 "Summary and Export" = "Summary and Export";
+"Previous Meetings in Context" = "Previous Meetings in Context";
+"Include the latest meetings from the same calendar series in the summary context." = "Include the latest meetings from the same calendar series in the summary context.";
+"Generate this summary?" = "Generate this summary?";
+"Review the context and export options before generating the summary." = "Review the context and export options before generating the summary.";
 "Export Summary to Vault" = "Export Summary to Vault";
 "Write the generated summary and related files to the current Vault." = "Write the generated summary and related files to the current Vault.";
 "Export Summary to Google Docs" = "Export Summary to Google Docs";
