@@ -11,4 +11,8 @@ enum CodexChatDesign {
     static let configurationPanelWidth: CGFloat = 252
     static let configurationPanelHeight: CGFloat = 278
     static let modelPanelWidth: CGFloat = 216
+    static let contextDividerSpacing: CGFloat = 8
+    static let contextLabelHorizontalPadding: CGFloat = 8
+    static let contextLabelVerticalPadding: CGFloat = 4
+    static let contextLabelCornerRadius: CGFloat = 5
 }

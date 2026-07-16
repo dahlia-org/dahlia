@@ -33,7 +33,8 @@ import Foundation
             #expect(session.messages.map(\.text) == ["Question", "Final answer"])
             #expect(session.messages.last?.reasoning == "Considered the question")
             #expect(session.title == "Question")
-            #expect(await service.sentTexts == ["Question"])
+            #expect(await service.sentTextBlocks == [["Question"]])
+            #expect(await service.threadNames == ["Question"])
         }
 
         @Test
@@ -159,6 +160,144 @@ import Foundation
             #expect(session.messages.isEmpty)
         }
 
+        @Test
+        func everyTurnUsesLatestContextWithoutExposingPromptMarkup() async throws {
+            let service = TestCodexChatService(mode: .staleRollout)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let firstContext = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
+                name: "First",
+                calendarEvent: nil
+            )
+            let secondContext = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")),
+                name: "Second",
+                calendarEvent: nil
+            )
+            let contextProvider = TestCodexChatContextProvider(context: firstContext)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+
+            session.draft = "First question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            contextProvider.context = secondContext
+            session.draft = "Second question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(await service.sentTextBlocks == [
+                CodexChatPromptCodec.encodeTextBlocks(text: "First question", context: firstContext),
+                CodexChatPromptCodec.encodeTextBlocks(text: "Second question", context: secondContext),
+            ])
+            #expect(session.messages.filter { $0.role == .user }.map(\.text) == [
+                "First question", "Second question",
+            ])
+            #expect(session.messages.filter { $0.role == .user }.map(\.context) == [
+                firstContext, secondContext,
+            ])
+            #expect(await service.threadNames == ["First question"])
+        }
+
+        @Test
+        func contextFailureKeepsDraftAndDoesNotSend() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider(
+                error: CodexAppServerError.invalidProtocolResponse
+            )
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Keep this"
+
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.draft == "Keep this")
+            #expect(session.messages.isEmpty)
+            #expect(session.errorMessage != nil)
+            #expect(session.lastSubmittedText == "Keep this")
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
+        @Test
+        func contextFailureReplacesStaleRetryAndSuccessfulRetryClearsDraft() async {
+            let service = TestCodexChatService(mode: .staleRollout)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Previous question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            contextProvider.error = CodexAppServerError.invalidProtocolResponse
+            session.draft = "Current question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.lastSubmittedText == "Current question")
+            #expect(session.draft == "Current question")
+            #expect(await service.sentTextBlocks == [["Previous question"]])
+
+            contextProvider.error = nil
+            session.retry()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.draft.isEmpty)
+            #expect(await service.sentTextBlocks == [["Previous question"], ["Current question"]])
+        }
+
+        @Test
+        func unavailableSelectedMeetingKeepsDraftAndDoesNotSend() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            let vault = Self.testVault()
+            settings.currentVault = vault
+            let contextProvider = CodexChatContextProvider()
+            contextProvider.update(
+                vaultID: vault.id,
+                meetingID: UUID.v7(),
+                draftMeeting: nil,
+                dbQueue: nil
+            )
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Keep selected meeting question"
+
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.draft == "Keep selected meeting question")
+            #expect(session.messages.isEmpty)
+            #expect(session.errorMessage == L10n.chatSelectedMeetingUnavailable)
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
         private static func testVault() -> VaultRecord {
             VaultRecord(
                 id: .v7(),
@@ -190,7 +329,7 @@ import Foundation
         }
     }
 
-    private actor TestCodexChatService: CodexChatServicing {
+    actor TestCodexChatService: CodexChatServicing {
         enum Mode {
             case complete
             case block
@@ -200,7 +339,8 @@ import Foundation
         }
 
         let mode: Mode
-        private(set) var sentTexts: [String] = []
+        private(set) var sentTextBlocks: [[String]] = []
+        private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
@@ -230,10 +370,18 @@ import Foundation
             case .staleRollout, .multipleMessages:
                 []
             }
+            let flattenedText = sentTextBlocks.last?.joined() ?? "Question"
+            let decoded = CodexChatPromptCodec.decodeTextBlocks([flattenedText])
             return CodexChatThread(
                 id: id,
                 title: "Question",
-                messages: [CodexChatMessage(role: .user, text: sentTexts.last ?? "Question")] + assistantMessages,
+                messages: [
+                    CodexChatMessage(
+                        role: .user,
+                        text: decoded.text,
+                        context: decoded.context
+                    ),
+                ] + assistantMessages,
                 model: nil,
                 reasoningEffort: nil
             )
@@ -253,13 +401,17 @@ import Foundation
             )
         }
 
+        func setThreadName(threadID _: String, name: String) async {
+            threadNames.append(name)
+        }
+
         func send(
             threadID _: String,
-            text: String,
+            textBlocks: [String],
             model _: String?,
             effort _: String
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
-            sentTexts.append(text)
+            sentTextBlocks.append(textBlocks)
             let (stream, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
             continuation.yield(.started(turnID: "turn-1"))
             switch mode {
@@ -313,4 +465,26 @@ import Foundation
             inputModalities: ["text"]
         )
     }
+
+    @MainActor
+    private final class TestCodexChatContextProvider: CodexChatContextProviding {
+        var context: CodexChatContext?
+        var error: CodexAppServerError?
+
+        init(
+            context: CodexChatContext? = nil,
+            error: CodexAppServerError? = nil
+        ) {
+            self.context = context
+            self.error = error
+        }
+
+        func currentContext(vaultID _: UUID) async throws -> CodexChatContext? {
+            if let error {
+                throw error
+            }
+            return context
+        }
+    }
+
 #endif

@@ -8,13 +8,13 @@ struct CodexChatMessageRow: View {
             if message.role == .user {
                 Spacer(minLength: 72)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(message.text)
+                    Text(userVisibleText)
                         .textSelection(.enabled)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
 
-                    CodexChatCopyButton(text: message.text)
+                    CodexChatCopyButton(text: userVisibleText)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 10) {
@@ -45,5 +45,9 @@ struct CodexChatMessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    }
+
+    private var userVisibleText: String {
+        CodexChatPromptCodec.visibleUserText(from: message.text)
     }
 }

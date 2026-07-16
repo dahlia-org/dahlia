@@ -102,6 +102,55 @@ import Foundation
             #expect(coordinator.history.map(\.id) == ["history-\(newVault.id.uuidString)"])
         }
 
+        @Test
+        func floatingAndDetachedSessionsShareLatestScreenContext() async throws {
+            let service = CoordinatorTestCodexChatService()
+            let settings = AppSettings()
+            let vault = Self.vault(name: "Shared Context")
+            settings.currentVault = vault
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
+            let firstDraft = DraftMeeting(id: UUID.v7(), title: "First draft")
+            coordinator.updateCurrentContext(
+                vaultID: vault.id,
+                meetingID: nil,
+                draftMeeting: firstDraft,
+                dbQueue: nil
+            )
+
+            coordinator.floatingSession.draft = "First question"
+            coordinator.floatingSession.sendDraft()
+            await waitUntil { await MainActor.run { !coordinator.floatingSession.isGenerating } }
+
+            let detachedID = coordinator.newDetachedChat()
+            let detachedSession = try #require(coordinator.session(for: detachedID))
+            coordinator.updateCurrentContext(
+                vaultID: vault.id,
+                meetingID: nil,
+                draftMeeting: DraftMeeting(id: UUID.v7(), title: "Second draft"),
+                dbQueue: nil
+            )
+            detachedSession.draft = "Second question"
+            detachedSession.sendDraft()
+            await waitUntil { await MainActor.run { !detachedSession.isGenerating } }
+
+            let historyID = await coordinator.openHistoryThreadInDetachedWindow(Self.threadSummary(id: "history"))
+            let historySession = try #require(coordinator.session(for: historyID))
+            coordinator.updateCurrentContext(
+                vaultID: vault.id,
+                meetingID: nil,
+                draftMeeting: DraftMeeting(id: UUID.v7(), title: "History draft"),
+                dbQueue: nil
+            )
+            historySession.draft = "History question"
+            historySession.sendDraft()
+            await waitUntil { await MainActor.run { !historySession.isGenerating } }
+
+            let prompts = await service.sentTextBlocks
+            #expect(prompts.allSatisfy { $0.count == 2 })
+            let contexts = prompts.map { CodexChatPromptCodec.decodeTextBlocks($0).context }
+            #expect(contexts.map { $0?.meetingName } == ["First draft", "Second draft", "History draft"])
+        }
+
         private static func threadSummary(id: String) -> CodexChatThreadSummary {
             CodexChatThreadSummary(id: id, title: "History", updatedAt: .now)
         }
@@ -156,9 +205,11 @@ import Foundation
             Self.thread(id: "new")
         }
 
+        func setThreadName(threadID _: String, name _: String) async {}
+
         func send(
             threadID _: String,
-            text _: String,
+            textBlocks _: [String],
             model _: String?,
             effort _: String
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
@@ -186,6 +237,7 @@ import Foundation
         private let failFirstHistoryRequest: Bool
         private var historyRequestCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
+        private(set) var sentTextBlocks: [[String]] = []
 
         init(failFirstHistoryRequest: Bool = false) {
             self.failFirstHistoryRequest = failFirstHistoryRequest
@@ -218,13 +270,16 @@ import Foundation
             CodexChatThread(id: "new-thread", title: "", messages: [], model: "default-model", reasoningEffort: effort)
         }
 
+        func setThreadName(threadID _: String, name _: String) async {}
+
         func send(
             threadID _: String,
-            text _: String,
+            textBlocks: [String],
             model _: String?,
             effort _: String
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
-            AsyncThrowingStream { $0.finish() }
+            sentTextBlocks.append(textBlocks)
+            return AsyncThrowingStream<CodexChatTurnEvent, any Error> { $0.finish() }
         }
 
         func interrupt(threadID _: String, turnID _: String) async {}

@@ -64,6 +64,9 @@
 "Could Not Create Project" = "プロジェクトを作成できませんでした";
 "The project folder could not be created." = "プロジェクトフォルダを作成できませんでした。";
 "New meeting" = "New meeting";
+"Meeting draft: %@" = "下書き: %@";
+"Context changed to %@" = "コンテキストが %@ に切り替わりました";
+"The selected meeting is no longer available." = "選択中のミーティングを読み込めませんでした。";
 "Project Name" = "プロジェクト名";
 "Rename Project" = "プロジェクト名を変更";
 "Renaming also updates the project folder and all subprojects." = "名前を変更すると、プロジェクトフォルダとすべてのサブプロジェクトも更新されます。";

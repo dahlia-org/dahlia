@@ -92,21 +92,50 @@ struct ContentView: View {
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
             handleMeetingSelectionChange(newValue)
+            syncChatContext()
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in
-            guard oldId != newId, let newId else { return }
-            if sidebarViewModel.selectedMeetingId != newId {
+            guard oldId != newId else { return }
+            if let newId, sidebarViewModel.selectedMeetingId != newId {
                 sidebarViewModel.selectMeeting(newId)
             }
+            syncChatContext()
+        }
+        .onChange(of: viewModel.draftMeeting) {
+            syncChatContext()
         }
         .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
+            syncChatContext()
         }
+        .task { syncChatContext() }
     }
 
     private func openDetachedChat(_ sessionID: CodexChatSessionID) {
         openWindow(id: WindowID.codexChat, value: sessionID)
+    }
+
+    private func syncChatContext() {
+        guard sidebarViewModel.selectedMeetingIds.count <= 1 else {
+            chatCoordinator.updateCurrentContext(
+                vaultID: sidebarViewModel.currentVault?.id,
+                meetingID: nil,
+                draftMeeting: nil,
+                dbQueue: sidebarViewModel.dbQueue
+            )
+            return
+        }
+
+        let draftMeeting = viewModel.draftMeeting
+        chatCoordinator.updateCurrentContext(
+            vaultID: sidebarViewModel.currentVault?.id,
+            meetingID: draftMeeting == nil
+                ? viewModel.currentMeetingId ?? sidebarViewModel.selectedMeetingId
+                : nil,
+            draftMeeting: draftMeeting,
+            dbQueue: sidebarViewModel.dbQueue
+        )
     }
 
     @ViewBuilder

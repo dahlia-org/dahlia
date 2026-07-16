@@ -21,6 +21,7 @@ final class CodexChatSessionModel: Identifiable {
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private var isStopRequested = false
     @ObservationIgnored private var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
@@ -34,7 +35,8 @@ final class CodexChatSessionModel: Identifiable {
         modelID: String? = nil,
         effort: String? = nil,
         service: any CodexChatServicing = CodexChatService.shared,
-        settings: AppSettings = .shared
+        settings: AppSettings = .shared,
+        contextProvider: any CodexChatContextProviding = CodexChatContextProvider()
     ) {
         self.id = id
         self.vaultID = vaultID ?? settings.currentVault?.id
@@ -45,6 +47,7 @@ final class CodexChatSessionModel: Identifiable {
         self.selectedEffort = effort ?? settings.codexChatReasoningEffort
         self.service = service
         self.settings = settings
+        self.contextProvider = contextProvider
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -102,13 +105,12 @@ final class CodexChatSessionModel: Identifiable {
 
     func sendDraft() {
         guard canSend, let text = draft.nilIfBlank else { return }
-        draft = ""
-        send(text)
+        submit(text, clearsDraft: true)
     }
 
     func retry() {
         guard let lastSubmittedText else { return }
-        send(lastSubmittedText)
+        submit(lastSubmittedText, clearsDraft: draft == lastSubmittedText)
     }
 
     func stop() {
@@ -127,23 +129,7 @@ final class CodexChatSessionModel: Identifiable {
         unsubscribeIfPossible()
     }
 
-    private func send(_ text: String) {
-        guard isBoundToCurrentVault,
-              !isGenerating,
-              text.nilIfBlank != nil else { return }
-        isGenerating = true
-        errorMessage = nil
-        lastSubmittedText = text
-        messages.append(CodexChatMessage(role: .user, text: text))
-        let responseID = "pending-\(UUID.v7().uuidString)"
-        messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
-
-        Task { [weak self] in
-            await self?.runTurn(text: text, responseID: responseID)
-        }
-    }
-
-    private func runTurn(text: String, responseID: String) async {
+    private func runTurn(text: String, context: CodexChatContext?, responseID: String) async {
         var accumulator = CodexChatTurnAccumulator()
         do {
             if models.isEmpty {
@@ -160,6 +146,8 @@ final class CodexChatSessionModel: Identifiable {
                     vaultID: vaultID
                 )
                 apply(thread, preservingPendingMessages: true)
+                title = text
+                await service.setThreadName(threadID: thread.id, name: text)
             }
             guard let backendThreadID else {
                 throw CodexAppServerError.invalidProtocolResponse
@@ -167,7 +155,7 @@ final class CodexChatSessionModel: Identifiable {
 
             let stream = try await service.send(
                 threadID: backendThreadID,
-                text: text,
+                textBlocks: CodexChatPromptCodec.encodeTextBlocks(text: text, context: context),
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
@@ -311,6 +299,48 @@ final class CodexChatSessionModel: Identifiable {
                 ?? options[0].reasoningEffort
         }
         settings.codexChatReasoningEffort = selectedEffort
+    }
+}
+
+private extension CodexChatSessionModel {
+    func submit(_ text: String, clearsDraft: Bool) {
+        guard isBoundToCurrentVault,
+              !isGenerating,
+              text.nilIfBlank != nil else { return }
+        isGenerating = true
+        errorMessage = nil
+
+        Task { [weak self] in
+            await self?.resolveContextAndRunTurn(text: text, clearsDraft: clearsDraft)
+        }
+    }
+
+    func resolveContextAndRunTurn(text: String, clearsDraft: Bool) async {
+        let context: CodexChatContext?
+        do {
+            guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
+            context = try await contextProvider.currentContext(vaultID: vaultID)
+        } catch {
+            lastSubmittedText = text
+            errorMessage = error.localizedDescription
+            finishGeneration()
+            return
+        }
+        guard !isReleased,
+              !isStopRequested,
+              isBoundToCurrentVault else {
+            finishGeneration()
+            return
+        }
+        if clearsDraft, draft == text {
+            draft = ""
+        }
+        lastSubmittedText = text
+        messages.append(CodexChatMessage(role: .user, text: text, context: context))
+        let responseID = "pending-\(UUID.v7().uuidString)"
+        messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
+
+        await runTurn(text: text, context: context, responseID: responseID)
     }
 }
 

@@ -553,6 +553,16 @@ final class MeetingRepository {
         }
     }
 
+    func fetchCodexChatContext(
+        id meetingId: UUID
+    ) async throws -> (meeting: MeetingRecord?, calendarEvent: CalendarEventRecord?) {
+        try await dbQueue.read { db in
+            let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+            let calendarEvent = try Self.fetchCalendarEvent(for: meeting, in: db)
+            return (meeting, calendarEvent)
+        }
+    }
+
     /// サマリーを保存する（insert or update）。
     nonisolated func upsertSummary(_ summary: SummaryRecord) throws {
         try dbQueue.write { db in
