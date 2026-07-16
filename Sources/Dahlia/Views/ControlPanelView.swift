@@ -482,7 +482,7 @@ struct ControlPanelView: View {
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .notes
     @State private var expandedScreenshot: MeetingScreenshotRecord?
-    @State private var screenshotGridLayout = ScreenshotGridLayout.large
+    @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
     @State private var isConfirmingScreenshotDeletion = false
@@ -769,7 +769,7 @@ struct ControlPanelView: View {
         } else {
             VStack(spacing: 0) {
                 ScreenshotManagementToolbar(
-                    layout: $screenshotGridLayout,
+                    minimumWidth: $screenshotMinimumWidth,
                     isSelecting: $isSelectingScreenshots,
                     selectedCount: selectedScreenshotIds.count,
                     canSelectAll: selectedScreenshotIds.count < deletableScreenshotIds.count,
@@ -783,7 +783,7 @@ struct ControlPanelView: View {
 
                 ScrollView {
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: screenshotGridLayout.minimumWidth), spacing: 12)],
+                        columns: [GridItem(.adaptive(minimum: screenshotMinimumWidth), spacing: 12)],
                         spacing: 12
                     ) {
                         let timeBase = screenshotTimeBase

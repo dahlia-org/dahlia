@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ScreenshotManagementToolbar: View {
-    @Binding var layout: ScreenshotGridLayout
+    @Binding var minimumWidth: Double
     @Binding var isSelecting: Bool
     let selectedCount: Int
     let canSelectAll: Bool
@@ -11,15 +11,20 @@ struct ScreenshotManagementToolbar: View {
 
     var body: some View {
         HStack {
-            Picker(L10n.layout, selection: $layout) {
-                ForEach(ScreenshotGridLayout.allCases) { layout in
-                    Label(layout.label, systemImage: layout.systemImage)
-                        .tag(layout)
-                }
+            Slider(
+                value: $minimumWidth,
+                in: ScreenshotGridSizing.minimumWidth ... ScreenshotGridSizing.maximumWidth
+            ) {
+                Text(L10n.layout)
+            } minimumValueLabel: {
+                Image(systemName: "square.grid.3x3")
+                    .accessibilityLabel(L10n.small)
+            } maximumValueLabel: {
+                Image(systemName: "rectangle.grid.1x2")
+                    .accessibilityLabel(L10n.large)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            .frame(minWidth: 140, maxWidth: 220)
+            .help(L10n.layout)
 
             Spacer()
 
