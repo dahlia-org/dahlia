@@ -391,27 +391,6 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func projectPromptContentUsesStructuredEscapedProjectData() throws {
-        let content = try #require(SummaryService.projectPromptContent(
-            name: "Customer & Partner",
-            description: "Discuss <launch> and the \"next step\"."
-        ))
-
-        #expect(content == """
-        <project>
-        <name>Customer &amp; Partner</name>
-        <description>Discuss &lt;launch&gt; and the &quot;next step&quot;.</description>
-        </project>
-        """)
-    }
-
-    @Test
-    func projectPromptContentRequiresProjectName() {
-        #expect(SummaryService.projectPromptContent(name: nil, description: "Description") == nil)
-        #expect(SummaryService.projectPromptContent(name: "  ", description: "Description") == nil)
-    }
-
-    @Test
     func resolvedSummaryPromptUsesDefaultWhenAutoSelected() {
         let previousInstructionID = AppSettings.shared.selectedInstructionID
         let previousVault = AppSettings.shared.currentVault

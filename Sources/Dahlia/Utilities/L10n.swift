@@ -474,6 +474,19 @@ enum L10n {
         bundle: bundle
     ) }
     static var summaryAndExport: String { String(localized: "Summary and Export", bundle: bundle) }
+    static var previousMeetingsInSummaryContext: String { String(
+        localized: "Previous Meetings in Context",
+        bundle: bundle
+    ) }
+    static var previousMeetingsInSummaryContextDescription: String { String(
+        localized: "Include the latest meetings from the same calendar series in the summary context.",
+        bundle: bundle
+    ) }
+    static var summaryGenerationConfirmationTitle: String { String(localized: "Generate this summary?", bundle: bundle) }
+    static var summaryGenerationConfirmationDescription: String { String(
+        localized: "Review the context and export options before generating the summary.",
+        bundle: bundle
+    ) }
     static var exportBatchSummaryToVault: String { String(
         localized: "Export Summary to Vault",
         bundle: bundle

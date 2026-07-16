@@ -11,6 +11,8 @@ struct BatchTranscriptionOptionsForm: View {
     private var exportBatchSummaryToVault = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey)
     private var exportBatchSummaryToGoogleDocs = false
+    @AppStorage(AppSettings.summaryPreviousMeetingCountUserDefaultsKey)
+    private var previousMeetingCount = AppSettings.defaultSummaryPreviousMeetingCount
 
     var body: some View {
         Form {
@@ -36,19 +38,12 @@ struct BatchTranscriptionOptionsForm: View {
                 }
                 .toggleStyle(.checkbox)
 
-                Toggle(isOn: $exportBatchSummaryToVault) {
-                    Text(L10n.exportBatchSummaryToVault)
-                    Text(L10n.exportBatchSummaryToVaultDescription)
-                }
-                .toggleStyle(.checkbox)
-                .disabled(!generateSummaryAfterBatchTranscription)
-
-                Toggle(isOn: $exportBatchSummaryToGoogleDocs) {
-                    Text(L10n.exportBatchSummaryToGoogleDocs)
-                    Text(L10n.exportBatchSummaryToGoogleDocsDescription)
-                }
-                .toggleStyle(.checkbox)
-                .disabled(!generateSummaryAfterBatchTranscription)
+                SummaryGenerationOptionsControls(
+                    previousMeetingCount: normalizedPreviousMeetingCount,
+                    exportsToVault: $exportBatchSummaryToVault,
+                    exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
+                    isEnabled: generateSummaryAfterBatchTranscription
+                )
             }
         }
         .formStyle(.grouped)
@@ -58,5 +53,12 @@ struct BatchTranscriptionOptionsForm: View {
         locale.localizedString(forIdentifier: locale.identifier)
             ?? Locale.current.localizedString(forIdentifier: locale.identifier)
             ?? locale.identifier
+    }
+
+    private var normalizedPreviousMeetingCount: Binding<Int> {
+        Binding(
+            get: { AppSettings.normalizedSummaryPreviousMeetingCount(previousMeetingCount) },
+            set: { previousMeetingCount = AppSettings.normalizedSummaryPreviousMeetingCount($0) }
+        )
     }
 }

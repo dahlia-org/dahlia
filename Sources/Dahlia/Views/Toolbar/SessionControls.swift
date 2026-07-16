@@ -54,15 +54,14 @@ struct RecordToolbarButton: View {
 
 struct GenerateSummaryToolbarButton: View {
     @ObservedObject var viewModel: CaptionViewModel
+    @State private var isConfirmationPresented = false
 
     private var isGeneratingCurrentMeeting: Bool {
         viewModel.summaryGeneratingMeetingId == viewModel.currentMeetingId
     }
 
     var body: some View {
-        Button {
-            viewModel.triggerManualSummary()
-        } label: {
+        Button(action: presentConfirmation) {
             Label {
                 Text(L10n.generateSummary)
             } icon: {
@@ -72,6 +71,17 @@ struct GenerateSummaryToolbarButton: View {
         }
         .disabled(isGeneratingCurrentMeeting || !viewModel.canGenerateSummary)
         .help(L10n.generateSummary)
+        .sheet(isPresented: $isConfirmationPresented) {
+            SummaryGenerationConfirmationView(onGenerate: generateSummary)
+        }
+    }
+
+    private func presentConfirmation() {
+        isConfirmationPresented = true
+    }
+
+    private func generateSummary(options: SummaryGenerationOptions) {
+        viewModel.triggerManualSummary(options: options)
     }
 
     private var summaryIconColor: Color {

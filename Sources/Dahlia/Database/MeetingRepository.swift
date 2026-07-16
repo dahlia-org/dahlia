@@ -622,6 +622,65 @@ final class MeetingRepository {
 }
 
 extension MeetingRepository {
+    func fetchPreviousMeetingMetadata(
+        forMeetingId meetingId: UUID,
+        limit: Int
+    ) throws -> [SummaryPreviousMeetingMetadata] {
+        guard limit > 0 else { return [] }
+
+        return try dbQueue.read { db in
+            guard let currentMeeting = try MeetingRecord.fetchOne(db, key: meetingId),
+                  let icalUid = currentMeeting.calendarEventIcalUid?.nilIfBlank else {
+                return []
+            }
+            let currentCalendarEvent = try Self.fetchCalendarEvent(for: currentMeeting, in: db)
+            let cutoff = currentCalendarEvent?.start ?? currentMeeting.createdAt
+            let rows = try Row.fetchCursor(
+                db,
+                sql: """
+                SELECT meetings.id AS meetingId,
+                       meetings.name AS name,
+                       meetings.createdAt AS recordedAt,
+                       calendar_events.start AS calendarStart,
+                       calendar_events.end AS calendarEnd,
+                       summaries.document AS summaryDocument
+                FROM meetings
+                JOIN summaries ON summaries.meetingId = meetings.id
+                LEFT JOIN calendar_events
+                  ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
+                 AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
+                WHERE meetings.vaultId = ?
+                  AND meetings.calendar_event_ical_uid = ?
+                  AND meetings.id <> ?
+                  AND COALESCE(calendar_events.start, meetings.createdAt) < ?
+                ORDER BY COALESCE(calendar_events.start, meetings.createdAt) DESC,
+                         meetings.createdAt DESC,
+                         meetings.id DESC
+                """,
+                arguments: [currentMeeting.vaultId, icalUid, meetingId, cutoff]
+            )
+
+            var summaries: [SummaryPreviousMeetingMetadata] = []
+            while summaries.count < limit, let row = try rows.next() {
+                let documentJSON: String = row["summaryDocument"]
+                guard (try? JSONDecoder().decode(
+                    SummaryDocument.self,
+                    from: Data(documentJSON.utf8)
+                )) != nil else { continue }
+                summaries.append(SummaryPreviousMeetingMetadata(
+                    meetingId: row["meetingId"],
+                    name: row["name"],
+                    recordedAt: row["recordedAt"],
+                    calendarStart: row["calendarStart"],
+                    calendarEnd: row["calendarEnd"]
+                ))
+            }
+            return summaries
+        }
+    }
+}
+
+extension MeetingRepository {
     /// 現在の Vault にある同一予定の最新 Meeting を返し、観測した予定情報も更新する。
     func resolveMeetingIdForCalendarEvent(
         _ event: CalendarEvent,

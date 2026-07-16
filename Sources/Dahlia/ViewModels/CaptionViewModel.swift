@@ -142,7 +142,7 @@ final class CaptionViewModel: ObservableObject {
 
     @Published var summaryGeneratingMeetingId: UUID?
     var isSummaryGenerating: Bool { summaryGeneratingMeetingId != nil }
-    private var pendingBatchSummaryRequestsBySessionId: [UUID: (meetingId: UUID, exportOptions: SummaryExportOptions)] = [:]
+    private var pendingBatchSummaryRequestsBySessionId: [UUID: (meetingId: UUID, options: SummaryGenerationOptions)] = [:]
     @Published var summaryError: String?
     @Published private(set) var googleDocsExportError: String?
     private var isExportingCurrentSummaryToGoogleDocs = false
@@ -519,7 +519,7 @@ final class CaptionViewModel: ObservableObject {
         if settings.generateSummaryAfterBatchTranscription {
             pendingBatchSummaryRequestsBySessionId[confirmation.sessionId] = (
                 meetingId: confirmation.meetingId,
-                exportOptions: settings.batchSummaryExportOptions
+                options: settings.batchSummaryGenerationOptions
             )
         } else {
             pendingBatchSummaryRequestsBySessionId.removeValue(forKey: confirmation.sessionId)
@@ -1959,12 +1959,12 @@ final class CaptionViewModel: ObservableObject {
         return !store.segments.isEmpty
     }
 
-    /// プルダウンメニューから手動で要約を実行する。
-    func triggerManualSummary() {
-        triggerSummary(exportOptions: .manual)
+    /// 確認画面で選択した設定を使って手動要約を実行する。
+    func triggerManualSummary(options: SummaryGenerationOptions = .manual) {
+        triggerSummary(options: options)
     }
 
-    private func triggerSummary(exportOptions: SummaryExportOptions) {
+    private func triggerSummary(options: SummaryGenerationOptions) {
         guard canGenerateSummary,
               let meetingId = currentMeetingId,
               let vaultURL = currentVaultURL else { return }
@@ -1985,7 +1985,7 @@ final class CaptionViewModel: ObservableObject {
                 projectName: projectName,
                 segments: segments,
                 recordingSessions: recordingSessions,
-                exportOptions: exportOptions
+                options: options
             )
         }
     }
@@ -1993,7 +1993,7 @@ final class CaptionViewModel: ObservableObject {
     private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
         let pendingRequests = pendingBatchSummaryRequestsBySessionId.compactMap { sessionId, request in
             request.meetingId == meetingId
-                ? (sessionId: sessionId, exportOptions: request.exportOptions)
+                ? (sessionId: sessionId, options: request.options)
                 : nil
         }
         guard currentMeetingId == meetingId,
@@ -2002,8 +2002,8 @@ final class CaptionViewModel: ObservableObject {
         for request in pendingRequests {
             pendingBatchSummaryRequestsBySessionId.removeValue(forKey: request.sessionId)
         }
-        let exportOptions = SummaryExportOptions.merging(pendingRequests.map(\.exportOptions))
-        triggerSummary(exportOptions: exportOptions)
+        let options = SummaryGenerationOptions.merging(pendingRequests.map(\.options))
+        triggerSummary(options: options)
     }
 
     // Summary generation coordinates persistence and two optional export destinations as one user operation.
@@ -2017,7 +2017,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String,
         segments: [TranscriptSegment],
         recordingSessions: [RecordingSessionTimeline],
-        exportOptions: SummaryExportOptions
+        options: SummaryGenerationOptions
     ) async {
         guard !transcriptText.isEmpty,
               !isDeletingScreenshots else { return }
@@ -2039,8 +2039,15 @@ final class CaptionViewModel: ObservableObject {
             var screenshots: [MeetingScreenshotRecord] = []
             var promptProjectName = projectName.nilIfBlank
             var projectDescription: String?
+            var calendarEvent: CalendarEventRecord?
+            var previousMeetings: [SummaryPreviousMeetingMetadata] = []
             if let repo {
                 screenshots = (try? repo.fetchScreenshots(forMeetingId: meetingId)) ?? []
+                calendarEvent = try repo.fetchCalendarEvent(forMeetingId: meetingId)
+                previousMeetings = try repo.fetchPreviousMeetingMetadata(
+                    forMeetingId: meetingId,
+                    limit: options.previousMeetingCount
+                )
                 if let projectId,
                    let project = try repo.fetchProject(id: projectId) {
                     promptProjectName = project.name
@@ -2049,6 +2056,7 @@ final class CaptionViewModel: ObservableObject {
             }
 
             progressPresentationID = summaryProgress.show()
+            let exportOptions = options.exportOptions
             summaryProgress.vaultExport = exportOptions.exportsToVault ? .pending : .skipped
             summaryProgress.googleDocsExport = exportOptions.exportsToGoogleDocs ? .pending : .skipped
 
@@ -2056,10 +2064,14 @@ final class CaptionViewModel: ObservableObject {
             summaryProgress.summaryGeneration = .running
 
             let generatedSummary = try await SummaryService.generateSummary(
-                projectName: promptProjectName,
-                projectDescription: projectDescription,
-                meetingId: meetingId,
-                createdAt: createdAt,
+                promptContext: SummaryPromptContext(
+                    meetingId: meetingId,
+                    recordedAt: createdAt,
+                    calendarEvent: calendarEvent,
+                    projectName: promptProjectName,
+                    projectDescription: projectDescription,
+                    previousMeetings: previousMeetings
+                ),
                 transcriptText: transcriptText,
                 noteText: currentNoteText.isEmpty ? nil : currentNoteText,
                 screenshots: screenshots,
