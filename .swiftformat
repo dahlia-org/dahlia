@@ -66,4 +66,6 @@
 --disable acronyms
 --disable wrapPropertyBodies
 --disable wrapFunctionBodies
+--disable wrapIfExpressionBodies
+--disable wrapIfStatementBodies
 --disable redundantSelf

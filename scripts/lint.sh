@@ -10,15 +10,12 @@ if [[ "${CI:-}" == "true" ]]; then
 fi
 
 echo "=== SwiftFormat ==="
-if ! command -v swiftformat &>/dev/null; then
-    echo "SwiftFormat not found. Install: brew install swiftformat"
-    exit 1
-fi
+swiftformat_command="$PWD/scripts/run-swiftformat.sh"
 
 if [[ "$is_ci" == "true" ]]; then
-    swiftformat --cache ignore --lint Sources/
+    "$swiftformat_command" --cache ignore --lint Sources/
 else
-    swiftformat --cache ignore Sources/
+    "$swiftformat_command" --cache ignore Sources/
 fi
 echo "SwiftFormat: done"
 

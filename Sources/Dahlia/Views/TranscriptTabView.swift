@@ -1,22 +1,7 @@
 import SwiftUI
 
 struct TranscriptTabView: View {
-    private enum ScrollMetrics {
-        static let bottomAnchorID = "transcript-bottom"
-        static let followThreshold: CGFloat = 32
-        static let loadMoreThreshold: CGFloat = 24
-    }
-
-    private struct EdgeProximity: Equatable {
-        let isNearBottom: Bool
-        let isNearTop: Bool
-        let contentOffsetY: CGFloat
-    }
-
-    private struct SegmentStructure: Equatable {
-        let count: Int
-        let latestConfirmedID: TranscriptSegment.ID?
-    }
+    private static let prefetchDistance = 30
 
     @ObservedObject var store: TranscriptStore
     let isListening: Bool
@@ -26,42 +11,11 @@ struct TranscriptTabView: View {
     let confirmBatchTranscription: () -> Void
     let retryBatchTranscription: () -> Void
     let discardFailedBatchTranscription: () -> Void
+    let retryInitialMeetingLoad: () -> Void
 
-    /// 過去へ移動しても ForEach の要素数が増えない固定容量の表示 window。
-    @State private var segmentWindow = TranscriptSegmentWindow<TranscriptSegment.ID>()
-    @State private var didCompleteInitialBottomScroll = false
-    /// 上端到達時の onAppear が連射しないようにする単発フラグ。
-    /// 一度 false に倒したら、ユーザーが上端から離れた瞬間 (`!isNearTop`) にのみ再アームする。
-    /// Spinner が表示領域に留まり続けるケースで誤って再ロードが走るのを防ぐ。
-    @State private var canLoadMoreFromTop = true
-    @State private var canLoadMoreFromBottom = true
-    @State private var isWindowShiftPending = false
-    /// resetWindowAndScrollToBottom 中の deferred scroll を保持し、リセット連発時に古い Task を cancel する。
-    @State private var pendingScrollTask: Task<Void, Never>?
-
-    /// ForEach の ID 照合対象を固定容量に制限する。
-    private var windowedSegments: ArraySlice<TranscriptSegment> {
-        store.segments[windowRange]
-    }
-
-    private var windowRange: Range<Int> {
-        segmentWindow.range(in: store.segments, id: \.id)
-    }
-
-    private var hasMoreAbove: Bool {
-        windowRange.lowerBound > 0
-    }
-
-    private var hasMoreBelow: Bool {
-        windowRange.upperBound < store.segments.count
-    }
-
-    private var segmentStructure: SegmentStructure {
-        let latestConfirmedID = store.segments
-            .lastIndex(where: \.isConfirmed)
-            .map { store.segments[$0].id }
-        return SegmentStructure(count: store.segments.count, latestConfirmedID: latestConfirmedID)
-    }
+    @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
+    @State private var isFollowingLatest = true
+    @State private var pageLoadTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,7 +28,12 @@ struct TranscriptTabView: View {
                 )
             }
 
-            if store.segments.isEmpty, !isListening || batchTranscriptionState != nil {
+            if store.isLoadingInitialPage {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store.segments.isEmpty,
+                      store.pageLoadError == nil,
+                      !isListening || batchTranscriptionState != nil {
                 ContentUnavailableView {
                     Label(L10n.transcript, systemImage: "waveform.badge.microphone")
                 } description: {
@@ -82,27 +41,54 @@ struct TranscriptTabView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                transcriptScrollView
+                transcriptContent
             }
+        }
+        .onDisappear {
+            pageLoadTask?.cancel()
         }
     }
 
-    private var transcriptScrollView: some View {
-        ScrollViewReader { proxy in
+    private var transcriptContent: some View {
+        VStack(spacing: 0) {
+            if let pageLoadError = store.pageLoadError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(L10n.transcriptLoadFailed(pageLoadError))
+                        .font(.caption)
+                        .lineLimit(2)
+                    Spacer()
+                    Button(L10n.retry) {
+                        if store.requiresFullMeetingReload {
+                            retryInitialMeetingLoad()
+                        } else {
+                            retryPageLoad()
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                Divider()
+            }
+
+            if store.hasNewerSegments {
+                Button {
+                    loadLatest()
+                } label: {
+                    Label(L10n.newerTranscriptAvailable, systemImage: "arrow.down.circle.fill")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .padding(.vertical, 6)
+            }
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    if hasMoreAbove {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .onAppear {
-                                loadEarlierSegmentsIfNeeded(using: proxy)
-                            }
-                    }
-
                     let timeBase = store.timeBase
                     let recordingSessions = store.recordingSessions
-                    ForEach(windowedSegments) { segment in
+                    ForEach(store.segments) { segment in
                         TranscriptRowView(
                             segment: segment,
                             timestamp: Formatters.elapsedHHmmss(
@@ -115,15 +101,7 @@ struct TranscriptTabView: View {
                             allowsTextSelection: !isListening
                         )
                         .equatable()
-                    }
-
-                    if hasMoreBelow {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .onAppear {
-                                loadLaterSegmentsIfNeeded(using: proxy)
-                            }
+                        .id(segment.id)
                     }
 
                     if showsRecordingIndicator {
@@ -138,120 +116,104 @@ struct TranscriptTabView: View {
                         .padding(.vertical, 4)
                         .padding(.leading, 68)
                     }
-
-                    Color.clear
-                        .frame(height: 1)
-                        .id(ScrollMetrics.bottomAnchorID)
                 }
+                .scrollTargetLayout()
                 .padding(8)
             }
+            .scrollPosition($scrollPosition)
+            .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in
+                updateVisibleSegments(ids)
+            }
             .onAppear {
-                resetWindowAndScrollToBottom(using: proxy)
+                scrollToLatest()
             }
-            .onChange(of: store.segments.first?.id) { _, _ in
-                resetWindowAndScrollToBottom(using: proxy)
-            }
-            .onScrollGeometryChange(for: EdgeProximity.self) { geometry in
-                let distanceFromBottom = geometry.contentSize.height
-                    - geometry.contentOffset.y
-                    - geometry.containerSize.height
-                return EdgeProximity(
-                    isNearBottom: distanceFromBottom <= ScrollMetrics.followThreshold,
-                    isNearTop: geometry.contentOffset.y <= ScrollMetrics.loadMoreThreshold,
-                    contentOffsetY: geometry.contentOffset.y
-                )
-            } action: { previousProximity, proximity in
-                let isFollowingLatest = proximity.isNearBottom && !hasMoreBelow
-                if isFollowingLatest {
-                    segmentWindow.followLatest()
-                } else if didCompleteInitialBottomScroll,
-                          segmentWindow.isFollowingLatest,
-                          abs(proximity.contentOffsetY - previousProximity.contentOffsetY) > 0.5 {
-                    // Content growth alone must not disable follow mode; only viewport movement does.
-                    segmentWindow.freeze(in: store.segments, id: \.id)
-                }
-                if !proximity.isNearTop {
-                    canLoadMoreFromTop = true
-                }
-                if !proximity.isNearBottom {
-                    canLoadMoreFromBottom = true
-                }
-            }
-            .onChange(of: segmentStructure) { _, _ in
-                guard segmentWindow.isFollowingLatest else { return }
-                scrollToBottom(using: proxy)
+            .onChange(of: store.latestConfirmedID) { _, _ in
+                guard isFollowingLatest, !store.hasLaterSegments else { return }
+                scrollToLatest()
             }
         }
     }
 
-    private func loadEarlierSegmentsIfNeeded(using proxy: ScrollViewProxy) {
-        guard didCompleteInitialBottomScroll,
-              !segmentWindow.isFollowingLatest,
-              canLoadMoreFromTop,
-              !isWindowShiftPending else { return }
-        let currentRange = windowRange
-        guard !currentRange.isEmpty else { return }
-        let anchorID = store.segments[currentRange.lowerBound].id
+    private func updateVisibleSegments(_ ids: [TranscriptSegment.ID]) {
+        let indexesByID = Dictionary(uniqueKeysWithValues: store.segments.enumerated().map { ($0.element.id, $0.offset) })
+        let visible = ids.compactMap { id in indexesByID[id].map { (id, $0) } }
+        guard let first = visible.min(by: { $0.1 < $1.1 }),
+              let last = visible.max(by: { $0.1 < $1.1 }) else { return }
 
-        canLoadMoreFromTop = false
-        guard segmentWindow.shiftEarlier(in: store.segments, id: \.id) else { return }
-        restoreScrollPosition(to: anchorID, anchor: .top, using: proxy)
-    }
+        let followsLatest = !store.hasLaterSegments
+            && last.1 >= max(0, store.segments.count - 2)
+        isFollowingLatest = followsLatest
+        store.setFollowingLatest(followsLatest)
 
-    private func loadLaterSegmentsIfNeeded(using proxy: ScrollViewProxy) {
-        guard didCompleteInitialBottomScroll,
-              !segmentWindow.isFollowingLatest,
-              canLoadMoreFromBottom,
-              !isWindowShiftPending else { return }
-        let currentRange = windowRange
-        guard !currentRange.isEmpty else { return }
-        let anchorID = store.segments[currentRange.upperBound - 1].id
-
-        canLoadMoreFromBottom = false
-        guard segmentWindow.shiftLater(in: store.segments, id: \.id) else { return }
-        restoreScrollPosition(to: anchorID, anchor: .bottom, using: proxy)
-    }
-
-    private func resetWindowAndScrollToBottom(using proxy: ScrollViewProxy) {
-        didCompleteInitialBottomScroll = false
-        canLoadMoreFromTop = true
-        canLoadMoreFromBottom = true
-        isWindowShiftPending = false
-        segmentWindow.followLatest()
-
-        scheduleDeferredScroll {
-            // LazyVStack の初期レイアウト確定後にスクロールするため、1 ターン譲る。
-            scrollToBottom(using: proxy)
-            didCompleteInitialBottomScroll = true
+        if first.1 <= Self.prefetchDistance, store.hasEarlierSegments {
+            loadPage(.earlier, anchorID: first.0)
+        } else if last.1 >= store.segments.count - Self.prefetchDistance - 1,
+                  store.hasLaterSegments {
+            loadPage(.later, anchorID: last.0)
         }
     }
 
-    private func restoreScrollPosition(
-        to id: TranscriptSegment.ID,
-        anchor: UnitPoint,
-        using proxy: ScrollViewProxy
-    ) {
-        isWindowShiftPending = true
-        scheduleDeferredScroll {
-            proxy.scrollTo(id, anchor: anchor)
-            isWindowShiftPending = false
+    private enum PageEdge: Equatable {
+        case earlier
+        case later
+    }
+
+    private func loadPage(_ edge: PageEdge, anchorID: TranscriptSegment.ID) {
+        guard pageLoadTask == nil else { return }
+        pageLoadTask = Task { @MainActor in
+            let didLoad = switch edge {
+            case .earlier:
+                await store.loadEarlier()
+            case .later:
+                await store.loadLater()
+            }
+            guard !Task.isCancelled else {
+                pageLoadTask = nil
+                return
+            }
+            if didLoad {
+                restorePosition(to: anchorID, edge: edge)
+            }
+            pageLoadTask = nil
         }
     }
 
-    private func scheduleDeferredScroll(_ action: @escaping @MainActor () -> Void) {
-        pendingScrollTask?.cancel()
-        pendingScrollTask = Task { @MainActor in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            action()
+    private func retryPageLoad() {
+        guard pageLoadTask == nil else { return }
+        pageLoadTask = Task { @MainActor in
+            _ = await store.retryPageLoad()
+            pageLoadTask = nil
         }
     }
 
-    private func scrollToBottom(using proxy: ScrollViewProxy) {
+    private func loadLatest() {
+        guard pageLoadTask == nil else { return }
+        pageLoadTask = Task { @MainActor in
+            if await store.reloadLatest() {
+                isFollowingLatest = true
+                store.setFollowingLatest(true)
+                scrollToLatest()
+            }
+            pageLoadTask = nil
+        }
+    }
+
+    private func restorePosition(to id: TranscriptSegment.ID, edge: PageEdge) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            proxy.scrollTo(ScrollMetrics.bottomAnchorID, anchor: .bottom)
+            scrollPosition.scrollTo(
+                id: id,
+                anchor: edge == .earlier ? .top : .bottom
+            )
+        }
+    }
+
+    private func scrollToLatest() {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scrollPosition.scrollTo(edge: .bottom)
         }
     }
 }

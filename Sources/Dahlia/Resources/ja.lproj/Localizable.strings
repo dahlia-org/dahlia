@@ -528,6 +528,8 @@
 "Keep Audio After Transcription" = "文字起こし後も音声を残す";
 "Keep the protected audio in Dahlia after batch transcription succeeds." = "バッチ文字起こし成功後も保護された音声を Dahlia 内に残します。";
 "No transcript yet." = "文字起こしはまだありません。";
+"Some transcript could not be loaded: %1$@" = "文字起こしの一部を読み込めませんでした: %1$@";
+"New transcript available" = "新しい文字起こしがあります";
 "Recording audio for transcription after recording stops…" = "録音終了後の文字起こし用に音声を保存しています…";
 "Audio is ready. Confirm the language to start transcription." = "音声の準備ができました。言語を確認して文字起こしを開始してください。";
 "Review and Start" = "確認して開始";

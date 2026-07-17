@@ -4,6 +4,9 @@
 
 Accepted
 
+UI projection の全件保持と停止時 fallback に関する決定は、
+[ADR-0006](0006-bounded-transcript-projection.md) により部分的に置き換えられた。
+
 ## Date
 
 2026-07-14

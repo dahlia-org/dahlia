@@ -17,7 +17,7 @@ struct TranscriptSegmentTests {
     }
 
     @Test
-    func transcriptStoreExportsRelativeTimestampsFromRecordingStartTime() {
+    func transcriptFormatterUsesRelativeTimestampsFromRecordingStartTime() {
         let store = TranscriptStore()
         let start = Date(timeIntervalSince1970: 1_776_384_000)
         store.recordingStartTime = start
@@ -35,12 +35,20 @@ struct TranscriptSegmentTests {
             ),
         ])
 
-        #expect(store.exportAsText() == "[00:12:34] [mic] First\n[01:05:47] Second")
-        #expect(store.exportForSummary() == "<time>00:12:34</time> First\n<time>01:05:47</time> Second")
+        #expect(TranscriptTextFormatter.plainText(
+            segments: store.segments,
+            recordingSessions: store.recordingSessions,
+            timeBase: store.timeBase
+        ) == "[00:12:34] [mic] First\n[01:05:47] Second")
+        #expect(TranscriptTextFormatter.summaryText(
+            segments: store.segments,
+            recordingSessions: store.recordingSessions,
+            timeBase: store.timeBase
+        ) == "<time>00:12:34</time> First\n<time>01:05:47</time> Second")
     }
 
     @Test
-    func transcriptStoreExportsSessionOffsetTimestampsAcrossPausedRecording() {
+    func transcriptFormatterUsesSessionOffsetTimestampsAcrossPausedRecording() {
         let store = TranscriptStore()
         let meetingStart = Date(timeIntervalSince1970: 1_776_384_000)
         let firstSessionId = UUID.v7()
@@ -75,8 +83,16 @@ struct TranscriptSegmentTests {
             ),
         ])
 
-        #expect(store.exportAsText() == "[00:00:05] Before pause\n[00:00:13] After pause")
-        #expect(store.exportForSummary() == "<time>00:00:05</time> Before pause\n<time>00:00:13</time> After pause")
+        #expect(TranscriptTextFormatter.plainText(
+            segments: store.segments,
+            recordingSessions: store.recordingSessions,
+            timeBase: store.timeBase
+        ) == "[00:00:05] Before pause\n[00:00:13] After pause")
+        #expect(TranscriptTextFormatter.summaryText(
+            segments: store.segments,
+            recordingSessions: store.recordingSessions,
+            timeBase: store.timeBase
+        ) == "<time>00:00:05</time> Before pause\n<time>00:00:13</time> After pause")
     }
 
     @Test

@@ -408,12 +408,100 @@ final class MeetingRepository {
 
     // MARK: - Segments
 
-    func fetchSegments(forMeetingId meetingId: UUID) throws -> [TranscriptSegmentRecord] {
+    nonisolated func fetchSegments(forMeetingId meetingId: UUID) throws -> [TranscriptSegmentRecord] {
         try dbQueue.read { db in
             try TranscriptSegmentRecord
                 .filter(Column("meetingId") == meetingId)
-                .order(Column("startTime").asc)
+                .order(Column("startTime").asc, Column("id").asc)
                 .fetchAll(db)
+        }
+    }
+
+    nonisolated func fetchTranscriptPage(
+        forMeetingId meetingId: UUID,
+        direction: TranscriptPageDirection,
+        limit: Int
+    ) throws -> TranscriptPage {
+        guard limit > 0 else {
+            return TranscriptPage(segments: [], hasEarlier: false, hasLater: false)
+        }
+        let pageLimit = min(limit, Int.max - 1)
+        let fetchLimit = pageLimit + 1
+
+        return try dbQueue.read { db in
+            let records: [TranscriptSegmentRecord]
+            let hasEarlier: Bool
+            let hasLater: Bool
+
+            switch direction {
+            case .latest:
+                let fetched = try TranscriptSegmentRecord.fetchAll(
+                    db,
+                    sql: """
+                    SELECT * FROM transcript_segments
+                    WHERE meetingId = ? AND isConfirmed = 1
+                    ORDER BY startTime DESC, id DESC
+                    LIMIT ?
+                    """,
+                    arguments: [meetingId, fetchLimit]
+                )
+                hasEarlier = fetched.count > pageLimit
+                hasLater = false
+                records = Array(fetched.prefix(pageLimit).reversed())
+
+            case let .before(cursor):
+                let fetched = try TranscriptSegmentRecord.fetchAll(
+                    db,
+                    sql: """
+                    SELECT * FROM transcript_segments
+                    WHERE meetingId = ? AND isConfirmed = 1
+                      AND (startTime < ? OR (startTime = ? AND id < ?))
+                    ORDER BY startTime DESC, id DESC
+                    LIMIT ?
+                    """,
+                    arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id, fetchLimit]
+                )
+                hasEarlier = fetched.count > pageLimit
+                hasLater = true
+                records = Array(fetched.prefix(pageLimit).reversed())
+
+            case let .after(cursor):
+                let fetched = try TranscriptSegmentRecord.fetchAll(
+                    db,
+                    sql: """
+                    SELECT * FROM transcript_segments
+                    WHERE meetingId = ? AND isConfirmed = 1
+                      AND (startTime > ? OR (startTime = ? AND id > ?))
+                    ORDER BY startTime ASC, id ASC
+                    LIMIT ?
+                    """,
+                    arguments: [meetingId, cursor.startTime, cursor.startTime, cursor.id, fetchLimit]
+                )
+                hasEarlier = true
+                hasLater = fetched.count > pageLimit
+                records = Array(fetched.prefix(pageLimit))
+            }
+
+            return TranscriptPage(
+                segments: records.map(TranscriptSegment.init(from:)),
+                hasEarlier: hasEarlier,
+                hasLater: hasLater
+            )
+        }
+    }
+
+    nonisolated func hasTranscriptSegments(forMeetingId meetingId: UUID) throws -> Bool {
+        try dbQueue.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM transcript_segments
+                    WHERE meetingId = ? AND isConfirmed = 1
+                )
+                """,
+                arguments: [meetingId]
+            ) ?? false
         }
     }
 
@@ -565,7 +653,6 @@ final class MeetingRepository {
     struct MeetingDetail {
         let meeting: MeetingRecord?
         let calendarEvent: CalendarEventRecord?
-        let segments: [TranscriptSegmentRecord]
         let recordingSessions: [RecordingSessionRecord]
         let screenshots: [MeetingScreenshotRecord]
         let note: MeetingNoteRecord?
@@ -577,10 +664,6 @@ final class MeetingRepository {
         try dbQueue.read { db in
             let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
             let calendarEvent = try Self.fetchCalendarEvent(for: meeting, in: db)
-            let segments = try TranscriptSegmentRecord
-                .filter(Column("meetingId") == meetingId)
-                .order(Column("startTime").asc)
-                .fetchAll(db)
             let recordingSessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)
@@ -597,7 +680,6 @@ final class MeetingRepository {
             return MeetingDetail(
                 meeting: meeting,
                 calendarEvent: calendarEvent,
-                segments: segments,
                 recordingSessions: recordingSessions,
                 screenshots: screenshots,
                 note: note,

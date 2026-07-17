@@ -354,6 +354,8 @@ final class CaptionViewModel: ObservableObject {
 
     private var currentDbQueue: DatabaseQueue?
     private var persistenceService: MeetingPersistenceService?
+    private var failedPersistenceService: MeetingPersistenceService?
+    private var failedTranscriptionEventPipeline: TranscriptionEventPipeline?
     private var transcriptionEventPipeline: TranscriptionEventPipeline?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private let recordingSessionController = RecordingSessionController()
@@ -376,6 +378,7 @@ final class CaptionViewModel: ObservableObject {
     private var automaticScreenshotTask: Task<Void, Never>?
     private var lastSavedAutomaticScreenshotFingerprint: ScreenshotFingerprint?
     private var meetingLoadTask: Task<Void, Never>?
+    private var meetingLoadGeneration: UInt64 = 0
     private var isSynchronizingSelectedLocale = false
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
@@ -606,7 +609,11 @@ final class CaptionViewModel: ObservableObject {
                   canReloadMeetingAfterBatchCompletion(meetingId) else { return }
             store.recordingStartTime = loaded.createdAt
             store.loadRecordingSessions(loaded.recordingSessions)
-            store.loadSegments(loaded.segments)
+            store.configurePaging(
+                meetingId: meetingId,
+                loader: TranscriptPageLoader(dbQueue: dbQueue),
+                initialPage: loaded.initialTranscriptPage
+            )
             applyLoadedDetail(loaded)
             generatePendingBatchSummaryIfReady(meetingId: meetingId)
         } catch {
@@ -615,9 +622,9 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func bindStoreSegments() {
-        currentMeetingHasTranscriptSegments = !store.segments.isEmpty
+        currentMeetingHasTranscriptSegments = store.segments.contains(where: \.isConfirmed)
         storeSegmentsCancellable = store.$segments
-            .map { !$0.isEmpty }
+            .map { $0.contains(where: \.isConfirmed) }
             .removeDuplicates()
             .sink { [weak self] hasSegments in
                 self?.currentMeetingHasTranscriptSegments = hasSegments
@@ -749,7 +756,8 @@ final class CaptionViewModel: ObservableObject {
         let createdAt: Date?
         let recordingSessionRecords: [RecordingSessionRecord]
         let recordingSessions: [RecordingSessionTimeline]
-        let segments: [TranscriptSegment]
+        let initialTranscriptPage: TranscriptPage
+        let hasTranscriptSegments: Bool
         let screenshots: [MeetingScreenshotRecord]
         let summaryDocument: SummaryDocument?
         let googleFileId: String?
@@ -765,7 +773,11 @@ final class CaptionViewModel: ObservableObject {
         let repo = MeetingRepository(dbQueue: dbQueue)
         let detail = try repo.fetchMeetingDetail(id: meetingId)
         let recordingSessions = detail.recordingSessions.map(RecordingSessionTimeline.init)
-        let segments = detail.segments.map(TranscriptSegment.init(from:))
+        let initialTranscriptPage = try repo.fetchTranscriptPage(
+            forMeetingId: meetingId,
+            direction: .latest,
+            limit: TranscriptStore.initialPageSize
+        )
         let vaultExport = detail.summaryExports.first(where: { $0.type == .vault })
         let googleDocsExport = detail.summaryExports.first(where: { $0.type == .googleDocs })
 
@@ -782,7 +794,8 @@ final class CaptionViewModel: ObservableObject {
             createdAt: detail.meeting?.createdAt,
             recordingSessionRecords: detail.recordingSessions,
             recordingSessions: recordingSessions,
-            segments: segments,
+            initialTranscriptPage: initialTranscriptPage,
+            hasTranscriptSegments: !initialTranscriptPage.segments.isEmpty,
             screenshots: detail.screenshots,
             summaryDocument: detail.summary?.loadDocument(),
             googleFileId: googleDocsExport?.googleDocumentID,
@@ -832,7 +845,41 @@ final class CaptionViewModel: ObservableObject {
             vaultURL: vaultURL
         )
 
-        meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL] in
+        let transcriptPageLoader = TranscriptPageLoader(dbQueue: dbQueue)
+        store.prepareForMeetingLoading(meetingId: meetingId, loader: transcriptPageLoader)
+        startMeetingLoad(
+            meetingId: meetingId,
+            dbQueue: dbQueue,
+            vaultURL: vaultURL,
+            transcriptPageLoader: transcriptPageLoader
+        )
+    }
+
+    func retryInitialMeetingLoad() {
+        guard store.requiresFullMeetingReload,
+              let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue,
+              let vaultURL = currentVaultURL else { return }
+        let transcriptPageLoader = TranscriptPageLoader(dbQueue: dbQueue)
+        store.prepareForMeetingLoading(meetingId: meetingId, loader: transcriptPageLoader)
+        startMeetingLoad(
+            meetingId: meetingId,
+            dbQueue: dbQueue,
+            vaultURL: vaultURL,
+            transcriptPageLoader: transcriptPageLoader
+        )
+    }
+
+    private func startMeetingLoad(
+        meetingId: UUID,
+        dbQueue: DatabaseQueue,
+        vaultURL: URL,
+        transcriptPageLoader: TranscriptPageLoader
+    ) {
+        meetingLoadTask?.cancel()
+        meetingLoadGeneration &+= 1
+        let generation = meetingLoadGeneration
+        meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL, transcriptPageLoader] in
             guard let self else { return }
 
             let loaded: LoadedMeetingData
@@ -849,14 +896,25 @@ final class CaptionViewModel: ObservableObject {
             } catch {
                 captionViewModelLogger.error("Failed to load meeting \(meetingId): \(error)")
                 ErrorReportingService.capture(error, context: ["source": "loadMeeting"])
+                if !Task.isCancelled,
+                   self.meetingLoadGeneration == generation,
+                   self.currentMeetingId == meetingId {
+                    self.store.failInitialMeetingLoad(error)
+                }
                 return
             }
 
-            guard !Task.isCancelled, self.currentMeetingId == meetingId else { return }
+            guard !Task.isCancelled,
+                  self.meetingLoadGeneration == generation,
+                  self.currentMeetingId == meetingId else { return }
 
             self.store.recordingStartTime = loaded.createdAt
             self.store.loadRecordingSessions(loaded.recordingSessions)
-            self.store.loadSegments(loaded.segments)
+            self.store.configurePaging(
+                meetingId: meetingId,
+                loader: transcriptPageLoader,
+                initialPage: loaded.initialTranscriptPage
+            )
             self.applyLoadedDetail(loaded)
             self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
         }
@@ -1013,6 +1071,8 @@ final class CaptionViewModel: ObservableObject {
     func clearCurrentMeeting() {
         guard !isFinalizingRecording else { return }
         if case .starting = recordingLifecycle { return }
+        meetingLoadTask?.cancel()
+        meetingLoadGeneration &+= 1
 
         if isListening {
             saveRecordingContextIfNeeded()
@@ -1036,6 +1096,7 @@ final class CaptionViewModel: ObservableObject {
     func returnToRecordingMeeting() {
         guard let ctx = recordingContext else { return }
         meetingLoadTask?.cancel()
+        meetingLoadGeneration &+= 1
         saveNoteImmediately()
 
         // コンテキストを先に復元（store 代入時の objectWillChange で SwiftUI が再評価する際に
@@ -1060,6 +1121,9 @@ final class CaptionViewModel: ObservableObject {
         guard let meetingId = currentMeetingId,
               let dbQueue = currentDbQueue,
               let vaultURL = currentVaultURL else { return }
+        meetingLoadTask?.cancel()
+        meetingLoadGeneration &+= 1
+        let generation = meetingLoadGeneration
         meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL] in
             guard let self else { return }
             let loaded: LoadedMeetingData
@@ -1074,13 +1138,16 @@ final class CaptionViewModel: ObservableObject {
             } catch {
                 return
             }
-            guard !Task.isCancelled, self.currentMeetingId == meetingId else { return }
+            guard !Task.isCancelled,
+                  self.meetingLoadGeneration == generation,
+                  self.currentMeetingId == meetingId else { return }
             self.applyLoadedDetail(loaded)
         }
     }
 
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
     private func applyLoadedDetail(_ loaded: LoadedMeetingData) {
+        currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
         screenshots = loaded.screenshots
         currentSummaryDocument = loaded.summaryDocument
         currentSummaryGoogleFileId = loaded.googleFileId
@@ -1126,6 +1193,7 @@ final class CaptionViewModel: ObservableObject {
     private func resetMeetingState() {
         saveNoteImmediately()
         meetingLoadTask?.cancel()
+        meetingLoadGeneration &+= 1
         store.clear()
         screenshots = []
         resetNoteState()
@@ -1470,6 +1538,10 @@ final class CaptionViewModel: ObservableObject {
             persistenceService = service
             installTranscriptionEventPipeline(persistenceService: service)
             currentMeetingId = existingMeetingId
+            store.attachPagingContext(
+                meetingId: existingMeetingId,
+                loader: TranscriptPageLoader(dbQueue: request.dbQueue)
+            )
             return
         }
 
@@ -1490,6 +1562,10 @@ final class CaptionViewModel: ObservableObject {
         persistenceService = service
         installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
+        store.attachPagingContext(
+            meetingId: service.meetingId,
+            loader: TranscriptPageLoader(dbQueue: request.dbQueue)
+        )
 
         let resolvedProject = currentVaultURL.flatMap { vaultURL in
             Self.projectContext(
@@ -1510,17 +1586,25 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func installTranscriptionEventPipeline(persistenceService: MeetingPersistenceService) {
+        let recordingTranscriptStore = store
         transcriptionEventPipeline = TranscriptionEventPipeline(
             uiSink: { [weak self] events in
                 for event in events {
                     self?.handleTranscriptionEvent(event)
                 }
             },
+            uiReloadSink: { [weak recordingTranscriptStore] in
+                guard let recordingTranscriptStore else { return }
+                _ = await recordingTranscriptStore.reloadLatestAfterUICompaction()
+            },
             persistenceSink: { events in
                 try await persistenceService.persist(events)
             },
+            persistenceFlushSink: {
+                try await persistenceService.flushPendingTranscriptEvents()
+            },
             persistenceResetSink: {
-                await persistenceService.reset()
+                try await persistenceService.reset()
             }
         )
     }
@@ -1617,6 +1701,7 @@ final class CaptionViewModel: ObservableObject {
         appendingTo existingMeetingId: UUID? = nil
     ) async {
         guard recordingLifecycle == .idle, !isFinalizingRecording else { return }
+        guard await retryFailedPersistenceIfNeeded() else { return }
         await refreshDefaultInputDevice()
         guard recordingLifecycle == .idle,
               !isFinalizingRecording,
@@ -1761,16 +1846,25 @@ final class CaptionViewModel: ObservableObject {
             for task in configurationTasks {
                 await task.value
             }
-            if let transcriptionEventPipeline {
+            let stoppingTranscriptionEventPipeline = transcriptionEventPipeline
+            if let stoppingTranscriptionEventPipeline {
                 do {
-                    try await transcriptionEventPipeline.finish()
+                    try await stoppingTranscriptionEventPipeline.finish()
                 } catch {
                     ErrorReportingService.capture(error, context: ["source": "stopTranscriptionPersistence"])
                 }
             }
             transcriptionEventPipeline = nil
-            let persistenceResult = await persistenceService?.stop()
+            let stoppingPersistenceService = persistenceService
+            let persistenceResult = await stoppingPersistenceService?.stop()
                 ?? .failure(message: L10n.recordingSessionNotActive)
+            if persistenceResult.succeeded {
+                await stoppingTranscriptionEventPipeline?.notifyPersistenceRecoveredAfterFinish()
+            }
+            failedPersistenceService = persistenceResult.succeeded ? nil : stoppingPersistenceService
+            failedTranscriptionEventPipeline = persistenceResult.succeeded
+                ? nil
+                : stoppingTranscriptionEventPipeline
             persistenceService = nil
             recordingContext = nil
             if let persistenceFailureMessage = persistenceResult.failureMessage {
@@ -1811,7 +1905,7 @@ final class CaptionViewModel: ObservableObject {
                     activeSegments: segments
                 )
                 if currentMeetingId == meetingId {
-                    activeStore.loadSegments(segments)
+                    currentMeetingHasTranscriptSegments = !segments.isEmpty
                 }
             }
             guard let vaultURL, let meetingId, !segments.isEmpty else { return }
@@ -1824,6 +1918,19 @@ final class CaptionViewModel: ObservableObject {
                 recordingSessions: recordingSessions
             )
         }
+    }
+
+    private func retryFailedPersistenceIfNeeded() async -> Bool {
+        guard let failedPersistenceService else { return true }
+        let result = await failedPersistenceService.stop()
+        guard result.succeeded else {
+            errorMessage = result.failureMessage
+            return false
+        }
+        await failedTranscriptionEventPipeline?.notifyPersistenceRecoveredAfterFinish()
+        self.failedPersistenceService = nil
+        failedTranscriptionEventPipeline = nil
+        return true
     }
 
     private func finishStoppedBatchRecording(
@@ -1956,7 +2063,7 @@ final class CaptionViewModel: ObservableObject {
               currentMeetingId != nil,
               currentVaultURL != nil,
               batchTranscriptionState?.blocksSummaryGeneration != true else { return false }
-        return !store.segments.isEmpty
+        return currentMeetingHasTranscriptSegments
     }
 
     /// 確認画面で選択した設定を使って手動要約を実行する。
@@ -1967,26 +2074,39 @@ final class CaptionViewModel: ObservableObject {
     private func triggerSummary(options: SummaryGenerationOptions) {
         guard canGenerateSummary,
               let meetingId = currentMeetingId,
-              let vaultURL = currentVaultURL else { return }
+              let vaultURL = currentVaultURL,
+              let dbQueue = currentDbQueue else { return }
         let projectURL = currentProjectURL
-        let transcriptText = store.exportForSummary()
         let createdAt = store.timeBase
         let projectName = selectedProjectName ?? ""
-        let segments = store.segments
         let recordingSessions = store.recordingSessions
         requestShowSummaryTab = true
         Task {
-            await generateSummary(
-                meetingId: meetingId,
-                transcriptText: transcriptText,
-                projectURL: projectURL,
-                createdAt: createdAt,
-                vaultURL: vaultURL,
-                projectName: projectName,
-                segments: segments,
-                recordingSessions: recordingSessions,
-                options: options
-            )
+            guard await retryFailedPersistenceIfNeeded() else { return }
+            do {
+                let summaryInput = try await Task.detached(priority: .userInitiated) {
+                    try FullTranscriptLoader.summaryInput(
+                        meetingId: meetingId,
+                        dbQueue: dbQueue,
+                        recordingSessions: recordingSessions,
+                        timeBase: createdAt
+                    )
+                }.value
+                guard currentMeetingId == meetingId else { return }
+                await generateSummary(
+                    meetingId: meetingId,
+                    transcriptText: summaryInput.text,
+                    projectURL: projectURL,
+                    createdAt: createdAt,
+                    vaultURL: vaultURL,
+                    projectName: projectName,
+                    segments: summaryInput.segments,
+                    recordingSessions: recordingSessions,
+                    options: options
+                )
+            } catch {
+                summaryError = error.localizedDescription
+            }
         }
     }
 
@@ -2303,8 +2423,12 @@ final class CaptionViewModel: ObservableObject {
     func clearText() async {
         guard !isFinalizingRecording else { return }
 
-        store.clear()
-        await transcriptionEventPipeline?.resetPersistence()
+        do {
+            try await transcriptionEventPipeline?.resetPersistence()
+            store.clear()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Screenshot
@@ -2679,16 +2803,34 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func exportTranscript() {
-        let text = store.exportAsText()
-        guard !text.isEmpty else { return }
+        guard let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue else { return }
+        let recordingSessions = store.recordingSessions
+        let timeBase = store.timeBase
 
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
         panel.nameFieldStringValue = "transcript_\(Self.fileDateFormatter.string(from: store.recordingStartTime ?? Date())).txt"
 
-        panel.begin { response in
+        panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            try? text.write(to: url, atomically: true, encoding: .utf8)
+            Task { @MainActor in
+                guard let self,
+                      await self.retryFailedPersistenceIfNeeded() else { return }
+                do {
+                    try await Task.detached(priority: .userInitiated) {
+                        let text = try FullTranscriptLoader.plainText(
+                            meetingId: meetingId,
+                            dbQueue: dbQueue,
+                            recordingSessions: recordingSessions,
+                            timeBase: timeBase
+                        )
+                        try text.write(to: url, atomically: true, encoding: .utf8)
+                    }.value
+                } catch {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 

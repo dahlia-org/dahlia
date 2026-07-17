@@ -26,12 +26,21 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Show toolchain
+        id: toolchain
         run: |
-          xcodebuild -version
-          swift --version
+          toolchain="$(xcodebuild -version; swift --version)"
+          echo "$toolchain"
+          toolchain_hash="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{ print $1 }')"
+          echo "hash=$toolchain_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Cache BuildTools
+        uses: actions/cache@v5
+        with:
+          path: BuildTools/.build
+          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('BuildTools/Package.resolved') }}
 
       - name: Install lint tools
-        run: brew install swiftformat swiftlint
+        run: brew install swiftlint
 
       - name: Run lint
         run: ./scripts/lint.sh
@@ -43,11 +52,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
-      - name: Show toolchain
-        run: |
-          xcodebuild -version
-          swift --version
 
       - name: Run unit tests
         run: |

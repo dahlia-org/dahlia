@@ -237,7 +237,7 @@ import GRDB
                 speakerLabel: "mic"
             )
 
-            store.loadSegments([segment])
+            try await service.persist(.finalized(segment))
             await service.stop()
 
             let persisted = try await waitForAppendPersistence(
@@ -562,7 +562,7 @@ import GRDB
         }
 
         @Test
-        func stopPersistsTranslatedTextWhenAvailableBeforeInsert() async throws {
+        func stopFlushesTranslatedTextQueuedBeforeInsert() async throws {
             let database = try makeDatabase()
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
@@ -583,7 +583,7 @@ import GRDB
                 speakerLabel: "mic"
             )
 
-            store.loadSegments([segment])
+            try await service.persist(.finalized(segment))
             await service.stop()
 
             let persisted = try await database.dbQueue.read { db in

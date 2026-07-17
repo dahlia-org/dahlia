@@ -11,6 +11,11 @@ actor TranscriptPersistenceWriter {
     private var persistedSegmentIds: Set<UUID>
     private var persistedSegmentTranslations: [UUID: String] = [:]
     private var pendingTranslations: [UUID: String] = [:]
+    private var pendingEvents: [TranscriptionEvent] = []
+    private var nextAutomaticRetry: ContinuousClock.Instant?
+    private var automaticRetryTask: Task<Void, Never>?
+    private var automaticRetryDelayMilliseconds = 250
+    private let maximumAutomaticRetryDelayMilliseconds = 30000
 
     init(
         dbQueue: DatabaseQueue,
@@ -33,86 +38,181 @@ actor TranscriptPersistenceWriter {
     /// 連続して到着したイベントを、単一の DB transaction で反映する。
     func persist(_ events: [TranscriptionEvent]) async throws {
         guard persistencePolicy.persistsStreamingSegments, !events.isEmpty else { return }
+        pendingEvents.append(contentsOf: events)
+        if let nextAutomaticRetry, ContinuousClock.now < nextAutomaticRetry {
+            return
+        }
+        try await flushPending()
+    }
+
+    /// 失敗済みイベントも含め、actor が保持する durable event を transaction で再試行する。
+    func flushPending() async throws {
+        guard persistencePolicy.persistsStreamingSegments, !pendingEvents.isEmpty else { return }
         try Task.checkCancellation()
 
-        var nextSegmentIds = persistedSegmentIds
-        var nextTranslations = persistedSegmentTranslations
-        var nextPendingTranslations = pendingTranslations
-        var insertOrder: [UUID] = []
-        var inserts: [UUID: TranscriptSegmentRecord] = [:]
-        var translationUpdates: [UUID: String] = [:]
-
+        let events = pendingEvents
+        var plan = TranscriptPersistencePlan(
+            persistedSegmentIds: persistedSegmentIds,
+            persistedSegmentTranslations: persistedSegmentTranslations,
+            pendingTranslations: pendingTranslations
+        )
         for event in events {
-            switch event {
-            case let .finalized(segment) where segment.isConfirmed:
-                var record = TranscriptSegmentRecord(
-                    from: segment,
-                    meetingId: meetingId,
-                    defaultSessionId: recordingSessionId
-                )
-                if let pendingTranslation = nextPendingTranslations.removeValue(forKey: segment.id) {
-                    record.translatedText = pendingTranslation
-                }
+            plan.consume(event, meetingId: meetingId, recordingSessionId: recordingSessionId)
+        }
+        let records = plan.records
+        let translationUpdates = plan.translationUpdates
 
-                if nextSegmentIds.insert(segment.id).inserted {
-                    insertOrder.append(segment.id)
-                    inserts[segment.id] = record
-                    if let translatedText = record.translatedText {
-                        nextTranslations[segment.id] = translatedText
-                    }
-                } else if let translatedText = record.translatedText,
-                          nextTranslations[segment.id] != translatedText {
-                    translationUpdates[segment.id] = translatedText
-                    nextTranslations[segment.id] = translatedText
+        do {
+            try await dbQueue.write { db in
+                for record in records {
+                    try record.insert(db)
                 }
-
-            case let .translation(_, segmentID, translatedText):
-                // 翻訳失敗を表す nil で、すでに保存済みの翻訳を巻き戻さない。
-                guard let translatedText else { continue }
-                if nextSegmentIds.contains(segmentID) {
-                    if var pendingInsert = inserts[segmentID] {
-                        pendingInsert.translatedText = translatedText
-                        inserts[segmentID] = pendingInsert
-                    } else if nextTranslations[segmentID] != translatedText {
-                        translationUpdates[segmentID] = translatedText
-                    }
-                    nextTranslations[segmentID] = translatedText
-                } else {
-                    nextPendingTranslations[segmentID] = translatedText
+                for (id, translatedText) in translationUpdates {
+                    try TranscriptSegmentRecord.updateTranslatedText(
+                        translatedText,
+                        id: id,
+                        in: db
+                    )
                 }
-
-            case .preview, .clearPreview, .previewTranslation, .failure, .finalized:
-                break
             }
+        } catch {
+            scheduleAutomaticRetry()
+            throw error
         }
 
-        let records = insertOrder.compactMap { inserts[$0] }
-        let updates = translationUpdates
-        try await dbQueue.write { db in
-            for record in records {
-                try record.insert(db)
-            }
-            for (id, translatedText) in updates {
-                try TranscriptSegmentRecord.updateTranslatedText(
-                    translatedText,
-                    id: id,
-                    in: db
-                )
-            }
-        }
-
-        persistedSegmentIds = nextSegmentIds
-        persistedSegmentTranslations = nextTranslations
-        pendingTranslations = nextPendingTranslations
+        persistedSegmentIds = plan.persistedSegmentIds
+        persistedSegmentTranslations = plan.persistedSegmentTranslations
+        pendingTranslations = plan.pendingTranslations
+        pendingEvents.removeFirst(events.count)
+        nextAutomaticRetry = nil
+        automaticRetryDelayMilliseconds = 250
+        automaticRetryTask?.cancel()
+        automaticRetryTask = nil
     }
 
-    func persistConfirmedSegments(_ segments: [TranscriptSegment]) async throws {
-        try await persist(segments.map(TranscriptionEvent.finalized))
-    }
-
-    func resetTracking() {
+    func resetTracking() async throws {
+        try await flushPending()
         persistedSegmentIds.removeAll()
         persistedSegmentTranslations.removeAll()
         pendingTranslations.removeAll()
+    }
+
+    private func scheduleAutomaticRetry() {
+        let delay = Duration.milliseconds(automaticRetryDelayMilliseconds)
+        nextAutomaticRetry = ContinuousClock.now + delay
+        automaticRetryDelayMilliseconds = min(
+            automaticRetryDelayMilliseconds * 2,
+            maximumAutomaticRetryDelayMilliseconds
+        )
+        automaticRetryTask?.cancel()
+        automaticRetryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            await self?.runAutomaticRetry()
+        }
+    }
+
+    private func runAutomaticRetry() async {
+        automaticRetryTask = nil
+        do {
+            try await flushPending()
+        } catch {
+            // flushPending() schedules the next backoff before propagating the failure.
+        }
+    }
+}
+
+private struct TranscriptPersistencePlan {
+    var persistedSegmentIds: Set<UUID>
+    var persistedSegmentTranslations: [UUID: String]
+    var pendingTranslations: [UUID: String]
+    private var insertOrder: [UUID] = []
+    private var inserts: [UUID: TranscriptSegmentRecord] = [:]
+    private(set) var translationUpdates: [UUID: String] = [:]
+
+    init(
+        persistedSegmentIds: Set<UUID>,
+        persistedSegmentTranslations: [UUID: String],
+        pendingTranslations: [UUID: String]
+    ) {
+        self.persistedSegmentIds = persistedSegmentIds
+        self.persistedSegmentTranslations = persistedSegmentTranslations
+        self.pendingTranslations = pendingTranslations
+    }
+
+    var records: [TranscriptSegmentRecord] {
+        insertOrder.compactMap { inserts[$0] }
+    }
+
+    mutating func consume(
+        _ event: TranscriptionEvent,
+        meetingId: UUID,
+        recordingSessionId: UUID
+    ) {
+        switch event {
+        case let .finalized(segment) where segment.isConfirmed:
+            consumeFinalized(
+                segment,
+                meetingId: meetingId,
+                recordingSessionId: recordingSessionId
+            )
+        case let .translation(_, segmentId, translatedText):
+            consumeTranslation(translatedText, segmentId: segmentId)
+        case .preview, .clearPreview, .previewTranslation, .failure, .finalized:
+            break
+        }
+    }
+
+    private mutating func consumeFinalized(
+        _ segment: TranscriptSegment,
+        meetingId: UUID,
+        recordingSessionId: UUID
+    ) {
+        var record = TranscriptSegmentRecord(
+            from: segment,
+            meetingId: meetingId,
+            defaultSessionId: recordingSessionId
+        )
+        if let pendingTranslation = pendingTranslations.removeValue(forKey: segment.id) {
+            record.translatedText = pendingTranslation
+        }
+
+        guard persistedSegmentIds.insert(segment.id).inserted else {
+            updateTranslationIfNeeded(record.translatedText, segmentId: segment.id)
+            return
+        }
+
+        insertOrder.append(segment.id)
+        inserts[segment.id] = record
+        if let translatedText = record.translatedText {
+            persistedSegmentTranslations[segment.id] = translatedText
+        }
+    }
+
+    private mutating func consumeTranslation(_ translatedText: String?, segmentId: UUID) {
+        // 翻訳失敗を表す nil で、すでに保存済みの翻訳を巻き戻さない。
+        guard let translatedText else { return }
+        guard persistedSegmentIds.contains(segmentId) else {
+            pendingTranslations[segmentId] = translatedText
+            return
+        }
+
+        if var pendingInsert = inserts[segmentId] {
+            pendingInsert.translatedText = translatedText
+            inserts[segmentId] = pendingInsert
+        } else if persistedSegmentTranslations[segmentId] != translatedText {
+            translationUpdates[segmentId] = translatedText
+        }
+        persistedSegmentTranslations[segmentId] = translatedText
+    }
+
+    private mutating func updateTranslationIfNeeded(_ translatedText: String?, segmentId: UUID) {
+        guard let translatedText,
+              persistedSegmentTranslations[segmentId] != translatedText else { return }
+        translationUpdates[segmentId] = translatedText
+        persistedSegmentTranslations[segmentId] = translatedText
     }
 }

@@ -539,7 +539,8 @@ struct ControlPanelView: View {
                         batchTranscriptionState: viewModel.batchTranscriptionState,
                         confirmBatchTranscription: viewModel.presentBatchTranscriptionConfirmation,
                         retryBatchTranscription: viewModel.retryBatchTranscription,
-                        discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription
+                        discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription,
+                        retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )
                 }
             }

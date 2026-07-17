@@ -3,6 +3,8 @@
 excluded:
   - .build
   - .swiftpm
+  - BuildTools/.build
+  - BuildTools/.swiftpm
   - DerivedData
   - Package.swift
 

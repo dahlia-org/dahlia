@@ -8,7 +8,7 @@ import GRDB
     @MainActor
     struct MeetingPersistenceStopTests {
         @Test
-        func stopPersistsFinalConfirmedSegmentsBeforeReportingSuccess() async throws {
+        func stopCompletesAfterFinalizedEventsArePersisted() async throws {
             let fixture = try makeDatabase()
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
@@ -26,7 +26,7 @@ import GRDB
                 isConfirmed: true,
                 speakerLabel: "mic"
             )
-            store.addSegment(segment)
+            try await service.persist(.finalized(segment))
 
             let result = await service.stop()
 
@@ -111,7 +111,7 @@ import GRDB
                 isConfirmed: true,
                 speakerLabel: "mic"
             )
-            store.addSegment(newSegment)
+            try await service.persist(.finalized(newSegment))
 
             let result = await service.stop()
 

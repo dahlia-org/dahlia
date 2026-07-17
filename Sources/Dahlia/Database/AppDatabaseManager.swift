@@ -123,8 +123,22 @@ final class AppDatabaseManager: Sendable {
             try LegacySummaryColumnsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v22_transcriptPagingIndex") { db in
+            try addTranscriptPagingIndexIfNeeded(in: db)
+        }
+
         return migrator
     }()
+
+    private static func addTranscriptPagingIndexIfNeeded(in db: Database) throws {
+        guard try db.tableExists("transcript_segments") else { return }
+        try db.execute(
+            sql: """
+            CREATE INDEX IF NOT EXISTS transcript_segments_on_meetingId_isConfirmed_startTime_id
+            ON transcript_segments(meetingId, isConfirmed, startTime, id)
+            """
+        )
+    }
 
     private static func addMeetingDescriptionColumnIfNeeded(in db: Database) throws {
         guard try db.tableExists("meetings") else { return }

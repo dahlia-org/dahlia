@@ -251,6 +251,58 @@ import GRDB
         }
 
         @Test
+        func retryInitialMeetingLoadRestoresMetadataAsWellAsTranscriptPage() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let meetingId = UUID.v7()
+            let viewModel = CaptionViewModel()
+            let vault = VaultRecord(
+                id: .v7(),
+                path: testVaultURL.path,
+                name: "Retry Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: vault.id,
+                    projectId: nil,
+                    name: "Recovered",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try MeetingNoteRecord(
+                    meetingId: meetingId,
+                    text: "metadata restored",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try db.execute(sql: "ALTER TABLE notes RENAME TO notes_unavailable")
+            }
+
+            viewModel.loadMeeting(
+                meetingId,
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+            try await waitUntil { viewModel.store.requiresFullMeetingReload }
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "ALTER TABLE notes_unavailable RENAME TO notes")
+            }
+
+            viewModel.retryInitialMeetingLoad()
+            try await waitUntil {
+                !viewModel.store.isLoadingInitialPage && viewModel.store.pageLoadError == nil
+            }
+
+            #expect(viewModel.noteText == "metadata restored")
+            #expect(!viewModel.store.requiresFullMeetingReload)
+        }
+
+        @Test
         func clearCurrentMeetingDoesNotResetStoreWhileFinalizingRecording() throws {
             let viewModel = summaryReadyViewModel()
             let originalMeetingId = try #require(viewModel.currentMeetingId)
@@ -499,6 +551,16 @@ import GRDB
             #expect(persisted.0.icalUid == "mac-event-1@local")
             #expect(persisted.0.conferenceURI == "https://zoom.us/j/123456789")
             #expect(persisted.1.platform == CalendarEventPlatform.macOSCalendar)
+        }
+
+        private func waitUntil(
+            _ condition: @escaping @MainActor () -> Bool
+        ) async throws {
+            for _ in 0 ..< 200 {
+                if condition() { return }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            Issue.record("Timed out waiting for asynchronous view model state")
         }
 
     }

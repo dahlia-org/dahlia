@@ -459,6 +459,11 @@ enum L10n {
     static var screenshots: String { String(localized: "Screenshots", bundle: bundle) }
     static var transcript: String { String(localized: "Transcript", bundle: bundle) }
     static var transcriptEmpty: String { String(localized: "No transcript yet.", bundle: bundle) }
+    static func transcriptLoadFailed(_ reason: String) -> String {
+        String(localized: "Some transcript could not be loaded: \(reason)", bundle: bundle)
+    }
+
+    static var newerTranscriptAvailable: String { String(localized: "New transcript available", bundle: bundle) }
     static var batchRecordingInProgress: String { String(localized: "Recording audio for transcription after recording stops…", bundle: bundle) }
     static var batchTranscriptionAwaitingConfirmation: String { String(
         localized: "Audio is ready. Confirm the language to start transcription.",

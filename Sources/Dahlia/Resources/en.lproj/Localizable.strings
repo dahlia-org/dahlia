@@ -528,6 +528,8 @@
 "Keep Audio After Transcription" = "Keep Audio After Transcription";
 "Keep the protected audio in Dahlia after batch transcription succeeds." = "Keep the protected audio in Dahlia after batch transcription succeeds.";
 "No transcript yet." = "No transcript yet.";
+"Some transcript could not be loaded: %1$@" = "Some transcript could not be loaded: %1$@";
+"New transcript available" = "New transcript available";
 "Recording audio for transcription after recording stops…" = "Recording audio for transcription after recording stops…";
 "Audio is ready. Confirm the language to start transcription." = "Audio is ready. Confirm the language to start transcription.";
 "Review and Start" = "Review and Start";
