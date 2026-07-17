@@ -1,4 +1,4 @@
-# SwiftLint configuration for Recavia (macOS app, Swift 6.2)
+# SwiftLint configuration for Dahlia (macOS app, Swift 6.2)
 
 excluded:
   - .build

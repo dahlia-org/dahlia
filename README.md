@@ -1,4 +1,4 @@
-# Recavia
+# Dahlia
 
 [Japanese / 日本語](README_ja.md)
 
@@ -22,26 +22,26 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
-Recavia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI Connection**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Recavia's Application Support directory; Databricks tokens remain managed by Databricks CLI.
+Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI Connection**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Dahlia's Application Support directory; Databricks tokens remain managed by Databricks CLI.
 
-The in-app chat uses the bundled `recavia-mcp` helper and is restricted to the currently selected vault. To give Claude Code or Codex CLI the same read-only access, open **Settings → Meeting Data Access** and copy the registration command. The command includes both the signed helper path and `--vault-id <UUID>`; rerun it after choosing another vault. The MCP tools expose compact meeting search, stored Markdown summaries, and paginated confirmed original transcript segments. They do not expose notes, screenshots, audio, translated text, or unconfirmed text.
+The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the currently selected vault. To give Claude Code or Codex CLI the same read-only access, open **Settings → Meeting Data Access** and copy the registration command. The command includes both the signed helper path and `--vault-id <UUID>`; rerun it after choosing another vault. The MCP tools expose compact meeting search, stored Markdown summaries, and paginated confirmed original transcript segments. They do not expose notes, screenshots, audio, translated text, or unconfirmed text.
 
 ## Build & Run
 
 ```bash
 # Debug build and run (unsigned; bundled Codex summaries unavailable)
-swift build && swift run Recavia
+swift build && swift run Dahlia
 
 # Debug build with code signing (enables Data Protection Keychain)
 ./scripts/run-dev.sh
 
 # Build release .app bundle
-./scripts/build-app.sh && open Recavia.app
+./scripts/build-app.sh && open Dahlia.app
 
 # Run tests
 swift test
 
-# Build, sign, notarize, and staple Recavia.dmg
+# Build, sign, notarize, and staple Dahlia.dmg
 ./scripts/notarize.sh
 
 # Generate human-friendly notes with AI and create the matching GitHub Release
@@ -51,13 +51,11 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **Note:** `swift run Recavia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Recavia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex 0.144.4 GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
-
-When upgrading from Dahlia, Recavia moves the existing Application Support directory on first launch and renames its database to `app.sqlite`, so the database, recordings, recovery state, and Codex state remain available.
+> **Note:** `swift run Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Dahlia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex 0.144.4 GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
-If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Recavia` and `run-dev.sh` do not send Sentry events by default.
+If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
 
 `build-app.sh` and `run-dev.sh` never upload files externally. When `notarize.sh` builds a Sentry-enabled release, it requires `SENTRY_AUTH_TOKEN` and `sentry-cli`, verifies that the executable and dSYM UUIDs match, then uploads the dSYM after notarization succeeds:
 
@@ -74,13 +72,13 @@ The app sends crash stacks and explicitly captured errors, but disables default 
 Before the first notarization run, create a notarytool keychain profile:
 
 ```bash
-xcrun notarytool store-credentials "recavia-notary" \
+xcrun notarytool store-credentials "dahlia-notary" \
   --apple-id "YOUR_APPLE_ID" \
   --team-id "YOUR_TEAM_ID" \
   --password "APP_SPECIFIC_PASSWORD"
 ```
 
-`./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `recavia-notary`) and produces a signed, notarized, and stapled `Recavia.dmg` ready for distribution.
+`./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
 
 To publish a release, install and authenticate the GitHub CLI (`gh`), commit and push the version change and all other source changes, then run:
 
@@ -89,7 +87,7 @@ To publish a release, install and authenticate the GitHub CLI (`gh`), commit and
 ./scripts/create-github-release.sh
 ```
 
-`create-github-release.sh` verifies the DMG signature, notarization ticket, fixed `Recavia.dmg` filename, embedded app version, and disk image integrity. It then asks Codex to use the repository's `$generate-release-notes` skill to interpret the changes since the previous release and write concise, user-focused notes. The Codex subprocess runs outside the sandbox so it can use local authentication, but ignores personal configuration, disables live web search, requires approval for untrusted commands, and limits its task to read-only investigation and Markdown output. The script also verifies that the DMG checksum did not change during AI generation. Finally, it creates `v<version>` at the current commit (or verifies an existing tag points there), creates the corresponding GitHub Release, and uploads the DMG. It requires an authenticated Codex CLI by default; pass `--notes-file <path>` to publish reviewed Markdown instead. It refuses to publish from a dirty working tree. The latest release is always available directly from <https://github.com/recavia/recavia/releases/latest/download/Recavia.dmg>.
+`create-github-release.sh` verifies the DMG signature, notarization ticket, fixed `Dahlia.dmg` filename, embedded app version, and disk image integrity. It then asks Codex to use the repository's `$generate-release-notes` skill to interpret the changes since the previous release and write concise, user-focused notes. The Codex subprocess runs outside the sandbox so it can use local authentication, but ignores personal configuration, disables live web search, requires approval for untrusted commands, and limits its task to read-only investigation and Markdown output. The script also verifies that the DMG checksum did not change during AI generation. Finally, it creates `v<version>` at the current commit (or verifies an existing tag points there), creates the corresponding GitHub Release, and uploads the DMG. It requires an authenticated Codex CLI by default; pass `--notes-file <path>` to publish reviewed Markdown instead. It refuses to publish from a dirty working tree. The latest release is always available directly from <https://github.com/mats16/dahlia/releases/latest/download/Dahlia.dmg>.
 
 ## Architecture
 
@@ -113,7 +111,7 @@ See [Calendar event persistence schema](docs/calendar-event-schema.md) for the U
 ### Project Structure
 
 ```
-Sources/Recavia/
+Sources/Dahlia/
 ├── Audio/          # Audio capture (mic & system)
 ├── Database/       # GRDB models, migrations, repository
 ├── Models/         # Domain models

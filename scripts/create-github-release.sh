@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Recavia"
+APP_NAME="Dahlia"
 INVOCATION_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -29,7 +29,7 @@ usage() {
 Usage: $0 [--notes-file path] [path-to-dmg]
 
 Create the GitHub Release for the version in Resources/Info.plist and attach
-its signed and notarized DMG. The default path is Recavia.dmg. By default,
+its signed and notarized DMG. The default path is Dahlia.dmg. By default,
 Codex uses \$generate-release-notes to write human-friendly release notes.
 Pass --notes-file to publish reviewed Markdown instead.
 EOF
@@ -63,7 +63,7 @@ validate_dmg_version() {
     local app_info_plist
     local dmg_version
 
-    DMG_MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recavia-release-mount.XXXXXX")"
+    DMG_MOUNT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-release-mount.XXXXXX")"
     hdiutil attach -readonly -nobrowse -mountpoint "$DMG_MOUNT_DIR" "$DMG_PATH" >/dev/null
 
     app_info_plist="${DMG_MOUNT_DIR}/${APP_NAME}.app/Contents/Info.plist"
@@ -226,7 +226,7 @@ else
 fi
 
 if [ -z "$NOTES_FILE" ]; then
-    GENERATED_NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/recavia-release-notes.XXXXXX")"
+    GENERATED_NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/dahlia-release-notes.XXXXXX")"
     NOTES_FILE="$GENERATED_NOTES_FILE"
 
     echo "=== Generating release notes with Codex ==="

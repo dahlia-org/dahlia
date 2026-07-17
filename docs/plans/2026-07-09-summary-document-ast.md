@@ -30,7 +30,7 @@ flowchart LR
     DB -->|NULL/破損| LP2[LegacyMarkdownSummaryParser<br/>読み出しフォールバック] --> UI
 ```
 
-## 正準モデル(新規 `Sources/Recavia/Models/SummaryDocument.swift`)
+## 正準モデル(新規 `Sources/Dahlia/Models/SummaryDocument.swift`)
 
 ```swift
 /// 会議サマリーの正準表現。summaries.document に JSON で永続化。
@@ -83,7 +83,7 @@ enum SummaryBlockContent: Equatable, Sendable {
 - transcript 参照は本文中のゆるい inline link ではなく、block-level の `transcript_refs: [{ "time": "HH:MM:SS", "label": "..." }]` に保持する。各レンダラが変換(Obsidian → `[[meetingId#HH:MM:SS|label]]`、UI 表示 → block の補助情報として表示)。
 - `SummaryActionItem`(既存 `Models/SummaryActionItem.swift`、Codable+Equatable)をそのまま利用(internal struct なので Sendable は推論される)。
 
-## LLM 出力(新規 `Sources/Recavia/Models/SummaryDocumentResponse.swift`)
+## LLM 出力(新規 `Sources/Dahlia/Models/SummaryDocumentResponse.swift`)
 
 現行 `Models/SummaryResult.swift` の置き換え。strict JSON Schema(OpenAI 互換)の制約から:
 
@@ -132,7 +132,7 @@ struct SummaryDocumentResponse: Decodable {
 2. 失敗 → 旧 `SummaryResult` 形式(title/summary/tags/action_items)でデコード → summary markdown を `LegacyMarkdownSummaryParser` でセクション/ブロック化
 3. 失敗 → 応答全文を markdown としてパース(title 空。現行の同フォールバックと同挙動)
 
-## プロンプト変更(`Sources/Recavia/Models/AppSettings.swift` L382 付近)
+## プロンプト変更(`Sources/Dahlia/Models/AppSettings.swift` L382 付近)
 
 - `summaryPromptPreamble` の `<output_policy>`(L388-397)の "Use Markdown." → 構造化ブロック生成の説明(インラインは markdown 可)に差し替え。
 - `<rendering_rules>`(L405-416): transcript 参照は本文中リンクではなく各 block の `transcript_refs` に `{"time":"HH:MM:SS","label":"short label"}` として入れる(現行 `([[<transcript_id>#HH:MM:SS|HH:MM:SS]])` を置換)、スクリーンショットは `image` ブロック + 提供 `<image_id>` UUID(現行 `![[<image_filename>]]` を置換)、表はリストで表現、に差し替え。
@@ -148,7 +148,7 @@ struct SummaryDocumentResponse: Decodable {
 - **`Database/MeetingRepository.swift`**: `applyGeneratedSummary(toMeetingId:title:summary:tags:)`(L311)→ `applyGeneratedSummary(toMeetingId:document:renderedBody:tags:)` に変更。title は `document.title` から取得し、**空なら既存 title を保持する現行ロジック(L321-324)を維持**。document は `JSONEncoder` + `.sortedKeys` でエンコードして保存。`fetchMeetingDetail` の `MeetingDetail.summary: SummaryRecord?` はそのまま(呼び出し側が `loadDocument()` を使う)。
 - `SidebarViewModel` の `EXISTS(SELECT 1 FROM summaries ...)` による `hasSummary` 監視(SidebarViewModel.swift L169)は無変更で動く。
 
-## レンダリング層(新規 `Sources/Recavia/Services/SummaryRendering/`)
+## レンダリング層(新規 `Sources/Dahlia/Services/SummaryRendering/`)
 
 - `SummaryRenderContext`: `{meetingId, createdAt, screenshots: [MeetingScreenshotRecord]}`(screenshotId → ファイル名解決用)。
 - **`LegacyMarkdownSummaryParser.swift`**: markdown → sections/blocks。`MarkdownContentView.parseBlocks`(Views/MarkdownContentView.swift L160-273)のロジックを移植・拡張:
@@ -188,17 +188,17 @@ struct GeneratedSummary {
 
 ## 実装ステップ(各段階でビルド/テスト green)
 
-1. **AST モデル**: `Models/SummaryDocument.swift` + 新規 `Tests/RecaviaTests/SummaryDocumentCodableTests.swift`(Codable round-trip、未知 type → paragraph フォールバック、Swift Testing で記述)
+1. **AST モデル**: `Models/SummaryDocument.swift` + 新規 `Tests/DahliaTests/SummaryDocumentCodableTests.swift`(Codable round-trip、未知 type → paragraph フォールバック、Swift Testing で記述)
 2. **レガシーパーサ**: `Services/SummaryRendering/LegacyMarkdownSummaryParser.swift` + テスト(旧記法 embed/link、checklist、セクション分割、frontmatter スキップ、table)
 3. **レンダラ**: `SummaryRenderContext` / `ObsidianMarkdownSummaryRenderer` / Slack・Docs スタブ + テスト(現行 `SummaryServiceTests` の frontmatter/fileName/embed 正規化系の期待値を移植して**出力同型を保証**、markdown→parse→render round-trip)
 4. **永続化**: `AppDatabaseManager`(v9)/ `SummaryRecord`(document + loadDocument)/ `MeetingRepository` + テスト(`AppDatabaseManagerTests` の `existingV5Database...` パターンに倣い v8→v9 でデータ保持・冪等、レガシー行の loadDocument フォールバック。`MeetingRepositorySummaryTests` の `applyGeneratedSummary` 呼び出しを新シグネチャに更新)
 5. **LLM 層**: `Models/SummaryDocumentResponse.swift`(schema)、`AppSettings` プロンプト、`SummaryService` 全面再構成、`SummaryResult` 縮退 + `SummaryServiceTests` 更新(デコード、フォールバック 3 段、image_id 検証、サルベージ。`sanitizeDisplaySummaryRemovesObsidianSyntax` / `defaultSummaryPromptRequiresScreenshotFilenameExtension` 等は新仕様のテストに置換)
 6. **UI 配線**: `Views/SummaryDocumentView.swift` 新規、`MarkdownContentView.swift` 削除、`CaptionViewModel` / `ControlPanelView` / `L10n` + 両 Localizable.strings、`CaptionViewModelTests` 更新
-7. **清掃**: 旧 API・旧テスト削除、`Sources/Recavia/CLAUDE.md` の LLM 行(「`SummaryResult` 構造化出力」記述)を `SummaryDocument` に更新
+7. **清掃**: 旧 API・旧テスト削除、`Sources/Dahlia/CLAUDE.md` の LLM 行(「`SummaryResult` 構造化出力」記述)を `SummaryDocument` に更新
 
 ## 検証
 
-- `swift test`(**注意: この環境では exit 0 のままテスト未実行になることがある。`Test run with N tests` の集計行が出力されているか必ず確認** — `Tests/RecaviaTests/CLAUDE.md` 記載)、`swift test --filter <各新規スイート>`
+- `swift test`(**注意: この環境では exit 0 のままテスト未実行になることがある。`Test run with N tests` の集計行が出力されているか必ず確認** — `Tests/DahliaTests/CLAUDE.md` 記載)、`swift test --filter <各新規スイート>`
 - `./scripts/lint.sh`(SwiftFormat + SwiftLint)
 - 手動 E2E: `./scripts/run-dev.sh` で起動 → 既存ミーティング(レガシー markdown サマリー)を開いて表示フォールバック確認 → スクリーンショット付き録音でサマリー生成 → サマリータブのインライン画像表示、Vault の .md 出力が従来と同型(frontmatter / `![[<UUID>.<ext>]]` / `[[id#HH:MM:SS|label]]`)であること、Drive エクスポート(設定時)の upsert 動作を確認
 

@@ -1,8 +1,8 @@
-# Recavia — リポジトリ作業ガイド
+# Dahlia — リポジトリ作業ガイド
 
 ## 目的
 
-Recavia は、マイクとシステム音声を同時にキャプチャし、Apple Speech framework でリアルタイム文字起こしを行う macOS アプリ。任意で LLM 要約も生成する。
+Dahlia は、マイクとシステム音声を同時にキャプチャし、Apple Speech framework でリアルタイム文字起こしを行う macOS アプリ。任意で LLM 要約も生成する。
 
 依頼された成果を、既存の録音・文字起こし品質とユーザーデータを保ちながら完成させる。明示的に変更を求められていない挙動は維持する。
 
@@ -12,9 +12,9 @@ Recavia は、マイクとシステム音声を同時にキャプチャし、App
 
 | 対象 | 追加の指示 |
 |------|------------|
-| `Sources/Recavia/` | アーキテクチャ、並行処理、UI: `Sources/Recavia/AGENTS.md` |
-| `Sources/Recavia/Database/` | GRDB とマイグレーション: `Sources/Recavia/Database/AGENTS.md` |
-| `Tests/RecaviaTests/` | テスト実装と実行確認: `Tests/RecaviaTests/AGENTS.md` |
+| `Sources/Dahlia/` | アーキテクチャ、並行処理、UI: `Sources/Dahlia/AGENTS.md` |
+| `Sources/Dahlia/Database/` | GRDB とマイグレーション: `Sources/Dahlia/Database/AGENTS.md` |
+| `Tests/DahliaTests/` | テスト実装と実行確認: `Tests/DahliaTests/AGENTS.md` |
 | `scripts/` | SwiftPM のビルド、署名、notarize、lint スクリプト |
 
 `CLAUDE.md` は同じ階層の `AGENTS.md` への互換シンボリックリンクであり、内容を二重管理しない。
@@ -38,7 +38,7 @@ Recavia は、マイクとシステム音声を同時にキャプチャし、App
 
 ```bash
 swift build                       # Debug ビルド
-swift run Recavia                  # 未署名 Debug 実行
+swift run Dahlia                  # 未署名 Debug 実行
 ./scripts/run-dev.sh              # Debug + codesign（フル機能の動作確認に推奨）
 ./scripts/build-app.sh            # Release .app バンドル
 swift test                        # 全テスト
@@ -46,7 +46,7 @@ swift test --filter SummaryServiceTests  # 対象スイートの例
 CI=true ./scripts/lint.sh         # 変更せず SwiftFormat / SwiftLint を検査
 ```
 
-`swift run Recavia` は未署名のため Data Protection Keychain を使えない。Keychain と Touch ID を含む動作確認には `run-dev.sh` を使う。
+`swift run Dahlia` は未署名のため Data Protection Keychain を使えない。Keychain と Touch ID を含む動作確認には `run-dev.sh` を使う。
 
 ## 完了条件
 

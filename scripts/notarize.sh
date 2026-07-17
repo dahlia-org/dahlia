@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Recavia"
+APP_NAME="Dahlia"
 DMG_NAME="${APP_NAME}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -41,7 +41,7 @@ if [ -f .env.local ]; then
     set +a
 fi
 
-NOTARY_PROFILE="${NOTARY_PROFILE:-recavia-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-dahlia-notary}"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 
 require_commands xcrun codesign ditto hdiutil spctl
@@ -61,7 +61,7 @@ if [ "$(basename "$DMG_PATH")" != "$DMG_NAME" ]; then
 fi
 
 echo "=== Creating signed DMG: $(basename "$DMG_PATH") ==="
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/recavia-dmg.XXXXXX")"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-dmg.XXXXXX")"
 ditto "$APP_BUNDLE" "${STAGING_DIR}/${APP_NAME}.app"
 ln -s /Applications "${STAGING_DIR}/Applications"
 hdiutil create \

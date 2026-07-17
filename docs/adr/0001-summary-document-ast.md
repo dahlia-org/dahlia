@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-Recavia のサマリーは、これまで Obsidian Markdown を中心に扱っていた。LLM が `![[screenshot.png]]` や `[[meetingId#HH:MM:SS|label]]` を含む Markdown を生成し、その文字列を `summaries.summary` に保存して、UI 表示、Vault 書き出し、Google Drive エクスポートで再利用していた。
+Dahlia のサマリーは、これまで Obsidian Markdown を中心に扱っていた。LLM が `![[screenshot.png]]` や `[[meetingId#HH:MM:SS|label]]` を含む Markdown を生成し、その文字列を `summaries.summary` に保存して、UI 表示、Vault 書き出し、Google Drive エクスポートで再利用していた。
 
 この方式は Obsidian 出力には都合がよい一方、以下の制約がある。
 

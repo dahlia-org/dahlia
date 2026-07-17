@@ -2,22 +2,22 @@
 
 - 調査日: 2026-07-13
 - 状態: 自動停止機能を削除
-- 対象: macOS 上の Recavia によるマイク・システム音声同時録音
+- 対象: macOS 上の Dahlia によるマイク・システム音声同時録音
 
 ## 結論
 
 今回確認した汎用 API だけでは、実環境のミーティング終了を誤検出なく判定できなかった。
 
-`AVAudioEngineConfigurationChange` は Recavia のマイクエンジンやデバイス構成の変化を通知するもので、ミーティングアプリの退出を表すイベントではない。CoreAudio のプロセス単位の入力・出力状態も、検証したミーティング中に対象プロセスを公開しなかった。
+`AVAudioEngineConfigurationChange` は Dahlia のマイクエンジンやデバイス構成の変化を通知するもので、ミーティングアプリの退出を表すイベントではない。CoreAudio のプロセス単位の入力・出力状態も、検証したミーティング中に対象プロセスを公開しなかった。
 
 誤停止による録音欠落を避けるため、ユーザー向けの自動停止設定と実行時の自動停止処理を削除した。手動停止、致命的なキャプチャ障害時の停止、録音データの保存処理は維持する。
 
 ## 検証環境
 
-- Recavia は `./scripts/run-dev.sh` で起動した。
-- このスクリプトは Debug バイナリを `Recavia.app` に格納し、`Recavia.entitlements` を付けてコード署名した後、バンドル内の実行ファイルを起動する。
+- Dahlia は `./scripts/run-dev.sh` で起動した。
+- このスクリプトは Debug バイナリを `Dahlia.app` に格納し、`Dahlia.entitlements` を付けてコード署名した後、バンドル内の実行ファイルを起動する。
 - 親プロセスが Terminal であること自体は、CoreAudio が他プロセスの状態を公開するかどうかには影響しないと判断した。
-- `swift run Recavia` や `.build/debug/Recavia` の直接実行は未署名なので、今回の権限切り分けには使用していない。
+- `swift run Dahlia` や `.build/debug/Dahlia` の直接実行は未署名なので、今回の権限切り分けには使用していない。
 
 ## 調査経緯
 
@@ -35,7 +35,7 @@
 
 ### 2. 外部プロセスのマイク入力状態
 
-CoreAudio の次のプロパティを使用し、Recavia 自身の PID を除外して、録音開始時に入力ストリームを使用している外部プロセスを追跡した。
+CoreAudio の次のプロパティを使用し、Dahlia 自身の PID を除外して、録音開始時に入力ストリームを使用している外部プロセスを追跡した。
 
 - `kAudioHardwarePropertyProcessObjectList`
 - `kAudioProcessPropertyPID`
@@ -48,7 +48,7 @@ CoreAudio の次のプロパティを使用し、Recavia 自身の PID を除外
 [ExternalMicrophoneActivity] External microphone activity monitor was not armed because no other input process was active
 ```
 
-ミーティング中にもかかわらず、外部入力プロセスは 0 件だった。Recavia 自身のマイク利用を除外できる点は有効だったが、対象ミーティングアプリまたはブラウザが CoreAudio のプロセス入力状態として現れなかったため、この方式は利用できなかった。
+ミーティング中にもかかわらず、外部入力プロセスは 0 件だった。Dahlia 自身のマイク利用を除外できる点は有効だったが、対象ミーティングアプリまたはブラウザが CoreAudio のプロセス入力状態として現れなかったため、この方式は利用できなかった。
 
 ### 3. 外部プロセスの音声出力状態
 
@@ -66,7 +66,7 @@ CoreAudio の次のプロパティを使用し、Recavia 自身の PID を除外
 
 ### オーディオデバイス全体の使用状態
 
-`kAudioDevicePropertyDeviceIsRunningSomewhere` は、Recavia 自身のマイクキャプチャにも反応する。Recavia が録音中である限りマイクデバイスは使用中になるため、ミーティングアプリの終了判定には使えない。
+`kAudioDevicePropertyDeviceIsRunningSomewhere` は、Dahlia 自身のマイクキャプチャにも反応する。Dahlia が録音中である限りマイクデバイスは使用中になるため、ミーティングアプリの終了判定には使えない。
 
 ### システム音声の無音時間
 

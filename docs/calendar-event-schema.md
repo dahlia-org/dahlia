@@ -8,7 +8,7 @@
 
 - `ical_uid`: iCalendar `UID`。前後の空白を除去し、空値は保存しない。
 - `recurrence_id`: iCalendar `RECURRENCE-ID` の値をRFC 5545のbasic形式へ正規化した文字列。
-  - 単発予定: `""`（Recaviaの規約。VEVENTにRECURRENCE-IDが存在しないことを表す）
+  - 単発予定: `""`（Dahliaの規約。VEVENTにRECURRENCE-IDが存在しないことを表す）
   - DATE: `20260417`
   - UTC DATE-TIME: `20260417T003000Z`
 
@@ -43,7 +43,7 @@ meetings
 | `start`, `end`, `is_all_day` | 現在観測している開催時刻 |
 | `conference_uri` | Meet、Zoom、Teams、電話、SIPなどの参加先URI |
 | `url` | Google Calendar Web UIなど、予定自体を参照するURL |
-| `created_at`, `updated_at` | Recaviaでの初回・最終観測時刻 |
+| `created_at`, `updated_at` | Dahliaでの初回・最終観測時刻 |
 
 別ソースから同じキーを観測した場合、開催時刻などの基本情報は最新の観測で更新する。一方、空description、NULLの`conference_uri`、NULLの`url`は、他ソースで取得済みの有効値を消去しない。
 

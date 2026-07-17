@@ -38,7 +38,7 @@ if [ "$MODE" = "--print-cache-key" ]; then
 fi
 
 if [ "$(uname -m)" != "arm64" ]; then
-    echo "error: Recavia's bundled Codex helper supports Apple Silicon only" >&2
+    echo "error: Dahlia's bundled Codex helper supports Apple Silicon only" >&2
     exit 1
 fi
 
@@ -53,7 +53,7 @@ validate_output() {
     local expected file_path reference validation_home
 
     for reference in \
-        "${PROJECT_DIR}/Sources/Recavia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
+        "${PROJECT_DIR}/Sources/Dahlia/Services/CodexBundle.swift:static let version = \"${CODEX_VERSION}\"" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Codex CLI ${CODEX_VERSION}" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:Asset: ${ASSET_NAME}" \
         "${PROJECT_DIR}/Resources/Codex-NOTICE.txt:SHA-256: ${ASSET_SHA256}" \

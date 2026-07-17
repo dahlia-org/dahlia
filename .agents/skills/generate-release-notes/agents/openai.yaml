@@ -1,4 +1,4 @@
 interface:
   display_name: "Generate Release Notes"
-  short_description: "Draft human-friendly release notes from Recavia changes."
-  default_prompt: "Use $generate-release-notes to draft user-friendly notes for the current Recavia release."
+  short_description: "Draft human-friendly release notes from Dahlia changes."
+  default_prompt: "Use $generate-release-notes to draft user-friendly notes for the current Dahlia release."

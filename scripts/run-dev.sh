@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Recavia"
+APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ENTITLEMENTS_PATH="${PROJECT_DIR}/Recavia.entitlements"
+ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
 CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 
 source "${SCRIPT_DIR}/common.sh"
@@ -18,7 +18,7 @@ if [ -f .env.local ]; then
     set +a
 fi
 
-export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/recavia-clang-module-cache"
+export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
 echo "=== Building ${APP_NAME} (debug) ==="
@@ -31,7 +31,7 @@ APP_BUNDLE="${APP_NAME}.app"
 CONTENTS="${APP_BUNDLE}/Contents"
 MACOS="${CONTENTS}/MacOS"
 HELPERS="${CONTENTS}/Helpers"
-ICON_SRC="Sources/Recavia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+ICON_SRC="Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 ICONSET_DIR="${CONTENTS}/Resources/AppIcon.iconset"
 
 rm -rf "${APP_BUNDLE}"
@@ -41,7 +41,7 @@ mkdir -p "${HELPERS}"
 mkdir -p "${CONTENTS}/Resources/Licenses/Codex"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${MACOS}/${APP_NAME}"
-cp "${BUILD_DIR}/recavia-mcp" "${HELPERS}/recavia-mcp"
+cp "${BUILD_DIR}/dahlia-mcp" "${HELPERS}/dahlia-mcp"
 cp ".build/codex-helper/codex" "${HELPERS}/codex"
 cp ".build/codex-helper/LICENSE" "${CONTENTS}/Resources/Licenses/Codex/LICENSE"
 cp ".build/codex-helper/NOTICE.txt" "${CONTENTS}/Resources/Licenses/Codex/NOTICE.txt"
@@ -49,8 +49,8 @@ if [ "$(lipo -archs "${HELPERS}/codex")" != "arm64" ]; then
     echo "error: bundled Codex must contain only arm64" >&2
     exit 1
 fi
-if [ "$(lipo -archs "${HELPERS}/recavia-mcp")" != "arm64" ]; then
-    echo "error: bundled recavia-mcp must contain only arm64" >&2
+if [ "$(lipo -archs "${HELPERS}/dahlia-mcp")" != "arm64" ]; then
+    echo "error: bundled dahlia-mcp must contain only arm64" >&2
     exit 1
 fi
 if [ "$("${HELPERS}/codex" --version)" != "codex-cli ${CODEX_VERSION}" ]; then
@@ -75,7 +75,7 @@ sips -z 1024 1024 "$ICON_SRC" --out "$ICONSET_DIR/icon_512x512@2x.png" > /dev/nu
 iconutil -c icns "$ICONSET_DIR" -o "${CONTENTS}/Resources/AppIcon.icns"
 rm -rf "$ICONSET_DIR"
 
-RESOURCE_BUNDLE="${BUILD_DIR}/Recavia_Recavia.bundle"
+RESOURCE_BUNDLE="${BUILD_DIR}/Dahlia_Dahlia.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "${CONTENTS}/Resources/"
 fi
@@ -83,7 +83,7 @@ fi
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true
 
-SIGNED_RESOURCE_BUNDLE="${CONTENTS}/Resources/Recavia_Recavia.bundle"
+SIGNED_RESOURCE_BUNDLE="${CONTENTS}/Resources/Dahlia_Dahlia.bundle"
 if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
     codesign_path "$SIGNED_RESOURCE_BUNDLE"
 fi
@@ -95,9 +95,9 @@ if ! has_boolean_entitlement "${HELPERS}/codex" "com.apple.security.cs.allow-jit
     echo "error: bundled Codex must allow JIT under the hardened runtime" >&2
     exit 1
 fi
-codesign --remove-signature "${HELPERS}/recavia-mcp" 2>/dev/null || true
-codesign_path "${HELPERS}/recavia-mcp"
-codesign --verify --strict --verbose=2 "${HELPERS}/recavia-mcp"
+codesign --remove-signature "${HELPERS}/dahlia-mcp" 2>/dev/null || true
+codesign_path "${HELPERS}/dahlia-mcp"
+codesign --verify --strict --verbose=2 "${HELPERS}/dahlia-mcp"
 
 if has_entitlements "$ENTITLEMENTS_PATH"; then
     codesign_path "${MACOS}/${APP_NAME}" --entitlements "$ENTITLEMENTS_PATH"
@@ -107,7 +107,7 @@ else
     codesign_path "${APP_BUNDLE}"
 fi
 if [ "$(lipo -archs "${MACOS}/${APP_NAME}")" != "arm64" ]; then
-    echo "error: Recavia.app must contain only arm64" >&2
+    echo "error: Dahlia.app must contain only arm64" >&2
     exit 1
 fi
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
@@ -118,4 +118,4 @@ if [ -x "$LSREGISTER" ]; then
     "$LSREGISTER" -f "${APP_BUNDLE}" >/dev/null 2>&1 || true
 fi
 
-exec env RECAVIA_RUNTIME_PROFILE=development "${MACOS}/${APP_NAME}"
+exec env DAHLIA_RUNTIME_PROFILE=development "${MACOS}/${APP_NAME}"

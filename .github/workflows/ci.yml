@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: BuildTools/.build
-          key: buildtools-recavia-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('BuildTools/Package.resolved') }}
+          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('BuildTools/Package.resolved') }}
 
       - name: Install lint tools
         run: brew install swiftlint
