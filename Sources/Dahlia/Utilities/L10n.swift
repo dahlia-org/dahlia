@@ -215,12 +215,28 @@ enum L10n {
     static var selectMeetingDescription: String { String(localized: "Select a meeting from the sidebar.", bundle: bundle) }
     static var noProjectsYet: String { String(localized: "No projects yet", bundle: bundle) }
     static var noProjectsMatchFilter: String { String(localized: "No projects match the current filter.", bundle: bundle) }
+    static var loadingProjects: String { String(localized: "Loading Projects…", bundle: bundle) }
+    static var projectCatalogLoadFailed: String { String(localized: "Could Not Load Projects", bundle: bundle) }
+    static var projectCatalogLoadFailedDescription: String { String(
+        localized: "Try loading the project list again.",
+        bundle: bundle
+    ) }
+    static var createFirstProjectDescription: String { String(
+        localized: "Create a project to organize meetings and summaries.",
+        bundle: bundle
+    ) }
+    static var clearSearch: String { String(localized: "Clear Search", bundle: bundle) }
     static var noInstructionsYet: String { String(localized: "No instructions yet", bundle: bundle) }
     static var noActionItemsYet: String { String(localized: "No action items yet", bundle: bundle) }
     static var noActionItemsMatchFilter: String { String(localized: "No action items match the current filter.", bundle: bundle) }
     static var actionItemsDescription: String { String(localized: "Action items extracted from summaries will appear here.", bundle: bundle) }
     static var missingOnDisk: String { String(localized: "Missing on Disk", bundle: bundle) }
     static func meetingCount(_ count: Int) -> String { String(localized: "\(count) meetings", bundle: bundle) }
+
+    static func includedSubprojectCount(_ count: Int) -> String {
+        String(localized: "\(count) subprojects included", bundle: bundle)
+    }
+
     static var noMeetings: String { String(localized: "No meetings", bundle: bundle) }
     static var noConversationDetected: String { String(localized: "We couldn't detect any conversation in this meeting.", bundle: bundle) }
     static var recordingNow: String { String(localized: "Recording now", bundle: bundle) }
@@ -278,6 +294,11 @@ enum L10n {
     static var saving: String { String(localized: "Saving…", bundle: bundle) }
     static var saved: String { String(localized: "Saved", bundle: bundle) }
     static var dangerZone: String { String(localized: "Danger Zone", bundle: bundle) }
+    static var projectOverview: String { String(localized: "Project Overview", bundle: bundle) }
+    static var projectLocation: String { String(localized: "Project Location", bundle: bundle) }
+    static var includedSubprojects: String { String(localized: "Included Subprojects", bundle: bundle) }
+    static var meetingsInThisProject: String { String(localized: "Meetings in This Project", bundle: bundle) }
+    static var meetingsInHierarchy: String { String(localized: "Meetings in Hierarchy", bundle: bundle) }
     static var deleteProject: String { String(localized: "Delete Project", bundle: bundle) }
     static var deleteProjectHelp: String { String(
         localized: "Deletes this project and all subprojects. The project folder is moved to the Trash.",
@@ -291,6 +312,24 @@ enum L10n {
     static func projectDeletionSummary(projectCount: Int, meetingCount: Int) -> String {
         String(localized: "This affects \(projectCount) projects and \(meetingCount) meetings.", bundle: bundle)
     }
+
+    static var projectFoldersMoveToTrash: String { String(
+        localized: "The affected project folders will be moved to the Trash.",
+        bundle: bundle
+    ) }
+
+    static func projectMeetingsWillBeDeleted(_ count: Int) -> String {
+        String(
+            localized: "\(count) meetings and their transcripts will be permanently deleted. This cannot be undone.",
+            bundle: bundle
+        )
+    }
+
+    static func projectMeetingsWillBeMoved(count: Int, destination: String) -> String {
+        String(localized: "\(count) meetings will be moved to \(destination) before deletion.", bundle: bundle)
+    }
+
+    static var deletingProjects: String { String(localized: "Deleting Projects…", bundle: bundle) }
 
     static var meetingHandling: String { String(localized: "Meeting History", bundle: bundle) }
     static var moveMeetingsBeforeDeletingProject: String { String(
@@ -309,6 +348,10 @@ enum L10n {
     static var moveAndDeleteProject: String { String(localized: "Move Meetings and Delete Project", bundle: bundle) }
     static var deleteProjectAndMeetings: String { String(localized: "Delete Project and Meetings", bundle: bundle) }
     static var projectOperationFailed: String { String(localized: "Could Not Update Project", bundle: bundle) }
+    static var projectOperationFailedDescription: String {
+        String(localized: "The project operation could not be completed.", bundle: bundle)
+    }
+
     static var projectNotFound: String { String(localized: "The project could not be found.", bundle: bundle) }
     static var projectParentFolderMissing: String { String(
         localized: "The parent project folder is missing from disk.",

@@ -118,8 +118,8 @@ struct ProjectTreeNode: Identifiable, Equatable {
     }
 
     private func matches(_ query: String) -> Bool {
-        project.projectName.localizedCaseInsensitiveContains(query)
-            || displayName.localizedCaseInsensitiveContains(query)
+        project.projectName.localizedStandardContains(query)
+            || displayName.localizedStandardContains(query)
     }
 
     private static func parentName(for name: String) -> String? {

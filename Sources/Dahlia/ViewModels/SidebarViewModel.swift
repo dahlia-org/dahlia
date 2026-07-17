@@ -1,6 +1,9 @@
 import Foundation
 import GRDB
 import Observation
+import OSLog
+
+private let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
 
 /// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
@@ -18,6 +21,8 @@ final class SidebarViewModel {
     private(set) var isMeetingCatalogLoaded = false
     /// 現在の vault に属する全 project の集約一覧。
     var allProjectItems: [ProjectOverviewItem] = []
+    private(set) var isProjectCatalogLoaded = false
+    private(set) var projectCatalogLoadFailed = false
     /// 現在の vault に属する全 instructions の一覧。
     var allInstructions: [InstructionRecord] = []
     var allVaults: [VaultRecord] = []
@@ -42,10 +47,12 @@ final class SidebarViewModel {
     @ObservationIgnored private var allMeetingsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allProjectsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var projectCatalogObservationTracker = ProjectCatalogObservationTracker()
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
+    @ObservationIgnored private var projectDescriptionDrafts: [UUID: String] = [:]
 
     /// プロジェクト名から vault 内の URL を返す。
     func projectURL(for name: String) -> URL {
@@ -70,6 +77,7 @@ final class SidebarViewModel {
         allMeetingsObservation?.cancel()
         allTagsObservation?.cancel()
         allProjectsObservation?.cancel()
+        projectCatalogObservationTracker.invalidate()
         instructionsObservation?.cancel()
         fileWatcher?.stopMonitoring()
 
@@ -79,6 +87,9 @@ final class SidebarViewModel {
         allMeetings.removeAll()
         isMeetingCatalogLoaded = false
         allProjectItems.removeAll()
+        isProjectCatalogLoaded = false
+        projectCatalogLoadFailed = false
+        projectDescriptionDrafts.removeAll()
         allInstructions.removeAll()
         allTags.removeAll()
         allAvailableTags.removeAll()
@@ -243,6 +254,10 @@ final class SidebarViewModel {
     }
 
     private func startProjectOverviewObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+        allProjectsObservation?.cancel()
+        let observationGeneration = projectCatalogObservationTracker.beginObservation()
+        isProjectCatalogLoaded = false
+        projectCatalogLoadFailed = false
         let observation = ValueObservation.tracking { db in
             let projects = try ProjectOverviewItem.fetchAll(
                 db,
@@ -272,11 +287,25 @@ final class SidebarViewModel {
         }
         allProjectsObservation = observation.start(
             in: dbQueue,
-            onError: { _ in },
+            onError: { [weak self] error in
+                sidebarViewModelLogger.error("Failed to load project catalog: \(error, privacy: .public)")
+                ErrorReportingService.capture(error, context: ["source": "projectCatalogObservation"])
+                Task { @MainActor in
+                    guard let self,
+                          self.currentVault?.id == vaultId,
+                          self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
+                    self.isProjectCatalogLoaded = true
+                    self.projectCatalogLoadFailed = true
+                }
+            },
             onChange: { [weak self] projects in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self,
+                          self.currentVault?.id == vaultId,
+                          self.projectCatalogObservationTracker.isCurrent(observationGeneration) else { return }
                     self.allProjectItems = projects
+                    self.isProjectCatalogLoaded = true
+                    self.projectCatalogLoadFailed = false
                 }
             }
         )
@@ -397,6 +426,11 @@ final class SidebarViewModel {
 
     // MARK: - Project Helpers
 
+    func retryProjectCatalogLoading() {
+        guard let dbQueue, let vault = currentVault else { return }
+        startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vault.id)
+    }
+
     func createProject(leafName: String, parentProjectId: UUID?) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
@@ -464,11 +498,21 @@ final class SidebarViewModel {
         guard let meetingRepository else { return false }
         do {
             try meetingRepository.updateProjectDescription(id: id, description: description)
+            projectDescriptionDrafts[id] = nil
             return true
         } catch {
+            projectDescriptionDrafts[id] = description
             lastError = error.localizedDescription
             return false
         }
+    }
+
+    func stageProjectDescriptionDraft(id: UUID, description: String) {
+        projectDescriptionDrafts[id] = description
+    }
+
+    func projectDescriptionDraft(id: UUID) -> String? {
+        projectDescriptionDrafts[id]
     }
 
     func projectDescription(id: UUID) -> String? {
