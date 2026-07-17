@@ -22,6 +22,7 @@ struct ProjectManagementView: View {
     @State private var lastSavedProjectDescription = ""
     @State private var descriptionSaveTask: Task<Void, Never>?
     @State private var isRevertingSelectionAfterSaveFailure = false
+    @State private var projectDescriptionChangeTracker = ProjectDescriptionChangeTracker()
 
     private let sidebarWidth: CGFloat = 300
 
@@ -53,7 +54,8 @@ struct ProjectManagementView: View {
             }
             loadProjectDetails(for: newProjectId)
         }
-        .onChange(of: projectDescription) { _, _ in
+        .onChange(of: projectDescription) { _, newDescription in
+            guard projectDescriptionChangeTracker.shouldSaveChange(to: newDescription) else { return }
             scheduleProjectDescriptionSave()
         }
         .onDisappear {
@@ -436,6 +438,10 @@ private extension ProjectManagementView {
         let editingState = ProjectDescriptionEditingState(
             persistedText: projectId.flatMap { sidebarViewModel.projectDescription(id: $0) },
             draftText: projectId.flatMap { sidebarViewModel.projectDescriptionDraft(id: $0) }
+        )
+        projectDescriptionChangeTracker.prepareForProgrammaticChange(
+            from: projectDescription,
+            to: editingState.text
         )
         projectDescription = editingState.text
         lastSavedProjectDescription = editingState.persistedText

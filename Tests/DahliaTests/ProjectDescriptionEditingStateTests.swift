@@ -19,6 +19,28 @@ struct ProjectDescriptionEditingStateTests {
     }
 
     @Test
+    func programmaticDraftRestorationDoesNotRequestSave() {
+        var tracker = ProjectDescriptionChangeTracker()
+
+        tracker.prepareForProgrammaticChange(from: "", to: "Unsaved description")
+        let shouldSaveRestoredDraft = tracker.shouldSaveChange(to: "Unsaved description")
+        let shouldSaveUserEdit = tracker.shouldSaveChange(to: "Edited description")
+
+        #expect(!shouldSaveRestoredDraft)
+        #expect(shouldSaveUserEdit)
+    }
+
+    @Test
+    func unchangedProgrammaticValueDoesNotSuppressLaterUserEdit() {
+        var tracker = ProjectDescriptionChangeTracker()
+
+        tracker.prepareForProgrammaticChange(from: "", to: "")
+        let shouldSaveUserEdit = tracker.shouldSaveChange(to: "User description")
+
+        #expect(shouldSaveUserEdit)
+    }
+
+    @Test
     func missingProjectDoesNotRemainAFailedDraft() throws {
         let database = try AppDatabaseManager(path: ":memory:")
         let viewModel = SidebarViewModel()
