@@ -1,3 +1,7 @@
 [mcp_servers.sentry]
 type = "http"
 url = "https://mcp.sentry.dev/mcp"
+
+[mcp_servers.xcode]
+command = "xcrun"
+args = ["mcpbridge"]
