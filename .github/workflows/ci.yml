@@ -53,24 +53,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Show toolchain
-        id: toolchain
-        run: |
-          toolchain="$(xcodebuild -version; swift --version)"
-          echo "$toolchain"
-          toolchain_hash="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{ print $1 }')"
-          echo "hash=$toolchain_hash" >> "$GITHUB_OUTPUT"
-
-      - name: Restore app build cache
-        id: app-build-cache
-        uses: actions/cache/restore@v5
-        with:
-          path: |
-            .build/repositories
-            .build/checkouts
-            .build/*-apple-macosx/debug
-          key: app-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-
       - name: Run unit tests
         run: |
           set -o pipefail
@@ -81,13 +63,3 @@ jobs:
 
       - name: Build executable
         run: swift build
-
-      - name: Save app build cache
-        if: ${{ !cancelled() && steps.app-build-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: |
-            .build/repositories
-            .build/checkouts
-            .build/*-apple-macosx/debug
-          key: ${{ steps.app-build-cache.outputs.cache-primary-key }}
