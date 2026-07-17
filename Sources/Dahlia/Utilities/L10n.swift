@@ -1176,6 +1176,7 @@ enum L10n {
     static var summaryGenerated: String { String(localized: "Summary generated", bundle: bundle) }
     static var openSummary: String { String(localized: "Open Summary", bundle: bundle) }
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }
+    static var share: String { String(localized: "Share", bundle: bundle) }
     static var shareSummary: String { String(localized: "Share Summary", bundle: bundle) }
     static var exportToGoogleDocs: String { String(localized: "Export to Google Docs", bundle: bundle) }
     static var googleDocsExportFailed: String { String(localized: "Could not export the summary to Google Docs.", bundle: bundle) }

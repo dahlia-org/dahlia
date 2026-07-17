@@ -95,13 +95,14 @@ struct ShareSummaryToolbarButton: View {
             isPopoverPresented = true
         } label: {
             Label {
-                Text(L10n.shareSummary)
+                Text(L10n.share)
             } icon: {
                 Image(systemName: "square.and.arrow.up")
                     .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : .secondary)
             }
         }
         .labelStyle(.titleAndIcon)
+        .buttonStyle(.bordered)
         .disabled(!viewModel.canShareCurrentSummary)
         .help(L10n.shareSummary)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {

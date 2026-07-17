@@ -1,25 +1,18 @@
 import AppKit
 import SwiftUI
 
-/// Commands that only apply to the selected meeting's generated summary.
-struct SummaryTabActions: View {
+/// External destinations for the selected meeting's generated summary.
+struct SummaryOpenMenu: View {
     @ObservedObject var viewModel: CaptionViewModel
 
     var body: some View {
-        HStack(spacing: 8) {
-            ShareSummaryToolbarButton(viewModel: viewModel)
+        Menu(L10n.openSummary, systemImage: "arrow.up.forward.app") {
+            Button(L10n.openInObsidian, systemImage: "book.closed", action: openInObsidian)
+                .disabled(viewModel.lastSummaryURL == nil || !ObsidianLauncher.isInstalled)
 
-            Menu(L10n.openSummary, systemImage: "arrow.up.forward.app") {
-                Button(L10n.openInObsidian, systemImage: "book.closed", action: openInObsidian)
-                    .disabled(viewModel.lastSummaryURL == nil || !ObsidianLauncher.isInstalled)
-
-                Button(L10n.openInBrowser, systemImage: "globe", action: openInBrowser)
-                    .disabled(viewModel.currentSummaryGoogleFileURL == nil)
-            }
-            .help(L10n.openSummary)
+            Button(L10n.openInBrowser, systemImage: "globe", action: openInBrowser)
+                .disabled(viewModel.currentSummaryGoogleFileURL == nil)
         }
-        .buttonStyle(.bordered)
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func openInObsidian() {

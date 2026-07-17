@@ -288,9 +288,17 @@ private struct MeetingActionsMenu: View {
     var sidebarViewModel: SidebarViewModel
     let onRename: () -> Void
 
+    private var canOpenSummary: Bool {
+        viewModel.lastSummaryURL != nil || viewModel.currentSummaryGoogleFileURL != nil
+    }
+
     var body: some View {
         Menu {
             Button(L10n.rename, systemImage: "pencil", action: onRename)
+
+            if canOpenSummary {
+                SummaryOpenMenu(viewModel: viewModel)
+            }
 
             Divider()
 
@@ -592,6 +600,7 @@ struct ControlPanelView: View {
         ToolbarSpacer(.flexible, placement: .primaryAction)
 
         ToolbarItemGroup(placement: .primaryAction) {
+            ShareSummaryToolbarButton(viewModel: viewModel)
             GenerateSummaryToolbarButton(viewModel: viewModel)
 
             if showsToolbarRecordButton {

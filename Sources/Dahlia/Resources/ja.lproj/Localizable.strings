@@ -434,6 +434,7 @@
 "Summary generated" = "要約が生成されました";
 "Open Summary" = "要約を開く";
 "Generate Summary" = "要約を生成";
+"Share" = "共有";
 "Share Summary" = "要約を共有";
 "Export to Google Docs" = "Google Docs に書き出す";
 "Could not export the summary to Google Docs." = "要約を Google Docs に書き出せませんでした。";
