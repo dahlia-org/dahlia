@@ -1,10 +1,46 @@
 {
   "version": 1,
   "skills": {
+    "gestalt-ui-organisation": {
+      "source": "dembrandt/dembrandt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/gestalt-ui-organisation/SKILL.md",
+      "computedHash": "d84f4eb2ff00562f68443f82d014ead9e2d548814d98aa7309528d5fa95d9549"
+    },
+    "information-architecture": {
+      "source": "dembrandt/dembrandt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/information-architecture/SKILL.md",
+      "computedHash": "046d03be3ec85828d32c719411f5921ec33ed2fdfa2e03435069168d9c4666a2"
+    },
+    "layout-paradigms-and-consistency": {
+      "source": "dembrandt/dembrandt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/layout-paradigms-and-consistency/SKILL.md",
+      "computedHash": "0720d67a1b9b20b6e501bbc65af01aa9c8b0599b13c0444b299712b8d9b02e17"
+    },
+    "nielsen-heuristics-audit": {
+      "source": "mastepanoski/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nielsen-heuristics-audit/SKILL.md",
+      "computedHash": "33fcc98ae4bccfde1d0a8220233c9fd36e3e5575f79dcaae6652693ac94ad59b"
+    },
     "swiftui-pro": {
       "source": "twostraws/swiftui-agent-skill",
       "sourceType": "github",
       "computedHash": "ce653d19fd00a4874489003025e9235be542e7134ff3c543e20afeb53fc3bc9a"
+    },
+    "ui-context-and-scope": {
+      "source": "dembrandt/dembrandt-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ui-context-and-scope/SKILL.md",
+      "computedHash": "a8d0c039d162e151b1720b34f0478053309823e214c5756b7617a8c17b24b8ba"
+    },
+    "ux-audit-rethink": {
+      "source": "mastepanoski/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ux-audit-rethink/SKILL.md",
+      "computedHash": "71f8915d166c445f051a444f387affe32dd31263cafd575fc1b82e86e616f49e"
     }
   }
 }
