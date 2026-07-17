@@ -38,5 +38,15 @@ struct SidebarViewModelSelectionTests {
         #expect(viewModel.selectedMeetingIds.isEmpty)
         #expect(viewModel.selectedMeetingId == nil)
     }
+
+    @Test
+    func projectDescriptionDraftSurvivesViewRecreation() {
+        let viewModel = SidebarViewModel()
+        let projectId = UUID.v7()
+
+        viewModel.stageProjectDescriptionDraft(id: projectId, description: "Unsaved description")
+
+        #expect(viewModel.projectDescriptionDraft(id: projectId) == "Unsaved description")
+    }
 }
 #endif

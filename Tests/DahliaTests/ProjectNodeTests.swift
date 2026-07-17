@@ -107,6 +107,31 @@ import Foundation
             #expect(filteredNodes.first?.children?.first?.children?.map(\.displayName) == ["baz"])
         }
 
+        @Test
+        func projectSearchUsesLocalizedStandardMatching() {
+            let nodes = ProjectTreeNode.buildNodes(
+                from: [
+                    projectOverview(named: "Café", meetingCount: 0),
+                    projectOverview(named: "Café/Planning", meetingCount: 2),
+                    projectOverview(named: "Archive", meetingCount: 1),
+                ]
+            )
+
+            let filteredNodes = nodes.compactMap { $0.filtered(matching: "cafe") }
+
+            #expect(filteredNodes.map(\.displayName) == ["Café"])
+            #expect(filteredNodes.first?.children?.map(\.displayName) == ["Planning"])
+        }
+
+        @Test
+        func projectSearchReturnsNoNodesForUnmatchedQuery() {
+            let nodes = ProjectTreeNode.buildNodes(
+                from: [projectOverview(named: "Alpha/Beta", meetingCount: 1)]
+            )
+
+            #expect(nodes.compactMap { $0.filtered(matching: "Gamma") }.isEmpty)
+        }
+
         private func project(named name: String) -> ProjectRecord {
             ProjectRecord(id: .v7(), vaultId: .v7(), name: name, createdAt: Date())
         }
