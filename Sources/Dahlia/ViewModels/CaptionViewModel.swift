@@ -2638,11 +2638,14 @@ final class CaptionViewModel: ObservableObject {
         dbQueue: DatabaseQueue,
         shouldRefreshVisibleScreenshots: Bool
     ) async throws {
-        let imageData: Data = try await Task.detached(priority: .userInitiated) {
+        let encodedImage: (data: Data, mimeType: String) = try await Task.detached(priority: .userInitiated) {
             guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
                 throw ScreenshotError.encodingFailed
             }
-            return encoded
+            guard let mimeType = ImageEncoder.mimeType(for: encoded) else {
+                throw ScreenshotError.encodingFailed
+            }
+            return (encoded, mimeType)
         }.value
 
         let record = MeetingScreenshotRecord(
@@ -2650,8 +2653,8 @@ final class CaptionViewModel: ObservableObject {
             meetingId: meetingId,
             sessionId: sessionId,
             capturedAt: Date(),
-            imageData: imageData,
-            mimeType: ImageEncoder.preferredMIMEType
+            imageData: encodedImage.data,
+            mimeType: encodedImage.mimeType
         )
 
         try await dbQueue.write { db in

@@ -9,10 +9,6 @@ package enum ImageEncoder {
         return types.contains(UTType.webP.identifier)
     }()
 
-    package static var preferredMIMEType: String {
-        supportsWebP ? "image/webp" : "image/jpeg"
-    }
-
     package static var preferredFileExtension: String {
         supportsWebP ? "webp" : "jpeg"
     }

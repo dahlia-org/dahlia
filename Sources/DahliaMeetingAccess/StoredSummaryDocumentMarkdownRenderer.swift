@@ -62,7 +62,9 @@ enum StoredSummaryDocumentMarkdownRenderer {
             text.text.nonEmpty.map { code in
                 let fence = codeFence(for: code)
                 let language = language.replacing(/[^A-Za-z0-9_+.-]/, with: "")
-                return appendTranscriptReference("\(fence)\(language)\n\(code)\n\(fence)", reference: text.transcriptRef)
+                let block = "\(fence)\(language)\n\(code)\n\(fence)"
+                guard let reference = normalized(text.transcriptRef ?? "") else { return block }
+                return "\(block)\n\n[Transcript \(reference)]"
             }
         case let .image(screenshotID, caption):
             renderScreenshot(id: screenshotID, caption: caption)
@@ -291,16 +293,12 @@ struct StoredSummaryBlock: Codable {
                 text: (try? container.decode(StoredSummaryText.self, forKey: .content)) ?? emptyText
             )
         case .image:
-            guard let screenshotID = try? container.decode(UUID.self, forKey: .screenshotID) else {
-                throw DecodingError.keyNotFound(
-                    CodingKeys.screenshotID,
-                    DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Image block requires screenshot_id")
-                )
+            let caption = (try? container.decode(StoredSummaryText.self, forKey: .content)) ?? emptyText
+            if let screenshotID = try? container.decode(UUID.self, forKey: .screenshotID) {
+                content = .image(screenshotID: screenshotID, caption: caption)
+            } else {
+                content = .paragraph(caption)
             }
-            content = .image(
-                screenshotID: screenshotID,
-                caption: (try? container.decode(StoredSummaryText.self, forKey: .content)) ?? emptyText
-            )
         case .heading:
             content = .heading(
                 level: (try? container.decode(Int.self, forKey: .level)) ?? 3,

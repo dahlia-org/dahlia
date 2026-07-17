@@ -189,7 +189,7 @@ public final class DahliaMCPServer {
             let page = try MeetingScreenshotPage(
                 vault: store.scopedVault(),
                 meetingID: meetingID,
-                screenshots: images.map(Self.deliveredMetadata),
+                screenshots: images.map(\.metadata),
                 nextCursor: nil
             )
             return (page, images)
@@ -201,7 +201,7 @@ public final class DahliaMCPServer {
         try validateTimeRange(from: from, to: to)
         let limit = try integer(arguments, key: "limit") ?? 1
         guard (1 ... 10).contains(limit) else { throw ParameterError("limit must be between 1 and 10") }
-        let page = try store.screenshots(
+        return try store.screenshotImages(
             meetingID: meetingID,
             query: ScreenshotQuery(
                 fromElapsedSeconds: from,
@@ -209,20 +209,6 @@ public final class DahliaMCPServer {
                 limit: limit,
                 cursor: string(arguments, key: "cursor")
             )
-        )
-        let images = if page.screenshots.isEmpty {
-            [MeetingScreenshotImage]()
-        } else {
-            try store.screenshotImages(meetingID: meetingID, screenshotIDs: page.screenshots.map(\.id))
-        }
-        return (
-            MeetingScreenshotPage(
-                vault: page.vault,
-                meetingID: page.meetingID,
-                screenshots: images.map(Self.deliveredMetadata),
-                nextCursor: page.nextCursor
-            ),
-            images
         )
     }
 
@@ -346,17 +332,6 @@ public final class DahliaMCPServer {
             "structuredContent": object,
             "isError": false,
         ]
-    }
-
-    private static func deliveredMetadata(_ image: MeetingScreenshotImage) -> MeetingScreenshotMetadata {
-        MeetingScreenshotMetadata(
-            id: image.metadata.id,
-            capturedAt: image.metadata.capturedAt,
-            elapsedSeconds: image.metadata.elapsedSeconds,
-            timestamp: image.metadata.timestamp,
-            mimeType: image.mimeType,
-            isReferencedInSummary: image.metadata.isReferencedInSummary
-        )
     }
 
     private func toolError(_ message: String) -> [String: Any] {

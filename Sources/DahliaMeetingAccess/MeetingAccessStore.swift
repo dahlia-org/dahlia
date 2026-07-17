@@ -180,6 +180,7 @@ public final class MeetingAccessStore: Sendable {
                 TranscriptCursor(
                     vaultID: vaultID,
                     meetingID: meetingID,
+                    startedAt: $0.startedAt,
                     elapsedSeconds: $0.elapsedSeconds,
                     segmentID: $0.id,
                     fromElapsedSeconds: fromElapsedSeconds,
@@ -198,6 +199,10 @@ public final class MeetingAccessStore: Sendable {
         cursor: TranscriptCursor?,
         limit: Int
     ) throws -> [Row] {
+        if fromElapsedSeconds == nil, toElapsedSeconds == nil {
+            return try transcriptRowsByStartTime(in: db, meetingID: meetingID, cursor: cursor, limit: limit)
+        }
+
         var predicates: [String] = []
         var arguments: StatementArguments = [meetingID, vaultID]
         if let fromElapsedSeconds {
@@ -246,6 +251,48 @@ public final class MeetingAccessStore: Sendable {
         )
     }
 
+    private func transcriptRowsByStartTime(
+        in db: Database,
+        meetingID: UUID,
+        cursor: TranscriptCursor?,
+        limit: Int
+    ) throws -> [Row] {
+        var cursorPredicate = ""
+        var arguments: StatementArguments = [meetingID, vaultID]
+        if let cursor {
+            cursorPredicate = "AND (segments.startTime > ? OR (segments.startTime = ? AND segments.id > ?))"
+            arguments += [cursor.startedAt, cursor.startedAt, cursor.segmentID]
+        }
+        arguments += [limit + 1]
+        return try Row.fetchAll(
+            db,
+            sql: """
+            SELECT
+                segments.id,
+                segments.text,
+                segments.speakerLabel,
+                segments.startTime,
+                segments.endTime,
+                meetings.createdAt AS meetingCreatedAt,
+                sessions.startedAt AS sessionStartedAt,
+                sessions.offsetSeconds AS sessionOffsetSeconds,
+                \(Self.elapsedSecondsSQL(timestampColumn: "segments.startTime")) AS elapsedSeconds
+            FROM transcript_segments AS segments
+            JOIN meetings ON meetings.id = segments.meetingId
+            LEFT JOIN recording_sessions AS sessions
+              ON sessions.id = segments.sessionId
+             AND sessions.meetingId = segments.meetingId
+            WHERE segments.meetingId = ?
+              AND meetings.vaultId = ?
+              AND segments.isConfirmed = 1
+              \(cursorPredicate)
+            ORDER BY segments.startTime ASC, segments.id ASC
+            LIMIT ?
+            """,
+            arguments: arguments
+        )
+    }
+
     private static func transcriptEntry(from row: Row) -> TranscriptEntry {
         let startedAt: Date = row["startTime"]
         let meetingCreatedAt: Date = row["meetingCreatedAt"]
@@ -281,7 +328,7 @@ public final class MeetingAccessStore: Sendable {
         } else {
             date.timeIntervalSince(meetingCreatedAt)
         }
-        return max(0, elapsed)
+        return (max(0, elapsed) * 1000).rounded() / 1000
     }
 
     private static func elapsedSecondsSQL(timestampColumn: String) -> String {
@@ -320,6 +367,31 @@ extension MeetingAccessStore {
         meetingID: UUID,
         query: ScreenshotQuery = ScreenshotQuery()
     ) throws -> MeetingScreenshotPage {
+        try screenshotPageData(meetingID: meetingID, query: query, includeImageData: false).page
+    }
+
+    public func screenshotImages(
+        meetingID: UUID,
+        query: ScreenshotQuery
+    ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
+        let result = try screenshotPageData(meetingID: meetingID, query: query, includeImageData: true)
+        let images = result.payloads.compactMap(Self.encodedScreenshot)
+        return (
+            MeetingScreenshotPage(
+                vault: result.page.vault,
+                meetingID: result.page.meetingID,
+                screenshots: images.map(\.metadata),
+                nextCursor: result.page.nextCursor
+            ),
+            images
+        )
+    }
+
+    private func screenshotPageData(
+        meetingID: UUID,
+        query: ScreenshotQuery,
+        includeImageData: Bool
+    ) throws -> ScreenshotPageData {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
@@ -340,11 +412,17 @@ extension MeetingAccessStore {
                 throw MeetingAccessError.meetingNotFound
             }
             let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID, in: db)
-            let rows = try screenshotRows(meetingID: meetingID, query: query, cursor: decodedCursor, in: db)
-            let allScreenshots = rows.map { Self.screenshotMetadata(from: $0, referencedIDs: referencedIDs) }
-            let hasMore = allScreenshots.count > query.limit
-            let page = hasMore ? Array(allScreenshots.prefix(query.limit)) : allScreenshots
-            let nextCursor = hasMore ? page.last.map {
+            let rows = try screenshotRows(
+                meetingID: meetingID,
+                query: query,
+                cursor: decodedCursor,
+                includeImageData: includeImageData,
+                in: db
+            )
+            let hasMore = rows.count > query.limit
+            let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
+            let screenshots = pageRows.map { Self.screenshotMetadata(from: $0, referencedIDs: referencedIDs) }
+            let nextCursor = hasMore ? screenshots.last.map {
                 ScreenshotCursor(
                     vaultID: vaultID,
                     meetingID: meetingID,
@@ -354,7 +432,18 @@ extension MeetingAccessStore {
                     toElapsedSeconds: query.toElapsedSeconds
                 ).encoded()
             } : nil
-            return MeetingScreenshotPage(vault: vault, meetingID: meetingID, screenshots: page, nextCursor: nextCursor)
+            let payloads = includeImageData ? zip(pageRows, screenshots).map {
+                ScreenshotPayload(metadata: $0.1, imageData: $0.0["imageData"])
+            } : []
+            return ScreenshotPageData(
+                page: MeetingScreenshotPage(
+                    vault: vault,
+                    meetingID: meetingID,
+                    screenshots: screenshots,
+                    nextCursor: nextCursor
+                ),
+                payloads: payloads
+            )
         }
     }
 
@@ -389,12 +478,27 @@ extension MeetingAccessStore {
             }
         }
         return try payloads.map { payload in
-            guard let resizedData = ImageEncoder.resizedIfPossible(payload.imageData, maxLongEdge: 1024),
-                  let mimeType = ImageEncoder.mimeType(for: resizedData) else {
+            guard let image = Self.encodedScreenshot(payload) else {
                 throw MeetingAccessError.screenshotEncodingFailed
             }
-            return MeetingScreenshotImage(metadata: payload.metadata, imageData: resizedData, mimeType: mimeType)
+            return image
         }
+    }
+
+    private static func encodedScreenshot(_ payload: ScreenshotPayload) -> MeetingScreenshotImage? {
+        guard let imageData = ImageEncoder.resizedIfPossible(payload.imageData, maxLongEdge: 1024),
+              let mimeType = ImageEncoder.mimeType(for: imageData) else {
+            return nil
+        }
+        let metadata = MeetingScreenshotMetadata(
+            id: payload.metadata.id,
+            capturedAt: payload.metadata.capturedAt,
+            elapsedSeconds: payload.metadata.elapsedSeconds,
+            timestamp: payload.metadata.timestamp,
+            mimeType: mimeType,
+            isReferencedInSummary: payload.metadata.isReferencedInSummary
+        )
+        return MeetingScreenshotImage(metadata: metadata, imageData: imageData, mimeType: mimeType)
     }
 
     private func meetingExists(id: UUID, in db: Database) throws -> Bool {
@@ -409,6 +513,7 @@ extension MeetingAccessStore {
         meetingID: UUID,
         query: ScreenshotQuery,
         cursor: ScreenshotCursor?,
+        includeImageData: Bool,
         in db: Database
     ) throws -> [Row] {
         var predicates: [String] = []
@@ -426,6 +531,7 @@ extension MeetingAccessStore {
             arguments += [cursor.elapsedSeconds, cursor.elapsedSeconds, cursor.screenshotID]
         }
         let filtering = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
+        let imageDataSelection = includeImageData ? "screenshots.imageData," : ""
         arguments += [query.limit + 1]
         return try Row.fetchAll(
             db,
@@ -435,6 +541,7 @@ extension MeetingAccessStore {
                     screenshots.id,
                     screenshots.capturedAt,
                     screenshots.mimeType,
+                    \(imageDataSelection)
                     \(Self.elapsedSecondsSQL(timestampColumn: "screenshots.capturedAt")) AS elapsedSeconds
                 FROM screenshots
                 JOIN meetings ON meetings.id = screenshots.meetingId
@@ -605,6 +712,11 @@ private struct ScreenshotPayload {
     let imageData: Data
 }
 
+private struct ScreenshotPageData {
+    let page: MeetingScreenshotPage
+    let payloads: [ScreenshotPayload]
+}
+
 private struct QueryComponents {
     var predicates: [String]
     var arguments: StatementArguments
@@ -652,6 +764,7 @@ private struct MeetingCursor: Codable {
 private struct TranscriptCursor: Codable {
     let vaultID: UUID
     let meetingID: UUID
+    let startedAt: Date
     let elapsedSeconds: Double
     let segmentID: UUID
     let fromElapsedSeconds: Double?
