@@ -43,6 +43,7 @@ struct CodexChatFloatingView: View {
                 )
                 .frame(width: layout.size.width, height: layout.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: 24))
+                .contentShape(.interaction, RoundedRectangle(cornerRadius: 24))
                 .overlay {
                     RoundedRectangle(cornerRadius: 24)
                         .stroke(.separator.opacity(0.6), lineWidth: 1)
