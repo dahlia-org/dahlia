@@ -156,7 +156,6 @@ private struct RecordingStatusBar: View {
     let recordingCoordinator: RecordingCoordinator
 
     @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
-    @State private var isRecordingSettingsPresented = false
 
     private var recordingMeetingId: UUID? {
         viewModel.recordingMeetingId
@@ -206,53 +205,38 @@ private struct RecordingStatusBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button(action: returnToRecordingMeeting) {
-                panelContent
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(recordingMeetingId == nil)
-            .help(recordingLabels.returnToMeeting)
-            .accessibilityLabel("\(recordingLabels.activity), \(recordingTitle)")
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button(action: returnToRecordingMeeting) {
+                    panelContent
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(recordingMeetingId == nil)
+                .help(recordingLabels.returnToMeeting)
+                .accessibilityLabel("\(recordingLabels.activity), \(recordingTitle)")
 
-            Button(L10n.recordingSettings, systemImage: "slider.horizontal.3") {
-                isRecordingSettingsPresented.toggle()
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .help(L10n.recordingSettings)
-            .popover(isPresented: $isRecordingSettingsPresented, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(L10n.recordingSettings)
-                        .font(.headline)
-                    Text(recordingLabels.activity)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Divider()
-                    VStack(spacing: 6) {
-                        microphoneMenu
-                        systemAudioMenu
-                        languageMenu
-                        RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
-                        screenSourceMenu
+                if showsSidebarStop {
+                    Button(recordingLabels.stop, systemImage: "stop.fill") {
+                        recordingCoordinator.stopRecording()
                     }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+                    .help(recordingLabels.stop)
                 }
-                .padding(14)
-                .frame(width: 300)
             }
 
-            if showsSidebarStop {
-                Button(recordingLabels.stop, systemImage: "stop.fill") {
-                    recordingCoordinator.stopRecording()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.small)
-                .help(recordingLabels.stop)
+            Divider()
+
+            VStack(spacing: 6) {
+                microphoneMenu
+                systemAudioMenu
+                languageMenu
+                RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
+                screenSourceMenu
             }
         }
         .padding(.horizontal, 10)
