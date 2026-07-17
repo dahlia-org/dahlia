@@ -493,37 +493,6 @@ final class SidebarViewModel {
         }
     }
 
-    @discardableResult
-    func updateProjectDescription(id: UUID, description: String) -> Bool {
-        guard let meetingRepository else { return false }
-        do {
-            try meetingRepository.updateProjectDescription(id: id, description: description)
-            projectDescriptionDrafts[id] = nil
-            return true
-        } catch {
-            projectDescriptionDrafts[id] = description
-            lastError = error.localizedDescription
-            return false
-        }
-    }
-
-    func stageProjectDescriptionDraft(id: UUID, description: String) {
-        projectDescriptionDrafts[id] = description
-    }
-
-    func projectDescriptionDraft(id: UUID) -> String? {
-        projectDescriptionDrafts[id]
-    }
-
-    func projectDescription(id: UUID) -> String? {
-        do {
-            return try meetingRepository?.fetchProject(id: id)?.description
-        } catch {
-            lastError = error.localizedDescription
-            return nil
-        }
-    }
-
     // MARK: - Meeting Management
 
     func renameMeeting(id: UUID, newName: String) {
@@ -587,6 +556,41 @@ final class SidebarViewModel {
             try repository.moveMeetings(ids: ids, toProjectId: toProjectId)
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+}
+
+extension SidebarViewModel {
+    func updateProjectDescription(id: UUID, description: String) -> ProjectDescriptionUpdateResult {
+        guard let meetingRepository else { return .failed }
+        do {
+            guard try meetingRepository.updateProjectDescription(id: id, description: description) else {
+                projectDescriptionDrafts[id] = nil
+                return .projectNotFound
+            }
+            projectDescriptionDrafts[id] = nil
+            return .saved
+        } catch {
+            projectDescriptionDrafts[id] = description
+            lastError = error.localizedDescription
+            return .failed
+        }
+    }
+
+    func stageProjectDescriptionDraft(id: UUID, description: String) {
+        projectDescriptionDrafts[id] = description
+    }
+
+    func projectDescriptionDraft(id: UUID) -> String? {
+        projectDescriptionDrafts[id]
+    }
+
+    func projectDescription(id: UUID) -> String? {
+        do {
+            return try meetingRepository?.fetchProject(id: id)?.description
+        } catch {
+            lastError = error.localizedDescription
+            return nil
         }
     }
 }

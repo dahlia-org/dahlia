@@ -862,13 +862,15 @@ extension MeetingRepository {
         }
     }
 
-    func updateProjectDescription(id: UUID, description: String) throws {
+    @discardableResult
+    func updateProjectDescription(id: UUID, description: String) throws -> Bool {
         try dbQueue.write { db in
             guard var record = try ProjectRecord.fetchOne(db, key: id) else {
-                throw ProjectRecord.recordNotFound(db, key: id)
+                return false
             }
             record.description = description
             try record.update(db)
+            return true
         }
     }
 

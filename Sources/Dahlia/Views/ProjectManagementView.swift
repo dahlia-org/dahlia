@@ -22,6 +22,7 @@ struct ProjectManagementView: View {
     @State private var lastSavedProjectDescription = ""
     @State private var descriptionSaveTask: Task<Void, Never>?
     @State private var isRevertingSelectionAfterSaveFailure = false
+    @State private var projectDescriptionChangeTracker = ProjectDescriptionChangeTracker()
 
     private let sidebarWidth: CGFloat = 300
 
@@ -53,7 +54,8 @@ struct ProjectManagementView: View {
             }
             loadProjectDetails(for: newProjectId)
         }
-        .onChange(of: projectDescription) { _, _ in
+        .onChange(of: projectDescription) { _, newDescription in
+            guard projectDescriptionChangeTracker.shouldSaveChange(to: newDescription) else { return }
             scheduleProjectDescriptionSave()
         }
         .onDisappear {
@@ -433,13 +435,18 @@ private extension ProjectManagementView {
     }
 
     private func loadProjectDetails(for projectId: UUID?) {
-        let description = projectId.flatMap { id in
-            sidebarViewModel.projectDescriptionDraft(id: id)
-                ?? sidebarViewModel.projectDescription(id: id)
-        } ?? ""
-        projectDescription = description
-        lastSavedProjectDescription = description
-        descriptionStatusMessage = nil
+        let editingState = ProjectDescriptionEditingState(
+            persistedText: projectId.flatMap { sidebarViewModel.projectDescription(id: $0) },
+            draftText: projectId.flatMap { sidebarViewModel.projectDescriptionDraft(id: $0) }
+        )
+        projectDescriptionChangeTracker.prepareForProgrammaticChange(
+            from: projectDescription,
+            to: editingState.text
+        )
+        projectDescription = editingState.text
+        lastSavedProjectDescription = editingState.persistedText
+        descriptionStatusMessage = editingState.hasUnsavedChanges ? L10n.projectDescriptionSaveFailed : nil
+        descriptionSaveFailed = editingState.hasUnsavedChanges
         projectName = projectId
             .flatMap { id in sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) }
             .map { leafName(for: $0.projectName) }
@@ -468,11 +475,15 @@ private extension ProjectManagementView {
         guard let projectId,
               projectDescription != lastSavedProjectDescription else { return true }
 
-        if sidebarViewModel.updateProjectDescription(id: projectId, description: projectDescription) {
+        switch sidebarViewModel.updateProjectDescription(id: projectId, description: projectDescription) {
+        case .saved:
             lastSavedProjectDescription = projectDescription
             descriptionStatusMessage = L10n.saved
             descriptionSaveFailed = false
-        } else {
+        case .projectNotFound:
+            descriptionStatusMessage = nil
+            descriptionSaveFailed = false
+        case .failed:
             descriptionStatusMessage = L10n.projectDescriptionSaveFailed
             descriptionSaveFailed = true
             return false
