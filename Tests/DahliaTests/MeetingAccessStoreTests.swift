@@ -1,7 +1,9 @@
-@testable import DahliaMeetingAccess
 import Foundation
 import GRDB
+import ImageIO
 @testable import Dahlia
+@testable import DahliaMeetingAccess
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
@@ -50,7 +52,22 @@ import GRDB
             #expect(detail.meeting.name == "AI planning title")
             #expect(detail.meeting.description == "Product planning decisions")
             #expect(detail.meeting.calendarTitle == "Roadmap review")
-            #expect(detail.summary == "# AI planning title\n\n## Summary\n\nMarkdown secret body")
+            #expect(detail.summary?.contains("Markdown secret body [Transcript 00:00:15]") == true)
+            #expect(detail.summary?.contains("[Screenshot \(fixture.firstScreenshotID.uuidString) at 00:00:16]") == true)
+            guard case let .object(document)? = detail.summaryDocument,
+                  case let .array(sections)? = document["sections"],
+                  case let .object(section)? = sections.first,
+                  case let .array(blocks)? = section["blocks"],
+                  case let .object(paragraph)? = blocks.first,
+                  case let .object(content)? = paragraph["content"] else {
+                Issue.record("Expected a structured summary document")
+                return
+            }
+            #expect(content["transcript_ref"] == .string("00:00:15"))
+            #expect(document["schema_version"] == .number(3))
+            #expect(document["schemaVersion"] == nil)
+            #expect(section["id"] != nil)
+            #expect(paragraph["id"] != nil)
             #expect(detail.meeting.transcriptSegmentCount == 2)
             #expect(try store.meeting(id: fixture.secondMeetingID).summary == nil)
             #expect(throws: MeetingAccessError.meetingNotFound) {
@@ -75,6 +92,8 @@ import GRDB
             #expect(segment.text == "Original secret body")
             #expect(segment.speaker == "mic")
             #expect(segment.elapsedSeconds == 15)
+            #expect(segment.endedElapsedSeconds == 17)
+            #expect(segment.timestamp == "00:00:15")
             #expect(Set(segments.map(\.id)) == [fixture.firstSegmentID, fixture.secondSegmentID])
             #expect(secondPage.nextCursor == nil)
             #expect(throws: MeetingAccessError.invalidCursor) {
@@ -83,6 +102,151 @@ import GRDB
             #expect(throws: MeetingAccessError.meetingNotFound) {
                 try store.transcript(meetingID: fixture.otherVaultMeetingID)
             }
+
+            let range = try store.transcript(
+                meetingID: fixture.firstMeetingID,
+                fromElapsedSeconds: 15,
+                toElapsedSeconds: 16,
+                limit: 1
+            )
+            #expect(range.segments.count == 1)
+            #expect(try store.transcript(
+                meetingID: fixture.firstMeetingID,
+                fromElapsedSeconds: 0,
+                toElapsedSeconds: 15
+            ).segments.isEmpty)
+            let rangeCursor = try #require(range.nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.transcript(
+                    meetingID: fixture.firstMeetingID,
+                    fromElapsedSeconds: 14,
+                    toElapsedSeconds: 16,
+                    cursor: rangeCursor
+                )
+            }
+        }
+
+        @Test
+        func transcriptEndElapsedSecondsUsesTheSamePrecisionAsStart() throws {
+            let fixture = try Fixture()
+            let endedAt = Date(timeIntervalSince1970: 1_800_000_007.123_456)
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE transcript_segments SET endTime = ? WHERE id = ?",
+                    arguments: [endedAt, fixture.firstSegmentID]
+                )
+            }
+
+            let page = try fixture.store(vaultID: fixture.primaryVaultID).transcript(
+                meetingID: fixture.firstMeetingID
+            )
+            let segment = try #require(page.segments.first { $0.id == fixture.firstSegmentID })
+            #expect(segment.endedElapsedSeconds == 17.123)
+        }
+
+        @Test
+        func screenshotsArePagedFilteredAndReturnedOneAtATimeAsResizedImages() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+
+            let firstPage = try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(limit: 1)
+            )
+            #expect(firstPage.screenshots.count == 1)
+            #expect(firstPage.nextCursor != nil)
+            let secondPage = try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(limit: 1, cursor: firstPage.nextCursor)
+            )
+            #expect(Set((firstPage.screenshots + secondPage.screenshots).map(\.id)) == fixture.primaryScreenshotIDs)
+
+            let filtered = try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(fromElapsedSeconds: 15, toElapsedSeconds: 17)
+            )
+            #expect(filtered.screenshots.map(\.id) == [fixture.firstScreenshotID])
+            #expect(filtered.screenshots.first?.timestamp == "00:00:16")
+            #expect(filtered.screenshots.first?.isReferencedInSummary == true)
+            #expect(try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(fromElapsedSeconds: 15, toElapsedSeconds: 16)
+            ).screenshots.isEmpty)
+
+            let rangedPage = try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100, limit: 1)
+            )
+            let rangedCursor = try #require(rangedPage.nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.screenshots(
+                    meetingID: fixture.firstMeetingID,
+                    query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 99, cursor: rangedCursor)
+                )
+            }
+
+            let image = try store.screenshot(
+                meetingID: fixture.firstMeetingID,
+                screenshotID: fixture.firstScreenshotID
+            )
+            #expect(image.imageData != fixture.imageData)
+            #expect(["image/webp", "image/jpeg"].contains(image.mimeType))
+            let source = CGImageSourceCreateWithData(image.imageData as CFData, nil)
+            let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+            #expect((properties?[kCGImagePropertyPixelWidth] as? Int ?? 0) <= 1024)
+            #expect((properties?[kCGImagePropertyPixelHeight] as? Int ?? 0) <= 1024)
+            #expect(throws: MeetingAccessError.screenshotNotFound) {
+                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherVaultScreenshotID)
+            }
+        }
+
+        @Test
+        func screenshotImagesAreActuallyDownsampledAndRejectCorruptData() throws {
+            let fixture = try Fixture()
+            let largeImage = try #require(Self.makeImage(width: 2048, height: 512))
+            let largeData = try #require(ImageEncoder.encode(largeImage, quality: 0.9))
+            try fixture.updateFirstScreenshot(data: largeData)
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+
+            let image = try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
+            let source = try #require(CGImageSourceCreateWithData(image.imageData as CFData, nil))
+            let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+            #expect(properties[kCGImagePropertyPixelWidth] as? Int == 1024)
+            #expect(properties[kCGImagePropertyPixelHeight] as? Int == 256)
+
+            try fixture.updateFirstScreenshot(data: Data("not an image".utf8))
+            #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
+                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
+            }
+
+            let range = try store.screenshotImages(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
+            )
+            #expect(range.images.map(\.metadata.id) == [fixture.secondScreenshotID])
+            #expect(range.page.screenshots.map(\.id) == [fixture.secondScreenshotID])
+        }
+
+        @Test
+        func elapsedTimelineUsesOffsetsAcrossPausedRecordingSessions() throws {
+            let fixture = try Fixture()
+            let inserted = try fixture.insertPausedSessionContent()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+
+            let transcript = try store.transcript(
+                meetingID: fixture.firstMeetingID,
+                fromElapsedSeconds: 35,
+                toElapsedSeconds: 36
+            )
+            #expect(transcript.segments.map(\.id) == [inserted.segmentID])
+            #expect(transcript.segments.first?.timestamp == "00:00:35")
+
+            let screenshots = try store.screenshots(
+                meetingID: fixture.firstMeetingID,
+                query: ScreenshotQuery(fromElapsedSeconds: 36, toElapsedSeconds: 37)
+            )
+            #expect(screenshots.screenshots.map(\.id) == [inserted.screenshotID])
+            #expect(screenshots.screenshots.first?.timestamp == "00:00:36")
         }
 
         @Test
@@ -90,6 +254,7 @@ import GRDB
             let fixture = try Fixture()
             try fixture.corruptPrimaryProjectAssociation()
             try fixture.corruptPrimarySessionAssociation()
+            try fixture.corruptPrimaryScreenshotSessionAssociation()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
 
             let detail = try store.meeting(id: fixture.firstMeetingID)
@@ -98,6 +263,8 @@ import GRDB
             let transcript = try store.transcript(meetingID: fixture.firstMeetingID)
             let segment = try #require(transcript.segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.elapsedSeconds == 0)
+            let screenshots = try store.screenshots(meetingID: fixture.firstMeetingID)
+            #expect(screenshots.screenshots.first(where: { $0.id == fixture.firstScreenshotID })?.elapsedSeconds == 0)
         }
 
         @Test
@@ -120,9 +287,13 @@ import GRDB
             let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "query_meetings", "get_meeting", "get_meeting_transcript",
+                "query_meetings", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
+            #expect(definitions.allSatisfy { $0["outputSchema"] != nil })
+            #expect(definitions.allSatisfy {
+                ($0["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool == false
+            })
 
             let queryCall = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning"}}}
@@ -135,8 +306,16 @@ import GRDB
             {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture.firstMeetingID
                 .uuidString)"}}}
             """#))
-            #expect(((meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["summary"] as? String ==
-                "# AI planning title\n\n## Summary\n\nMarkdown secret body")
+            let meetingContent = (meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            #expect((meetingContent?["summary"] as? String)?.contains("[Transcript 00:00:15]") == true)
+            let summaryDocument = try #require(meetingContent?["summary_document"] as? [String: Any])
+            #expect(summaryDocument["schema_version"] as? Int == 3)
+            #expect(summaryDocument["schemaVersion"] == nil)
+            let sections = try #require(summaryDocument["sections"] as? [[String: Any]])
+            let blocks = try #require(sections.first?["blocks"] as? [[String: Any]])
+            #expect(sections.first?["id"] is String)
+            #expect(blocks.allSatisfy { $0["id"] is String })
+            #expect(blocks.contains { $0["screenshot_id"] as? String == fixture.firstScreenshotID.uuidString })
 
             let transcriptCall = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"get_meeting_transcript","arguments":{"meeting_id":"\#(fixture
@@ -145,6 +324,35 @@ import GRDB
             let transcriptContent = ((transcriptCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
             #expect(transcriptContent?["segments"] != nil)
             #expect(transcriptContent?["next_cursor"] is String)
+
+            let screenshotCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)","\#(fixture.secondScreenshotID
+                .uuidString)"]}}}
+            """#))
+            let screenshotResult = try #require(screenshotCall["result"] as? [String: Any])
+            let screenshotContent = try #require(screenshotResult["content"] as? [[String: Any]])
+            #expect(screenshotContent.map { $0["type"] as? String } == ["text", "text", "image", "text", "image"])
+            #expect((screenshotContent.last?["data"] as? String)?.isEmpty == false)
+            let screenshotStructured = try #require(screenshotResult["structuredContent"] as? [String: Any])
+            let selectedScreenshots = try #require(screenshotStructured["screenshots"] as? [[String: Any]])
+            #expect(selectedScreenshots.compactMap { $0["id"] as? String } == [
+                fixture.firstScreenshotID.uuidString,
+                fixture.secondScreenshotID.uuidString,
+            ])
+
+            let rangedScreenshotCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)","from_elapsed_seconds":15,"to_elapsed_seconds":17}}}
+            """#))
+            let rangedContent = ((rangedScreenshotCall["result"] as? [String: Any])?["content"] as? [[String: Any]])
+            #expect(rangedContent?.map { $0["type"] as? String } == ["text", "text", "image"])
+
+            let missingSelector = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)"}}}
+            """#))
+            #expect((missingSelector["error"] as? [String: Any])?["code"] as? Int == -32602)
 
             let invalid = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"query_meetings","arguments":{"unexpected":true}}}
@@ -167,6 +375,54 @@ import GRDB
             let missingVaultServer = DahliaMCPServer(store: missingVaultStore)
             let missing = try Self.json(missingVaultServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}"#))
             #expect((missing["error"] as? [String: Any])?["code"] as? Int == -32000)
+        }
+
+        @Test
+        func screenshotIDSelectorRejectsPaginationArguments() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let response = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)"],"limit":1}}}
+            """#))
+            #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
+
+            func call(ids: [String]) throws -> [String: Any] {
+                let request: [String: Any] = [
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": [
+                        "name": "get_meeting_screenshots",
+                        "arguments": ["meeting_id": fixture.firstMeetingID.uuidString, "screenshot_ids": ids],
+                    ],
+                ]
+                let data = try JSONSerialization.data(withJSONObject: request)
+                return try Self.json(server.handleLine(String(decoding: data, as: UTF8.self)))
+            }
+
+            let invalidSelections = try [
+                call(ids: []),
+                call(ids: [fixture.firstScreenshotID.uuidString, fixture.firstScreenshotID.uuidString]),
+                call(ids: (0 ..< 11).map { _ in UUID.v7().uuidString }),
+                call(ids: ["not-a-uuid"]),
+            ]
+            #expect(invalidSelections.allSatisfy { ($0["error"] as? [String: Any])?["code"] as? Int == -32602 })
+        }
+
+        @Test
+        func elapsedTimeInputsRejectInvalidRanges() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let response = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting_transcript","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)","from_elapsed_seconds":2,"to_elapsed_seconds":1}}}
+            """#))
+            #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
         }
 
         @Test
@@ -222,92 +478,27 @@ import GRDB
             }
         }
 
-        @Test
-        func invalidSummaryDocumentReturnsDedicatedError() throws {
-            let fixture = try Fixture()
-            try fixture.manager.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE summaries SET document = 'not-json' WHERE meetingId = ?",
-                    arguments: [fixture.firstMeetingID]
-                )
-            }
-
-            #expect(throws: MeetingAccessError.invalidSummaryDocument) {
-                try fixture.store(vaultID: fixture.primaryVaultID).meeting(id: fixture.firstMeetingID)
-            }
-        }
-
-        @Test
-        func storedDocumentRendererGeneratesGenericMarkdownForAllBlocks() throws {
-            let document = SummaryDocument(
-                title: "Release plan",
-                sections: [
-                    SummarySection(
-                        id: .v7(),
-                        heading: "Decision",
-                        blocks: [
-                            .paragraph("Ship it", transcriptRef: TranscriptReference(time: "00:00:01")),
-                            .bulletedList(items: ["Alpha", "Beta"]),
-                            .numberedList(items: ["First", "Second"]),
-                            .checklist(items: [
-                                .init(text: "Done", checked: true),
-                                .init(text: "Pending", checked: false),
-                            ]),
-                            .quote("Quoted"),
-                            .code(language: "swift\n```evil", code: "let value = 1\n```breakout"),
-                            .image(screenshotId: .v7(), caption: "Screenshot"),
-                            .image(screenshotId: .v7(), caption: ""),
-                            .heading(level: 4, text: "Details"),
-                            .table(headers: ["Name", "State"], rows: [["A|B", "Ready\nNow"]]),
-                        ]
-                    ),
-                ],
-                actionItems: [SummaryActionItem(title: "Follow up", assignee: "Mina")]
-            )
-
-            let markdown = try StoredSummaryDocumentMarkdownRenderer.render(json: document.databaseJSONString())
-
-            #expect(markdown == """
-            # Release plan
-
-            ## Decision
-
-            Ship it
-
-            - Alpha
-            - Beta
-
-            1. First
-            2. Second
-
-            - [x] Done
-            - [ ] Pending
-
-            > Quoted
-
-            ````swiftevil
-            let value = 1
-            ```breakout
-            ````
-
-            Screenshot
-
-            #### Details
-
-            | Name | State |
-            | --- | --- |
-            | A\\|B | Ready<br>Now |
-
-            ## Action Items
-            - [ ] Follow up (Mina)
-            """)
-        }
-
         private static func json(_ line: String?) throws -> [String: Any] {
             let line = try #require(line)
             let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
             return try #require(value as? [String: Any])
         }
+
+        private static func makeImage(width: Int, height: Int) -> CGImage? {
+            guard let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            return context.makeImage()
+        }
+
     }
 
     @MainActor
@@ -356,7 +547,7 @@ import GRDB
     }
 
     @MainActor
-    private final class Fixture {
+    final class Fixture {
         let databaseURL: URL
         let manager: AppDatabaseManager
         let primaryVaultID = UUID.v7()
@@ -366,9 +557,16 @@ import GRDB
         let otherVaultMeetingID = UUID.v7()
         let firstSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let secondSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let firstScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+        let secondScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
+        let otherVaultScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
         let otherVaultProjectID = UUID.v7()
         let otherVaultSessionID = UUID.v7()
         var primaryMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID] }
+        var primaryScreenshotIDs: Set<UUID> { [firstScreenshotID, secondScreenshotID] }
+        let imageData = Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9WQAAAABJRU5ErkJggg=="
+        )!
 
         init() throws {
             databaseURL = URL.temporaryDirectory
@@ -468,7 +666,18 @@ import GRDB
                 document: SummaryDocument(
                     title: "AI planning title",
                     sections: [
-                        SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("Markdown secret body")]),
+                        SummarySection(
+                            id: .v7(),
+                            heading: "Summary",
+                            blocks: [
+                                .paragraph("Markdown secret body", transcriptRef: TranscriptReference(time: "00:00:15")),
+                                .image(
+                                    screenshotId: firstScreenshotID,
+                                    caption: "Referenced screen",
+                                    transcriptRef: TranscriptReference(time: "00:00:16")
+                                ),
+                            ]
+                        ),
                     ]
                 ).databaseJSONString(),
                 createdAt: createdAt
@@ -525,6 +734,29 @@ import GRDB
                 isConfirmed: false,
                 speakerLabel: nil
             ).insert(db)
+            try MeetingScreenshotRecord(
+                id: firstScreenshotID,
+                meetingId: firstMeetingID,
+                sessionId: sessionID,
+                capturedAt: createdAt.addingTimeInterval(6),
+                imageData: imageData,
+                mimeType: "image/png"
+            ).insert(db)
+            try MeetingScreenshotRecord(
+                id: secondScreenshotID,
+                meetingId: firstMeetingID,
+                capturedAt: createdAt.addingTimeInterval(25),
+                imageData: imageData,
+                mimeType: "image/png"
+            ).insert(db)
+            try MeetingScreenshotRecord(
+                id: otherVaultScreenshotID,
+                meetingId: otherVaultMeetingID,
+                sessionId: otherVaultSessionID,
+                capturedAt: createdAt.addingTimeInterval(6),
+                imageData: imageData,
+                mimeType: "image/png"
+            ).insert(db)
         }
 
         deinit {
@@ -533,6 +765,55 @@ import GRDB
 
         func store(vaultID: UUID) throws -> MeetingAccessStore {
             try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+        }
+
+        func updateFirstScreenshot(data: Data) throws {
+            try manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE screenshots SET imageData = ? WHERE id = ?",
+                    arguments: [data, firstScreenshotID]
+                )
+            }
+        }
+
+        func insertPausedSessionContent() throws -> (segmentID: UUID, screenshotID: UUID) {
+            let sessionID = UUID.v7()
+            let segmentID = UUID.v7()
+            let screenshotID = UUID.v7()
+            let base = Date(timeIntervalSince1970: 1_800_000_000)
+            let startedAt = base.addingTimeInterval(100)
+            try manager.dbQueue.write { db in
+                try RecordingSessionRecord(
+                    id: sessionID,
+                    meetingId: firstMeetingID,
+                    startedAt: startedAt,
+                    endedAt: startedAt.addingTimeInterval(10),
+                    duration: 10,
+                    offsetSeconds: 30,
+                    createdAt: startedAt,
+                    updatedAt: startedAt
+                ).insert(db)
+                try TranscriptSegmentRecord(
+                    id: segmentID,
+                    meetingId: firstMeetingID,
+                    sessionId: sessionID,
+                    startTime: startedAt.addingTimeInterval(5),
+                    endTime: startedAt.addingTimeInterval(6),
+                    text: "After pause",
+                    translatedText: nil,
+                    isConfirmed: true,
+                    speakerLabel: "mic"
+                ).insert(db)
+                try MeetingScreenshotRecord(
+                    id: screenshotID,
+                    meetingId: firstMeetingID,
+                    sessionId: sessionID,
+                    capturedAt: startedAt.addingTimeInterval(6),
+                    imageData: imageData,
+                    mimeType: "image/png"
+                ).insert(db)
+            }
+            return (segmentID, screenshotID)
         }
 
         func corruptPrimaryProjectAssociation() throws {
@@ -549,6 +830,15 @@ import GRDB
                 try db.execute(
                     sql: "UPDATE transcript_segments SET sessionId = ? WHERE id = ?",
                     arguments: [otherVaultSessionID, firstSegmentID]
+                )
+            }
+        }
+
+        func corruptPrimaryScreenshotSessionAssociation() throws {
+            try manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE screenshots SET sessionId = ? WHERE id = ?",
+                    arguments: [otherVaultSessionID, firstScreenshotID]
                 )
             }
         }

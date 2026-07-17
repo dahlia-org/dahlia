@@ -54,6 +54,7 @@ public struct MeetingDetail: Codable, Sendable, Equatable {
     public let vault: ScopedVault
     public let meeting: MeetingMetadata
     public let summary: String?
+    public let summaryDocument: JSONValue?
 }
 
 public struct TranscriptPage: Codable, Sendable, Equatable {
@@ -70,6 +71,87 @@ public struct TranscriptEntry: Codable, Sendable, Equatable {
     public let startedAt: Date
     public let endedAt: Date?
     public let elapsedSeconds: Double
+    public let endedElapsedSeconds: Double?
+    public let timestamp: String
+}
+
+public struct ScreenshotQuery: Sendable, Equatable {
+    public var fromElapsedSeconds: Double?
+    public var toElapsedSeconds: Double?
+    public var limit: Int
+    public var cursor: String?
+
+    public init(
+        fromElapsedSeconds: Double? = nil,
+        toElapsedSeconds: Double? = nil,
+        limit: Int = 20,
+        cursor: String? = nil
+    ) {
+        self.fromElapsedSeconds = fromElapsedSeconds
+        self.toElapsedSeconds = toElapsedSeconds
+        self.limit = limit
+        self.cursor = cursor
+    }
+}
+
+public struct MeetingScreenshotPage: Codable, Sendable, Equatable {
+    public let vault: ScopedVault
+    public let meetingID: UUID
+    public let screenshots: [MeetingScreenshotMetadata]
+    public let nextCursor: String?
+}
+
+public struct MeetingScreenshotMetadata: Codable, Sendable, Equatable {
+    public let id: UUID
+    public let capturedAt: Date
+    public let elapsedSeconds: Double
+    public let timestamp: String
+    public let mimeType: String
+    public let isReferencedInSummary: Bool
+}
+
+public struct MeetingScreenshotImage: Sendable, Equatable {
+    public let metadata: MeetingScreenshotMetadata
+    public let imageData: Data
+    public let mimeType: String
+}
+
+public enum JSONValue: Codable, Sendable, Equatable {
+    case object([String: Self])
+    case array([Self])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode([String: Self].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([Self].self) {
+            self = .array(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else {
+            self = try .string(container.decode(String.self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .object(value): try container.encode(value)
+        case let .array(value): try container.encode(value)
+        case let .string(value): try container.encode(value)
+        case let .number(value): try container.encode(value)
+        case let .bool(value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
 }
 
 public enum MeetingAccessError: Error, LocalizedError, Equatable {
@@ -79,6 +161,9 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case invalidSummaryDocument
     case invalidCursor
     case invalidLimit(maximum: Int)
+    case invalidTimeRange
+    case screenshotNotFound
+    case screenshotEncodingFailed
 
     public var errorDescription: String? {
         switch self {
@@ -94,6 +179,12 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The cursor is invalid for the configured vault or meeting."
         case let .invalidLimit(maximum):
             "The limit must be between 1 and \(maximum)."
+        case .invalidTimeRange:
+            "Elapsed time values must be finite and nonnegative, and the start must be before the end."
+        case .screenshotNotFound:
+            "The screenshot was not found in the configured meeting and vault."
+        case .screenshotEncodingFailed:
+            "The screenshot could not be resized for MCP access."
         }
     }
 }

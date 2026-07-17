@@ -1,5 +1,6 @@
 import Combine
 import CoreGraphics
+import DahliaRuntimeSupport
 import Foundation
 
 /// スクリーンショットのデコードを直列化し、スクロール中のデコード集中を防ぐ。

@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 /// スクリーンショットを Vault の `_dahlia/screenshots/` フォルダに書き出すサービス。

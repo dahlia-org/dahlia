@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 extension SummaryService {

@@ -2,9 +2,8 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-/// ImageIO の遅延デコードとダウンサンプリング設定を一元化する。
-enum CGImageDecoder {
-    static func decode(_ data: Data, maxPixelSize: Int? = nil) -> CGImage? {
+package enum CGImageDecoder {
+    package static func decode(_ data: Data, maxPixelSize: Int? = nil) -> CGImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
 
