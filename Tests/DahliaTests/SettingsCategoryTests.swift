@@ -45,5 +45,24 @@
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.advanced.categories == [.developer, .audioDiagnostics])
         }
+
+        @Test
+        func settingsFeedbackCopyNamesTheActionAndAffectedInstruction() {
+            let instructionName = "Weekly review"
+
+            #expect(!L10n.copied.isEmpty)
+            #expect(!L10n.changesSaveAutomatically.isEmpty)
+            #expect(!L10n.instructionTitleRequired.isEmpty)
+            #expect(L10n.deleteInstructionConfirmation(instructionName).contains(instructionName))
+            #expect(!L10n.deleteInstructionWarning.isEmpty)
+        }
+
+        @Test
+        func developerSettingsCopyUsesUserFacingTerms() {
+            #expect(!L10n.googleOAuthClientIDOverrideDescription.contains("GOOGLE_CLIENT_ID"))
+            #expect(!L10n.googleOAuthClientSecretOverrideDescription.contains("GOOGLE_CLIENT_SECRET"))
+            #expect(!L10n.developerSettingsDescription.isEmpty)
+            #expect(!L10n.restoreAppDefaults.isEmpty)
+        }
     }
 #endif

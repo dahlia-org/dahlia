@@ -37,7 +37,12 @@ struct ScreenshotSettingsView: View {
             } header: {
                 Text(L10n.automaticScreenshots)
             } footer: {
-                Text(L10n.automaticScreenshotsDescription)
+                VStack(alignment: .leading) {
+                    Text(L10n.automaticScreenshotsDescription)
+                    if !settings.automaticScreenshotEnabled {
+                        Text(L10n.enableAutomaticScreenshotsToConfigure)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

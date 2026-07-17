@@ -12,7 +12,7 @@ struct SettingsView: View {
         NavigationStack {
             HStack(spacing: 0) {
                 SettingsSidebarView(selection: $selection)
-                    .frame(width: 180)
+                    .frame(width: 200)
 
                 Divider()
 
@@ -25,6 +25,6 @@ struct SettingsView: View {
             }
             .navigationTitle(selection.label)
         }
-        .frame(minWidth: 860, minHeight: 560)
+        .frame(minWidth: 720, minHeight: 520)
     }
 }

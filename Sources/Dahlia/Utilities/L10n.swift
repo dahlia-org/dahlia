@@ -15,7 +15,9 @@ enum L10n {
     /// UserDefaults から直接読み取ることで @MainActor 制約を回避する。
     private nonisolated static var bundle: Bundle {
         let rawValue = UserDefaults.standard.string(forKey: AppLanguage.userDefaultsKey) ?? AppLanguage.system.rawValue
-        if rawValue == cachedLanguageRaw { return cachedBundle }
+        if rawValue == cachedLanguageRaw {
+            return cachedBundle
+        }
         let resolved: Bundle = if let language = AppLanguage(rawValue: rawValue),
                                   let lprojName = language.lprojName,
                                   let path = Bundle.appModule.path(forResource: lprojName, ofType: "lproj"),
@@ -246,6 +248,17 @@ enum L10n {
         localized: "This instruction is not currently used for summary generation.",
         bundle: bundle
     ) }
+    static var changesSaveAutomatically: String { String(localized: "Changes save automatically.", bundle: bundle) }
+    static var instructionTitleRequired: String { String(localized: "Enter a title to save this instruction.", bundle: bundle) }
+    static var deleteInstructionWarning: String { String(
+        localized: "This instruction will be permanently deleted. This cannot be undone.",
+        bundle: bundle
+    ) }
+
+    static func deleteInstructionConfirmation(_ name: String) -> String {
+        String(format: String(localized: "Delete instruction \"%@\"?", bundle: bundle), name)
+    }
+
     static var instructionsEmptyContent: String { String(localized: "No content yet", bundle: bundle) }
     static var noResultsFound: String { String(localized: "No results found", bundle: bundle) }
     static var noProject: String { String(localized: "No project", bundle: bundle) }
@@ -379,6 +392,10 @@ enum L10n {
         localized: "Capture the screen during recording and save a new image when the display changes significantly.",
         bundle: bundle
     ) }
+    static var enableAutomaticScreenshotsToConfigure: String { String(
+        localized: "Turn on automatic screenshots to choose the interval and change threshold.",
+        bundle: bundle
+    ) }
     static var automaticScreenshotsToggleDescription: String { String(
         localized: "Automatically add screenshots while recording.",
         bundle: bundle
@@ -412,6 +429,11 @@ enum L10n {
             String(localized: "In batch mode, subtitles are temporary and the final transcript is created after recording stops.", bundle: bundle),
         ].joined(separator: " ")
     }
+
+    static var enableLiveSubtitlesToConfigure: String { String(
+        localized: "Turn on live subtitles to choose their source and line count.",
+        bundle: bundle
+    ) }
 
     static var systemAudioOnly: String { String(localized: "System Audio Only", bundle: bundle) }
     static var includeMicrophone: String { String(localized: "Include Microphone", bundle: bundle) }
@@ -565,6 +587,7 @@ enum L10n {
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
     static var vaultID: String { String(localized: "Vault ID", bundle: bundle) }
     static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
+    static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
     static var mcpHelperUnavailable: String { String(
@@ -589,6 +612,10 @@ enum L10n {
     static var followSystem: String { String(localized: "Follow System", bundle: bundle) }
     static var notificationSettingsDescription: String { String(
         localized: "Choose one or both conditions. Calendar notifications use events from enabled calendar sources.",
+        bundle: bundle
+    ) }
+    static var enableMeetingNotificationsToChooseConditions: String { String(
+        localized: "Turn on meeting notifications to choose notification conditions.",
         bundle: bundle
     ) }
     static var transcriptionSettingsDescription: String { String(
@@ -624,18 +651,22 @@ enum L10n {
         localized: "Translation is automatically disabled when the target language matches the transcription language.",
         bundle: bundle
     ) }
+    static var enableTranscriptTranslationToChooseLanguage: String { String(
+        localized: "Turn on transcript translation to choose a target language.",
+        bundle: bundle
+    ) }
     static var developerSettingsDescription: String { String(
-        localized: "Override developer-managed credentials used by external service integrations.",
+        localized: "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults.",
         bundle: bundle
     ) }
     static var googleOAuthClientIDOverride: String { String(localized: "Google OAuth Client ID", bundle: bundle) }
     static var googleOAuthClientIDOverrideDescription: String { String(
-        localized: "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID.",
+        localized: "Leave blank to use the app's default client ID.",
         bundle: bundle
     ) }
     static var googleOAuthClientSecretOverride: String { String(localized: "Google OAuth Client Secret", bundle: bundle) }
     static var googleOAuthClientSecretOverrideDescription: String { String(
-        localized: "Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set.",
+        localized: "Optional. Stored securely in Keychain. Leave blank to use the app's default client secret.",
         bundle: bundle
     ) }
     static var googleOAuthOverrideReconnectNotice: String { String(
@@ -779,7 +810,7 @@ enum L10n {
     static var calendarAllDay: String { googleCalendarAllDay }
     static var googleCalendarClientIDMissingTitle: String { String(localized: "Google Calendar is not configured", bundle: bundle) }
     static var googleCalendarClientIDMissingMessage: String { String(
-        localized: "Set GOOGLE_CLIENT_ID before connecting Google Calendar.",
+        localized: "Set a Google OAuth client ID in Developer Settings before connecting Google Calendar.",
         bundle: bundle
     ) }
     static var googleCalendarSignInRequiredTitle: String { String(localized: "Connect Google Calendar", bundle: bundle) }
@@ -844,11 +875,11 @@ enum L10n {
     static var googleCalendarNoPreviousSession: String { String(localized: "No previous Google Calendar session was found.", bundle: bundle) }
     static var googleAccountNoPreviousSession: String { String(localized: "No previous Google session was found.", bundle: bundle) }
     static var googleCalendarClientSecretMissingMessage: String { String(
-        localized: "This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia.",
+        localized: "This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia.",
         bundle: bundle
     ) }
     static var googleAccountClientIDMissingMessage: String { String(
-        localized: "Set GOOGLE_CLIENT_ID before connecting Google services.",
+        localized: "Set a Google OAuth client ID in Developer Settings before connecting Google services.",
         bundle: bundle
     ) }
     static var googleAccountClientSecretMissingMessage: String { googleCalendarClientSecretMissingMessage }
@@ -1104,6 +1135,7 @@ enum L10n {
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }
     static var summaryPrompt: String { String(localized: "Summary Prompt", bundle: bundle) }
     static var resetToDefault: String { String(localized: "Reset to Default", bundle: bundle) }
+    static var restoreAppDefaults: String { String(localized: "Restore App Defaults", bundle: bundle) }
     static var summaryTemplate: String { String(localized: "Summary Template", bundle: bundle) }
     static var openInEditor: String { String(localized: "Open in Editor", bundle: bundle) }
     static var openTemplatesFolder: String { String(localized: "Open Templates Folder", bundle: bundle) }

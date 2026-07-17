@@ -103,6 +103,10 @@
 "Use Auto" = "Auto を使用";
 "This instruction is currently used for summary generation." = "この instruction は現在の要約生成に使用されています。";
 "This instruction is not currently used for summary generation." = "この instruction は現在の要約生成には使用されていません。";
+"Changes save automatically." = "変更は自動的に保存されます。";
+"Enter a title to save this instruction." = "この instruction を保存するにはタイトルを入力してください。";
+"Delete instruction \"%@\"?" = "instruction「%@」を削除しますか？";
+"This instruction will be permanently deleted. This cannot be undone." = "この instruction は完全に削除されます。この操作は取り消せません。";
 "No content yet" = "まだ内容がありません";
 "No results found" = "結果が見つかりません";
 "No project" = "未設定";
@@ -281,11 +285,11 @@
 "Target Language" = "翻訳先の言語";
 "Choose which language translated transcript lines should use." = "翻訳済みの文字起こし行に使う言語を選びます。";
 "Translation is automatically disabled when the target language matches the transcription language." = "翻訳先の言語が文字起こし言語と同じ場合、翻訳は自動的に無効になります。";
-"Override developer-managed credentials used by external service integrations." = "外部サービス連携で使用する開発者管理の認証情報を上書きします。";
+"Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults." = "会社のポリシーで自社管理の Google OAuth クライアントを使用する必要がある場合にのみ設定してください。通常は空欄のまま、アプリ規定の設定を使用できます。";
 "Google OAuth Client ID" = "Google OAuth クライアント ID";
-"Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "空欄の場合はバンドル済み、または環境変数の GOOGLE_CLIENT_ID を使用します。";
+"Leave blank to use the app's default client ID." = "空欄の場合は、アプリ規定のクライアント ID を使用します。";
 "Google OAuth Client Secret" = "Google OAuth クライアントシークレット";
-"Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set." = "任意です。設定すると Keychain に保存され、GOOGLE_CLIENT_SECRET より優先して使用されます。";
+"Optional. Stored securely in Keychain. Leave blank to use the app's default client secret." = "任意です。Keychain に安全に保存されます。空欄の場合は、アプリ規定のクライアントシークレットを使用します。";
 "Reconnect Google services after changing OAuth credentials." = "OAuth 認証情報を変更した後は Google サービスを再接続してください。";
 "Google Calendar" = "Google カレンダー";
 "macOS Calendar" = "macOS カレンダー";
@@ -331,7 +335,7 @@
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
-"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Google カレンダーを接続する前に、開発者設定または環境変数で GOOGLE_CLIENT_ID を設定してください。";
+"Set a Google OAuth client ID in Developer Settings before connecting Google Calendar." = "Google カレンダーを接続する前に、開発者設定で Google OAuth クライアント ID を設定してください。";
 "Connect Google Calendar" = "Google カレンダーを接続";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Home に予定を表示するには設定画面から Google カレンダーを接続してください。";
 "Connect Google Calendar from Settings to show your upcoming events here." = "ここに予定を表示するには設定画面から Google カレンダーを接続してください。";
@@ -359,7 +363,7 @@
 "Untitled calendar" = "タイトル未設定のカレンダー";
 "No window is available to present Google sign-in." = "Google サインインを表示できるウィンドウがありません。";
 "No previous Google Calendar session was found." = "以前の Google カレンダーセッションは見つかりませんでした。";
-"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "この Google OAuth クライアントには client secret が必要です。Google Cloud Console の値を開発者設定または GOOGLE_CLIENT_SECRET に設定してください。";
+"This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia." = "この Google OAuth クライアントにはクライアントシークレットが必要です。Google Cloud Console の値を開発者設定に入力し、Dahlia を再起動してください。";
 "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements." = "Google サインインが Keychain にアクセスできませんでした。必要な Keychain entitlement 付きでコード署名されるよう、./scripts/run-dev.sh でアプリを作り直してください。";
 "Google Account" = "Google アカウント";
 "Untitled event" = "タイトル未設定";
@@ -416,6 +420,7 @@
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
 "Reset to Default" = "デフォルトに戻す";
+"Restore App Defaults" = "アプリ規定に戻す";
 "Summary Template" = "要約テンプレート";
 "Open in Editor" = "エディタで開く";
 "Open Templates Folder" = "テンプレートフォルダを開く";
@@ -508,7 +513,7 @@
 "Could not configure the Google Drive export folder." = "Google Drive の書き出しフォルダを設定できませんでした。";
 "Open Cloud Storage Settings" = "Cloud Storage 設定を開く";
 "No previous Google session was found." = "以前の Google セッションは見つかりませんでした。";
-"Set GOOGLE_CLIENT_ID before connecting Google services." = "Google サービスを接続する前に、開発者設定または環境変数で GOOGLE_CLIENT_ID を設定してください。";
+"Set a Google OAuth client ID in Developer Settings before connecting Google services." = "Google サービスを接続する前に、開発者設定で Google OAuth クライアント ID を設定してください。";
 "Unexpected response from Google" = "Google から予期しないレスポンスが返されました";
 "Google HTTP %lld: %@" = "Google HTTP %lld: %@";
 "Google account connected, but Calendar access has not been granted yet." = "Google アカウントは接続済みですが、カレンダー権限はまだ付与されていません。";
@@ -703,9 +708,14 @@
 "Vault Name" = "保管庫名";
 "Vault ID" = "保管庫 ID";
 "Copy Command" = "コマンドをコピー";
+"Copied" = "コピーしました";
 "Codex CLI" = "Codex CLI";
 "Claude Code" = "Claude Code";
 "The MCP helper is not available in this app build." = "このアプリビルドではMCPヘルパーを利用できません。";
 "Select a vault before configuring MCP." = "MCPを設定する前に保管庫を選択してください。";
 "Each command registers read-only access to only the selected vault. Run it again after switching vaults." = "各コマンドは、選択中の保管庫だけへの読み取り専用アクセスを登録します。保管庫を切り替えた後は再実行してください。";
 "%@ registration command" = "%@ 登録コマンド";
+"Turn on meeting notifications to choose notification conditions." = "通知条件を選ぶには、ミーティング通知をオンにしてください。";
+"Turn on transcript translation to choose a target language." = "翻訳先の言語を選ぶには、文字起こし翻訳をオンにしてください。";
+"Turn on live subtitles to choose their source and line count." = "音声ソースと表示行数を選ぶには、ライブ字幕をオンにしてください。";
+"Turn on automatic screenshots to choose the interval and change threshold." = "取得間隔と変化量を選ぶには、自動スクリーンショットをオンにしてください。";

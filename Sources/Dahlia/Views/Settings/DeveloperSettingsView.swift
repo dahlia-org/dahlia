@@ -8,7 +8,12 @@ struct DeveloperSettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent {
+                VStack(alignment: .leading) {
+                    Text(L10n.googleOAuthClientIDOverride)
+                    Text(L10n.googleOAuthClientIDOverrideDescription)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
                     TextField(
                         "",
                         text: $settings.googleOAuthClientIDOverride,
@@ -16,23 +21,24 @@ struct DeveloperSettingsView: View {
                     )
                     .font(.callout.monospaced())
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(Text(L10n.googleOAuthClientIDOverride))
                     .onSubmit {
                         saveClientIDOverride()
                     }
-                } label: {
-                    Text(L10n.googleOAuthClientIDOverride)
-                    Text(L10n.googleOAuthClientIDOverrideDescription)
                 }
 
-                LabeledContent {
+                VStack(alignment: .leading) {
+                    Text(L10n.googleOAuthClientSecretOverride)
+                    Text(L10n.googleOAuthClientSecretOverrideDescription)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
                     SecureField("", text: $clientSecretOverride)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(Text(L10n.googleOAuthClientSecretOverride))
                         .onSubmit {
                             saveClientSecretOverride()
                         }
-                } label: {
-                    Text(L10n.googleOAuthClientSecretOverride)
-                    Text(L10n.googleOAuthClientSecretOverrideDescription)
                 }
 
                 SettingsStatusMessage(
@@ -41,7 +47,7 @@ struct DeveloperSettingsView: View {
                     tint: .blue
                 )
 
-                Button(L10n.resetToDefault) {
+                Button(L10n.restoreAppDefaults) {
                     resetOverrides()
                 }
                 .disabled(!hasOverrides)

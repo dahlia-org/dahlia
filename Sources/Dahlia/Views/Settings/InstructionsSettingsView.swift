@@ -12,19 +12,28 @@ struct InstructionsSettingsView: View {
     @State private var draftName = ""
     @State private var draftContent = ""
     @State private var saveTask: Task<Void, Never>?
+    @State private var isSaving = false
+    @State private var instructionPendingDeletion: InstructionRecord?
+    @State private var isShowingDeleteConfirmation = false
     @FocusState private var isNameFieldFocused: Bool
 
     private let listWidth: CGFloat = 280
 
     var body: some View {
-        HStack(spacing: 0) {
-            instructionsList
-                .frame(minWidth: 220, idealWidth: listWidth, maxWidth: 320)
+        Group {
+            if sidebarViewModel.allInstructions.isEmpty {
+                emptyInstructionsView
+            } else {
+                HStack(spacing: 0) {
+                    instructionsList
+                        .frame(minWidth: 220, idealWidth: listWidth, maxWidth: 320)
 
-            Divider()
+                    Divider()
 
-            instructionEditor
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    instructionEditor
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minHeight: 440)
@@ -43,7 +52,19 @@ struct InstructionsSettingsView: View {
             saveTask?.cancel()
             persistDraftsIfNeeded()
         }
-        .onDeleteCommand(perform: deleteSelectedInstruction)
+        .onDeleteCommand(perform: requestSelectedInstructionDeletion)
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.delete, role: .destructive, action: confirmInstructionDeletion)
+            Button(L10n.cancel, role: .cancel) {
+                instructionPendingDeletion = nil
+            }
+        } message: {
+            Text(L10n.deleteInstructionWarning)
+        }
     }
 
     private var selectedInstruction: InstructionRecord? {
@@ -68,24 +89,20 @@ struct InstructionsSettingsView: View {
             .padding(.top, 16)
             .padding(.bottom, 12)
 
-            if sidebarViewModel.allInstructions.isEmpty {
-                emptyInstructionsView
-            } else {
-                List(selection: $selectedInstructionID) {
-                    ForEach(sidebarViewModel.allInstructions) { instruction in
-                        instructionRow(instruction)
-                            .tag(instruction.id)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    sidebarViewModel.deleteInstruction(id: instruction.id)
-                                } label: {
-                                    Label(L10n.delete, systemImage: "trash")
-                                }
+            List(selection: $selectedInstructionID) {
+                ForEach(sidebarViewModel.allInstructions) { instruction in
+                    instructionRow(instruction)
+                        .tag(instruction.id)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                requestInstructionDeletion(instruction)
+                            } label: {
+                                Label(L10n.delete, systemImage: "trash")
                             }
-                    }
+                        }
                 }
-                .listStyle(.inset)
             }
+            .listStyle(.inset)
         }
     }
 
@@ -100,9 +117,9 @@ struct InstructionsSettingsView: View {
                             .font(.largeTitle.weight(.semibold))
                             .focused($isNameFieldFocused)
 
-                        Text(activeInstructionStatusText(for: selectedInstruction))
+                        Text(editorStatusText(for: selectedInstruction))
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(isInstructionTitleValid ? Color.secondary : Color.red)
                     }
 
                     Spacer(minLength: 0)
@@ -120,7 +137,7 @@ struct InstructionsSettingsView: View {
                         }
 
                         Button(L10n.delete, role: .destructive) {
-                            deleteSelectedInstruction()
+                            requestSelectedInstructionDeletion()
                         }
                     }
                 }
@@ -137,8 +154,6 @@ struct InstructionsSettingsView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                     .padding(12)
             }
-        } else if sidebarViewModel.allInstructions.isEmpty {
-            emptyInstructionsView
         } else {
             ContentUnavailableView {
                 Label(L10n.instructions, systemImage: "list.bullet.clipboard")
@@ -206,6 +221,18 @@ struct InstructionsSettingsView: View {
         return L10n.summaryInstructionNotSelected
     }
 
+    private var isInstructionTitleValid: Bool {
+        !draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func editorStatusText(for instruction: InstructionRecord) -> String {
+        guard isInstructionTitleValid else { return L10n.instructionTitleRequired }
+        if isSaving {
+            return L10n.saving
+        }
+        return "\(activeInstructionStatusText(for: instruction)) \(L10n.changesSaveAutomatically)"
+    }
+
     private func instruction(for id: UUID?) -> InstructionRecord? {
         guard let id else { return nil }
         return sidebarViewModel.allInstructions.first(where: { $0.id == id })
@@ -219,16 +246,32 @@ struct InstructionsSettingsView: View {
 
     private func syncDraftsFromSelection() {
         saveTask?.cancel()
+        isSaving = false
         draftName = selectedInstruction?.name ?? ""
         draftContent = selectedInstruction?.content ?? ""
     }
 
     private func scheduleSave() {
-        guard selectedInstruction != nil else { return }
+        guard let selectedInstruction else { return }
         saveTask?.cancel()
+        let trimmedName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            isSaving = false
+            return
+        }
+        guard trimmedName != selectedInstruction.name || draftContent != selectedInstruction.content else {
+            isSaving = false
+            return
+        }
+        isSaving = true
         saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+            } catch {
+                return
+            }
             persistDraftsIfNeeded()
+            isSaving = false
         }
     }
 
@@ -240,10 +283,7 @@ struct InstructionsSettingsView: View {
         guard let selectedInstruction = instruction(for: instructionID) else { return }
 
         let trimmedName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            draftName = selectedInstruction.name
-            return
-        }
+        guard !trimmedName.isEmpty else { return }
 
         guard trimmedName != selectedInstruction.name || draftContent != selectedInstruction.content else { return }
         sidebarViewModel.updateInstruction(id: selectedInstruction.id, name: trimmedName, content: draftContent)
@@ -255,9 +295,27 @@ struct InstructionsSettingsView: View {
         isNameFieldFocused = true
     }
 
-    private func deleteSelectedInstruction() {
+    private var deleteConfirmationTitle: String {
+        guard let instructionPendingDeletion else { return L10n.delete }
+        return L10n.deleteInstructionConfirmation(instructionPendingDeletion.displayName)
+    }
+
+    private func requestSelectedInstructionDeletion() {
         guard let selectedInstruction else { return }
-        sidebarViewModel.deleteInstruction(id: selectedInstruction.id)
-        selectedInstructionID = sidebarViewModel.allInstructions.first(where: { $0.id != selectedInstruction.id })?.id
+        requestInstructionDeletion(selectedInstruction)
+    }
+
+    private func requestInstructionDeletion(_ instruction: InstructionRecord) {
+        instructionPendingDeletion = instruction
+        isShowingDeleteConfirmation = true
+    }
+
+    private func confirmInstructionDeletion() {
+        guard let instructionPendingDeletion else { return }
+        sidebarViewModel.deleteInstruction(id: instructionPendingDeletion.id)
+        if selectedInstructionID == instructionPendingDeletion.id {
+            selectedInstructionID = sidebarViewModel.allInstructions.first(where: { $0.id != instructionPendingDeletion.id })?.id
+        }
+        self.instructionPendingDeletion = nil
     }
 }

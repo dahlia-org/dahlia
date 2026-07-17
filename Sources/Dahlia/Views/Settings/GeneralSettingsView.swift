@@ -73,7 +73,12 @@ struct GeneralSettingsView: View {
             } header: {
                 Text(L10n.notifications)
             } footer: {
-                Text(L10n.notificationSettingsDescription)
+                VStack(alignment: .leading) {
+                    Text(L10n.notificationSettingsDescription)
+                    if !settings.meetingDetectionEnabled {
+                        Text(L10n.enableMeetingNotificationsToChooseConditions)
+                    }
+                }
             }
         }
         .formStyle(.grouped)

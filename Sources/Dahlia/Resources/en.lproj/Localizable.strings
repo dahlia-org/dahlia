@@ -103,6 +103,10 @@
 "Use Auto" = "Use Auto";
 "This instruction is currently used for summary generation." = "This instruction is currently used for summary generation.";
 "This instruction is not currently used for summary generation." = "This instruction is not currently used for summary generation.";
+"Changes save automatically." = "Changes save automatically.";
+"Enter a title to save this instruction." = "Enter a title to save this instruction.";
+"Delete instruction \"%@\"?" = "Delete instruction \"%@\"?";
+"This instruction will be permanently deleted. This cannot be undone." = "This instruction will be permanently deleted. This cannot be undone.";
 "No content yet" = "No content yet";
 "No results found" = "No results found";
 "No project" = "No project";
@@ -281,11 +285,11 @@
 "Target Language" = "Target Language";
 "Choose which language translated transcript lines should use." = "Choose which language translated transcript lines should use.";
 "Translation is automatically disabled when the target language matches the transcription language." = "Translation is automatically disabled when the target language matches the transcription language.";
-"Override developer-managed credentials used by external service integrations." = "Override developer-managed credentials used by external service integrations.";
+"Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults." = "Configure these only when your organization requires a company-managed Google OAuth client. Otherwise, leave them blank to use the app defaults.";
 "Google OAuth Client ID" = "Google OAuth Client ID";
-"Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID." = "Leave blank to use the bundled or environment-provided GOOGLE_CLIENT_ID.";
+"Leave blank to use the app's default client ID." = "Leave blank to use the app's default client ID.";
 "Google OAuth Client Secret" = "Google OAuth Client Secret";
-"Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set." = "Optional. Stored in Keychain and used before GOOGLE_CLIENT_SECRET when set.";
+"Optional. Stored securely in Keychain. Leave blank to use the app's default client secret." = "Optional. Stored securely in Keychain. Leave blank to use the app's default client secret.";
 "Reconnect Google services after changing OAuth credentials." = "Reconnect Google services after changing OAuth credentials.";
 "Google Calendar" = "Google Calendar";
 "macOS Calendar" = "macOS Calendar";
@@ -331,7 +335,7 @@
 "Join" = "Join";
 "All day" = "All day";
 "Google Calendar is not configured" = "Google Calendar is not configured";
-"Set GOOGLE_CLIENT_ID before connecting Google Calendar." = "Set GOOGLE_CLIENT_ID in Developer Settings or the environment before connecting Google Calendar.";
+"Set a Google OAuth client ID in Developer Settings before connecting Google Calendar." = "Set a Google OAuth client ID in Developer Settings before connecting Google Calendar.";
 "Connect Google Calendar" = "Connect Google Calendar";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Connect Google Calendar from Settings to show your upcoming events on Home.";
 "Connect Google Calendar from Settings to show your upcoming events here." = "Connect Google Calendar from Settings to show your upcoming events here.";
@@ -359,7 +363,7 @@
 "Untitled calendar" = "Untitled calendar";
 "No window is available to present Google sign-in." = "No window is available to present Google sign-in.";
 "No previous Google Calendar session was found." = "No previous Google Calendar session was found.";
-"This Google OAuth client requires a client secret. Set GOOGLE_CLIENT_SECRET to the value from Google Cloud Console and relaunch Dahlia." = "This Google OAuth client requires a client secret. Set the Google Cloud Console value in Developer Settings or GOOGLE_CLIENT_SECRET.";
+"This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia." = "This Google OAuth client requires a client secret. Enter the value from Google Cloud Console in Developer Settings and relaunch Dahlia.";
 "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements." = "Google sign-in could not access Keychain. Rebuild the app with ./scripts/run-dev.sh so it is code signed with the required Keychain entitlements.";
 "Google Account" = "Google Account";
 "Untitled event" = "Untitled event";
@@ -416,6 +420,7 @@
 "Copy for Slack" = "Copy for Slack";
 "Summary Prompt" = "Summary Prompt";
 "Reset to Default" = "Reset to Default";
+"Restore App Defaults" = "Restore App Defaults";
 "Summary Template" = "Summary Template";
 "Open in Editor" = "Open in Editor";
 "Open Templates Folder" = "Open Templates Folder";
@@ -508,7 +513,7 @@
 "Could not configure the Google Drive export folder." = "Could not configure the Google Drive export folder.";
 "Open Cloud Storage Settings" = "Open Cloud Storage Settings";
 "No previous Google session was found." = "No previous Google session was found.";
-"Set GOOGLE_CLIENT_ID before connecting Google services." = "Set GOOGLE_CLIENT_ID in Developer Settings or the environment before connecting Google services.";
+"Set a Google OAuth client ID in Developer Settings before connecting Google services." = "Set a Google OAuth client ID in Developer Settings before connecting Google services.";
 "Unexpected response from Google" = "Unexpected response from Google";
 "Google HTTP %lld: %@" = "Google HTTP %lld: %@";
 "Google account connected, but Calendar access has not been granted yet." = "Google account connected, but Calendar access has not been granted yet.";
@@ -703,9 +708,14 @@
 "Vault Name" = "Vault Name";
 "Vault ID" = "Vault ID";
 "Copy Command" = "Copy Command";
+"Copied" = "Copied";
 "Codex CLI" = "Codex CLI";
 "Claude Code" = "Claude Code";
 "The MCP helper is not available in this app build." = "The MCP helper is not available in this app build.";
 "Select a vault before configuring MCP." = "Select a vault before configuring MCP.";
 "Each command registers read-only access to only the selected vault. Run it again after switching vaults." = "Each command registers read-only access to only the selected vault. Run it again after switching vaults.";
 "%@ registration command" = "%@ registration command";
+"Turn on meeting notifications to choose notification conditions." = "Turn on meeting notifications to choose notification conditions.";
+"Turn on transcript translation to choose a target language." = "Turn on transcript translation to choose a target language.";
+"Turn on live subtitles to choose their source and line count." = "Turn on live subtitles to choose their source and line count.";
+"Turn on automatic screenshots to choose the interval and change threshold." = "Turn on automatic screenshots to choose the interval and change threshold.";

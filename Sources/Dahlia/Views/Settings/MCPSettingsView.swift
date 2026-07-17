@@ -3,6 +3,8 @@ import SwiftUI
 
 struct MCPSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var copiedCommandTitle: String?
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         Form {
@@ -39,6 +41,9 @@ struct MCPSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onDisappear {
+            copyFeedbackTask?.cancel()
+        }
     }
 
     private func commandContent(title: String, command: String) -> some View {
@@ -49,11 +54,11 @@ struct MCPSettingsView: View {
                     .textSelection(.enabled)
                     .multilineTextAlignment(.leading)
                     .accessibilityLabel(L10n.registrationCommand(title))
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(command, forType: .string)
-                } label: {
-                    Label(L10n.copyCommand, systemImage: "doc.on.doc")
+                Button(
+                    copiedCommandTitle == title ? L10n.copied : L10n.copyCommand,
+                    systemImage: copiedCommandTitle == title ? "checkmark" : "doc.on.doc"
+                ) {
+                    copy(command, title: title)
                 }
             }
         } label: {
@@ -67,5 +72,21 @@ struct MCPSettingsView: View {
             helperURL: helperURL,
             vaultID: vault.id
         )
+    }
+
+    private func copy(_ command: String, title: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        copiedCommandTitle = title
+
+        copyFeedbackTask?.cancel()
+        copyFeedbackTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+            copiedCommandTitle = nil
+        }
     }
 }

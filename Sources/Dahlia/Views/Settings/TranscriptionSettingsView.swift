@@ -74,10 +74,13 @@ struct TranscriptionSettingsView: View {
                     Text(L10n.translationTargetLanguageDescription)
                 }
                 .pickerStyle(.menu)
+                .disabled(!settings.transcriptTranslationEnabled)
             } header: {
                 Text(L10n.transcriptTranslation)
             } footer: {
-                if !settings.isTranscriptTranslationEffectivelyEnabled, settings.transcriptTranslationEnabled {
+                if !settings.transcriptTranslationEnabled {
+                    Text(L10n.enableTranscriptTranslationToChooseLanguage)
+                } else if !settings.isTranscriptTranslationEffectivelyEnabled {
                     Text(L10n.translationDisabledForMatchingLanguage)
                 }
             }
@@ -111,7 +114,12 @@ struct TranscriptionSettingsView: View {
             } header: {
                 Text(L10n.liveSubtitleOverlay)
             } footer: {
-                Text(L10n.liveSubtitleOverlayDescription)
+                VStack(alignment: .leading) {
+                    Text(L10n.liveSubtitleOverlayDescription)
+                    if !settings.liveSubtitleOverlayEnabled {
+                        Text(L10n.enableLiveSubtitlesToConfigure)
+                    }
+                }
             }
 
             Section {
