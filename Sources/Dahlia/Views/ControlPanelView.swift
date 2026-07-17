@@ -140,8 +140,6 @@ private struct ScreenshotOverlayView: View {
 
 /// スクリーンショットのサムネイル表示。
 private struct ScreenshotThumbnailView: View {
-    private static let maximumPixelSize = 200
-
     let screenshot: MeetingScreenshotRecord
     let timestamp: String
     let viewModel: CaptionViewModel
@@ -224,7 +222,7 @@ private struct ScreenshotThumbnailView: View {
             await imageLoader.load(
                 screenshotID: screenshot.id,
                 data: screenshot.imageData,
-                maxPixelSize: Self.maximumPixelSize
+                maxPixelSize: ScreenshotGridSizing.maximumThumbnailPixelSize
             )
         }
         .onDisappear {
