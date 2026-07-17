@@ -64,8 +64,9 @@ jobs:
           toolchain_hash="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{ print $1 }')"
           echo "hash=$toolchain_hash" >> "$GITHUB_OUTPUT"
 
-      - name: Cache app build
-        uses: actions/cache@v5
+      - name: Restore app build cache
+        id: app-build-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             .build/checkouts
@@ -83,3 +84,13 @@ jobs:
 
       - name: Build executable
         run: swift build
+
+      - name: Save app build cache
+        if: ${{ !cancelled() && steps.app-build-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .build/checkouts
+            .build/workspace-state.json
+            .build/*-apple-macosx/debug
+          key: ${{ steps.app-build-cache.outputs.cache-primary-key }}
