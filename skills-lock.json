@@ -41,12 +41,6 @@
       "sourceType": "github",
       "skillPath": "skills/ux-audit-rethink/SKILL.md",
       "computedHash": "71f8915d166c445f051a444f387affe32dd31263cafd575fc1b82e86e616f49e"
-    },
-    "visual-emphasis-and-hierarchy": {
-      "source": "dembrandt/dembrandt-skills",
-      "sourceType": "github",
-      "skillPath": "skills/visual-emphasis-and-hierarchy/SKILL.md",
-      "computedHash": "c75e64cc93b50b27221ec895d3b9c945cc829f5e8e31437c297b6fb35d548f7d"
     }
   }
 }
