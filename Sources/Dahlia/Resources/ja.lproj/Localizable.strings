@@ -271,6 +271,7 @@
 
 /* Settings */
 "General" = "一般";
+"Check for Updates…" = "アップデートを確認…";
 "App" = "アプリ";
 "Integrations" = "連携";
 "AI" = "AI";

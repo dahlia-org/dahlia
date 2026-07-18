@@ -13,6 +13,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Project Management** — Organize transcripts into vault/project hierarchy synced with filesystem folders
 - **Meeting Detection** — Automatically detect meeting sessions with 3-layer detection
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries
+- **Automatic Updates** — Securely check, download, and install new releases with Sparkle 2
 - **Bilingual UI** — Japanese (primary) and English
 
 ## Requirements
@@ -80,14 +81,40 @@ xcrun notarytool store-credentials "dahlia-notary" \
 
 `./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
 
-To publish a release, install and authenticate the GitHub CLI (`gh`), commit and push the version change and all other source changes, then run:
+Dahlia uses Sparkle 2 for in-app updates. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update and appcast with this key, then uploads both `Dahlia.dmg` and `appcast.xml` to the GitHub Release.
+
+When replacing the release laptop, migrate the Sparkle key as follows. The exported file is an unencrypted private key with the same sensitivity as a password. Export it directly to encrypted offline storage, transfer it through a trusted channel, and never place it in the repository, cloud-synced folders, chat, or issue attachments.
+
+```bash
+# Old laptop: export the existing key to encrypted offline storage.
+umask 077
+.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+  --account com.dahlia.app \
+  -x /path/to/encrypted-volume/dahlia-sparkle-private-key
+
+# New laptop: resolve dependencies, then import that same key.
+swift package resolve
+.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+  --account com.dahlia.app \
+  -f /path/to/encrypted-volume/dahlia-sparkle-private-key
+
+# Verify that the imported public key matches Resources/Info.plist exactly.
+.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+  --account com.dahlia.app \
+  -p
+# Expected: HR6N/+ImpB4ahCwyYLfF+CKJf2YG267B7pu5Q8CSB2E=
+```
+
+After importing, remove any unencrypted transfer copy and retain one access-controlled, encrypted backup. Do not run `generate_keys` without `-f` on the new laptop: creating a different key would prevent installed Dahlia versions from accepting future updates.
+
+To publish a release, install and authenticate the GitHub CLI (`gh`), increment both `CFBundleShortVersionString` and the integer `CFBundleVersion` in `Resources/Info.plist`, then commit and push the version change and all other source changes before running:
 
 ```bash
 ./scripts/notarize.sh
 ./scripts/create-github-release.sh
 ```
 
-`create-github-release.sh` verifies the DMG signature, notarization ticket, fixed `Dahlia.dmg` filename, embedded app version, and disk image integrity. It then asks Codex to use the repository's `$generate-release-notes` skill to interpret the changes since the previous release and write concise, user-focused notes. The Codex subprocess runs outside the sandbox so it can use local authentication, but ignores personal configuration, disables live web search, requires approval for untrusted commands, and limits its task to read-only investigation and Markdown output. The script also verifies that the DMG checksum did not change during AI generation. Finally, it creates `v<version>` at the current commit (or verifies an existing tag points there), creates the corresponding GitHub Release, and uploads the DMG. It requires an authenticated Codex CLI by default; pass `--notes-file <path>` to publish reviewed Markdown instead. It refuses to publish from a dirty working tree. The latest release is always available directly from <https://github.com/mats16/dahlia/releases/latest/download/Dahlia.dmg>.
+`create-github-release.sh` verifies the DMG signature, notarization ticket, fixed `Dahlia.dmg` filename, embedded marketing/build versions, monotonic build number, Sparkle feed and signing configuration, and disk image integrity. It then asks Codex to use the repository's `$generate-release-notes` skill to interpret the changes since the previous release and write concise, user-focused notes. The Codex subprocess runs outside the sandbox so it can use local authentication, but ignores personal configuration, disables live web search, requires approval for untrusted commands, and limits its task to read-only investigation and Markdown output. The script also verifies that the DMG checksum did not change during AI generation. Finally, it cryptographically verifies the generated feed and update archive, creates `v<version>` at the current commit (or verifies an existing tag points there), creates the corresponding GitHub Release, and uploads the exact DMG signed by the appcast. It requires an authenticated Codex CLI by default; pass `--notes-file <path>` to publish reviewed Markdown instead. It refuses to publish from a dirty working tree. The latest release is always available directly from <https://github.com/dahlia-mtg/dahlia/releases/latest/download/Dahlia.dmg>.
 
 ## Architecture
 
@@ -127,6 +154,7 @@ Sources/Dahlia/
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite toolkit
 - [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Crash reporting for release builds
+- [Sparkle](https://github.com/sparkle-project/Sparkle) — Secure in-app updates
 
 ## License
 

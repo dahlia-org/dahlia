@@ -619,6 +619,7 @@ enum L10n {
     // MARK: - Settings
 
     static var general: String { String(localized: "General", bundle: bundle) }
+    static var checkForUpdates: String { String(localized: "Check for Updates…", bundle: bundle) }
     static var app: String { String(localized: "App", bundle: bundle) }
     static var integrations: String { String(localized: "Integrations", bundle: bundle) }
     static var ai: String { String(localized: "AI", bundle: bundle) }

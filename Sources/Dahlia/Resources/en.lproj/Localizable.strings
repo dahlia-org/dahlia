@@ -271,6 +271,7 @@
 
 /* Settings */
 "General" = "General";
+"Check for Updates…" = "Check for Updates…";
 "App" = "App";
 "Integrations" = "Integrations";
 "AI" = "AI";

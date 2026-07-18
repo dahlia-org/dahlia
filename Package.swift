@@ -14,6 +14,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.10.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2"),
     ],
     targets: [
         .target(
@@ -39,6 +40,7 @@ let package = Package(
                 "DahliaRuntimeSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/Dahlia",
             exclude: [
@@ -47,7 +49,10 @@ let package = Package(
                 "Database/AGENTS.md",
                 "Database/CLAUDE.md",
             ],
-            resources: [.process("Resources")]
+            resources: [.process("Resources")],
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
+            ]
         ),
         .testTarget(
             name: "DahliaTests",

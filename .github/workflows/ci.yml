@@ -45,6 +45,9 @@ jobs:
       - name: Run lint
         run: ./scripts/lint.sh
 
+      - name: Test release scripts
+        run: ./scripts/test-release-scripts.sh
+
   unit-tests:
     name: Unit Tests
     runs-on: macos-26

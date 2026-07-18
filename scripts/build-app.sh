@@ -84,6 +84,7 @@ RESOURCE_BUNDLE="${BUILD_DIR}/Dahlia_Dahlia.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "${CONTENTS}/Resources/"
 fi
+embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true
@@ -92,6 +93,7 @@ SIGNED_RESOURCE_BUNDLE="${CONTENTS}/Resources/Dahlia_Dahlia.bundle"
 if [ -d "$SIGNED_RESOURCE_BUNDLE" ]; then
     codesign_path "$SIGNED_RESOURCE_BUNDLE"
 fi
+codesign_sparkle_framework "${CONTENTS}/Frameworks/Sparkle.framework"
 
 codesign --remove-signature "${HELPERS}/codex"
 codesign_path "${HELPERS}/codex" --entitlements "$CODEX_ENTITLEMENTS_PATH"
