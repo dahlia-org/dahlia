@@ -157,6 +157,7 @@ struct DahliaApp: App {
 
         Settings {
             SettingsView(
+                captionViewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
                 onSelectVault: { vault in openVault(vault) }
             )
@@ -321,6 +322,20 @@ struct DahliaApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor private(set) static var hasMutationOwnership = false
+    @MainActor private(set) static var backupRestoreOutcome: BackupRestoreStartupOutcome = .none
+    @MainActor private(set) static var isBackupRestorePreparationActive = false
+
+    @MainActor
+    static func beginBackupRestorePreparation() -> Bool {
+        guard !isBackupRestorePreparationActive else { return false }
+        isBackupRestorePreparationActive = true
+        return true
+    }
+
+    @MainActor
+    static func cancelBackupRestorePreparation() {
+        isBackupRestorePreparationActive = false
+    }
 
     private var isWaitingForCodexShutdown = false
     private var processLock: AdvisoryFileLock?
@@ -333,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     .appending(path: ".process.lock")
             )
             Self.hasMutationOwnership = true
+            Self.backupRestoreOutcome = BackupRestoreStartupProcessor.applyPendingRestore()
         } catch AdvisoryFileLockError.alreadyLocked {
             let alert = NSAlert()
             alert.alertStyle = .warning

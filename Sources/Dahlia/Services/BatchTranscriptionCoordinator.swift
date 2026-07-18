@@ -60,7 +60,7 @@ actor BatchTranscriptionCoordinator {
         }) ?? []
 
         for sessionId in sessionIds {
-            enqueue(sessionId: sessionId)
+            await enqueue(sessionId: sessionId)
         }
     }
 
@@ -90,12 +90,18 @@ actor BatchTranscriptionCoordinator {
         )
         for confirmedSessionId in result.sessionIds {
             await notify(meetingId: result.meetingId, state: .queued(sessionId: confirmedSessionId))
-            enqueue(sessionId: confirmedSessionId)
+            await enqueue(sessionId: confirmedSessionId)
         }
     }
 
-    func enqueue(sessionId: UUID) {
+    func enqueue(sessionId: UUID) async {
         guard runningSessionId != sessionId, !pendingSessionIds.contains(sessionId) else { return }
+        do {
+            guard try await claimForQueue(sessionId: sessionId) else { return }
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "batchTranscriptionQueue"])
+            return
+        }
         pendingSessionIds.append(sessionId)
         guard processorTask == nil else { return }
         processorTask = Task { [weak self] in
@@ -120,10 +126,13 @@ actor BatchTranscriptionCoordinator {
             let sessionId = pendingSessionIds.removeFirst()
             runningSessionId = sessionId
             do {
+                try await markAttemptStarted(sessionId: sessionId)
                 let meetingId = try meetingId(for: sessionId)
                 await notify(meetingId: meetingId, state: .running(sessionId: sessionId))
                 try await process(sessionId: sessionId)
                 await notify(meetingId: meetingId, state: .completed(sessionId: sessionId))
+            } catch is CancellationError {
+                // The session was completed or explicitly discarded after it was queued.
             } catch {
                 await recordFailure(sessionId: sessionId, error: error)
             }
@@ -133,7 +142,6 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func process(sessionId: UUID) async throws {
-        try await markAttemptStarted(sessionId: sessionId)
         let job = try fetchJob(sessionId: sessionId)
         let segments = try await transcribe(job: job)
         let records = segments.map { TranscriptSegmentRecord(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
@@ -177,9 +185,31 @@ actor BatchTranscriptionCoordinator {
                 SET batchLastAttemptAt = ?, batchAttemptCount = batchAttemptCount + 1,
                     batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
+                  AND batchCompletedAt IS NULL
+                  AND batchDiscardedAt IS NULL
                 """,
                 arguments: [attemptDate, attemptDate, sessionId]
             )
+            guard db.changesCount == 1 else { throw CancellationError() }
+        }
+    }
+
+    private func claimForQueue(sessionId: UUID) async throws -> Bool {
+        let now = Date.now
+        return try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE recording_sessions
+                SET batchLastAttemptAt = COALESCE(batchLastAttemptAt, ?),
+                    batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
+                WHERE id = ?
+                  AND transcriptionMode = ?
+                  AND batchCompletedAt IS NULL
+                  AND batchDiscardedAt IS NULL
+                """,
+                arguments: [now, now, sessionId, TranscriptionMode.batch.rawValue]
+            )
+            return db.changesCount == 1
         }
     }
 
@@ -342,17 +372,18 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func persistFailure(sessionId: UUID, message: String, kind: BatchFailureKind? = nil) async {
-        try? await dbQueue.write { db in
+        let didPersist = await (try? dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
                 SET batchLastError = ?, batchFailureKind = ?, updatedAt = ?
-                WHERE id = ?
+                WHERE id = ? AND batchDiscardedAt IS NULL
                 """,
                 arguments: [message, kind, Date.now, sessionId]
             )
-        }
-        if let meetingId = try? meetingId(for: sessionId) {
+            return db.changesCount == 1
+        }) ?? false
+        if didPersist, let meetingId = try? meetingId(for: sessionId) {
             await notify(meetingId: meetingId, state: .failed(sessionId: sessionId, message: message))
         }
     }

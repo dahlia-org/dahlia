@@ -40,7 +40,7 @@ final class AppDatabaseManager: Sendable {
             .appending(path: "dahlia.sqlite")
     }
 
-    private static let migrator: DatabaseMigrator = {
+    static let migrator: DatabaseMigrator = {
         var migrator = DatabaseMigrator()
 
         // リリース後は既存ユーザーデータを保持する。破壊的な自動再作成は行わない。
@@ -128,6 +128,60 @@ final class AppDatabaseManager: Sendable {
 
         return migrator
     }()
+
+    nonisolated static var migrationIdentifiers: [String] {
+        migrator.migrations
+    }
+
+    nonisolated static var currentMigrationIdentifier: String {
+        migrationIdentifiers.last ?? "unversioned"
+    }
+
+    nonisolated static var currentSchemaVersion: Int {
+        schemaVersion(from: currentMigrationIdentifier) ?? 0
+    }
+
+    nonisolated static func schemaVersion(from migrationIdentifier: String) -> Int? {
+        guard migrationIdentifier.first == "v" else { return nil }
+        let digits = migrationIdentifier.dropFirst().prefix(while: \Character.isNumber)
+        return Int(digits)
+    }
+
+    static func hasExpectedCurrentSchema(
+        _ db: Database,
+        excludingTableNames: Set<String> = []
+    ) throws -> Bool {
+        let reference = try AppDatabaseManager(path: ":memory:")
+        let expected = try reference.dbQueue.read {
+            try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
+        }
+        return try schemaSignature(in: db, excludingTableNames: excludingTableNames) == expected
+    }
+
+    private static func schemaSignature(
+        in db: Database,
+        excludingTableNames: Set<String>
+    ) throws -> [String] {
+        try Row.fetchAll(
+            db,
+            sql: """
+            SELECT type, name, tbl_name, sql
+            FROM sqlite_master
+            WHERE sql IS NOT NULL
+            ORDER BY type, name
+            """
+        ).map { row in
+            let type: String = row["type"]
+            let name: String = row["name"]
+            let table: String = row["tbl_name"]
+            let sql: String = row["sql"]
+            return (type, name, table, sql)
+        }.filter { object in
+            !excludingTableNames.contains(object.1) && !excludingTableNames.contains(object.2)
+        }.map { object in
+            "\(object.0)\u{0}\(object.1)\u{0}\(object.2)\u{0}\(object.3)"
+        }
+    }
 
     private static func addTranscriptPagingIndexIfNeeded(in db: Database) throws {
         guard try db.tableExists("transcript_segments") else { return }

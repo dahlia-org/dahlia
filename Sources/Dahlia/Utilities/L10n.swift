@@ -619,6 +619,102 @@ enum L10n {
     // MARK: - Settings
 
     static var general: String { String(localized: "General", bundle: bundle) }
+    static var backups: String { String(localized: "Backups", bundle: bundle) }
+    static var databaseBackup: String { String(localized: "Database Backup", bundle: bundle) }
+    static var databaseBackupDescription: String { String(
+        localized: "Backups include transcripts and other database content. Audio files and their references are excluded.",
+        bundle: bundle
+    ) }
+    static var createBackup: String { String(localized: "Create Backup", bundle: bundle) }
+    static var importBackup: String { String(localized: "Import Backup", bundle: bundle) }
+    static var exportBackup: String { String(localized: "Export", bundle: bundle) }
+    static var restoreBackup: String { String(localized: "Restore", bundle: bundle) }
+    static var deleteBackup: String { String(localized: "Delete Backup", bundle: bundle) }
+    static var backupGenerations: String { String(localized: "Backup Generations", bundle: bundle) }
+    static var noBackups: String { String(localized: "No Backups", bundle: bundle) }
+    static var noBackupsDescription: String { String(localized: "Create a backup to preserve the current database.", bundle: bundle) }
+    static var backupCreated: String { String(localized: "Backup created.", bundle: bundle) }
+    static var backupImported: String { String(localized: "Backup imported.", bundle: bundle) }
+    static var backupExported: String { String(localized: "Backup exported.", bundle: bundle) }
+    static var backupDeleted: String { String(localized: "Backup deleted.", bundle: bundle) }
+    static var selectedBackupInvalid: String { String(localized: "The selected file is not a valid Dahlia backup.", bundle: bundle) }
+    static var backupRestoreAlreadyPending: String { String(localized: "Another database restore is already pending.", bundle: bundle) }
+    static var backupGenerationMissing: String { String(localized: "The selected backup generation no longer exists.", bundle: bundle) }
+    static var untitledMeeting: String { String(localized: "Untitled Meeting", bundle: bundle) }
+
+    static func resolveUnprocessedRecordings(_ count: Int) -> String {
+        let format = if count == 1 {
+            String(localized: "Resolve %lld unprocessed recording before continuing.", bundle: bundle)
+        } else {
+            String(localized: "Resolve %lld unprocessed recordings before continuing.", bundle: bundle)
+        }
+        return String(
+            format: format,
+            Int64(count)
+        )
+    }
+
+    static func backupFormatUnsupported(_ version: Int) -> String {
+        String(
+            format: String(localized: "Backup format %lld is not supported by this version of Dahlia.", bundle: bundle),
+            Int64(version)
+        )
+    }
+
+    static func backupSchemaNewer(_ identifier: String) -> String {
+        String(format: String(localized: "This backup uses the newer database schema %@.", bundle: bundle), identifier)
+    }
+
+    static func backupIntegrityCheckFailed(_ message: String) -> String {
+        String(format: String(localized: "The backup failed its integrity check: %@", bundle: bundle), message)
+    }
+
+    static func backupRestored(schemaVersion: Int) -> String {
+        String(format: String(localized: "Database restored from schema v%lld.", bundle: bundle), Int64(schemaVersion))
+    }
+
+    static func backupRestoreFailed(_ reason: String) -> String {
+        String(format: String(localized: "Could not restore the database: %@", bundle: bundle), reason)
+    }
+
+    static var invalidBackup: String { String(localized: "Invalid backup", bundle: bundle) }
+    static var beforeRestoreBackup: String { String(localized: "Created before restore", bundle: bundle) }
+    static var deleteBackupConfirmation: String { String(localized: "Delete this backup?", bundle: bundle) }
+    static var deleteBackupDescription: String { String(
+        localized: "This backup generation will be permanently deleted. This cannot be undone.",
+        bundle: bundle
+    ) }
+    static var restoreBackupConfirmation: String { String(localized: "Restore this backup?", bundle: bundle) }
+    static var restoreBackupDescription: String { String(
+        localized: "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored.",
+        bundle: bundle
+    ) }
+    static var unprocessedRecordings: String { String(localized: "Unprocessed Recordings", bundle: bundle) }
+    static var unprocessedRecordingsDescription: String { String(
+        localized: "Transcribe or discard every unprocessed recording before creating or restoring a backup.",
+        bundle: bundle
+    ) }
+    static var awaitingTranscription: String { String(localized: "Waiting for transcription", bundle: bundle) }
+    static var transcriptionInProgress: String { String(localized: "Transcription in progress", bundle: bundle) }
+    static var transcriptionFailed: String { String(localized: "Transcription failed", bundle: bundle) }
+    static var recordingInProgress: String { String(localized: "Recording in progress", bundle: bundle) }
+    static var transcribe: String { String(localized: "Transcribe", bundle: bundle) }
+    static var discardRecording: String { String(localized: "Discard", bundle: bundle) }
+    static var discardUnprocessedRecordingConfirmation: String { String(localized: "Discard this recording?", bundle: bundle) }
+    static var discardUnprocessedRecordingDescription: String { String(
+        localized: "The unprocessed audio and any partial transcript from this recording will be permanently deleted. The meeting remains.",
+        bundle: bundle
+    ) }
+    static var unprocessedRecordingDiscarded: String { String(localized: "Unprocessed recording discarded.", bundle: bundle) }
+    static func backupGenerationDetail(schemaVersion: Int, appVersion: String, size: String) -> String {
+        String(
+            format: String(localized: "Schema v%lld · Dahlia %@ · %@", bundle: bundle),
+            Int64(schemaVersion),
+            appVersion,
+            size
+        )
+    }
+
     static var checkForUpdates: String { String(localized: "Check for Updates…", bundle: bundle) }
     static var app: String { String(localized: "App", bundle: bundle) }
     static var integrations: String { String(localized: "Integrations", bundle: bundle) }

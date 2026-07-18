@@ -231,6 +231,19 @@ final class MeetingRepository {
         )
     }
 
+    /// 未確認または失敗したバッチ録音を、音声ファイルと部分結果を含めて明示的に破棄する。
+    @discardableResult
+    func discardUnprocessedBatchSessionSafely(
+        id: UUID,
+        managedRootURL: URL = BatchAudioStorage.managedRootURL
+    ) async throws -> Bool {
+        try await BatchTranscriptionDiscardService.discardUnprocessedSessionSafely(
+            id: id,
+            dbQueue: dbQueue,
+            managedRootURL: managedRootURL
+        )
+    }
+
     /// 複数のミーティングを一括削除する。
     func deleteMeetings(ids: Set<UUID>) throws {
         guard !ids.isEmpty else { return }
