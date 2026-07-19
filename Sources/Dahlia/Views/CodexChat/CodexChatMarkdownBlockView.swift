@@ -1,26 +1,26 @@
 import SwiftUI
 
 struct CodexChatMarkdownBlockView: View {
-    let block: CodexChatMarkdownBlock
+    let block: CodexChatMarkdownRenderedBlock
 
     var body: some View {
         switch block {
         case let .paragraph(text):
-            markdownText(text)
+            renderedText(text)
         case let .heading(level, text):
-            markdownText(text)
+            renderedText(text)
                 .font(headingFont(for: level))
                 .fontWeight(.semibold)
         case let .unorderedList(items):
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    CodexChatMarkdownListRow(marker: "•", text: item)
+                ForEach(items.indices, id: \.self) { index in
+                    CodexChatMarkdownListRow(marker: "•", text: items[index])
                 }
             }
         case let .orderedList(items):
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    CodexChatMarkdownListRow(marker: item.marker, text: item.text)
+                ForEach(items.indices, id: \.self) { index in
+                    CodexChatMarkdownListRow(marker: items[index].marker, text: items[index].text)
                 }
             }
         case let .blockquote(text):
@@ -28,7 +28,7 @@ struct CodexChatMarkdownBlockView: View {
                 RoundedRectangle(cornerRadius: 1)
                     .fill(.tertiary)
                     .frame(width: 3)
-                markdownText(text)
+                renderedText(text)
                     .foregroundStyle(.secondary)
             }
         case let .code(language, text):
@@ -51,16 +51,9 @@ struct CodexChatMarkdownBlockView: View {
         }
     }
 
-    private func markdownText(_ value: String) -> some View {
-        Text(attributedMarkdown(value))
+    private func renderedText(_ value: AttributedString) -> some View {
+        Text(value)
             .textSelection(.enabled)
-    }
-
-    private func attributedMarkdown(_ value: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: value,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(value)
     }
 
     private func headingFont(for level: Int) -> Font {

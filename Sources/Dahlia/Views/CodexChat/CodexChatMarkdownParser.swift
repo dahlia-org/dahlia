@@ -1,21 +1,25 @@
 import Foundation
 
 enum CodexChatMarkdownParser {
-    static func parse(_ markdown: String) -> [CodexChatMarkdownBlock] {
-        let normalized = markdown
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+    static func parse(_ markdown: String) throws -> [CodexChatMarkdownBlock] {
+        try Task.checkCancellation()
+        let normalizedLineEndings = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+        try Task.checkCancellation()
+        let normalized = normalizedLineEndings.replacingOccurrences(of: "\r", with: "\n")
+        try Task.checkCancellation()
         let lines = normalized.components(separatedBy: "\n")
+        try Task.checkCancellation()
         var blocks: [CodexChatMarkdownBlock] = []
         var index = 0
 
         while index < lines.count {
+            try Task.checkCancellation()
             if lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
                 index += 1
                 continue
             }
 
-            if let block = parseFence(lines, index: &index) {
+            if let block = try parseFence(lines, index: &index) {
                 blocks.append(block)
             } else if let block = parseHeading(lines[index]) {
                 blocks.append(block)
@@ -24,11 +28,11 @@ enum CodexChatMarkdownParser {
                 blocks.append(.divider)
                 index += 1
             } else if isBlockquote(lines[index]) {
-                blocks.append(parseBlockquote(lines, index: &index))
+                try blocks.append(parseBlockquote(lines, index: &index))
             } else if let marker = listMarker(in: lines[index]) {
-                blocks.append(parseList(lines, index: &index, kind: marker.kind))
+                try blocks.append(parseList(lines, index: &index, kind: marker.kind))
             } else {
-                blocks.append(parseParagraph(lines, index: &index))
+                try blocks.append(parseParagraph(lines, index: &index))
             }
         }
 
@@ -49,7 +53,7 @@ enum CodexChatMarkdownParser {
     private static func parseFence(
         _ lines: [String],
         index: inout Int
-    ) -> CodexChatMarkdownBlock? {
+    ) throws -> CodexChatMarkdownBlock? {
         let opening = lines[index].trimmingCharacters(in: .whitespaces)
         guard opening.hasPrefix("```") else { return nil }
 
@@ -58,6 +62,7 @@ enum CodexChatMarkdownParser {
         var codeLines: [String] = []
         while index < lines.count,
               !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+            try Task.checkCancellation()
             codeLines.append(lines[index])
             index += 1
         }
@@ -87,9 +92,10 @@ enum CodexChatMarkdownParser {
     private static func parseBlockquote(
         _ lines: [String],
         index: inout Int
-    ) -> CodexChatMarkdownBlock {
+    ) throws -> CodexChatMarkdownBlock {
         var quoteLines: [String] = []
         while index < lines.count, isBlockquote(lines[index]) {
+            try Task.checkCancellation()
             let trimmed = removingLeadingWhitespace(from: lines[index])
             quoteLines.append(removingLeadingWhitespace(from: String(trimmed.dropFirst())))
             index += 1
@@ -101,16 +107,18 @@ enum CodexChatMarkdownParser {
         _ lines: [String],
         index: inout Int,
         kind: ListKind
-    ) -> CodexChatMarkdownBlock {
+    ) throws -> CodexChatMarkdownBlock {
         var items: [String] = []
         var orderedItems: [CodexChatMarkdownOrderedItem] = []
 
         while index < lines.count {
+            try Task.checkCancellation()
             guard let marker = listMarker(in: lines[index]), marker.kind == kind else { break }
             var itemLines = [marker.content]
             index += 1
 
             while index < lines.count {
+                try Task.checkCancellation()
                 if lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
                     let next = nextNonemptyLine(in: lines, after: index)
                     if let next,
@@ -146,10 +154,11 @@ enum CodexChatMarkdownParser {
     private static func parseParagraph(
         _ lines: [String],
         index: inout Int
-    ) -> CodexChatMarkdownBlock {
+    ) throws -> CodexChatMarkdownBlock {
         var paragraphLines: [String] = []
         while index < lines.count,
               !lines[index].trimmingCharacters(in: .whitespaces).isEmpty {
+            try Task.checkCancellation()
             if !paragraphLines.isEmpty, isBlockStart(lines[index]) {
                 break
             }

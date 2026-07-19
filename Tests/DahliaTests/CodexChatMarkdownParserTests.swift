@@ -3,7 +3,7 @@
     @testable import Dahlia
 
     struct CodexChatMarkdownParserTests {
-        @Test func preservesParagraphsAndUnorderedListItems() {
+        @Test func preservesParagraphsAndUnorderedListItems() throws {
             let authenticationDescription =
                 "GCP環境でログインがループする問題を調査。`.com`エイリアスとGoogle Workspaceの`.jp` IDの不一致が原因候補となり、" +
                 "過去事例を確認のうえ必要なら`.jp`で環境を作り直す方針です。"
@@ -25,7 +25,7 @@
                 "  \(pocDescription)",
             ].joined(separator: "\n")
 
-            #expect(CodexChatMarkdownParser.parse(markdown) == [
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
                 .paragraph("昨日（7月15日）の予定を確認します。"),
                 .paragraph("昨日（7月15日）は、DeNA／Databricks関連で3件ありました。"),
                 .unorderedList([
@@ -36,7 +36,7 @@
             ])
         }
 
-        @Test func parsesCommonBlockMarkdownAndLineBreaks() {
+        @Test func parsesCommonBlockMarkdownAndLineBreaks() throws {
             let markdown = [
                 "## Heading",
                 "soft",
@@ -55,7 +55,7 @@
                 "---",
             ].joined(separator: "\n")
 
-            #expect(CodexChatMarkdownParser.parse(markdown) == [
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
                 .heading(level: 2, text: "Heading"),
                 .paragraph("soft line\nhard"),
                 .orderedList([
@@ -66,6 +66,38 @@
                 .code(language: "swift", text: "let value = 1"),
                 .divider,
             ])
+        }
+
+        @Test func parsesIncompleteStreamingMarkdown() throws {
+            let markdown = [
+                "## Partial heading",
+                "",
+                "- **unfinished emphasis",
+                "",
+                "```swift",
+                "let value = 1",
+            ].joined(separator: "\n")
+
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
+                .heading(level: 2, text: "Partial heading"),
+                .unorderedList(["**unfinished emphasis"]),
+                .code(language: "swift", text: "let value = 1"),
+            ])
+        }
+
+        @Test func parsesLargeStreamingList() throws {
+            let markdown = (0 ..< 2_000)
+                .map { "- item \($0)" }
+                .joined(separator: "\n")
+
+            let blocks = try CodexChatMarkdownParser.parse(markdown)
+
+            guard case let .unorderedList(items) = blocks.first else {
+                Issue.record("Expected one unordered list")
+                return
+            }
+            #expect(blocks.count == 1)
+            #expect(items.count == 2_000)
         }
     }
 #endif

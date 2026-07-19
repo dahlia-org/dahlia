@@ -8,13 +8,10 @@ struct CodexChatReasoningView: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
-            Group {
-                if isStreaming {
-                    Text(reasoning)
-                } else {
-                    CodexChatMarkdownView(markdown: reasoning)
-                }
-            }
+            CodexChatMarkdownView(
+                markdown: reasoning,
+                isStreaming: isStreaming
+            )
             .padding(.top, 8)
         } label: {
             Text(L10n.chatReasoning)
