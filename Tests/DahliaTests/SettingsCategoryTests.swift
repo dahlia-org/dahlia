@@ -8,6 +8,7 @@
         func categoriesAreOrderedByUserWorkflow() {
             #expect(SettingsCategory.allCases == [
                 .general,
+                .backups,
                 .transcription,
                 .screenshots,
                 .calendar,
@@ -30,6 +31,8 @@
         @Test
         func technicalCategoriesUseUserFacingLabelsAndIdentifiers() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
+            #expect(SettingsCategory.backups.label == L10n.backups)
+            #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
             #expect(SettingsCategory.modelProvider.label == L10n.aiConnection)
             #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")
             #expect(SettingsCategory.cloudStorage.label == L10n.export)

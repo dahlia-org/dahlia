@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 設定画面（Cmd+, で表示）。
 struct SettingsView: View {
+    var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
@@ -18,6 +19,7 @@ struct SettingsView: View {
 
                 SettingsDetailView(
                     selection: selection,
+                    captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     onSelectVault: onSelectVault
                 )

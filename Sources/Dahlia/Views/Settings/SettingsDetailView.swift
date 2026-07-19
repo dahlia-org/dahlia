@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsDetailView: View {
     let selection: SettingsCategory
+    var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var onSelectVault: (VaultRecord) -> Void
 
@@ -10,6 +11,12 @@ struct SettingsDetailView: View {
             switch selection {
             case .general:
                 GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
+            case .backups:
+                BackupSettingsView(
+                    dbQueue: sidebarViewModel.dbQueue,
+                    captionViewModel: captionViewModel,
+                    sidebarViewModel: sidebarViewModel
+                )
             case .transcription:
                 TranscriptionSettingsView()
             case .screenshots:

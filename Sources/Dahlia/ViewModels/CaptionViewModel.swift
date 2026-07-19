@@ -538,6 +538,29 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
+    func presentBatchTranscriptionConfirmation(
+        sessionId: UUID,
+        meetingId: UUID,
+        dbQueue: DatabaseQueue
+    ) {
+        presentBatchTranscriptionConfirmation(
+            sessionId: sessionId,
+            meetingId: meetingId,
+            suggestedLocaleIdentifier: selectedLocale,
+            dbQueue: dbQueue
+        )
+    }
+
+    func retryBatchTranscription(sessionId: UUID, meetingId: UUID) {
+        guard let coordinator = batchTranscriptionCoordinator else { return }
+        if currentMeetingId == meetingId {
+            batchTranscriptionState = .queued(sessionId: sessionId)
+        }
+        Task {
+            await coordinator.enqueue(sessionId: sessionId)
+        }
+    }
+
     func postponeBatchTranscription() {
         pendingBatchTranscriptionConfirmation = nil
     }
@@ -1749,7 +1772,9 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL,
         appendingTo existingMeetingId: UUID? = nil
     ) async {
-        guard recordingLifecycle == .idle, !isFinalizingRecording else { return }
+        guard recordingLifecycle == .idle,
+              !isFinalizingRecording,
+              !AppDelegate.isBackupRestorePreparationActive else { return }
         guard await retryFailedPersistenceIfNeeded() else { return }
         await refreshDefaultInputDevice()
         guard recordingLifecycle == .idle,
