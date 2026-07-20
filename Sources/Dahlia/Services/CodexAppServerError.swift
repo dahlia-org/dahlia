@@ -33,4 +33,9 @@ enum CodexAppServerError: LocalizedError, Equatable {
         case .emptyResponse: L10n.llmErrorEmptyResponse
         }
     }
+
+    var isNoActiveTurnToSteer: Bool {
+        guard case let .rpcError(_, message) = self else { return false }
+        return message.caseInsensitiveCompare("no active turn to steer") == .orderedSame
+    }
 }

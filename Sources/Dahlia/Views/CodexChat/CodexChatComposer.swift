@@ -36,20 +36,6 @@ struct CodexChatComposer: View {
                         )
                     }
 
-                Button(L10n.chatLiveMode, systemImage: "waveform", action: session.toggleLiveMode)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(session.isLiveModeEnabled ? Color.accentColor : .secondary)
-                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-                    .background(
-                        session.isLiveModeEnabled ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.08),
-                        in: Circle()
-                    )
-                    .contentShape(Circle())
-                    .disabled(!session.isBoundToCurrentVault)
-                    .help(session.isLiveModeEnabled ? L10n.disableChatLiveMode : L10n.enableChatLiveMode)
-                    .accessibilityValue(session.isLiveModeEnabled ? L10n.chatLiveModeOn : L10n.chatLiveModeOff)
-
                 TextField(L10n.messageCodex, text: $session.draft, axis: .vertical)
                     .font(.body)
                     .textFieldStyle(.plain)

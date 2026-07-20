@@ -1,6 +1,13 @@
 @testable import Dahlia
 
 enum TestCodexChatFixtures {
+    static let liveTranscriptContext = """
+    <context>
+      Live mode is enabled. You are receiving finalized live transcription from Dahlia.
+      This turn contains one hidden live transcript block.
+    </context>
+    """
+
     private static let historyUserPrompt = """
     <context>
       You are viewing a meeting in the Dahlia App.

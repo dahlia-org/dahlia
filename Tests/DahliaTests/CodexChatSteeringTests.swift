@@ -19,9 +19,9 @@ import Foundation
 
             await waitUntilAsync { await service.steeredTextBlocks.count == 2 }
 
-            #expect(await service.steeredTextBlocks.map(\.last) == [
-                "<live_transcript>second</live_transcript>",
-                "<live_transcript>third</live_transcript>",
+            #expect(await service.steeredTextBlocks == [
+                ["<live_transcript source=\"dahlia\">second</live_transcript>"],
+                ["<live_transcript source=\"dahlia\">third</live_transcript>"],
             ])
             session.disableLiveMode()
             await waitUntil { !session.isGenerating }
@@ -67,8 +67,38 @@ import Foundation
             await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
 
             #expect(session.draft == "Still editing")
-            #expect(await service.steeredTextBlocks[0].last == "<live_transcript>send immediately</live_transcript>")
+            #expect(await service.sentTextBlocks == [["Initial request"]])
+            #expect(await service.steeredTextBlocks[0] == [
+                TestCodexChatFixtures.liveTranscriptContext,
+                "<live_transcript source=\"dahlia\">send immediately</live_transcript>",
+            ])
             session.stop()
+            await waitUntil { !session.isGenerating }
+        }
+
+        @Test
+        func liveTranscriptStartsANewTurnWhenTheActiveTurnFinishedBeforeSteering() async {
+            let service = TestCodexChatService(
+                mode: .block,
+                steerErrors: [.rpcError(code: nil, message: "no active turn to steer")]
+            )
+            let session = makeSession(service: service)
+
+            session.toggleLiveMode()
+            session.receiveFinalizedLiveTranscript("first")
+            await waitUntil { session.activeTurnID != nil }
+
+            session.receiveFinalizedLiveTranscript("send on the next turn")
+            await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
+            await waitUntilAsync { await service.sentTextBlocks.count == 2 }
+
+            #expect(await service.sentTextBlocks[1] == [
+                "<live_transcript source=\"dahlia\">send on the next turn</live_transcript>",
+            ])
+            #expect(session.isGenerating)
+            #expect(session.errorMessage == nil)
+
+            session.disableLiveMode()
             await waitUntil { !session.isGenerating }
         }
 

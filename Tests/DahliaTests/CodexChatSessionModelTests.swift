@@ -25,30 +25,25 @@ import Foundation
             #expect(session.messages.allSatisfy { $0.role == .assistant })
             #expect(await service.sentTextBlocks == [
                 [
-                    """
-                    <context>
-                      Live mode is enabled. You are receiving finalized live transcription from Dahlia.
-                      This turn contains one hidden live transcript block.
-                    </context>
-                    """,
-                    "<live_transcript>Finalized speech</live_transcript>",
+                    TestCodexChatFixtures.liveTranscriptContext,
+                    "<live_transcript source=\"dahlia\">Finalized speech</live_transcript>",
                 ],
             ])
             #expect(await service.threadNames == [L10n.chatLiveMode])
+
+            session.receiveFinalizedLiveTranscript("More finalized speech")
+            await waitUntil { !session.isGenerating }
+
+            #expect(await service.sentTextBlocks.last == [
+                "<live_transcript source=\"dahlia\">More finalized speech</live_transcript>",
+            ])
 
             session.draft = "A visible question"
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
             #expect(session.messages.filter { $0.role == .user }.map(\.text) == ["A visible question"])
-            #expect(await service.sentTextBlocks.last == [
-                """
-                <context>
-                  Live mode is enabled. You are receiving finalized live transcription from Dahlia.
-                </context>
-                """,
-                "A visible question",
-            ])
+            #expect(await service.sentTextBlocks.last == ["A visible question"])
             #expect(session.title == "A visible question")
             #expect(await service.threadNames == [L10n.chatLiveMode, "A visible question"])
         }
@@ -640,7 +635,7 @@ import Foundation
 
             let sentTextBlocks = await service.sentTextBlocks
             #expect(sentTextBlocks[1].last == "Manual recovery")
-            #expect(await service.steeredTextBlocks[0].last == "<live_transcript>Failed live speech</live_transcript>")
+            #expect(await service.steeredTextBlocks[0].last == "<live_transcript source=\"dahlia\">Failed live speech</live_transcript>")
             #expect(session.failedLiveTranscript == nil)
         }
 
@@ -710,22 +705,30 @@ import Foundation
             case staleRollout
             case rolloutWithoutReasoning
             case multipleMessages
+            case delayFirstSendIgnoringCancellation
         }
 
         let mode: Mode
+        private var steerErrors: [CodexAppServerError]
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
         private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
+        private var delayedSendContinuation: CheckedContinuation<Void, Never>?
 
         var unsubscribeCount: Int {
             unsubscribedThreadIDs.count
         }
 
-        init(mode: Mode) {
+        var isSendWaiting: Bool {
+            delayedSendContinuation != nil
+        }
+
+        init(mode: Mode, steerErrors: [CodexAppServerError] = []) {
             self.mode = mode
+            self.steerErrors = steerErrors
         }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
@@ -739,7 +742,8 @@ import Foundation
         func loadThread(id: String) async throws -> CodexChatThread {
             let assistantMessages: [CodexChatMessage] = switch mode {
             case .complete, .block, .burstThenBlock, .bufferedBurstThenInterrupt,
-                 .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail:
+                 .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
+                 .delayFirstSendIgnoringCancellation:
                 [CodexChatMessage(role: .assistant, text: "Final answer", reasoning: "Considered the question")]
             case .rolloutWithoutReasoning:
                 [CodexChatMessage(role: .assistant, text: "Final answer")]
@@ -789,6 +793,11 @@ import Foundation
             effort _: String
         ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
             sentTextBlocks.append(textBlocks)
+            if mode == .delayFirstSendIgnoringCancellation, sentTextBlocks.count == 1 {
+                await withCheckedContinuation { continuation in
+                    delayedSendContinuation = continuation
+                }
+            }
             if mode == .failThenComplete, sentTextBlocks.count == 1 {
                 throw CodexAppServerError.invalidProtocolResponse
             }
@@ -798,7 +807,8 @@ import Foundation
             let (stream, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
             continuation.yield(.started(turnID: "turn-1"))
             switch mode {
-            case .complete, .staleRollout, .rolloutWithoutReasoning, .failThenComplete, .alwaysFail:
+            case .complete, .staleRollout, .rolloutWithoutReasoning, .failThenComplete, .alwaysFail,
+                 .delayFirstSendIgnoringCancellation:
                 continuation.yield(.reasoningDelta(
                     itemID: "reasoning-1",
                     summaryIndex: 0,
@@ -849,12 +859,20 @@ import Foundation
 
         func steer(threadID _: String, turnID _: String, textBlocks: [String]) async throws {
             steeredTextBlocks.append(textBlocks)
+            if !steerErrors.isEmpty {
+                throw steerErrors.removeFirst()
+            }
         }
 
         func completeBlockedTurn() {
             blockedContinuation?.yield(.completed(itemID: nil, text: nil))
             blockedContinuation?.finish()
             blockedContinuation = nil
+        }
+
+        func resumeDelayedSend() {
+            delayedSendContinuation?.resume()
+            delayedSendContinuation = nil
         }
 
         func unsubscribe(threadID: String) async {
@@ -877,7 +895,7 @@ import Foundation
     }
 
     @MainActor
-    private final class TestCodexChatContextProvider: CodexChatContextProviding {
+    final class TestCodexChatContextProvider: CodexChatContextProviding {
         var context: CodexChatContext?
         var error: CodexAppServerError?
         var requestCount = 0
