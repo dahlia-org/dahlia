@@ -22,10 +22,7 @@ struct CodexConfigurationManager {
 
     @discardableResult
     func configureDatabricks(profile: DatabricksCLIClient.Profile) throws -> Bool {
-        guard let profileName = profile.name.nilIfBlank else {
-            throw CodexConfigurationError.databricksProfileRequired
-        }
-        let workspaceURL = try normalizedWorkspaceURL(profile.host)
+        let (profileName, workspaceURL) = try validatedDatabricksValues(profile: profile)
         let baseURL = workspaceURL.appending(path: "ai-gateway/codex/v1").absoluteString
         let tokenCommand = "databricks auth token --profile \(shellQuote(profileName)) --output json "
             + "| /usr/bin/plutil -extract access_token raw -o - -"
@@ -45,6 +42,19 @@ struct CodexConfigurationManager {
         """ + "\n"
 
         return try writeIfChanged(Data(configuration.utf8))
+    }
+
+    func validateDatabricks(profile: DatabricksCLIClient.Profile) throws {
+        _ = try validatedDatabricksValues(profile: profile)
+    }
+
+    private func validatedDatabricksValues(
+        profile: DatabricksCLIClient.Profile
+    ) throws -> (profileName: String, workspaceURL: URL) {
+        guard let profileName = profile.name.nilIfBlank else {
+            throw CodexConfigurationError.databricksProfileRequired
+        }
+        return try (profileName, normalizedWorkspaceURL(profile.host))
     }
 
     private func normalizedWorkspaceURL(_ value: String?) throws -> URL {

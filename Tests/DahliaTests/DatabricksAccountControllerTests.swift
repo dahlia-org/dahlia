@@ -136,6 +136,38 @@ import Foundation
             await service.shutdown()
         }
 
+        @Test
+        func invalidWorkspaceDoesNotStartBrowserLogin() async {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-databricks-invalid-workspace-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let profileResponse = Data(
+                #"{"profiles":[{"name":"DEFAULT","auth_type":"databricks-cli"}]}"#.utf8
+            )
+            let responder = ControllerAuthenticationResponder(profileResponse: profileResponse)
+            let client = DatabricksCLIClient { arguments in
+                await responder.run(arguments)
+            }
+            let service = CodexAppServerService {
+                TestCodexAppServerTransport(mode: .models)
+            }
+            let controller = DatabricksAccountController(
+                client: client,
+                configurationManager: CodexConfigurationManager(
+                    homeLocator: ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
+                ),
+                service: service,
+                configurationStore: TestCodexAccountConfigurationStore()
+            )
+
+            _ = await controller.prepare(profileName: "DEFAULT")
+
+            #expect(!controller.isConfigured)
+            #expect(controller.errorMessage == L10n.databricksWorkspaceURLInvalid)
+            #expect(await responder.commands.count == 1)
+            await service.shutdown()
+        }
+
         private actor ControllerAuthenticationResponder {
             private(set) var commands: [[String]] = []
             private let profileResponse: Data
