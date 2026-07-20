@@ -15,11 +15,11 @@ import ImageIO
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
 
-            let firstPage = try store.queryMeetings(MeetingQuery(limit: 1))
+            let firstPage = try store.queryMeetings(MeetingQuery(limit: 2))
             #expect(firstPage.vault.id == fixture.primaryVaultID)
-            #expect(firstPage.meetings.count == 1)
+            #expect(firstPage.meetings.count == 2)
             let cursor = try #require(firstPage.nextCursor)
-            let secondPage = try store.queryMeetings(MeetingQuery(limit: 1, cursor: cursor))
+            let secondPage = try store.queryMeetings(MeetingQuery(limit: 2, cursor: cursor))
             #expect(secondPage.meetings.count == 1)
             #expect(Set(firstPage.meetings.map(\.id) + secondPage.meetings.map(\.id)) == fixture.primaryMeetingIDs)
 
@@ -34,6 +34,16 @@ import ImageIO
             #expect(try store.queryMeetings(MeetingQuery(query: "_")).meetings.isEmpty)
             let projectMatch = try store.queryMeetings(MeetingQuery(project: "Acme"))
             #expect(projectMatch.meetings.count == 2)
+            let projectIDMatch = try store.queryMeetings(MeetingQuery(projectID: fixture.primaryProjectID))
+            #expect(Set(projectIDMatch.meetings.map(\.id)) == fixture.projectMeetingIDs)
+            #expect(Set(projectIDMatch.meetings.compactMap(\.icalUID)) == ["roadmap@example.com", "budget@example.com"])
+            let icalUIDMatch = try store.queryMeetings(MeetingQuery(icalUID: " roadmap@example.com "))
+            #expect(icalUIDMatch.meetings.map(\.id) == [fixture.firstMeetingID, fixture.recurringMeetingID])
+            #expect(try store.queryMeetings(MeetingQuery(
+                projectID: fixture.primaryProjectID,
+                icalUID: "missing@example.com"
+            )).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.isEmpty)
             #expect(!firstPage.meetings.contains { $0.id == fixture.otherVaultMeetingID })
 
@@ -51,6 +61,9 @@ import ImageIO
             let detail = try store.meeting(id: fixture.firstMeetingID)
             #expect(detail.meeting.name == "AI planning title")
             #expect(detail.meeting.description == "Product planning decisions")
+            #expect(detail.meeting.projectID == fixture.primaryProjectID)
+            #expect(detail.meeting.icalUID == "roadmap@example.com")
+            #expect(detail.meeting.recurrenceID?.isEmpty == true)
             #expect(detail.meeting.calendarTitle == "Roadmap review")
             #expect(detail.summary?.contains("Markdown secret body [Transcript 00:00:15]") == true)
             #expect(detail.summary?.contains("[Screenshot \(fixture.firstScreenshotID.uuidString) at 00:00:16]") == true)
@@ -259,7 +272,9 @@ import ImageIO
 
             let detail = try store.meeting(id: fixture.firstMeetingID)
             #expect(detail.meeting.project == nil)
+            #expect(detail.meeting.projectID == nil)
             #expect(try store.queryMeetings(MeetingQuery(query: "Other vault project")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
             let transcript = try store.transcript(meetingID: fixture.firstMeetingID)
             let segment = try #require(transcript.segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.elapsedSeconds == 0)
@@ -502,6 +517,80 @@ import ImageIO
     }
 
     @MainActor
+    struct MCPDiscoveryContractTests {
+        @Test
+        func exposesRelationshipKeys() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+
+            let initialized = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            let instructions = try #require((initialized["result"] as? [String: Any])?["instructions"] as? String)
+            #expect(instructions.contains("ical_uid"))
+            #expect(instructions.contains("project_id"))
+            #expect(instructions.contains("transcripts or screenshots only when supporting evidence is needed"))
+            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+
+            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            let queryDefinition = try #require(definitions.first { $0["name"] as? String == "query_meetings" })
+            let inputSchema = try #require(queryDefinition["inputSchema"] as? [String: Any])
+            let inputProperties = try #require(inputSchema["properties"] as? [String: Any])
+            #expect(inputProperties["ical_uid"] != nil)
+            #expect(inputProperties["project_id"] != nil)
+            let outputSchema = try #require(queryDefinition["outputSchema"] as? [String: Any])
+            let outputProperties = try #require(outputSchema["properties"] as? [String: Any])
+            let meetingsSchema = try #require(outputProperties["meetings"] as? [String: Any])
+            let meetingSchema = try #require(meetingsSchema["items"] as? [String: Any])
+            let meetingProperties = try #require(meetingSchema["properties"] as? [String: Any])
+            #expect(meetingProperties["project_id"] != nil)
+            #expect(meetingProperties["ical_uid"] != nil)
+            #expect(meetingProperties["recurrence_id"] != nil)
+
+            let metadataQuery = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning"}}}
+            """#))
+            let metadataContent = (metadataQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            let meeting = try #require((metadataContent?["meetings"] as? [[String: Any]])?.first)
+            #expect(meeting["project_id"] as? String == fixture.primaryProjectID.uuidString)
+            #expect(meeting["ical_uid"] as? String == "roadmap@example.com")
+            #expect((meeting["recurrence_id"] as? String)?.isEmpty == true)
+
+            let projectQuery = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"\#(fixture
+                .primaryProjectID.uuidString)"}}}
+            """#))
+            let projectContent = (projectQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            #expect((projectContent?["meetings"] as? [[String: Any]])?.count == 2)
+
+            let icalQuery = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"query_meetings","arguments":{"ical_uid":"roadmap@example.com"}}}
+            """#))
+            let icalContent = (icalQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            let icalMeetings = icalContent?["meetings"] as? [[String: Any]]
+            #expect(icalMeetings?.compactMap { $0["id"] as? String } == [
+                fixture.firstMeetingID.uuidString,
+                fixture.recurringMeetingID.uuidString,
+            ])
+
+            let invalidProjectID = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"not-a-uuid"}}}
+            """#))
+            #expect((invalidProjectID["error"] as? [String: Any])?["code"] as? Int == -32602)
+
+            let blankIcalUID = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"ical_uid":"   "}}}
+            """#))
+            #expect((blankIcalUID["error"] as? [String: Any])?["code"] as? Int == -32602)
+        }
+
+        private static func json(_ line: String?) throws -> [String: Any] {
+            let line = try #require(line)
+            let value = try JSONSerialization.jsonObject(with: Data(line.utf8))
+            return try #require(value as? [String: Any])
+        }
+    }
+
+    @MainActor
     struct RestrictedMCPServerTests {
         @Test
         func exposesOnlyAllowedMeetingSummaries() throws {
@@ -552,8 +641,10 @@ import ImageIO
         let manager: AppDatabaseManager
         let primaryVaultID = UUID.v7()
         let otherVaultID = UUID.v7()
+        let primaryProjectID = UUID.v7()
         let firstMeetingID = UUID.v7()
         let secondMeetingID = UUID.v7()
+        let recurringMeetingID = UUID.v7()
         let otherVaultMeetingID = UUID.v7()
         let firstSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let secondSegmentID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
@@ -562,7 +653,8 @@ import ImageIO
         let otherVaultScreenshotID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
         let otherVaultProjectID = UUID.v7()
         let otherVaultSessionID = UUID.v7()
-        var primaryMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID] }
+        var primaryMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID, recurringMeetingID] }
+        var projectMeetingIDs: Set<UUID> { [firstMeetingID, secondMeetingID] }
         var primaryScreenshotIDs: Set<UUID> { [firstScreenshotID, secondScreenshotID] }
         let imageData = Data(base64Encoded:
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9WQAAAABJRU5ErkJggg=="
@@ -574,11 +666,10 @@ import ImageIO
                 .appendingPathExtension("sqlite")
             manager = try AppDatabaseManager(path: databaseURL.path)
             let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
-            let projectID = UUID.v7()
             let sessionID = UUID.v7()
 
             try manager.dbQueue.write { db in
-                try insertMetadata(in: db, createdAt: createdAt, projectID: projectID)
+                try insertMetadata(in: db, createdAt: createdAt, projectID: primaryProjectID)
                 try insertContent(in: db, createdAt: createdAt, sessionID: sessionID)
             }
         }
@@ -597,29 +688,64 @@ import ImageIO
                 name: "Other vault project",
                 createdAt: createdAt
             ).insert(db)
-            try insertCalendarEvent(in: db, createdAt: createdAt)
+            try insertCalendarEvents(in: db, createdAt: createdAt)
             try insertMeetings(in: db, createdAt: createdAt, projectID: projectID)
         }
 
-        private func insertCalendarEvent(in db: Database, createdAt: Date) throws {
+        private func insertCalendarEvents(in db: Database, createdAt: Date) throws {
+            try insertCalendarEvent(
+                in: db,
+                createdAt: createdAt,
+                icalUID: "roadmap@example.com",
+                recurrenceID: "",
+                title: "Roadmap review",
+                startOffset: 0
+            )
+            try insertCalendarEvent(
+                in: db,
+                createdAt: createdAt,
+                icalUID: "roadmap@example.com",
+                recurrenceID: "20300115T000000Z",
+                title: "Series follow-up",
+                startOffset: 7200
+            )
+            try insertCalendarEvent(
+                in: db,
+                createdAt: createdAt,
+                icalUID: "budget@example.com",
+                recurrenceID: "",
+                title: "Budget review",
+                startOffset: 3600
+            )
+        }
+
+        private func insertCalendarEvent(
+            in db: Database,
+            createdAt: Date,
+            icalUID: String,
+            recurrenceID: String,
+            title: String,
+            startOffset: TimeInterval
+        ) throws {
+            let startDate = createdAt.addingTimeInterval(startOffset)
             try CalendarEventRecord(
                 now: createdAt,
                 event: CalendarEvent(
-                    id: "calendar-item",
+                    id: "\(icalUID)-\(recurrenceID)",
                     calendarID: "work",
                     calendarName: "Work",
                     calendarColorHex: "#000000",
-                    platformId: "calendar-item",
-                    title: "Roadmap review",
+                    platformId: "\(icalUID)-\(recurrenceID)",
+                    title: title,
                     description: "Calendar description",
-                    icalUid: "roadmap@example.com",
-                    recurrenceId: "",
-                    startDate: createdAt,
-                    endDate: createdAt.addingTimeInterval(3600),
+                    icalUid: icalUID,
+                    recurrenceId: recurrenceID,
+                    startDate: startDate,
+                    endDate: startDate.addingTimeInterval(3600),
                     isAllDay: false,
                     conferenceURI: nil
                 ),
-                key: CalendarEventKey(icalUid: "roadmap@example.com", recurrenceId: "")
+                key: CalendarEventKey(icalUid: icalUID, recurrenceId: recurrenceID)
             ).insert(db)
         }
 
@@ -643,7 +769,20 @@ import ImageIO
                 name: "Budget 100% review",
                 status: .ready,
                 createdAt: createdAt.addingTimeInterval(10),
-                updatedAt: createdAt
+                updatedAt: createdAt,
+                calendarEventIcalUid: "budget@example.com",
+                calendarEventRecurrenceId: ""
+            ).insert(db)
+            try MeetingRecord(
+                id: recurringMeetingID,
+                vaultId: primaryVaultID,
+                projectId: nil,
+                name: "Recurring series follow-up",
+                status: .ready,
+                createdAt: createdAt.addingTimeInterval(5),
+                updatedAt: createdAt,
+                calendarEventIcalUid: "roadmap@example.com",
+                calendarEventRecurrenceId: "20300115T000000Z"
             ).insert(db)
             let tag = TagRecord(name: "launch-tag", colorHex: "#808080", createdAt: createdAt)
             try tag.insert(db)
@@ -655,7 +794,9 @@ import ImageIO
                 name: "Other vault",
                 status: .ready,
                 createdAt: createdAt.addingTimeInterval(30),
-                updatedAt: createdAt
+                updatedAt: createdAt,
+                calendarEventIcalUid: "roadmap@example.com",
+                calendarEventRecurrenceId: ""
             ).insert(db)
         }
 

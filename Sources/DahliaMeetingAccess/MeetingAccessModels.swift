@@ -3,6 +3,8 @@ import Foundation
 public struct MeetingQuery: Sendable, Equatable {
     public var query: String?
     public var project: String?
+    public var projectID: UUID?
+    public var icalUID: String?
     public var createdFrom: Date?
     public var createdBefore: Date?
     public var limit: Int
@@ -11,6 +13,8 @@ public struct MeetingQuery: Sendable, Equatable {
     public init(
         query: String? = nil,
         project: String? = nil,
+        projectID: UUID? = nil,
+        icalUID: String? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
         limit: Int = 25,
@@ -18,6 +22,8 @@ public struct MeetingQuery: Sendable, Equatable {
     ) {
         self.query = query
         self.project = project
+        self.projectID = projectID
+        self.icalUID = icalUID
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
         self.limit = limit
@@ -41,6 +47,9 @@ public struct MeetingMetadata: Codable, Sendable, Equatable {
     public let name: String
     public let description: String
     public let project: String?
+    public let projectID: UUID?
+    public let icalUID: String?
+    public let recurrenceID: String?
     public let calendarTitle: String?
     public let status: String
     public let durationSeconds: Double?

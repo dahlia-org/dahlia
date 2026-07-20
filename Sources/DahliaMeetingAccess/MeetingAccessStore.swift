@@ -53,6 +53,15 @@ public final class MeetingAccessStore: Sendable {
             components.predicates.append("projects.name = ? COLLATE NOCASE")
             components.arguments += [trimmedProject]
         }
+        if let projectID = query.projectID {
+            components.predicates.append("projects.id = ?")
+            components.arguments += [projectID]
+        }
+        let trimmedIcalUID = query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedIcalUID, !trimmedIcalUID.isEmpty {
+            components.predicates.append("meetings.calendar_event_ical_uid = ?")
+            components.arguments += [trimmedIcalUID]
+        }
         if let createdFrom = query.createdFrom {
             components.predicates.append("meetings.createdAt >= ?")
             components.arguments += [createdFrom]
@@ -78,6 +87,9 @@ public final class MeetingAccessStore: Sendable {
                 meetings.name,
                 meetings.description,
                 projects.name AS project,
+                projects.id AS projectId,
+                meetings.calendar_event_ical_uid AS icalUid,
+                meetings.calendar_event_recurrence_id AS recurrenceId,
                 calendar_events.title AS calendarTitle,
                 meetings.status,
                 meetings.duration,
@@ -656,6 +668,9 @@ extension MeetingAccessStore {
                 meetings.name,
                 meetings.description,
                 projects.name AS project,
+                projects.id AS projectId,
+                meetings.calendar_event_ical_uid AS icalUid,
+                meetings.calendar_event_recurrence_id AS recurrenceId,
                 calendar_events.title AS calendarTitle,
                 meetings.status,
                 meetings.duration,
@@ -689,6 +704,9 @@ extension MeetingAccessStore {
             name: row["name"],
             description: row["description"],
             project: row["project"],
+            projectID: row["projectId"],
+            icalUID: row["icalUid"],
+            recurrenceID: row["recurrenceId"],
             calendarTitle: row["calendarTitle"],
             status: row["status"],
             durationSeconds: row["duration"],
