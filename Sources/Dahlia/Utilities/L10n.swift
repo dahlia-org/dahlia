@@ -522,9 +522,16 @@ enum L10n {
     }
 
     static var retryBatchTranscription: String { String(localized: "Retry Batch Transcription", bundle: bundle) }
+    static var keepCurrentTranscript: String { String(localized: "Keep Current Transcript", bundle: bundle) }
+    static var retranscribe: String { String(localized: "Retranscribe", bundle: bundle) }
     static var batchTranscriptionConfirmationTitle: String { String(localized: "Start batch transcription?", bundle: bundle) }
     static var batchTranscriptionConfirmationDescription: String { String(
         localized: "Choose a transcription language. Audio is kept until transcription succeeds.",
+        bundle: bundle
+    ) }
+    static var batchRetranscriptionConfirmationTitle: String { String(localized: "Retranscribe the saved recording?", bundle: bundle) }
+    static var batchRetranscriptionConfirmationDescription: String { String(
+        localized: "The current transcript remains available while processing and is replaced only after retranscription succeeds.",
         bundle: bundle
     ) }
     static var automaticDetectionMultilingualTitle: String { String(

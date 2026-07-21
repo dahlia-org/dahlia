@@ -9,6 +9,220 @@ import GRDB
     @MainActor
     struct BatchTranscriptionConfirmationServiceTests {
         @Test
+        func retranscriptionKeepsPreviousTranscriptUntilSuccessfulCompletion() async throws {
+            let completedAt = Date(timeIntervalSince1970: 4_000_000_000)
+            let fixture = try BatchAudioTestFixture(
+                name: "RetranscriptionConfirmation",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_030),
+                duration: 30,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: completedAt
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let previousTranscript = TranscriptSegmentRecord(
+                id: .v7(),
+                meetingId: fixture.meeting.id,
+                sessionId: fixture.session.id,
+                startTime: fixture.now,
+                endTime: fixture.now.addingTimeInterval(1),
+                text: "previous transcript",
+                translatedText: nil,
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+            try await fixture.database.dbQueue.write { db in
+                try previousTranscript.insert(db)
+            }
+
+            let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id],
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: false,
+                dbQueue: fixture.database.dbQueue
+            )
+            let firstAttempt = try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+            }
+            #expect(firstAttempt?.retainAudioAfterBatch == false)
+            #expect(firstAttempt?.isBatchRetranscriptionPending == true)
+
+            _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id],
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: true,
+                dbQueue: fixture.database.dbQueue
+            )
+            let persisted = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    TranscriptSegmentRecord.fetchOne(db, key: previousTranscript.id),
+                    RecordingAudioSegmentRangeRecord.fetchAll(db)
+                )
+            }
+
+            #expect(result.meetingId == fixture.meeting.id)
+            #expect(result.sessionIds == [fixture.session.id])
+            #expect(persisted.0?.batchCompletedAt == completedAt)
+            #expect(persisted.0?.isBatchRetranscriptionPending == true)
+            #expect(persisted.0?.batchAttemptCount == 0)
+            #expect(persisted.1?.text == "previous transcript")
+            #expect(persisted.2.map(\.localeIdentifier) == ["en_US"])
+
+            let replacement = TranscriptSegmentRecord(
+                id: .v7(),
+                meetingId: fixture.meeting.id,
+                sessionId: fixture.session.id,
+                startTime: fixture.now,
+                endTime: fixture.now.addingTimeInterval(1),
+                text: "replacement transcript",
+                translatedText: nil,
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+            try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                records: [replacement],
+                completedAt: fixture.now.addingTimeInterval(120),
+                dbQueue: fixture.database.dbQueue
+            )
+            let completedResult = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    TranscriptSegmentRecord
+                        .filter(Column("sessionId") == fixture.session.id)
+                        .fetchAll(db)
+                )
+            }
+            #expect(completedResult.0?.isBatchRetranscriptionPending == false)
+            #expect(completedResult.0?.batchCompletedAt == persisted.0?.batchLastAttemptAt)
+            #expect(completedResult.1.map(\.text) == ["replacement transcript"])
+        }
+
+        @Test
+        func retranscriptionRejectsIncompleteRetainedAudio() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
+            let fixture = try BatchAudioTestFixture(
+                name: "RetranscriptionIncompleteAudio",
+                endedAt: completedAt.addingTimeInterval(-30),
+                duration: 30,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: completedAt
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_audio_segments SET state = ? WHERE recordingSessionId = ?",
+                    arguments: [RecordingAudioSegmentState.failed.rawValue, fixture.session.id]
+                )
+            }
+
+            await #expect(throws: CocoaError.self) {
+                try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                    sessionIds: [fixture.session.id],
+                    languageSelection: .manual(localeIdentifier: "en_US"),
+                    automaticLanguageCandidates: nil,
+                    retainAudioAfterBatch: true,
+                    dbQueue: fixture.database.dbQueue
+                )
+            }
+        }
+
+        @Test
+        func cancellingRetranscriptionRestoresRetainedCompletedState() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
+            let fixture = try BatchAudioTestFixture(
+                name: "CancelRetranscription",
+                endedAt: completedAt.addingTimeInterval(-30),
+                duration: 30,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: completedAt
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id],
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: false,
+                dbQueue: fixture.database.dbQueue
+            )
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastError = ? WHERE id = ?",
+                    arguments: ["failed", fixture.session.id]
+                )
+            }
+
+            let meetingId = try await BatchTranscriptionConfirmationService.cancelRetranscription(
+                sessionIds: [fixture.session.id],
+                dbQueue: fixture.database.dbQueue
+            )
+            let session = try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+            }
+
+            #expect(meetingId == fixture.meeting.id)
+            #expect(session?.isBatchRetranscriptionPending == false)
+            #expect(session?.retainAudioAfterBatch == true)
+            #expect(session?.audioRetentionPolicy == .keepInApp)
+            #expect(session?.batchLastError == nil)
+            #expect(session.flatMap { BatchTranscriptionState.derive(from: $0) } == .completed(
+                sessionId: fixture.session.id
+            ))
+        }
+
+        @Test
+        func startupRecoveryFinishesDeferredAudioDeletion() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_060)
+            let fixture = try BatchAudioTestFixture(
+                name: "DeferredAudioDeletion",
+                endedAt: completedAt.addingTimeInterval(-30),
+                duration: 30,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: completedAt
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            _ = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+                sessionIds: [fixture.session.id],
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
+                retainAudioAfterBatch: false,
+                dbQueue: fixture.database.dbQueue
+            )
+            let pending = try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+            }
+            try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                records: [],
+                completedAt: #require(pending?.batchLastAttemptAt).addingTimeInterval(1),
+                dbQueue: fixture.database.dbQueue
+            )
+
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                onStateChange: { _ in }
+            )
+            await coordinator.recoverAndEnqueue()
+            let segmentStates = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord
+                    .filter(Column("recordingSessionId") == fixture.session.id)
+                    .fetchAll(db)
+                    .map(\.state)
+            }
+
+            #expect(segmentStates == [.purged])
+        }
+
+        @Test
         func automaticConfirmationRejectsEmptyCandidates() async throws {
             let queue = try DatabaseQueue(path: ":memory:")
 
@@ -207,5 +421,6 @@ import GRDB
             #expect(candidates.identifierSet == ["en", "ja"])
             #expect(result.1.map(\.localeIdentifier) == ["ja_JP"])
         }
+
     }
 #endif

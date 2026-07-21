@@ -8,6 +8,7 @@ enum BatchTranscriptionState: Equatable {
     case running(sessionId: UUID)
     case completed(sessionId: UUID)
     case failed(sessionId: UUID, message: String)
+    case retranscriptionFailed(sessionId: UUID, message: String)
 
     var sessionId: UUID {
         switch self {
@@ -16,14 +17,15 @@ enum BatchTranscriptionState: Equatable {
              let .queued(sessionId),
              let .running(sessionId),
              let .completed(sessionId),
-             let .failed(sessionId, _):
+             let .failed(sessionId, _),
+             let .retranscriptionFailed(sessionId, _):
             sessionId
         }
     }
 
     var blocksSummaryGeneration: Bool {
         switch self {
-        case .recording, .awaitingConfirmation, .queued, .running, .failed:
+        case .recording, .awaitingConfirmation, .queued, .running, .failed, .retranscriptionFailed:
             true
         case .completed:
             false
@@ -33,14 +35,17 @@ enum BatchTranscriptionState: Equatable {
     static func derive(from session: RecordingSessionRecord, isRunning: Bool = false) -> Self? {
         guard session.transcriptionMode == .batch,
               session.batchDiscardedAt == nil else { return nil }
-        if session.batchCompletedAt != nil {
-            return .completed(sessionId: session.id)
-        }
+        let isRetranscription = session.isBatchRetranscriptionPending
         if isRunning {
             return .running(sessionId: session.id)
         }
+        if session.batchCompletedAt != nil, !isRetranscription {
+            return .completed(sessionId: session.id)
+        }
         if let error = session.batchLastError?.nilIfBlank {
-            return .failed(sessionId: session.id, message: error)
+            return isRetranscription
+                ? .retranscriptionFailed(sessionId: session.id, message: error)
+                : .failed(sessionId: session.id, message: error)
         }
         if session.endedAt == nil {
             return .recording(sessionId: session.id)

@@ -614,8 +614,12 @@
 "High-accuracy transcription completed." = "高精度な文字起こしが完了しました。";
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
 "Retry Batch Transcription" = "バッチ文字起こしを再試行";
+"Keep Current Transcript" = "現在の文字起こしを維持";
+"Retranscribe" = "文字起こしをやり直す";
 "Start batch transcription?" = "バッチ文字起こしを開始しますか？";
 "Choose a transcription language. Audio is kept until transcription succeeds." = "文字起こし言語を選択してください。文字起こしが成功するまで音声データは保持されます。";
+"Retranscribe the saved recording?" = "保存した録音を再文字起こししますか？";
+"The current transcript remains available while processing and is replaced only after retranscription succeeds." = "処理中は現在の文字起こしを保持し、再文字起こしに成功した場合のみ新しい内容に置き換えます。";
 "Multilingual meetings" = "複数言語に対応";
 "Detects the language of each recording, allowing transcription when multiple languages are used." = "録音ごとに言語を判定し、複数の言語が混在するミーティングを文字起こしできます。";
 "Languages to detect" = "判定する言語";

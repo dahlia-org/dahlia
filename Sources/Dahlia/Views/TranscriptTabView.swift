@@ -10,6 +10,7 @@ struct TranscriptTabView: View {
     let batchTranscriptionState: BatchTranscriptionState?
     let confirmBatchTranscription: () -> Void
     let retryBatchTranscription: () -> Void
+    let cancelFailedBatchRetranscription: () -> Void
     let discardFailedBatchTranscription: () -> Void
     let retryInitialMeetingLoad: () -> Void
 
@@ -24,6 +25,7 @@ struct TranscriptTabView: View {
                     state: batchTranscriptionState,
                     confirm: confirmBatchTranscription,
                     retry: retryBatchTranscription,
+                    cancelRetranscription: cancelFailedBatchRetranscription,
                     discard: discardFailedBatchTranscription
                 )
             }

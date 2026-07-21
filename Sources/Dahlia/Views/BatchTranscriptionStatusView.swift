@@ -4,6 +4,7 @@ struct BatchTranscriptionStatusView: View {
     let state: BatchTranscriptionState
     let confirm: () -> Void
     let retry: () -> Void
+    let cancelRetranscription: () -> Void
     let discard: () -> Void
 
     @State private var isShowingDiscardConfirmation = false
@@ -40,6 +41,12 @@ struct BatchTranscriptionStatusView: View {
                     role: .destructive,
                     action: showDiscardConfirmation
                 )
+            case let .retranscriptionFailed(_, message):
+                Label(L10n.batchTranscriptionFailed(message), systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Spacer()
+                Button(L10n.keepCurrentTranscript, action: cancelRetranscription)
+                Button(L10n.retryBatchTranscription, action: retry)
             }
         }
         .font(.callout)

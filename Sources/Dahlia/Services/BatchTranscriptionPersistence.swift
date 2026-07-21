@@ -11,10 +11,11 @@ enum BatchTranscriptionPersistence {
         dbQueue: DatabaseQueue
     ) throws {
         try dbQueue.write { db in
-            guard try RecordingSessionRecord.fetchOne(db, key: sessionId) != nil,
+            guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
                   try MeetingRecord.fetchOne(db, key: meetingId) != nil else {
                 throw CocoaError(.fileNoSuchFile)
             }
+            let persistedCompletedAt = max(completedAt, session.batchLastAttemptAt ?? completedAt)
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == sessionId)
                 .deleteAll(db)
@@ -28,11 +29,11 @@ enum BatchTranscriptionPersistence {
                     batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
                 """,
-                arguments: [completedAt, completedAt, sessionId]
+                arguments: [persistedCompletedAt, persistedCompletedAt, sessionId]
             )
             try db.execute(
                 sql: "UPDATE meetings SET status = ?, updatedAt = ? WHERE id = ?",
-                arguments: [MeetingStatus.ready.rawValue, completedAt, meetingId]
+                arguments: [MeetingStatus.ready.rawValue, persistedCompletedAt, meetingId]
             )
         }
     }

@@ -7,7 +7,7 @@ extension BatchTranscriptionCoordinator: BatchTranscriptionScheduling {
 
     static func shouldAutomaticallyRetry(_ session: RecordingSessionRecord) -> Bool {
         guard session.transcriptionMode == .batch,
-              session.batchCompletedAt == nil,
+              session.batchCompletedAt == nil || session.isBatchRetranscriptionPending,
               session.batchDiscardedAt == nil else { return false }
         guard session.batchFailureKind != .recordingRecovery,
               session.batchFailureKind != .recordingAudioPermanent else { return false }

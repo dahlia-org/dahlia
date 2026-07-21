@@ -103,10 +103,11 @@ actor BatchTranscriptionCoordinator {
 
     func recoverAndEnqueue() async {
         _ = await recordingAudioStore?.reconcileStartup()
+        await recoverCompletedAudioPurges()
         let sessionIds = await (try? dbQueue.read { db in
             try RecordingSessionRecord
                 .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
-                .filter(Column("batchCompletedAt") == nil)
+                .filter(sql: "batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt")
                 .filter(Column("batchDiscardedAt") == nil)
                 .order(Column("startedAt").asc)
                 .fetchAll(db)
@@ -116,25 +117,6 @@ actor BatchTranscriptionCoordinator {
 
         for sessionId in sessionIds {
             await enqueue(sessionId: sessionId)
-        }
-    }
-
-    func confirmAndEnqueue(
-        sessionId: UUID,
-        languageSelection: BatchTranscriptionLanguageSelection,
-        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool
-    ) async throws {
-        let result = try await BatchTranscriptionConfirmationService.confirm(
-            sessionId: sessionId,
-            languageSelection: languageSelection,
-            automaticLanguageCandidates: automaticLanguageCandidates,
-            retainAudioAfterBatch: retainAudioAfterBatch,
-            dbQueue: dbQueue
-        )
-        for confirmedSessionId in result.sessionIds {
-            await notify(meetingId: result.meetingId, state: .queued(sessionId: confirmedSessionId))
-            await enqueue(sessionId: confirmedSessionId)
         }
     }
 
@@ -232,13 +214,17 @@ actor BatchTranscriptionCoordinator {
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
-                SET batchLastAttemptAt = ?, batchAttemptCount = batchAttemptCount + 1,
+                SET batchLastAttemptAt = CASE
+                        WHEN batchLastAttemptAt IS NULL OR ? > batchLastAttemptAt THEN ?
+                        ELSE batchLastAttemptAt
+                    END,
+                    batchAttemptCount = batchAttemptCount + 1,
                     batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
-                  AND batchCompletedAt IS NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
                   AND batchDiscardedAt IS NULL
                 """,
-                arguments: [attemptDate, attemptDate, sessionId]
+                arguments: [attemptDate, attemptDate, attemptDate, sessionId]
             )
             guard db.changesCount == 1 else { throw CancellationError() }
         }
@@ -254,7 +240,7 @@ actor BatchTranscriptionCoordinator {
                     batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
                 WHERE id = ?
                   AND transcriptionMode = ?
-                  AND batchCompletedAt IS NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
                   AND batchDiscardedAt IS NULL
                 """,
                 arguments: [now, now, sessionId, TranscriptionMode.batch.rawValue]
@@ -560,9 +546,102 @@ actor BatchTranscriptionCoordinator {
             )
             return db.changesCount == 1
         }) ?? false
-        if didPersist, let meetingId = try? meetingId(for: sessionId) {
-            await notify(meetingId: meetingId, state: .failed(sessionId: sessionId, message: message))
+        if didPersist, let result = try? failureNotificationContext(for: sessionId) {
+            let state: BatchTranscriptionState = result.isRetranscription
+                ? .retranscriptionFailed(sessionId: sessionId, message: message)
+                : .failed(sessionId: sessionId, message: message)
+            await notify(meetingId: result.meetingId, state: state)
         }
     }
 
+}
+
+extension BatchTranscriptionCoordinator {
+    /// Resumes the delete-after-transcription policy if the app stopped after committing a result.
+    private func recoverCompletedAudioPurges() async {
+        guard let recordingAudioStore else { return }
+        let sessionIds = await (try? dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT sessions.id
+                FROM recording_sessions AS sessions
+                WHERE sessions.transcriptionMode = ?
+                  AND sessions.batchCompletedAt IS NOT NULL
+                  AND sessions.batchDiscardedAt IS NULL
+                  AND sessions.audioRetentionPolicy = ?
+                  AND EXISTS (
+                      SELECT 1 FROM recording_audio_segments AS segments
+                      WHERE segments.recordingSessionId = sessions.id
+                        AND segments.state != ?
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM recording_audio_segments AS segments
+                      WHERE segments.recordingSessionId = sessions.id
+                        AND segments.state = ?
+                  )
+                """,
+                arguments: [
+                    TranscriptionMode.batch.rawValue,
+                    RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
+                    RecordingAudioSegmentState.purged.rawValue,
+                    RecordingAudioSegmentState.failed.rawValue,
+                ]
+            )
+        }) ?? []
+        for sessionId in sessionIds {
+            do {
+                try await recordingAudioStore.requestPurge(sessionId: sessionId)
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "batchAudioPurgeRecovery"])
+            }
+        }
+    }
+
+    func confirmAndEnqueue(
+        sessionId: UUID,
+        languageSelection: BatchTranscriptionLanguageSelection,
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
+        retainAudioAfterBatch: Bool
+    ) async throws {
+        let result = try await BatchTranscriptionConfirmationService.confirm(
+            sessionId: sessionId,
+            languageSelection: languageSelection,
+            automaticLanguageCandidates: automaticLanguageCandidates,
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            dbQueue: dbQueue
+        )
+        for confirmedSessionId in result.sessionIds {
+            await notify(meetingId: result.meetingId, state: .queued(sessionId: confirmedSessionId))
+            await enqueue(sessionId: confirmedSessionId)
+        }
+    }
+
+    func confirmRetranscriptionAndEnqueue(
+        sessionIds: [UUID],
+        languageSelection: BatchTranscriptionLanguageSelection,
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
+        retainAudioAfterBatch: Bool
+    ) async throws {
+        let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
+            sessionIds: sessionIds,
+            languageSelection: languageSelection,
+            automaticLanguageCandidates: automaticLanguageCandidates,
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            dbQueue: dbQueue
+        )
+        for sessionId in result.sessionIds {
+            await notify(meetingId: result.meetingId, state: .queued(sessionId: sessionId))
+            await enqueue(sessionId: sessionId)
+        }
+    }
+
+    private func failureNotificationContext(for sessionId: UUID) throws -> (meetingId: UUID, isRetranscription: Bool) {
+        try dbQueue.read { db in
+            guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId) else {
+                throw CocoaError(.fileNoSuchFile)
+            }
+            return (session.meetingId, session.isBatchRetranscriptionPending)
+        }
+    }
 }

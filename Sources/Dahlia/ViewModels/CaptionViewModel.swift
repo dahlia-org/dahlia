@@ -113,6 +113,7 @@ final class CaptionViewModel: ObservableObject {
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
     @Published private(set) var batchTranscriptionState: BatchTranscriptionState?
+    @Published private(set) var retranscribableBatchSessionIds: [UUID] = []
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
     @Published var errorMessage: String?
     @Published var availableMicrophones: [MicrophoneDevice] = []
@@ -154,6 +155,11 @@ final class CaptionViewModel: ObservableObject {
     @Published var lastSummaryURL: URL?
     @Published var currentSummaryGoogleFileId: String?
     @Published var currentSummaryDocument: SummaryDocument?
+
+    var canRetranscribeBatchAudio: Bool {
+        !retranscribableBatchSessionIds.isEmpty && batchTranscriptionState == nil && !isListening
+    }
+
     /// Summary タブへの切り替えをリクエストするフラグ。
     @Published var requestShowSummaryTab = false
     /// 要約生成の進捗トースト状態。
@@ -507,13 +513,68 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func retryBatchTranscription() {
-        guard case let .failed(sessionId, _) = batchTranscriptionState,
-              let meetingId = currentMeetingId else { return }
-        presentBatchTranscriptionConfirmation(
+        switch batchTranscriptionState {
+        case let .failed(sessionId, _):
+            guard let meetingId = currentMeetingId else { return }
+            presentBatchTranscriptionConfirmation(
+                sessionId: sessionId,
+                meetingId: meetingId,
+                suggestedLocaleIdentifier: selectedLocale,
+                dbQueue: currentDbQueue
+            )
+        case let .retranscriptionFailed(sessionId, _):
+            guard let meetingId = currentMeetingId,
+                  let dbQueue = currentDbQueue else { return }
+            Task {
+                guard let sessionIds = await Self.pendingBatchRetranscriptionSessionIds(
+                    meetingId: meetingId,
+                    dbQueue: dbQueue
+                ),
+                    !sessionIds.isEmpty,
+                    currentMeetingId == meetingId,
+                    case .retranscriptionFailed = batchTranscriptionState else { return }
+                presentBatchRetranscriptionConfirmation(
+                    sessionId: sessionId,
+                    sessionIds: sessionIds,
+                    meetingId: meetingId
+                )
+            }
+        default:
+            return
+        }
+    }
+
+    func presentBatchRetranscriptionConfirmation() {
+        guard canRetranscribeBatchAudio,
+              let meetingId = currentMeetingId,
+              let sessionId = retranscribableBatchSessionIds.last else { return }
+        presentBatchRetranscriptionConfirmation(
             sessionId: sessionId,
-            meetingId: meetingId,
+            sessionIds: retranscribableBatchSessionIds,
+            meetingId: meetingId
+        )
+    }
+
+    private func presentBatchRetranscriptionConfirmation(
+        sessionId: UUID,
+        sessionIds: [UUID],
+        meetingId: UUID
+    ) {
+        let preferences = batchConfirmationPreferences(
+            sessionId: sessionId,
             suggestedLocaleIdentifier: selectedLocale,
             dbQueue: currentDbQueue
+        )
+        pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
+            sessionId: sessionId,
+            meetingId: meetingId,
+            suggestedLocaleIdentifier: preferences.localeIdentifier,
+            retainAudioAfterBatch: preferences.retainsAudio,
+            initialLanguageSelection: preferences.languageSelection,
+            automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
+            purpose: .retranscription(sessionIds: sessionIds),
+            initiallyGeneratesSummary: hasCurrentMeetingSummary
+                || AppSettings.shared.generateSummaryAfterBatchTranscription
         )
     }
 
@@ -574,26 +635,31 @@ final class CaptionViewModel: ObservableObject {
 
     func confirmBatchTranscription(
         languageSelection: BatchTranscriptionLanguageSelection,
-        retainAudioAfterBatch: Bool
+        retainAudioAfterBatch: Bool,
+        summaryGenerationOptions: SummaryGenerationOptions?
     ) {
         guard let confirmation = pendingBatchTranscriptionConfirmation,
               let coordinator = batchTranscriptionCoordinator else { return }
         let automaticLanguageCandidates = batchTranscriptionAutomaticLanguageCandidates(
             snapshot: confirmation.automaticLanguageCandidateSnapshot
         )
+        let selectedAutomaticLanguageCandidates = languageSelection == .automatic
+            ? automaticLanguageCandidates.snapshot
+            : nil
         let retryConfirmation = BatchTranscriptionConfirmation(
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
             suggestedLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
             retainAudioAfterBatch: retainAudioAfterBatch,
             initialLanguageSelection: languageSelection,
-            automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot
+            automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
+            purpose: confirmation.purpose,
+            initiallyGeneratesSummary: summaryGenerationOptions != nil
         )
-        let settings = AppSettings.shared
-        if settings.generateSummaryAfterBatchTranscription {
+        if let summaryGenerationOptions {
             pendingBatchSummaryRequestsBySessionId[confirmation.sessionId] = (
                 meetingId: confirmation.meetingId,
-                options: settings.batchSummaryGenerationOptions
+                options: summaryGenerationOptions
             )
         } else {
             pendingBatchSummaryRequestsBySessionId.removeValue(forKey: confirmation.sessionId)
@@ -601,21 +667,36 @@ final class CaptionViewModel: ObservableObject {
         pendingBatchTranscriptionConfirmation = nil
         if currentMeetingId == confirmation.meetingId {
             batchTranscriptionState = .queued(sessionId: confirmation.sessionId)
+            retranscribableBatchSessionIds = []
         }
 
         Task {
             do {
-                try await coordinator.confirmAndEnqueue(
-                    sessionId: confirmation.sessionId,
-                    languageSelection: languageSelection,
-                    automaticLanguageCandidates: languageSelection == .automatic
-                        ? automaticLanguageCandidates.snapshot
-                        : nil,
-                    retainAudioAfterBatch: retainAudioAfterBatch
-                )
+                switch confirmation.purpose {
+                case .initialOrRetry:
+                    try await coordinator.confirmAndEnqueue(
+                        sessionId: confirmation.sessionId,
+                        languageSelection: languageSelection,
+                        automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
+                        retainAudioAfterBatch: retainAudioAfterBatch
+                    )
+                case let .retranscription(sessionIds):
+                    try await coordinator.confirmRetranscriptionAndEnqueue(
+                        sessionIds: sessionIds,
+                        languageSelection: languageSelection,
+                        automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
+                        retainAudioAfterBatch: retainAudioAfterBatch
+                    )
+                }
             } catch {
                 if currentMeetingId == confirmation.meetingId {
-                    batchTranscriptionState = .awaitingConfirmation(sessionId: confirmation.sessionId)
+                    switch confirmation.purpose {
+                    case .initialOrRetry:
+                        batchTranscriptionState = .awaitingConfirmation(sessionId: confirmation.sessionId)
+                    case let .retranscription(sessionIds):
+                        batchTranscriptionState = nil
+                        retranscribableBatchSessionIds = sessionIds
+                    }
                 }
                 errorMessage = error.localizedDescription
                 pendingBatchTranscriptionConfirmation = retryConfirmation
@@ -634,6 +715,30 @@ final class CaptionViewModel: ObservableObject {
                 guard try await repository.discardFailedBatchSessionSafely(id: sessionId) else { return }
                 pendingBatchSummaryRequestsBySessionId.removeValue(forKey: sessionId)
                 try refreshBatchTranscriptionState(meetingId: meetingId, dbQueue: dbQueue)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func cancelFailedBatchRetranscription() {
+        guard case .retranscriptionFailed = batchTranscriptionState,
+              let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue else { return }
+        Task {
+            do {
+                guard let sessionIds = await Self.pendingBatchRetranscriptionSessionIds(
+                    meetingId: meetingId,
+                    dbQueue: dbQueue
+                ),
+                    !sessionIds.isEmpty else { return }
+                _ = try await BatchTranscriptionConfirmationService.cancelRetranscription(
+                    sessionIds: sessionIds,
+                    dbQueue: dbQueue
+                )
+                guard currentMeetingId == meetingId else { return }
+                batchTranscriptionState = nil
+                retranscribableBatchSessionIds = sessionIds
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -792,6 +897,7 @@ final class CaptionViewModel: ObservableObject {
         let googleFileId: String?
         let lastSummaryURL: URL?
         let note: MeetingNoteRecord?
+        let retranscribableBatchSessionIds: [UUID]
     }
 
     private nonisolated static func fetchLoadedMeetingData(
@@ -819,6 +925,47 @@ final class CaptionViewModel: ObservableObject {
             nil
         }
 
+        let retranscribableBatchSessionIds = try dbQueue.read { db in
+            try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT DISTINCT sessions.id
+                FROM recording_sessions AS sessions
+                JOIN recording_audio_segments AS segments
+                  ON segments.recordingSessionId = sessions.id
+                JOIN recording_audio_segment_ranges AS ranges
+                  ON ranges.audioSegmentId = segments.id
+                WHERE sessions.meetingId = ?
+                  AND sessions.transcriptionMode = ?
+                  AND sessions.batchCompletedAt IS NOT NULL
+                  AND sessions.batchDiscardedAt IS NULL
+                  AND sessions.retainAudioAfterBatch = 1
+                  AND (sessions.batchLastAttemptAt IS NULL OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt)
+                  AND segments.state = ?
+                  AND segments.purgedAt IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM recording_audio_segments AS candidate
+                      WHERE candidate.recordingSessionId = sessions.id
+                        AND (
+                            candidate.state != ?
+                            OR candidate.purgedAt IS NOT NULL
+                            OR NOT EXISTS (
+                                SELECT 1 FROM recording_audio_segment_ranges AS candidateRanges
+                                WHERE candidateRanges.audioSegmentId = candidate.id
+                            )
+                        )
+                  )
+                ORDER BY sessions.startedAt
+                """,
+                arguments: [
+                    meetingId,
+                    TranscriptionMode.batch.rawValue,
+                    RecordingAudioSegmentState.ready.rawValue,
+                    RecordingAudioSegmentState.ready.rawValue,
+                ]
+            )
+        }
+
         return try LoadedMeetingData(
             createdAt: detail.meeting?.createdAt,
             recordingSessionRecords: detail.recordingSessions,
@@ -829,7 +976,8 @@ final class CaptionViewModel: ObservableObject {
             summaryDocument: detail.summary?.loadDocument(),
             googleFileId: googleDocsExport?.googleDocumentID,
             lastSummaryURL: lastSummaryURL,
-            note: detail.note
+            note: detail.note,
+            retranscribableBatchSessionIds: retranscribableBatchSessionIds
         )
     }
 
@@ -1119,6 +1267,7 @@ final class CaptionViewModel: ObservableObject {
         currentVaultURL = nil
         draftMeeting = nil
         batchTranscriptionState = nil
+        retranscribableBatchSessionIds = []
     }
 
     /// 録音対象のトランスクリプトに表示を復帰する。
@@ -1137,6 +1286,7 @@ final class CaptionViewModel: ObservableObject {
         currentVaultURL = ctx.vaultURL
         currentDbQueue = ctx.dbQueue
         batchTranscriptionState = ctx.batchTranscriptionState
+        retranscribableBatchSessionIds = []
         draftMeeting = nil
 
         store = ctx.store
@@ -1189,6 +1339,7 @@ final class CaptionViewModel: ObservableObject {
             .reversed()
             .compactMap { BatchTranscriptionState.derive(from: $0) }
             .first(where: \.blocksSummaryGeneration)
+        retranscribableBatchSessionIds = loaded.retranscribableBatchSessionIds
         setupNoteAutoSave()
 
         guard let coordinator = batchTranscriptionCoordinator,
@@ -1229,6 +1380,7 @@ final class CaptionViewModel: ObservableObject {
         resetSummaryState()
         draftMeeting = nil
         batchTranscriptionState = nil
+        retranscribableBatchSessionIds = []
     }
 
     private func resetSummaryState() {
@@ -2034,7 +2186,8 @@ final class CaptionViewModel: ObservableObject {
             suggestedLocaleIdentifier: preferences.localeIdentifier,
             retainAudioAfterBatch: preferences.retainsAudio,
             initialLanguageSelection: preferences.languageSelection,
-            automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot
+            automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
+            initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription
         )
         MainWindowOpener.shared.openMainWindow()
     }
@@ -2076,8 +2229,9 @@ final class CaptionViewModel: ObservableObject {
             )
         }
         let localeIdentifier = session.batchSelectedLocaleIdentifier ?? stored.1 ?? suggestedLocaleIdentifier
-        let isRetry = session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0
-        let languageSelection: BatchTranscriptionLanguageSelection = if isRetry,
+        let preservesStoredSelection = session.batchCompletedAt != nil
+            || (session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0)
+        let languageSelection: BatchTranscriptionLanguageSelection = if preservesStoredSelection,
                                                                         session.batchLanguageDetectionMode == .automatic {
             .automatic
         } else {
@@ -2086,6 +2240,21 @@ final class CaptionViewModel: ObservableObject {
         let automaticLanguageCandidateSnapshot = session.batchAutomaticLanguageCandidatesJSON
             .flatMap { try? BatchLanguageDetectionCandidateSnapshot.decode($0) }
         return (localeIdentifier, session.retainAudioAfterBatch, languageSelection, automaticLanguageCandidateSnapshot)
+    }
+
+    private nonisolated static func pendingBatchRetranscriptionSessionIds(
+        meetingId: UUID,
+        dbQueue: DatabaseQueue
+    ) async -> [UUID]? {
+        try? await dbQueue.read { db in
+            try RecordingSessionRecord
+                .filter(Column("meetingId") == meetingId)
+                .filter(Column("batchCompletedAt") != nil)
+                .filter(sql: "batchLastAttemptAt > batchCompletedAt")
+                .order(Column("startedAt").asc)
+                .fetchAll(db)
+                .map(\.id)
+        }
     }
 
     private func completeBatchRecording(

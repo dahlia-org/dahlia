@@ -6,15 +6,10 @@ struct BatchTranscriptionOptionsForm: View {
     let displayLocale: Locale
     @Binding var languageSelection: BatchTranscriptionLanguageSelection
     @Binding var deleteAudioAfterTranscription: Bool
-
-    @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
-    private var generateSummaryAfterBatchTranscription = false
-    @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey)
-    private var exportBatchSummaryToVault = true
-    @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey)
-    private var exportBatchSummaryToGoogleDocs = false
-    @AppStorage(AppSettings.summaryPreviousMeetingCountUserDefaultsKey)
-    private var previousMeetingCount = AppSettings.defaultSummaryPreviousMeetingCount
+    @Binding var generateSummaryAfterBatchTranscription: Bool
+    @Binding var exportBatchSummaryToVault: Bool
+    @Binding var exportBatchSummaryToGoogleDocs: Bool
+    @Binding var previousMeetingCount: Int
 
     var body: some View {
         Form {

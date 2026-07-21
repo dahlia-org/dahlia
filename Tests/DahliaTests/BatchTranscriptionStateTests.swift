@@ -35,6 +35,17 @@ import Foundation
             session.batchCompletedAt = now.addingTimeInterval(20)
             #expect(BatchTranscriptionState.derive(from: session) == .completed(sessionId: session.id))
 
+            session.batchLastAttemptAt = now.addingTimeInterval(21)
+            session.batchLastError = nil
+            #expect(session.isBatchRetranscriptionPending)
+            #expect(BatchTranscriptionState.derive(from: session) == .queued(sessionId: session.id))
+
+            session.batchLastError = "retry failed"
+            #expect(BatchTranscriptionState.derive(from: session) == .retranscriptionFailed(
+                sessionId: session.id,
+                message: "retry failed"
+            ))
+
             session.batchDiscardedAt = now.addingTimeInterval(30)
             #expect(BatchTranscriptionState.derive(from: session) == nil)
         }

@@ -87,6 +87,9 @@ struct ContentView: View {
                 displayLocale: AppSettings.shared.appLanguage.locale,
                 initialLanguageSelection: confirmation.initialLanguageSelection,
                 initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
+                initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
+                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
+                isRetranscription: confirmation.isRetranscription,
                 onStart: viewModel.confirmBatchTranscription,
                 onPostpone: viewModel.postponeBatchTranscription
             )

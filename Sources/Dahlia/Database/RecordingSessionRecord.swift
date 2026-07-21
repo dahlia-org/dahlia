@@ -26,4 +26,10 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     var batchLanguageDetectionMode: BatchLanguageDetectionMode = .manual
     var batchSelectedLocaleIdentifier: String?
     var batchAutomaticLanguageCandidatesJSON: String?
+
+    /// A completed transcript is being rebuilt while the previous successful result remains available.
+    var isBatchRetranscriptionPending: Bool {
+        guard let batchCompletedAt, let batchLastAttemptAt else { return false }
+        return batchLastAttemptAt > batchCompletedAt
+    }
 }

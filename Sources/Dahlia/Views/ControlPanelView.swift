@@ -162,6 +162,14 @@ private struct MeetingActionsMenu: View {
                 SummaryOpenMenu(viewModel: viewModel)
             }
 
+            if viewModel.canRetranscribeBatchAudio {
+                Button(
+                    L10n.retranscribe,
+                    systemImage: "arrow.clockwise",
+                    action: viewModel.presentBatchRetranscriptionConfirmation
+                )
+            }
+
             Divider()
 
             Button(role: .destructive) {
@@ -353,6 +361,7 @@ struct ControlPanelView: View {
                         batchTranscriptionState: viewModel.batchTranscriptionState,
                         confirmBatchTranscription: viewModel.presentBatchTranscriptionConfirmation,
                         retryBatchTranscription: viewModel.retryBatchTranscription,
+                        cancelFailedBatchRetranscription: viewModel.cancelFailedBatchRetranscription,
                         discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription,
                         retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )

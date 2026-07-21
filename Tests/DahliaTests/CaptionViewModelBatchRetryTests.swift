@@ -8,6 +8,46 @@ import GRDB
     @MainActor
     struct CaptionViewModelBatchRetryTests {
         @Test
+        func retainedCompletedAudioOffersRetranscription() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "retained-completed-audio",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: Date(timeIntervalSince1970: 1_776_384_002)
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: batch.vaultURL
+            )
+            #expect(await waitUntil { viewModel.canRetranscribeBatchAudio })
+
+            viewModel.presentBatchRetranscriptionConfirmation()
+
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.isRetranscription)
+            #expect(confirmation.sessionId == batch.session.id)
+            #expect(confirmation.retainAudioAfterBatch)
+            guard case let .retranscription(sessionIds) = confirmation.purpose else {
+                Issue.record("Expected a retranscription confirmation")
+                return
+            }
+            #expect(sessionIds == [batch.session.id])
+        }
+
+        @Test
         func newConfirmationDefaultsToManualSelectedLanguage() {
             let confirmation = BatchTranscriptionConfirmation(
                 sessionId: .v7(),

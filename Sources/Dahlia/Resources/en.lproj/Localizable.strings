@@ -614,8 +614,12 @@
 "High-accuracy transcription completed." = "High-accuracy transcription completed.";
 "Batch transcription failed: %@" = "Batch transcription failed: %@";
 "Retry Batch Transcription" = "Retry Batch Transcription";
+"Keep Current Transcript" = "Keep Current Transcript";
+"Retranscribe" = "Retranscribe";
 "Start batch transcription?" = "Start batch transcription?";
 "Choose a transcription language. Audio is kept until transcription succeeds." = "Choose a transcription language. Audio is kept until transcription succeeds.";
+"Retranscribe the saved recording?" = "Retranscribe the saved recording?";
+"The current transcript remains available while processing and is replaced only after retranscription succeeds." = "The current transcript remains available while processing and is replaced only after retranscription succeeds.";
 "Multilingual meetings" = "Multilingual meetings";
 "Detects the language of each recording, allowing transcription when multiple languages are used." = "Detects the language of each recording, allowing transcription when multiple languages are used.";
 "Languages to detect" = "Languages to detect";

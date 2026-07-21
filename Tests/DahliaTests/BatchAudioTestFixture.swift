@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -63,6 +64,34 @@ import GRDB
 
         func removeFiles() {
             try? FileManager.default.removeItem(at: testRootURL)
+        }
+
+        func recordMicrophoneAudio(localeIdentifier: String = "ja_JP") async throws {
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: database.dbQueue,
+                managedRootURL: managedRootURL,
+                meetingId: meeting.id,
+                recordingSessionId: session.id,
+                recordingStartTime: now,
+                sampleRate: 16000,
+                configuration: RecordingAudioStore.Configuration(
+                    targetSegmentDuration: .seconds(30),
+                    maximumFinalizingSegmentCountPerSource: 2,
+                    maximumActiveSegmentDuration: .seconds(600),
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                    minimumAvailableCapacity: 0,
+                    capacityCheckInterval: .seconds(5)
+                )
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: localeIdentifier),
+                at: now
+            )
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: recorder.targetFormat, frameCapacity: 160))
+            buffer.frameLength = 160
+            writer.appendBuffer(buffer)
+            try await recorder.finish()
         }
     }
 #endif
