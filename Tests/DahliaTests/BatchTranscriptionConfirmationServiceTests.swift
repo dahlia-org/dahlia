@@ -72,7 +72,7 @@ import GRDB
         }
 
         @Test
-        func automaticConfirmationPreservesRecordedLocaleAndFailedRetryCanSwitchToManual() async throws {
+        func automaticConfirmationPreservesLocaleAndFailedRetryBecomesRecoverableManual() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticConfirmation",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_030),
@@ -129,8 +129,14 @@ import GRDB
                     RecordingAudioSegmentRangeRecord.fetchAll(db)
                 )
             }
-            #expect(retryResult.0?.batchLanguageDetectionMode == .manual)
-            #expect(retryResult.0?.retainAudioAfterBatch == false)
+            let retrySession = try #require(retryResult.0)
+            #expect(retrySession.batchLanguageDetectionMode == .manual)
+            #expect(!retrySession.retainAudioAfterBatch)
+            #expect(retrySession.batchLastError == nil)
+            #expect(retrySession.batchFailureKind == nil)
+            #expect(retrySession.batchAttemptCount == BatchTranscriptionCoordinator.maximumAutomaticAttemptCount)
+            #expect(retrySession.batchLastAttemptAt != nil)
+            #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(retrySession))
             #expect(retryResult.1.map(\.localeIdentifier) == ["en_US"])
         }
 
@@ -140,8 +146,9 @@ import GRDB
                     throw CocoaError(.fileNoSuchFile)
                 }
                 session.batchLastError = L10n.batchLanguageDetectionFailed
+                session.batchFailureKind = .transcription
                 session.batchLastAttemptAt = fixture.now
-                session.batchAttemptCount = 1
+                session.batchAttemptCount = BatchTranscriptionCoordinator.maximumAutomaticAttemptCount
                 try session.update(db)
             }
         }

@@ -154,7 +154,8 @@ enum BatchTranscriptionConfirmationService {
             sql: """
             UPDATE recording_sessions
             SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
-                batchLanguageDetectionMode = ?, batchLastAttemptAt = ?, updatedAt = ?
+                batchLanguageDetectionMode = ?, batchLastAttemptAt = ?,
+                batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
             WHERE id = ?
             """,
             arguments: [
