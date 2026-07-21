@@ -14,26 +14,31 @@ import GRDB
         }
     }
 
+    private enum AudioConsumptionGateError: Error {
+        case timedOut
+    }
+
     private actor AudioConsumptionGate {
         private var isOpen = false
         private var isWaiting = false
         private var openWaiter: CheckedContinuation<Void, Never>?
-        private var waitingObserver: CheckedContinuation<Void, Never>?
 
         func wait() async {
             isWaiting = true
-            waitingObserver?.resume()
-            waitingObserver = nil
             guard !isOpen else { return }
             await withCheckedContinuation { continuation in
                 openWaiter = continuation
             }
         }
 
-        func waitUntilWaiting() async {
-            guard !isWaiting else { return }
-            await withCheckedContinuation { continuation in
-                waitingObserver = continuation
+        func waitUntilWaiting(timeout: Duration = .seconds(30)) async throws {
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            while !isWaiting {
+                guard ContinuousClock.now < deadline else {
+                    isOpen = true
+                    throw AudioConsumptionGateError.timedOut
+                }
+                try await Task.sleep(for: .milliseconds(10))
             }
         }
 
@@ -488,7 +493,7 @@ import GRDB
             )
             let buffer = try makeBuffer(format: recorder.targetFormat, frameCount: 1)
             writer.appendBuffer(buffer)
-            await consumptionGate.waitUntilWaiting()
+            try await consumptionGate.waitUntilWaiting()
             for _ in 1 ..< 300 {
                 writer.appendBuffer(buffer)
             }
