@@ -30,6 +30,7 @@ final class MeetingPersistenceService {
     private var recordingSession: RecordingSessionRecord
     private let createsMeeting: Bool
     private let persistencePolicy: TranscriptPersistencePolicy
+    private let now: () -> Date
     private nonisolated let transcriptWriter: TranscriptPersistenceWriter
 
     /// 新規ミーティングを作成して録音を開始する。
@@ -44,7 +45,8 @@ final class MeetingPersistenceService {
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
-        retainAudioAfterBatch: Bool = false
+        retainAudioAfterBatch: Bool = false,
+        now: @escaping () -> Date = { .now }
     ) throws {
         self.store = store
         self.dbQueue = dbQueue
@@ -53,6 +55,7 @@ final class MeetingPersistenceService {
         self.projectId = projectId
         self.createsMeeting = true
         self.persistencePolicy = persistencePolicy
+        self.now = now
 
         let now = store.recordingStartTime ?? Date()
         let session = Self.makeRecordingSession(
@@ -118,7 +121,8 @@ final class MeetingPersistenceService {
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
-        retainAudioAfterBatch: Bool = false
+        retainAudioAfterBatch: Bool = false,
+        now: @escaping () -> Date = { .now }
     ) throws {
         self.store = store
         self.dbQueue = dbQueue
@@ -127,6 +131,7 @@ final class MeetingPersistenceService {
         self.projectId = nil
         self.createsMeeting = false
         self.persistencePolicy = persistencePolicy
+        self.now = now
         let session = Self.makeRecordingSession(
             id: recordingSessionId,
             meetingId: existingMeetingId,
@@ -168,18 +173,18 @@ final class MeetingPersistenceService {
     /// 最終保存とミーティング完了の記録を行う。
     @discardableResult
     func stop() async -> MeetingPersistenceStopResult {
-        let now = Date.now
-        let duration = max(0, now.timeIntervalSince(recordingSession.startedAt))
-        recordingSession.endedAt = now
+        let currentDate = now()
+        let duration = max(0, currentDate.timeIntervalSince(recordingSession.startedAt))
+        recordingSession.endedAt = currentDate
         recordingSession.duration = duration
-        recordingSession.updatedAt = now
+        recordingSession.updatedAt = currentDate
         do {
             try await transcriptWriter.flushPending()
             let persistedSession = try await MeetingPersistenceFinalizer.finish(
                 MeetingPersistenceFinalizer.Request(
                     recordingSessionId: recordingSession.id,
                     meetingId: meetingId,
-                    endedAt: now,
+                    endedAt: currentDate,
                     duration: duration,
                     persistsStreamingSegments: persistencePolicy.persistsStreamingSegments
                 ),

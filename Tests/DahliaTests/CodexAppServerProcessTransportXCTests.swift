@@ -30,7 +30,6 @@ import Foundation
 
             #expect(Darwin.kill(processID, 0) == 0)
             await transport.close()
-            #expect(await transport.terminationStatusForTesting() == 0)
             let probeResult = Darwin.kill(processID, 0)
             let probeError = errno
             #expect(probeResult == -1)

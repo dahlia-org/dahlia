@@ -4,6 +4,8 @@ import Foundation
 import os
 
 actor SegmentedAudioSourceWriter {
+    typealias BeforeConsumingChunk = @Sendable () async -> Void
+
     struct BacklogSnapshot: Equatable {
         let segmentCount: Int
         let pendingByteCount: Int64
@@ -96,6 +98,7 @@ actor SegmentedAudioSourceWriter {
     private let sessionId: UUID
     private let requiredSource: Bool
     private let eventHandler: EventHandler
+    private let beforeConsumingChunk: BeforeConsumingChunk?
     private var currentLocaleIdentifier: String
     private var nextSegmentIndex: Int
     private var current: PhysicalSegment?
@@ -125,6 +128,7 @@ actor SegmentedAudioSourceWriter {
         locale: Locale,
         firstSegmentIndex: Int,
         requiredSource: Bool,
+        beforeConsumingChunk: BeforeConsumingChunk? = nil,
         eventHandler: @escaping EventHandler
     ) {
         let pair = AsyncStream.makeStream(
@@ -141,15 +145,25 @@ actor SegmentedAudioSourceWriter {
         self.currentLocaleIdentifier = locale.identifier
         self.nextSegmentIndex = firstSegmentIndex
         self.requiredSource = requiredSource
+        self.beforeConsumingChunk = beforeConsumingChunk
         self.eventHandler = eventHandler
     }
 
     func start(sessionOffsetSeconds: TimeInterval) async throws {
         guard current == nil else { return }
         current = try await createPhysicalSegment(sessionOffsetSeconds: sessionOffsetSeconds)
-        writerTask = Task { [weak self, stream] in
-            for await chunk in stream {
-                await self?.consume(chunk)
+        if let beforeConsumingChunk {
+            writerTask = Task { [weak self, stream, beforeConsumingChunk] in
+                for await chunk in stream {
+                    await beforeConsumingChunk()
+                    await self?.consume(chunk)
+                }
+            }
+        } else {
+            writerTask = Task { [weak self, stream] in
+                for await chunk in stream {
+                    await self?.consume(chunk)
+                }
             }
         }
     }

@@ -172,10 +172,6 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
                 outputBufferOverflowWaiters.append(continuation)
             }
         }
-
-        func terminationStatusForTesting() -> Int32 {
-            process.terminationStatus
-        }
     #endif
 
     private var stderrDescription: String? {

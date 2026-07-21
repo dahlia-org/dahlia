@@ -147,6 +147,7 @@
 
             await pipeline.start()
             await pipeline.enqueue(event)
+            await uiEvents.waitForCount(1)
             try await pipeline.finish()
 
             #expect(await uiEvents.snapshot() == [event])

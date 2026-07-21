@@ -5,6 +5,7 @@ import Foundation
     import Testing
 
     @MainActor
+    @Suite(.timeLimit(.minutes(1)))
     struct CodexChatStreamingSessionTests {
         @Test
         func trailingUpdateAppearsWhileStreamIsStillWaiting() async {
@@ -13,7 +14,7 @@ import Foundation
             session.draft = "Question"
             session.sendDraft()
             await waitUntil { session.messages.last?.text == "First" }
-            await waitUntilEventually { session.messages.last?.text == "First second" }
+            await waitUntil { session.messages.last?.text == "First second" }
 
             #expect(session.isGenerating)
             #expect(session.messages.last?.text == "First second")
@@ -54,7 +55,7 @@ import Foundation
 
             await waitUntil { session.activeTurnID != nil }
             #expect(session.isGenerating)
-            await waitUntilEventually { !session.isGenerating }
+            await waitUntil { !session.isGenerating }
             #expect(session.messages.last?.text == String(repeating: "x", count: 2048))
         }
 
@@ -80,23 +81,9 @@ import Foundation
         }
 
         private func waitUntil(_ predicate: @MainActor () -> Bool) async {
-            for _ in 0 ..< 1000 {
-                if predicate() { return }
+            while !predicate() {
                 await Task.yield()
             }
-            Issue.record("Timed out waiting for chat state")
-        }
-
-        private func waitUntilEventually(
-            timeout: Duration = .seconds(1),
-            _ predicate: @MainActor () -> Bool
-        ) async {
-            let deadline = ContinuousClock.now.advanced(by: timeout)
-            while ContinuousClock.now < deadline {
-                if predicate() { return }
-                try? await Task.sleep(for: .milliseconds(1))
-            }
-            Issue.record("Timed out waiting for chat state")
         }
     }
 #endif

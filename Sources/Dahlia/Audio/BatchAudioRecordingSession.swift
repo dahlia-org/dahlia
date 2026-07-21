@@ -14,6 +14,7 @@ actor BatchAudioRecordingSession {
     private let meetingId: UUID
     private let recordingSessionId: UUID
     private let recordingStartTime: Date
+    private let beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk?
     private var writers: [RecordingAudioSource: SegmentedAudioSourceWriter] = [:]
     private var requiredSourcesFrozen = false
     private var hasSessionLease = false
@@ -25,7 +26,8 @@ actor BatchAudioRecordingSession {
         recordingSessionId: UUID,
         recordingStartTime: Date,
         sampleRate: Double,
-        configuration: RecordingAudioStore.Configuration = .production
+        configuration: RecordingAudioStore.Configuration = .production,
+        beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk? = nil
     ) throws {
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
@@ -46,6 +48,7 @@ actor BatchAudioRecordingSession {
         self.meetingId = meetingId
         self.recordingSessionId = recordingSessionId
         self.recordingStartTime = recordingStartTime
+        self.beforeConsumingChunk = beforeConsumingChunk
         targetFormat = format
     }
 
@@ -240,6 +243,7 @@ actor BatchAudioRecordingSession {
             locale: locale,
             firstSegmentIndex: firstSegmentIndex,
             requiredSource: !requiredSourcesFrozen,
+            beforeConsumingChunk: beforeConsumingChunk,
             eventHandler: { [eventContinuation] event in
                 switch event {
                 case let .finalizationDelayed(source):

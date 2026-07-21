@@ -155,7 +155,8 @@ import GRDB
             let database = try makeDatabase()
             let meetingId = UUID.v7()
             let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
-            let sessionStartDate = Date()
+            let sessionStartDate = createdAt.addingTimeInterval(300)
+            let sessionEndDate = sessionStartDate.addingTimeInterval(4)
             let store = TranscriptStore()
             store.recordingStartTime = createdAt
 
@@ -177,16 +178,21 @@ import GRDB
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
                 existingSegmentIds: [],
-                recordingStartDate: sessionStartDate
+                recordingStartDate: sessionStartDate,
+                now: { sessionEndDate }
             )
             await service.stop()
 
-            let persisted = try await database.dbQueue.read { db in
+            let (persistedMeeting, persistedSession) = try await database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
-                return try #require(meeting)
+                let session = try RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
+                return (try #require(meeting), try #require(session))
             }
 
-            #expect((persisted.duration ?? .greatestFiniteMagnitude) < 10)
+            #expect(persistedMeeting.duration == 4)
+            #expect(persistedSession.startedAt == sessionStartDate)
+            #expect(persistedSession.endedAt == sessionEndDate)
+            #expect(persistedSession.duration == 4)
         }
 
         @Test
@@ -194,7 +200,8 @@ import GRDB
             let database = try makeDatabase()
             let meetingId = UUID.v7()
             let firstSessionId = UUID.v7()
-            let secondSessionStart = Date()
+            let secondSessionStart = Date(timeIntervalSince1970: 1_776_384_300)
+            let secondSessionEnd = secondSessionStart.addingTimeInterval(5)
             let firstSessionStart = secondSessionStart.addingTimeInterval(-300)
             let store = TranscriptStore()
             store.recordingStartTime = firstSessionStart
@@ -228,7 +235,8 @@ import GRDB
                 existingMeetingId: meetingId,
                 existingSegmentIds: [],
                 recordingStartDate: secondSessionStart,
-                recordingOffsetSeconds: 10
+                recordingOffsetSeconds: 10,
+                now: { secondSessionEnd }
             )
             let segment = TranscriptSegment(
                 startTime: secondSessionStart.addingTimeInterval(3),
@@ -251,8 +259,9 @@ import GRDB
             let secondSession = try #require(persisted.sessions.first(where: { $0.id == service.recordingSessionId }))
             #expect(secondSession.offsetSeconds == 10)
             #expect(segmentRecord.sessionId == secondSession.id)
-            #expect((meetingRecord.duration ?? 0) >= 10)
-            #expect((meetingRecord.duration ?? 0) < 20)
+            #expect(secondSession.endedAt == secondSessionEnd)
+            #expect(secondSession.duration == 5)
+            #expect(meetingRecord.duration == 15)
         }
 
         @Test
