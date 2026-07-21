@@ -26,11 +26,9 @@ struct CodexChatFloatingView: View {
     var body: some View {
         GeometryReader { geometry in
             let origin = layout.origin(in: geometry.size, dragTranslation: dragTranslation)
-            let resizeHandlePosition = layout.resizeHandlePosition(
-                in: geometry.size,
-                dragTranslation: dragTranslation
-            )
-            ZStack(alignment: .topLeading) {
+            let restingOrigin = layout.origin(in: geometry.size)
+            let interactionSize = CodexChatResizeHandles.interactionSize(for: layout.size)
+            ZStack {
                 CodexChatView(
                     session: coordinator.floatingSession,
                     coordinator: coordinator,
@@ -42,28 +40,37 @@ struct CodexChatFloatingView: View {
                     onPopOut: popOut,
                     onHide: coordinator.hideFloating,
                     onOpenHistory: openHistory,
-                    onHeaderDragChanged: { dragTranslation = $0 },
+                    onHeaderDragChanged: updateDragging,
                     onHeaderDragEnded: { finishDragging($0, availableSize: geometry.size) }
                 )
                 .frame(width: layout.size.width, height: layout.size.height)
-                .clipShape(RoundedRectangle(cornerRadius: 24))
-                .contentShape(.interaction, RoundedRectangle(cornerRadius: 24))
+                .clipShape(.rect(cornerRadius: 24))
+                .contentShape(.interaction, .rect(cornerRadius: 24))
                 .overlay {
                     RoundedRectangle(cornerRadius: 24)
                         .stroke(.separator.opacity(0.6), lineWidth: 1)
                 }
                 .shadow(color: .black.opacity(0.18), radius: 22, y: 8)
-                .position(
-                    x: origin.x + layout.size.width / 2,
-                    y: origin.y + layout.size.height / 2
-                )
 
-                CodexChatResizeHandle(layout: $layout, availableSize: geometry.size)
-                    .position(resizeHandlePosition)
+                CodexChatResizeHandles(layout: $layout, availableSize: geometry.size)
             }
+            .frame(width: interactionSize.width, height: interactionSize.height)
+            .position(
+                x: restingOrigin.x + layout.size.width / 2,
+                y: restingOrigin.y + layout.size.height / 2
+            )
+            .offset(x: origin.x - restingOrigin.x)
             .onChange(of: geometry.size) {
                 layout.clamp(to: geometry.size)
             }
+        }
+    }
+
+    private func updateDragging(_ translation: CGSize) {
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            dragTranslation = translation
         }
     }
 

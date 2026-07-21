@@ -13,6 +13,11 @@ enum CodexChatDesign {
     static let composerBottomPadding: CGFloat = 8
     static let composerCornerRadius: CGFloat = 22
     static let controlSize: CGFloat = 30
+    static let headerControlSize: CGFloat = 28
+    static let resizeAccessibilityStep: CGFloat = 20
+    static let resizeHandleOutset: CGFloat = 8
+    static let resizeEdgeThickness: CGFloat = 8
+    static let resizeCornerSize: CGFloat = 12
     static let configurationPanelWidth: CGFloat = 252
     static let configurationPanelHeight: CGFloat = 278
     static let modelPanelWidth: CGFloat = 216

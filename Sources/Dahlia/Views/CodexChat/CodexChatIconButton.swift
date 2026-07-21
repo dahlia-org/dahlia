@@ -3,7 +3,7 @@ import SwiftUI
 struct CodexChatIconButton: View {
     let label: String
     let systemImage: String
-    var size: CGFloat = 28
+    var size = CodexChatDesign.headerControlSize
     let action: () -> Void
 
     @State private var isHovering = false
