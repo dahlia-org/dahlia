@@ -35,7 +35,6 @@ struct BatchTranscriptionStatusView: View {
                 Label(L10n.batchTranscriptionFailed(message), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 Spacer()
-                Button(L10n.keepCurrentTranscript, action: cancelRetranscription)
                 Button(L10n.retryBatchTranscription, action: retry)
                 Button(
                     L10n.discardFailedBatchRecording,
@@ -46,6 +45,7 @@ struct BatchTranscriptionStatusView: View {
                 Label(L10n.batchTranscriptionFailed(message), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 Spacer()
+                Button(L10n.keepCurrentTranscript, action: cancelRetranscription)
                 Button(L10n.retryBatchTranscription, action: retry)
             }
         }

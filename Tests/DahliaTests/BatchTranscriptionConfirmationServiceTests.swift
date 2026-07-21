@@ -86,15 +86,20 @@ import GRDB
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
                 records: [replacement],
-                completedAt: persisted.0?.batchLastAttemptAt?.addingTimeInterval(1) ?? Date.now,
+                completedAt: fixture.now.addingTimeInterval(120),
                 dbQueue: fixture.database.dbQueue
             )
-            let completedTranscripts = try await fixture.database.dbQueue.read { db in
-                try TranscriptSegmentRecord
-                    .filter(Column("sessionId") == fixture.session.id)
-                    .fetchAll(db)
+            let completedResult = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    TranscriptSegmentRecord
+                        .filter(Column("sessionId") == fixture.session.id)
+                        .fetchAll(db)
+                )
             }
-            #expect(completedTranscripts.map(\.text) == ["replacement transcript"])
+            #expect(completedResult.0?.isBatchRetranscriptionPending == false)
+            #expect(completedResult.0?.batchCompletedAt == persisted.0?.batchLastAttemptAt)
+            #expect(completedResult.1.map(\.text) == ["replacement transcript"])
         }
 
         @Test
@@ -197,7 +202,7 @@ import GRDB
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
                 records: [],
-                completedAt: try #require(pending?.batchLastAttemptAt).addingTimeInterval(1),
+                completedAt: #require(pending?.batchLastAttemptAt).addingTimeInterval(1),
                 dbQueue: fixture.database.dbQueue
             )
 
