@@ -144,19 +144,4 @@ struct SummaryExportRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         )
     }
 
-    static func clearVaultPaths(
-        meetingIds: Set<UUID>,
-        underProjectPrefix projectPrefix: String,
-        in db: Database
-    ) throws {
-        guard !meetingIds.isEmpty else { return }
-        let records = try filter(meetingIds.contains(Column("meetingId")))
-            .filter(Column("type") == SummaryExportType.vault)
-            .fetchAll(db)
-        for record in records where record.vaultRelativePath.map({
-            ProjectRecord.belongsToHierarchy($0, prefix: projectPrefix)
-        }) == true {
-            _ = try record.delete(db)
-        }
-    }
 }

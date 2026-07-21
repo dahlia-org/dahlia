@@ -385,6 +385,14 @@ enum L10n {
         bundle: bundle
     ) }
 
+    static func summaryFileAlreadyExists(_ name: String) -> String {
+        String(localized: "A summary file named \(name) already exists in the destination.", bundle: bundle)
+    }
+
+    static func summaryFileShared(_ name: String) -> String {
+        String(localized: "The summary file \(name) is linked to multiple meetings and cannot be moved safely.", bundle: bundle)
+    }
+
     static func projectRollbackFailed(operation: String, rollback: String) -> String {
         String(
             localized: "The project operation failed (\(operation)), and Dahlia could not restore the folder (\(rollback)).",

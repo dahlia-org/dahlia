@@ -10,6 +10,8 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
     case folderMissing
     case trashLocationUnavailable
     case invalidMoveDestination
+    case summaryFileAlreadyExists(String)
+    case summaryFileShared(String)
     case rollbackFailed(operation: String, rollback: String)
 
     var errorDescription: String? {
@@ -32,6 +34,10 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
             L10n.projectTrashLocationUnavailable
         case .invalidMoveDestination:
             L10n.invalidProjectMoveDestination
+        case let .summaryFileAlreadyExists(name):
+            L10n.summaryFileAlreadyExists(name)
+        case let .summaryFileShared(name):
+            L10n.summaryFileShared(name)
         case let .rollbackFailed(operation, rollback):
             L10n.projectRollbackFailed(operation: operation, rollback: rollback)
         }

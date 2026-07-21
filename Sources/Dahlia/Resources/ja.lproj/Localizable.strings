@@ -201,6 +201,8 @@
 "The project folder must exist before it can be renamed." = "名前を変更するにはプロジェクトフォルダが必要です。";
 "The project folder could not be moved to a recoverable Trash location." = "復元可能なゴミ箱の場所へプロジェクトフォルダを移動できませんでした。";
 "Choose an available project outside the hierarchy being deleted." = "削除対象の階層外にある利用可能なプロジェクトを選択してください。";
+"A summary file named %@ already exists in the destination." = "移動先には「%@」という要約ファイルがすでにあります。";
+"The summary file %@ is linked to multiple meetings and cannot be moved safely." = "要約ファイル「%@」は複数のmeetingから参照されているため、安全に移動できません。";
 "The project operation failed (%@), and Dahlia could not restore the folder (%@)." = "プロジェクト操作に失敗し（%@）、フォルダも復元できませんでした（%@）。";
 "Select a project to manage summary destinations and instructions." = "要約の書き出し先と instruction を管理するプロジェクトを選択してください。";
 "Open a vault before managing project settings." = "プロジェクト設定を管理するには保管庫を開いてください。";

@@ -542,18 +542,20 @@ final class SidebarViewModel {
     }
 
     func moveMeeting(id: UUID, toProjectId: UUID?) {
-        guard let repository = meetingRepository else { return }
+        guard let projectWorkspaceService else { return }
         do {
-            try repository.moveMeeting(id: id, toProjectId: toProjectId)
+            try projectWorkspaceService.moveMeeting(id: id, toProjectId: toProjectId)
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) {
-        guard let repository = meetingRepository, !ids.isEmpty else { return }
+        guard let projectWorkspaceService, !ids.isEmpty else { return }
         do {
-            try repository.moveMeetings(ids: ids, toProjectId: toProjectId)
+            try projectWorkspaceService.moveMeetings(ids: ids, toProjectId: toProjectId)
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }

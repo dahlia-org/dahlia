@@ -6,6 +6,47 @@ import GRDB
 // Query methods share one MainActor-isolated database boundary.
 // swiftlint:disable:next type_body_length
 final class MeetingRepository {
+    struct MeetingMoveCandidate {
+        let meetingId: UUID
+        let projectId: UUID?
+        let hasVaultExport: Bool
+        let vaultRelativePath: String?
+    }
+
+    struct MeetingVaultExportUpdate {
+        let meetingId: UUID
+        let relativePath: String?
+    }
+
+    private static func updateVaultExports(
+        _ updates: [MeetingVaultExportUpdate],
+        forMeetingIds meetingIds: Set<UUID>,
+        in db: Database
+    ) throws {
+        let existingRecords = try SummaryExportRecord
+            .filter(meetingIds.contains(Column("meetingId")))
+            .filter(Column("type") == SummaryExportType.vault)
+            .fetchAll(db)
+        let existingByMeetingId = Dictionary(uniqueKeysWithValues: existingRecords.map { ($0.meetingId, $0) })
+        let updatedAt = Date.now
+
+        for update in updates where meetingIds.contains(update.meetingId) {
+            guard let url = update.relativePath.flatMap(SummaryExportRecord.vaultURL(relativePath:)) else {
+                if let existing = existingByMeetingId[update.meetingId] {
+                    _ = try existing.delete(db)
+                }
+                continue
+            }
+            try SummaryExportRecord(
+                meetingId: update.meetingId,
+                type: .vault,
+                url: url,
+                createdAt: existingByMeetingId[update.meetingId]?.createdAt ?? updatedAt,
+                updatedAt: updatedAt
+            ).save(db)
+        }
+    }
+
     struct AppendRecordingContext {
         let meetingCreatedAt: Date?
         let firstSegmentStartTime: Date?
@@ -264,22 +305,77 @@ final class MeetingRepository {
         try deleteMeetings(ids: ids)
     }
 
-    func moveMeeting(id: UUID, toProjectId: UUID?) throws {
-        try dbQueue.write { db in
-            if var record = try MeetingRecord.fetchOne(db, key: id) {
-                record.projectId = toProjectId
-                try record.update(db)
+    func fetchMeetingMoveCandidates(ids: Set<UUID>, vaultId: UUID) throws -> [MeetingMoveCandidate] {
+        guard !ids.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            let meetings = try MeetingRecord
+                .filter(ids.contains(Column("id")))
+                .filter(Column("vaultId") == vaultId)
+                .fetchAll(db)
+            let vaultExports = try SummaryExportRecord
+                .filter(ids.contains(Column("meetingId")))
+                .filter(Column("type") == SummaryExportType.vault)
+                .fetchAll(db)
+            let vaultExportsByMeetingId = Dictionary(uniqueKeysWithValues: vaultExports.map { ($0.meetingId, $0) })
+
+            return meetings.map { meeting in
+                let vaultExport = vaultExportsByMeetingId[meeting.id]
+                return MeetingMoveCandidate(
+                    meetingId: meeting.id,
+                    projectId: meeting.projectId,
+                    hasVaultExport: vaultExport != nil,
+                    vaultRelativePath: vaultExport?.vaultRelativePath
+                )
             }
         }
     }
 
-    /// 複数のミーティングを一括移動する。
-    func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) throws {
+    func sharedVaultSummaryPaths(relativePaths: Set<String>, vaultId: UUID) throws -> Set<String> {
+        let pathsByURL = Dictionary(uniqueKeysWithValues: relativePaths.compactMap { relativePath in
+            SummaryExportRecord.vaultURL(relativePath: relativePath).map { ($0, relativePath) }
+        })
+        guard !pathsByURL.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            let sharedURLs = try String.fetchSet(
+                db,
+                sql: """
+                SELECT summary_exports.url
+                FROM summary_exports
+                JOIN meetings ON meetings.id = summary_exports.meetingId
+                WHERE summary_exports.type = ?
+                  AND meetings.vaultId = ?
+                GROUP BY summary_exports.url
+                HAVING COUNT(*) > 1
+                """,
+                arguments: [SummaryExportType.vault, vaultId]
+            )
+            return Set(sharedURLs.compactMap { pathsByURL[$0] })
+        }
+    }
+
+    func commitMeetingMove(
+        ids: Set<UUID>,
+        toProjectId: UUID?,
+        vaultId: UUID,
+        vaultExportUpdates: [MeetingVaultExportUpdate]
+    ) throws {
         guard !ids.isEmpty else { return }
         try dbQueue.write { db in
+            if let toProjectId {
+                guard let destination = try ProjectRecord.fetchOne(db, key: toProjectId),
+                      destination.vaultId == vaultId,
+                      !destination.missingOnDisk
+                else {
+                    throw ProjectWorkspaceError.invalidMoveDestination
+                }
+            }
+
             _ = try MeetingRecord
                 .filter(ids.contains(Column("id")))
+                .filter(Column("vaultId") == vaultId)
                 .updateAll(db, Column("projectId").set(to: toProjectId))
+
+            try Self.updateVaultExports(vaultExportUpdates, forMeetingIds: ids, in: db)
         }
     }
 
@@ -813,6 +909,18 @@ extension MeetingRepository {
         }
     }
 
+    func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
+        try dbQueue.read { db in
+            let projectIds = try ProjectRecord.hierarchy(prefix: name, vaultId: vaultId, in: db).map(\.id)
+            guard !projectIds.isEmpty else { return [] }
+            return try UUID.fetchSet(
+                db,
+                sql: "SELECT id FROM meetings WHERE projectId IN (\(projectIds.map { _ in "?" }.joined(separator: ",")))",
+                arguments: StatementArguments(projectIds)
+            )
+        }
+    }
+
     func fetchProject(id: UUID) throws -> ProjectRecord? {
         try dbQueue.read { db in
             try ProjectRecord.fetchOne(db, key: id)
@@ -890,7 +998,8 @@ extension MeetingRepository {
     func deleteProjectHierarchy(
         name: String,
         vaultId: UUID,
-        meetingDisposition: ProjectMeetingDisposition
+        meetingDisposition: ProjectMeetingDisposition,
+        vaultExportUpdates: [MeetingVaultExportUpdate] = []
     ) throws {
         let meetingIds = try dbQueue.read { db in
             let projectIds = try ProjectRecord.hierarchy(prefix: name, vaultId: vaultId, in: db).map(\.id)
@@ -927,11 +1036,7 @@ extension MeetingRepository {
                     _ = try MeetingRecord
                         .filter(meetingIds.contains(Column("id")))
                         .updateAll(db, Column("projectId").set(to: destinationId))
-                    try SummaryExportRecord.clearVaultPaths(
-                        meetingIds: meetingIds,
-                        underProjectPrefix: name,
-                        in: db
-                    )
+                    try Self.updateVaultExports(vaultExportUpdates, forMeetingIds: meetingIds, in: db)
                 }
             case .deleteMeetings:
                 if !meetingIds.isEmpty {
