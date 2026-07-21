@@ -507,11 +507,13 @@ final class CaptionViewModel: ObservableObject {
 
     func retryBatchTranscription() {
         guard case let .failed(sessionId, _) = batchTranscriptionState,
-              let coordinator = batchTranscriptionCoordinator else { return }
-        batchTranscriptionState = .queued(sessionId: sessionId)
-        Task {
-            await coordinator.enqueue(sessionId: sessionId)
-        }
+              let meetingId = currentMeetingId else { return }
+        presentBatchTranscriptionConfirmation(
+            sessionId: sessionId,
+            meetingId: meetingId,
+            suggestedLocaleIdentifier: selectedLocale,
+            dbQueue: currentDbQueue
+        )
     }
 
     func batchTranscriptionLocaleOptions(preferredIdentifier: String) -> [Locale] {
@@ -544,16 +546,6 @@ final class CaptionViewModel: ObservableObject {
             suggestedLocaleIdentifier: selectedLocale,
             dbQueue: dbQueue
         )
-    }
-
-    func retryBatchTranscription(sessionId: UUID, meetingId: UUID) {
-        guard let coordinator = batchTranscriptionCoordinator else { return }
-        if currentMeetingId == meetingId {
-            batchTranscriptionState = .queued(sessionId: sessionId)
-        }
-        Task {
-            await coordinator.enqueue(sessionId: sessionId)
-        }
     }
 
     func postponeBatchTranscription() {
@@ -2004,24 +1996,56 @@ final class CaptionViewModel: ObservableObject {
         suggestedLocaleIdentifier: String,
         dbQueue: DatabaseQueue?
     ) {
+        let preferences = batchConfirmationPreferences(
+            sessionId: sessionId,
+            suggestedLocaleIdentifier: suggestedLocaleIdentifier,
+            dbQueue: dbQueue
+        )
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
             sessionId: sessionId,
             meetingId: meetingId,
-            suggestedLocaleIdentifier: suggestedLocaleIdentifier,
-            retainAudioAfterBatch: batchAudioRetentionPreference(
-                sessionId: sessionId,
-                dbQueue: dbQueue
-            )
+            suggestedLocaleIdentifier: preferences.localeIdentifier,
+            retainAudioAfterBatch: preferences.retainsAudio,
+            initialLanguageSelection: preferences.languageSelection
         )
         MainWindowOpener.shared.openMainWindow()
     }
 
-    private func batchAudioRetentionPreference(sessionId: UUID, dbQueue: DatabaseQueue?) -> Bool {
-        let fallback = AppSettings.shared.retainAudioAfterBatchTranscription
-        guard let dbQueue else { return fallback }
-        return (try? dbQueue.read { db in
-            try RecordingSessionRecord.fetchOne(db, key: sessionId)
-        })?.retainAudioAfterBatch ?? fallback
+    private func batchConfirmationPreferences(
+        sessionId: UUID,
+        suggestedLocaleIdentifier: String,
+        dbQueue: DatabaseQueue?
+    ) -> (localeIdentifier: String, retainsAudio: Bool, languageSelection: BatchTranscriptionLanguageSelection) {
+        let fallbackRetention = AppSettings.shared.retainAudioAfterBatchTranscription
+        guard let dbQueue,
+              let stored = try? dbQueue.read({ db -> (RecordingSessionRecord?, String?) in
+                  let session = try RecordingSessionRecord.fetchOne(db, key: sessionId)
+                  let localeIdentifier = try String.fetchOne(
+                      db,
+                      sql: """
+                      SELECT ranges.localeIdentifier
+                      FROM recording_audio_segment_ranges AS ranges
+                      JOIN recording_audio_segments AS segments ON segments.id = ranges.audioSegmentId
+                      WHERE segments.recordingSessionId = ?
+                      ORDER BY segments.segmentIndex, ranges.startFrame
+                      LIMIT 1
+                      """,
+                      arguments: [sessionId]
+                  )
+                  return (session, localeIdentifier)
+              }),
+              let session = stored.0 else {
+            return (suggestedLocaleIdentifier, fallbackRetention, .automatic)
+        }
+        let localeIdentifier = stored.1 ?? suggestedLocaleIdentifier
+        let isRetry = session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0
+        let languageSelection: BatchTranscriptionLanguageSelection = if isRetry,
+                                                                        session.batchLanguageDetectionMode == .manual {
+            .manual(localeIdentifier: localeIdentifier)
+        } else {
+            .automatic
+        }
+        return (localeIdentifier, session.retainAudioAfterBatch, languageSelection)
     }
 
     private func completeBatchRecording(

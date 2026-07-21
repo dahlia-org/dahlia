@@ -1,6 +1,6 @@
+@preconcurrency import AVFoundation
 import Foundation
 import GRDB
-@preconcurrency import AVFoundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -117,7 +117,7 @@ import GRDB
                     targetSegmentDuration: .seconds(60),
                     maximumFinalizingSegmentCountPerSource: 2,
                     maximumActiveSegmentDuration: .seconds(600),
-                    maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                     minimumAvailableCapacity: 0,
                     capacityCheckInterval: .seconds(5)
                 )

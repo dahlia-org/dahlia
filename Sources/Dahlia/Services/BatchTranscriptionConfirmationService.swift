@@ -18,7 +18,17 @@ enum BatchTranscriptionConfirmationService {
 
         return try await dbQueue.write { db in
             let session = try validSession(id: sessionId, db: db)
-            let sessions = try unconfirmedSessions(meetingId: session.meetingId, db: db)
+            let sessions: [RecordingSessionRecord]
+            if session.batchLastError?.nilIfBlank != nil, session.batchAttemptCount > 0 {
+                sessions = [session]
+            } else {
+                guard session.batchLastError == nil,
+                      session.batchLastAttemptAt == nil,
+                      session.batchAttemptCount == 0 else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                sessions = try unconfirmedSessions(meetingId: session.meetingId, db: db)
+            }
             let confirmedAt = Date.now
             for unconfirmedSession in sessions {
                 try requireAudioRanges(sessionId: unconfirmedSession.id, db: db)
@@ -58,10 +68,7 @@ enum BatchTranscriptionConfirmationService {
               session.transcriptionMode == .batch,
               session.endedAt != nil,
               session.batchCompletedAt == nil,
-              session.batchDiscardedAt == nil,
-              session.batchLastError == nil,
-              session.batchLastAttemptAt == nil,
-              session.batchAttemptCount == 0 else {
+              session.batchDiscardedAt == nil else {
             throw CocoaError(.fileNoSuchFile)
         }
         return session

@@ -33,7 +33,7 @@ import GRDB
                     targetSegmentDuration: .seconds(60),
                     maximumFinalizingSegmentCountPerSource: 2,
                     maximumActiveSegmentDuration: .seconds(600),
-                    maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                     minimumAvailableCapacity: 0,
                     capacityCheckInterval: .seconds(5)
                 )
@@ -72,7 +72,7 @@ import GRDB
         }
 
         @Test
-        func automaticConfirmationPreservesRecordedLocale() async throws {
+        func automaticConfirmationPreservesRecordedLocaleAndFailedRetryCanSwitchToManual() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticConfirmation",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_030),
@@ -90,7 +90,7 @@ import GRDB
                     targetSegmentDuration: .seconds(30),
                     maximumFinalizingSegmentCountPerSource: 2,
                     maximumActiveSegmentDuration: .seconds(600),
-                    maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                     minimumAvailableCapacity: 0,
                     capacityCheckInterval: .seconds(5)
                 )
@@ -112,6 +112,41 @@ import GRDB
                 dbQueue: fixture.database.dbQueue
             )
 
+            try await verifyAutomaticConfirmation(fixture)
+
+            try await markBatchFailed(fixture)
+
+            _ = try await BatchTranscriptionConfirmationService.confirm(
+                sessionId: fixture.session.id,
+                languageSelection: .manual(localeIdentifier: "en_US"),
+                retainAudioAfterBatch: false,
+                dbQueue: fixture.database.dbQueue
+            )
+
+            let retryResult = try await fixture.database.dbQueue.read { db in
+                try (
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id),
+                    RecordingAudioSegmentRangeRecord.fetchAll(db)
+                )
+            }
+            #expect(retryResult.0?.batchLanguageDetectionMode == .manual)
+            #expect(retryResult.0?.retainAudioAfterBatch == false)
+            #expect(retryResult.1.map(\.localeIdentifier) == ["en_US"])
+        }
+
+        private func markBatchFailed(_ fixture: BatchAudioTestFixture) async throws {
+            try await fixture.database.dbQueue.write { db in
+                guard var session = try RecordingSessionRecord.fetchOne(db, key: fixture.session.id) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                session.batchLastError = L10n.batchLanguageDetectionFailed
+                session.batchLastAttemptAt = fixture.now
+                session.batchAttemptCount = 1
+                try session.update(db)
+            }
+        }
+
+        private func verifyAutomaticConfirmation(_ fixture: BatchAudioTestFixture) async throws {
             let result = try await fixture.database.dbQueue.read { db in
                 try (
                     RecordingSessionRecord.fetchOne(db, key: fixture.session.id),

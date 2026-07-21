@@ -227,7 +227,11 @@ struct BackupSettingsView: View {
                 dbQueue: dbQueue
             )
         case .failed:
-            captionViewModel.retryBatchTranscription(sessionId: item.sessionId, meetingId: item.meetingId)
+            captionViewModel.presentBatchTranscriptionConfirmation(
+                sessionId: item.sessionId,
+                meetingId: item.meetingId,
+                dbQueue: dbQueue
+            )
         case .recording, .processing:
             break
         }

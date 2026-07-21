@@ -8,6 +8,38 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
     static let modelRevision = "97a5bf9bbc74c7d9c12c755d04dea59e672e3808"
     static let tokenizerRepository = HubApiWrapper.Repo(id: "openai/whisper-tiny")
     static let tokenizerRevision = "169d4a4341b33bc18d8881c4b69c2e104e1cc0af"
+    static let modelRelativePaths = [
+        "AudioEncoder.mlmodelc/analytics/coremldata.bin",
+        "AudioEncoder.mlmodelc/coremldata.bin",
+        "AudioEncoder.mlmodelc/metadata.json",
+        "AudioEncoder.mlmodelc/model.mil",
+        "AudioEncoder.mlmodelc/model.mlmodel",
+        "AudioEncoder.mlmodelc/weights/weight.bin",
+        "MelSpectrogram.mlmodelc/analytics/coremldata.bin",
+        "MelSpectrogram.mlmodelc/coremldata.bin",
+        "MelSpectrogram.mlmodelc/metadata.json",
+        "MelSpectrogram.mlmodelc/model.mil",
+        "MelSpectrogram.mlmodelc/weights/weight.bin",
+        "TextDecoder.mlmodelc/analytics/coremldata.bin",
+        "TextDecoder.mlmodelc/coremldata.bin",
+        "TextDecoder.mlmodelc/metadata.json",
+        "TextDecoder.mlmodelc/model.mil",
+        "TextDecoder.mlmodelc/model.mlmodel",
+        "TextDecoder.mlmodelc/weights/weight.bin",
+        "config.json",
+        "generation_config.json",
+    ]
+    static let tokenizerRelativePaths = [
+        "added_tokens.json",
+        "config.json",
+        "merges.txt",
+        "normalizer.json",
+        "preprocessor_config.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+    ]
 
     private let modelDownloadBaseURL: URL
     private var whisperKit: WhisperKit?
@@ -79,7 +111,7 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
         let hub = HubApiWrapper(downloadBase: modelDownloadBaseURL)
         let repositoryFolder = hub.localRepoLocation(Self.modelRepository)
         let modelFolder = repositoryFolder.appending(path: Self.modelFolderName, directoryHint: .isDirectory)
-        if hasPinnedModel(at: modelFolder, repositoryFolder: repositoryFolder) {
+        if Self.hasPinnedModel(repositoryFolder: repositoryFolder) {
             return modelFolder
         }
 
@@ -89,7 +121,7 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
             matching: ["\(Self.modelFolderName)/*"]
         )
         try Task.checkCancellation()
-        guard hasPinnedModel(at: modelFolder, repositoryFolder: repositoryFolder) else {
+        guard Self.hasPinnedModel(repositoryFolder: repositoryFolder) else {
             throw BatchLanguageDetectorError.modelPreparationFailed
         }
         return modelFolder
@@ -98,58 +130,50 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
     private func prepareTokenizerFolder() async throws -> URL {
         let hub = HubApiWrapper(downloadBase: modelDownloadBaseURL)
         let tokenizerFolder = hub.localRepoLocation(Self.tokenizerRepository)
-        if hasPinnedTokenizer(at: tokenizerFolder) {
+        if Self.hasPinnedTokenizer(repositoryFolder: tokenizerFolder) {
             return tokenizerFolder
         }
 
         _ = try await hub.snapshot(
             from: Self.tokenizerRepository,
             revision: Self.tokenizerRevision,
-            matching: [
-                "added_tokens.json",
-                "config.json",
-                "merges.txt",
-                "normalizer.json",
-                "preprocessor_config.json",
-                "special_tokens_map.json",
-                "tokenizer.json",
-                "tokenizer_config.json",
-                "vocab.json",
-            ]
+            matching: Self.tokenizerRelativePaths
         )
         try Task.checkCancellation()
-        guard hasPinnedTokenizer(at: tokenizerFolder) else {
+        guard Self.hasPinnedTokenizer(repositoryFolder: tokenizerFolder) else {
             throw BatchLanguageDetectorError.modelPreparationFailed
         }
         return tokenizerFolder
     }
 
-    private func hasPinnedModel(at modelFolder: URL, repositoryFolder: URL) -> Bool {
-        let requiredPaths = [
-            "AudioEncoder.mlmodelc/coremldata.bin",
-            "MelSpectrogram.mlmodelc/coremldata.bin",
-            "TextDecoder.mlmodelc/coremldata.bin",
-        ]
-        guard requiredPaths.allSatisfy({
-            FileManager.default.fileExists(atPath: modelFolder.appending(path: $0).path)
-        }) else { return false }
-        return metadataRevision(
+    static func hasPinnedModel(repositoryFolder: URL) -> Bool {
+        hasPinnedFiles(
             repositoryFolder: repositoryFolder,
-            relativePath: "\(Self.modelFolderName)/config.json"
-        ) == Self.modelRevision
+            relativePaths: modelRelativePaths.map { "\(modelFolderName)/\($0)" },
+            revision: modelRevision
+        )
     }
 
-    private func hasPinnedTokenizer(at tokenizerFolder: URL) -> Bool {
-        guard FileManager.default.fileExists(atPath: tokenizerFolder.appending(path: "tokenizer.json").path) else {
-            return false
+    static func hasPinnedTokenizer(repositoryFolder: URL) -> Bool {
+        hasPinnedFiles(
+            repositoryFolder: repositoryFolder,
+            relativePaths: tokenizerRelativePaths,
+            revision: tokenizerRevision
+        )
+    }
+
+    private static func hasPinnedFiles(
+        repositoryFolder: URL,
+        relativePaths: [String],
+        revision: String
+    ) -> Bool {
+        relativePaths.allSatisfy { relativePath in
+            FileManager.default.fileExists(atPath: repositoryFolder.appending(path: relativePath).path)
+                && metadataRevision(repositoryFolder: repositoryFolder, relativePath: relativePath) == revision
         }
-        return metadataRevision(
-            repositoryFolder: tokenizerFolder,
-            relativePath: "tokenizer.json"
-        ) == Self.tokenizerRevision
     }
 
-    private func metadataRevision(repositoryFolder: URL, relativePath: String) -> String? {
+    private static func metadataRevision(repositoryFolder: URL, relativePath: String) -> String? {
         let metadataURL = repositoryFolder
             .appending(path: ".cache/huggingface/download", directoryHint: .isDirectory)
             .appending(path: "\(relativePath).metadata")
