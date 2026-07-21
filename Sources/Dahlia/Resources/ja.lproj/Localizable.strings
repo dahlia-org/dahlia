@@ -326,6 +326,13 @@
 "AI Summary" = "AI 要約";
 "Reasoning Effort" = "推論の強度";
 "Controls how much reasoning Codex uses for each summary." = "要約ごとに Codex が使用する推論の強度を設定します。";
+"Summary Output" = "要約の出力";
+"Detail Level" = "詳細度";
+"Controls how much information is included in each summary." = "要約に含める情報量を設定します。";
+"Concise" = "簡潔";
+"Detailed" = "詳細";
+"Output Language" = "出力言語";
+"Select the language used for generated summaries." = "生成する要約の言語を選択します。";
 "Minimal" = "最小";
 "Low" = "低";
 "Medium" = "中";

@@ -28,5 +28,8 @@ struct SettingsView: View {
             .navigationTitle(selection.label)
         }
         .frame(minWidth: 720, minHeight: 520)
+        .onAppear {
+            selection = SettingsNavigation.visibleSelection(selection)
+        }
     }
 }

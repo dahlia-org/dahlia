@@ -1263,6 +1263,20 @@ enum L10n {
         localized: "The saved model is used when available; otherwise Codex's default model is selected.",
         bundle: bundle
     ) }
+    static var summaryOutput: String { String(localized: "Summary Output", bundle: bundle) }
+    static var summaryDetailLevel: String { String(localized: "Detail Level", bundle: bundle) }
+    static var summaryDetailLevelDescription: String { String(
+        localized: "Controls how much information is included in each summary.",
+        bundle: bundle
+    ) }
+    static var summaryDetailConcise: String { String(localized: "Concise", bundle: bundle) }
+    static var summaryDetailStandard: String { String(localized: "Standard", bundle: bundle) }
+    static var summaryDetailDetailed: String { String(localized: "Detailed", bundle: bundle) }
+    static var summaryOutputLanguage: String { String(localized: "Output Language", bundle: bundle) }
+    static var summaryOutputLanguageDescription: String { String(
+        localized: "Select the language used for generated summaries.",
+        bundle: bundle
+    ) }
     static var llmErrorEmptyResponse: String { String(localized: "Empty response from server", bundle: bundle) }
 
     // MARK: - Summary

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Codex model selection for AI summaries.
+/// Codex model and output settings for AI summaries.
 struct AISummarySettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var catalog = CodexModelCatalog()
@@ -52,6 +52,30 @@ struct AISummarySettingsView: View {
                 Text(L10n.aiSummary)
             } footer: {
                 Text(L10n.codexSummaryModelFooter)
+            }
+
+            Section {
+                Picker(selection: $settings.summaryDetailLevel) {
+                    ForEach(SummaryDetailLevel.allCases) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                } label: {
+                    Text(L10n.summaryDetailLevel)
+                    Text(L10n.summaryDetailLevelDescription)
+                }
+                .pickerStyle(.menu)
+
+                Picker(selection: $settings.llmSummaryLanguage) {
+                    ForEach(SummaryLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                } label: {
+                    Text(L10n.summaryOutputLanguage)
+                    Text(L10n.summaryOutputLanguageDescription)
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text(L10n.summaryOutput)
             }
         }
         .formStyle(.grouped)

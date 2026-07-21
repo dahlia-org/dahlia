@@ -399,58 +399,77 @@ struct SummaryServiceTests {
     }
 
     @Test
-    func resolvedSummaryPromptUsesDefaultWhenAutoSelected() {
-        let previousInstructionID = AppSettings.shared.selectedInstructionID
-        let previousVault = AppSettings.shared.currentVault
-        defer {
-            AppSettings.shared.selectedInstructionID = previousInstructionID
-            AppSettings.shared.currentVault = previousVault
+    func summaryDetailLevelFallsBackToDetailed() {
+        let previousValue = AppSettings.shared.summaryDetailLevelRawValue
+        defer { AppSettings.shared.summaryDetailLevelRawValue = previousValue }
+
+        #expect(SummaryDetailLevel.defaultValue == .detailed)
+        for detailLevel in SummaryDetailLevel.allCases {
+            AppSettings.shared.summaryDetailLevelRawValue = detailLevel.rawValue
+            #expect(AppSettings.shared.summaryDetailLevel == detailLevel)
         }
 
-        AppSettings.shared.selectedInstructionID = nil
-        AppSettings.shared.currentVault = VaultRecord(
-            id: .v7(),
-            path: NSTemporaryDirectory(),
-            name: "Test Vault",
-            createdAt: Date(),
-            lastOpenedAt: Date()
-        )
-
-        let prompt = SummaryService.resolvedSummaryPrompt(settings: AppSettings.shared)
-
-        #expect(prompt == AppSettings.defaultSummaryPrompt)
+        AppSettings.shared.summaryDetailLevelRawValue = "unsupported"
+        #expect(AppSettings.shared.summaryDetailLevel == .detailed)
     }
 
     @Test
-    func resolvedSummaryPromptUsesSelectedInstructionFromDatabase() throws {
-        let previousInstructionID = AppSettings.shared.selectedInstructionID
-        let previousVault = AppSettings.shared.currentVault
+    func summaryGenerationInstructionsIncludeDetailAndLanguage() {
+        let settings = AppSettings.shared
+        let previousDetailLevel = settings.summaryDetailLevelRawValue
+        let previousLanguage = settings.llmSummaryLanguageRawValue
         defer {
-            AppSettings.shared.selectedInstructionID = previousInstructionID
-            AppSettings.shared.currentVault = previousVault
+            settings.summaryDetailLevelRawValue = previousDetailLevel
+            settings.llmSummaryLanguageRawValue = previousLanguage
         }
 
-        let database = try AppDatabaseManager(path: ":memory:")
-        let repository = MeetingRepository(dbQueue: database.dbQueue)
-        let vault = VaultRecord(
-            id: .v7(),
-            path: NSTemporaryDirectory(),
-            name: "Test Vault",
-            createdAt: Date(),
-            lastOpenedAt: Date()
-        )
-        try repository.insertVault(vault)
-        let instruction = try repository.createInstruction(
-            vaultId: vault.id,
-            name: "customer_meeting",
-            content: AppSettings.defaultSummaryPrompt + "\n\n# Extra\n- Follow up"
-        )
-        AppSettings.shared.currentVault = vault
-        AppSettings.shared.selectedInstructionID = instruction.id
+        settings.llmSummaryLanguage = .en
+        for detailLevel in SummaryDetailLevel.allCases {
+            settings.summaryDetailLevel = detailLevel
+            let instructions = SummaryService.summaryGenerationInstructions(
+                settings: settings,
+                includesPreviousMeetings: false
+            )
 
-        let prompt = SummaryService.resolvedSummaryPrompt(settings: AppSettings.shared, repository: repository)
+            #expect(instructions.hasPrefix(AppSettings.defaultSummaryPrompt))
+            #expect(instructions.contains(detailLevel.instruction))
+            #expect(instructions.contains("Write the summary in English."))
+        }
+    }
 
-        #expect(prompt == instruction.content.trimmingCharacters(in: .whitespacesAndNewlines))
+    @Test
+    func summaryGenerationInstructionsIgnoreSelectedCustomInstruction() {
+        let previousInstructionID = AppSettings.shared.selectedInstructionID
+        defer { AppSettings.shared.selectedInstructionID = previousInstructionID }
+
+        let settings = AppSettings.shared
+        settings.selectedInstructionID = nil
+        let autoInstructions = SummaryService.summaryGenerationInstructions(
+            settings: settings,
+            includesPreviousMeetings: false
+        )
+        settings.selectedInstructionID = .v7()
+        let selectedInstructions = SummaryService.summaryGenerationInstructions(
+            settings: settings,
+            includesPreviousMeetings: false
+        )
+
+        #expect(selectedInstructions == autoInstructions)
+    }
+
+    @Test
+    func summaryGenerationInstructionsIncludePreviousMeetingsOnlyWhenRequested() {
+        let withoutPreviousMeetings = SummaryService.summaryGenerationInstructions(
+            settings: AppSettings.shared,
+            includesPreviousMeetings: false
+        )
+        let withPreviousMeetings = SummaryService.summaryGenerationInstructions(
+            settings: AppSettings.shared,
+            includesPreviousMeetings: true
+        )
+
+        #expect(!withoutPreviousMeetings.contains(SummaryService.codexPreviousMeetingsInstruction))
+        #expect(withPreviousMeetings.components(separatedBy: SummaryService.codexPreviousMeetingsInstruction).count == 2)
     }
 
 }

@@ -25,7 +25,16 @@
         @Test
         func groupsContainEveryCategoryOnce() {
             let groupedCategories = SettingsGroup.allCases.flatMap(\.categories)
-            #expect(groupedCategories == SettingsCategory.allCases)
+            let expectedCategories = SettingsCategory.allCases.filter { $0 != .instructions }
+
+            #expect(groupedCategories == expectedCategories)
+            #expect(!groupedCategories.contains(.instructions))
+        }
+
+        @Test
+        func hiddenInstructionsSelectionOpensAISummarySettings() {
+            #expect(SettingsNavigation.visibleSelection(.instructions) == .aiSummary)
+            #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
         }
 
         @Test

@@ -19,19 +19,11 @@ enum SummaryService {
         repository: MeetingRepository? = nil
     ) async throws -> GeneratedSummary {
         let settings = AppSettings.shared
-        let prompt = resolvedSummaryPrompt(settings: settings, repository: repository)
-        let languageName = settings.llmSummaryLanguage.displayName
 
-        var systemPromptSections = [
-            prompt,
-            codexInputTrustInstruction,
-        ]
-        if !promptContext.previousMeetings.isEmpty {
-            systemPromptSections.append(codexPreviousMeetingsInstruction)
-        }
-        systemPromptSections.append("# Language\nWrite the summary in \(languageName).")
-        let systemPrompt = systemPromptSections.joined(separator: "\n\n")
-            + codexStructuredInstruction
+        let systemPrompt = summaryGenerationInstructions(
+            settings: settings,
+            includesPreviousMeetings: !promptContext.previousMeetings.isEmpty
+        )
         let inputs = await makeCodexInputs(.init(
             promptContext: promptContext,
             transcriptText: transcriptText,
@@ -288,29 +280,22 @@ enum SummaryService {
 
     // MARK: - Private Helpers
 
-    /// 選択中 instruction の内容を DB から解決する。
-    /// Auto モード時はデフォルトプロンプト全体を返す。
-    /// instruction 選択時は instruction 本文をそのまま使う。
     @MainActor
-    static func resolvedSummaryPrompt(
+    static func summaryGenerationInstructions(
         settings: AppSettings,
-        repository: MeetingRepository? = nil
+        includesPreviousMeetings: Bool
     ) -> String {
-        // Auto モード
-        guard let selectedInstructionID = settings.selectedInstructionID,
-              let vaultId = settings.currentVault?.id else {
-            return AppSettings.defaultSummaryPrompt
+        // カスタム instruction は一時的に無効化し、保存済みの選択にかかわらず既定値を使う。
+        var sections = [
+            AppSettings.defaultSummaryPrompt,
+            codexInputTrustInstruction,
+        ]
+        if includesPreviousMeetings {
+            sections.append(codexPreviousMeetingsInstruction)
         }
-
-        // カスタム instruction: DB から全文プロンプトを読み込む
-        if let instruction = try? repository?.fetchInstruction(id: selectedInstructionID),
-           instruction.vaultId == vaultId,
-           !instruction.content.isEmpty {
-            return instruction.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        // フォールバック: デフォルト
-        return AppSettings.defaultSummaryPrompt
+        sections.append("# Detail Level\n\(settings.summaryDetailLevel.instruction)")
+        sections.append("# Language\nWrite the summary in \(settings.llmSummaryLanguage.displayName).")
+        return sections.joined(separator: "\n\n") + codexStructuredInstruction
     }
 
     private static func appendUniqueTags(_ candidates: [String], to tags: inout [String]) {

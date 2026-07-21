@@ -326,6 +326,13 @@
 "AI Summary" = "AI Summary";
 "Reasoning Effort" = "Reasoning Effort";
 "Controls how much reasoning Codex uses for each summary." = "Controls how much reasoning Codex uses for each summary.";
+"Summary Output" = "Summary Output";
+"Detail Level" = "Detail Level";
+"Controls how much information is included in each summary." = "Controls how much information is included in each summary.";
+"Concise" = "Concise";
+"Detailed" = "Detailed";
+"Output Language" = "Output Language";
+"Select the language used for generated summaries." = "Select the language used for generated summaries.";
 "Minimal" = "Minimal";
 "Low" = "Low";
 "Medium" = "Medium";

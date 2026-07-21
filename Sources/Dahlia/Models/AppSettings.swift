@@ -445,6 +445,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
     @AppStorage("codexChatDockSide") var codexChatDockSideRawValue = CodexChatDockSide.right.rawValue
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
+    @AppStorage("summaryDetailLevel") var summaryDetailLevelRawValue = SummaryDetailLevel.defaultValue.rawValue
 
     var codexChatDockSide: CodexChatDockSide {
         get { CodexChatDockSide(rawValue: codexChatDockSideRawValue) ?? .right }
@@ -491,6 +492,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var llmSummaryLanguage: SummaryLanguage {
         get { SummaryLanguage(rawValue: llmSummaryLanguageRawValue) ?? .ja }
         set { llmSummaryLanguageRawValue = newValue.rawValue }
+    }
+
+    var summaryDetailLevel: SummaryDetailLevel {
+        get { SummaryDetailLevel.fromPersistedValue(summaryDetailLevelRawValue) }
+        set { summaryDetailLevelRawValue = newValue.rawValue }
     }
 
     @AppStorage("llmSummaryPrompt") var llmSummaryPrompt: String = AppSettings.defaultSummaryPrompt
