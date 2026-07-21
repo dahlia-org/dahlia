@@ -13,8 +13,8 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct RecordingAudioStoreTests {
         @Test
-        func productionSegmentsTargetThirtySeconds() {
-            #expect(RecordingAudioStore.Configuration.production.targetSegmentDuration == .seconds(30))
+        func productionSegmentsTargetSixtySeconds() {
+            #expect(RecordingAudioStore.Configuration.production.targetSegmentDuration == .seconds(60))
         }
 
         @Test
@@ -169,6 +169,130 @@ import GRDB
             #expect(failed.1?.durableThroughOffsetSeconds == 0)
             #expect(failed.1?.lastContiguousReadySegmentIndex == nil)
             #expect(FileManager.default.fileExists(atPath: finalURL.path))
+        }
+
+        @Test
+        func preservedModificationDateCannotBypassDigestVerification() async throws {
+            let fixture = try BatchAudioTestFixture(name: "PreservedModificationDateMismatch")
+            defer { fixture.removeFiles() }
+            let ready = try await makeReadySegment(fixture: fixture)
+            let verifiedAt = try #require(ready.integrityVerifiedAt)
+            let finalURL = fixture.managedRootURL.appending(path: ready.finalRelativePath)
+            var bytes = try Data(contentsOf: finalURL)
+            let index = try #require(bytes.indices.dropLast(8).last)
+            bytes[index] ^= 0x01
+            try bytes.write(to: finalURL)
+            try FileManager.default.setAttributes(
+                [.modificationDate: verifiedAt.addingTimeInterval(-1)],
+                ofItemAtPath: finalURL.path
+            )
+
+            let store = try makeStore(fixture)
+            await #expect(throws: (any Error).self) {
+                try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { _ in true }
+            }
+            let failed = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db, key: ready.id)
+            }
+            #expect(failed?.state == .failed)
+            #expect(failed?.failureCode == "integrityMismatch")
+        }
+
+        @Test
+        func unchangedReadySegmentReusesRecordingIntegrityCheckpoint() async throws {
+            let fixture = try BatchAudioTestFixture(name: "ReuseIntegrityCheckpoint")
+            defer { fixture.removeFiles() }
+            let ready = try await makeReadySegment(fixture: fixture)
+            let verifiedAt = try #require(ready.integrityVerifiedAt)
+
+            let store = try makeStore(fixture)
+            let segmentCount = try await store.withVerifiedTranscribableSegments(
+                sessionId: fixture.session.id
+            ) { $0.count }
+            let afterRead = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db, key: ready.id)
+            }
+
+            #expect(segmentCount == 1)
+            #expect(afterRead?.integrityVerifiedAt == verifiedAt)
+        }
+
+        @Test
+        func changedModificationDatePerformsFullVerificationAndRefreshesCheckpoint() async throws {
+            let fixture = try BatchAudioTestFixture(name: "RefreshIntegrityCheckpoint")
+            defer { fixture.removeFiles() }
+            let ready = try await makeReadySegment(fixture: fixture)
+            let verifiedAt = try #require(ready.integrityVerifiedAt)
+            let finalURL = fixture.managedRootURL.appending(path: ready.finalRelativePath)
+            try await Task.sleep(for: .milliseconds(10))
+            try FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: finalURL.path)
+
+            let store = try makeStore(fixture)
+            _ = try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { $0.count }
+            let afterRead = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db, key: ready.id)
+            }
+
+            #expect(try #require(afterRead?.integrityVerifiedAt) > verifiedAt)
+            #expect(afterRead?.state == .ready)
+        }
+
+        @Test
+        func concurrentVerificationMarksEveryCorruptSegmentFailed() async throws {
+            let fixture = try BatchAudioTestFixture(name: "MultipleDigestMismatches")
+            defer { fixture.removeFiles() }
+            let segmentedConfiguration = RecordingAudioStore.Configuration(
+                targetSegmentDuration: .milliseconds(5),
+                maximumFinalizingSegmentCountPerSource: 2,
+                maximumActiveSegmentDuration: .seconds(600),
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                minimumAvailableCapacity: 0,
+                capacityCheckInterval: .seconds(5)
+            )
+            let recorder = try BatchAudioRecordingSession(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                meetingId: fixture.meeting.id,
+                recordingSessionId: fixture.session.id,
+                recordingStartTime: fixture.now,
+                sampleRate: 16000,
+                configuration: segmentedConfiguration
+            )
+            let writer = try await recorder.beginRange(
+                source: .microphone,
+                locale: Locale(identifier: "ja_JP"),
+                at: fixture.now
+            )
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
+            try await recorder.finish()
+
+            let segments = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
+            }
+            #expect(segments.count == 2)
+            for segment in segments {
+                let url = fixture.managedRootURL.appending(path: segment.finalRelativePath)
+                var bytes = try Data(contentsOf: url)
+                let index = try #require(bytes.indices.dropLast(8).last)
+                bytes[index] ^= 0x01
+                try bytes.write(to: url)
+            }
+
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                configuration: segmentedConfiguration
+            )
+            await #expect(throws: (any Error).self) {
+                try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { _ in true }
+            }
+
+            let failedSegments = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.order(Column("segmentIndex").asc).fetchAll(db)
+            }
+            #expect(failedSegments.map(\.state) == [.failed, .failed])
+            #expect(failedSegments.map(\.failureCode) == ["integrityMismatch", "integrityMismatch"])
         }
 
         @Test

@@ -8,6 +8,17 @@ enum BatchSpeechTranscriberError: LocalizedError {
     case languageDetectionFailed
     case unsupportedDetectedLanguage(String)
 
+    var diagnosticCode: String {
+        switch self {
+        case .audioFormatUnavailable: "audioFormatUnavailable"
+        case .invalidAudioRange: "invalidAudioRange"
+        case .analysisDidNotAdvance: "analysisDidNotAdvance"
+        case .languageModelPreparationFailed: "languageModelPreparationFailed"
+        case .languageDetectionFailed: "languageDetectionFailed"
+        case .unsupportedDetectedLanguage: "unsupportedDetectedLanguage"
+        }
+    }
+
     var errorDescription: String? {
         switch self {
         case .audioFormatUnavailable:

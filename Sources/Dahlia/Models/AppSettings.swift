@@ -60,6 +60,20 @@ enum CalendarSource: String, CaseIterable, Identifiable {
     }
 }
 
+enum TranscriptionLanguageScope: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case selected
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .all: L10n.allSupportedLanguages
+        case .selected: L10n.selectedLanguages
+        }
+    }
+}
+
 /// アプリ設定の一元管理。@AppStorage で UserDefaults に永続化。
 @MainActor
 final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProviding {
@@ -83,6 +97,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
+    nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let summaryPreviousMeetingCountOptions = [0, 1, 2, 3, 4, 5]
     nonisolated static let defaultSummaryPreviousMeetingCount = 3
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
@@ -259,7 +274,21 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     // MARK: - 表示言語設定
 
     /// デフォルトで有効にする言語識別子のJSON。
+    nonisolated static let defaultEnabledLocaleIdentifiers: Set = ["en_US", "ja_JP"]
     private static let defaultEnabledLocalesJSON = "[\"en_US\",\"ja_JP\"]"
+
+    /// 空文字は旧設定を表し、既存の言語集合から範囲を推定する。
+    @AppStorage(transcriptionLanguageScopeUserDefaultsKey) var transcriptionLanguageScopeRawValue = ""
+
+    var transcriptionLanguageScope: TranscriptionLanguageScope {
+        get {
+            Self.resolvedTranscriptionLanguageScope(
+                storedRawValue: transcriptionLanguageScopeRawValue,
+                enabledLocaleIdentifiers: enabledLocaleIdentifiers
+            )
+        }
+        set { transcriptionLanguageScopeRawValue = newValue.rawValue }
+    }
 
     /// 言語選択ピッカーに表示する言語の識別子（JSON配列）。
     @AppStorage("enabledLocaleIdentifiers") var enabledLocaleIdentifiersJSON = defaultEnabledLocalesJSON
@@ -285,10 +314,19 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         }
     }
 
-    /// 指定ロケールが有効かどうか。空の場合は全て有効。
+    /// 指定ロケールがピッカーと自動言語判定の候補として有効かどうか。
     func isLocaleEnabled(_ identifier: String) -> Bool {
-        let enabled = enabledLocaleIdentifiers
-        return enabled.isEmpty || enabled.contains(identifier)
+        transcriptionLanguageScope == .all || enabledLocaleIdentifiers.contains(identifier)
+    }
+
+    nonisolated static func resolvedTranscriptionLanguageScope(
+        storedRawValue: String,
+        enabledLocaleIdentifiers: Set<String>
+    ) -> TranscriptionLanguageScope {
+        if let storedScope = TranscriptionLanguageScope(rawValue: storedRawValue) {
+            return storedScope
+        }
+        return enabledLocaleIdentifiers.isEmpty ? .all : .selected
     }
 
     // MARK: - 保管庫（ランタイム状態）
@@ -608,6 +646,10 @@ extension UserDefaults {
 
     @objc dynamic var enabledLocaleIdentifiers: String? {
         string(forKey: "enabledLocaleIdentifiers")
+    }
+
+    @objc dynamic var transcriptionLanguageScope: String? {
+        string(forKey: AppSettings.transcriptionLanguageScopeUserDefaultsKey)
     }
 
     @objc dynamic var transcriptTranslationEnabled: Bool {

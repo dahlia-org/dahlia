@@ -1,7 +1,7 @@
 import Foundation
 
 enum BatchTranscriptionLanguageSelection: Hashable, Sendable {
-    case automatic
+    case automatic(fallbackLocaleIdentifier: String)
     case manual(localeIdentifier: String)
 
     var detectionMode: BatchLanguageDetectionMode {
@@ -10,6 +10,15 @@ enum BatchTranscriptionLanguageSelection: Hashable, Sendable {
             .automatic
         case .manual:
             .manual
+        }
+    }
+
+    var localeIdentifier: String {
+        switch self {
+        case let .automatic(fallbackLocaleIdentifier):
+            fallbackLocaleIdentifier
+        case let .manual(localeIdentifier):
+            localeIdentifier
         }
     }
 }

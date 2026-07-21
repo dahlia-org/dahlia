@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-enum RecordingAudioSource: String, Codable, DatabaseValueConvertible {
+enum RecordingAudioSource: String, Codable, DatabaseValueConvertible, Sendable {
     case microphone
     case system
 

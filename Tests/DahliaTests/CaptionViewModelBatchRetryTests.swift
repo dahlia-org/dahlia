@@ -8,6 +8,18 @@ import GRDB
     @MainActor
     struct CaptionViewModelBatchRetryTests {
         @Test
+        func newConfirmationDefaultsToManualSelectedLanguage() {
+            let confirmation = BatchTranscriptionConfirmation(
+                sessionId: .v7(),
+                meetingId: .v7(),
+                suggestedLocaleIdentifier: "ja_JP",
+                retainAudioAfterBatch: true
+            )
+
+            #expect(confirmation.initialLanguageSelection == .manual(localeIdentifier: "ja_JP"))
+        }
+
+        @Test
         func failedAutomaticBatchRetryPresentsLanguageSelection() async throws {
             let batch = try BatchAudioTestFixture(
                 name: "failed-auto-retry-selection",
@@ -39,7 +51,9 @@ import GRDB
 
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.sessionId == batch.session.id)
-            #expect(confirmation.initialLanguageSelection == .automatic)
+            #expect(
+                confirmation.initialLanguageSelection == .automatic(fallbackLocaleIdentifier: "en_GB")
+            )
             #expect(confirmation.retainAudioAfterBatch)
         }
 
@@ -49,6 +63,7 @@ import GRDB
                     throw CocoaError(.fileNoSuchFile)
                 }
                 session.batchLanguageDetectionMode = .automatic
+                session.batchSelectedLocaleIdentifier = "en_GB"
                 session.batchLastError = L10n.batchLanguageDetectionFailed
                 session.batchLastAttemptAt = batch.now
                 session.batchAttemptCount = 1

@@ -41,6 +41,160 @@ import GRDB
             try await assertCompletedRetry(context)
         }
 
+        @Test
+        func nextLanguageDetectionOverlapsPreviousSpeechRecognition() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "AutomaticLanguagePipeline",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 0.0125,
+                retainAudioAfterBatch: true
+            )
+            defer { fixture.removeFiles() }
+            try await createSegmentedRecording(fixture: fixture)
+            let probe = BatchPipelineProbe()
+            defer { Task { await probe.releaseSecondDetection() } }
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                languageDetector: PipelineLanguageDetector(probe: probe),
+                speechRecognizer: PipelineSpeechRecognizer(probe: probe),
+                supportedLocalesProvider: {
+                    [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")]
+                },
+                onStateChange: { _ in }
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitUntil { await probe.secondDetectionIsActive }
+            try await waitUntil { await probe.recognitionCallCount > 0 }
+            #expect(await probe.recognitionStartedDuringSecondDetection)
+            await probe.releaseSecondDetection()
+            try await waitUntil {
+                (try? fixture.database.dbQueue.read { db in
+                    try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchCompletedAt != nil
+                }) == true
+            }
+
+            let transcripts = try await fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord
+                    .filter(Column("sessionId") == fixture.session.id)
+                    .order(Column("startTime").asc)
+                    .fetchAll(db)
+            }
+            #expect(transcripts.count == 2)
+        }
+
+        @Test
+        func unsupportedDetectionUsesSelectedFallbackLocale() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "AutomaticLanguageFallback",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 0.0125,
+                retainAudioAfterBatch: true
+            )
+            defer { fixture.removeFiles() }
+            try await createSegmentedRecording(
+                fixture: fixture,
+                recordedLocale: Locale(identifier: "en_US")
+            )
+            let recognizer = CoordinatorSpeechRecognizer()
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                languageDetector: SequenceCoordinatorLanguageDetector(detections: ["ja", "jw"]),
+                speechRecognizer: recognizer,
+                supportedLocalesProvider: {
+                    [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")]
+                },
+                onStateChange: { _ in }
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitUntil {
+                (try? fixture.database.dbQueue.read { db in
+                    try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchCompletedAt != nil
+                }) == true
+            }
+
+            #expect(await recognizer.localeIdentifiers == ["ja_JP", "en_US"])
+        }
+
+        @Test
+        func fallbackDiagnosticsAreReportedWhenSubsequentRecognitionFails() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "AutomaticLanguageFallbackFailure",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 0.0125,
+                retainAudioAfterBatch: true
+            )
+            defer { fixture.removeFiles() }
+            try await createSegmentedRecording(
+                fixture: fixture,
+                recordedLocale: Locale(identifier: "en_US")
+            )
+            let reportProbe = LanguageFallbackReportProbe()
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                languageDetector: SequenceCoordinatorLanguageDetector(detections: ["jw", "jw"]),
+                speechRecognizer: FailingCoordinatorSpeechRecognizer(),
+                supportedLocalesProvider: {
+                    [Locale(identifier: "en_US")]
+                },
+                languageFallbackReporter: { fallbacks, allowedLanguageIdentifiers in
+                    await reportProbe.record(
+                        fallbacks: fallbacks,
+                        allowedLanguageIdentifiers: allowedLanguageIdentifiers
+                    )
+                },
+                onStateChange: { _ in }
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitUntil { await reportProbe.reportCount == 1 }
+
+            #expect(await reportProbe.fallbackCount >= 1)
+            #expect(await reportProbe.reasons == [.unsupportedLanguage])
+            let transcriptCount = try await fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord
+                    .filter(Column("sessionId") == fixture.session.id)
+                    .fetchCount(db)
+            }
+            #expect(transcriptCount == 0)
+        }
+
+        @Test
+        func sentryFallbackReportAggregatesEveryReason() {
+            let fallbacks = [
+                fallback(reason: .detectionFailed),
+                fallback(reason: .lowConfidence),
+                fallback(reason: .lowConfidence),
+                fallback(reason: .unsupportedLanguage),
+            ]
+
+            let context = BatchTranscriptionCoordinator.languageFallbackReportContext(
+                fallbacks,
+                allowedLanguageIdentifiers: ["en", "ja"]
+            )
+
+            #expect(context["source"] == "batchLanguageDetectionFallback")
+            #expect(context["candidateScope"] == "selected")
+            #expect(context["candidateLanguageCount"] == "2")
+            #expect(context["fallbackCount"] == "4")
+            #expect(context["detectionFailedCount"] == "1")
+            #expect(context["lowConfidenceCount"] == "2")
+            #expect(context["unsupportedLanguageCount"] == "1")
+        }
+
+        private func fallback(reason: BatchLanguageFallback.Reason) -> BatchLanguageFallback {
+            BatchLanguageFallback(
+                reason: reason,
+                detectedLanguageIdentifier: nil,
+                fallbackLocaleIdentifier: "ja_JP",
+                topProbability: nil
+            )
+        }
+
         private func makeContext() async throws -> Context {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguageRetry",
@@ -75,7 +229,10 @@ import GRDB
             )
         }
 
-        private func createSegmentedRecording(fixture: BatchAudioTestFixture) async throws {
+        private func createSegmentedRecording(
+            fixture: BatchAudioTestFixture,
+            recordedLocale: Locale = Locale(identifier: "ja_JP")
+        ) async throws {
             let configuration = RecordingAudioStore.Configuration(
                 targetSegmentDuration: .milliseconds(5),
                 maximumFinalizingSegmentCountPerSource: 2,
@@ -95,7 +252,7 @@ import GRDB
             )
             let writer = try await recorder.beginRange(
                 source: .microphone,
-                locale: Locale(identifier: "ja_JP"),
+                locale: recordedLocale,
                 at: fixture.now
             )
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
@@ -107,6 +264,7 @@ import GRDB
                     throw CocoaError(.fileNoSuchFile)
                 }
                 session.batchLanguageDetectionMode = .automatic
+                session.batchSelectedLocaleIdentifier = recordedLocale.identifier
                 try session.update(db)
             }
         }
@@ -120,7 +278,7 @@ import GRDB
                 return (session, transcriptCount)
             }
             #expect(failed.0.batchLanguageDetectionMode == .automatic)
-            #expect(failed.0.batchLastError == L10n.batchLanguageDetectionFailed)
+            #expect(failed.0.batchLastError == L10n.batchLanguageModelPreparationFailed)
             #expect(failed.0.batchFailureKind == .transcription)
             #expect(failed.0.batchAttemptCount == 1)
             #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(failed.0))
@@ -146,8 +304,13 @@ import GRDB
             #expect(completed.0.batchAttemptCount == 2)
             #expect(completed.1.count == 2)
             #expect(completed.1.map(\.speakerLabel) == ["mic", "mic"])
-            #expect(completed.1.map(\.text) == ["recognized-2", "recognized-3"])
-            #expect(await context.recognizer.localeIdentifiers == ["ja_JP", "ja_JP", "en_US"])
+            let localeIdentifiers = await context.recognizer.localeIdentifiers
+            #expect((2 ... 3).contains(localeIdentifiers.count))
+            #expect(Set(localeIdentifiers.suffix(2)) == ["ja_JP", "en_US"])
+            #expect(Set(completed.1.map(\.text)) == [
+                "recognized-\(localeIdentifiers.count - 1)",
+                "recognized-\(localeIdentifiers.count)",
+            ])
             #expect(await !(context.detector.detectedDuringUnload))
         }
 
@@ -173,17 +336,39 @@ import GRDB
 
     private enum CoordinatorLanguageDetectionTestError: Error {
         case timedOut
+        case forcedRecognitionFailure
+    }
+
+    private actor LanguageFallbackReportProbe {
+        private(set) var reportCount = 0
+        private(set) var fallbackCount = 0
+        private(set) var reasons: Set<BatchLanguageFallback.Reason> = []
+
+        func record(
+            fallbacks: [BatchLanguageFallback],
+            allowedLanguageIdentifiers _: Set<String>?
+        ) {
+            reportCount += 1
+            fallbackCount += fallbacks.count
+            reasons.formUnion(fallbacks.map(\.reason))
+        }
+    }
+
+    private struct FailingCoordinatorSpeechRecognizer: BatchSpeechRecognizing {
+        func recognize(audioURL _: URL, locale _: Locale) throws -> [BatchSpeechRecognition] {
+            throw CoordinatorLanguageDetectionTestError.forcedRecognitionFailure
+        }
     }
 
     private actor RetryLanguageDetector: BatchLanguageDetecting {
         private enum Step {
             case detection(String)
-            case failure
+            case modelPreparationFailure
         }
 
         private var steps: [Step] = [
             .detection("ja"),
-            .failure,
+            .modelPreparationFailure,
             .detection("ja"),
             .detection("en"),
         ]
@@ -193,7 +378,10 @@ import GRDB
         private(set) var unloadCount = 0
         private var isUnloading = false
 
-        func detectLanguage(audioURL _: URL) throws -> String {
+        func detectLanguage(
+            audioURL _: URL,
+            allowedLanguageIdentifiers _: Set<String>?
+        ) throws -> BatchLanguageDetectionOutcome {
             if isUnloading {
                 detectedDuringUnload = true
                 throw BatchLanguageDetectorError.detectionFailed
@@ -201,9 +389,9 @@ import GRDB
             guard !steps.isEmpty else { throw BatchLanguageDetectorError.detectionFailed }
             switch steps.removeFirst() {
             case let .detection(languageIdentifier):
-                return languageIdentifier
-            case .failure:
-                throw BatchLanguageDetectorError.detectionFailed
+                return .confidentDetection(languageIdentifier)
+            case .modelPreparationFailure:
+                throw BatchLanguageDetectorError.modelPreparationFailed
             }
         }
 
@@ -235,6 +423,103 @@ import GRDB
                     startSeconds: 0.001,
                     endSeconds: 0.002,
                     text: "recognized-\(localeIdentifiers.count)"
+                ),
+            ]
+        }
+    }
+
+    private actor SequenceCoordinatorLanguageDetector: BatchLanguageDetecting {
+        private var detections: [String]
+
+        init(detections: [String]) {
+            self.detections = detections
+        }
+
+        func detectLanguage(
+            audioURL _: URL,
+            allowedLanguageIdentifiers _: Set<String>?
+        ) throws -> BatchLanguageDetectionOutcome {
+            guard !detections.isEmpty else { throw BatchLanguageDetectorError.detectionFailed }
+            return .confidentDetection(detections.removeFirst())
+        }
+
+        func unload() async {}
+    }
+
+    private actor BatchPipelineProbe {
+        private var secondDetectionContinuation: CheckedContinuation<Void, Never>?
+        private var recognitionWaiters: [CheckedContinuation<Void, Never>] = []
+        private(set) var secondDetectionIsActive = false
+        private(set) var recognitionStartedDuringSecondDetection = false
+        private(set) var recognitionCallCount = 0
+
+        func holdSecondDetection() async {
+            secondDetectionIsActive = true
+            let waiters = recognitionWaiters
+            recognitionWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+            await withCheckedContinuation { continuation in
+                secondDetectionContinuation = continuation
+            }
+            secondDetectionIsActive = false
+        }
+
+        func recordRecognitionStart() async {
+            recognitionCallCount += 1
+            guard recognitionCallCount == 1 else { return }
+            if !secondDetectionIsActive {
+                await withCheckedContinuation { continuation in
+                    recognitionWaiters.append(continuation)
+                }
+            }
+            recognitionStartedDuringSecondDetection = secondDetectionIsActive
+        }
+
+        func releaseSecondDetection() {
+            secondDetectionContinuation?.resume()
+            secondDetectionContinuation = nil
+        }
+    }
+
+    private actor PipelineLanguageDetector: BatchLanguageDetecting {
+        private let probe: BatchPipelineProbe
+        private var callCount = 0
+
+        init(probe: BatchPipelineProbe) {
+            self.probe = probe
+        }
+
+        func detectLanguage(
+            audioURL _: URL,
+            allowedLanguageIdentifiers _: Set<String>?
+        ) async -> BatchLanguageDetectionOutcome {
+            callCount += 1
+            if callCount == 2 {
+                await probe.holdSecondDetection()
+                return .confidentDetection("en")
+            }
+            return .confidentDetection("ja")
+        }
+
+        func unload() async {}
+    }
+
+    private actor PipelineSpeechRecognizer: BatchSpeechRecognizing {
+        private let probe: BatchPipelineProbe
+
+        init(probe: BatchPipelineProbe) {
+            self.probe = probe
+        }
+
+        func recognize(audioURL _: URL, locale: Locale) async -> [BatchSpeechRecognition] {
+            await probe.recordRecognitionStart()
+            return [
+                BatchSpeechRecognition(
+                    startSeconds: 0.001,
+                    endSeconds: 0.002,
+                    text: locale.identifier
                 ),
             ]
         }

@@ -24,4 +24,5 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     var retentionExpiresAt: Date?
     var batchFailureKind: BatchFailureKind?
     var batchLanguageDetectionMode: BatchLanguageDetectionMode = .manual
+    var batchSelectedLocaleIdentifier: String?
 }

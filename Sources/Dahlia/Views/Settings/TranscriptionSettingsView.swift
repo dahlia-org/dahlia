@@ -1,7 +1,7 @@
 import Speech
 import SwiftUI
 
-/// 設定画面「文字起こし」タブ。認識言語の表示フィルタを管理する。
+/// 設定画面「文字起こし」タブ。認識方法と利用する言語を管理する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
@@ -11,7 +11,7 @@ struct TranscriptionSettingsView: View {
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey)
     private var exportBatchSummaryToGoogleDocs = false
     @State private var supportedLocales: [Locale] = []
-    @State private var isLoadingLocales = false
+    @State private var isLoadingLocales = true
     @State private var localeSearchText = ""
 
     var body: some View {
@@ -123,19 +123,33 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
-                TextField(L10n.searchLanguages, text: $localeSearchText)
-                    .textFieldStyle(.roundedBorder)
+                Picker(L10n.languageRange, selection: languageScopeBinding) {
+                    ForEach(TranscriptionLanguageScope.allCases) { scope in
+                        Text(scope.displayName).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(isLoadingLocales)
 
-                if isLoadingLocales {
-                    ProgressView(L10n.loadingLanguages)
-                } else {
-                    localeSelectionList
-                    localeSelectionFooter
+                if settings.transcriptionLanguageScope == .selected {
+                    TextField(L10n.searchLanguages, text: $localeSearchText)
+                        .textFieldStyle(.roundedBorder)
+
+                    if isLoadingLocales {
+                        ProgressView(L10n.loadingLanguages)
+                    } else {
+                        localeSelectionList
+                    }
                 }
             } header: {
-                Text(L10n.displayLanguages)
+                Text(L10n.transcriptionLanguages)
             } footer: {
-                Text(L10n.displayLanguagesDescription)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(languageScopeDescription)
+                    if settings.transcriptionLanguageScope == .selected {
+                        Text(L10n.languagesSelected(settings.enabledLocaleIdentifiers.count))
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -159,34 +173,11 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    private var localeSelectionFooter: some View {
-        HStack(alignment: .center, spacing: 12) {
-            let enabled = settings.enabledLocaleIdentifiers
-            Text(localeSelectionSummary(for: enabled))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            if !enabled.isEmpty {
-                Button(L10n.uncheckAll) {
-                    settings.enabledLocaleIdentifiers = []
-                }
-            }
-
-            if enabled.count != supportedLocales.count {
-                Button(L10n.showAll) {
-                    settings.enabledLocaleIdentifiers = Set(supportedLocales.map(\.identifier))
-                }
-            }
+    private var languageScopeDescription: String {
+        switch settings.transcriptionLanguageScope {
+        case .all: L10n.allTranscriptionLanguagesDescription
+        case .selected: L10n.selectedTranscriptionLanguagesDescription
         }
-    }
-
-    private func localeSelectionSummary(for enabled: Set<String>) -> String {
-        if enabled.isEmpty {
-            return L10n.allLanguagesShown
-        }
-        return L10n.languagesSelected(enabled.count)
     }
 
     private var targetLanguageOptions: [TranscriptTranslationLanguageOption] {
@@ -222,10 +213,7 @@ struct TranscriptionSettingsView: View {
 
     private func toggleLocale(_ identifier: String) {
         var enabled = settings.enabledLocaleIdentifiers
-        if enabled.isEmpty {
-            enabled = Set(supportedLocales.map(\.identifier))
-            enabled.remove(identifier)
-        } else if enabled.contains(identifier) {
+        if enabled.contains(identifier) {
             enabled.remove(identifier)
         } else {
             enabled.insert(identifier)
@@ -239,6 +227,24 @@ struct TranscriptionSettingsView: View {
         } set: { _ in
             toggleLocale(identifier)
         }
+    }
+
+    private var languageScopeBinding: Binding<TranscriptionLanguageScope> {
+        Binding {
+            settings.transcriptionLanguageScope
+        } set: { scope in
+            settings.transcriptionLanguageScope = scope
+            if scope == .selected, settings.enabledLocaleIdentifiers.isEmpty {
+                seedDefaultEnabledLocales()
+            }
+        }
+    }
+
+    private func seedDefaultEnabledLocales() {
+        let supportedIdentifiers = Set(supportedLocales.map(\.identifier))
+        guard !supportedIdentifiers.isEmpty else { return }
+        settings.enabledLocaleIdentifiers = AppSettings.defaultEnabledLocaleIdentifiers
+            .intersection(supportedIdentifiers)
     }
 
     private func localeRow(for locale: Locale) -> some View {
@@ -257,6 +263,10 @@ struct TranscriptionSettingsView: View {
         isLoadingLocales = true
         let locales = await SpeechTranscriber.supportedLocales
         supportedLocales = locales.sortedByLocalizedName()
+        if settings.transcriptionLanguageScope == .selected,
+           settings.enabledLocaleIdentifiers.isEmpty {
+            seedDefaultEnabledLocales()
+        }
         isLoadingLocales = false
     }
 }

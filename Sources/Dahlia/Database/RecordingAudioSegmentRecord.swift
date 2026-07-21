@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// App-managed recording audio represented by one immutable physical CAF segment.
-struct RecordingAudioSegmentRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+struct RecordingAudioSegmentRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
     static let databaseTableName = "recording_audio_segments"
 
     var id: UUID

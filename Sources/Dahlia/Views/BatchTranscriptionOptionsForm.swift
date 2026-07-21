@@ -2,7 +2,8 @@ import SwiftUI
 
 struct BatchTranscriptionOptionsForm: View {
     let locales: [Locale]
-    @Binding var languageSelection: BatchTranscriptionLanguageSelection
+    @Binding var selectedLocaleIdentifier: String
+    @Binding var automaticallyDetectsLanguage: Bool
     @Binding var deleteAudioAfterTranscription: Bool
 
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
@@ -17,15 +18,19 @@ struct BatchTranscriptionOptionsForm: View {
     var body: some View {
         Form {
             Section(L10n.transcription) {
-                Picker(L10n.language, selection: $languageSelection) {
-                    Text(L10n.detectLanguageAutomatically)
-                        .tag(BatchTranscriptionLanguageSelection.automatic)
+                Picker(L10n.language, selection: $selectedLocaleIdentifier) {
                     ForEach(locales, id: \.identifier) { locale in
                         Text(displayName(for: locale))
-                            .tag(BatchTranscriptionLanguageSelection.manual(localeIdentifier: locale.identifier))
+                            .tag(locale.identifier)
                     }
                 }
                 .pickerStyle(.menu)
+
+                Toggle(isOn: $automaticallyDetectsLanguage) {
+                    Text(L10n.detectLanguageAutomatically)
+                    Text(L10n.detectLanguageAutomaticallyDescription)
+                }
+                .toggleStyle(.checkbox)
 
                 Toggle(isOn: $deleteAudioAfterTranscription) {
                     Text(L10n.deleteBatchAudioAfterTranscription)

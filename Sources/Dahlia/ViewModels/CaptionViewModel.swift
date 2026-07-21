@@ -433,6 +433,7 @@ final class CaptionViewModel: ObservableObject {
         // AppSettings の表示言語設定変更を監視
         settingsCancellable = UserDefaults.standard
             .publisher(for: \.enabledLocaleIdentifiers)
+            .merge(with: UserDefaults.standard.publisher(for: \.transcriptionLanguageScope))
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -517,7 +518,9 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func batchTranscriptionLocaleOptions(preferredIdentifier: String) -> [Locale] {
-        var locales = filteredLocales.isEmpty ? supportedLocales : filteredLocales
+        var locales = AppSettings.shared.transcriptionLanguageScope == .all
+            ? supportedLocales
+            : filteredLocales
         if !locales.contains(where: { $0.identifier == preferredIdentifier }) {
             locales.append(Locale(identifier: preferredIdentifier))
         }
@@ -682,7 +685,7 @@ final class CaptionViewModel: ObservableObject {
     private func updateFilteredLocales() {
         let settings = AppSettings.shared
         let enabled = settings.enabledLocaleIdentifiers
-        if enabled.isEmpty {
+        if settings.transcriptionLanguageScope == .all {
             filteredLocales = supportedLocales
         } else {
             filteredLocales = supportedLocales.filter { locale in
@@ -2035,15 +2038,19 @@ final class CaptionViewModel: ObservableObject {
                   return (session, localeIdentifier)
               }),
               let session = stored.0 else {
-            return (suggestedLocaleIdentifier, fallbackRetention, .automatic)
+            return (
+                suggestedLocaleIdentifier,
+                fallbackRetention,
+                .manual(localeIdentifier: suggestedLocaleIdentifier)
+            )
         }
-        let localeIdentifier = stored.1 ?? suggestedLocaleIdentifier
+        let localeIdentifier = session.batchSelectedLocaleIdentifier ?? stored.1 ?? suggestedLocaleIdentifier
         let isRetry = session.batchLastError?.nilIfBlank != nil && session.batchAttemptCount > 0
         let languageSelection: BatchTranscriptionLanguageSelection = if isRetry,
-                                                                        session.batchLanguageDetectionMode == .manual {
-            .manual(localeIdentifier: localeIdentifier)
+                                                                        session.batchLanguageDetectionMode == .automatic {
+            .automatic(fallbackLocaleIdentifier: localeIdentifier)
         } else {
-            .automatic
+            .manual(localeIdentifier: localeIdentifier)
         }
         return (localeIdentifier, session.retainAudioAfterBatch, languageSelection)
     }

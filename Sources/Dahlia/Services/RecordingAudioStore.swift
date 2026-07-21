@@ -6,9 +6,11 @@ import CryptoKit
 import Darwin
 import Foundation
 import GRDB
+import os
 
 /// The sole mutation boundary for app-managed recording audio.
 actor RecordingAudioStore {
+    private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
     private enum FilePresence: Equatable {
         case missing
         case regular
@@ -52,7 +54,7 @@ actor RecordingAudioStore {
         }
 
         static let production = Configuration(
-            targetSegmentDuration: .seconds(30),
+            targetSegmentDuration: .seconds(60),
             maximumFinalizingSegmentCountPerSource: 2,
             maximumActiveSegmentDuration: .seconds(600),
             maximumActiveSegmentByteCount: 64 * 1024 * 1024,
@@ -66,7 +68,7 @@ actor RecordingAudioStore {
         let partialURL: URL
     }
 
-    struct VerifiedSegment {
+    struct VerifiedSegment: Sendable {
         let segment: RecordingAudioSegmentRecord
         let url: URL
         let ranges: [RecordingAudioSegmentRangeRecord]
@@ -75,6 +77,52 @@ actor RecordingAudioStore {
     private struct TranscriptionReadPlan {
         let records: [RecordingAudioSegmentRecord]
         let cutoff: TimeInterval?
+    }
+
+    private struct VerificationCandidate: Sendable {
+        let index: Int
+        let record: RecordingAudioSegmentRecord
+        let url: URL
+        let ranges: [RecordingAudioSegmentRangeRecord]
+        let expectedFrameCount: Int64
+        let expectedByteCount: Int64
+        let expectedDigest: Data
+        let integrityVerifiedAt: Date
+    }
+
+    private struct SegmentVerificationFailure: Error, Sendable {
+        let segmentId: UUID
+        let error: RecordingAudioStoreError
+    }
+
+    private struct SegmentVerificationFailures: Error, Sendable {
+        let failures: [SegmentVerificationFailure]
+    }
+
+    private enum VerificationOutcome: Sendable {
+        case success(index: Int, segment: VerifiedSegment, fullyVerifiedAt: Date?)
+        case failure(index: Int, failure: SegmentVerificationFailure)
+
+        var index: Int {
+            switch self {
+            case let .success(index, _, _), let .failure(index, _): index
+            }
+        }
+
+        var segment: VerifiedSegment? {
+            guard case let .success(_, segment, _) = self else { return nil }
+            return segment
+        }
+
+        var fullyVerifiedAt: (UUID, Date)? {
+            guard case let .success(_, segment, fullyVerifiedAt?) = self else { return nil }
+            return (segment.segment.id, fullyVerifiedAt)
+        }
+
+        var failure: SegmentVerificationFailure? {
+            guard case let .failure(_, failure) = self else { return nil }
+            return failure
+        }
     }
 
     let configuration: Configuration
@@ -402,6 +450,20 @@ actor RecordingAudioStore {
     }
 
     func markSourceEnded(sessionId: UUID, source: RecordingAudioSource, at now: Date = .now) async throws {
+        let readyRecords = try await dbQueue.read { db in
+            try RecordingAudioSegmentRecord
+                .filter(Column("recordingSessionId") == sessionId)
+                .filter(Column("source") == source.rawValue)
+                .filter(Column("state") == RecordingAudioSegmentState.ready.rawValue)
+                .fetchAll(db)
+        }
+        let integrityCheckpoints = try readyRecords.map { record in
+            let url = try safeURL(relativePath: record.finalRelativePath)
+            return try (
+                record.id,
+                Self.persistedStatusCheckpoint(Self.statusChangeDate(of: url))
+            )
+        }
         try await dbQueue.write { db in
             guard var progress = try RecordingAudioSourceProgressRecord.fetchOne(
                 db,
@@ -410,6 +472,16 @@ actor RecordingAudioStore {
             progress.captureState = .ended
             progress.updatedAt = now
             try progress.update(db)
+            for (segmentId, checkpoint) in integrityCheckpoints {
+                try db.execute(
+                    sql: """
+                    UPDATE recording_audio_segments
+                    SET integrityVerifiedAt = ?, updatedAt = ?
+                    WHERE id = ? AND state = ?
+                    """,
+                    arguments: [checkpoint, now, segmentId, RecordingAudioSegmentState.ready.rawValue]
+                )
+            }
         }
     }
 
@@ -449,56 +521,253 @@ actor RecordingAudioStore {
             readLeaseCounts[sessionId] = remaining == 0 ? nil : remaining
         }
         let readPlan = try await transcriptionReadPlan(sessionId: sessionId)
-        var verified: [VerifiedSegment] = []
-        for record in readPlan.records {
-            guard let expectedFrames = record.sealedFrameCount,
-                  let expectedBytes = record.byteCount,
-                  let expectedDigest = record.sha256 else {
+        let candidates = try await verificationCandidates(for: readPlan)
+        let verified: [VerifiedSegment]
+        let verificationState = Self.signposter.beginInterval("Verify CAF files")
+        do {
+            let outcomes = try await Self.verifyConcurrently(candidates)
+            verified = outcomes
+                .compactMap(\.segment)
+                .filter { !$0.ranges.isEmpty }
+            let refreshedVerificationDates = outcomes.compactMap(\.fullyVerifiedAt)
+            if !refreshedVerificationDates.isEmpty {
+                try await dbQueue.write { db in
+                    for (segmentId, verifiedAt) in refreshedVerificationDates {
+                        try db.execute(
+                            sql: """
+                            UPDATE recording_audio_segments
+                            SET integrityVerifiedAt = ?, updatedAt = ?
+                            WHERE id = ? AND state = ?
+                            """,
+                            arguments: [verifiedAt, verifiedAt, segmentId, RecordingAudioSegmentState.ready.rawValue]
+                        )
+                    }
+                }
+            }
+        } catch let aggregate as SegmentVerificationFailures {
+            Self.signposter.endInterval("Verify CAF files", verificationState)
+            for failure in aggregate.failures {
+                switch failure.error {
+                case .integrityMismatch:
+                    try await fail(segmentId: failure.segmentId, stage: "read", code: "integrityMismatch")
+                case .missingFile:
+                    try await fail(segmentId: failure.segmentId, stage: "read", code: "missingFinal")
+                default:
+                    break
+                }
+            }
+            throw aggregate.failures[0].error
+        } catch {
+            Self.signposter.endInterval("Verify CAF files", verificationState)
+            throw error
+        }
+        Self.signposter.endInterval("Verify CAF files", verificationState)
+        guard !verified.isEmpty else { throw RecordingAudioStoreError.invalidState }
+        return try await operation(verified)
+    }
+
+    private func verificationCandidates(for readPlan: TranscriptionReadPlan) async throws -> [VerificationCandidate] {
+        let segmentIds = readPlan.records.map(\.id)
+        let allRanges = try await dbQueue.read { db in
+            try RecordingAudioSegmentRangeRecord
+                .filter(segmentIds.contains(Column("audioSegmentId")))
+                .order(Column("audioSegmentId").asc, Column("startFrame").asc)
+                .fetchAll(db)
+        }
+        let rangesBySegmentId = Dictionary(grouping: allRanges, by: \.audioSegmentId)
+
+        var candidates: [VerificationCandidate] = []
+        for (index, record) in readPlan.records.enumerated() {
+            guard let expectedFrameCount = record.sealedFrameCount,
+                  let expectedByteCount = record.byteCount,
+                  let expectedDigest = record.sha256,
+                  let integrityVerifiedAt = record.integrityVerifiedAt else {
                 try await fail(segmentId: record.id, stage: "read", code: "missingIntegrityMetadata")
                 throw RecordingAudioStoreError.integrityMismatch
             }
             let url = try safeURL(relativePath: record.finalRelativePath)
-            do {
-                let metadata = try await Task.detached(priority: .utility) {
-                    try Self.verify(
-                        url: url,
-                        expectedFrameCount: expectedFrames,
-                        expectedSampleRate: record.sampleRate,
-                        expectedChannelCount: record.channelCount
-                    )
-                }.value
-                guard metadata.byteCount == expectedBytes, metadata.sha256 == expectedDigest else {
-                    throw RecordingAudioStoreError.integrityMismatch
-                }
-                var ranges = try await dbQueue.read { db in
-                    try RecordingAudioSegmentRangeRecord
-                        .filter(Column("audioSegmentId") == record.id)
-                        .order(Column("startFrame").asc)
-                        .fetchAll(db)
-                }
-                guard ranges.allSatisfy({ $0.frameCount != nil }) else {
-                    throw RecordingAudioStoreError.integrityMismatch
-                }
-                if let cutoff = readPlan.cutoff {
-                    ranges = Self.clippedRanges(
-                        ranges,
-                        toSessionOffset: cutoff,
-                        in: record,
-                        sealedFrameCount: expectedFrames
-                    )
-                }
-                guard !ranges.isEmpty else { continue }
-                verified.append(VerifiedSegment(segment: record, url: url, ranges: ranges))
-            } catch RecordingAudioStoreError.integrityMismatch {
+            var ranges = rangesBySegmentId[record.id, default: []]
+            guard ranges.allSatisfy({ $0.frameCount != nil }) else {
                 try await fail(segmentId: record.id, stage: "read", code: "integrityMismatch")
                 throw RecordingAudioStoreError.integrityMismatch
-            } catch RecordingAudioStoreError.missingFile {
-                try await fail(segmentId: record.id, stage: "read", code: "missingFinal")
+            }
+            if let cutoff = readPlan.cutoff {
+                ranges = Self.clippedRanges(
+                    ranges,
+                    toSessionOffset: cutoff,
+                    in: record,
+                    sealedFrameCount: expectedFrameCount
+                )
+            }
+            candidates.append(
+                VerificationCandidate(
+                    index: index,
+                    record: record,
+                    url: url,
+                    ranges: ranges,
+                    expectedFrameCount: expectedFrameCount,
+                    expectedByteCount: expectedByteCount,
+                    expectedDigest: expectedDigest,
+                    integrityVerifiedAt: integrityVerifiedAt
+                )
+            )
+        }
+        return candidates
+    }
+
+    private static func verifyConcurrently(_ candidates: [VerificationCandidate]) async throws -> [VerificationOutcome] {
+        try await withThrowingTaskGroup(of: VerificationOutcome.self) { group in
+            let initialCount = min(2, candidates.count)
+            for candidate in candidates.prefix(initialCount) {
+                group.addTask(priority: .utility) {
+                    try verificationOutcome(for: candidate)
+                }
+            }
+
+            var nextIndex = initialCount
+            var outcomes: [VerificationOutcome] = []
+            do {
+                while let outcome = try await group.next() {
+                    outcomes.append(outcome)
+                    if nextIndex < candidates.count {
+                        let candidate = candidates[nextIndex]
+                        nextIndex += 1
+                        group.addTask(priority: .utility) {
+                            try verificationOutcome(for: candidate)
+                        }
+                    }
+                }
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+            let sortedOutcomes = outcomes.sorted { $0.index < $1.index }
+            let failures = sortedOutcomes.compactMap(\.failure)
+            guard failures.isEmpty else {
+                throw SegmentVerificationFailures(failures: failures)
+            }
+            return sortedOutcomes
+        }
+    }
+
+    private static func verificationOutcome(for candidate: VerificationCandidate) throws -> VerificationOutcome {
+        do {
+            let (segment, performedFullVerification) = try verify(candidate)
+            return .success(
+                index: candidate.index,
+                segment: segment,
+                fullyVerifiedAt: performedFullVerification ? .now : nil
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let failure as SegmentVerificationFailure {
+            return .failure(index: candidate.index, failure: failure)
+        }
+    }
+
+    private static func verify(_ candidate: VerificationCandidate) throws -> (VerifiedSegment, Bool) {
+        do {
+            if try unchangedSinceRecordingVerification(candidate) {
+                return (
+                    VerifiedSegment(segment: candidate.record, url: candidate.url, ranges: candidate.ranges),
+                    false
+                )
+            }
+            let metadata = try verify(
+                url: candidate.url,
+                expectedFrameCount: candidate.expectedFrameCount,
+                expectedSampleRate: candidate.record.sampleRate,
+                expectedChannelCount: candidate.record.channelCount
+            )
+            guard metadata.byteCount == candidate.expectedByteCount,
+                  metadata.sha256 == candidate.expectedDigest else {
+                throw RecordingAudioStoreError.integrityMismatch
+            }
+            return (
+                VerifiedSegment(segment: candidate.record, url: candidate.url, ranges: candidate.ranges),
+                true
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as RecordingAudioStoreError {
+            throw SegmentVerificationFailure(segmentId: candidate.record.id, error: error)
+        } catch {
+            throw SegmentVerificationFailure(segmentId: candidate.record.id, error: .storageUnavailable)
+        }
+    }
+
+    /// Ready CAFs are immutable after finalization. Avoid hashing their complete payload again
+    /// only when both user-settable timestamps and the filesystem status-change timestamp show
+    /// that nothing has touched the file since the durable checkpoint.
+    private static func unchangedSinceRecordingVerification(_ candidate: VerificationCandidate) throws -> Bool {
+        switch filePresence(at: candidate.url) {
+        case .regular:
+            break
+        case .missing:
+            throw RecordingAudioStoreError.missingFile
+        case .symbolicLink:
+            throw RecordingAudioStoreError.integrityMismatch
+        case .inaccessible:
+            throw RecordingAudioStoreError.storageUnavailable
+        }
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: candidate.url.path)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            throw RecordingAudioStoreError.missingFile
+        } catch {
+            throw RecordingAudioStoreError.storageUnavailable
+        }
+        guard let size = attributes[.size] as? NSNumber,
+              size.int64Value == candidate.expectedByteCount,
+              let modificationDate = attributes[.modificationDate] as? Date,
+              modificationDate <= candidate.integrityVerifiedAt,
+              try statusChangeDate(of: candidate.url) <= candidate.integrityVerifiedAt else {
+            return false
+        }
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(forReading: candidate.url)
+        } catch let error as CocoaError where error.code == .fileReadNoPermission {
+            throw RecordingAudioStoreError.storageUnavailable
+        } catch {
+            throw RecordingAudioStoreError.integrityMismatch
+        }
+        guard audioFile.length == candidate.expectedFrameCount,
+              audioFile.processingFormat.sampleRate == candidate.record.sampleRate,
+              Int(audioFile.processingFormat.channelCount) == candidate.record.channelCount else {
+            throw RecordingAudioStoreError.integrityMismatch
+        }
+        return true
+    }
+
+    /// Unlike mtime, POSIX ctime is advanced by content and metadata changes and cannot be
+    /// restored through FileManager's timestamp APIs. It closes the preserved-mtime fast-path gap.
+    private static func statusChangeDate(of url: URL) throws -> Date {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else {
+            switch errno {
+            case ENOENT:
                 throw RecordingAudioStoreError.missingFile
+            case EACCES, EPERM:
+                throw RecordingAudioStoreError.storageUnavailable
+            default:
+                throw RecordingAudioStoreError.storageUnavailable
             }
         }
-        guard !verified.isEmpty else { throw RecordingAudioStoreError.invalidState }
-        return try await operation(verified)
+        guard info.st_mode & S_IFMT == S_IFREG else {
+            throw RecordingAudioStoreError.integrityMismatch
+        }
+        return Date(
+            timeIntervalSince1970: TimeInterval(info.st_ctimespec.tv_sec)
+                + TimeInterval(info.st_ctimespec.tv_nsec) / 1_000_000_000
+        )
+    }
+
+    private static func persistedStatusCheckpoint(_ date: Date) -> Date {
+        // GRDB's SQLite date representation is millisecond-granular. Round upward so
+        // decoding the checkpoint cannot make an unchanged nanosecond ctime look newer.
+        Date(timeIntervalSince1970: ceil(date.timeIntervalSince1970 * 1000) / 1000)
     }
 
     private func reconcilePendingSegmentsForReading(sessionId: UUID) async throws {
@@ -1022,9 +1291,14 @@ actor RecordingAudioStore {
     }
 
     private func markReady(segmentId: UUID, at finalizedAt: Date = .now) async throws -> RecordingAudioSegmentRecord {
-        try await dbQueue.write { db in
+        let checkpointRecord = try await fetchSegment(id: segmentId)
+        let finalURL = try safeURL(relativePath: checkpointRecord.finalRelativePath)
+        let fileStatusChangeDate = try Self.statusChangeDate(of: finalURL)
+        let persistedStatusCheckpoint = Self.persistedStatusCheckpoint(fileStatusChangeDate)
+        return try await dbQueue.write { db in
             guard var current = try RecordingAudioSegmentRecord.fetchOne(db, key: segmentId),
                   current.state == .finalizing,
+                  current.finalRelativePath == checkpointRecord.finalRelativePath,
                   current.sealedFrameCount != nil,
                   current.byteCount != nil,
                   current.sha256 != nil,
@@ -1032,6 +1306,9 @@ actor RecordingAudioStore {
                 throw RecordingAudioStoreError.invalidState
             }
             current.state = .ready
+            // Persist the exact filesystem generation timestamp after publish/chmod. A
+            // later write advances ctime even if its user-settable mtime is restored.
+            current.integrityVerifiedAt = persistedStatusCheckpoint
             current.finalizedAt = finalizedAt
             current.updatedAt = finalizedAt
             try current.update(db)
@@ -1190,7 +1467,7 @@ actor RecordingAudioStore {
         guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
             throw RecordingAudioStoreError.invalidPath
         }
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        try setPOSIXPermissionsIfNeeded(at: url, permissions: 0o700)
     }
 
     private static func repairManagedPermissions(rootURL: URL) throws {
@@ -1208,11 +1485,23 @@ actor RecordingAudioStore {
                 continue
             }
             if values.isDirectory == true {
-                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+                try setPOSIXPermissionsIfNeeded(at: url, permissions: 0o700)
             } else if values.isRegularFile == true {
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                try setPOSIXPermissionsIfNeeded(at: url, permissions: 0o600)
             }
         }
+    }
+
+    private static func setPOSIXPermissionsIfNeeded(at url: URL, permissions: mode_t) throws {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else {
+            throw RecordingAudioStoreError.storageUnavailable
+        }
+        guard info.st_mode & mode_t(0o7777) != permissions else { return }
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: permissions)],
+            ofItemAtPath: url.path
+        )
     }
 
     private func removeManagedFile(relativePath: String) throws {
@@ -1425,9 +1714,12 @@ actor RecordingAudioStore {
             defer { try? handle.close() }
             var hasher = SHA256()
             while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+                try Task.checkCancellation()
                 hasher.update(data: data)
             }
             digest = Data(hasher.finalize())
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as RecordingAudioStoreError {
             throw error
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {

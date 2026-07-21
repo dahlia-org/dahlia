@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// A locale range whose frame coordinates are local to one physical segment.
-struct RecordingAudioSegmentRangeRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+struct RecordingAudioSegmentRangeRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
     static let databaseTableName = "recording_audio_segment_ranges"
 
     var id: UUID

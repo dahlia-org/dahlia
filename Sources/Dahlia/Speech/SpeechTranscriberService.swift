@@ -293,6 +293,14 @@ actor SpeechTranscriberService {
               let activeSessionId,
               let eventHandler else { return }
         hasReportedFailure = true
+        ErrorReportingService.capture(
+            error,
+            context: [
+                "source": "liveTranscription",
+                "audioSource": speakerLabel ?? "unknown",
+                "locale": locale.identifier,
+            ]
+        )
         await eventHandler(.failure(
             sessionId: activeSessionId,
             pipelineID: pipelineID,

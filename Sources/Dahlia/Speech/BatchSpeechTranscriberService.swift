@@ -3,30 +3,54 @@ import Foundation
 
 /// CAFの指定rangeを精度優先のSpeechTranscriberで文字起こしする。
 enum BatchSpeechTranscriberService {
+    private struct PreparedAudio: Sendable {
+        let url: URL
+        let isTemporary: Bool
+    }
+
     static func transcribe(
         _ request: BatchSpeechTranscriptionRequest,
         languageDetector: (any BatchLanguageDetecting)? = nil,
-        speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer()
+        speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
+        fallbackLocaleIdentifier: String = "en",
+        onLanguageFallback: @escaping @Sendable (BatchLanguageFallback) async -> Void = { _ in }
     ) async throws -> BatchSpeechTranscriptionResult {
         guard request.startFrame >= 0, request.frameCount > 0 else {
             return BatchSpeechTranscriptionResult(
                 segments: [],
-                localeIdentifier: request.recordedLocaleIdentifiers.first ?? ""
+                localeIdentifier: request.recordedLocaleIdentifiers.first ?? "",
+                languageFallback: nil
             )
         }
-        let rangeURL = try extractRange(
-            from: request.audioURL,
-            startFrame: request.startFrame,
-            frameCount: request.frameCount
-        )
-        defer { try? FileManager.default.removeItem(at: rangeURL) }
+        try Task.checkCancellation()
+        let preparationTask = Task.detached(priority: .utility) {
+            try prepareAudio(
+                from: request.audioURL,
+                startFrame: request.startFrame,
+                frameCount: request.frameCount
+            )
+        }
+        let preparedAudio = try await withTaskCancellationHandler {
+            try await preparationTask.value
+        } onCancel: {
+            preparationTask.cancel()
+        }
+        defer {
+            if preparedAudio.isTemporary {
+                try? FileManager.default.removeItem(at: preparedAudio.url)
+            }
+        }
 
-        let locale = try await resolvedLocale(
+        let resolution = try await resolvedLocale(
             for: request,
-            rangeURL: rangeURL,
-            languageDetector: languageDetector
+            audioURL: preparedAudio.url,
+            languageDetector: languageDetector,
+            fallbackLocaleIdentifier: fallbackLocaleIdentifier
         )
-        let recognitions = try await speechRecognizer.recognize(audioURL: rangeURL, locale: locale)
+        if let fallback = resolution.fallback {
+            await onLanguageFallback(fallback)
+        }
+        let recognitions = try await speechRecognizer.recognize(audioURL: preparedAudio.url, locale: resolution.locale)
         let segments = recognitions.compactMap { recognition -> TranscriptSegment? in
             guard let text = SpeechTranscriberService.normalizedTranscriptText(recognition.text) else { return nil }
             let absoluteStart = request.recordingStartTime.addingTimeInterval(
@@ -46,18 +70,23 @@ enum BatchSpeechTranscriberService {
         }
         return BatchSpeechTranscriptionResult(
             segments: segments,
-            localeIdentifier: locale.identifier
+            localeIdentifier: resolution.locale.identifier,
+            languageFallback: resolution.fallback
         )
     }
 
     private static func resolvedLocale(
         for request: BatchSpeechTranscriptionRequest,
-        rangeURL: URL,
-        languageDetector: (any BatchLanguageDetecting)?
-    ) async throws -> Locale {
+        audioURL: URL,
+        languageDetector: (any BatchLanguageDetecting)?,
+        fallbackLocaleIdentifier: String
+    ) async throws -> BatchLanguageResolution {
         if request.languageDetectionMode == .manual,
            let recordedLocaleIdentifier = request.recordedLocaleIdentifiers.first {
-            return Locale(identifier: recordedLocaleIdentifier)
+            return BatchLanguageResolution(
+                locale: Locale(identifier: recordedLocaleIdentifier),
+                fallback: nil
+            )
         }
         guard request.languageDetectionMode == .automatic else {
             throw BatchSpeechTranscriberError.invalidAudioRange
@@ -67,14 +96,16 @@ enum BatchSpeechTranscriberService {
         }
 
         return try await BatchLanguageDetectionService.resolveLocale(
-            audioURL: rangeURL,
+            audioURL: audioURL,
             recordedLocaleIdentifiers: request.recordedLocaleIdentifiers,
             supportedLocales: request.supportedLocales,
-            languageDetector: languageDetector
+            languageDetector: languageDetector,
+            fallbackLocaleIdentifier: fallbackLocaleIdentifier,
+            allowedLanguageIdentifiers: request.allowedLanguageIdentifiers
         )
     }
 
-    private static func extractRange(from sourceURL: URL, startFrame: Int64, frameCount: Int64) throws -> URL {
+    private static func prepareAudio(from sourceURL: URL, startFrame: Int64, frameCount: Int64) throws -> PreparedAudio {
         let source = try AVAudioFile(forReading: sourceURL)
         guard startFrame < source.length else {
             throw BatchSpeechTranscriberError.invalidAudioRange
@@ -83,7 +114,16 @@ enum BatchSpeechTranscriberService {
         guard availableFrames > 0 else {
             throw BatchSpeechTranscriberError.invalidAudioRange
         }
+        if startFrame == 0, frameCount == source.length {
+            return PreparedAudio(url: sourceURL, isTemporary: false)
+        }
+        return try PreparedAudio(
+            url: extractRange(from: source, startFrame: startFrame, frameCount: availableFrames),
+            isTemporary: true
+        )
+    }
 
+    private static func extractRange(from source: AVAudioFile, startFrame: Int64, frameCount: Int64) throws -> URL {
         let destinationURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-batch-\(UUID.v7().uuidString).caf")
         source.framePosition = startFrame
@@ -100,8 +140,9 @@ enum BatchSpeechTranscriberService {
                 throw BatchSpeechTranscriberError.audioFormatUnavailable
             }
 
-            var remaining = availableFrames
+            var remaining = frameCount
             while remaining > 0 {
+                try Task.checkCancellation()
                 let requested = AVAudioFrameCount(min(Int64(capacity), remaining))
                 try source.read(into: buffer, frameCount: requested)
                 guard buffer.frameLength > 0 else {

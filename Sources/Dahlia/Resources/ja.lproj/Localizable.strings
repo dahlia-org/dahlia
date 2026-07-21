@@ -351,7 +351,7 @@
 "Set the display language for the app." = "アプリの表示言語を設定します。";
 "Follow System" = "システムに従う";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
-"Choose which languages appear when starting transcription." = "文字起こし開始時に表示する言語を選びます。";
+"Choose which languages are available for transcription and automatic detection." = "文字起こしと自動判定で利用する言語を選びます。";
 "Transcript Translation" = "文字起こし翻訳";
 "Show translated transcript lines in the selected target language when available." = "選択したターゲット言語で翻訳済みの文字起こし行を表示します。";
 "Target Language" = "翻訳先の言語";
@@ -469,11 +469,13 @@
 "Loading supported languages..." = "対応言語を読み込み中...";
 "Search languages..." = "言語を検索...";
 "No matching languages" = "該当する言語がありません";
-"All languages shown" = "すべての言語を表示中";
 "%lld languages selected" = "%lld 言語を選択中";
-"Show all" = "すべて表示に戻す";
-"Display Languages" = "表示する言語";
-"Only selected languages will appear in the language picker. All languages are shown if none are selected." = "選択した言語のみが言語ピッカーに表示されます。未選択の場合はすべての言語が表示されます。";
+"Transcription Languages" = "文字起こし言語";
+"Language Range" = "言語の範囲";
+"All Supported Languages" = "対応するすべての言語";
+"Selected Languages" = "選択した言語";
+"All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit." = "Apple Speechが対応するすべての言語をピッカーに表示します。自動判定には、そのうちWhisperKitも対応する言語を使用します。";
+"Selected languages appear in pickers. WhisperKit-supported selections become automatic detection candidates, and the language chosen when starting transcription is always included as the fallback." = "選択した言語のみをピッカーに表示します。そのうちWhisperKit対応言語を自動判定の候補とし、文字起こし開始時に指定した言語は常にフォールバック先として使用します。";
 
 /* Settings - LLM */
 "Empty response from server" = "サーバーから空のレスポンスが返されました";
@@ -604,7 +606,7 @@
 "Some transcript could not be loaded: %1$@" = "文字起こしの一部を読み込めませんでした: %1$@";
 "New transcript available" = "新しい文字起こしがあります";
 "Recording audio for transcription after recording stops…" = "録音終了後の文字起こし用に音声を保存しています…";
-"Audio is ready. Confirm language detection to start transcription." = "音声の準備ができました。言語判定を確認して文字起こしを開始してください。";
+"Audio is ready. Confirm the transcription language to start." = "音声の準備ができました。文字起こし言語を確認して開始してください。";
 "Review and Start" = "確認して開始";
 "Waiting to transcribe the recording…" = "録音の文字起こしを待機しています…";
 "Creating a high-accuracy transcript…" = "高精度な文字起こしを作成しています…";
@@ -612,8 +614,9 @@
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
 "Retry Batch Transcription" = "バッチ文字起こしを再試行";
 "Start batch transcription?" = "バッチ文字起こしを開始しますか？";
-"Automatic detection identifies the language of each recording file. Choose a language to use manual transcription instead. Audio is kept until transcription succeeds." = "自動判定では録音ファイルごとに言語を判定します。手動で文字起こしする場合は言語を選択してください。文字起こしが成功するまで音声データは保持されます。";
+"Choose a language. Automatic detection is slower; leave it off for speed. Audio is kept until transcription succeeds." = "文字起こし言語を選択してください。自動判定には処理時間がかかるため、速度を優先する場合はオフを推奨します。文字起こしが成功するまで音声データは保持されます。";
 "Detect Automatically" = "自動判定";
+"Detect each recording file with WhisperKit. If detection is uncertain or fails, use the selected language." = "WhisperKitで録音ファイルごとに言語を判定します。判定が不確かな場合や失敗した場合は、選択した言語を使用します。";
 "Could not prepare the language detection model. Check your network connection and try again." = "言語判定モデルを準備できませんでした。ネットワーク接続を確認して再試行してください。";
 "Could not detect the recording language. Try again." = "録音の言語を判定できませんでした。再試行してください。";
 "The detected language is not supported for transcription: %@" = "判定された言語は文字起こしに対応していません: %@";

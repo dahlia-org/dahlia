@@ -126,8 +126,8 @@ final class AppDatabaseManager: Sendable {
             try addTranscriptPagingIndexIfNeeded(in: db)
         }
 
-        migrator.registerMigration("v23_batchLanguageDetectionMode") { db in
-            try addBatchLanguageDetectionModeIfNeeded(in: db)
+        migrator.registerMigration("v23_batchLanguageOptions") { db in
+            try addBatchLanguageOptionsIfNeeded(in: db)
         }
 
         return migrator
@@ -1085,16 +1085,37 @@ final class AppDatabaseManager: Sendable {
         )
     }
 
-    private static func addBatchLanguageDetectionModeIfNeeded(in db: Database) throws {
+    private static func addBatchLanguageOptionsIfNeeded(in db: Database) throws {
         guard try db.tableExists("recording_sessions") else { return }
         let columns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_sessions')")
-        guard !columns.contains("batchLanguageDetectionMode") else { return }
-
-        try db.alter(table: "recording_sessions") { table in
-            table.add(column: "batchLanguageDetectionMode", .text)
-                .notNull()
-                .defaults(to: BatchLanguageDetectionMode.manual.rawValue)
+        if !columns.contains("batchLanguageDetectionMode") {
+            try db.alter(table: "recording_sessions") { table in
+                table.add(column: "batchLanguageDetectionMode", .text)
+                    .notNull()
+                    .defaults(to: BatchLanguageDetectionMode.manual.rawValue)
+            }
         }
+        if !columns.contains("batchSelectedLocaleIdentifier") {
+            try db.alter(table: "recording_sessions") { table in
+                table.add(column: "batchSelectedLocaleIdentifier", .text)
+            }
+        }
+        guard try db.tableExists("recording_audio_segments"),
+              try db.tableExists("recording_audio_segment_ranges") else { return }
+        try db.execute(
+            sql: """
+            UPDATE recording_sessions
+            SET batchSelectedLocaleIdentifier = (
+                SELECT ranges.localeIdentifier
+                FROM recording_audio_segment_ranges AS ranges
+                JOIN recording_audio_segments AS segments ON segments.id = ranges.audioSegmentId
+                WHERE segments.recordingSessionId = recording_sessions.id
+                ORDER BY segments.segmentIndex, ranges.startFrame
+                LIMIT 1
+            )
+            WHERE batchSelectedLocaleIdentifier IS NULL
+            """
+        )
     }
 
     private static func createRecordingSessionsTableIfNeeded(in db: Database) throws {

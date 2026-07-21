@@ -14,7 +14,7 @@ enum BatchTranscriptionConfirmationService {
         retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
     ) async throws -> Result {
-        let normalizedLocaleIdentifier = try normalizedManualLocaleIdentifier(from: languageSelection)
+        let normalizedLocaleIdentifier = try normalizedLocaleIdentifier(from: languageSelection)
 
         return try await dbQueue.write { db in
             let session = try validSession(id: sessionId, db: db)
@@ -32,7 +32,7 @@ enum BatchTranscriptionConfirmationService {
             let confirmedAt = Date.now
             for unconfirmedSession in sessions {
                 try requireAudioRanges(sessionId: unconfirmedSession.id, db: db)
-                if let normalizedLocaleIdentifier {
+                if languageSelection.detectionMode == .manual {
                     try updateSingleRecordedLocale(
                         sessionId: unconfirmedSession.id,
                         localeIdentifier: normalizedLocaleIdentifier,
@@ -43,6 +43,7 @@ enum BatchTranscriptionConfirmationService {
                 try markConfirmed(
                     sessionId: unconfirmedSession.id,
                     languageDetectionMode: languageSelection.detectionMode,
+                    selectedLocaleIdentifier: normalizedLocaleIdentifier,
                     retainAudioAfterBatch: retainAudioAfterBatch,
                     confirmedAt: confirmedAt,
                     db: db
@@ -52,11 +53,10 @@ enum BatchTranscriptionConfirmationService {
         }
     }
 
-    private static func normalizedManualLocaleIdentifier(
+    private static func normalizedLocaleIdentifier(
         from selection: BatchTranscriptionLanguageSelection
-    ) throws -> String? {
-        guard case let .manual(localeIdentifier) = selection else { return nil }
-        let normalized = localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    ) throws -> String {
+        let normalized = selection.localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             throw CocoaError(.validationMissingMandatoryProperty)
         }
@@ -145,6 +145,7 @@ enum BatchTranscriptionConfirmationService {
     private static func markConfirmed(
         sessionId: UUID,
         languageDetectionMode: BatchLanguageDetectionMode,
+        selectedLocaleIdentifier: String,
         retainAudioAfterBatch: Bool,
         confirmedAt: Date,
         db: Database
@@ -154,7 +155,7 @@ enum BatchTranscriptionConfirmationService {
             sql: """
             UPDATE recording_sessions
             SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
-                batchLanguageDetectionMode = ?, batchLastAttemptAt = ?,
+                batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?, batchLastAttemptAt = ?,
                 batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
             WHERE id = ?
             """,
@@ -164,6 +165,7 @@ enum BatchTranscriptionConfirmationService {
                     ? RecordingAudioRetentionPolicy.keepInApp.rawValue
                     : RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
                 languageDetectionMode.rawValue,
+                selectedLocaleIdentifier,
                 confirmedAt,
                 confirmedAt,
                 sessionId,

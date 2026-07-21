@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os
 import Speech
 
 private struct BatchRecordingFailure: LocalizedError {
@@ -8,11 +9,34 @@ private struct BatchRecordingFailure: LocalizedError {
     var errorDescription: String? { message }
 }
 
+private struct BatchLanguageFallbacksObserved: LocalizedError {
+    let count: Int
+
+    var errorDescription: String? { "Batch language detection used fallback for \(count) CAF files" }
+}
+
+private actor BatchLanguageFallbackCollector {
+    private var fallbacks: [BatchLanguageFallback] = []
+
+    func record(_ fallback: BatchLanguageFallback) {
+        fallbacks.append(fallback)
+    }
+
+    func snapshot() -> [BatchLanguageFallback] {
+        fallbacks
+    }
+}
+
 /// 未完了のバッチセッションを直列実行し、成功結果だけをDBへ反映する。
 actor BatchTranscriptionCoordinator {
     typealias StateHandler = @Sendable (BatchTranscriptionUpdate) async -> Void
+    typealias LanguageFallbackReporter = @Sendable (
+        [BatchLanguageFallback],
+        Set<String>?
+    ) async -> Void
 
     static let maximumAutomaticAttemptCount = 3
+    private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
 
     private struct Job {
         let session: RecordingSessionRecord
@@ -21,9 +45,21 @@ actor BatchTranscriptionCoordinator {
         let projectName: String
     }
 
-    private struct TranslationConfiguration {
+    private struct TranslationConfiguration: Sendable {
         let isEnabled: Bool
         let targetLanguage: String
+    }
+
+    private struct TranscriptionWorkItem: Sendable {
+        let index: Int
+        let request: BatchSpeechTranscriptionRequest
+        let fallbackLocaleIdentifier: String
+    }
+
+    private struct TranscriptionWorkResult: Sendable {
+        let index: Int
+        var segments: [TranscriptSegment]
+        let localeIdentifier: String
     }
 
     private let dbQueue: DatabaseQueue
@@ -32,7 +68,8 @@ actor BatchTranscriptionCoordinator {
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
     private let supportedLocalesProvider: @Sendable () async -> [Locale]
-    private let onStateChange: StateHandler
+    let languageFallbackReporter: LanguageFallbackReporter
+    let onStateChange: StateHandler
     private var pendingSessionIds: [UUID] = []
     private var runningSessionId: UUID?
     private var processorTask: Task<Void, Never>?
@@ -45,6 +82,7 @@ actor BatchTranscriptionCoordinator {
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
             await SpeechTranscriber.supportedLocales
         },
+        languageFallbackReporter: LanguageFallbackReporter? = nil,
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
@@ -52,9 +90,18 @@ actor BatchTranscriptionCoordinator {
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
         )
-        self.languageDetector = languageDetector
-        self.speechRecognizer = speechRecognizer
+        self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
+        self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
         self.supportedLocalesProvider = supportedLocalesProvider
+        self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, allowedLanguageIdentifiers in
+            ErrorReportingService.capture(
+                BatchLanguageFallbacksObserved(count: fallbacks.count),
+                context: Self.languageFallbackReportContext(
+                    fallbacks,
+                    allowedLanguageIdentifiers: allowedLanguageIdentifiers
+                )
+            )
+        }
         self.onStateChange = onStateChange
     }
 
@@ -74,19 +121,6 @@ actor BatchTranscriptionCoordinator {
         for sessionId in sessionIds {
             await enqueue(sessionId: sessionId)
         }
-    }
-
-    static func shouldAutomaticallyRetry(_ session: RecordingSessionRecord) -> Bool {
-        guard session.transcriptionMode == .batch,
-              session.batchCompletedAt == nil,
-              session.batchDiscardedAt == nil else { return false }
-        guard session.batchFailureKind != .recordingRecovery,
-              session.batchFailureKind != .recordingAudioPermanent else { return false }
-        guard session.batchLastAttemptAt != nil || session.batchLastError?.nilIfBlank != nil else {
-            return false
-        }
-        guard session.batchLastError?.nilIfBlank != nil else { return true }
-        return session.batchAttemptCount < maximumAutomaticAttemptCount
     }
 
     func confirmAndEnqueue(
@@ -152,11 +186,14 @@ actor BatchTranscriptionCoordinator {
                 runningSessionId = nil
             }
             await languageDetector.unload()
+            await speechRecognizer.unload()
         } while !pendingSessionIds.isEmpty
         processorTask = nil
     }
 
     private func process(sessionId: UUID) async throws {
+        let state = Self.signposter.beginInterval("Batch transcription")
+        defer { Self.signposter.endInterval("Batch transcription", state) }
         let job = try fetchJob(sessionId: sessionId)
         let segments = try await transcribe(job: job)
         let records = segments.map { TranscriptSegmentRecord(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
@@ -258,23 +295,78 @@ actor BatchTranscriptionCoordinator {
         } else {
             []
         }
-        var transcriptSegments: [TranscriptSegment] = []
+        let fallbackLocaleIdentifier = job.session.batchSelectedLocaleIdentifier?.nilIfBlank
+            ?? verifiedSegments.lazy.flatMap(\.ranges).first?.localeIdentifier
+            ?? "en"
+        let allowedLanguageIdentifiers: Set<String>? = if job.session.batchLanguageDetectionMode == .automatic {
+            await MainActor.run {
+                let settings = AppSettings.shared
+                return BatchLanguageDetectionCandidateResolver.languageIdentifiers(
+                    scope: settings.transcriptionLanguageScope,
+                    enabledLocaleIdentifiers: settings.enabledLocaleIdentifiers,
+                    fallbackLocaleIdentifier: fallbackLocaleIdentifier
+                )
+            }
+        } else {
+            nil
+        }
+        var workItems: [TranscriptionWorkItem] = []
         for verified in verifiedSegments {
             let ranges = try BatchTranscriptionAudioRangePlanner.ranges(
                 for: verified,
                 mode: job.session.batchLanguageDetectionMode
             )
             for range in ranges {
-                try await transcriptSegments.append(contentsOf: transcribe(
-                    range: range,
-                    segment: verified.segment,
-                    audioURL: verified.url,
-                    session: job.session,
-                    supportedLocales: supportedLocales,
-                    translationConfiguration: translationConfiguration
-                ))
+                workItems.append(
+                    TranscriptionWorkItem(
+                        index: workItems.count,
+                        request: BatchSpeechTranscriptionRequest(
+                            audioURL: verified.url,
+                            startFrame: range.startFrame,
+                            frameCount: range.frameCount,
+                            recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
+                            languageDetectionMode: job.session.batchLanguageDetectionMode,
+                            supportedLocales: supportedLocales,
+                            allowedLanguageIdentifiers: allowedLanguageIdentifiers,
+                            source: verified.segment.source,
+                            recordingSessionId: job.session.id,
+                            recordingStartTime: job.session.startedAt,
+                            sessionOffsetSeconds: range.sessionOffsetSeconds
+                        ),
+                        fallbackLocaleIdentifier: fallbackLocaleIdentifier
+                    )
+                )
             }
         }
+        let recognitionState = Self.signposter.beginInterval("Recognize CAF files")
+        let fallbackCollector = BatchLanguageFallbackCollector()
+        var workResults: [TranscriptionWorkResult]
+        do {
+            workResults = try await transcribeConcurrently(
+                workItems: workItems,
+                fallbackCollector: fallbackCollector
+            )
+            .sorted { $0.index < $1.index }
+            Self.signposter.endInterval("Recognize CAF files", recognitionState)
+        } catch {
+            Self.signposter.endInterval("Recognize CAF files", recognitionState)
+            await reportLanguageFallbacks(
+                fallbackCollector.snapshot(),
+                allowedLanguageIdentifiers: allowedLanguageIdentifiers
+            )
+            throw error
+        }
+        await reportLanguageFallbacks(
+            fallbackCollector.snapshot(),
+            allowedLanguageIdentifiers: allowedLanguageIdentifiers
+        )
+        if translationConfiguration.isEnabled {
+            workResults = try await translate(
+                workResults: workResults,
+                configuration: translationConfiguration
+            )
+        }
+        let transcriptSegments = workResults.flatMap(\.segments)
         return transcriptSegments.sorted { lhs, rhs in
             if lhs.startTime == rhs.startTime {
                 return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
@@ -283,45 +375,90 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
-    private func transcribe(
-        range: BatchTranscriptionAudioRange,
-        segment: RecordingAudioSegmentRecord,
-        audioURL: URL,
-        session: RecordingSessionRecord,
-        supportedLocales: [Locale],
-        translationConfiguration: TranslationConfiguration
-    ) async throws -> [TranscriptSegment] {
-        let result = try await BatchSpeechTranscriberService.transcribe(
-            BatchSpeechTranscriptionRequest(
-                audioURL: audioURL,
-                startFrame: range.startFrame,
-                frameCount: range.frameCount,
-                recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
-                languageDetectionMode: session.batchLanguageDetectionMode,
-                supportedLocales: supportedLocales,
-                source: segment.source,
-                recordingSessionId: session.id,
-                recordingStartTime: session.startedAt,
-                sessionOffsetSeconds: range.sessionOffsetSeconds
-            ),
-            languageDetector: languageDetector,
-            speechRecognizer: speechRecognizer
-        )
-        var segments = result.segments
-        guard translationConfiguration.isEnabled,
-              TranscriptTranslationLanguage.shouldTranslate(
-                  transcriptionLocaleIdentifier: result.localeIdentifier,
-                  targetLanguageIdentifier: translationConfiguration.targetLanguage
-              ) else { return segments }
-
-        for index in segments.indices {
-            segments[index].translatedText = await translationService.translate(
-                segments[index].text,
-                from: result.localeIdentifier,
-                to: translationConfiguration.targetLanguage
-            )
+    private func translate(
+        workResults: [TranscriptionWorkResult],
+        configuration: TranslationConfiguration
+    ) async throws -> [TranscriptionWorkResult] {
+        let translationState = Self.signposter.beginInterval("Translate transcript")
+        defer { Self.signposter.endInterval("Translate transcript", translationState) }
+        var workResults = workResults
+        let requests = workResults.flatMap { result in
+            guard TranscriptTranslationLanguage.shouldTranslate(
+                transcriptionLocaleIdentifier: result.localeIdentifier,
+                targetLanguageIdentifier: configuration.targetLanguage
+            ) else { return [TranscriptTranslationService.BatchRequest]() }
+            return result.segments.map {
+                TranscriptTranslationService.BatchRequest(
+                    id: $0.id,
+                    text: $0.text,
+                    sourceLocaleIdentifier: result.localeIdentifier
+                )
+            }
         }
-        return segments
+        let translations = try await translationService.translateBatch(
+            requests,
+            to: configuration.targetLanguage
+        )
+        for resultIndex in workResults.indices {
+            for segmentIndex in workResults[resultIndex].segments.indices {
+                let segmentId = workResults[resultIndex].segments[segmentIndex].id
+                workResults[resultIndex].segments[segmentIndex].translatedText = translations[segmentId]
+            }
+        }
+        return workResults
+    }
+
+    private func transcribeConcurrently(
+        workItems: [TranscriptionWorkItem],
+        fallbackCollector: BatchLanguageFallbackCollector
+    ) async throws -> [TranscriptionWorkResult] {
+        try await withThrowingTaskGroup(of: TranscriptionWorkResult.self) { group in
+            let initialCount = min(BatchTranscriptionConcurrency.appleSpeechMaximum, workItems.count)
+            for workItem in workItems.prefix(initialCount) {
+                group.addTask { [self] in
+                    try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                }
+            }
+
+            var nextIndex = initialCount
+            var results: [TranscriptionWorkResult] = []
+            do {
+                while let result = try await group.next() {
+                    results.append(result)
+                    if nextIndex < workItems.count {
+                        let workItem = workItems[nextIndex]
+                        nextIndex += 1
+                        group.addTask { [self] in
+                            try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                        }
+                    }
+                }
+                return results
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+        }
+    }
+
+    private func transcribe(
+        workItem: TranscriptionWorkItem,
+        fallbackCollector: BatchLanguageFallbackCollector
+    ) async throws -> TranscriptionWorkResult {
+        let result = try await BatchSpeechTranscriberService.transcribe(
+            workItem.request,
+            languageDetector: languageDetector,
+            speechRecognizer: speechRecognizer,
+            fallbackLocaleIdentifier: workItem.fallbackLocaleIdentifier,
+            onLanguageFallback: { fallback in
+                await fallbackCollector.record(fallback)
+            }
+        )
+        return TranscriptionWorkResult(
+            index: workItem.index,
+            segments: result.segments,
+            localeIdentifier: result.localeIdentifier
+        )
     }
 
     private func fetchJob(sessionId: UUID) throws -> Job {
@@ -396,7 +533,17 @@ actor BatchTranscriptionCoordinator {
             .transcription
         }
         await persistFailure(sessionId: sessionId, message: message, kind: kind)
-        ErrorReportingService.capture(error, context: ["source": "batchTranscription"])
+        var context = [
+            "source": "batchTranscription",
+            "failureKind": kind.rawValue,
+        ]
+        if let transcriptionError = error as? BatchSpeechTranscriberError {
+            context["errorCode"] = transcriptionError.diagnosticCode
+            if case let .unsupportedDetectedLanguage(languageIdentifier) = transcriptionError {
+                context["detectedLanguage"] = languageIdentifier
+            }
+        }
+        ErrorReportingService.capture(error, context: context)
     }
 
     private func persistFailure(sessionId: UUID, message: String, kind: BatchFailureKind? = nil) async {
@@ -416,7 +563,4 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
-    private func notify(meetingId: UUID, state: BatchTranscriptionState) async {
-        await onStateChange(BatchTranscriptionUpdate(meetingId: meetingId, state: state))
-    }
 }

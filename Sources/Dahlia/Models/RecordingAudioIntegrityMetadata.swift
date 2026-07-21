@@ -1,6 +1,6 @@
 import Foundation
 
-struct RecordingAudioIntegrityMetadata: Equatable {
+struct RecordingAudioIntegrityMetadata: Equatable, Sendable {
     let frameCount: Int64
     let sampleRate: Double
     let channelCount: Int

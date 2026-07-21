@@ -42,18 +42,19 @@ enum TranscriptionLocaleResolver {
         recordedLocaleIdentifiers: [String],
         supportedLocales: [Locale]
     ) -> Locale? {
-        let detectedLanguage = TranscriptTranslationLanguage.normalizedLanguageIdentifier(from: detectedLanguageIdentifier)
-        guard !detectedLanguage.isEmpty else { return nil }
+        guard let detectedLanguage = WhisperLanguageIdentifier.canonicalIdentifier(
+            from: detectedLanguageIdentifier
+        ) else { return nil }
 
         let candidates = supportedLocales
             .filter {
-                TranscriptTranslationLanguage.normalizedLanguageIdentifier(from: $0.identifier) == detectedLanguage
+                WhisperLanguageIdentifier.canonicalIdentifier(from: $0.identifier) == detectedLanguage
             }
             .sorted(by: { $0.identifier < $1.identifier })
         guard !candidates.isEmpty else { return nil }
 
         for recordedLocaleIdentifier in recordedLocaleIdentifiers
-            where TranscriptTranslationLanguage.normalizedLanguageIdentifier(from: recordedLocaleIdentifier) == detectedLanguage {
+            where WhisperLanguageIdentifier.canonicalIdentifier(from: recordedLocaleIdentifier) == detectedLanguage {
             let normalizedRecordedIdentifier = normalizedLocaleIdentifier(from: recordedLocaleIdentifier)
             if let recordedLocale = candidates.first(where: { $0.identifier == normalizedRecordedIdentifier }) {
                 return recordedLocale

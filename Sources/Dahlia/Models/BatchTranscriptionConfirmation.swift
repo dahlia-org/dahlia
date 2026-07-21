@@ -12,13 +12,14 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         meetingId: UUID,
         suggestedLocaleIdentifier: String,
         retainAudioAfterBatch: Bool,
-        initialLanguageSelection: BatchTranscriptionLanguageSelection = .automatic
+        initialLanguageSelection: BatchTranscriptionLanguageSelection? = nil
     ) {
         self.sessionId = sessionId
         self.meetingId = meetingId
         self.suggestedLocaleIdentifier = suggestedLocaleIdentifier
         self.retainAudioAfterBatch = retainAudioAfterBatch
         self.initialLanguageSelection = initialLanguageSelection
+            ?? .manual(localeIdentifier: suggestedLocaleIdentifier)
     }
 
     var id: UUID { sessionId }

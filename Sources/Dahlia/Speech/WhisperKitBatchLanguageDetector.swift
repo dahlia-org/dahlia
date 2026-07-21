@@ -1,8 +1,10 @@
 import DahliaRuntimeSupport
 import Foundation
+import os
 import WhisperKit
 
 actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
+    private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
     static let modelFolderName = "openai_whisper-tiny"
     static let modelRepository = HubApiWrapper.Repo(id: "argmaxinc/whisperkit-coreml")
     static let modelRevision = "97a5bf9bbc74c7d9c12c755d04dea59e672e3808"
@@ -42,7 +44,9 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
     ]
 
     private let modelDownloadBaseURL: URL
+    private let operationLimiter = BatchTranscriptionConcurrencyLimiter(limit: 1)
     private var whisperKit: WhisperKit?
+    private var restrictedTextDecoder: CandidateRestrictedTextDecoder?
     private var modelsAreLoaded = false
 
     init(
@@ -53,7 +57,22 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
         self.modelDownloadBaseURL = modelDownloadBaseURL
     }
 
-    func detectLanguage(audioURL: URL) async throws -> String {
+    func detectLanguage(
+        audioURL: URL,
+        allowedLanguageIdentifiers: Set<String>?
+    ) async throws -> BatchLanguageDetectionOutcome {
+        try await operationLimiter.perform { [self] in
+            try await detectLanguageSerially(
+                audioURL: audioURL,
+                allowedLanguageIdentifiers: allowedLanguageIdentifiers
+            )
+        }
+    }
+
+    private func detectLanguageSerially(
+        audioURL: URL,
+        allowedLanguageIdentifiers: Set<String>?
+    ) async throws -> BatchLanguageDetectionOutcome {
         let whisperKit: WhisperKit
         do {
             whisperKit = try await loadedWhisperKit()
@@ -64,8 +83,14 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
         }
 
         do {
+            let detectionState = Self.signposter.beginInterval("Detect language")
+            defer { Self.signposter.endInterval("Detect language", detectionState) }
+            restrictedTextDecoder?.allowedLanguageIdentifiers = allowedLanguageIdentifiers
             let result = try await whisperKit.detectLanguage(audioPath: audioURL.path)
-            return result.language
+            return .detected(
+                languageIdentifier: result.language,
+                logProbability: result.langProbs[result.language]
+            )
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -74,6 +99,12 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
     }
 
     func unload() async {
+        await operationLimiter.performWithoutCancellation { [self] in
+            await unloadModels()
+        }
+    }
+
+    private func unloadModels() async {
         await whisperKit?.unloadModels()
         modelsAreLoaded = false
     }
@@ -92,16 +123,19 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
         )
         let modelFolder = try await prepareModelFolder()
         let tokenizerFolder = try await prepareTokenizerFolder()
+        let restrictedTextDecoder = CandidateRestrictedTextDecoder()
         let whisperKit = try await WhisperKit(
             WhisperKitConfig(
                 modelFolder: modelFolder.path,
                 tokenizerFolder: tokenizerFolder,
+                textDecoder: restrictedTextDecoder,
                 verbose: false,
                 prewarm: false,
                 load: true,
                 download: false
             )
         )
+        self.restrictedTextDecoder = restrictedTextDecoder
         self.whisperKit = whisperKit
         modelsAreLoaded = true
         return whisperKit

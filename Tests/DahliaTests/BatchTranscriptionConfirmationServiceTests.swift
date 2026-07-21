@@ -68,6 +68,7 @@ import GRDB
             #expect(result.0?.audioRetentionPolicy == policy)
             #expect(result.0?.batchLastAttemptAt != nil)
             #expect(result.0?.batchLanguageDetectionMode == .manual)
+            #expect(result.0?.batchSelectedLocaleIdentifier == "en_US")
             #expect(result.1.map(\.localeIdentifier) == ["en_US"])
         }
 
@@ -107,7 +108,7 @@ import GRDB
 
             _ = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
-                languageSelection: .automatic,
+                languageSelection: .automatic(fallbackLocaleIdentifier: "en_GB"),
                 retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
@@ -131,6 +132,7 @@ import GRDB
             }
             let retrySession = try #require(retryResult.0)
             #expect(retrySession.batchLanguageDetectionMode == .manual)
+            #expect(retrySession.batchSelectedLocaleIdentifier == "en_US")
             #expect(!retrySession.retainAudioAfterBatch)
             #expect(retrySession.batchLastError == nil)
             #expect(retrySession.batchFailureKind == nil)
@@ -161,6 +163,7 @@ import GRDB
                 )
             }
             #expect(result.0?.batchLanguageDetectionMode == .automatic)
+            #expect(result.0?.batchSelectedLocaleIdentifier == "en_GB")
             #expect(result.1.map(\.localeIdentifier) == ["ja_JP"])
         }
     }

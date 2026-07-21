@@ -5,7 +5,8 @@ struct BatchTranscriptionConfirmationView: View {
     let onStart: (BatchTranscriptionLanguageSelection, Bool) -> Void
     let onPostpone: () -> Void
 
-    @State private var languageSelection: BatchTranscriptionLanguageSelection
+    @State private var selectedLocaleIdentifier: String
+    @State private var automaticallyDetectsLanguage: Bool
     @State private var deleteAudioAfterTranscription: Bool
 
     init(
@@ -18,7 +19,8 @@ struct BatchTranscriptionConfirmationView: View {
         self.locales = locales
         self.onStart = onStart
         self.onPostpone = onPostpone
-        _languageSelection = State(initialValue: initialLanguageSelection)
+        _selectedLocaleIdentifier = State(initialValue: initialLanguageSelection.localeIdentifier)
+        _automaticallyDetectsLanguage = State(initialValue: initialLanguageSelection.detectionMode == .automatic)
         _deleteAudioAfterTranscription = State(initialValue: !initiallyRetainsAudioAfterBatch)
     }
 
@@ -38,7 +40,8 @@ struct BatchTranscriptionConfirmationView: View {
 
             BatchTranscriptionOptionsForm(
                 locales: locales,
-                languageSelection: $languageSelection,
+                selectedLocaleIdentifier: $selectedLocaleIdentifier,
+                automaticallyDetectsLanguage: $automaticallyDetectsLanguage,
                 deleteAudioAfterTranscription: $deleteAudioAfterTranscription
             )
 
@@ -58,7 +61,9 @@ struct BatchTranscriptionConfirmationView: View {
 
     private func startTranscription() {
         onStart(
-            languageSelection,
+            automaticallyDetectsLanguage
+                ? .automatic(fallbackLocaleIdentifier: selectedLocaleIdentifier)
+                : .manual(localeIdentifier: selectedLocaleIdentifier),
             !deleteAudioAfterTranscription
         )
     }
