@@ -126,6 +126,10 @@ final class AppDatabaseManager: Sendable {
             try addTranscriptPagingIndexIfNeeded(in: db)
         }
 
+        migrator.registerMigration("v23_batchLanguageDetectionMode") { db in
+            try addBatchLanguageDetectionModeIfNeeded(in: db)
+        }
+
         return migrator
     }()
 
@@ -1079,6 +1083,18 @@ final class AppDatabaseManager: Sendable {
             column: "batchDiscardedAt",
             type: .datetime
         )
+    }
+
+    private static func addBatchLanguageDetectionModeIfNeeded(in db: Database) throws {
+        guard try db.tableExists("recording_sessions") else { return }
+        let columns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('recording_sessions')")
+        guard !columns.contains("batchLanguageDetectionMode") else { return }
+
+        try db.alter(table: "recording_sessions") { table in
+            table.add(column: "batchLanguageDetectionMode", .text)
+                .notNull()
+                .defaults(to: BatchLanguageDetectionMode.manual.rawValue)
+        }
     }
 
     private static func createRecordingSessionsTableIfNeeded(in db: Database) throws {

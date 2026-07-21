@@ -509,7 +509,7 @@ enum L10n {
     static var newerTranscriptAvailable: String { String(localized: "New transcript available", bundle: bundle) }
     static var batchRecordingInProgress: String { String(localized: "Recording audio for transcription after recording stops…", bundle: bundle) }
     static var batchTranscriptionAwaitingConfirmation: String { String(
-        localized: "Audio is ready. Confirm the language to start transcription.",
+        localized: "Audio is ready. Confirm language detection to start transcription.",
         bundle: bundle
     ) }
     static var reviewBatchTranscription: String { String(localized: "Review and Start", bundle: bundle) }
@@ -524,9 +524,23 @@ enum L10n {
     static var batchTranscriptionConfirmationTitle: String { String(localized: "Start batch transcription?", bundle: bundle) }
     static var batchTranscriptionConfirmationDescription: String { String(
         // swiftlint:disable:next line_length
-        localized: "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.",
+        localized: "Automatic detection identifies the language of each recording file. Choose a language to use manual transcription instead. Audio is kept until transcription succeeds.",
         bundle: bundle
     ) }
+    static var detectLanguageAutomatically: String { String(localized: "Detect Automatically", bundle: bundle) }
+    static var batchLanguageModelPreparationFailed: String { String(
+        localized: "Could not prepare the language detection model. Check your network connection and try again.",
+        bundle: bundle
+    ) }
+    static var batchLanguageDetectionFailed: String { String(
+        localized: "Could not detect the recording language. Try again.",
+        bundle: bundle
+    ) }
+
+    static func batchDetectedLanguageUnsupported(_ languageIdentifier: String) -> String {
+        String(localized: "The detected language is not supported for transcription: \(languageIdentifier)", bundle: bundle)
+    }
+
     static var deleteBatchAudioAfterTranscription: String { String(
         localized: "Delete Recording Files After Transcription",
         bundle: bundle

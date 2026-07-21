@@ -52,7 +52,7 @@ actor RecordingAudioStore {
         }
 
         static let production = Configuration(
-            targetSegmentDuration: .seconds(60),
+            targetSegmentDuration: .seconds(30),
             maximumFinalizingSegmentCountPerSource: 2,
             maximumActiveSegmentDuration: .seconds(600),
             maximumActiveSegmentByteCount: 64 * 1024 * 1024,

@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import Speech
 
 private struct BatchRecordingFailure: LocalizedError {
     let message: String
@@ -28,6 +29,9 @@ actor BatchTranscriptionCoordinator {
     private let dbQueue: DatabaseQueue
     private let recordingAudioStore: RecordingAudioStore?
     private let translationService = TranscriptTranslationService()
+    private let languageDetector: any BatchLanguageDetecting
+    private let speechRecognizer: any BatchSpeechRecognizing
+    private let supportedLocalesProvider: @Sendable () async -> [Locale]
     private let onStateChange: StateHandler
     private var pendingSessionIds: [UUID] = []
     private var runningSessionId: UUID?
@@ -36,6 +40,11 @@ actor BatchTranscriptionCoordinator {
     init(
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
+        languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
+        speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
+        supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
+            await SpeechTranscriber.supportedLocales
+        },
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
@@ -43,6 +52,9 @@ actor BatchTranscriptionCoordinator {
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
         )
+        self.languageDetector = languageDetector
+        self.speechRecognizer = speechRecognizer
+        self.supportedLocalesProvider = supportedLocalesProvider
         self.onStateChange = onStateChange
     }
 
@@ -79,12 +91,12 @@ actor BatchTranscriptionCoordinator {
 
     func confirmAndEnqueue(
         sessionId: UUID,
-        localeIdentifier: String,
+        languageSelection: BatchTranscriptionLanguageSelection,
         retainAudioAfterBatch: Bool
     ) async throws {
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
-            localeIdentifier: localeIdentifier,
+            languageSelection: languageSelection,
             retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
@@ -122,22 +134,25 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func processQueue() async {
-        while !pendingSessionIds.isEmpty {
-            let sessionId = pendingSessionIds.removeFirst()
-            runningSessionId = sessionId
-            do {
-                try await markAttemptStarted(sessionId: sessionId)
-                let meetingId = try meetingId(for: sessionId)
-                await notify(meetingId: meetingId, state: .running(sessionId: sessionId))
-                try await process(sessionId: sessionId)
-                await notify(meetingId: meetingId, state: .completed(sessionId: sessionId))
-            } catch is CancellationError {
-                // The session was completed or explicitly discarded after it was queued.
-            } catch {
-                await recordFailure(sessionId: sessionId, error: error)
+        repeat {
+            while !pendingSessionIds.isEmpty {
+                let sessionId = pendingSessionIds.removeFirst()
+                runningSessionId = sessionId
+                do {
+                    try await markAttemptStarted(sessionId: sessionId)
+                    let meetingId = try meetingId(for: sessionId)
+                    await notify(meetingId: meetingId, state: .running(sessionId: sessionId))
+                    try await process(sessionId: sessionId)
+                    await notify(meetingId: meetingId, state: .completed(sessionId: sessionId))
+                } catch is CancellationError {
+                    // The session was completed or explicitly discarded after it was queued.
+                } catch {
+                    await recordFailure(sessionId: sessionId, error: error)
+                }
+                runningSessionId = nil
             }
-            runningSessionId = nil
-        }
+            await languageDetector.unload()
+        } while !pendingSessionIds.isEmpty
         processorTask = nil
     }
 
@@ -238,14 +253,24 @@ actor BatchTranscriptionCoordinator {
         job: Job,
         translationConfiguration: TranslationConfiguration
     ) async throws -> [TranscriptSegment] {
+        let supportedLocales: [Locale] = if job.session.batchLanguageDetectionMode == .automatic {
+            await supportedLocalesProvider()
+        } else {
+            []
+        }
         var transcriptSegments: [TranscriptSegment] = []
         for verified in verifiedSegments {
-            for range in verified.ranges {
+            let ranges = try BatchTranscriptionAudioRangePlanner.ranges(
+                for: verified,
+                mode: job.session.batchLanguageDetectionMode
+            )
+            for range in ranges {
                 try await transcriptSegments.append(contentsOf: transcribe(
                     range: range,
                     segment: verified.segment,
                     audioURL: verified.url,
                     session: job.session,
+                    supportedLocales: supportedLocales,
                     translationConfiguration: translationConfiguration
                 ))
             }
@@ -259,37 +284,40 @@ actor BatchTranscriptionCoordinator {
     }
 
     private func transcribe(
-        range: RecordingAudioSegmentRangeRecord,
+        range: BatchTranscriptionAudioRange,
         segment: RecordingAudioSegmentRecord,
         audioURL: URL,
         session: RecordingSessionRecord,
+        supportedLocales: [Locale],
         translationConfiguration: TranslationConfiguration
     ) async throws -> [TranscriptSegment] {
-        guard let frameCount = range.frameCount else {
-            throw BatchSpeechTranscriberError.invalidAudioRange
-        }
-        var segments = try await BatchSpeechTranscriberService.transcribe(
+        let result = try await BatchSpeechTranscriberService.transcribe(
             BatchSpeechTranscriptionRequest(
                 audioURL: audioURL,
                 startFrame: range.startFrame,
-                frameCount: frameCount,
-                locale: Locale(identifier: range.localeIdentifier),
+                frameCount: range.frameCount,
+                recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
+                languageDetectionMode: session.batchLanguageDetectionMode,
+                supportedLocales: supportedLocales,
                 source: segment.source,
                 recordingSessionId: session.id,
                 recordingStartTime: session.startedAt,
                 sessionOffsetSeconds: range.sessionOffsetSeconds
-            )
+            ),
+            languageDetector: languageDetector,
+            speechRecognizer: speechRecognizer
         )
+        var segments = result.segments
         guard translationConfiguration.isEnabled,
               TranscriptTranslationLanguage.shouldTranslate(
-                  transcriptionLocaleIdentifier: range.localeIdentifier,
+                  transcriptionLocaleIdentifier: result.localeIdentifier,
                   targetLanguageIdentifier: translationConfiguration.targetLanguage
               ) else { return segments }
 
         for index in segments.indices {
             segments[index].translatedText = await translationService.translate(
                 segments[index].text,
-                from: range.localeIdentifier,
+                from: result.localeIdentifier,
                 to: translationConfiguration.targetLanguage
             )
         }

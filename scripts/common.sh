@@ -112,6 +112,25 @@ embed_sparkle_framework() {
     fi
 }
 
+embed_whisperkit_licenses() {
+    local project_dir="$1"
+    local contents_dir="$2"
+    local checkout_dir="${project_dir}/.build/checkouts/argmax-oss-swift"
+    local destination_dir="${contents_dir}/Resources/Licenses/WhisperKit"
+    local notice_name
+
+    for notice_name in LICENSE NOTICES; do
+        if [ ! -f "${checkout_dir}/${notice_name}" ]; then
+            echo "error: WhisperKit ${notice_name} was not found in the SwiftPM checkout" >&2
+            return 1
+        fi
+    done
+
+    mkdir -p "$destination_dir"
+    cp "${checkout_dir}/LICENSE" "${destination_dir}/LICENSE"
+    cp "${checkout_dir}/NOTICES" "${destination_dir}/NOTICES"
+}
+
 has_entitlements() {
     local entitlements_path="$1"
 

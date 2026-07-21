@@ -13,6 +13,11 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct RecordingAudioStoreTests {
         @Test
+        func productionSegmentsTargetThirtySeconds() {
+            #expect(RecordingAudioStore.Configuration.production.targetSegmentDuration == .seconds(30))
+        }
+
+        @Test
         func recoversRecordingPartialToReady() async throws {
             let fixture = try BatchAudioTestFixture(name: "RecoverRecordingPartial")
             defer { fixture.removeFiles() }

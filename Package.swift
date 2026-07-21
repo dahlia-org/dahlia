@@ -15,6 +15,7 @@ let package = Package(
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.10.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2"),
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0"),
     ],
     targets: [
         .target(
@@ -41,6 +42,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
             ],
             path: "Sources/Dahlia",
             exclude: [

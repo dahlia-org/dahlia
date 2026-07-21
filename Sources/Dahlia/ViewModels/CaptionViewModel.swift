@@ -419,11 +419,6 @@ final class CaptionViewModel: ObservableObject {
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
 
-    private nonisolated static let preferredTranscriptionLocaleFallbacksByLanguage = [
-        "en": "en_US",
-        "ja": "ja_JP",
-    ]
-
     private var activeDbQueueForSessionControls: DatabaseQueue? {
         recordingContext?.dbQueue ?? currentDbQueue
     }
@@ -566,7 +561,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func confirmBatchTranscription(
-        localeIdentifier: String,
+        languageSelection: BatchTranscriptionLanguageSelection,
         retainAudioAfterBatch: Bool
     ) {
         guard let confirmation = pendingBatchTranscriptionConfirmation,
@@ -574,8 +569,9 @@ final class CaptionViewModel: ObservableObject {
         let retryConfirmation = BatchTranscriptionConfirmation(
             sessionId: confirmation.sessionId,
             meetingId: confirmation.meetingId,
-            suggestedLocaleIdentifier: localeIdentifier,
-            retainAudioAfterBatch: retainAudioAfterBatch
+            suggestedLocaleIdentifier: confirmation.suggestedLocaleIdentifier,
+            retainAudioAfterBatch: retainAudioAfterBatch,
+            initialLanguageSelection: languageSelection
         )
         let settings = AppSettings.shared
         if settings.generateSummaryAfterBatchTranscription {
@@ -595,7 +591,7 @@ final class CaptionViewModel: ObservableObject {
             do {
                 try await coordinator.confirmAndEnqueue(
                     sessionId: confirmation.sessionId,
-                    localeIdentifier: localeIdentifier,
+                    languageSelection: languageSelection,
                     retainAudioAfterBatch: retainAudioAfterBatch
                 )
             } catch {
@@ -708,55 +704,10 @@ final class CaptionViewModel: ObservableObject {
         preferredIdentifier: String,
         supportedLocales: [Locale]
     ) -> String {
-        let trimmedIdentifier = preferredIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedIdentifier = normalizedLocaleIdentifier(from: trimmedIdentifier)
-        let supportedLocaleIdentifiers = Set(supportedLocales.map(\.identifier))
-
-        if supportedLocaleIdentifiers.contains(normalizedIdentifier) {
-            return normalizedIdentifier
-        }
-
-        let preferredLanguageIdentifier = TranscriptTranslationLanguage.normalizedLanguageIdentifier(from: trimmedIdentifier)
-        if let preferredFallback = preferredTranscriptionLocaleFallbacksByLanguage[preferredLanguageIdentifier],
-           supportedLocaleIdentifiers.contains(preferredFallback) {
-            return preferredFallback
-        }
-
-        let sortedLocales = supportedLocales.sorted(by: { $0.identifier < $1.identifier })
-
-        if let sameLanguageLocale = sortedLocales
-            .first(where: {
-                TranscriptTranslationLanguage.normalizedLanguageIdentifier(from: $0.identifier) == preferredLanguageIdentifier
-            }) {
-            return sameLanguageLocale.identifier
-        }
-
-        for fallback in preferredTranscriptionLocaleFallbacksByLanguage.values.sorted() {
-            if supportedLocaleIdentifiers.contains(fallback) {
-                return fallback
-            }
-        }
-
-        return sortedLocales.first?.identifier ?? normalizedIdentifier
-    }
-
-    private nonisolated static func normalizedLocaleIdentifier(from identifier: String) -> String {
-        guard !identifier.isEmpty else { return identifier }
-
-        let locale = Locale(identifier: identifier)
-        guard let languageCode = locale.language.languageCode?.identifier.nilIfBlank else {
-            return identifier
-                .replacingOccurrences(of: "-", with: "_")
-                .split(separator: "@", maxSplits: 1)
-                .first
-                .map(String.init) ?? identifier
-        }
-
-        guard let regionCode = locale.region?.identifier.nilIfBlank else {
-            return languageCode
-        }
-
-        return "\(languageCode)_\(regionCode)"
+        TranscriptionLocaleResolver.resolvedSupportedLocaleIdentifier(
+            preferredIdentifier: preferredIdentifier,
+            supportedLocales: supportedLocales
+        )
     }
 
     private func resolvedSelectedLocale() -> Locale {

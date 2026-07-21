@@ -604,7 +604,7 @@
 "Some transcript could not be loaded: %1$@" = "文字起こしの一部を読み込めませんでした: %1$@";
 "New transcript available" = "新しい文字起こしがあります";
 "Recording audio for transcription after recording stops…" = "録音終了後の文字起こし用に音声を保存しています…";
-"Audio is ready. Confirm the language to start transcription." = "音声の準備ができました。言語を確認して文字起こしを開始してください。";
+"Audio is ready. Confirm language detection to start transcription." = "音声の準備ができました。言語判定を確認して文字起こしを開始してください。";
 "Review and Start" = "確認して開始";
 "Waiting to transcribe the recording…" = "録音の文字起こしを待機しています…";
 "Creating a high-accuracy transcript…" = "高精度な文字起こしを作成しています…";
@@ -612,7 +612,11 @@
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
 "Retry Batch Transcription" = "バッチ文字起こしを再試行";
 "Start batch transcription?" = "バッチ文字起こしを開始しますか？";
-"The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds." = "単一言語の録音には選択した言語を使用します。録音中に切り替えた言語区間は保持されます。文字起こしが成功するまで音声データは保持されます。";
+"Automatic detection identifies the language of each recording file. Choose a language to use manual transcription instead. Audio is kept until transcription succeeds." = "自動判定では録音ファイルごとに言語を判定します。手動で文字起こしする場合は言語を選択してください。文字起こしが成功するまで音声データは保持されます。";
+"Detect Automatically" = "自動判定";
+"Could not prepare the language detection model. Check your network connection and try again." = "言語判定モデルを準備できませんでした。ネットワーク接続を確認して再試行してください。";
+"Could not detect the recording language. Try again." = "録音の言語を判定できませんでした。再試行してください。";
+"The detected language is not supported for transcription: %@" = "判定された言語は文字起こしに対応していません: %@";
 "Delete Recording Files After Transcription" = "文字起こし後に録音ファイルを削除";
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "バッチ文字起こしが成功したら録音ファイルを削除します。失敗した場合は再試行のため保持されます。";
 "Generate Summary After Transcription" = "文字起こし後に要約を生成";

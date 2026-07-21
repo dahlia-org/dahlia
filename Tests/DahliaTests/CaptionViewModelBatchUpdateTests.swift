@@ -178,7 +178,7 @@ import GRDB
                 retainAudioAfterBatch: false
             )
             viewModel.confirmBatchTranscription(
-                localeIdentifier: "ja_JP",
+                languageSelection: .manual(localeIdentifier: "ja_JP"),
                 retainAudioAfterBatch: false
             )
             #expect(await waitUntil {

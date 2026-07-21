@@ -85,6 +85,7 @@ if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "${CONTENTS}/Resources/"
 fi
 embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
+embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true

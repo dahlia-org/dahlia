@@ -604,7 +604,7 @@
 "Some transcript could not be loaded: %1$@" = "Some transcript could not be loaded: %1$@";
 "New transcript available" = "New transcript available";
 "Recording audio for transcription after recording stops…" = "Recording audio for transcription after recording stops…";
-"Audio is ready. Confirm the language to start transcription." = "Audio is ready. Confirm the language to start transcription.";
+"Audio is ready. Confirm language detection to start transcription." = "Audio is ready. Confirm language detection to start transcription.";
 "Review and Start" = "Review and Start";
 "Waiting to transcribe the recording…" = "Waiting to transcribe the recording…";
 "Creating a high-accuracy transcript…" = "Creating a high-accuracy transcript…";
@@ -612,7 +612,11 @@
 "Batch transcription failed: %@" = "Batch transcription failed: %@";
 "Retry Batch Transcription" = "Retry Batch Transcription";
 "Start batch transcription?" = "Start batch transcription?";
-"The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds." = "The selected language is used for single-language recordings. Language changes made during recording are preserved. The audio is kept until transcription succeeds.";
+"Automatic detection identifies the language of each recording file. Choose a language to use manual transcription instead. Audio is kept until transcription succeeds." = "Automatic detection identifies the language of each recording file. Choose a language to use manual transcription instead. Audio is kept until transcription succeeds.";
+"Detect Automatically" = "Detect Automatically";
+"Could not prepare the language detection model. Check your network connection and try again." = "Could not prepare the language detection model. Check your network connection and try again.";
+"Could not detect the recording language. Try again." = "Could not detect the recording language. Try again.";
+"The detected language is not supported for transcription: %@" = "The detected language is not supported for transcription: %@";
 "Delete Recording Files After Transcription" = "Delete Recording Files After Transcription";
 "Delete the recording files after batch transcription succeeds. They are kept if transcription fails." = "Delete the recording files after batch transcription succeeds. They are kept if transcription fails.";
 "Generate Summary After Transcription" = "Generate Summary After Transcription";

@@ -307,6 +307,23 @@ test_framework_embedding_validation() {
     expect_failure embed_sparkle_framework "$fake_project" "$contents_dir"
 }
 
+test_whisperkit_license_embedding_validation() {
+    local fake_project="${TEST_DIR}/whisperkit-license-project"
+    local checkout_dir="${fake_project}/.build/checkouts/argmax-oss-swift"
+    local contents_dir="${TEST_DIR}/WhisperKitContents"
+
+    mkdir -p "$checkout_dir"
+    printf '%s' 'license fixture' > "${checkout_dir}/LICENSE"
+    printf '%s' 'notices fixture' > "${checkout_dir}/NOTICES"
+
+    embed_whisperkit_licenses "$fake_project" "$contents_dir"
+    cmp "${checkout_dir}/LICENSE" "${contents_dir}/Resources/Licenses/WhisperKit/LICENSE"
+    cmp "${checkout_dir}/NOTICES" "${contents_dir}/Resources/Licenses/WhisperKit/NOTICES"
+
+    rm "${checkout_dir}/NOTICES"
+    expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
+}
+
 test_build_version_validation
 test_latest_release_build_validation
 test_sparkle_configuration_validation
@@ -315,5 +332,6 @@ test_sparkle_appcast_creation
 test_release_upload_arguments
 test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
+test_whisperkit_license_embedding_validation
 
 echo "Release script tests passed"
