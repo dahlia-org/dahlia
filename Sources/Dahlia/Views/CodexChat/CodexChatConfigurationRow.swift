@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatConfigurationRow: View {
     let title: String
     let isSelected: Bool
+    var leadingSystemImage: String?
     var trailingSystemImage: String?
     let action: () -> Void
 
@@ -11,6 +12,12 @@ struct CodexChatConfigurationRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
+                if let leadingSystemImage {
+                    Image(systemName: leadingSystemImage)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+
                 Text(title)
                     .font(.callout)
                     .foregroundStyle(.primary)

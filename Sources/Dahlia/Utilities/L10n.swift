@@ -1525,6 +1525,7 @@ enum L10n {
     static var stopGenerating: String { String(localized: "Stop generating", bundle: bundle) }
     static var chatThinking: String { String(localized: "Thinking", bundle: bundle) }
     static var messageCodex: String { String(localized: "Message Codex", bundle: bundle) }
+    static var addToChat: String { String(localized: "Add to chat", bundle: bundle) }
     static var chatImage: String { String(localized: "Image", bundle: bundle) }
     static var attachChatImages: String { String(localized: "Attach images", bundle: bundle) }
     static var chatAttachedImage: String { String(localized: "Attached image", bundle: bundle) }

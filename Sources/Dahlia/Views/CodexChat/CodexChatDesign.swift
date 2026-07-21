@@ -20,6 +20,7 @@ enum CodexChatDesign {
     static let resizeCornerSize: CGFloat = 12
     static let attachmentThumbnailSize: CGFloat = 64
     static let messageImageSize: CGFloat = 120
+    static let addPanelWidth: CGFloat = 220
     static let configurationPanelWidth: CGFloat = 252
     static let configurationPanelHeight: CGFloat = 278
     static let modelPanelWidth: CGFloat = 216

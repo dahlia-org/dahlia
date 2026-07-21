@@ -4,28 +4,29 @@ import UniformTypeIdentifiers
 
 struct CodexChatComposer: View {
     @Bindable var session: CodexChatSessionModel
-    @State private var isMeetingPickerPresented = false
+    @State private var showsMeetingPicker = false
     @State private var meetingQuery = ""
     @State private var highlightedMeetingID: UUID?
     @State private var suggestions: [CodexChatMeetingReference] = []
     @State private var consumesTrailingMentionOnSelection = false
     @State private var isImageImporterPresented = false
     @State private var isImageDropTargeted = false
+    @State private var showsAddPanel = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            if !session.attachedImages.isEmpty {
+                CodexChatAttachmentStrip(
+                    attachments: session.attachedImages,
+                    onRemove: session.removeAttachedImage
+                )
+            }
+
             if !session.selectedMeetingReferenceIDs.isEmpty {
                 CodexChatMeetingReferenceBar(
                     referenceIDs: session.selectedMeetingReferenceIDs,
                     referencesByID: session.meetingReferencesByID,
                     onRemove: session.removeMeetingReference
-                )
-            }
-
-            if !session.attachedImages.isEmpty {
-                CodexChatAttachmentStrip(
-                    attachments: session.attachedImages,
-                    onRemove: session.removeAttachedImage
                 )
             }
 
@@ -35,15 +36,18 @@ struct CodexChatComposer: View {
 
             CodexChatComposerInputRow(
                 session: session,
-                isMeetingPickerPresented: $isMeetingPickerPresented,
+                showsAddPanel: showsAddPanel,
+                showsMeetingPicker: showsMeetingPicker,
                 suggestions: suggestions,
                 highlightedMeetingID: highlightedMeetingID,
                 onShowImageImporter: showImageImporter,
+                onToggleAddPanel: toggleAddPanel,
                 onShowMeetingPicker: showMeetingPicker,
                 onSelectMeeting: selectMeeting,
+                onPasteImages: pasteImages,
                 onSubmit: handleSubmit,
                 onMoveCommand: handleMoveCommand,
-                onExitCommand: closeMeetingPicker,
+                onExitCommand: dismissAddPanel,
                 onHover: updateTextInputCursor
             )
         }
@@ -73,7 +77,20 @@ struct CodexChatComposer: View {
     }
 
     private func showImageImporter() {
+        dismissAddPanel()
         isImageImporterPresented = true
+    }
+
+    private func toggleAddPanel() {
+        guard !showsAddPanel else {
+            dismissAddPanel()
+            return
+        }
+        meetingQuery = ""
+        highlightedMeetingID = nil
+        consumesTrailingMentionOnSelection = false
+        showsMeetingPicker = false
+        showsAddPanel = true
     }
 
     private func handleImageImport(_ result: Result<[URL], any Error>) {
@@ -91,6 +108,13 @@ struct CodexChatComposer: View {
         Task { await session.addImageData(images.map(\.data)) }
     }
 
+    private func pasteImages() -> Bool {
+        let imageData = CodexChatPasteboardImageReader.imageData()
+        guard !imageData.isEmpty else { return false }
+        Task { await session.addImageData(imageData) }
+        return true
+    }
+
     private func updateDropTarget(_ dropSession: DropSession) {
         switch dropSession.phase {
         case .entering, .active:
@@ -103,7 +127,7 @@ struct CodexChatComposer: View {
     }
 
     private func handleSubmit() {
-        if isMeetingPickerPresented,
+        if showsMeetingPicker,
            let highlightedMeetingID,
            let reference = suggestions.first(where: { $0.id == highlightedMeetingID }) {
             selectMeeting(reference)
@@ -124,26 +148,29 @@ struct CodexChatComposer: View {
 
     private func handleDraftChange(_: String, _ newValue: String) {
         guard let query = CodexChatMeetingReference.trailingMentionQuery(in: newValue) else {
-            if isMeetingPickerPresented {
-                closeMeetingPicker()
+            if showsMeetingPicker {
+                dismissAddPanel()
             }
             return
         }
         meetingQuery = query
         consumesTrailingMentionOnSelection = true
-        isMeetingPickerPresented = true
+        showsMeetingPicker = true
+        showsAddPanel = true
         refreshSuggestions()
     }
 
     private func showMeetingPicker() {
         meetingQuery = ""
         consumesTrailingMentionOnSelection = false
-        isMeetingPickerPresented = true
+        showsMeetingPicker = true
+        showsAddPanel = true
         refreshSuggestions()
     }
 
-    private func closeMeetingPicker() {
-        isMeetingPickerPresented = false
+    private func dismissAddPanel() {
+        showsAddPanel = false
+        showsMeetingPicker = false
         meetingQuery = ""
         highlightedMeetingID = nil
         consumesTrailingMentionOnSelection = false
@@ -155,11 +182,11 @@ struct CodexChatComposer: View {
             consumesTrailingMention: consumesTrailingMentionOnSelection
         )
         session.addMeetingReference(reference)
-        closeMeetingPicker()
+        dismissAddPanel()
     }
 
     private func refreshSuggestionsIfPresented() {
-        guard isMeetingPickerPresented else { return }
+        guard showsMeetingPicker else { return }
         refreshSuggestions()
     }
 
@@ -178,7 +205,7 @@ struct CodexChatComposer: View {
     }
 
     private func handleMoveCommand(_ direction: MoveCommandDirection) {
-        guard isMeetingPickerPresented, !suggestions.isEmpty else { return }
+        guard showsMeetingPicker, !suggestions.isEmpty else { return }
         switch direction {
         case .up:
             highlightedMeetingID = CodexChatMeetingPickerSelection.moving(

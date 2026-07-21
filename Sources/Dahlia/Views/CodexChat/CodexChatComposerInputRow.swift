@@ -2,12 +2,15 @@ import SwiftUI
 
 struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
-    @Binding var isMeetingPickerPresented: Bool
+    let showsAddPanel: Bool
+    let showsMeetingPicker: Bool
     let suggestions: [CodexChatMeetingReference]
     let highlightedMeetingID: UUID?
     let onShowImageImporter: () -> Void
+    let onToggleAddPanel: () -> Void
     let onShowMeetingPicker: () -> Void
     let onSelectMeeting: (CodexChatMeetingReference) -> Void
+    let onPasteImages: () -> Bool
     let onSubmit: () -> Void
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
@@ -15,32 +18,30 @@ struct CodexChatComposerInputRow: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            HStack(spacing: 4) {
-                Button(L10n.attachChatImages, systemImage: "paperclip", action: onShowImageImporter)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-                    .background(.quaternary, in: Circle())
-                    .contentShape(Circle())
-                    .help(L10n.attachChatImages)
-
-                Button(L10n.addMeetingReference, systemImage: "plus", action: onShowMeetingPicker)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-                    .background(.quaternary, in: Circle())
-                    .contentShape(Circle())
-                    .help(L10n.addMeetingReference)
-                    .popover(isPresented: $isMeetingPickerPresented, arrowEdge: .top) {
-                        CodexChatMeetingPicker(
-                            references: suggestions,
-                            highlightedID: highlightedMeetingID,
-                            onSelect: onSelectMeeting
+            Button(L10n.addToChat, systemImage: "plus", action: onToggleAddPanel)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
+                .background(.quaternary, in: Circle())
+                .contentShape(Circle())
+                .help(L10n.addToChat)
+                .overlay(alignment: .bottomLeading) {
+                    if showsAddPanel {
+                        CodexChatAddPanel(
+                            showsMeetingPicker: showsMeetingPicker,
+                            meetingReferences: suggestions,
+                            highlightedMeetingID: highlightedMeetingID,
+                            onAttachImages: onShowImageImporter,
+                            onAddMeetingReference: onShowMeetingPicker,
+                            onSelectMeeting: onSelectMeeting
                         )
+                        .offset(y: -(CodexChatDesign.controlSize + 8))
+                        .zIndex(1)
                     }
-            }
+                }
+                .onExitCommand(perform: onExitCommand)
+                .zIndex(showsAddPanel ? 1 : 0)
 
             TextField(L10n.messageCodex, text: $session.draft, axis: .vertical)
                 .font(.body)
@@ -54,6 +55,10 @@ struct CodexChatComposerInputRow: View {
                 .onSubmit(onSubmit)
                 .onMoveCommand(perform: onMoveCommand)
                 .onExitCommand(perform: onExitCommand)
+                .onKeyPress("v", phases: .down) { keyPress in
+                    guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
+                    return .handled
+                }
 
             if session.isLoading, session.models.isEmpty {
                 ProgressView()

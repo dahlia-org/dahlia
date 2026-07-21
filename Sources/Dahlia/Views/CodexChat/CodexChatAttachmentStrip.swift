@@ -15,8 +15,8 @@ struct CodexChatAttachmentStrip: View {
                 }
             }
             .padding(.horizontal, 4)
-            .padding(.top, 4)
         }
+        .frame(height: CodexChatDesign.attachmentThumbnailSize)
         .scrollIndicators(.hidden)
         .accessibilityLabel(L10n.chatAttachedImages)
     }
