@@ -13,8 +13,7 @@ import Foundation
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["ja_JP", "en_GB"],
                 supportedLocales: [Locale(identifier: "en_US"), Locale(identifier: "en_GB")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                languageDetector: detector
             )
 
             #expect(locale.locale.identifier == "en_GB")
@@ -28,8 +27,7 @@ import Foundation
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["ja_JP"],
                 supportedLocales: [Locale(identifier: "en_GB"), Locale(identifier: "en_US")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                languageDetector: detector
             )
 
             #expect(locale.locale.identifier == "en_US")
@@ -43,8 +41,7 @@ import Foundation
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["ja_JP"],
                 supportedLocales: [Locale(identifier: "fr_FR"), Locale(identifier: "fr_CA")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                languageDetector: detector
             )
 
             #expect(locale.locale.identifier == "fr_CA")
@@ -58,8 +55,7 @@ import Foundation
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["en_US", "nb_NO"],
                 supportedLocales: [Locale(identifier: "en_US"), Locale(identifier: "nb_NO")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "en_US"
+                languageDetector: detector
             )
 
             #expect(resolution.locale.identifier == "nb_NO")
@@ -67,7 +63,7 @@ import Foundation
         }
 
         @Test
-        func rejectsFallbackLanguageWhenSelectedLocaleIsUnavailable() async {
+        func rejectsDetectedLanguageWhenAppleLocaleIsUnavailable() async {
             let detector = BatchLanguageDetectorStub(behavior: .detection("fr"))
 
             await #expect(throws: BatchSpeechTranscriberError.self) {
@@ -75,66 +71,46 @@ import Foundation
                     audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                     recordedLocaleIdentifiers: ["fr_FR"],
                     supportedLocales: [Locale(identifier: "ja_JP")],
-                    languageDetector: detector,
-                    fallbackLocaleIdentifier: "en_US"
+                    languageDetector: detector
                 )
             }
         }
 
         @Test
-        func unsupportedDetectionFallsBackToSelectedLanguage() async throws {
+        func unsupportedDetectionFailsInsteadOfFallingBack() async {
             let detector = BatchLanguageDetectorStub(behavior: .detection("jw"))
 
-            let locale = try await BatchLanguageDetectionService.resolveLocale(
-                audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
-                recordedLocaleIdentifiers: ["ja_JP"],
-                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
-            )
-
-            #expect(locale.locale.identifier == "ja_JP")
-            #expect(locale.fallback?.reason == .unsupportedLanguage)
+            await #expect(throws: BatchSpeechTranscriberError.self) {
+                _ = try await BatchLanguageDetectionService.resolveLocale(
+                    audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
+                    recordedLocaleIdentifiers: ["ja_JP"],
+                    supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
+                    languageDetector: detector
+                )
+            }
         }
 
         @Test
-        func detectedSelectedLanguageUsesSelectedRegionalLocale() async throws {
+        func detectedLanguageUsesRecordedRegionalLocale() async throws {
             let detector = BatchLanguageDetectorStub(behavior: .detection("en"))
 
             let locale = try await BatchLanguageDetectionService.resolveLocale(
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["en_US"],
                 supportedLocales: [Locale(identifier: "en_US"), Locale(identifier: "en_GB")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "en_GB"
+                languageDetector: detector
             )
 
-            #expect(locale.locale.identifier == "en_GB")
+            #expect(locale.locale.identifier == "en_US")
             #expect(locale.fallback == nil)
         }
 
         @Test
-        func unsupportedDetectionUsesExplicitFallbackLocale() async throws {
-            let detector = BatchLanguageDetectorStub(behavior: .detection("jw"))
-
-            let locale = try await BatchLanguageDetectionService.resolveLocale(
-                audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
-                recordedLocaleIdentifiers: ["en_US"],
-                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
-            )
-
-            #expect(locale.locale.identifier == "ja_JP")
-            #expect(locale.fallback?.reason == .unsupportedLanguage)
-        }
-
-        @Test
-        func lowConfidenceDetectionFallsBackToSelectedLanguage() async throws {
+        func lowConfidenceDetectionUsesDetectedCandidate() async throws {
             let detector = BatchLanguageDetectorStub(
                 behavior: .outcome(
                     .detected(
-                        languageIdentifier: "jw",
+                        languageIdentifier: "en",
                         logProbability: Float(log(0.2))
                     )
                 )
@@ -144,45 +120,78 @@ import Foundation
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["ja_JP"],
                 supportedLocales: [Locale(identifier: "en_US"), Locale(identifier: "ja_JP")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                languageDetector: detector
             )
 
-            #expect(resolution.locale.identifier == "ja_JP")
-            #expect(resolution.fallback?.reason == .lowConfidence)
-            #expect(abs((resolution.fallback?.topProbability ?? 0) - 0.2) < 0.001)
+            #expect(resolution.locale.identifier == "en_US")
+            #expect(resolution.fallback == nil)
         }
 
         @Test
-        func emptyDetectionResultFallsBackToSelectedLanguage() async throws {
+        func detectionWithoutProbabilityUsesDetectedCandidate() async throws {
+            let detector = BatchLanguageDetectorStub(
+                behavior: .outcome(
+                    .detected(languageIdentifier: "en", logProbability: nil)
+                )
+            )
+
+            let resolution = try await BatchLanguageDetectionService.resolveLocale(
+                audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
+                recordedLocaleIdentifiers: ["ja_JP"],
+                supportedLocales: [Locale(identifier: "en_US"), Locale(identifier: "ja_JP")],
+                languageDetector: detector
+            )
+
+            #expect(resolution.locale.identifier == "en_US")
+            #expect(resolution.fallback == nil)
+        }
+
+        @Test
+        func emptyDetectionResultUsesEnglish() async throws {
             let detector = BatchLanguageDetectorStub(behavior: .detection(""))
 
             let resolution = try await BatchLanguageDetectionService.resolveLocale(
                 audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                 recordedLocaleIdentifiers: ["ja_JP"],
-                supportedLocales: [Locale(identifier: "ja_JP")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
+                languageDetector: detector
             )
 
-            #expect(resolution.locale.identifier == "ja_JP")
-            #expect(resolution.fallback?.reason == .detectionFailed)
+            #expect(resolution.locale.identifier == "en_US")
+            #expect(resolution.fallback == .inferenceFailure)
         }
 
         @Test
-        func detectorFailureFallsBackWithoutExposingDetails() async throws {
+        func inferenceFailureUsesEnglishWithoutExposingDetails() async throws {
             let detector = BatchLanguageDetectorStub(behavior: .failure)
 
             let resolution = try await BatchLanguageDetectionService.resolveLocale(
                 audioURL: URL(fileURLWithPath: "/Users/alice/private/meeting.caf"),
                 recordedLocaleIdentifiers: ["ja_JP"],
-                supportedLocales: [Locale(identifier: "ja_JP")],
-                languageDetector: detector,
-                fallbackLocaleIdentifier: "ja_JP"
+                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
+                languageDetector: detector
             )
 
-            #expect(resolution.locale.identifier == "ja_JP")
-            #expect(resolution.fallback?.reason == .detectionFailed)
+            #expect(resolution.locale.identifier == "en_US")
+            #expect(resolution.fallback == .inferenceFailure)
+        }
+
+        @Test
+        func audioLoadingFailureStopsBatchWithoutExposingDetails() async {
+            let detector = BatchLanguageDetectorStub(behavior: .audioLoadingFailure)
+
+            do {
+                _ = try await BatchLanguageDetectionService.resolveLocale(
+                    audioURL: URL(fileURLWithPath: "/Users/alice/private/meeting.caf"),
+                    recordedLocaleIdentifiers: ["ja_JP"],
+                    supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
+                    languageDetector: detector
+                )
+                Issue.record("Expected audio loading to fail")
+            } catch {
+                #expect(error.localizedDescription == L10n.batchLanguageDetectionAudioLoadingFailed)
+                #expect(!error.localizedDescription.contains("/Users/alice"))
+            }
         }
 
         @Test
@@ -194,8 +203,7 @@ import Foundation
                     audioURL: URL(fileURLWithPath: "/Users/alice/private/meeting.caf"),
                     recordedLocaleIdentifiers: ["ja_JP"],
                     supportedLocales: [Locale(identifier: "ja_JP")],
-                    languageDetector: detector,
-                    fallbackLocaleIdentifier: "ja_JP"
+                    languageDetector: detector
                 )
                 Issue.record("Expected model preparation to fail")
             } catch {
@@ -213,8 +221,7 @@ import Foundation
                     audioURL: URL(fileURLWithPath: "/tmp/audio.caf"),
                     recordedLocaleIdentifiers: ["ja_JP"],
                     supportedLocales: [Locale(identifier: "ja_JP")],
-                    languageDetector: detector,
-                    fallbackLocaleIdentifier: "ja_JP"
+                    languageDetector: detector
                 )
             }
         }

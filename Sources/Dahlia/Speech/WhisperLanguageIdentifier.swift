@@ -1,4 +1,5 @@
 import Foundation
+import WhisperKit
 
 /// Bridges BCP-47 language codes used by Apple APIs to Whisper's historical token codes.
 enum WhisperLanguageIdentifier {
@@ -14,6 +15,12 @@ enum WhisperLanguageIdentifier {
         case "jv": "jw"
         default: languageIdentifier
         }
+    }
+
+    static func supportedCanonicalIdentifier(from identifier: String) -> String? {
+        guard let identifier = canonicalIdentifier(from: identifier),
+              Constants.languageCodes.contains(identifier) else { return nil }
+        return identifier
     }
 
     static func matches(_ lhs: String, _ rhs: String) -> Bool {

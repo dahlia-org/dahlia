@@ -23,6 +23,7 @@ import GRDB
             }
             #expect(migratedSession?.batchLanguageDetectionMode == .manual)
             #expect(migratedSession?.batchSelectedLocaleIdentifier == "en_GB")
+            #expect(migratedSession?.batchAutomaticLanguageCandidatesJSON == nil)
         }
 
         @Test
@@ -60,8 +61,10 @@ import GRDB
             }
             #expect(result.0?.batchLanguageDetectionMode == .automatic)
             #expect(result.0?.batchSelectedLocaleIdentifier == "en_GB")
+            #expect(result.0?.batchAutomaticLanguageCandidatesJSON == nil)
             #expect(result.1.filter { $0 == "batchLanguageDetectionMode" }.count == 1)
             #expect(result.1.filter { $0 == "batchSelectedLocaleIdentifier" }.count == 1)
+            #expect(result.1.filter { $0 == "batchAutomaticLanguageCandidatesJSON" }.count == 1)
         }
 
         private func insertExistingSession(into queue: DatabaseQueue) throws -> RecordingSessionRecord {

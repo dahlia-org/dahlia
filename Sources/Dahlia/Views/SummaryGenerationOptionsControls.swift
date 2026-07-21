@@ -9,7 +9,7 @@ struct SummaryGenerationOptionsControls: View {
     var body: some View {
         Picker(selection: $previousMeetingCount) {
             ForEach(AppSettings.summaryPreviousMeetingCountOptions, id: \.self) { count in
-                Text(count == 0 ? L10n.none : L10n.meetingCount(count))
+                Text(count == 0 ? L10n.none : L10n.compactMeetingCount(count))
                     .tag(count)
             }
         } label: {

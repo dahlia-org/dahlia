@@ -12,7 +12,6 @@ enum BatchSpeechTranscriberService {
         _ request: BatchSpeechTranscriptionRequest,
         languageDetector: (any BatchLanguageDetecting)? = nil,
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
-        fallbackLocaleIdentifier: String = "en",
         onLanguageFallback: @escaping @Sendable (BatchLanguageFallback) async -> Void = { _ in }
     ) async throws -> BatchSpeechTranscriptionResult {
         guard request.startFrame >= 0, request.frameCount > 0 else {
@@ -44,8 +43,7 @@ enum BatchSpeechTranscriberService {
         let resolution = try await resolvedLocale(
             for: request,
             audioURL: preparedAudio.url,
-            languageDetector: languageDetector,
-            fallbackLocaleIdentifier: fallbackLocaleIdentifier
+            languageDetector: languageDetector
         )
         if let fallback = resolution.fallback {
             await onLanguageFallback(fallback)
@@ -78,8 +76,7 @@ enum BatchSpeechTranscriberService {
     private static func resolvedLocale(
         for request: BatchSpeechTranscriptionRequest,
         audioURL: URL,
-        languageDetector: (any BatchLanguageDetecting)?,
-        fallbackLocaleIdentifier: String
+        languageDetector: (any BatchLanguageDetecting)?
     ) async throws -> BatchLanguageResolution {
         if request.languageDetectionMode == .manual,
            let recordedLocaleIdentifier = request.recordedLocaleIdentifiers.first {
@@ -100,7 +97,6 @@ enum BatchSpeechTranscriberService {
             recordedLocaleIdentifiers: request.recordedLocaleIdentifiers,
             supportedLocales: request.supportedLocales,
             languageDetector: languageDetector,
-            fallbackLocaleIdentifier: fallbackLocaleIdentifier,
             allowedLanguageIdentifiers: request.allowedLanguageIdentifiers
         )
     }

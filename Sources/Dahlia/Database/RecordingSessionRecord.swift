@@ -25,4 +25,5 @@ struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equa
     var batchFailureKind: BatchFailureKind?
     var batchLanguageDetectionMode: BatchLanguageDetectionMode = .manual
     var batchSelectedLocaleIdentifier: String?
+    var batchAutomaticLanguageCandidatesJSON: String?
 }

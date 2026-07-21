@@ -31,6 +31,7 @@ import GRDB
             try await markBatchFailed(batch)
 
             let viewModel = CaptionViewModel()
+            viewModel.supportedLocales = [Locale(identifier: "en_GB"), Locale(identifier: "ja_JP")]
             viewModel.configureBatchTranscription(
                 dbQueue: batch.database.dbQueue,
                 managedRootURL: batch.managedRootURL,
@@ -51,10 +52,9 @@ import GRDB
 
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.sessionId == batch.session.id)
-            #expect(
-                confirmation.initialLanguageSelection == .automatic(fallbackLocaleIdentifier: "en_GB")
-            )
+            #expect(confirmation.initialLanguageSelection == .automatic)
             #expect(confirmation.retainAudioAfterBatch)
+            #expect(confirmation.automaticLanguageCandidateSnapshot?.identifierSet == ["en", "ja"])
         }
 
         private func markBatchFailed(_ batch: BatchAudioTestFixture) async throws {
@@ -63,7 +63,11 @@ import GRDB
                     throw CocoaError(.fileNoSuchFile)
                 }
                 session.batchLanguageDetectionMode = .automatic
-                session.batchSelectedLocaleIdentifier = "en_GB"
+                session.batchSelectedLocaleIdentifier = nil
+                session.batchAutomaticLanguageCandidatesJSON = try BatchLanguageDetectionCandidateSnapshot(
+                    scope: .selected,
+                    languageIdentifiers: ["en", "ja"]
+                ).encoded()
                 session.batchLastError = L10n.batchLanguageDetectionFailed
                 session.batchLastAttemptAt = batch.now
                 session.batchAttemptCount = 1

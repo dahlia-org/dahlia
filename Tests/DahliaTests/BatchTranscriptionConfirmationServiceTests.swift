@@ -8,6 +8,27 @@ import GRDB
 
     @MainActor
     struct BatchTranscriptionConfirmationServiceTests {
+        @Test
+        func automaticConfirmationRejectsEmptyCandidates() async throws {
+            let queue = try DatabaseQueue(path: ":memory:")
+
+            do {
+                _ = try await BatchTranscriptionConfirmationService.confirm(
+                    sessionId: .v7(),
+                    languageSelection: .automatic,
+                    automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot(
+                        scope: .selected,
+                        languageIdentifiers: []
+                    ),
+                    retainAudioAfterBatch: true,
+                    dbQueue: queue
+                )
+                Issue.record("Expected automatic confirmation to reject an empty candidate set")
+            } catch let error as BatchSpeechTranscriberError {
+                #expect(error.diagnosticCode == "noAutomaticLanguageCandidates")
+            }
+        }
+
         @Test(arguments: [
             (retainsAudio: true, policy: RecordingAudioRetentionPolicy.keepInApp),
             (retainsAudio: false, policy: RecordingAudioRetentionPolicy.deleteAfterTranscription),
@@ -54,6 +75,7 @@ import GRDB
             let confirmation = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
                 retainAudioAfterBatch: retainsAudio,
                 dbQueue: fixture.database.dbQueue
             )
@@ -69,6 +91,7 @@ import GRDB
             #expect(result.0?.batchLastAttemptAt != nil)
             #expect(result.0?.batchLanguageDetectionMode == .manual)
             #expect(result.0?.batchSelectedLocaleIdentifier == "en_US")
+            #expect(result.0?.batchAutomaticLanguageCandidatesJSON == nil)
             #expect(result.1.map(\.localeIdentifier) == ["en_US"])
         }
 
@@ -108,7 +131,11 @@ import GRDB
 
             _ = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
-                languageSelection: .automatic(fallbackLocaleIdentifier: "en_GB"),
+                languageSelection: .automatic,
+                automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot(
+                    scope: .selected,
+                    languageIdentifiers: ["en", "ja"]
+                ),
                 retainAudioAfterBatch: true,
                 dbQueue: fixture.database.dbQueue
             )
@@ -120,6 +147,7 @@ import GRDB
             _ = try await BatchTranscriptionConfirmationService.confirm(
                 sessionId: fixture.session.id,
                 languageSelection: .manual(localeIdentifier: "en_US"),
+                automaticLanguageCandidates: nil,
                 retainAudioAfterBatch: false,
                 dbQueue: fixture.database.dbQueue
             )
@@ -133,6 +161,7 @@ import GRDB
             let retrySession = try #require(retryResult.0)
             #expect(retrySession.batchLanguageDetectionMode == .manual)
             #expect(retrySession.batchSelectedLocaleIdentifier == "en_US")
+            #expect(retrySession.batchAutomaticLanguageCandidatesJSON == nil)
             #expect(!retrySession.retainAudioAfterBatch)
             #expect(retrySession.batchLastError == nil)
             #expect(retrySession.batchFailureKind == nil)
@@ -163,7 +192,11 @@ import GRDB
                 )
             }
             #expect(result.0?.batchLanguageDetectionMode == .automatic)
-            #expect(result.0?.batchSelectedLocaleIdentifier == "en_GB")
+            #expect(result.0?.batchSelectedLocaleIdentifier == nil)
+            let candidatesJSON = try #require(result.0?.batchAutomaticLanguageCandidatesJSON)
+            let candidates = try BatchLanguageDetectionCandidateSnapshot.decode(candidatesJSON)
+            #expect(candidates.scope == .selected)
+            #expect(candidates.identifierSet == ["en", "ja"])
             #expect(result.1.map(\.localeIdentifier) == ["ja_JP"])
         }
     }

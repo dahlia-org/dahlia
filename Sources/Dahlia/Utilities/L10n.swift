@@ -232,6 +232,7 @@ enum L10n {
     static var actionItemsDescription: String { String(localized: "Action items extracted from summaries will appear here.", bundle: bundle) }
     static var missingOnDisk: String { String(localized: "Missing on Disk", bundle: bundle) }
     static func meetingCount(_ count: Int) -> String { String(localized: "\(count) meetings", bundle: bundle) }
+    static func compactMeetingCount(_ count: Int) -> String { String(localized: "\(count)", bundle: bundle) }
 
     static func includedSubprojectCount(_ count: Int) -> String {
         String(localized: "\(count) subprojects included", bundle: bundle)
@@ -523,16 +524,42 @@ enum L10n {
     static var retryBatchTranscription: String { String(localized: "Retry Batch Transcription", bundle: bundle) }
     static var batchTranscriptionConfirmationTitle: String { String(localized: "Start batch transcription?", bundle: bundle) }
     static var batchTranscriptionConfirmationDescription: String { String(
-        localized: "Choose a language. Automatic detection is slower; leave it off for speed. Audio is kept until transcription succeeds.",
+        localized: "Choose a transcription language. Audio is kept until transcription succeeds.",
         bundle: bundle
     ) }
-    static var detectLanguageAutomatically: String { String(localized: "Detect Automatically", bundle: bundle) }
-    static var detectLanguageAutomaticallyDescription: String { String(
-        localized: "Detect each recording file with WhisperKit. If detection is uncertain or fails, use the selected language.",
+    static var automaticDetectionMultilingualTitle: String { String(
+        localized: "Multilingual meetings",
+        bundle: bundle
+    ) }
+    static var automaticDetectionMultilingualDescription: String { String(
+        localized: "Detects the language of each recording, allowing transcription when multiple languages are used.",
+        bundle: bundle
+    ) }
+    static var automaticDetectionLanguagesTitle: String { String(
+        localized: "Languages to detect",
+        bundle: bundle
+    ) }
+    static var noAutomaticLanguageCandidates: String { String(
+        localized: "Select at least one WhisperKit-supported language in Settings before using Auto.",
+        bundle: bundle
+    ) }
+    static var automaticDetectionProcessingTimeTitle: String { String(
+        localized: "Processing time",
+        bundle: bundle
+    ) }
+    static var automaticDetectionProcessingTimeDescription: String { String(
+        localized: """
+        Language detection makes transcription take longer. \
+        If the language cannot be determined, the recording is transcribed as English.
+        """,
         bundle: bundle
     ) }
     static var batchLanguageModelPreparationFailed: String { String(
         localized: "Could not prepare the language detection model. Check your network connection and try again.",
+        bundle: bundle
+    ) }
+    static var batchLanguageDetectionAudioLoadingFailed: String { String(
+        localized: "Could not read the recording for language detection. Try again.",
         bundle: bundle
     ) }
     static var batchLanguageDetectionFailed: String { String(
@@ -1128,8 +1155,7 @@ enum L10n {
         bundle: bundle
     ) }
     static var selectedTranscriptionLanguagesDescription: String { String(
-        // swiftlint:disable:next line_length
-        localized: "Selected languages appear in pickers. WhisperKit-supported selections become automatic detection candidates, and the language chosen when starting transcription is always included as the fallback.",
+        localized: "Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates.",
         bundle: bundle
     ) }
 

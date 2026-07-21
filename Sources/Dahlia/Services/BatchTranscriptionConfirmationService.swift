@@ -8,13 +8,31 @@ enum BatchTranscriptionConfirmationService {
         let sessionIds: [UUID]
     }
 
+    private struct PersistenceOptions {
+        let languageDetectionMode: BatchLanguageDetectionMode
+        let selectedLocaleIdentifier: String?
+        let automaticLanguageCandidatesJSON: String?
+        let retainAudioAfterBatch: Bool
+    }
+
     static func confirm(
         sessionId: UUID,
         languageSelection: BatchTranscriptionLanguageSelection,
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         retainAudioAfterBatch: Bool,
         dbQueue: DatabaseQueue
     ) async throws -> Result {
-        let normalizedLocaleIdentifier = try normalizedLocaleIdentifier(from: languageSelection)
+        let selectedLocaleIdentifier = try selectedLocaleIdentifier(from: languageSelection)
+        let automaticLanguageCandidatesJSON = try automaticLanguageCandidatesJSON(
+            from: languageSelection,
+            candidates: automaticLanguageCandidates
+        )
+        let persistenceOptions = PersistenceOptions(
+            languageDetectionMode: languageSelection.detectionMode,
+            selectedLocaleIdentifier: selectedLocaleIdentifier,
+            automaticLanguageCandidatesJSON: automaticLanguageCandidatesJSON,
+            retainAudioAfterBatch: retainAudioAfterBatch
+        )
 
         return try await dbQueue.write { db in
             let session = try validSession(id: sessionId, db: db)
@@ -32,19 +50,17 @@ enum BatchTranscriptionConfirmationService {
             let confirmedAt = Date.now
             for unconfirmedSession in sessions {
                 try requireAudioRanges(sessionId: unconfirmedSession.id, db: db)
-                if languageSelection.detectionMode == .manual {
+                if let selectedLocaleIdentifier {
                     try updateSingleRecordedLocale(
                         sessionId: unconfirmedSession.id,
-                        localeIdentifier: normalizedLocaleIdentifier,
+                        localeIdentifier: selectedLocaleIdentifier,
                         updatedAt: confirmedAt,
                         db: db
                     )
                 }
                 try markConfirmed(
                     sessionId: unconfirmedSession.id,
-                    languageDetectionMode: languageSelection.detectionMode,
-                    selectedLocaleIdentifier: normalizedLocaleIdentifier,
-                    retainAudioAfterBatch: retainAudioAfterBatch,
+                    options: persistenceOptions,
                     confirmedAt: confirmedAt,
                     db: db
                 )
@@ -53,14 +69,26 @@ enum BatchTranscriptionConfirmationService {
         }
     }
 
-    private static func normalizedLocaleIdentifier(
+    private static func selectedLocaleIdentifier(
         from selection: BatchTranscriptionLanguageSelection
-    ) throws -> String {
-        let normalized = selection.localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+    ) throws -> String? {
+        guard case let .manual(localeIdentifier) = selection else { return nil }
+        let normalized = localeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             throw CocoaError(.validationMissingMandatoryProperty)
         }
         return normalized
+    }
+
+    private static func automaticLanguageCandidatesJSON(
+        from selection: BatchTranscriptionLanguageSelection,
+        candidates: BatchLanguageDetectionCandidateSnapshot?
+    ) throws -> String? {
+        guard selection == .automatic else { return nil }
+        guard let candidates, !candidates.languageIdentifiers.isEmpty else {
+            throw BatchSpeechTranscriberError.noAutomaticLanguageCandidates
+        }
+        return try candidates.encoded()
     }
 
     private static func validSession(id: UUID, db: Database) throws -> RecordingSessionRecord {
@@ -144,9 +172,7 @@ enum BatchTranscriptionConfirmationService {
 
     private static func markConfirmed(
         sessionId: UUID,
-        languageDetectionMode: BatchLanguageDetectionMode,
-        selectedLocaleIdentifier: String,
-        retainAudioAfterBatch: Bool,
+        options: PersistenceOptions,
         confirmedAt: Date,
         db: Database
     ) throws {
@@ -155,17 +181,19 @@ enum BatchTranscriptionConfirmationService {
             sql: """
             UPDATE recording_sessions
             SET retainAudioAfterBatch = ?, audioRetentionPolicy = ?,
-                batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?, batchLastAttemptAt = ?,
+                batchLanguageDetectionMode = ?, batchSelectedLocaleIdentifier = ?,
+                batchAutomaticLanguageCandidatesJSON = ?, batchLastAttemptAt = ?,
                 batchLastError = NULL, batchFailureKind = NULL, updatedAt = ?
             WHERE id = ?
             """,
             arguments: [
-                retainAudioAfterBatch,
-                retainAudioAfterBatch
+                options.retainAudioAfterBatch,
+                options.retainAudioAfterBatch
                     ? RecordingAudioRetentionPolicy.keepInApp.rawValue
                     : RecordingAudioRetentionPolicy.deleteAfterTranscription.rawValue,
-                languageDetectionMode.rawValue,
-                selectedLocaleIdentifier,
+                options.languageDetectionMode.rawValue,
+                options.selectedLocaleIdentifier,
+                options.automaticLanguageCandidatesJSON,
                 confirmedAt,
                 confirmedAt,
                 sessionId,

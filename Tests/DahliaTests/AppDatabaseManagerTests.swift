@@ -173,6 +173,7 @@ import GRDB
             #expect(result.0.contains("batchDiscardedAt"))
             #expect(result.0.contains("batchLanguageDetectionMode"))
             #expect(result.0.contains("batchSelectedLocaleIdentifier"))
+            #expect(result.0.contains("batchAutomaticLanguageCandidatesJSON"))
             #expect(result.1.contains("storageLocation"))
             #expect(result.2)
         }

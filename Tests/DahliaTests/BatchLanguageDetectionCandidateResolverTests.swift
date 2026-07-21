@@ -1,3 +1,4 @@
+import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -5,47 +6,78 @@
 
     struct BatchLanguageDetectionCandidateResolverTests {
         @Test
-        func allScopeDoesNotRestrictWhisperLanguages() {
-            let identifiers = BatchLanguageDetectionCandidateResolver.languageIdentifiers(
+        func allScopeUsesAppleSupportedLanguages() {
+            let candidates = BatchLanguageDetectionCandidateResolver.candidates(
                 scope: .all,
                 enabledLocaleIdentifiers: ["en_US", "ja_JP"],
-                fallbackLocaleIdentifier: "fr_FR"
+                supportedLocales: locales("en_US", "fr_FR", "ja_JP")
             )
 
-            #expect(identifiers == nil)
+            #expect(candidates.snapshot.identifierSet == ["en", "fr", "ja"])
+            #expect(candidates.snapshot.scope == .all)
         }
 
         @Test
-        func selectedScopeNormalizesRegionsAndIncludesFallback() {
-            let identifiers = BatchLanguageDetectionCandidateResolver.languageIdentifiers(
+        func selectedScopeNormalizesEnabledRegions() {
+            let candidates = BatchLanguageDetectionCandidateResolver.candidates(
                 scope: .selected,
                 enabledLocaleIdentifiers: ["en_US", "en_GB", "ja_JP"],
-                fallbackLocaleIdentifier: "fr_CA"
+                supportedLocales: locales("en_US", "fr_CA", "ja_JP")
             )
 
-            #expect(identifiers == ["en", "fr", "ja"])
+            #expect(candidates.snapshot.identifierSet == ["en", "ja"])
         }
 
         @Test
-        func selectedScopeAlwaysHasSelectedTranscriptionLanguage() {
-            let identifiers = BatchLanguageDetectionCandidateResolver.languageIdentifiers(
+        func selectedScopeCanBeEmpty() {
+            let candidates = BatchLanguageDetectionCandidateResolver.candidates(
                 scope: .selected,
                 enabledLocaleIdentifiers: [],
-                fallbackLocaleIdentifier: "ja_JP"
+                supportedLocales: locales("en_US", "ja_JP")
             )
 
-            #expect(identifiers == ["ja"])
+            #expect(candidates.snapshot.languageIdentifiers.isEmpty)
+            #expect(candidates.locales.isEmpty)
         }
 
         @Test
         func selectedScopeMapsAppleLanguageCodesToWhisperTokens() {
-            let identifiers = BatchLanguageDetectionCandidateResolver.languageIdentifiers(
+            let candidates = BatchLanguageDetectionCandidateResolver.candidates(
                 scope: .selected,
                 enabledLocaleIdentifiers: ["nb_NO", "fil_PH", "jv_ID"],
-                fallbackLocaleIdentifier: "en_US"
+                supportedLocales: locales("en_US", "fil_PH", "jv_ID", "nb_NO")
             )
 
-            #expect(identifiers == ["en", "jw", "no", "tl"])
+            #expect(candidates.snapshot.identifierSet == ["jw", "no", "tl"])
+        }
+
+        @Test
+        func filtersWhisperUnsupportedLanguagesAndDeduplicatesRegions() {
+            let candidates = BatchLanguageDetectionCandidateResolver.candidates(
+                scope: .all,
+                enabledLocaleIdentifiers: [],
+                supportedLocales: locales("en_US", "en_GB", "zz_ZZ", "ja_JP")
+            )
+
+            #expect(candidates.snapshot.identifierSet == ["en", "ja"])
+            #expect(candidates.locales.map(\.identifier) == ["en_US", "ja_JP"])
+        }
+
+        @Test
+        func candidateSnapshotRoundTripsScopeAndSortedIdentifiers() throws {
+            let snapshot = BatchLanguageDetectionCandidateSnapshot(
+                scope: .all,
+                languageIdentifiers: ["ja", "en"]
+            )
+
+            let decoded = try BatchLanguageDetectionCandidateSnapshot.decode(snapshot.encoded())
+
+            #expect(decoded == snapshot)
+            #expect(decoded.languageIdentifiers == ["en", "ja"])
+        }
+
+        private func locales(_ identifiers: String...) -> [Locale] {
+            identifiers.map { Locale(identifier: $0) }
         }
     }
 

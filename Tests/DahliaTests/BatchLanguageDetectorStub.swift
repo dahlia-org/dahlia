@@ -16,6 +16,7 @@ import Foundation
             case detection(String)
             case outcome(BatchLanguageDetectionOutcome)
             case failure
+            case audioLoadingFailure
             case modelPreparationFailure
             case cancellation
         }
@@ -32,7 +33,9 @@ import Foundation
             case let .outcome(outcome):
                 outcome
             case .failure:
-                throw CocoaError(.fileReadUnknown)
+                throw BatchLanguageDetectorError.inferenceFailed
+            case .audioLoadingFailure:
+                throw BatchLanguageDetectorError.audioLoadingFailed
             case .modelPreparationFailure:
                 throw BatchLanguageDetectorError.modelPreparationFailed
             case .cancellation:

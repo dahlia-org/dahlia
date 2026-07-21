@@ -6,14 +6,13 @@ struct BatchLanguageResolution: Sendable {
 }
 
 enum BatchLanguageDetectionService {
-    static let minimumTopProbability: Float = 0.5
+    private static let inferenceFailureLanguageIdentifier = "en"
 
     static func resolveLocale(
         audioURL: URL,
         recordedLocaleIdentifiers: [String],
         supportedLocales: [Locale],
         languageDetector: any BatchLanguageDetecting,
-        fallbackLocaleIdentifier: String,
         allowedLanguageIdentifiers: Set<String>? = nil
     ) async throws -> BatchLanguageResolution {
         let outcome: BatchLanguageDetectionOutcome
@@ -26,82 +25,42 @@ enum BatchLanguageDetectionService {
             throw CancellationError()
         } catch BatchLanguageDetectorError.modelPreparationFailed {
             throw BatchSpeechTranscriberError.languageModelPreparationFailed
+        } catch BatchLanguageDetectorError.audioLoadingFailed {
+            throw BatchSpeechTranscriberError.languageDetectionAudioLoadingFailed
         } catch {
-            return try fallbackResolution(
-                reason: .detectionFailed,
-                detectedLanguageIdentifier: nil,
-                topProbability: nil,
-                fallbackLocaleIdentifier: fallbackLocaleIdentifier,
-                supportedLocales: supportedLocales
-            )
+            return try inferenceFailureResolution(supportedLocales: supportedLocales)
         }
 
         switch outcome {
-        case let .detected(languageIdentifier, logProbability):
+        case let .detected(languageIdentifier, _):
             let trimmedIdentifier = languageIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedIdentifier.isEmpty else {
-                return try fallbackResolution(
-                    reason: .detectionFailed,
-                    detectedLanguageIdentifier: nil,
-                    topProbability: nil,
-                    fallbackLocaleIdentifier: fallbackLocaleIdentifier,
-                    supportedLocales: supportedLocales
-                )
-            }
-            let topProbability = probability(fromLogProbability: logProbability)
-            guard let topProbability, topProbability >= minimumTopProbability else {
-                return try fallbackResolution(
-                    reason: .lowConfidence,
-                    detectedLanguageIdentifier: trimmedIdentifier,
-                    topProbability: topProbability,
-                    fallbackLocaleIdentifier: fallbackLocaleIdentifier,
-                    supportedLocales: supportedLocales
-                )
+                return try inferenceFailureResolution(supportedLocales: supportedLocales)
             }
             if let locale = TranscriptionLocaleResolver.locale(
                 forDetectedLanguageIdentifier: trimmedIdentifier,
-                recordedLocaleIdentifiers: [fallbackLocaleIdentifier] + recordedLocaleIdentifiers,
+                recordedLocaleIdentifiers: recordedLocaleIdentifiers,
                 supportedLocales: supportedLocales
             ) {
                 return BatchLanguageResolution(locale: locale, fallback: nil)
             }
-            return try fallbackResolution(
-                reason: .unsupportedLanguage,
-                detectedLanguageIdentifier: trimmedIdentifier,
-                topProbability: topProbability,
-                fallbackLocaleIdentifier: fallbackLocaleIdentifier,
-                supportedLocales: supportedLocales
-            )
+            throw BatchSpeechTranscriberError.unsupportedDetectedLanguage(trimmedIdentifier)
         }
     }
 
-    private static func probability(fromLogProbability logProbability: Float?) -> Float? {
-        guard let logProbability, logProbability.isFinite else { return nil }
-        return min(max(exp(logProbability), 0), 1)
-    }
-
-    private static func fallbackResolution(
-        reason: BatchLanguageFallback.Reason,
-        detectedLanguageIdentifier: String?,
-        topProbability: Float?,
-        fallbackLocaleIdentifier: String,
+    private static func inferenceFailureResolution(
         supportedLocales: [Locale]
     ) throws -> BatchLanguageResolution {
-        guard let fallbackLocale = TranscriptionLocaleResolver.locale(
-            forDetectedLanguageIdentifier: fallbackLocaleIdentifier,
-            recordedLocaleIdentifiers: [fallbackLocaleIdentifier],
+        guard let englishLocale = TranscriptionLocaleResolver.locale(
+            forDetectedLanguageIdentifier: inferenceFailureLanguageIdentifier,
+            recordedLocaleIdentifiers: [],
             supportedLocales: supportedLocales
         ) else {
-            throw BatchSpeechTranscriberError.unsupportedDetectedLanguage(fallbackLocaleIdentifier)
+            throw BatchSpeechTranscriberError.unsupportedDetectedLanguage(inferenceFailureLanguageIdentifier)
         }
         return BatchLanguageResolution(
-            locale: fallbackLocale,
-            fallback: BatchLanguageFallback(
-                reason: reason,
-                detectedLanguageIdentifier: detectedLanguageIdentifier,
-                fallbackLocaleIdentifier: fallbackLocale.identifier,
-                topProbability: topProbability
-            )
+            locale: englishLocale,
+            fallback: .inferenceFailure
         )
     }
 }

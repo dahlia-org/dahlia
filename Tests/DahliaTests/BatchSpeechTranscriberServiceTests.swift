@@ -167,7 +167,7 @@ import Foundation
         }
 
         @Test
-        func languageDetectionFailureFallsBackAndRemovesPartialRangeTemporaryCAF() async throws {
+        func languageInferenceFailureUsesEnglishAndRemovesPartialRangeTemporaryCAF() async throws {
             let audioURL = try makeAudioFile(name: "failed-partial-detection")
             defer { try? FileManager.default.removeItem(at: audioURL) }
             let detector = SequenceLanguageDetector(detections: [])
@@ -176,13 +176,12 @@ import Foundation
             let result = try await BatchSpeechTranscriberService.transcribe(
                 partialRequest(audioURL: audioURL),
                 languageDetector: detector,
-                speechRecognizer: recognizer,
-                fallbackLocaleIdentifier: "ja_JP"
+                speechRecognizer: recognizer
             )
 
             let temporaryURL = try #require(await detector.audioURLs.first)
-            #expect(result.localeIdentifier == "ja_JP")
-            #expect(result.languageFallback?.reason == .detectionFailed)
+            #expect(result.localeIdentifier == "en_US")
+            #expect(result.languageFallback == .inferenceFailure)
             #expect(await recognizer.calls.first?.audioURL == temporaryURL)
             #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
             #expect(FileManager.default.fileExists(atPath: audioURL.path))
@@ -215,7 +214,7 @@ import Foundation
                 frameCount: 160,
                 recordedLocaleIdentifiers: ["ja_JP"],
                 languageDetectionMode: .automatic,
-                supportedLocales: [Locale(identifier: "ja_JP")],
+                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
                 source: .microphone,
                 recordingSessionId: UUID.v7(),
                 recordingStartTime: .now,

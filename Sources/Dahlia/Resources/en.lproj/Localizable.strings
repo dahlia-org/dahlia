@@ -210,6 +210,7 @@
 "No meetings yet" = "No meetings yet";
 "No meetings match the current filter." = "No meetings match the current filter.";
 "%lld meetings" = "%lld meetings";
+"%lld" = "%lld";
 "%lld subprojects included" = "%lld subprojects included";
 "Missing on Disk" = "Missing on Disk";
 "Search meetings..." = "Search meetings...";
@@ -475,7 +476,7 @@
 "All Supported Languages" = "All Supported Languages";
 "Selected Languages" = "Selected Languages";
 "All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit." = "All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit.";
-"Selected languages appear in pickers. WhisperKit-supported selections become automatic detection candidates, and the language chosen when starting transcription is always included as the fallback." = "Selected languages appear in pickers. WhisperKit-supported selections become automatic detection candidates, and the language chosen when starting transcription is always included as the fallback.";
+"Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates." = "Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates.";
 
 /* Settings - LLM */
 "Empty response from server" = "Empty response from server";
@@ -614,9 +615,14 @@
 "Batch transcription failed: %@" = "Batch transcription failed: %@";
 "Retry Batch Transcription" = "Retry Batch Transcription";
 "Start batch transcription?" = "Start batch transcription?";
-"Choose a language. Automatic detection is slower; leave it off for speed. Audio is kept until transcription succeeds." = "Choose a language. Automatic detection is slower; leave it off for speed. Audio is kept until transcription succeeds.";
-"Detect Automatically" = "Detect Automatically";
-"Detect each recording file with WhisperKit. If detection is uncertain or fails, use the selected language." = "Detect each recording file with WhisperKit. If detection is uncertain or fails, use the selected language.";
+"Choose a transcription language. Audio is kept until transcription succeeds." = "Choose a transcription language. Audio is kept until transcription succeeds.";
+"Multilingual meetings" = "Multilingual meetings";
+"Detects the language of each recording, allowing transcription when multiple languages are used." = "Detects the language of each recording, allowing transcription when multiple languages are used.";
+"Languages to detect" = "Languages to detect";
+"Select at least one WhisperKit-supported language in Settings before using Auto." = "Select at least one WhisperKit-supported language in Settings before using Auto.";
+"Processing time" = "Processing time";
+"Language detection makes transcription take longer. If the language cannot be determined, the recording is transcribed as English." = "Language detection makes transcription take longer. If the language cannot be determined, the recording is transcribed as English.";
+"Could not read the recording for language detection. Try again." = "Could not read the recording for language detection. Try again.";
 "Could not prepare the language detection model. Check your network connection and try again." = "Could not prepare the language detection model. Check your network connection and try again.";
 "Could not detect the recording language. Try again." = "Could not detect the recording language. Try again.";
 "The detected language is not supported for transcription: %@" = "The detected language is not supported for transcription: %@";

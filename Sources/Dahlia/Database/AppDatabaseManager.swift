@@ -1100,6 +1100,11 @@ final class AppDatabaseManager: Sendable {
                 table.add(column: "batchSelectedLocaleIdentifier", .text)
             }
         }
+        if !columns.contains("batchAutomaticLanguageCandidatesJSON") {
+            try db.alter(table: "recording_sessions") { table in
+                table.add(column: "batchAutomaticLanguageCandidatesJSON", .text)
+            }
+        }
         guard try db.tableExists("recording_audio_segments"),
               try db.tableExists("recording_audio_segment_ranges") else { return }
         try db.execute(

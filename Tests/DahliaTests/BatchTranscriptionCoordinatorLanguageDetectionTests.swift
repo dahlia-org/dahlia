@@ -85,7 +85,7 @@ import GRDB
         }
 
         @Test
-        func unsupportedDetectionUsesSelectedFallbackLocale() async throws {
+        func unsupportedDetectionFailsBatchInsteadOfFallingBack() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguageFallback",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -97,12 +97,12 @@ import GRDB
                 fixture: fixture,
                 recordedLocale: Locale(identifier: "en_US")
             )
-            let recognizer = CoordinatorSpeechRecognizer()
+            let detector = SequenceCoordinatorLanguageDetector(detections: ["ja", "jw"])
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
-                languageDetector: SequenceCoordinatorLanguageDetector(detections: ["ja", "jw"]),
-                speechRecognizer: recognizer,
+                languageDetector: detector,
+                speechRecognizer: CoordinatorSpeechRecognizer(),
                 supportedLocalesProvider: {
                     [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")]
                 },
@@ -112,11 +112,19 @@ import GRDB
             await coordinator.enqueue(sessionId: fixture.session.id)
             try await waitUntil {
                 (try? fixture.database.dbQueue.read { db in
-                    try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchCompletedAt != nil
+                    try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchLastError != nil
                 }) == true
             }
 
-            #expect(await recognizer.localeIdentifiers == ["ja_JP", "en_US"])
+            let transcriptCount = try await fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord
+                    .filter(Column("sessionId") == fixture.session.id)
+                    .fetchCount(db)
+            }
+            #expect(transcriptCount == 0)
+            let allowedLanguageIdentifierSets = await detector.allowedLanguageIdentifierSets
+            #expect(!allowedLanguageIdentifierSets.isEmpty)
+            #expect(allowedLanguageIdentifierSets.allSatisfy { $0 == ["en", "ja"] })
         }
 
         @Test
@@ -136,15 +144,15 @@ import GRDB
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
-                languageDetector: SequenceCoordinatorLanguageDetector(detections: ["jw", "jw"]),
+                languageDetector: InferenceFailingCoordinatorLanguageDetector(),
                 speechRecognizer: FailingCoordinatorSpeechRecognizer(),
                 supportedLocalesProvider: {
                     [Locale(identifier: "en_US")]
                 },
-                languageFallbackReporter: { fallbacks, allowedLanguageIdentifiers in
+                languageFallbackReporter: { fallbacks, candidates in
                     await reportProbe.record(
                         fallbacks: fallbacks,
-                        allowedLanguageIdentifiers: allowedLanguageIdentifiers
+                        candidates: candidates
                     )
                 },
                 onStateChange: { _ in }
@@ -154,7 +162,6 @@ import GRDB
             try await waitUntil { await reportProbe.reportCount == 1 }
 
             #expect(await reportProbe.fallbackCount >= 1)
-            #expect(await reportProbe.reasons == [.unsupportedLanguage])
             let transcriptCount = try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentRecord
                     .filter(Column("sessionId") == fixture.session.id)
@@ -164,35 +171,35 @@ import GRDB
         }
 
         @Test
-        func sentryFallbackReportAggregatesEveryReason() {
-            let fallbacks = [
-                fallback(reason: .detectionFailed),
-                fallback(reason: .lowConfidence),
-                fallback(reason: .lowConfidence),
-                fallback(reason: .unsupportedLanguage),
-            ]
+        func sentryFallbackReportIncludesInferenceFailureCount() {
+            let fallbacks: [BatchLanguageFallback] = [.inferenceFailure]
 
             let context = BatchTranscriptionCoordinator.languageFallbackReportContext(
                 fallbacks,
-                allowedLanguageIdentifiers: ["en", "ja"]
+                candidates: BatchLanguageDetectionCandidateSnapshot(
+                    scope: .selected,
+                    languageIdentifiers: ["en", "ja"]
+                )
             )
 
             #expect(context["source"] == "batchLanguageDetectionFallback")
             #expect(context["candidateScope"] == "selected")
             #expect(context["candidateLanguageCount"] == "2")
-            #expect(context["fallbackCount"] == "4")
-            #expect(context["detectionFailedCount"] == "1")
-            #expect(context["lowConfidenceCount"] == "2")
-            #expect(context["unsupportedLanguageCount"] == "1")
+            #expect(context["fallbackCount"] == "1")
+            #expect(context["inferenceFailedCount"] == "1")
         }
 
-        private func fallback(reason: BatchLanguageFallback.Reason) -> BatchLanguageFallback {
-            BatchLanguageFallback(
-                reason: reason,
-                detectedLanguageIdentifier: nil,
-                fallbackLocaleIdentifier: "ja_JP",
-                topProbability: nil
+        @Test
+        func sentryFallbackReportPreservesAllLanguageScope() {
+            let context = BatchTranscriptionCoordinator.languageFallbackReportContext(
+                [.inferenceFailure],
+                candidates: BatchLanguageDetectionCandidateSnapshot(
+                    scope: .all,
+                    languageIdentifiers: ["en", "ja"]
+                )
             )
+
+            #expect(context["candidateScope"] == "all")
         }
 
         private func makeContext() async throws -> Context {
@@ -264,7 +271,11 @@ import GRDB
                     throw CocoaError(.fileNoSuchFile)
                 }
                 session.batchLanguageDetectionMode = .automatic
-                session.batchSelectedLocaleIdentifier = recordedLocale.identifier
+                session.batchSelectedLocaleIdentifier = nil
+                session.batchAutomaticLanguageCandidatesJSON = try BatchLanguageDetectionCandidateSnapshot(
+                    scope: .selected,
+                    languageIdentifiers: ["en", "ja"]
+                ).encoded()
                 try session.update(db)
             }
         }
@@ -342,15 +353,13 @@ import GRDB
     private actor LanguageFallbackReportProbe {
         private(set) var reportCount = 0
         private(set) var fallbackCount = 0
-        private(set) var reasons: Set<BatchLanguageFallback.Reason> = []
 
         func record(
             fallbacks: [BatchLanguageFallback],
-            allowedLanguageIdentifiers _: Set<String>?
+            candidates _: BatchLanguageDetectionCandidateSnapshot
         ) {
             reportCount += 1
             fallbackCount += fallbacks.count
-            reasons.formUnion(fallbacks.map(\.reason))
         }
     }
 
@@ -384,9 +393,9 @@ import GRDB
         ) throws -> BatchLanguageDetectionOutcome {
             if isUnloading {
                 detectedDuringUnload = true
-                throw BatchLanguageDetectorError.detectionFailed
+                throw BatchLanguageDetectorError.inferenceFailed
             }
-            guard !steps.isEmpty else { throw BatchLanguageDetectorError.detectionFailed }
+            guard !steps.isEmpty else { throw BatchLanguageDetectorError.inferenceFailed }
             switch steps.removeFirst() {
             case let .detection(languageIdentifier):
                 return .confidentDetection(languageIdentifier)
@@ -430,6 +439,7 @@ import GRDB
 
     private actor SequenceCoordinatorLanguageDetector: BatchLanguageDetecting {
         private var detections: [String]
+        private(set) var allowedLanguageIdentifierSets: [Set<String>?] = []
 
         init(detections: [String]) {
             self.detections = detections
@@ -437,10 +447,22 @@ import GRDB
 
         func detectLanguage(
             audioURL _: URL,
+            allowedLanguageIdentifiers: Set<String>?
+        ) throws -> BatchLanguageDetectionOutcome {
+            allowedLanguageIdentifierSets.append(allowedLanguageIdentifiers)
+            guard !detections.isEmpty else { throw BatchLanguageDetectorError.inferenceFailed }
+            return .confidentDetection(detections.removeFirst())
+        }
+
+        func unload() async {}
+    }
+
+    private struct InferenceFailingCoordinatorLanguageDetector: BatchLanguageDetecting {
+        func detectLanguage(
+            audioURL _: URL,
             allowedLanguageIdentifiers _: Set<String>?
         ) throws -> BatchLanguageDetectionOutcome {
-            guard !detections.isEmpty else { throw BatchLanguageDetectorError.detectionFailed }
-            return .confidentDetection(detections.removeFirst())
+            throw BatchLanguageDetectorError.inferenceFailed
         }
 
         func unload() async {}

@@ -5,6 +5,8 @@ enum BatchSpeechTranscriberError: LocalizedError {
     case invalidAudioRange
     case analysisDidNotAdvance
     case languageModelPreparationFailed
+    case noAutomaticLanguageCandidates
+    case languageDetectionAudioLoadingFailed
     case languageDetectionFailed
     case unsupportedDetectedLanguage(String)
 
@@ -14,6 +16,8 @@ enum BatchSpeechTranscriberError: LocalizedError {
         case .invalidAudioRange: "invalidAudioRange"
         case .analysisDidNotAdvance: "analysisDidNotAdvance"
         case .languageModelPreparationFailed: "languageModelPreparationFailed"
+        case .noAutomaticLanguageCandidates: "noAutomaticLanguageCandidates"
+        case .languageDetectionAudioLoadingFailed: "languageDetectionAudioLoadingFailed"
         case .languageDetectionFailed: "languageDetectionFailed"
         case .unsupportedDetectedLanguage: "unsupportedDetectedLanguage"
         }
@@ -29,6 +33,10 @@ enum BatchSpeechTranscriberError: LocalizedError {
             L10n.batchAnalysisDidNotAdvance
         case .languageModelPreparationFailed:
             L10n.batchLanguageModelPreparationFailed
+        case .noAutomaticLanguageCandidates:
+            L10n.noAutomaticLanguageCandidates
+        case .languageDetectionAudioLoadingFailed:
+            L10n.batchLanguageDetectionAudioLoadingFailed
         case .languageDetectionFailed:
             L10n.batchLanguageDetectionFailed
         case let .unsupportedDetectedLanguage(languageIdentifier):

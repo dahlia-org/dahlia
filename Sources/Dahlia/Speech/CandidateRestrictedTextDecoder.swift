@@ -3,9 +3,9 @@ import Foundation
 import WhisperKit
 
 /// Keeps WhisperKit's language detection inference unchanged while limiting which
-/// language token may win sampling. The returned probability is still normalized
-/// across every Whisper language so the existing confidence threshold remains
-/// conservative when the candidate set is small.
+/// language token may win sampling. The returned probability remains normalized
+/// across every Whisper language for diagnostics, but the selected candidate is
+/// used regardless of its probability.
 final class CandidateRestrictedTextDecoder: TextDecoding, WhisperMLModel {
     private let base = TextDecoder()
 

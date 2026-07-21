@@ -60,7 +60,7 @@ enum CalendarSource: String, CaseIterable, Identifiable {
     }
 }
 
-enum TranscriptionLanguageScope: String, CaseIterable, Identifiable, Sendable {
+enum TranscriptionLanguageScope: String, CaseIterable, Codable, Identifiable, Sendable {
     case all
     case selected
 

@@ -93,8 +93,15 @@ actor WhisperKitBatchLanguageDetector: BatchLanguageDetecting {
             )
         } catch is CancellationError {
             throw CancellationError()
+        } catch let error as WhisperError {
+            switch error {
+            case .loadAudioFailed:
+                throw BatchLanguageDetectorError.audioLoadingFailed
+            default:
+                throw BatchLanguageDetectorError.inferenceFailed
+            }
         } catch {
-            throw BatchLanguageDetectorError.detectionFailed
+            throw BatchLanguageDetectorError.inferenceFailed
         }
     }
 

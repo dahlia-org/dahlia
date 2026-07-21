@@ -32,7 +32,7 @@ actor BatchTranscriptionCoordinator {
     typealias StateHandler = @Sendable (BatchTranscriptionUpdate) async -> Void
     typealias LanguageFallbackReporter = @Sendable (
         [BatchLanguageFallback],
-        Set<String>?
+        BatchLanguageDetectionCandidateSnapshot
     ) async -> Void
 
     static let maximumAutomaticAttemptCount = 3
@@ -53,7 +53,6 @@ actor BatchTranscriptionCoordinator {
     private struct TranscriptionWorkItem: Sendable {
         let index: Int
         let request: BatchSpeechTranscriptionRequest
-        let fallbackLocaleIdentifier: String
     }
 
     private struct TranscriptionWorkResult: Sendable {
@@ -93,13 +92,10 @@ actor BatchTranscriptionCoordinator {
         self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
         self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
         self.supportedLocalesProvider = supportedLocalesProvider
-        self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, allowedLanguageIdentifiers in
+        self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, candidates in
             ErrorReportingService.capture(
                 BatchLanguageFallbacksObserved(count: fallbacks.count),
-                context: Self.languageFallbackReportContext(
-                    fallbacks,
-                    allowedLanguageIdentifiers: allowedLanguageIdentifiers
-                )
+                context: Self.languageFallbackReportContext(fallbacks, candidates: candidates)
             )
         }
         self.onStateChange = onStateChange
@@ -126,11 +122,13 @@ actor BatchTranscriptionCoordinator {
     func confirmAndEnqueue(
         sessionId: UUID,
         languageSelection: BatchTranscriptionLanguageSelection,
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
         retainAudioAfterBatch: Bool
     ) async throws {
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
             languageSelection: languageSelection,
+            automaticLanguageCandidates: automaticLanguageCandidates,
             retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
@@ -295,21 +293,13 @@ actor BatchTranscriptionCoordinator {
         } else {
             []
         }
-        let fallbackLocaleIdentifier = job.session.batchSelectedLocaleIdentifier?.nilIfBlank
-            ?? verifiedSegments.lazy.flatMap(\.ranges).first?.localeIdentifier
-            ?? "en"
-        let allowedLanguageIdentifiers: Set<String>? = if job.session.batchLanguageDetectionMode == .automatic {
-            await MainActor.run {
-                let settings = AppSettings.shared
-                return BatchLanguageDetectionCandidateResolver.languageIdentifiers(
-                    scope: settings.transcriptionLanguageScope,
-                    enabledLocaleIdentifiers: settings.enabledLocaleIdentifiers,
-                    fallbackLocaleIdentifier: fallbackLocaleIdentifier
-                )
-            }
+        let automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot? = if job.session
+            .batchLanguageDetectionMode == .automatic {
+            try automaticLanguageCandidates(for: job.session)
         } else {
             nil
         }
+        let allowedLanguageIdentifiers = automaticLanguageCandidates?.identifierSet
         var workItems: [TranscriptionWorkItem] = []
         for verified in verifiedSegments {
             let ranges = try BatchTranscriptionAudioRangePlanner.ranges(
@@ -332,8 +322,7 @@ actor BatchTranscriptionCoordinator {
                             recordingSessionId: job.session.id,
                             recordingStartTime: job.session.startedAt,
                             sessionOffsetSeconds: range.sessionOffsetSeconds
-                        ),
-                        fallbackLocaleIdentifier: fallbackLocaleIdentifier
+                        )
                     )
                 )
             }
@@ -352,13 +341,13 @@ actor BatchTranscriptionCoordinator {
             Self.signposter.endInterval("Recognize CAF files", recognitionState)
             await reportLanguageFallbacks(
                 fallbackCollector.snapshot(),
-                allowedLanguageIdentifiers: allowedLanguageIdentifiers
+                candidates: automaticLanguageCandidates
             )
             throw error
         }
         await reportLanguageFallbacks(
             fallbackCollector.snapshot(),
-            allowedLanguageIdentifiers: allowedLanguageIdentifiers
+            candidates: automaticLanguageCandidates
         )
         if translationConfiguration.isEnabled {
             workResults = try await translate(
@@ -373,6 +362,17 @@ actor BatchTranscriptionCoordinator {
             }
             return lhs.startTime < rhs.startTime
         }
+    }
+
+    private func automaticLanguageCandidates(
+        for session: RecordingSessionRecord
+    ) throws -> BatchLanguageDetectionCandidateSnapshot {
+        guard let encoded = session.batchAutomaticLanguageCandidatesJSON,
+              let candidates = try? BatchLanguageDetectionCandidateSnapshot.decode(encoded),
+              !candidates.languageIdentifiers.isEmpty else {
+            throw BatchSpeechTranscriberError.noAutomaticLanguageCandidates
+        }
+        return candidates
     }
 
     private func translate(
@@ -449,7 +449,6 @@ actor BatchTranscriptionCoordinator {
             workItem.request,
             languageDetector: languageDetector,
             speechRecognizer: speechRecognizer,
-            fallbackLocaleIdentifier: workItem.fallbackLocaleIdentifier,
             onLanguageFallback: { fallback in
                 await fallbackCollector.record(fallback)
             }
