@@ -10,6 +10,8 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var exportBatchSummaryToVault: Bool
     @Binding var exportBatchSummaryToGoogleDocs: Bool
     @Binding var previousMeetingCount: Int
+    let projects: [FlatProjectRow]
+    @Binding var selectedProjectId: UUID?
 
     var body: some View {
         Form {
@@ -41,6 +43,8 @@ struct BatchTranscriptionOptionsForm: View {
             }
 
             Section(L10n.summaryAndExport) {
+                SummaryProjectPicker(projects: projects, selection: $selectedProjectId)
+
                 Toggle(isOn: $generateSummaryAfterBatchTranscription) {
                     Text(L10n.generateSummaryAfterBatchTranscription)
                     Text(L10n.generateSummaryAfterBatchTranscriptionDescription)

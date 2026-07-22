@@ -1,5 +1,11 @@
 import Foundation
 
+struct BatchTranscriptionProjectSelection {
+    let projects: [FlatProjectRow]
+    let selectedProjectId: UUID?
+    let errorMessage: String?
+}
+
 struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     enum Purpose: Equatable {
         case initialOrRetry

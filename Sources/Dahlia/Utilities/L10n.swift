@@ -603,6 +603,7 @@ enum L10n {
         bundle: bundle
     ) }
     static var summaryAndExport: String { String(localized: "Summary and Export", bundle: bundle) }
+    static var project: String { String(localized: "Project", bundle: bundle) }
     static var previousMeetingsInSummaryContext: String { String(
         localized: "Previous Meetings in Context",
         bundle: bundle

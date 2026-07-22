@@ -88,6 +88,7 @@ struct ContentView: View {
             }
         }
         .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
+            let projectSelection = viewModel.batchTranscriptionProjectSelection(for: confirmation)
             BatchTranscriptionConfirmationView(
                 locales: viewModel.batchTranscriptionLocaleOptions(
                     preferredIdentifier: confirmation.suggestedLocaleIdentifier
@@ -96,12 +97,25 @@ struct ContentView: View {
                     snapshot: confirmation.automaticLanguageCandidateSnapshot
                 ).locales,
                 displayLocale: AppSettings.shared.appLanguage.locale,
+                projects: projectSelection.projects,
+                initialProjectId: projectSelection.selectedProjectId,
+                initialErrorMessage: projectSelection.errorMessage,
                 initialLanguageSelection: confirmation.initialLanguageSelection,
                 initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
                 initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
                 summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
                 isRetranscription: confirmation.isRetranscription,
-                onStart: viewModel.confirmBatchTranscription,
+                onStart: { languageSelection, retainAudio, summaryOptions, projectId in
+                    if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
+                        return error
+                    }
+                    viewModel.confirmBatchTranscription(
+                        languageSelection: languageSelection,
+                        retainAudioAfterBatch: retainAudio,
+                        summaryGenerationOptions: summaryOptions
+                    )
+                    return nil
+                },
                 onPostpone: viewModel.postponeBatchTranscription
             )
             .interactiveDismissDisabled()

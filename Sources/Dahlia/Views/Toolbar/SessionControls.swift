@@ -49,6 +49,7 @@ struct RecordToolbarButton: View {
 
 struct GenerateSummaryToolbarButton: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var sidebarViewModel: SidebarViewModel
     @State private var isConfirmationPresented = false
 
     private var isGeneratingCurrentMeeting: Bool {
@@ -73,7 +74,11 @@ struct GenerateSummaryToolbarButton: View {
         .disabled(isGeneratingCurrentMeeting || !viewModel.canGenerateSummary)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
-            SummaryGenerationConfirmationView(onGenerate: generateSummary)
+            SummaryGenerationConfirmationView(
+                projects: sidebarViewModel.flatProjects,
+                initialProjectId: viewModel.currentProjectId,
+                onGenerate: generateSummary
+            )
         }
     }
 
@@ -81,8 +86,29 @@ struct GenerateSummaryToolbarButton: View {
         isConfirmationPresented = true
     }
 
-    private func generateSummary(options: SummaryGenerationOptions) {
-        viewModel.triggerManualSummary(options: options)
+    private func generateSummary(options: SummaryGenerationOptions, projectId: UUID?) -> String? {
+        if let error = assignCurrentMeeting(to: projectId) {
+            return error
+        }
+        return viewModel.triggerManualSummary(options: options) ? nil : L10n.summaryGenerationFailed
+    }
+
+    private func assignCurrentMeeting(to projectId: UUID?) -> String? {
+        guard projectId != viewModel.currentProjectId else { return nil }
+        guard let meetingId = viewModel.currentMeetingId,
+              sidebarViewModel.moveMeeting(id: meetingId, toProjectId: projectId) else {
+            return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
+        }
+
+        let project = projectId.flatMap { id in
+            sidebarViewModel.flatProjects.first(where: { $0.id == id })
+        }
+        viewModel.setExplicitProjectContext(
+            projectURL: project.map { sidebarViewModel.projectURL(for: $0.name) },
+            projectId: projectId,
+            projectName: project?.name
+        )
+        return nil
     }
 }
 

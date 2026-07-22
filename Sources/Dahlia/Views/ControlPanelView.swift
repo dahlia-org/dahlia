@@ -469,7 +469,10 @@ struct ControlPanelView: View {
         ToolbarSpacer(.fixed, placement: .primaryAction)
 
         ToolbarItem(placement: .primaryAction) {
-            GenerateSummaryToolbarButton(viewModel: viewModel)
+            GenerateSummaryToolbarButton(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel
+            )
         }
 
         if showsToolbarRecordButton {
