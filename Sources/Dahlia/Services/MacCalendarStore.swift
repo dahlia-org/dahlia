@@ -113,6 +113,20 @@ final class MacCalendarStore: ObservableObject {
         }
     }
 
+    /// Requests EventKit authorization without reading or selecting calendars.
+    /// The permission guide uses this so granting access does not enable the integration.
+    func requestAuthorizationOnly() async {
+        beginLoading()
+        do {
+            _ = try await eventStoreProvider.requestFullAccessToEvents()
+            authorizationStatus = await eventStoreProvider.authorizationStatus()
+            clearRuntimeState()
+            state = Self.state(for: authorizationStatus)
+        } catch {
+            handle(error)
+        }
+    }
+
     func refreshIfNeeded(force: Bool = false) async {
         guard await prepareRefresh(force: force) else { return }
 

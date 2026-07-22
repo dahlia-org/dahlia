@@ -39,6 +39,34 @@ struct MacCalendarStoreTests {
     }
 
     @Test
+    func authorizationOnlyDoesNotReadOrSelectCalendars() async {
+        let defaults = isolatedUserDefaults()
+        let provider = MockMacCalendarEventStore(
+            authorizationStatus: .notDetermined,
+            calendars: [primaryCalendar],
+            events: [fixtureEvent]
+        )
+        let store = MacCalendarStore(
+            eventStoreProvider: provider,
+            userDefaults: defaults,
+            storeChangedNotification: nil
+        )
+
+        await store.requestAuthorizationOnly()
+        let snapshot = await provider.snapshot()
+
+        #expect(store.authorizationStatus == .fullAccess)
+        #expect(store.availableCalendars.isEmpty)
+        #expect(store.upcomingEvents.isEmpty)
+        #expect(store.selectedCalendarIDs.isEmpty)
+        #expect(snapshot.requestAccessCallCount == 1)
+        #expect(snapshot.fetchCalendarListCallCount == 0)
+        #expect(snapshot.fetchEventsCallCount == 0)
+        #expect(!defaults.bool(forKey: MacCalendarStore.didInitializeSelectionKey))
+        #expect(defaults.string(forKey: MacCalendarStore.selectedCalendarIDsKey) == nil)
+    }
+
+    @Test
     func firstAuthorizedRefreshSelectsAllCalendarsAndLoadsEvents() async {
         let defaults = isolatedUserDefaults()
         let provider = MockMacCalendarEventStore(
@@ -267,6 +295,7 @@ private let fixtureEvent = CalendarEvent(
 private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
     struct Snapshot: Sendable {
         let requestAccessCallCount: Int
+        let fetchCalendarListCallCount: Int
         let fetchEventsCallCount: Int
         let requestedCalendars: [CalendarListItem]
     }
@@ -277,6 +306,7 @@ private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
     var calendarsResult: Result<[CalendarListItem], Error>
     var eventsResult: Result<[CalendarEvent], Error>
     private(set) var requestAccessCallCount = 0
+    private(set) var fetchCalendarListCallCount = 0
     private(set) var fetchEventsCallCount = 0
     private(set) var requestedCalendars: [CalendarListItem] = []
 
@@ -305,7 +335,8 @@ private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
     }
 
     func fetchCalendarList() throws -> [CalendarListItem] {
-        try calendarsResult.get()
+        fetchCalendarListCallCount += 1
+        return try calendarsResult.get()
     }
 
     func fetchUpcomingEvents(calendars: [CalendarListItem], now _: Date, daysAhead _: Int) throws -> [CalendarEvent] {
@@ -317,6 +348,7 @@ private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
     func snapshot() -> Snapshot {
         Snapshot(
             requestAccessCallCount: requestAccessCallCount,
+            fetchCalendarListCallCount: fetchCalendarListCallCount,
             fetchEventsCallCount: fetchEventsCallCount,
             requestedCalendars: requestedCalendars
         )

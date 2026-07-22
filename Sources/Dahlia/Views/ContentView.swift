@@ -9,6 +9,8 @@ struct ContentView: View {
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
+    private var permissionGuidePresentationVersion = 0
 
     var body: some View {
         NavigationSplitView {
@@ -87,6 +89,9 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 0.3), value: viewModel.summaryGenerationJobs.map(\.id))
             }
         }
+        .task {
+            presentPermissionGuideIfNeeded()
+        }
         .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
             BatchTranscriptionConfirmationView(
                 locales: viewModel.batchTranscriptionLocaleOptions(
@@ -127,6 +132,13 @@ struct ContentView: View {
             syncChatContext()
         }
         .task { syncChatContext() }
+    }
+
+    private func presentPermissionGuideIfNeeded() {
+        guard PermissionGuidePresentationPolicy.shouldPresent(
+            storedVersion: permissionGuidePresentationVersion
+        ) else { return }
+        openWindow(id: WindowID.permissions)
     }
 
     private func openDetachedChat(_ sessionID: CodexChatSessionID) {

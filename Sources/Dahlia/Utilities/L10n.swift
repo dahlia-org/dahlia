@@ -687,6 +687,73 @@ enum L10n {
     // MARK: - Settings
 
     static var general: String { String(localized: "General", bundle: bundle) }
+    static var permissions: String { String(localized: "Permissions", bundle: bundle) }
+    static var permissionGuideDescription: String { String(
+        localized: "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time.",
+        bundle: bundle
+    ) }
+    static var screenAndSystemAudioPermission: String { String(
+        localized: "Screen & System Audio Recording",
+        bundle: bundle
+    ) }
+    static var screenAndSystemAudioPermissionDescription: String { String(
+        localized: "Allows Dahlia to transcribe audio from speakers and meeting apps. Dahlia does not save screen video for transcription.",
+        bundle: bundle
+    ) }
+    static var screenAndSystemAudioPermissionFooter: String { String(
+        localized: """
+        Microphone capture also uses ScreenCaptureKit, but macOS still requires the separate Microphone permission below. \
+        You may need to restart Dahlia after changing this setting.
+        """,
+        bundle: bundle
+    ) }
+    static var microphonePermission: String { String(localized: "Microphone Permission", bundle: bundle) }
+    static var microphonePermissionDescription: String { String(
+        localized: "Allows Dahlia to capture and transcribe your voice from the selected microphone.",
+        bundle: bundle
+    ) }
+    static var calendarPermission: String { String(localized: "macOS Calendar Permission", bundle: bundle) }
+    static var calendarPermissionDescription: String { String(
+        localized: "Allows Dahlia to read events from calendars selected in Calendar settings.",
+        bundle: bundle
+    ) }
+    static var calendarPermissionFooter: String { String(
+        localized: "Optional. Google Calendar does not use this macOS permission.",
+        bundle: bundle
+    ) }
+    static var permissionNotDetermined: String { String(localized: "Not Requested", bundle: bundle) }
+    static var permissionRequiresReview: String { String(localized: "Needs Review", bundle: bundle) }
+    static var permissionGranted: String { String(localized: "Permission Granted", bundle: bundle) }
+    static var permissionDenied: String { String(localized: "Permission Denied", bundle: bundle) }
+    static var permissionRestricted: String { String(localized: "Restricted", bundle: bundle) }
+    static var allowAccess: String { String(localized: "Allow Access", bundle: bundle) }
+    static var checkAccess: String { String(localized: "Check Access", bundle: bundle) }
+    static var openSystemSettings: String { String(localized: "Open System Settings", bundle: bundle) }
+    static var screenCapturePermissionReviewGuidance: String { String(
+        localized: "macOS does not report whether this access has never been requested or was previously denied. Check access to continue; if needed, enable Dahlia in System Settings.",
+        bundle: bundle
+    ) }
+    static var screenCapturePermissionDeniedGuidance: String { String(
+        localized: "In System Settings, enable Dahlia under Screen & System Audio Recording. Restart Dahlia if macOS asks you to.",
+        bundle: bundle
+    ) }
+    static var microphonePermissionDeniedGuidance: String { String(
+        localized: "In System Settings, enable Dahlia under Microphone.",
+        bundle: bundle
+    ) }
+    static var calendarPermissionDeniedGuidance: String { String(
+        localized: "In System Settings, give Dahlia full access under Calendars.",
+        bundle: bundle
+    ) }
+    static var permissionRestrictedGuidance: String { String(
+        localized: "This permission is restricted by this Mac or its administrator and may not be changeable in System Settings.",
+        bundle: bundle
+    ) }
+    static var systemSettingsOpenFailed: String { String(localized: "Could Not Open System Settings", bundle: bundle) }
+    static var systemSettingsOpenFailedDescription: String { String(
+        localized: "Open Privacy & Security in System Settings and choose the relevant permission manually.",
+        bundle: bundle
+    ) }
     static var backups: String { String(localized: "Backups", bundle: bundle) }
     static var databaseBackup: String { String(localized: "Database Backup", bundle: bundle) }
     static var databaseBackupDescription: String { String(

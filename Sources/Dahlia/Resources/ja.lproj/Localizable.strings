@@ -317,6 +317,30 @@
 
 /* Settings */
 "General" = "一般";
+"Permissions" = "権限";
+"Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time." = "Dahlia が使用する macOS の権限を確認します。それぞれ異なる機能を制御し、いつでも変更できます。";
+"Screen & System Audio Recording" = "画面とシステムオーディオ録音";
+"Allows Dahlia to transcribe audio from speakers and meeting apps. Dahlia does not save screen video for transcription." = "スピーカーや会議アプリの音声を文字起こしできます。文字起こしのために画面映像を保存することはありません。";
+"Microphone capture also uses ScreenCaptureKit, but macOS still requires the separate Microphone permission below. You may need to restart Dahlia after changing this setting." = "マイクの取得にも ScreenCaptureKit を使用しますが、macOS では下の「マイク」権限も別途必要です。この設定を変更した後は Dahlia の再起動が必要な場合があります。";
+"Microphone Permission" = "マイク";
+"Allows Dahlia to capture and transcribe your voice from the selected microphone." = "選択したマイクから自分の声を取得して文字起こしできます。";
+"macOS Calendar Permission" = "macOS カレンダー";
+"Allows Dahlia to read events from calendars selected in Calendar settings." = "カレンダー設定で選択した macOS カレンダーの予定を読み取れます。";
+"Optional. Google Calendar does not use this macOS permission." = "任意です。Google カレンダーはこの macOS 権限を使用しません。";
+"Not Requested" = "未確認";
+"Needs Review" = "確認が必要";
+"Permission Granted" = "許可済み";
+"Permission Denied" = "許可されていません";
+"Restricted" = "制限されています";
+"Check Access" = "アクセスを確認";
+"Open System Settings" = "システム設定を開く";
+"macOS does not report whether this access has never been requested or was previously denied. Check access to continue; if needed, enable Dahlia in System Settings." = "macOS では、未要求か以前に拒否されたかを判別できません。アクセスを確認し、必要な場合はシステム設定で Dahlia を有効にしてください。";
+"In System Settings, enable Dahlia under Screen & System Audio Recording. Restart Dahlia if macOS asks you to." = "システム設定の「画面収録とシステムオーディオ録音」で Dahlia を有効にしてください。macOS に求められた場合は Dahlia を再起動します。";
+"In System Settings, enable Dahlia under Microphone." = "システム設定の「マイク」で Dahlia を有効にしてください。";
+"In System Settings, give Dahlia full access under Calendars." = "システム設定の「カレンダー」で Dahlia にフルアクセスを許可してください。";
+"This permission is restricted by this Mac or its administrator and may not be changeable in System Settings." = "この権限は Mac または管理者によって制限されているため、システム設定では変更できない場合があります。";
+"Could Not Open System Settings" = "システム設定を開けませんでした";
+"Open Privacy & Security in System Settings and choose the relevant permission manually." = "システム設定の「プライバシーとセキュリティ」を開き、該当する権限を手動で選択してください。";
 "Check for Updates…" = "アップデートを確認…";
 "App" = "アプリ";
 "Integrations" = "連携";

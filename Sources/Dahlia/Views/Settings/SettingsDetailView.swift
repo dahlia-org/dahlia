@@ -11,6 +11,8 @@ struct SettingsDetailView: View {
             switch selection {
             case .general:
                 GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
+            case .permissions:
+                PermissionSettingsView()
             case .backups:
                 BackupSettingsView(
                     dbQueue: sidebarViewModel.dbQueue,

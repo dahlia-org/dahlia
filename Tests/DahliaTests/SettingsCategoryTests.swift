@@ -8,6 +8,7 @@
         func categoriesAreOrderedByUserWorkflow() {
             #expect(SettingsCategory.allCases == [
                 .general,
+                .permissions,
                 .backups,
                 .transcription,
                 .screenshots,
@@ -41,6 +42,8 @@
         func technicalCategoriesUseUserFacingLabelsAndIdentifiers() {
             #expect(SettingsCategory.modelProvider.rawValue == "accounts")
             #expect(SettingsCategory.backups.label == L10n.backups)
+            #expect(SettingsCategory.permissions.label == L10n.permissions)
+            #expect(SettingsCategory.permissions.systemImage == "hand.raised")
             #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
             #expect(SettingsCategory.modelProvider.label == L10n.aiConnection)
             #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")
@@ -55,6 +58,7 @@
         @Test
         func advancedSettingsRemainAtTheEnd() {
             #expect(SettingsGroup.allCases.last == .advanced)
+            #expect(SettingsGroup.app.categories == [.general, .permissions, .backups])
             #expect(SettingsGroup.advanced.categories == [.developer, .audioDiagnostics])
         }
 
