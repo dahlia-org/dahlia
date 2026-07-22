@@ -470,11 +470,20 @@ struct ControlPanelView: View {
     private var detailToolbar: some ToolbarContent {
         ToolbarSpacer(.flexible, placement: .primaryAction)
 
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
             ShareSummaryToolbarButton(viewModel: viewModel)
-            GenerateSummaryToolbarButton(viewModel: viewModel)
+        }
 
-            if showsToolbarRecordButton {
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+
+        ToolbarItem(placement: .primaryAction) {
+            GenerateSummaryToolbarButton(viewModel: viewModel)
+        }
+
+        if showsToolbarRecordButton {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+
+            ToolbarItem(placement: .primaryAction) {
                 RecordToolbarButton(
                     viewModel: viewModel,
                     sidebarViewModel: sidebarViewModel,
