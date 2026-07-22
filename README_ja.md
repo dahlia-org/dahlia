@@ -115,7 +115,7 @@ swift package resolve
 ./scripts/create-github-release.sh
 ```
 
-`create-github-release.sh` は DMG の署名、公証チケット、固定ファイル名 `Dahlia.dmg`、内包アプリのマーケティング／ビルドバージョン、ビルド番号の単調増加、Sparkle feed と署名設定、ディスクイメージの整合性を検証します。その後、Codex にリポジトリ内の `$generate-release-notes` スキルを使わせ、前回のリリース以降の変更を解釈した簡潔でユーザー目線のリリースノートを生成します。Codex のサブプロセスはローカルの認証情報を利用できるようサンドボックス外で実行しますが、個人設定を読み込まず、live web search を無効化し、信頼されていないコマンドには承認を必須とし、読み取り専用の調査と Markdown 出力だけを行うよう制約します。AI 生成中に DMG のチェックサムが変わっていないことも再確認します。最後に、生成した feed と更新アーカイブの署名を暗号学的に検証し、スクリプトが現在のコミットに `v<version>` タグを作成（既存タグがある場合は同じコミットを指すことを確認）して、GitHub Release に appcast が署名したものと同一の DMG を添付します。既定では認証済みの Codex CLI が必要です。レビュー済みの Markdown を使う場合は `--notes-file <path>` を指定できます。作業ツリーに未コミットの変更がある場合は公開しません。最新版は常に <https://github.com/dahlia-mtg/dahlia/releases/latest/download/Dahlia.dmg> から直接ダウンロードできます。
+`create-github-release.sh` は DMG の署名、公証チケット、固定ファイル名 `Dahlia.dmg`、内包アプリのマーケティング／ビルドバージョン、ビルド番号の単調増加、Sparkle feed と署名設定、ディスクイメージの整合性を検証します。その後、Codex にリポジトリ内の `$generate-release-notes` スキルを使わせ、前回のリリース以降の変更を解釈した簡潔でユーザー目線のリリースノートを生成します。Codex のサブプロセスはローカルの認証情報を利用できるようサンドボックス外で実行しますが、個人設定を読み込まず、live web search を無効化し、信頼されていないコマンドには承認を必須とし、読み取り専用の調査と Markdown 出力だけを行うよう制約します。AI 生成中に DMG のチェックサムが変わっていないことも再確認します。最後に、生成した feed と更新アーカイブの署名を暗号学的に検証し、スクリプトが現在のコミットに `v<version>` タグを作成（既存タグがある場合は同じコミットを指すことを確認）して、GitHub Release に appcast が署名したものと同一の DMG を添付します。既定では認証済みの Codex CLI が必要です。レビュー済みの Markdown を使う場合は `--notes-file <path>` を指定できます。作業ツリーに未コミットの変更がある場合は公開しません。最新版は常に <https://github.com/dahlia-org/dahlia/releases/latest/download/Dahlia.dmg> から直接ダウンロードできます。
 
 ## アーキテクチャ
 

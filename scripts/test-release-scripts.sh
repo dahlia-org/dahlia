@@ -75,7 +75,7 @@ test_latest_release_build_validation() {
         cat "$previous_plist"
     }
 
-    RELEASE_REPOSITORY="dahlia-mtg/dahlia"
+    RELEASE_REPOSITORY="dahlia-org/dahlia"
     BUILD_VERSION="24"
     validate_build_version_against_latest_release
 
@@ -97,20 +97,20 @@ test_sparkle_configuration_validation() {
     chmod +x "$generate_keys"
 
     PROJECT_DIR="$fake_project"
-    RELEASE_REPOSITORY="dahlia-mtg/dahlia"
-    DMG_SPARKLE_FEED_URL="https://github.com/dahlia-mtg/dahlia/releases/latest/download/appcast.xml"
+    RELEASE_REPOSITORY="dahlia-org/dahlia"
+    DMG_SPARKLE_FEED_URL="https://github.com/dahlia-org/dahlia/releases/latest/download/appcast.xml"
     DMG_SPARKLE_PUBLIC_KEY="test-public-key"
     DMG_SPARKLE_REQUIRES_SIGNED_FEED="true"
     DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION="true"
     gh() {
-        printf '%s\n' "dahlia-mtg/dahlia"
+        printf '%s\n' "dahlia-org/dahlia"
     }
 
     validate_sparkle_release_configuration
 
     DMG_SPARKLE_FEED_URL="https://example.com/appcast.xml"
     expect_failure validate_sparkle_release_configuration
-    DMG_SPARKLE_FEED_URL="https://github.com/dahlia-mtg/dahlia/releases/latest/download/appcast.xml"
+    DMG_SPARKLE_FEED_URL="https://github.com/dahlia-org/dahlia/releases/latest/download/appcast.xml"
     DMG_SPARKLE_PUBLIC_KEY="wrong-key"
     expect_failure validate_sparkle_release_configuration
 }
@@ -123,7 +123,7 @@ test_appcast_validation() {
     local sign_update_log="${TEST_DIR}/sign-update.log"
     local expected_sign_update_log="${TEST_DIR}/expected-sign-update.log"
     local archive_length
-    local expected_url="https://github.com/dahlia-mtg/dahlia/releases/download/v1.2.3/Dahlia.dmg"
+    local expected_url="https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.dmg"
 
     mkdir -p "$(dirname "$sign_update")"
     printf '%s\n' \
@@ -137,7 +137,7 @@ test_appcast_validation() {
     archive_length="$(stat -f '%z' "$archive_path")"
 
     PROJECT_DIR="$fake_project"
-    RELEASE_REPOSITORY="dahlia-mtg/dahlia"
+    RELEASE_REPOSITORY="dahlia-org/dahlia"
     TAG_NAME="v1.2.3"
     EXPECTED_DMG_NAME="Dahlia.dmg"
     BUILD_VERSION="24"
@@ -194,7 +194,7 @@ test_sparkle_appcast_creation() {
         '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><item>' \
         '<sparkle:version>24</sparkle:version>' \
         '<sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>' \
-        '<enclosure url="https://github.com/dahlia-mtg/dahlia/releases/download/v1.2.3/Dahlia.dmg" length="${archive_length}" sparkle:edSignature="test-signature"/>' \
+        '<enclosure url="https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.dmg" length="${archive_length}" sparkle:edSignature="test-signature"/>' \
         '</item></channel></rss>' \
         'EOF' \
         > "$generate_appcast"
@@ -205,7 +205,7 @@ test_sparkle_appcast_creation() {
     printf '%s' 'release notes fixture' > "${TEST_DIR}/release-notes.md"
 
     PROJECT_DIR="$fake_project"
-    RELEASE_REPOSITORY="dahlia-mtg/dahlia"
+    RELEASE_REPOSITORY="dahlia-org/dahlia"
     TAG_NAME="v1.2.3"
     EXPECTED_DMG_NAME="Dahlia.dmg"
     BUILD_VERSION="24"
@@ -225,7 +225,7 @@ test_sparkle_appcast_creation() {
         '<--account>' \
         '<com.dahlia.app>' \
         '<--download-url-prefix>' \
-        '<https://github.com/dahlia-mtg/dahlia/releases/download/v1.2.3/>' \
+        '<https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/>' \
         '<--embed-release-notes>' \
         "<${release_dir}>" \
         > "$expected_generate_appcast_log"

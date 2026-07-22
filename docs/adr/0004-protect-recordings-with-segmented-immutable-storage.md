@@ -24,7 +24,7 @@ SQLite に保存する。
 録音終了処理が既存の `final.caf` を削除し、存在しない `partial.caf` の移動に失敗した。最初の失敗時に唯一の音声が
 失われたため、以後の再処理は `The file doesn't exist.` になった。
 
-[PR #95](https://github.com/mats16/dahlia/pull/95)（コミット `deb269b`、main にマージ済み）は、`partial` / `final` の
+[PR #95](https://github.com/dahlia-org/dahlia/pull/95)（コミット `deb269b`、main にマージ済み）は、`partial` / `final` の
 存在状態を分け、既存ファイルを無条件に削除せず、最終フレーム数を検証することで、この具体的な損失経路を塞いだ。この修正は
 必要な封じ込めだが、次の構造的な問題は残る。
 

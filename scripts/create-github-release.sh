@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="Dahlia"
-RELEASE_REPOSITORY="dahlia-mtg/dahlia"
+RELEASE_REPOSITORY="dahlia-org/dahlia"
 INVOCATION_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"

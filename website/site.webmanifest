@@ -1,0 +1,16 @@
+{
+  "name": "Dahlia",
+  "short_name": "Dahlia",
+  "description": "Stay in the conversation.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f5f1",
+  "theme_color": "#f7f5f1",
+  "icons": [
+    {
+      "src": "assets/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
