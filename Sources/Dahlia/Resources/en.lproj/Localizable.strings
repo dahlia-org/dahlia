@@ -485,6 +485,7 @@
 
 /* Summary */
 "Generating summary..." = "Generating summary...";
+"Running Tasks" = "Running Tasks";
 "No summary has been generated yet." = "No summary has been generated yet.";
 "Summary image unavailable" = "Summary image unavailable";
 "Summary generated" = "Summary generated";

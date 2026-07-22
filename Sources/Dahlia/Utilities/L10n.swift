@@ -1344,6 +1344,7 @@ enum L10n {
 
     // MARK: - Summary
 
+    static var runningTasks: String { String(localized: "Running Tasks", bundle: bundle) }
     static var generatingSummary: String { String(localized: "Generating summary...", bundle: bundle) }
     static var summaryGenerationFailed: String { String(localized: "Could not generate the summary.", bundle: bundle) }
     static var noSummaryYet: String { String(localized: "No summary has been generated yet.", bundle: bundle) }

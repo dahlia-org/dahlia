@@ -7,7 +7,7 @@ struct SummaryProgressToastView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.generatingSummary)
+            Text(L10n.runningTasks)
                 .font(.callout)
                 .bold()
                 .foregroundStyle(.primary)
