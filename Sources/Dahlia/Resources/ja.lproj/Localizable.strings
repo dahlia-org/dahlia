@@ -690,9 +690,10 @@
 "View Dahlia logs from the current app session. Private values remain redacted." = "現在のアプリセッションに記録された Dahlia のログを表示します。非公開の値はマスクされたままです。";
 "Logs Unavailable" = "ログを取得できません";
 "No Logs" = "ログがありません";
-"Use Dahlia, then refresh to load new log entries." = "Dahlia を操作してから再読み込みすると、新しいログを確認できます。";
+"New logs from this app session appear here automatically." = "このアプリセッションの新しいログが自動的に表示されます。";
 "Search logs…" = "ログを検索…";
 "Refresh Logs" = "ログを再読み込み";
+"Follow Latest Logs" = "最新ログを追従";
 "Copy Displayed Logs" = "表示中のログをコピー";
 "System Microphone Mode" = "システムのマイクモード";
 "Selected Mode" = "選択中のモード";
@@ -720,6 +721,13 @@
 "Audio Engine Prepared" = "オーディオエンジン準備";
 "Audio Engine Started" = "オーディオエンジン開始";
 "First Audio Buffer Received" = "最初の音声バッファ受信";
+"Capture Health" = "マイク取得状態";
+"Audio Configuration Changed" = "オーディオ構成変更";
+"Capture Restart Started" = "マイク取得の再起動開始";
+"Capture Restart Succeeded" = "マイク取得の再起動成功";
+"Capture Restart Failed" = "マイク取得の再起動失敗";
+"Capture Stopped" = "マイク取得停止";
+"Unexpected Capture Stop" = "マイク取得の予期しない停止";
 "Capture Attempt Failed" = "取得試行失敗";
 "Start Test" = "テスト開始";
 "Stop Test" = "テスト停止";

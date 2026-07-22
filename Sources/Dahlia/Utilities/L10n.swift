@@ -1493,11 +1493,12 @@ enum L10n {
     static var applicationLogsUnavailable: String { String(localized: "Logs Unavailable", bundle: bundle) }
     static var noApplicationLogs: String { String(localized: "No Logs", bundle: bundle) }
     static var noApplicationLogsDescription: String { String(
-        localized: "Use Dahlia, then refresh to load new log entries.",
+        localized: "New logs from this app session appear here automatically.",
         bundle: bundle
     ) }
     static var searchApplicationLogs: String { String(localized: "Search logs…", bundle: bundle) }
     static var refreshApplicationLogs: String { String(localized: "Refresh Logs", bundle: bundle) }
+    static var followLatestApplicationLogs: String { String(localized: "Follow Latest Logs", bundle: bundle) }
     static var copyDisplayedLogs: String { String(localized: "Copy Displayed Logs", bundle: bundle) }
     static var systemMicrophoneMode: String { String(localized: "System Microphone Mode", bundle: bundle) }
     static var preferredMicrophoneMode: String { String(localized: "Selected Mode", bundle: bundle) }

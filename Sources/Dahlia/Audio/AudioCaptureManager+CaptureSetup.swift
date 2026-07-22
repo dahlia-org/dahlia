@@ -2,6 +2,50 @@
 import CoreAudio
 
 extension AudioCaptureManager {
+    func prepareCaptureAttempt(
+        inputNode: AVAudioInputNode,
+        targetFormat: AVAudioFormat,
+        selectedDeviceID: AudioDeviceID?,
+        enablesVoiceProcessing: Bool,
+        diagnosticCaptureID: UUID
+    ) throws -> (hardware: AVAudioFormat, source: AVAudioFormat, converter: AVAudioConverter) {
+        try configureVoiceProcessingInput(
+            inputNode,
+            enabled: enablesVoiceProcessing,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
+        try configureInputDeviceForCapture(
+            selectedDeviceID,
+            inputNode: inputNode,
+            diagnosticCaptureID: diagnosticCaptureID
+        )
+        let voiceProcessingFormat = try configureVoiceProcessingGraph(
+            enabled: enablesVoiceProcessing,
+            inputNode: inputNode
+        )
+        let formats = try Self.validatedCaptureFormats(
+            inputNode: inputNode,
+            voiceProcessingFormat: voiceProcessingFormat,
+            enablesVoiceProcessing: enablesVoiceProcessing
+        )
+        recordDiagnosticSnapshot(
+            captureID: diagnosticCaptureID,
+            stage: .voiceProcessingGraphConfigured,
+            inputNode: inputNode,
+            inputHardwareFormat: formats.hardware.diagnosticDescription,
+            inputClientFormat: formats.source.diagnosticDescription,
+            outputHardwareFormat: enablesVoiceProcessing
+                ? engine.outputNode.outputFormat(forBus: 0).diagnosticDescription
+                : nil,
+            targetFormat: targetFormat.diagnosticDescription
+        )
+        guard let converter = AudioConverter.makeConverter(from: formats.source, to: targetFormat) else {
+            throw AudioCaptureError.converterCreationFailed
+        }
+        converter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
+        return (formats.hardware, formats.source, converter)
+    }
+
     func installInputTap(
         on inputNode: AVAudioInputNode,
         bufferSize: AVAudioFrameCount,
@@ -55,20 +99,6 @@ extension AudioCaptureManager {
             inputNode: inputNode,
             detail: selectedDeviceID.map(String.init) ?? "system-default"
         )
-    }
-
-    func configureVoiceProcessingGraphForCapture(
-        enabled: Bool,
-        inputNode: AVAudioInputNode,
-        diagnosticCaptureID: UUID
-    ) throws -> AVAudioFormat? {
-        let format = try configureVoiceProcessingGraph(enabled: enabled, inputNode: inputNode)
-        recordDiagnosticSnapshot(
-            captureID: diagnosticCaptureID,
-            stage: .voiceProcessingGraphConfigured,
-            inputNode: inputNode
-        )
-        return format
     }
 
     static func validatedCaptureFormats(

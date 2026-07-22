@@ -31,7 +31,7 @@ enum AudioCaptureError: Error, LocalizedError {
 final class AudioCaptureManager: NSObject, @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.dahlia", category: "MicrophoneCapture")
 
-    private struct CaptureRequest {
+    struct CaptureRequest {
         let targetFormat: AVAudioFormat
         let selectedDeviceID: AudioDeviceID?
         let bufferSize: AVAudioFrameCount
@@ -39,7 +39,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
         let context: MicrophoneCaptureContext
     }
 
-    private enum LifecycleState {
+    enum LifecycleState {
         case stopped
         case starting
         case running
@@ -67,11 +67,14 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     }
 
     private(set) var engine = AVAudioEngine()
-    private let lifecycleQueue = DispatchQueue(label: "com.dahlia.microphone-capture.lifecycle")
+    let lifecycleQueue = DispatchQueue(label: "com.dahlia.microphone-capture.lifecycle")
     private let conversionState = OSAllocatedUnfairLock(initialState: ConversionState())
     private let handlerState = OSAllocatedUnfairLock(initialState: HandlerState())
-    private var lifecycleState = LifecycleState.stopped
-    private var activeRequest: CaptureRequest?
+    let healthTracker = MicrophoneCaptureHealthTracker()
+    var lifecycleState = LifecycleState.stopped
+    var activeRequest: CaptureRequest?
+    var activeDiagnosticCaptureID: UUID?
+    var healthMonitoringTask: Task<Void, Never>?
     var hasInputTap = false
     private var hasVoiceProcessingOutputConnection = false
 
@@ -106,6 +109,7 @@ final class AudioCaptureManager: NSObject, @unchecked Sendable {
     }
 
     deinit {
+        healthMonitoringTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 }
@@ -153,6 +157,7 @@ extension AudioCaptureManager {
                 lifecycleState = .running
                 return startInfo
             } catch {
+                activeDiagnosticCaptureID = nil
                 resetCaptureAttempt()
                 lifecycleState = .stopped
                 throw error
@@ -160,14 +165,22 @@ extension AudioCaptureManager {
         }
     }
 
-    private func startCapture(_ request: CaptureRequest) throws -> AudioCaptureStartInfo {
+    func startCapture(_ request: CaptureRequest) throws -> AudioCaptureStartInfo {
         var lastError: (any Error)?
-        let selectedDeviceDescription = request.selectedDeviceID.map(String.init) ?? "system-default"
-        let diagnosticCaptureID = MicrophoneCaptureDiagnostics.shared.beginCapture(context: request.context)
-
-        Self.logger.info(
-            "Starting microphone capture; device=\(selectedDeviceDescription, privacy: .public), voiceProcessing=\(request.prefersVoiceProcessing)"
+        let defaultDeviceID = Self.defaultInputDeviceID()
+        let activeDeviceID = request.selectedDeviceID ?? defaultDeviceID
+        let diagnosticCaptureID = MicrophoneCaptureDiagnostics.shared.beginCapture(
+            context: request.context,
+            requestedVoiceProcessing: request.prefersVoiceProcessing,
+            selectedDeviceID: request.selectedDeviceID,
+            defaultDeviceID: defaultDeviceID,
+            activeDeviceID: activeDeviceID,
+            activeDeviceName: activeDeviceID.flatMap(Self.deviceName),
+            deviceRunningBeforeCapture: activeDeviceID.map(Self.isDeviceRunningSomewhere),
+            targetFormat: request.targetFormat.diagnosticDescription,
+            detail: "bufferSize=\(request.bufferSize)"
         )
+        activeDiagnosticCaptureID = diagnosticCaptureID
 
         for enablesVoiceProcessing in Self.voiceProcessingAttemptOrder(
             prefersVoiceProcessing: request.prefersVoiceProcessing
@@ -192,9 +205,6 @@ extension AudioCaptureManager {
                     inputNode: engine.inputNode,
                     detail: error.localizedDescription
                 )
-                Self.logger.error(
-                    "Microphone capture attempt failed; voiceProcessing=\(enablesVoiceProcessing), error=\(error.localizedDescription, privacy: .public)"
-                )
                 resetCaptureAttempt()
             }
         }
@@ -215,60 +225,38 @@ extension AudioCaptureManager {
             stage: .inputNodeReady,
             inputNode: inputNode
         )
-        try configureVoiceProcessingInput(
-            inputNode,
-            enabled: enablesVoiceProcessing,
+        let captureSetup = try prepareCaptureAttempt(
+            inputNode: inputNode,
+            targetFormat: targetFormat,
+            selectedDeviceID: selectedDeviceID,
+            enablesVoiceProcessing: enablesVoiceProcessing,
             diagnosticCaptureID: diagnosticCaptureID
         )
-
-        try configureInputDeviceForCapture(
-            selectedDeviceID,
-            inputNode: inputNode,
-            diagnosticCaptureID: diagnosticCaptureID
-        )
-        let voiceProcessingFormat = try configureVoiceProcessingGraphForCapture(
-            enabled: enablesVoiceProcessing,
-            inputNode: inputNode,
-            diagnosticCaptureID: diagnosticCaptureID
-        )
-        let captureFormats = try Self.validatedCaptureFormats(
-            inputNode: inputNode,
-            voiceProcessingFormat: voiceProcessingFormat,
-            enablesVoiceProcessing: enablesVoiceProcessing
-        )
-        let hardwareFormat = captureFormats.hardware
-        let sourceFormat = captureFormats.source
-
-        Self.logger.info("Microphone hardware format: \(hardwareFormat.diagnosticDescription, privacy: .public)")
-        Self.logger.info("Microphone source format: \(sourceFormat.diagnosticDescription, privacy: .public)")
-        Self.logger.info("Microphone target format: \(targetFormat.diagnosticDescription, privacy: .public)")
-
-        guard let audioConverter = AudioConverter.makeConverter(from: sourceFormat, to: targetFormat) else {
-            throw AudioCaptureError.converterCreationFailed
-        }
-        audioConverter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
 
         installInputTap(
             on: inputNode,
             bufferSize: bufferSize,
-            sourceFormat: sourceFormat,
+            sourceFormat: captureSetup.source,
             diagnosticCaptureID: diagnosticCaptureID
         )
-        try prepareAndStartEngine(inputNode: inputNode, diagnosticCaptureID: diagnosticCaptureID)
+        healthTracker.begin(captureID: diagnosticCaptureID)
+        do {
+            try prepareAndStartEngine(inputNode: inputNode, diagnosticCaptureID: diagnosticCaptureID)
+        } catch {
+            healthTracker.reset()
+            throw error
+        }
         conversionState.withLock { state in
-            state.converter = audioConverter
+            state.converter = captureSetup.converter
             state.targetFormat = targetFormat
             state.didLogFirstBuffer = false
             state.didLogConversionFailure = false
         }
-        Self.logger.info("Microphone engine started; voiceProcessing=\(enablesVoiceProcessing)")
-        Self.logger.info(
-            "Microphone modes; preferred=\(AVCaptureDevice.preferredMicrophoneMode.rawValue), active=\(AVCaptureDevice.activeMicrophoneMode.rawValue)"
-        )
+        startHealthMonitoring(captureID: diagnosticCaptureID)
 
         return AudioCaptureStartInfo(
-            hardwareFormatDescription: hardwareFormat.diagnosticDescription,
-            sourceFormatDescription: sourceFormat.diagnosticDescription,
+            hardwareFormatDescription: captureSetup.hardware.diagnosticDescription,
+            sourceFormatDescription: captureSetup.source.diagnosticDescription,
             targetFormatDescription: targetFormat.diagnosticDescription
         )
     }
@@ -316,53 +304,10 @@ extension AudioCaptureManager {
             guard lifecycleState != .stopped else { return }
             lifecycleState = .stopping
             activeRequest = nil
+            finishCaptureDiagnostics(stage: .captureStopped, detail: "reason=requested")
             resetCaptureAttempt()
+            activeDiagnosticCaptureID = nil
             lifecycleState = .stopped
-        }
-    }
-
-    @objc private func engineConfigurationDidChange() {
-        Self.logger.notice("Received microphone engine configuration change notification")
-        lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
-            self?.recoverFromConfigurationChangeIfNeeded()
-        }
-    }
-
-    private func recoverFromConfigurationChangeIfNeeded() {
-        let lifecycleDescription = String(describing: lifecycleState)
-        let engineIsRunning = engine.isRunning
-        let hasActiveRequest = activeRequest != nil
-        Self.logger.notice(
-            "Evaluating microphone configuration change; lifecycle=\(lifecycleDescription, privacy: .public), engineRunning=\(engineIsRunning), activeRequest=\(hasActiveRequest)"
-        )
-        guard lifecycleState == .running,
-              !engineIsRunning,
-              let request = activeRequest else {
-            Self.logger.notice("Microphone configuration change did not interrupt active capture")
-            return
-        }
-        lifecycleState = .restarting
-        activeRequest = nil
-        Self.logger.notice("Microphone capture interruption detected; restarting capture")
-        restartCaptureAfterConfigurationChange(request)
-    }
-
-    private func restartCaptureAfterConfigurationChange(_ request: CaptureRequest) {
-        guard lifecycleState == .restarting else { return }
-        Self.logger.notice("Restarting microphone engine after a configuration change")
-        resetCaptureAttempt()
-        do {
-            _ = try startCapture(request)
-            activeRequest = request
-            lifecycleState = .running
-            Self.logger.notice("Microphone engine recovered after a configuration change")
-        } catch {
-            resetCaptureAttempt()
-            lifecycleState = .stopped
-            Self.logger.error(
-                "Microphone engine recovery failed: \(error.localizedDescription, privacy: .public)"
-            )
-            notifyUnexpectedStop(Self.audioCaptureError(from: error))
         }
     }
 
@@ -371,8 +316,18 @@ extension AudioCaptureManager {
         inputNode: AVAudioInputNode,
         diagnosticCaptureID: UUID
     ) {
+        let shouldSampleHealthLevel = healthTracker.recordBuffer(
+            captureID: diagnosticCaptureID,
+            frameLength: inputBuffer.frameLength
+        )
         let levelsHandler = onInputLevels
-        levelsHandler?(AudioLevelCalculator.normalizedLevels(in: inputBuffer))
+        if levelsHandler != nil || shouldSampleHealthLevel {
+            let levels = AudioLevelCalculator.normalizedLevels(in: inputBuffer)
+            levelsHandler?(levels)
+            if shouldSampleHealthLevel, let level = levels.max() {
+                healthTracker.recordLevel(level, captureID: diagnosticCaptureID)
+            }
+        }
 
         let shouldLogFirstBuffer = conversionState.withLock { state in
             guard state.targetFormat != nil, !state.didLogFirstBuffer else { return false }
@@ -384,10 +339,6 @@ extension AudioCaptureManager {
                 captureID: diagnosticCaptureID,
                 inputNode: inputNode,
                 frameLength: inputBuffer.frameLength
-            )
-            let formatDescription = inputBuffer.format.diagnosticDescription
-            Self.logger.info(
-                "Received first microphone buffer; frames=\(inputBuffer.frameLength), format=\(formatDescription, privacy: .public)"
             )
         }
 
@@ -402,9 +353,7 @@ extension AudioCaptureManager {
                 }
                 converter.sampleRateConverterQuality = AVAudioQuality.medium.rawValue
                 state.converter = converter
-                Self.logger.notice(
-                    "Recreated microphone converter for input format: \(inputBuffer.format.diagnosticDescription, privacy: .public)"
-                )
+                Self.logger.notice("captureID=\(diagnosticCaptureID.uuidString, privacy: .public) recreatedConverter=true")
             }
             guard let converter = state.converter,
                   let outputBuffer = AudioConverter.convert(inputBuffer, to: targetFormat, using: converter) else {
@@ -414,7 +363,9 @@ extension AudioCaptureManager {
         }
         if let failure = conversionResult.1 {
             let inputDescription = inputBuffer.format.diagnosticDescription
-            Self.logger.error("Failed to convert microphone buffer: \(inputDescription, privacy: .public)")
+            Self.logger.error(
+                "captureID=\(diagnosticCaptureID.uuidString, privacy: .public) conversionFailed=true inputFormat=\(inputDescription, privacy: .public)"
+            )
             lifecycleQueue.async { [weak self] in
                 self?.failActiveCapture(failure)
             }
@@ -445,7 +396,10 @@ extension AudioCaptureManager {
         }
     }
 
-    private func resetCaptureAttempt() {
+    func resetCaptureAttempt() {
+        healthMonitoringTask?.cancel()
+        healthMonitoringTask = nil
+        healthTracker.reset()
         conversionState.withLock { state in
             state = ConversionState()
         }
@@ -478,19 +432,21 @@ extension AudioCaptureManager {
         guard lifecycleState == .running || lifecycleState == .restarting else { return }
         lifecycleState = .stopping
         activeRequest = nil
+        finishCaptureDiagnostics(stage: .unexpectedStop, detail: "error=\(error.localizedDescription)")
         resetCaptureAttempt()
+        activeDiagnosticCaptureID = nil
         lifecycleState = .stopped
         notifyUnexpectedStop(error)
     }
 
-    private func notifyUnexpectedStop(_ error: AudioCaptureError?) {
+    func notifyUnexpectedStop(_ error: AudioCaptureError?) {
         guard let handler = onUnexpectedStop else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             handler(error)
         }
     }
 
-    private static func audioCaptureError(from error: any Error) -> AudioCaptureError {
+    static func audioCaptureError(from error: any Error) -> AudioCaptureError {
         error as? AudioCaptureError ?? .microphoneDeviceUnavailable
     }
 }

@@ -5,33 +5,62 @@ import OSLog
 @MainActor
 @Observable
 final class ApplicationLogViewModel {
-    private static let maximumEntryCount = 2000
-    private static let subsystem = "com.dahlia"
+    private nonisolated static let maximumEntryCount = 2000
+    private static let pollingInterval = Duration.seconds(1)
+    private nonisolated static let subsystem = "com.dahlia"
+
+    typealias LogLoader = @Sendable () async throws -> [String]
+    typealias Sleeper = @Sendable (Duration) async throws -> Void
 
     private(set) var logLines: [String]
     private(set) var errorMessage: String?
+    private(set) var revision = 0
 
-    init(logLines: [String] = []) {
-        self.logLines = logLines
+    private let loadLogs: LogLoader
+    private let sleep: Sleeper
+    private var isRefreshing = false
+
+    init(
+        logLines: [String] = [],
+        loadLogs: @escaping LogLoader = ApplicationLogViewModel.loadCurrentProcessLogs,
+        sleep: @escaping Sleeper = { try await Task.sleep(for: $0) }
+    ) {
+        self.logLines = Array(logLines.suffix(Self.maximumEntryCount))
+        self.loadLogs = loadLogs
+        self.sleep = sleep
     }
 
     var hasLogs: Bool {
         !logLines.isEmpty
     }
 
-    func refresh() {
+    func monitor() async {
+        while !Task.isCancelled {
+            await refresh()
+            do {
+                try await sleep(Self.pollingInterval)
+            } catch {
+                return
+            }
+        }
+    }
+
+    func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         do {
-            let store = try OSLogStore(scope: .currentProcessIdentifier)
-            let predicate = NSPredicate(format: "subsystem == %@", Self.subsystem)
-            let entries = try store.getEntries(with: .reverse, matching: predicate)
-            logLines = entries.lazy
-                .compactMap { $0 as? OSLogEntryLog }
-                .prefix(Self.maximumEntryCount)
-                .map(Self.renderedLine)
-                .reversed()
+            let loadedLines = try await loadLogs()
+            guard !Task.isCancelled else { return }
+            let boundedLines = Array(loadedLines.suffix(Self.maximumEntryCount))
+            if boundedLines != logLines {
+                logLines = boundedLines
+                revision &+= 1
+            }
             errorMessage = nil
         } catch {
-            logLines = []
+            guard !Task.isCancelled else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -48,6 +77,17 @@ final class ApplicationLogViewModel {
     nonisolated static func renderedLine(_ entry: OSLogEntryLog) -> String {
         let timestamp = entry.date.formatted(.iso8601)
         return "\(timestamp) [\(levelName(entry.level))] [\(entry.category)] \(entry.composedMessage)"
+    }
+
+    private nonisolated static func loadCurrentProcessLogs() async throws -> [String] {
+        let store = try OSLogStore(scope: .currentProcessIdentifier)
+        let predicate = NSPredicate(format: "subsystem == %@", Self.subsystem)
+        let entries = try store.getEntries(with: .reverse, matching: predicate)
+        return entries.lazy
+            .compactMap { $0 as? OSLogEntryLog }
+            .prefix(Self.maximumEntryCount)
+            .map(Self.renderedLine)
+            .reversed()
     }
 
     private nonisolated static func levelName(_ level: OSLogEntryLog.Level) -> String {

@@ -1,3 +1,5 @@
+import AudioToolbox
+@preconcurrency import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -103,7 +105,7 @@ extension AudioCaptureManager {
         return isRunning != 0
     }
 
-    private static func deviceName(for deviceID: AudioDeviceID) -> String? {
+    static func deviceName(for deviceID: AudioDeviceID) -> String? {
         var address = globalAddress(kAudioObjectPropertyName)
         var propertySize = UInt32(MemoryLayout<CFString?>.size)
         var name: Unmanaged<CFString>?
@@ -122,5 +124,20 @@ extension AudioCaptureManager {
         }
 
         return name.takeRetainedValue() as String
+    }
+
+    static func currentDeviceID(for inputNode: AVAudioInputNode) -> AudioDeviceID? {
+        guard let audioUnit = inputNode.audioUnit else { return nil }
+        var deviceID = AudioDeviceID(0)
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitGetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceID,
+            &propertySize
+        )
+        return status == noErr && deviceID != 0 ? deviceID : nil
     }
 }

@@ -12,5 +12,12 @@ enum MicrophoneCaptureDiagnosticStage: String {
     case enginePrepared = "Audio Engine Prepared"
     case engineStarted = "Audio Engine Started"
     case firstAudioBufferReceived = "First Audio Buffer Received"
+    case captureHealth = "Capture Health"
+    case configurationChanged = "Audio Configuration Changed"
+    case restartStarted = "Capture Restart Started"
+    case restartSucceeded = "Capture Restart Succeeded"
+    case restartFailed = "Capture Restart Failed"
+    case captureStopped = "Capture Stopped"
+    case unexpectedStop = "Unexpected Capture Stop"
     case attemptFailed = "Capture Attempt Failed"
 }

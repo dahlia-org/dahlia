@@ -133,6 +133,39 @@ final class MicrophoneRecognitionTestModel {
         if let agcEnabled = snapshot.voiceProcessingAGCEnabled {
             components.append("AGC=\(agcEnabled)")
         }
+        if let requestedVoiceProcessing = snapshot.requestedVoiceProcessing {
+            components.append("requestedVP=\(requestedVoiceProcessing)")
+        }
+        if let selectedDeviceID = snapshot.selectedDeviceID {
+            components.append("selectedDevice=\(selectedDeviceID)")
+        }
+        if let defaultDeviceID = snapshot.defaultDeviceID {
+            components.append("defaultDevice=\(defaultDeviceID)")
+        }
+        if let activeDeviceID = snapshot.activeDeviceID {
+            components.append("activeDevice=\(activeDeviceID)")
+        }
+        if let activeDeviceName = snapshot.activeDeviceName {
+            components.append(activeDeviceName)
+        }
+        if let deviceRunningBeforeCapture = snapshot.deviceRunningBeforeCapture {
+            components.append("runningBeforeCapture=\(deviceRunningBeforeCapture)")
+        }
+        if let engineRunning = snapshot.engineRunning {
+            components.append("engineRunning=\(engineRunning)")
+        }
+        if let inputHardwareFormat = snapshot.inputHardwareFormat {
+            components.append("hardware=\(inputHardwareFormat)")
+        }
+        if let inputClientFormat = snapshot.inputClientFormat {
+            components.append("client=\(inputClientFormat)")
+        }
+        if let outputHardwareFormat = snapshot.outputHardwareFormat {
+            components.append("output=\(outputHardwareFormat)")
+        }
+        if let targetFormat = snapshot.targetFormat {
+            components.append("target=\(targetFormat)")
+        }
         if let detail = snapshot.detail {
             components.append(detail)
         }

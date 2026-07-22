@@ -690,9 +690,10 @@
 "View Dahlia logs from the current app session. Private values remain redacted." = "View Dahlia logs from the current app session. Private values remain redacted.";
 "Logs Unavailable" = "Logs Unavailable";
 "No Logs" = "No Logs";
-"Use Dahlia, then refresh to load new log entries." = "Use Dahlia, then refresh to load new log entries.";
+"New logs from this app session appear here automatically." = "New logs from this app session appear here automatically.";
 "Search logs…" = "Search logs…";
 "Refresh Logs" = "Refresh Logs";
+"Follow Latest Logs" = "Follow Latest Logs";
 "Copy Displayed Logs" = "Copy Displayed Logs";
 "System Microphone Mode" = "System Microphone Mode";
 "Selected Mode" = "Selected Mode";
@@ -720,6 +721,13 @@
 "Audio Engine Prepared" = "Audio Engine Prepared";
 "Audio Engine Started" = "Audio Engine Started";
 "First Audio Buffer Received" = "First Audio Buffer Received";
+"Capture Health" = "Capture Health";
+"Audio Configuration Changed" = "Audio Configuration Changed";
+"Capture Restart Started" = "Capture Restart Started";
+"Capture Restart Succeeded" = "Capture Restart Succeeded";
+"Capture Restart Failed" = "Capture Restart Failed";
+"Capture Stopped" = "Capture Stopped";
+"Unexpected Capture Stop" = "Unexpected Capture Stop";
 "Capture Attempt Failed" = "Capture Attempt Failed";
 "Start Test" = "Start Test";
 "Stop Test" = "Stop Test";
