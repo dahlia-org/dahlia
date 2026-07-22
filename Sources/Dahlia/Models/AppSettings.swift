@@ -164,6 +164,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage("transcriptionLocale") var transcriptionLocale: String = Locale.current.identifier
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
+    @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true

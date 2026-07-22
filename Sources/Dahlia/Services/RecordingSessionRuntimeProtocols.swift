@@ -3,6 +3,7 @@ import Foundation
 import GRDB
 
 typealias AudioCaptureUnexpectedStopHandler = @Sendable (Error?) -> Void
+typealias AudioCaptureWarningHandler = @Sendable (Error) -> Void
 typealias ProgressiveTranscriptionEventHandler = @Sendable (TranscriptionEvent) async -> Void
 typealias ProgressiveSegmentTranslationHandler = @Sendable (TranscriptSegment) async -> String?
 
@@ -14,10 +15,11 @@ protocol AudioCaptureSession: Sendable {
 
 /// 実デバイス capture とテスト用 fake を差し替えるための生成境界。
 protocol AudioCaptureSessionFactory: Sendable {
-    func requestPermission(for source: RecordingAudioSource) async -> Bool
+    func requestPermission(for source: RecordingAudioSource) async throws
 
     func makeSession(
         for pipeline: AudioSourcePipeline,
+        onWarning: @escaping AudioCaptureWarningHandler,
         onUnexpectedStop: @escaping AudioCaptureUnexpectedStopHandler
     ) -> any AudioCaptureSession
 }

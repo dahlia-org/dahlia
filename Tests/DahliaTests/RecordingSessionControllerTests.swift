@@ -2,6 +2,7 @@
     @preconcurrency import AVFoundation
     import Foundation
     import GRDB
+    import os
     import Testing
     @testable import Dahlia
 
@@ -76,14 +77,17 @@
             for testCase in cases {
                 let runtime = try await makeRuntime(
                     mode: testCase.mode,
-                    liveSubtitlesEnabled: testCase.liveSubtitlesEnabled
+                    liveSubtitlesEnabled: testCase.liveSubtitlesEnabled,
+                    forcesExternalMicrophoneEchoCancellation: true
                 )
                 let counts = await runtime.controller.resourceCounts()
+                let actions = await runtime.probe.actions
 
                 #expect(counts.captures == 2)
                 #expect(counts.recognizers == testCase.recognizerCount)
                 #expect(counts.batchRecorders == testCase.recorderCount)
                 #expect(counts.batchSchedulers == (testCase.mode == .batch ? 1 : 0))
+                #expect(actions.contains(.captureConfiguration(.microphone, forcesEchoCancellation: true)))
 
                 _ = try await runtime.controller.stop()
                 await runtime.controller.completeStop()
@@ -451,20 +455,79 @@
             await runtime.controller.completeStop()
         }
 
+        @Test
+        func changingExternalMicrophoneEchoCancellationRebuildsOnlyMicrophoneCapture() async throws {
+            let runtime = try await makeRuntime(mode: .realtime, liveSubtitlesEnabled: true)
+            await runtime.probe.clear()
+
+            _ = try await runtime.controller.setSource(
+                .init(source: .microphone, forcesEchoCancellationForExternalMicrophone: true),
+                enabled: true,
+                translateSegment: nil
+            )
+
+            let actions = await runtime.probe.actions
+            #expect(actions.contains(.captureConfiguration(.microphone, forcesEchoCancellation: true)))
+            #expect(!actions.contains { action in
+                if case .captureConfiguration(.system, _) = action { return true }
+                return false
+            })
+            #expect(!actions.contains(.captureStart(.system)))
+            #expect(!actions.contains(.captureStop(.system)))
+
+            _ = try await runtime.controller.stop()
+            await runtime.controller.completeStop()
+        }
+
+        @Test
+        func sourceReplacementIgnoresWarningFromRetiredCapture() async throws {
+            let warningStore = FakeCaptureWarningStore()
+            let failures = RuntimeFailureRecorder()
+            let runtime = try await makeRuntime(
+                mode: .realtime,
+                liveSubtitlesEnabled: true,
+                failureRecorder: failures,
+                warningStore: warningStore
+            )
+            let retiredWarning = try #require(warningStore.handlers(for: .microphone).first)
+
+            _ = try await runtime.controller.setSource(
+                .init(source: .microphone, forcesEchoCancellationForExternalMicrophone: true),
+                enabled: true,
+                translateSegment: nil
+            )
+            let currentWarning = try #require(warningStore.handlers(for: .microphone).last)
+
+            retiredWarning(FakeWarning.retired)
+            currentWarning(FakeWarning.current)
+            await failures.waitUntilCount(1)
+            let entries = await failures.entries
+
+            #expect(entries == [
+                .init(source: .microphone, message: "current warning", isFatal: false),
+            ])
+
+            _ = try await runtime.controller.stop()
+            await runtime.controller.completeStop()
+        }
+
         private func makeRuntime(
             mode: TranscriptionMode,
             liveSubtitlesEnabled: Bool,
             recognitionFailureMode: FakeRecognitionFailureMode = .none,
             failingRecognitionFinishSource: RecordingAudioSource? = nil,
             failingCaptureDeviceID: AudioDeviceID? = nil,
-            failureRecorder: RuntimeFailureRecorder? = nil
+            forcesExternalMicrophoneEchoCancellation: Bool = false,
+            failureRecorder: RuntimeFailureRecorder? = nil,
+            warningStore: FakeCaptureWarningStore? = nil
         ) async throws -> (controller: RecordingSessionController, probe: RecordingRuntimeProbe) {
             let probe = RecordingRuntimeProbe()
             let scheduler = FakeBatchScheduler(probe: probe)
             let controller = RecordingSessionController(
                 captureFactory: FakeAudioCaptureFactory(
                     probe: probe,
-                    failingDeviceID: failingCaptureDeviceID
+                    failingDeviceID: failingCaptureDeviceID,
+                    warningStore: warningStore
                 ),
                 recognitionFactory: FakeRecognitionFactory(
                     probe: probe,
@@ -485,7 +548,10 @@
                     plan: plan,
                     locale: Locale(identifier: "ja_JP"),
                     sources: [
-                        .init(source: .microphone),
+                        .init(
+                            source: .microphone,
+                            forcesEchoCancellationForExternalMicrophone: forcesExternalMicrophoneEchoCancellation
+                        ),
                         .init(source: .system),
                     ],
                     dbQueue: mode == .batch ? DatabaseQueue() : nil,
@@ -503,8 +569,9 @@
         }
     }
 
-    private actor RecordingRuntimeProbe {
+    actor RecordingRuntimeProbe {
         enum Action: Equatable {
+            case captureConfiguration(RecordingAudioSource, forcesEchoCancellation: Bool)
             case captureStart(RecordingAudioSource)
             case captureStop(RecordingAudioSource)
             case recognitionStart(RecordingAudioSource)
@@ -554,9 +621,48 @@
         }
 
         private(set) var entries: [Entry] = []
+        private var countWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
         func append(source: RecordingAudioSource?, message: String, isFatal: Bool) {
             entries.append(Entry(source: source, message: message, isFatal: isFatal))
+            let ready = countWaiters.filter { entries.count >= $0.count }
+            countWaiters.removeAll { entries.count >= $0.count }
+            ready.forEach { $0.continuation.resume() }
+        }
+
+        func waitUntilCount(_ count: Int) async {
+            guard entries.count < count else { return }
+            await withCheckedContinuation { continuation in
+                countWaiters.append((count, continuation))
+            }
+        }
+    }
+
+    private enum FakeWarning: LocalizedError {
+        case retired
+        case current
+
+        var errorDescription: String? {
+            switch self {
+            case .retired: "retired warning"
+            case .current: "current warning"
+            }
+        }
+    }
+
+    private final class FakeCaptureWarningStore: @unchecked Sendable {
+        private struct State {
+            var handlers: [RecordingAudioSource: [AudioCaptureWarningHandler]] = [:]
+        }
+
+        private let state = OSAllocatedUnfairLock(initialState: State())
+
+        func append(_ handler: @escaping AudioCaptureWarningHandler, for source: RecordingAudioSource) {
+            state.withLock { $0.handlers[source, default: []].append(handler) }
+        }
+
+        func handlers(for source: RecordingAudioSource) -> [AudioCaptureWarningHandler] {
+            state.withLock { $0.handlers[source] ?? [] }
         }
     }
 
@@ -572,27 +678,33 @@
         let probe: RecordingRuntimeProbe
         let failingSource: RecordingAudioSource?
         let failingDeviceID: AudioDeviceID?
+        let warningStore: FakeCaptureWarningStore?
 
         init(
             probe: RecordingRuntimeProbe,
             failingSource: RecordingAudioSource? = nil,
-            failingDeviceID: AudioDeviceID? = nil
+            failingDeviceID: AudioDeviceID? = nil,
+            warningStore: FakeCaptureWarningStore? = nil
         ) {
             self.probe = probe
             self.failingSource = failingSource
             self.failingDeviceID = failingDeviceID
+            self.warningStore = warningStore
         }
 
-        func requestPermission(for _: RecordingAudioSource) async -> Bool { true }
+        func requestPermission(for _: RecordingAudioSource) async throws {}
 
         func makeSession(
             for pipeline: AudioSourcePipeline,
+            onWarning: @escaping AudioCaptureWarningHandler,
             onUnexpectedStop _: @escaping AudioCaptureUnexpectedStopHandler
         ) -> any AudioCaptureSession {
+            warningStore?.append(onWarning, for: pipeline.source)
             let deviceShouldFail = failingDeviceID.map { pipeline.captureDeviceID == $0 } ?? false
             return FakeAudioCaptureSession(
                 source: pipeline.source,
                 probe: probe,
+                forcesEchoCancellation: pipeline.forcesEchoCancellationForExternalMicrophone,
                 shouldFail: pipeline.source == failingSource || deviceShouldFail
             )
         }
@@ -601,15 +713,26 @@
     private actor FakeAudioCaptureSession: AudioCaptureSession {
         let source: RecordingAudioSource
         let probe: RecordingRuntimeProbe
+        let forcesEchoCancellation: Bool
         let shouldFail: Bool
 
-        init(source: RecordingAudioSource, probe: RecordingRuntimeProbe, shouldFail: Bool) {
+        init(
+            source: RecordingAudioSource,
+            probe: RecordingRuntimeProbe,
+            forcesEchoCancellation: Bool,
+            shouldFail: Bool
+        ) {
             self.source = source
             self.probe = probe
+            self.forcesEchoCancellation = forcesEchoCancellation
             self.shouldFail = shouldFail
         }
 
         func start() async throws {
+            await probe.append(.captureConfiguration(
+                source,
+                forcesEchoCancellation: forcesEchoCancellation
+            ))
             await probe.append(.captureStart(source))
             if shouldFail {
                 throw FakeRuntimeError.captureStart
@@ -723,134 +846,6 @@
 
         func cancel() async {
             await probe.append(.recognitionCancel(source))
-        }
-    }
-
-    private struct SelfWaitingRecognitionFactory: ProgressiveRecognitionSessionFactory {
-        let probe: RecordingRuntimeProbe
-        let control: SelfWaitingRecognitionControl
-
-        func prepareModel(locale _: Locale) async throws {}
-
-        func prepareSession(
-            locale _: Locale,
-            source: RecordingAudioSource,
-            sourceFormat _: AVAudioFormat?,
-            bufferingMode _: AudioBufferBridge.BufferingMode,
-            translateSegment _: ProgressiveSegmentTranslationHandler?
-        ) async throws -> PreparedProgressiveRecognitionSession {
-            let format = try #require(AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: 16000,
-                channels: 1,
-                interleaved: false
-            ))
-            return PreparedProgressiveRecognitionSession(
-                analyzerFormat: format,
-                session: SelfWaitingRecognitionSession(source: source, probe: probe, control: control)
-            )
-        }
-    }
-
-    private actor SelfWaitingRecognitionSession: ProgressiveRecognitionSession {
-        nonisolated let pipelineID = UUID.v7()
-        nonisolated let liveConsumer: AudioFrameRouter.LiveConsumer = { _ in true }
-
-        private let source: RecordingAudioSource
-        private let probe: RecordingRuntimeProbe
-        private let control: SelfWaitingRecognitionControl
-
-        init(source: RecordingAudioSource, probe: RecordingRuntimeProbe, control: SelfWaitingRecognitionControl) {
-            self.source = source
-            self.probe = probe
-            self.control = control
-        }
-
-        func start(
-            recordingStartTime _: Date,
-            recordingSessionId: UUID,
-            onEvent: @escaping ProgressiveTranscriptionEventHandler
-        ) async throws {
-            await probe.append(.recognitionStart(source))
-            await control.register(
-                sessionID: recordingSessionId,
-                pipelineID: pipelineID,
-                source: source,
-                handler: onEvent
-            )
-        }
-
-        func finish() async throws {
-            await control.finish(pipelineID: pipelineID)
-            await probe.append(.recognitionFinish(source))
-        }
-
-        func cancel() async {
-            await control.waitForActiveDelivery()
-            await probe.append(.recognitionCancel(source))
-        }
-    }
-
-    private actor SelfWaitingRecognitionControl {
-        private struct Registration {
-            let sessionID: UUID
-            let pipelineID: UUID
-            let source: RecordingAudioSource
-            let handler: ProgressiveTranscriptionEventHandler
-        }
-
-        private var registrations: [Registration] = []
-        private var activeDelivery: Task<Void, Never>?
-
-        func register(
-            sessionID: UUID,
-            pipelineID: UUID,
-            source: RecordingAudioSource,
-            handler: @escaping ProgressiveTranscriptionEventHandler
-        ) {
-            registrations.append(Registration(
-                sessionID: sessionID,
-                pipelineID: pipelineID,
-                source: source,
-                handler: handler
-            ))
-        }
-
-        func emitFailure() async {
-            guard let registration = registrations.last else { return }
-            let delivery = Task {
-                await registration.handler(.failure(
-                    sessionId: registration.sessionID,
-                    pipelineID: registration.pipelineID,
-                    sourceLabel: registration.source.speakerLabel,
-                    message: "runtime recognition failure"
-                ))
-            }
-            activeDelivery = delivery
-            await delivery.value
-            activeDelivery = nil
-        }
-
-        func waitForActiveDelivery() async {
-            await activeDelivery?.value
-        }
-
-        func finish(pipelineID: UUID) async {
-            guard let retiring = registrations.first(where: { $0.pipelineID == pipelineID }),
-                  let latest = registrations.last,
-                  latest.pipelineID != retiring.pipelineID else { return }
-            let preview = TranscriptSegment(
-                sessionId: latest.sessionID,
-                startTime: .now,
-                text: "replacement preview",
-                isConfirmed: false,
-                speakerLabel: latest.source.speakerLabel
-            )
-            await latest.handler(.preview(preview))
-            await retiring.handler(.clearPreview(
-                sessionId: retiring.sessionID,
-                sourceLabel: retiring.source.speakerLabel
-            ))
         }
     }
 

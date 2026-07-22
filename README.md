@@ -6,7 +6,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 
 ## Features
 
-- **Dual Audio Capture** — Record microphone (AVAudioEngine) and system audio (ScreenCaptureKit) at the same time
+- **Dual Audio Capture** — Record microphone and system audio through ScreenCaptureKit, with speaker echo cancellation for built-in microphones
 - **On-Device Transcription** — Real-time speech-to-text using Apple Speech framework
 - **Automatic Batch Language Detection** — Detect each recording file's language with WhisperKit, then transcribe it with Apple Speech
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
@@ -21,6 +21,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 
 - macOS 26+
 - Apple Silicon (arm64)
+- Microphone and Screen Recording permissions (ScreenCaptureKit is used even for microphone-only recording)
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
@@ -122,7 +123,7 @@ To publish a release, install and authenticate the GitHub CLI (`gh`), increment 
 ## Architecture
 
 ```
-AudioCaptureManager (microphone / AVAudioEngine)
+MicrophoneAudioCaptureSession (microphone / ScreenCaptureKit raw + optional AEC3)
 SystemAudioCaptureManager (system audio / ScreenCaptureKit)
     ↓ onAudioBuffer
 AudioSourcePipeline → CapturedAudioChunk

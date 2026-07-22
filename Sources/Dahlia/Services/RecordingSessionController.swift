@@ -16,16 +16,16 @@ actor RecordingSessionController {
     struct SourceConfiguration: Equatable {
         let source: RecordingAudioSource
         let captureDeviceID: AudioDeviceID?
-        let captureBufferSize: AVAudioFrameCount
+        let forcesEchoCancellationForExternalMicrophone: Bool
 
         init(
             source: RecordingAudioSource,
             captureDeviceID: AudioDeviceID? = nil,
-            captureBufferSize: AVAudioFrameCount = 4096
+            forcesEchoCancellationForExternalMicrophone: Bool = false
         ) {
             self.source = source
             self.captureDeviceID = captureDeviceID
-            self.captureBufferSize = captureBufferSize
+            self.forcesEchoCancellationForExternalMicrophone = forcesEchoCancellationForExternalMicrophone
         }
     }
 
@@ -166,9 +166,7 @@ actor RecordingSessionController {
         var preparedRecognitions: [PreparedProgressiveRecognitionSession] = []
         do {
             for configuration in configurations {
-                guard await captureFactory.requestPermission(for: configuration.source) else {
-                    throw Self.permissionError(for: configuration.source)
-                }
+                try await captureFactory.requestPermission(for: configuration.source)
             }
 
             var recognitionModelIsAvailable = request.plan.requiresLiveRecognition
@@ -456,14 +454,5 @@ actor RecordingSessionController {
 
     static func sortedSources(_ sources: some Sequence<RecordingAudioSource>) -> [RecordingAudioSource] {
         sources.sorted { $0.rawValue < $1.rawValue }
-    }
-
-    static func permissionError(for source: RecordingAudioSource) -> Error {
-        switch source {
-        case .microphone:
-            AudioCaptureError.microphonePermissionDenied
-        case .system:
-            SystemAudioCaptureError.screenRecordingPermissionDenied
-        }
     }
 }

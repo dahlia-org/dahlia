@@ -19,7 +19,7 @@ extension RecordingSessionController {
             source: configuration.source,
             captureFormat: captureFormat,
             captureDeviceID: configuration.captureDeviceID,
-            captureBufferSize: configuration.captureBufferSize,
+            forcesEchoCancellationForExternalMicrophone: configuration.forcesEchoCancellationForExternalMicrophone,
             sessionRelativeOrigin: CMTime(
                 seconds: max(0, captureOriginDate.timeIntervalSince(snapshot.startedAt)),
                 preferredTimescale: 1_000_000
@@ -45,6 +45,11 @@ extension RecordingSessionController {
         )
         let capture = captureFactory.makeSession(
             for: pipeline,
+            onWarning: captureWarningHandler(
+                source: configuration.source,
+                runtimeID: runtimeID,
+                sessionId: snapshot.sessionId
+            ),
             onUnexpectedStop: captureFailureHandler(
                 source: configuration.source,
                 runtimeID: runtimeID,

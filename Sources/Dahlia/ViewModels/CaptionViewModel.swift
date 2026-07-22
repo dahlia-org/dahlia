@@ -1746,7 +1746,7 @@ final class CaptionViewModel: ObservableObject {
                 startedAt: request.startedAt,
                 plan: request.plan,
                 locale: request.locale,
-                sources: controllerSourceConfigurations(plan: request.plan),
+                sources: controllerSourceConfigurations(),
                 dbQueue: request.plan.recordsBatchAudio ? request.dbQueue : nil,
                 meetingId: request.plan.recordsBatchAudio ? request.meetingId : nil,
                 batchSampleRate: request.batchSampleRate,
@@ -3466,22 +3466,19 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func controllerSourceConfiguration(
-        for source: RecordingAudioSource,
-        plan: TranscriptionSessionPlan? = nil
+        for source: RecordingAudioSource
     ) -> RecordingSessionController.SourceConfiguration {
-        let effectivePlan = plan ?? activeTranscriptionPlan
-        return RecordingSessionController.SourceConfiguration(
+        RecordingSessionController.SourceConfiguration(
             source: source,
             captureDeviceID: source == .microphone ? microphoneCaptureDeviceID : nil,
-            captureBufferSize: effectivePlan?.recordsBatchAudio == true ? 1024 : 4096
+            forcesEchoCancellationForExternalMicrophone: source == .microphone
+                && AppSettings.shared.forceEchoCancellationForExternalMicrophone
         )
     }
 
-    private func controllerSourceConfigurations(
-        plan: TranscriptionSessionPlan
-    ) -> [RecordingSessionController.SourceConfiguration] {
+    private func controllerSourceConfigurations() -> [RecordingSessionController.SourceConfiguration] {
         enabledRecordingAudioSources.map { source in
-            controllerSourceConfiguration(for: source, plan: plan)
+            controllerSourceConfiguration(for: source)
         }
     }
 

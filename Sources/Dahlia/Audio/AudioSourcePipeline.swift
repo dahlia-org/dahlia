@@ -14,7 +14,7 @@ final class AudioSourcePipeline: Sendable {
     let router: AudioFrameRouter
     let captureFormat: AVAudioFormat
     let captureDeviceID: AudioDeviceID?
-    let captureBufferSize: AVAudioFrameCount
+    let forcesEchoCancellationForExternalMicrophone: Bool
     private let clockState: OSAllocatedUnfairLock<ClockState>
     private let sampleRateTimescale: CMTimeScale
 
@@ -27,14 +27,14 @@ final class AudioSourcePipeline: Sendable {
         router: AudioFrameRouter = AudioFrameRouter(),
         captureFormat: AVAudioFormat,
         captureDeviceID: AudioDeviceID? = nil,
-        captureBufferSize: AVAudioFrameCount = 4096,
+        forcesEchoCancellationForExternalMicrophone: Bool = false,
         sessionRelativeOrigin: CMTime = .zero
     ) {
         self.source = source
         self.router = router
         self.captureFormat = captureFormat
         self.captureDeviceID = captureDeviceID
-        self.captureBufferSize = captureBufferSize
+        self.forcesEchoCancellationForExternalMicrophone = forcesEchoCancellationForExternalMicrophone
         clockState = OSAllocatedUnfairLock(initialState: ClockState(sessionRelativeOrigin: sessionRelativeOrigin))
         sampleRateTimescale = CMTimeScale(captureFormat.sampleRate.rounded())
     }

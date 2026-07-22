@@ -27,7 +27,8 @@ extension RecordingSessionController {
         let source = configuration.source
         if enabled, let runtime = sourceRuntimes[source] {
             let matchesConfiguration = runtime.pipeline.captureDeviceID == configuration.captureDeviceID
-                && runtime.pipeline.captureBufferSize == configuration.captureBufferSize
+                && runtime.pipeline.forcesEchoCancellationForExternalMicrophone
+                == configuration.forcesEchoCancellationForExternalMicrophone
             if matchesConfiguration { return snapshot }
             return try await replaceSource(
                 runtime,
@@ -74,9 +75,7 @@ extension RecordingSessionController {
         translateSegment: ProgressiveSegmentTranslationHandler?
     ) async throws -> SourcePipelinePreparation {
         let source = configuration.source
-        guard await captureFactory.requestPermission(for: source) else {
-            throw Self.permissionError(for: source)
-        }
+        try await captureFactory.requestPermission(for: source)
         let batchFormat = batchRecording?.targetFormat
         let preparedRecognition = try await prepareRecognitionForNewPipeline(
             source: source,
@@ -94,7 +93,7 @@ extension RecordingSessionController {
                 source: source,
                 captureFormat: captureFormat,
                 captureDeviceID: configuration.captureDeviceID,
-                captureBufferSize: configuration.captureBufferSize,
+                forcesEchoCancellationForExternalMicrophone: configuration.forcesEchoCancellationForExternalMicrophone,
                 sessionRelativeOrigin: .zero
             ),
             preparedRecognition: preparedRecognition
@@ -133,6 +132,11 @@ extension RecordingSessionController {
             runtimeID = newRuntimeID
             let newCapture = captureFactory.makeSession(
                 for: preparation.pipeline,
+                onWarning: captureWarningHandler(
+                    source: preparation.source,
+                    runtimeID: newRuntimeID,
+                    sessionId: snapshot.sessionId
+                ),
                 onUnexpectedStop: captureFailureHandler(
                     source: preparation.source,
                     runtimeID: newRuntimeID,
@@ -315,6 +319,11 @@ extension RecordingSessionController {
             runtimeID = replacementRuntimeID
             let replacementCapture = captureFactory.makeSession(
                 for: preparation.pipeline,
+                onWarning: captureWarningHandler(
+                    source: preparation.source,
+                    runtimeID: replacementRuntimeID,
+                    sessionId: snapshot.sessionId
+                ),
                 onUnexpectedStop: captureFailureHandler(
                     source: preparation.source,
                     runtimeID: replacementRuntimeID,

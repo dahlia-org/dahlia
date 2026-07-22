@@ -1,4 +1,3 @@
-@preconcurrency import AVFoundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -7,36 +6,30 @@
     struct MicrophoneCaptureDiagnosticsTests {
         @Test
         func recordsOrderedSnapshotsForCurrentCapture() throws {
-            let diagnostics = MicrophoneCaptureDiagnostics(modeProvider: {
-                (preferred: .voiceIsolation, active: .standard)
-            })
+            let diagnostics = MicrophoneCaptureDiagnostics()
 
             let captureID = diagnostics.beginCapture(context: .audioTest)
             diagnostics.record(
                 captureID: captureID,
-                stage: .voiceProcessingEnabled,
-                voiceProcessingEnabled: true,
-                voiceProcessingBypassed: false
+                stage: .echoCancellationConfigured,
+                inputClientFormat: "16000 Hz, 1 ch, Float32",
+                detail: "backend=WebRTC-AEC3"
             )
 
             let snapshots = diagnostics.snapshots()
-            #expect(snapshots.map(\.stage) == [.captureRequested, .voiceProcessingEnabled])
+            #expect(snapshots.map(\.stage) == [.captureRequested, .echoCancellationConfigured])
             #expect(snapshots.allSatisfy { $0.captureID == captureID })
             #expect(snapshots.allSatisfy { $0.context == .audioTest })
-            #expect(snapshots.allSatisfy { $0.preferredMicrophoneMode == .voiceIsolation })
-            #expect(snapshots.allSatisfy { $0.activeMicrophoneMode == .standard })
-            let enabledSnapshot = try #require(snapshots.last)
-            #expect(enabledSnapshot.voiceProcessingEnabled == true)
-            #expect(enabledSnapshot.voiceProcessingBypassed == false)
+            let configured = try #require(snapshots.last)
+            #expect(configured.inputClientFormat == "16000 Hz, 1 ch, Float32")
+            #expect(configured.detail == "backend=WebRTC-AEC3")
         }
 
         @Test
         func beginningNewCaptureReplacesPreviousLog() throws {
-            let diagnostics = MicrophoneCaptureDiagnostics(modeProvider: {
-                (preferred: .standard, active: .standard)
-            })
+            let diagnostics = MicrophoneCaptureDiagnostics()
             let previousCaptureID = diagnostics.beginCapture(context: .recording)
-            diagnostics.record(captureID: previousCaptureID, stage: .engineStarted)
+            diagnostics.record(captureID: previousCaptureID, stage: .screenCaptureKitConfigured)
 
             let currentCaptureID = diagnostics.beginCapture(context: .audioTest)
             diagnostics.record(captureID: previousCaptureID, stage: .attemptFailed)
@@ -51,12 +44,9 @@
 
         @Test
         func rendersStructuredCaptureMetadata() throws {
-            let diagnostics = MicrophoneCaptureDiagnostics(modeProvider: {
-                (preferred: .voiceIsolation, active: .standard)
-            })
+            let diagnostics = MicrophoneCaptureDiagnostics()
             let captureID = diagnostics.beginCapture(
                 context: .recording,
-                requestedVoiceProcessing: true,
                 selectedDeviceID: 42,
                 defaultDeviceID: 7,
                 activeDeviceID: 42,
@@ -70,7 +60,6 @@
 
             #expect(line.contains("captureID=\(captureID.uuidString)"))
             #expect(line.contains("context=recording"))
-            #expect(line.contains("requestedVP=true"))
             #expect(line.contains("selectedDevice=42"))
             #expect(line.contains("runningBeforeCapture=true"))
             #expect(line.contains("activeDeviceName=\"USB Mic\""))
@@ -79,13 +68,11 @@
 
         @Test
         func boundsInMemorySnapshots() {
-            let diagnostics = MicrophoneCaptureDiagnostics(modeProvider: {
-                (preferred: .standard, active: .standard)
-            })
+            let diagnostics = MicrophoneCaptureDiagnostics()
             let captureID = diagnostics.beginCapture(context: .recording)
 
             for index in 0 ..< 250 {
-                diagnostics.record(captureID: captureID, stage: .captureHealth, detail: "index=\(index)")
+                diagnostics.record(captureID: captureID, stage: .echoCancellationMetrics, detail: "index=\(index)")
             }
 
             let snapshots = diagnostics.snapshots()

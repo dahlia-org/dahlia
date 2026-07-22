@@ -59,6 +59,18 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $settings.forceEchoCancellationForExternalMicrophone) {
+                    Text(L10n.externalMicrophoneEchoCancellation)
+                    Text(L10n.externalMicrophoneEchoCancellationDescription)
+                }
+                .toggleStyle(.switch)
+            } header: {
+                Text(L10n.audioInput)
+            } footer: {
+                Text(L10n.builtInMicrophoneEchoCancellationDescription)
+            }
+
+            Section {
                 Toggle(isOn: $settings.transcriptTranslationEnabled) {
                     Text(L10n.transcriptTranslation)
                     Text(L10n.transcriptTranslationDescription)

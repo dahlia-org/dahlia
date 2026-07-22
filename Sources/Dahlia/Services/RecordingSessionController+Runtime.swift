@@ -284,6 +284,36 @@ extension RecordingSessionController {
         }
     }
 
+    func captureWarningHandler(
+        source: RecordingAudioSource,
+        runtimeID: UUID,
+        sessionId: UUID
+    ) -> AudioCaptureWarningHandler {
+        { [weak self] error in
+            Task {
+                await self?.handleCaptureWarning(
+                    source: source,
+                    runtimeID: runtimeID,
+                    sessionId: sessionId,
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func handleCaptureWarning(
+        source: RecordingAudioSource,
+        runtimeID: UUID,
+        sessionId: UUID,
+        message: String
+    ) async {
+        guard case let .capturing(snapshot) = state,
+              snapshot.sessionId == sessionId,
+              sourceRuntimeGenerations[source] == runtimeID,
+              sourceRuntimes[source]?.id == runtimeID else { return }
+        await onRuntimeFailure?(source, message, false)
+    }
+
     func beginSourceRuntimeGeneration(
         source: RecordingAudioSource,
         sessionId: UUID

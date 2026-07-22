@@ -18,6 +18,10 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0"),
     ],
     targets: [
+        .binaryTarget(
+            name: "DahliaAEC3",
+            path: "Vendor/DahliaAEC3.xcframework"
+        ),
         .target(
             name: "DahliaRuntimeSupport",
             path: "Sources/DahliaRuntimeSupport"
@@ -38,6 +42,7 @@ let package = Package(
         .executableTarget(
             name: "Dahlia",
             dependencies: [
+                "DahliaAEC3",
                 "DahliaRuntimeSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
@@ -53,6 +58,8 @@ let package = Package(
             ],
             resources: [.process("Resources")],
             linkerSettings: [
+                .linkedLibrary("c++"),
+                .linkedFramework("CoreFoundation"),
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
         ),

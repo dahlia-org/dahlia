@@ -1473,6 +1473,25 @@ enum L10n {
         bundle: bundle
     ) }
     static var microphoneUnavailable: String { String(localized: "The selected microphone is unavailable", bundle: bundle) }
+    static var echoCancellationUnavailable: String { String(localized: "Speaker echo cancellation is unavailable", bundle: bundle) }
+    static var echoCancellationBypassed: String { String(
+        localized: "Speaker echo cancellation became unavailable. Recording continues with raw microphone audio.",
+        bundle: bundle
+    ) }
+    static var audioInput: String { String(localized: "Audio Input", bundle: bundle) }
+    static var externalMicrophoneEchoCancellation: String { String(
+        localized: "Use Echo Cancellation with External Microphones",
+        bundle: bundle
+    ) }
+    static var externalMicrophoneEchoCancellationDescription: String { String(
+        localized: "Enable this when an external microphone can pick up audio from speakers.",
+        bundle: bundle
+    ) }
+    static var builtInMicrophoneEchoCancellationDescription: String { String(
+        localized: "Echo cancellation is always enabled for the built-in microphone, regardless of this setting.",
+        bundle: bundle
+    ) }
+    static var diagnosticAudioOutputUnavailable: String { String(localized: "Could not create temporary diagnostic audio", bundle: bundle) }
     static var noAudioSourceSelected: String { String(localized: "Select at least one audio source", bundle: bundle) }
 
     // MARK: - Debug
@@ -1481,6 +1500,28 @@ enum L10n {
     static var audioRecognitionTest: String { String(localized: "Microphone & Speech Recognition Test", bundle: bundle) }
     static var audioRecognitionTestDescription: String { String(
         localized: "Test microphone input and speech recognition without creating a recording.",
+        bundle: bundle
+    ) }
+    static var screenCaptureRawDescription: String { String(
+        localized: "Captures raw microphone PCM through ScreenCaptureKit without opening AVAudioEngine device I/O.",
+        bundle: bundle
+    ) }
+    static var screenCaptureAutomaticDescription: String { String(
+        localized: """
+        The test uses ScreenCaptureKit raw input and automatically enables echo cancellation for the built-in \
+        microphone or when enabled for external microphones in Transcription settings.
+        """,
+        bundle: bundle
+    ) }
+    static var screenCaptureEchoCancellationDescription: String { String(
+        localized: """
+        Captures raw microphone PCM and system audio through ScreenCaptureKit, then uses the system audio as the \
+        WebRTC AEC3 reference to remove speaker echo.
+        """,
+        bundle: bundle
+    ) }
+    static var screenCaptureRawFallbackDescription: String { String(
+        localized: "Echo cancellation became unavailable, so the test is continuing with raw microphone audio.",
         bundle: bundle
     ) }
     static var openAudioRecognitionTest: String { String(localized: "Open Test…", bundle: bundle) }
@@ -1500,24 +1541,9 @@ enum L10n {
     static var refreshApplicationLogs: String { String(localized: "Refresh Logs", bundle: bundle) }
     static var followLatestApplicationLogs: String { String(localized: "Follow Latest Logs", bundle: bundle) }
     static var copyDisplayedLogs: String { String(localized: "Copy Displayed Logs", bundle: bundle) }
-    static var systemMicrophoneMode: String { String(localized: "System Microphone Mode", bundle: bundle) }
-    static var preferredMicrophoneMode: String { String(localized: "Selected Mode", bundle: bundle) }
-    static var activeMicrophoneMode: String { String(localized: "Active Mode", bundle: bundle) }
-    static var openMicrophoneModes: String { String(localized: "Open Microphone Modes…", bundle: bundle) }
-    static var systemMicrophoneModeDescription: String { String(
-        localized: """
-        Dahlia uses the microphone mode selected in the macOS menu bar when the active audio route \
-        supports it. Voice Isolation reduces speaker audio and surrounding noise.
-        """,
-        bundle: bundle
-    ) }
-    static var microphoneModeStandard: String { String(localized: "Standard", bundle: bundle) }
-    static var microphoneModeWideSpectrum: String { String(localized: "Wide Spectrum", bundle: bundle) }
-    static var microphoneModeVoiceIsolation: String { String(localized: "Voice Isolation", bundle: bundle) }
-    static var microphoneModeUnknown: String { String(localized: "Unknown Mode", bundle: bundle) }
     static var microphoneCaptureLog: String { String(localized: "Microphone Capture Log", bundle: bundle) }
     static var microphoneCaptureLogDescription: String { String(
-        localized: "Shows the startup sequence for the latest audio test or recording. Audio data is not stored.",
+        localized: "Shows the startup sequence for the latest audio test or recording. Diagnostic tests may store temporary comparison audio.",
         bundle: bundle
     ) }
     static var microphoneCaptureRecording: String { String(localized: "App Recording", bundle: bundle) }
@@ -1535,11 +1561,45 @@ enum L10n {
     ) }
     static var audioRecognitionTestStatus: String { String(localized: "Test Status", bundle: bundle) }
     static var inputLevel: String { String(localized: "Input Level", bundle: bundle) }
+    static var rawInputLevel: String { String(localized: "Raw Input Level", bundle: bundle) }
+    static var processedInputLevel: String { String(localized: "Processed Input Level", bundle: bundle) }
+    static var referenceInputLevel: String { String(localized: "System Audio Reference Level", bundle: bundle) }
     static var audioBuffers: String { String(localized: "Audio Buffers", bundle: bundle) }
+    static var referenceAudioBuffers: String { String(localized: "Reference Audio Buffers", bundle: bundle) }
     static func inputChannel(_ channel: Int) -> String { String(localized: "Input Channel \(channel)", bundle: bundle) }
     static var hardwareFormat: String { String(localized: "Hardware Format", bundle: bundle) }
     static var inputFormat: String { String(localized: "Input Format", bundle: bundle) }
     static var recognitionFormat: String { String(localized: "Recognition Format", bundle: bundle) }
+    static var processingLatency: String { String(localized: "Processing Latency", bundle: bundle) }
+    static var echoCancellationDelay: String { String(localized: "Estimated Echo Delay", bundle: bundle) }
+    static var echoCancellationERLE: String { String(localized: "Echo Reduction (ERLE)", bundle: bundle) }
+    static var residualEchoLikelihood: String { String(localized: "Residual Echo Likelihood", bundle: bundle) }
+    static var streamDelayHint: String { String(localized: "AEC Stream Delay Hint", bundle: bundle) }
+    static var presentationTimeDelta: String { String(localized: "Capture − Reference PTS", bundle: bundle) }
+    static var referenceCallbackLatency: String { String(localized: "Reference Callback Latency", bundle: bundle) }
+    static var captureCallbackLatency: String { String(localized: "Capture Callback Latency", bundle: bundle) }
+    static var renderFrameLead: String { String(localized: "Render Frame Lead", bundle: bundle) }
+    static var referenceAudioFrames: String { String(localized: "Reference Audio Frames", bundle: bundle) }
+    static var captureAudioFrames: String { String(localized: "Capture Audio Frames", bundle: bundle) }
+    static var captureWithoutReferenceFrames: String { String(
+        localized: "Capture Frames Without Aligned Reference",
+        bundle: bundle
+    ) }
+    static var notAvailable: String { String(localized: "Not available", bundle: bundle) }
+    static var diagnosticAudioOutput: String { String(localized: "Diagnostic Audio Output", bundle: bundle) }
+    static var temporaryAudioFolder: String { String(localized: "Temporary Audio Folder", bundle: bundle) }
+    static var showTemporaryAudioInFinder: String { String(localized: "Show Temporary Audio in Finder", bundle: bundle) }
+    static var rawDiagnosticAudioOutputDescription: String { String(
+        localized: "Raw microphone audio is stored as a temporary CAF file and is not added to recordings.",
+        bundle: bundle
+    ) }
+    static var echoCancellationDiagnosticAudioOutputDescription: String { String(
+        localized: """
+        Raw, system-audio reference, and processed CAF files are stored in a temporary folder for comparison and are \
+        not added to recordings.
+        """,
+        bundle: bundle
+    ) }
     static var recognizedText: String { String(localized: "Recognized Text", bundle: bundle) }
     static var speakIntoSelectedMicrophone: String { String(localized: "Speak into the selected microphone.", bundle: bundle) }
     static var preparingAudioRecognitionTest: String { String(localized: "Preparing speech recognition…", bundle: bundle) }

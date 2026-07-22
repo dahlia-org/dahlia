@@ -7,7 +7,7 @@
 録音経路は次の所有関係を保つ。
 
 ```text
-AudioCaptureManager (マイク / AVAudioEngine)
+MicrophoneAudioCaptureSession (マイク / ScreenCaptureKit raw + 必要時 AEC3)
 SystemAudioCaptureManager (システム音声 / ScreenCaptureKit)
     ↓ onAudioBuffer
 AudioSourcePipeline → CapturedAudioChunk (セッション相対時刻付き)

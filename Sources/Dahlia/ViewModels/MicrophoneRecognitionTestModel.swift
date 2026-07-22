@@ -1,4 +1,4 @@
-import AVFoundation
+import AppKit
 import CoreAudio
 import Foundation
 import Observation
@@ -8,12 +8,16 @@ import Observation
 final class MicrophoneRecognitionTestModel {
     private(set) var devices: [MicrophoneDevice] = []
     var selectedDeviceID: AudioDeviceID?
-    private(set) var preferredMicrophoneMode: AVCaptureDevice.MicrophoneMode
-    private(set) var activeMicrophoneMode: AVCaptureDevice.MicrophoneMode
     private(set) var isRunning = false
     private(set) var isPreparing = false
     private(set) var inputLevel = 0.0
     private(set) var inputChannelLevels: [Double] = []
+    private(set) var rawInputLevel = 0.0
+    private(set) var processedInputLevel = 0.0
+    private(set) var referenceInputLevel = 0.0
+    private(set) var referenceBufferCount = 0
+    private(set) var echoCancellationStatistics: WebRTCAEC3Statistics?
+    private(set) var didBypassEchoCancellation = false
     private(set) var bufferCount = 0
     private(set) var recognizedText = ""
     private(set) var previewText = ""
@@ -22,33 +26,19 @@ final class MicrophoneRecognitionTestModel {
     private(set) var captureDiagnostics: [MicrophoneCaptureDiagnosticSnapshot] = []
 
     private var session: MicrophoneRecognitionTestSession?
-    private let microphoneModeProvider: () -> (
-        preferred: AVCaptureDevice.MicrophoneMode,
-        active: AVCaptureDevice.MicrophoneMode
-    )
-    private let microphoneModeRefreshDelay: () async throws -> Void
+    private let diagnosticsRefreshDelay: () async throws -> Void
     private let captureDiagnosticsProvider: () -> [MicrophoneCaptureDiagnosticSnapshot]
 
     init(
-        microphoneModeProvider: @escaping () -> (
-            preferred: AVCaptureDevice.MicrophoneMode,
-            active: AVCaptureDevice.MicrophoneMode
-        ) = {
-            (AVCaptureDevice.preferredMicrophoneMode, AVCaptureDevice.activeMicrophoneMode)
-        },
-        microphoneModeRefreshDelay: @escaping () async throws -> Void = {
+        diagnosticsRefreshDelay: @escaping () async throws -> Void = {
             try await Task.sleep(for: .milliseconds(250))
         },
         captureDiagnosticsProvider: @escaping () -> [MicrophoneCaptureDiagnosticSnapshot] = {
             MicrophoneCaptureDiagnostics.shared.snapshots()
         }
     ) {
-        self.microphoneModeProvider = microphoneModeProvider
-        self.microphoneModeRefreshDelay = microphoneModeRefreshDelay
+        self.diagnosticsRefreshDelay = diagnosticsRefreshDelay
         self.captureDiagnosticsProvider = captureDiagnosticsProvider
-        let microphoneModes = microphoneModeProvider()
-        preferredMicrophoneMode = microphoneModes.preferred
-        activeMicrophoneMode = microphoneModes.active
         captureDiagnostics = captureDiagnosticsProvider()
     }
 
@@ -72,40 +62,66 @@ final class MicrophoneRecognitionTestModel {
             .joined(separator: "\n")
     }
 
-    var preferredMicrophoneModeText: String {
-        Self.microphoneModeDisplayName(preferredMicrophoneMode)
+    var capturePathDescription: String {
+        if didBypassEchoCancellation {
+            return L10n.screenCaptureRawFallbackDescription
+        }
+        return switch startInfo?.capturePath {
+        case .screenCaptureRaw: L10n.screenCaptureRawDescription
+        case .screenCaptureEchoCancellation: L10n.screenCaptureEchoCancellationDescription
+        case nil: L10n.screenCaptureAutomaticDescription
+        }
     }
 
-    var activeMicrophoneModeText: String {
-        Self.microphoneModeDisplayName(activeMicrophoneMode)
+    var showsRawInputLevel: Bool {
+        true
+    }
+
+    var showsProcessedInputLevel: Bool {
+        startInfo?.capturePath == .screenCaptureEchoCancellation
+    }
+
+    var showsReferenceInputLevel: Bool {
+        startInfo?.capturePath == .screenCaptureEchoCancellation && !didBypassEchoCancellation
+    }
+
+    var processingLatencyText: String? {
+        guard !didBypassEchoCancellation,
+              let latency = startInfo?.processingLatency else { return nil }
+        return Duration.seconds(latency).formatted(
+            .units(allowed: [.milliseconds], width: .abbreviated, maximumUnitCount: 1)
+        )
+    }
+
+    var diagnosticOutputDirectory: URL? {
+        startInfo?.diagnosticOutputDirectory
+    }
+
+    var diagnosticAudioOutputDescription: String {
+        startInfo?.capturePath == .screenCaptureRaw
+            ? L10n.rawDiagnosticAudioOutputDescription
+            : L10n.echoCancellationDiagnosticAudioOutputDescription
     }
 
     func refreshDevices() {
         devices = AudioCaptureManager.availableInputDevices()
-        refreshMicrophoneModes()
         refreshCaptureDiagnostics()
     }
 
-    func refreshMicrophoneModes() {
-        let microphoneModes = microphoneModeProvider()
-        preferredMicrophoneMode = microphoneModes.preferred
-        activeMicrophoneMode = microphoneModes.active
-    }
-
-    func monitorMicrophoneModes() async {
+    func monitorDiagnostics() async {
         while !Task.isCancelled {
-            refreshMicrophoneModes()
             refreshCaptureDiagnostics()
             do {
-                try await microphoneModeRefreshDelay()
+                try await diagnosticsRefreshDelay()
             } catch {
                 return
             }
         }
     }
 
-    func showMicrophoneModes() {
-        AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    func showDiagnosticOutputDirectory() {
+        guard let diagnosticOutputDirectory else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([diagnosticOutputDirectory])
     }
 
     func captureDiagnosticTitle(_ snapshot: MicrophoneCaptureDiagnosticSnapshot) -> String {
@@ -117,25 +133,7 @@ final class MicrophoneRecognitionTestModel {
     }
 
     func captureDiagnosticDetails(_ snapshot: MicrophoneCaptureDiagnosticSnapshot) -> String {
-        var components = [
-            "\(L10n.preferredMicrophoneMode)=\(Self.microphoneModeDisplayName(snapshot.preferredMicrophoneMode))",
-            "\(L10n.activeMicrophoneMode)=\(Self.microphoneModeDisplayName(snapshot.activeMicrophoneMode))",
-        ]
-        if let enabled = snapshot.voiceProcessingEnabled {
-            components.append("VP=\(enabled)")
-        }
-        if let bypassed = snapshot.voiceProcessingBypassed {
-            components.append("bypass=\(bypassed)")
-        }
-        if let muted = snapshot.voiceProcessingInputMuted {
-            components.append("mute=\(muted)")
-        }
-        if let agcEnabled = snapshot.voiceProcessingAGCEnabled {
-            components.append("AGC=\(agcEnabled)")
-        }
-        if let requestedVoiceProcessing = snapshot.requestedVoiceProcessing {
-            components.append("requestedVP=\(requestedVoiceProcessing)")
-        }
+        var components: [String] = []
         if let selectedDeviceID = snapshot.selectedDeviceID {
             components.append("selectedDevice=\(selectedDeviceID)")
         }
@@ -151,17 +149,11 @@ final class MicrophoneRecognitionTestModel {
         if let deviceRunningBeforeCapture = snapshot.deviceRunningBeforeCapture {
             components.append("runningBeforeCapture=\(deviceRunningBeforeCapture)")
         }
-        if let engineRunning = snapshot.engineRunning {
-            components.append("engineRunning=\(engineRunning)")
-        }
         if let inputHardwareFormat = snapshot.inputHardwareFormat {
             components.append("hardware=\(inputHardwareFormat)")
         }
         if let inputClientFormat = snapshot.inputClientFormat {
             components.append("client=\(inputClientFormat)")
-        }
-        if let outputHardwareFormat = snapshot.outputHardwareFormat {
-            components.append("output=\(outputHardwareFormat)")
         }
         if let targetFormat = snapshot.targetFormat {
             components.append("target=\(targetFormat)")
@@ -188,13 +180,18 @@ final class MicrophoneRecognitionTestModel {
         self.session = nil
         resetRunningState()
         await session.stop()
-        refreshMicrophoneModes()
     }
 
     private func start() async {
         isPreparing = true
         inputLevel = 0
         inputChannelLevels = []
+        rawInputLevel = 0
+        processedInputLevel = 0
+        referenceInputLevel = 0
+        referenceBufferCount = 0
+        echoCancellationStatistics = nil
+        didBypassEchoCancellation = false
         bufferCount = 0
         recognizedText = ""
         previewText = ""
@@ -217,7 +214,6 @@ final class MicrophoneRecognitionTestModel {
             self.startInfo = startInfo
             isRunning = true
             isPreparing = false
-            refreshMicrophoneModes()
             refreshCaptureDiagnostics()
         } catch {
             await session.stop()
@@ -233,11 +229,23 @@ final class MicrophoneRecognitionTestModel {
         case let .inputLevel(level, bufferCount):
             inputLevel = level
             self.bufferCount = bufferCount
-            if bufferCount == 1 {
-                refreshMicrophoneModes()
-            }
         case let .inputChannelLevels(levels):
             inputChannelLevels = levels
+        case let .signalLevels(raw, processed):
+            if let raw {
+                rawInputLevel = raw
+            }
+            if let processed {
+                processedInputLevel = processed
+            }
+        case let .referenceSignal(level, bufferCount):
+            referenceInputLevel = level
+            referenceBufferCount = bufferCount
+        case let .echoCancellationStatistics(statistics):
+            echoCancellationStatistics = statistics
+        case .echoCancellationBypassed:
+            didBypassEchoCancellation = true
+            echoCancellationStatistics = nil
         case let .transcript(text, isFinal):
             if isFinal {
                 recognizedText = [recognizedText, text]
@@ -250,7 +258,9 @@ final class MicrophoneRecognitionTestModel {
         case let .failure(message):
             errorMessage = message
         case .captureStopped:
-            errorMessage = L10n.microphoneCaptureStopped
+            if errorMessage == nil {
+                errorMessage = L10n.microphoneCaptureStopped
+            }
             Task {
                 await stop()
             }
@@ -262,6 +272,9 @@ final class MicrophoneRecognitionTestModel {
         isRunning = false
         inputLevel = 0
         inputChannelLevels = []
+        rawInputLevel = 0
+        processedInputLevel = 0
+        referenceInputLevel = 0
     }
 
     private func refreshCaptureDiagnostics() {
@@ -275,12 +288,4 @@ final class MicrophoneRecognitionTestModel {
         }
     }
 
-    static func microphoneModeDisplayName(_ mode: AVCaptureDevice.MicrophoneMode) -> String {
-        switch mode {
-        case .standard: L10n.microphoneModeStandard
-        case .wideSpectrum: L10n.microphoneModeWideSpectrum
-        case .voiceIsolation: L10n.microphoneModeVoiceIsolation
-        @unknown default: L10n.microphoneModeUnknown
-        }
-    }
 }
