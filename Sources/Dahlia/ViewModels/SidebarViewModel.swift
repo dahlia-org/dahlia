@@ -541,23 +541,29 @@ final class SidebarViewModel {
         }
     }
 
-    func moveMeeting(id: UUID, toProjectId: UUID?) {
-        guard let projectWorkspaceService else { return }
+    @discardableResult
+    func moveMeeting(id: UUID, toProjectId: UUID?) -> Bool {
+        guard let projectWorkspaceService else { return false }
         do {
             try projectWorkspaceService.moveMeeting(id: id, toProjectId: toProjectId)
             lastError = nil
+            return true
         } catch {
             lastError = error.localizedDescription
+            return false
         }
     }
 
-    func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) {
-        guard let projectWorkspaceService, !ids.isEmpty else { return }
+    @discardableResult
+    func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) -> Bool {
+        guard let projectWorkspaceService, !ids.isEmpty else { return false }
         do {
             try projectWorkspaceService.moveMeetings(ids: ids, toProjectId: toProjectId)
             lastError = nil
+            return true
         } catch {
             lastError = error.localizedDescription
+            return false
         }
     }
 }

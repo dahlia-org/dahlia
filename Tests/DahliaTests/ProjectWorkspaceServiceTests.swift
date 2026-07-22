@@ -227,7 +227,7 @@ import GRDB
         }
 
         @Test
-        func clearsMissingSummaryExportAndStillMovesMeeting() throws {
+        func preservesMissingSummaryExportAndStillMovesMeeting() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -242,7 +242,7 @@ import GRDB
                 try MeetingRecord.fetchOne(db, key: meeting.id)
             }
             #expect(movedMeeting?.projectId == destination.id)
-            #expect(try context.repository.fetchSummaryExport(forMeetingId: meeting.id, type: .vault) == nil)
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Missing.md")
         }
 
         @Test
@@ -263,7 +263,7 @@ import GRDB
 
             try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
 
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == nil)
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Source/Summary.md")
             #expect(FileManager.default.fileExists(atPath: outsideURL.appending(path: "Summary.md").path))
             #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
         }
@@ -338,16 +338,50 @@ import GRDB
                 context: context,
                 writeFile: true
             )
-            try insertSummary(meetingId: remainingMeeting.id, path: "Source/Summary.md", context: context)
+            try insertSummary(meetingId: remainingMeeting.id, path: "source/summary.md", context: context)
 
             #expect(throws: ProjectWorkspaceError.summaryFileShared("Summary.md")) {
                 try context.service.moveMeeting(id: movingMeeting.id, toProjectId: destination.id)
             }
 
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: movingMeeting.id) == "Source/Summary.md")
-            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: remainingMeeting.id) == "Source/Summary.md")
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: remainingMeeting.id) == "source/summary.md")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
             #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+        }
+
+        @Test
+        func movesSharedSummaryOnceWhenAllReferencingMeetingsMove() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let firstMeeting = try insertMeeting(projectId: source.id, context: context)
+            let secondMeeting = try insertMeeting(projectId: source.id, context: context)
+            try insertSummary(
+                meetingId: firstMeeting.id,
+                path: "Source/Summary.md",
+                context: context,
+                writeFile: true
+            )
+            try insertSummary(meetingId: secondMeeting.id, path: "Source/Summary.md", context: context)
+
+            try await context.service.deleteProjectHierarchy(
+                id: source.id,
+                meetingDisposition: .move(to: destination.id)
+            )
+
+            #expect(
+                try context.repository.fetchSummaryVaultRelativePath(forMeetingId: firstMeeting.id)
+                    == "Destination/Summary.md"
+            )
+            #expect(
+                try context.repository.fetchSummaryVaultRelativePath(forMeetingId: secondMeeting.id)
+                    == "Destination/Summary.md"
+            )
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
         }
 
         @Test

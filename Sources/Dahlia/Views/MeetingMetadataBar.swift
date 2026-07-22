@@ -430,11 +430,11 @@ struct MeetingProjectPicker: View {
     private func clearProject() {
         let existingMeetingId = viewModel.currentMeetingId
         let removesPersistedProject = viewModel.currentProjectId != nil
-        viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
         if removesPersistedProject, let existingMeetingId {
-            sidebarViewModel.moveMeeting(id: existingMeetingId, toProjectId: nil)
+            guard sidebarViewModel.moveMeeting(id: existingMeetingId, toProjectId: nil) else { return }
             sidebarViewModel.selectMeeting(existingMeetingId)
         }
+        viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
         projectInput = ""
         showProjectPopover = false
     }
@@ -447,8 +447,9 @@ struct MeetingProjectPicker: View {
             projectName: projectName
         ) else { return }
 
-        if projectId != viewModel.currentProjectId {
-            sidebarViewModel.moveMeeting(id: meetingId, toProjectId: projectId)
+        if projectId != viewModel.currentProjectId,
+           !sidebarViewModel.moveMeeting(id: meetingId, toProjectId: projectId) {
+            return
         }
         viewModel.setExplicitProjectContext(
             projectURL: projectURL,

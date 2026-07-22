@@ -330,26 +330,42 @@ final class MeetingRepository {
         }
     }
 
-    func sharedVaultSummaryPaths(relativePaths: Set<String>, vaultId: UUID) throws -> Set<String> {
-        let pathsByURL = Dictionary(uniqueKeysWithValues: relativePaths.compactMap { relativePath in
-            SummaryExportRecord.vaultURL(relativePath: relativePath).map { ($0, relativePath) }
-        })
+    func externallySharedVaultSummaryPaths(
+        relativePaths: Set<String>,
+        movingMeetingIds: Set<UUID>,
+        vaultId: UUID
+    ) throws -> Set<String> {
+        let pathsByURL = Dictionary(grouping: relativePaths.compactMap { relativePath in
+            SummaryExportRecord.vaultURL(relativePath: relativePath).map { ($0.lowercased(), relativePath) }
+        }, by: \.0)
         guard !pathsByURL.isEmpty else { return [] }
         return try dbQueue.read { db in
-            let sharedURLs = try String.fetchSet(
+            let normalizedURLs = Array(pathsByURL.keys)
+            let placeholders = normalizedURLs.map { _ in "?" }.joined(separator: ",")
+            var arguments: StatementArguments = [SummaryExportType.vault, vaultId]
+            arguments += StatementArguments(normalizedURLs)
+            let records = try SummaryExportRecord.fetchAll(
                 db,
                 sql: """
-                SELECT summary_exports.url
+                SELECT summary_exports.*
                 FROM summary_exports
                 JOIN meetings ON meetings.id = summary_exports.meetingId
                 WHERE summary_exports.type = ?
                   AND meetings.vaultId = ?
-                GROUP BY summary_exports.url
-                HAVING COUNT(*) > 1
+                  AND LOWER(summary_exports.url) IN (\(placeholders))
                 """,
-                arguments: [SummaryExportType.vault, vaultId]
+                arguments: arguments
             )
-            return Set(sharedURLs.compactMap { pathsByURL[$0] })
+            let externallySharedURLs = Set(records.compactMap { record -> String? in
+                let key = record.url.lowercased()
+                guard pathsByURL[key] != nil,
+                      !movingMeetingIds.contains(record.meetingId)
+                else { return nil }
+                return key
+            })
+            return Set(externallySharedURLs.flatMap { key in
+                pathsByURL[key, default: []].map(\.1)
+            })
         }
     }
 

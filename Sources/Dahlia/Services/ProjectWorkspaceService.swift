@@ -240,19 +240,20 @@ extension ProjectWorkspaceService {
         let candidates = try repository.fetchMeetingMoveCandidates(ids: ids, vaultId: vault.id)
             .filter { $0.projectId != toProjectId }
         let meetingIds = Set(candidates.map(\.meetingId))
-        let sharedSummaryPaths = try repository.sharedVaultSummaryPaths(
+        let sharedSummaryPaths = try repository.externallySharedVaultSummaryPaths(
             relativePaths: Set(candidates.compactMap(\.vaultRelativePath)),
+            movingMeetingIds: meetingIds,
             vaultId: vault.id
         )
         var relocations: [SummaryRelocation] = []
         var updates: [MeetingRepository.MeetingVaultExportUpdate] = []
         var destinationPaths: Set<String> = []
+        var destinationBySourcePath: [String: URL] = [:]
 
         for candidate in candidates where candidate.hasVaultExport {
             guard let sourceURL = try summaryFileResolver(candidate.vaultRelativePath, vault.url),
                   isInsideVaultAfterResolvingSymlinks(sourceURL)
             else {
-                updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
             }
             if let relativePath = candidate.vaultRelativePath, sharedSummaryPaths.contains(relativePath) {
@@ -274,10 +275,19 @@ extension ProjectWorkspaceService {
             updates.append(.init(meetingId: candidate.meetingId, relativePath: relativePath))
             guard standardizedSourceURL != destinationURL else { continue }
 
+            let sourceKey = standardizedSourceURL.path.lowercased()
+            if let plannedDestination = destinationBySourcePath[sourceKey] {
+                guard plannedDestination == destinationURL else {
+                    throw ProjectWorkspaceError.summaryFileAlreadyExists(destinationURL.lastPathComponent)
+                }
+                continue
+            }
+
             let destinationKey = destinationURL.path.lowercased()
             if !destinationPaths.insert(destinationKey).inserted || fileManager.fileExists(atPath: destinationURL.path) {
                 throw ProjectWorkspaceError.summaryFileAlreadyExists(destinationURL.lastPathComponent)
             }
+            destinationBySourcePath[sourceKey] = destinationURL
             relocations.append(.init(sourceURL: standardizedSourceURL, destinationURL: destinationURL))
         }
 
