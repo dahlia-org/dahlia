@@ -1,3 +1,5 @@
-.env
-.env.*
-**/.claude/settings.local.json
+# Local environment used by the build and release scripts.
+/.env.local
+
+# Personal Claude Code permissions and settings.
+/.claude/settings.local.json
