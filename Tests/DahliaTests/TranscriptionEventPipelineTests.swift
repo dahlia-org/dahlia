@@ -257,14 +257,19 @@
         @Test
         func resetRunsAfterEarlierPersistenceEvents() async throws {
             let operations = StringProbe()
+            let batchSleep = PersistenceBatchSleepProbe()
             let sessionID = UUID.v7()
             let pipeline = TranscriptionEventPipeline(
                 uiSink: { _ in },
                 persistenceSink: { _ in
+                    try Task.checkCancellation()
                     await operations.append("persist")
                 },
                 persistenceResetSink: {
                     await operations.append("reset")
+                },
+                persistenceBatchSleep: {
+                    try await batchSleep.sleep()
                 }
             )
 
@@ -272,10 +277,61 @@
             await pipeline.enqueue(.finalized(
                 makeSegment(sessionId: sessionID, text: "final", isConfirmed: true)
             ))
+            await batchSleep.waitUntilStarted()
             try await pipeline.resetPersistence()
             try await pipeline.finish()
 
             #expect(await operations.snapshot() == ["persist", "reset"])
+        }
+
+        @Test
+        func finishDoesNotCancelPendingPersistenceBatch() async throws {
+            let persistedEvents = TranscriptionEventProbe()
+            let batchSleep = PersistenceBatchSleepProbe()
+            let event = TranscriptionEvent.finalized(
+                makeSegment(sessionId: .v7(), text: "final", isConfirmed: true)
+            )
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { _ in },
+                persistenceSink: { events in
+                    try Task.checkCancellation()
+                    await persistedEvents.append(contentsOf: events)
+                },
+                persistenceBatchSleep: {
+                    try await batchSleep.sleep()
+                }
+            )
+
+            await pipeline.start()
+            await pipeline.enqueue(event)
+            await batchSleep.waitUntilStarted()
+            try await pipeline.finish()
+
+            #expect(await persistedEvents.snapshot() == [event])
+        }
+
+        @Test
+        func batchSleepFailureDoesNotDisablePersistence() async throws {
+            let persistedEvents = TranscriptionEventProbe()
+            let event = TranscriptionEvent.finalized(
+                makeSegment(sessionId: .v7(), text: "final", isConfirmed: true)
+            )
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { _ in },
+                persistenceSink: { events in
+                    await persistedEvents.append(contentsOf: events)
+                },
+                persistenceBatchSleep: {
+                    throw PersistenceBatchSleepError.failed
+                }
+            )
+
+            await pipeline.start()
+            await pipeline.enqueue(event)
+            await persistedEvents.waitForCount(1)
+            try await pipeline.finish()
+
+            #expect(await persistedEvents.snapshot() == [event])
         }
 
         @Test
@@ -466,6 +522,30 @@
             waiters.removeAll()
             continuations.forEach { $0.resume() }
         }
+    }
+
+    private actor PersistenceBatchSleepProbe {
+        private var isStarted = false
+        private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+        func sleep() async throws {
+            isStarted = true
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            try await Task.sleep(for: .seconds(60))
+        }
+
+        func waitUntilStarted() async {
+            guard !isStarted else { return }
+            await withCheckedContinuation { continuation in
+                startWaiters.append(continuation)
+            }
+        }
+    }
+
+    private enum PersistenceBatchSleepError: Error {
+        case failed
     }
 
     private actor TranscriptionEventProbe {

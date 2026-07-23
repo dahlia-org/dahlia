@@ -12,6 +12,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     typealias PersistenceSink = @Sendable ([TranscriptionEvent]) async throws -> Void
     typealias PersistenceFlushSink = @Sendable () async throws -> Void
     typealias PersistenceResetSink = @Sendable () async throws -> Void
+    typealias PersistenceBatchSleep = @Sendable () async throws -> Void
 
     static let maximumPendingUIEventCount = 300
     static let maximumUIFinishWait: Duration = .seconds(2)
@@ -47,6 +48,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
         case event(TranscriptionEvent)
         case flush(CheckedContinuation<Result<Void, Error>, Never>)
         case reset(CheckedContinuation<Result<Void, Error>, Never>)
+        case scheduledFlush(UInt64)
     }
 
     private let uiSink: UISink
@@ -55,6 +57,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     private let persistenceSink: PersistenceSink
     private let persistenceFlushSink: PersistenceFlushSink
     private let persistenceResetSink: PersistenceResetSink
+    private let persistenceBatchSleep: PersistenceBatchSleep
     private let uiSignals: AsyncStream<Void>
     private let uiSignalContinuation: AsyncStream<Void>.Continuation
     private let persistenceItems: AsyncStream<PersistenceItem>
@@ -84,6 +87,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
 
     private var pendingPersistenceEvents: [TranscriptionEvent] = []
     private var persistenceBatchTask: Task<Void, Never>?
+    private var persistenceBatchGeneration: UInt64 = 0
     private var firstPersistenceError: Error?
 
     init(
@@ -92,7 +96,10 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
         uiReloadSink: @escaping UIReloadSink = {},
         persistenceSink: @escaping PersistenceSink,
         persistenceFlushSink: @escaping PersistenceFlushSink = {},
-        persistenceResetSink: @escaping PersistenceResetSink = {}
+        persistenceResetSink: @escaping PersistenceResetSink = {},
+        persistenceBatchSleep: @escaping PersistenceBatchSleep = {
+            try await Task.sleep(for: .milliseconds(50))
+        }
     ) {
         let uiPair = AsyncStream.makeStream(
             of: Void.self,
@@ -108,6 +115,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
         self.persistenceSink = persistenceSink
         self.persistenceFlushSink = persistenceFlushSink
         self.persistenceResetSink = persistenceResetSink
+        self.persistenceBatchSleep = persistenceBatchSleep
         self.uiSignals = uiPair.stream
         self.uiSignalContinuation = uiPair.continuation
         self.persistenceItems = persistencePair.stream
@@ -461,6 +469,10 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
                 recordPersistenceError(error)
                 continuation.resume(returning: .failure(error))
             }
+        case let .scheduledFlush(generation):
+            guard generation == persistenceBatchGeneration else { return }
+            persistenceBatchTask = nil
+            await flushPersistenceBatch()
         }
     }
 
@@ -617,9 +629,17 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
 
     private func schedulePersistenceBatchIfNeeded() {
         guard persistenceBatchTask == nil else { return }
-        persistenceBatchTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(50))
-            await self?.flushPersistenceBatch()
+        persistenceBatchGeneration &+= 1
+        let generation = persistenceBatchGeneration
+        let persistenceBatchSleep = persistenceBatchSleep
+        let persistenceContinuation = persistenceContinuation
+        persistenceBatchTask = Task {
+            do {
+                try await persistenceBatchSleep()
+            } catch {
+                guard !Task.isCancelled else { return }
+            }
+            persistenceContinuation.yield(.scheduledFlush(generation))
         }
     }
 
@@ -644,9 +664,10 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     }
 
     private func finishPersistenceBatches() async {
-        while let task = persistenceBatchTask {
+        if let task = persistenceBatchTask {
+            persistenceBatchGeneration &+= 1
+            persistenceBatchTask = nil
             task.cancel()
-            await task.value
         }
         if !pendingPersistenceEvents.isEmpty {
             await flushPersistenceBatch()
