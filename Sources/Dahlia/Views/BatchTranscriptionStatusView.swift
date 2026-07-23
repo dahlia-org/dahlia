@@ -24,10 +24,31 @@ struct BatchTranscriptionStatusView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(L10n.batchTranscriptionQueued)
-            case .running:
-                ProgressView()
-                    .controlSize(.small)
-                Text(L10n.batchTranscriptionRunning)
+            case let .running(_, progress):
+                if let progress, progress.totalFileCount > 0 {
+                    ProgressView(
+                        value: Double(progress.completedFileCount),
+                        total: Double(progress.totalFileCount)
+                    ) {
+                        Text(L10n.batchTranscriptionRunning)
+                    } currentValueLabel: {
+                        Text(L10n.batchTranscriptionFileProgress(
+                            completed: progress.completedFileCount,
+                            total: progress.totalFileCount
+                        ))
+                    }
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(L10n.batchTranscriptionRunning)
+                    .accessibilityValue(L10n.batchTranscriptionFileProgress(
+                        completed: progress.completedFileCount,
+                        total: progress.totalFileCount
+                    ))
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L10n.batchTranscriptionRunning)
+                }
             case .completed:
                 Label(L10n.batchTranscriptionCompleted, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)

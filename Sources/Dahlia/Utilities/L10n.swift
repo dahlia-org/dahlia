@@ -524,6 +524,10 @@ enum L10n {
     static var reviewBatchTranscription: String { String(localized: "Review and Start", bundle: bundle) }
     static var batchTranscriptionQueued: String { String(localized: "Waiting to transcribe the recording…", bundle: bundle) }
     static var batchTranscriptionRunning: String { String(localized: "Creating a high-accuracy transcript…", bundle: bundle) }
+    static func batchTranscriptionFileProgress(completed: Int, total: Int) -> String {
+        String(localized: "Files completed: \(completed) of \(total)", bundle: bundle)
+    }
+
     static var batchTranscriptionCompleted: String { String(localized: "High-accuracy transcription completed.", bundle: bundle) }
     static func batchTranscriptionFailed(_ reason: String) -> String {
         String(localized: "Batch transcription failed: \(reason)", bundle: bundle)

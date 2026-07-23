@@ -663,6 +663,7 @@
 "Review and Start" = "Review and Start";
 "Waiting to transcribe the recording…" = "Waiting to transcribe the recording…";
 "Creating a high-accuracy transcript…" = "Creating a high-accuracy transcript…";
+"Files completed: %lld of %lld" = "Files completed: %1$lld of %2$lld";
 "High-accuracy transcription completed." = "High-accuracy transcription completed.";
 "Batch transcription failed: %@" = "Batch transcription failed: %@";
 "Retry Batch Transcription" = "Retry Batch Transcription";

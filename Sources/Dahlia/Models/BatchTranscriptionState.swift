@@ -5,7 +5,7 @@ enum BatchTranscriptionState: Equatable {
     case recording(sessionId: UUID)
     case awaitingConfirmation(sessionId: UUID)
     case queued(sessionId: UUID)
-    case running(sessionId: UUID)
+    case running(sessionId: UUID, progress: BatchTranscriptionProgress? = nil)
     case completed(sessionId: UUID)
     case failed(sessionId: UUID, message: String)
     case retranscriptionFailed(sessionId: UUID, message: String)
@@ -15,7 +15,7 @@ enum BatchTranscriptionState: Equatable {
         case let .recording(sessionId),
              let .awaitingConfirmation(sessionId),
              let .queued(sessionId),
-             let .running(sessionId),
+             let .running(sessionId, _),
              let .completed(sessionId),
              let .failed(sessionId, _),
              let .retranscriptionFailed(sessionId, _):
@@ -30,6 +30,20 @@ enum BatchTranscriptionState: Equatable {
         case .completed:
             false
         }
+    }
+
+    func preferringMoreAdvancedRunningProgress(over restoredState: Self) -> Self {
+        guard sessionId == restoredState.sessionId,
+              case let .running(_, currentProgress?) = self,
+              case let .running(_, restoredProgress) = restoredState else {
+            return restoredState
+        }
+        guard let restoredProgress else { return self }
+        guard currentProgress.totalFileCount == restoredProgress.totalFileCount,
+              currentProgress.completedFileCount >= restoredProgress.completedFileCount else {
+            return restoredState
+        }
+        return self
     }
 
     static func derive(from session: RecordingSessionRecord, isRunning: Bool = false) -> Self? {

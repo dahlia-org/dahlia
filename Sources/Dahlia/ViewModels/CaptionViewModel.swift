@@ -1564,10 +1564,10 @@ final class CaptionViewModel: ObservableObject {
         guard let coordinator = batchTranscriptionCoordinator,
               let visibleState = batchTranscriptionState else { return }
         Task {
-            if await coordinator.isRunning(sessionId: visibleState.sessionId),
-               batchTranscriptionState?.sessionId == visibleState.sessionId {
-                batchTranscriptionState = .running(sessionId: visibleState.sessionId)
-            }
+            guard let restoredState = await coordinator.runningState(sessionId: visibleState.sessionId),
+                  batchTranscriptionState?.sessionId == visibleState.sessionId else { return }
+            batchTranscriptionState = batchTranscriptionState?
+                .preferringMoreAdvancedRunningProgress(over: restoredState) ?? restoredState
         }
     }
 

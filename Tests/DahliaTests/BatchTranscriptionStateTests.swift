@@ -26,6 +26,11 @@ import Foundation
             #expect(BatchTranscriptionState.derive(from: session) == .awaitingConfirmation(sessionId: session.id))
             #expect(BatchTranscriptionState.derive(from: session, isRunning: true) == .running(sessionId: session.id))
 
+            let progress = BatchTranscriptionProgress(completedFileCount: 2, totalFileCount: 5)
+            let running = BatchTranscriptionState.running(sessionId: session.id, progress: progress)
+            #expect(running.sessionId == session.id)
+            #expect(running == .running(sessionId: session.id, progress: progress))
+
             session.batchLastAttemptAt = now.addingTimeInterval(11)
             #expect(BatchTranscriptionState.derive(from: session) == .queued(sessionId: session.id))
 
@@ -65,6 +70,25 @@ import Foundation
             )
 
             #expect(BatchTranscriptionState.derive(from: session) == nil)
+        }
+
+        @Test
+        func restoredRunningStateDoesNotRegressNewerVisibleProgress() {
+            let sessionId = UUID.v7()
+            let indeterminate = BatchTranscriptionState.running(sessionId: sessionId)
+            let firstFile = BatchTranscriptionState.running(
+                sessionId: sessionId,
+                progress: BatchTranscriptionProgress(completedFileCount: 1, totalFileCount: 5)
+            )
+            let secondFile = BatchTranscriptionState.running(
+                sessionId: sessionId,
+                progress: BatchTranscriptionProgress(completedFileCount: 2, totalFileCount: 5)
+            )
+
+            #expect(indeterminate.preferringMoreAdvancedRunningProgress(over: firstFile) == firstFile)
+            #expect(firstFile.preferringMoreAdvancedRunningProgress(over: secondFile) == secondFile)
+            #expect(secondFile.preferringMoreAdvancedRunningProgress(over: firstFile) == secondFile)
+            #expect(secondFile.preferringMoreAdvancedRunningProgress(over: indeterminate) == secondFile)
         }
 
         @Test

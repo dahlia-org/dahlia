@@ -663,6 +663,7 @@
 "Review and Start" = "確認して開始";
 "Waiting to transcribe the recording…" = "録音の文字起こしを待機しています…";
 "Creating a high-accuracy transcript…" = "高精度な文字起こしを作成しています…";
+"Files completed: %lld of %lld" = "完了ファイル: %1$lld / %2$lld";
 "High-accuracy transcription completed." = "高精度な文字起こしが完了しました。";
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
 "Retry Batch Transcription" = "バッチ文字起こしを再試行";
