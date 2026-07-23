@@ -296,6 +296,7 @@ struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .notes
     @State private var expandedScreenshot: MeetingScreenshotRecord?
@@ -502,7 +503,8 @@ struct ControlPanelView: View {
                             guard let record = viewModel.screenshots.first(where: { $0.id == screenshotId }) else { return nil }
                             return record.imageData
                         },
-                        transcriptTextProvider: summaryTranscriptText
+                        transcriptTextProvider: summaryTranscriptText,
+                        allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

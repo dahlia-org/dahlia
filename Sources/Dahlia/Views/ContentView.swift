@@ -191,7 +191,8 @@ struct ContentView: View {
             ControlPanelView(
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator
+                recordingCoordinator: recordingCoordinator,
+                allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible
             )
         } else {
             CalendarScheduleView(

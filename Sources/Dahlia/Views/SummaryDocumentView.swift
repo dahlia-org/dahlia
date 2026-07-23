@@ -4,15 +4,18 @@ struct SummaryDocumentView: View {
     let document: SummaryDocument
     let imageDataProvider: (UUID) -> Data?
     let transcriptTextProvider: (TranscriptReference) -> String?
+    let allowsTranscriptReferencePopovers: Bool
 
     init(
         document: SummaryDocument,
         imageDataProvider: @escaping (UUID) -> Data?,
-        transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil }
+        transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil },
+        allowsTranscriptReferencePopovers: Bool = true
     ) {
         self.document = document
         self.imageDataProvider = imageDataProvider
         self.transcriptTextProvider = transcriptTextProvider
+        self.allowsTranscriptReferencePopovers = allowsTranscriptReferencePopovers
     }
 
     var body: some View {
@@ -226,7 +229,8 @@ struct SummaryDocumentView: View {
         if let ref {
             TranscriptReferenceChip(
                 reference: ref,
-                transcriptText: transcriptTextProvider(ref)
+                transcriptText: transcriptTextProvider(ref),
+                allowsPopover: allowsTranscriptReferencePopovers
             )
         }
     }
@@ -280,6 +284,7 @@ private struct SummaryScreenshotImageView: View {
 private struct TranscriptReferenceChip: View {
     let reference: TranscriptReference
     let transcriptText: String?
+    let allowsPopover: Bool
 
     @State private var isTranscriptPopoverPresented = false
 
@@ -291,7 +296,13 @@ private struct TranscriptReferenceChip: View {
             .padding(.vertical, 2)
             .background(Color.primary.opacity(0.06), in: Capsule())
             .onHover { isHovering in
-                isTranscriptPopoverPresented = isHovering && transcriptText?.nilIfBlank != nil
+                isTranscriptPopoverPresented = allowsPopover
+                    && isHovering
+                    && transcriptText?.nilIfBlank != nil
+            }
+            .onChange(of: allowsPopover) {
+                guard !allowsPopover else { return }
+                isTranscriptPopoverPresented = false
             }
             .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
                 if let transcriptText = transcriptText?.nilIfBlank {
