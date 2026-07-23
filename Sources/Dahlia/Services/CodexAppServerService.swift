@@ -947,6 +947,8 @@ private extension CodexAppServerService {
             let detail = turnError?["message"]?.stringValue
             if Self.isAuthenticationTurnError(turnError) {
                 waiter.continuation.resume(throwing: CodexAppServerError.notLoggedIn)
+            } else if Self.isExpectedProviderAuthenticationTurnError(turnError) {
+                waiter.continuation.resume(throwing: CodexAppServerError.providerAuthenticationFailed(detail))
             } else {
                 waiter.continuation.resume(throwing: CodexAppServerError.turnFailed(detail))
             }

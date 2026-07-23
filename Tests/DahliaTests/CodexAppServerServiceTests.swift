@@ -624,6 +624,51 @@ import Foundation
         }
 
         @Test
+        func expectedProviderAuthenticationFailurePreservesDetailWithoutReporting() async {
+            let transport = TestCodexAppServerTransport(mode: .generationFailsExpectedProviderAuthentication)
+            let service = CodexAppServerService(transportFactory: { transport })
+            let detail = """
+            unexpected status 401 Unauthorized: {"error_code":401,"message":"Credential was not sent or was of an unsupported type for this API."}
+            """
+            let expectedError = CodexAppServerError.providerAuthenticationFailed(detail)
+            let paddedTurnError: [String: JSONValue] = ["message": .string("\n \(detail)\n")]
+
+            #expect(CodexAppServerService.isExpectedProviderAuthenticationTurnError(paddedTurnError))
+            await #expect(throws: expectedError) {
+                _ = try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+            #expect(expectedError.localizedDescription == L10n.codexRequestFailed(detail))
+            #expect(!CaptionViewModel.shouldCaptureSummaryGenerationError(expectedError))
+            await service.shutdown()
+        }
+
+        @Test
+        func unrelatedHTTPUnauthorizedTurnFailureRemainsReportable() async {
+            let transport = TestCodexAppServerTransport(mode: .generationFailsOtherHTTPUnauthorized)
+            let service = CodexAppServerService(transportFactory: { transport })
+            let detail = """
+            unexpected status 401 Unauthorized: {"error":"An upstream tool rejected its credentials."}
+            """
+            let expectedError = CodexAppServerError.turnFailed(detail)
+
+            await #expect(throws: expectedError) {
+                _ = try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+            #expect(CaptionViewModel.shouldCaptureSummaryGenerationError(expectedError))
+            await service.shutdown()
+        }
+
+        @Test
         func unrelatedUnauthorizedTextRemainsTurnFailure() async {
             let transport = TestCodexAppServerTransport(mode: .generationFailsMessageOnlyUnauthorized)
             let service = CodexAppServerService(transportFactory: { transport })

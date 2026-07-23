@@ -12,6 +12,8 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
         case generationCompletes
         case generationBlocks
         case generationFailsUnauthorized
+        case generationFailsExpectedProviderAuthentication
+        case generationFailsOtherHTTPUnauthorized
         case generationFailsMessageOnlyUnauthorized
         case signedOut
         case loginCompletes
@@ -240,11 +242,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
                 "status": .string("inProgress"),
             ]),
         ])))
-        if mode == .generationFailsUnauthorized || mode == .generationFailsMessageOnlyUnauthorized {
-            var error: [String: JSONValue] = ["message": .string("unauthorized while generating")]
-            if mode == .generationFailsUnauthorized {
-                error["codexErrorInfo"] = .string("unauthorized")
-            }
+        if let error = generationFailureError() {
             enqueue(jsonValue: .object([
                 "method": .string("turn/completed"),
                 "params": .object([
@@ -282,6 +280,35 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
                 ]),
             ]),
         ]))
+    }
+
+    private func generationFailureError() -> [String: JSONValue]? {
+        switch mode {
+        case .generationFailsUnauthorized:
+            [
+                "message": .string("unauthorized while generating"),
+                "codexErrorInfo": .string("unauthorized"),
+            ]
+        case .generationFailsExpectedProviderAuthentication:
+            [
+                "message": .string(
+                    "unexpected status 401 Unauthorized: "
+                        + #"{"error_code":401,"message":"Credential was not sent or was of an unsupported type for this API."}"#
+                ),
+            ]
+        case .generationFailsOtherHTTPUnauthorized:
+            [
+                "message": .string(
+                    """
+                    unexpected status 401 Unauthorized: {"error":"An upstream tool rejected its credentials."}
+                    """
+                ),
+            ]
+        case .generationFailsMessageOnlyUnauthorized:
+            ["message": .string("unauthorized while generating")]
+        default:
+            nil
+        }
     }
 
     private func enqueueTestResponse(to requestID: Int, method: String) {

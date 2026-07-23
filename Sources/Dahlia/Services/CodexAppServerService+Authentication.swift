@@ -1,3 +1,5 @@
+import Foundation
+
 extension CodexAppServerService {
     nonisolated static func isAuthenticationRPCError(
         data: JSONValue?,
@@ -20,8 +22,20 @@ extension CodexAppServerService {
 
     nonisolated static func isAuthenticationTurnError(_ error: [String: JSONValue]?) -> Bool {
         guard let error else { return false }
-        let info = error["codexErrorInfo"] ?? error["codex_error_info"]
-        return info?.stringValue?.lowercased() == "unauthorized"
-            || info?.objectValue?["type"]?.stringValue?.lowercased() == "unauthorized"
+        let authenticationInfo = error["codexErrorInfo"] ?? error["codex_error_info"]
+        return authenticationInfo?.stringValue?.lowercased() == "unauthorized"
+            || authenticationInfo?.objectValue?["type"]?.stringValue?.lowercased() == "unauthorized"
+    }
+
+    nonisolated static func isExpectedProviderAuthenticationTurnError(_ error: [String: JSONValue]?) -> Bool {
+        guard let error,
+              let rawMessage = error["message"]?.stringValue
+        else { return false }
+
+        // Databricks can return this expected credential diagnostic without
+        // codexErrorInfo, so preserve it for the user without reporting it.
+        let message = rawMessage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard message.hasPrefix("unexpected status 401 unauthorized:") else { return false }
+        return message.contains("credential was not sent or was of an unsupported type for this api.")
     }
 }

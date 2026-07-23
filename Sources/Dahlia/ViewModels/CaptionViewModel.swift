@@ -3088,7 +3088,7 @@ final class CaptionViewModel: ObservableObject {
         if let configurationError = error as? CodexConfigurationError, case .accountNotReady = configurationError { return false }
         guard let error = error as? CodexAppServerError else { return true }
         return switch error {
-        case .helperNotBundled, .notLoggedIn, .requestTimedOut, .turnInterrupted:
+        case .helperNotBundled, .notLoggedIn, .providerAuthenticationFailed, .requestTimedOut, .turnInterrupted:
             false
         default:
             true
