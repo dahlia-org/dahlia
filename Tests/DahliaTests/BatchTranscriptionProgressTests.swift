@@ -259,7 +259,8 @@ import GRDB
                 totalFileCount: totalFileCount
             ))
             #expect(progressUpdates.allSatisfy { $0.totalFileCount == totalFileCount })
-            #expect(progressUpdates.map(\.completedFileCount) == progressUpdates.map(\.completedFileCount).sorted())
+            let completedFileCounts = progressUpdates.map(\.completedFileCount)
+            #expect(completedFileCounts == completedFileCounts.sorted())
         }
 
         private func waitUntil(

@@ -612,16 +612,12 @@ extension BatchTranscriptionCoordinator {
         completedFileCount: Int,
         totalFileCount: Int
     ) {
-        let progress = BatchTranscriptionProgress(
+        pendingProgressUpdate = recordProgress(
+            meetingId: meetingId,
+            sessionId: sessionId,
             completedFileCount: completedFileCount,
             totalFileCount: totalFileCount
         )
-        runningProgress = progress
-        let update = BatchTranscriptionUpdate(
-            meetingId: meetingId,
-            state: .running(sessionId: sessionId, progress: progress)
-        )
-        pendingProgressUpdate = update
         guard progressNotificationTask == nil else { return }
         progressNotificationTask = Task { [weak self] in
             await self?.deliverPendingProgressUpdates()
@@ -646,17 +642,29 @@ extension BatchTranscriptionCoordinator {
         completedFileCount: Int,
         totalFileCount: Int
     ) async {
+        let update = recordProgress(
+            meetingId: meetingId,
+            sessionId: sessionId,
+            completedFileCount: completedFileCount,
+            totalFileCount: totalFileCount
+        )
+        await onStateChange(update)
+    }
+
+    private func recordProgress(
+        meetingId: UUID,
+        sessionId: UUID,
+        completedFileCount: Int,
+        totalFileCount: Int
+    ) -> BatchTranscriptionUpdate {
         let progress = BatchTranscriptionProgress(
             completedFileCount: completedFileCount,
             totalFileCount: totalFileCount
         )
         runningProgress = progress
-        await notify(
+        return BatchTranscriptionUpdate(
             meetingId: meetingId,
-            state: .running(
-                sessionId: sessionId,
-                progress: progress
-            )
+            state: .running(sessionId: sessionId, progress: progress)
         )
     }
 
