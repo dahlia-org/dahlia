@@ -317,6 +317,30 @@
 
 /* Settings */
 "General" = "General";
+"Permissions" = "Permissions";
+"Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time." = "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time.";
+"Screen & System Audio Recording" = "Screen & System Audio Recording";
+"Allows Dahlia to transcribe audio from speakers and meeting apps. Dahlia does not save screen video for transcription." = "Allows Dahlia to transcribe audio from speakers and meeting apps. Dahlia does not save screen video for transcription.";
+"Microphone capture also uses ScreenCaptureKit, but macOS still requires the separate Microphone permission below. You may need to restart Dahlia after changing this setting." = "Microphone capture also uses ScreenCaptureKit, but macOS still requires the separate Microphone permission below. You may need to restart Dahlia after changing this setting.";
+"Microphone Permission" = "Microphone";
+"Allows Dahlia to capture and transcribe your voice from the selected microphone." = "Allows Dahlia to capture and transcribe your voice from the selected microphone.";
+"macOS Calendar Permission" = "macOS Calendar";
+"Allows Dahlia to read events from calendars selected in Calendar settings." = "Allows Dahlia to read events from calendars selected in Calendar settings.";
+"Optional. Google Calendar does not use this macOS permission." = "Optional. Google Calendar does not use this macOS permission.";
+"Not Requested" = "Not Requested";
+"Needs Review" = "Needs Review";
+"Permission Granted" = "Permission Granted";
+"Permission Denied" = "Permission Denied";
+"Restricted" = "Restricted";
+"Check Access" = "Check Access";
+"Open System Settings" = "Open System Settings";
+"macOS does not report whether this access has never been requested or was previously denied. Check access to continue; if needed, enable Dahlia in System Settings." = "macOS does not report whether this access has never been requested or was previously denied. Check access to continue; if needed, enable Dahlia in System Settings.";
+"In System Settings, enable Dahlia under Screen & System Audio Recording. Restart Dahlia if macOS asks you to." = "In System Settings, enable Dahlia under Screen & System Audio Recording. Restart Dahlia if macOS asks you to.";
+"In System Settings, enable Dahlia under Microphone." = "In System Settings, enable Dahlia under Microphone.";
+"In System Settings, give Dahlia full access under Calendars." = "In System Settings, give Dahlia full access under Calendars.";
+"This permission is restricted by this Mac or its administrator and may not be changeable in System Settings." = "This permission is restricted by this Mac or its administrator and may not be changeable in System Settings.";
+"Could Not Open System Settings" = "Could Not Open System Settings";
+"Open Privacy & Security in System Settings and choose the relevant permission manually." = "Open Privacy & Security in System Settings and choose the relevant permission manually.";
 "Check for Updates…" = "Check for Updates…";
 "App" = "App";
 "Integrations" = "Integrations";

@@ -22,7 +22,7 @@ enum SettingsGroup: CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .backups]
+        case .app: [.general, .permissions, .backups]
         case .recording: [.transcription, .screenshots]
         case .integrations: [.calendar, .cloudStorage]
         case .ai: [.modelProvider, .aiSummary, .mcp]

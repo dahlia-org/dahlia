@@ -9,6 +9,7 @@ enum WindowID {
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
     static let codexChat = "codex-chat"
+    static let permissions = "permissions"
 }
 
 private enum MainWindowMetrics {
@@ -152,6 +153,13 @@ struct DahliaApp: App {
             ApplicationLogView()
         }
         .defaultSize(width: 900, height: 600)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+
+        Window(L10n.permissions, id: WindowID.permissions) {
+            PermissionGuideWindowView()
+        }
+        .defaultSize(width: 680, height: 620)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
 
