@@ -611,11 +611,13 @@ final class CaptionViewModel: ObservableObject {
         sessionIds: [UUID],
         meetingId: UUID
     ) {
+        var context: BatchSummaryContext?
         if let currentDbQueue, let currentVaultURL {
-            batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
+            context = BatchSummaryContext(
                 dbQueue: currentDbQueue,
                 vaultURL: currentVaultURL
             )
+            batchSummaryContextsBySessionId[sessionId] = context
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
@@ -631,7 +633,8 @@ final class CaptionViewModel: ObservableObject {
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: hasCurrentMeetingSummary
-                || AppSettings.shared.generateSummaryAfterBatchTranscription
+                || AppSettings.shared.generateSummaryAfterBatchTranscription,
+            projectSelection: makeBatchTranscriptionProjectSelection(meetingId: meetingId, context: context)
         )
     }
 
@@ -660,6 +663,98 @@ final class CaptionViewModel: ObservableObject {
             enabledLocaleIdentifiers: settings.enabledLocaleIdentifiers,
             supportedLocales: supportedLocales
         )
+    }
+
+    private func makeBatchTranscriptionProjectSelection(
+        meetingId: UUID,
+        context: BatchSummaryContext?
+    ) -> BatchTranscriptionProjectSelection {
+        guard let context else { return .unavailable }
+
+        do {
+            let snapshot = try context.dbQueue.read { db -> (MeetingRecord, [ProjectRecord]) in
+                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
+                    throw SummaryGenerationPreparationError.meetingUnavailable
+                }
+                let projects = try ProjectRecord
+                    .filter(Column("vaultId") == meeting.vaultId)
+                    .order(Column("name").asc)
+                    .fetchAll(db)
+                return (meeting, projects)
+            }
+            return BatchTranscriptionProjectSelection(
+                projects: FlatProjectRow.buildRows(fromRecords: snapshot.1),
+                selectedProjectId: snapshot.0.projectId,
+                errorMessage: nil
+            )
+        } catch {
+            return BatchTranscriptionProjectSelection(
+                projects: [],
+                selectedProjectId: nil,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
+    func assignPendingBatchTranscriptionProject(_ projectId: UUID?) -> String? {
+        guard let confirmation = pendingBatchTranscriptionConfirmation else { return L10n.meetingUnavailable }
+        if let errorMessage = confirmation.projectSelection.errorMessage { return errorMessage }
+        guard let context = batchSummaryContextsBySessionId[confirmation.sessionId] else { return nil }
+
+        do {
+            let repository = MeetingRepository(dbQueue: context.dbQueue)
+            guard let meeting = try repository.fetchMeeting(id: confirmation.meetingId),
+                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }),
+                  vault.url.standardizedFileURL == context.vaultURL.standardizedFileURL else {
+                return L10n.meetingUnavailable
+            }
+            guard meeting.projectId != projectId else { return nil }
+
+            try ProjectWorkspaceService(repository: repository, vault: vault)
+                .moveMeeting(id: meeting.id, toProjectId: projectId)
+
+            if currentMeetingId == meeting.id, currentDbQueue === context.dbQueue {
+                let project = try projectId.flatMap(repository.fetchProject(id:))
+                setExplicitProjectContext(
+                    projectURL: project.map { context.vaultURL.appending(path: $0.name, directoryHint: .isDirectory) },
+                    projectId: projectId,
+                    projectName: project?.name
+                )
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func assignCurrentMeetingProject(_ projectId: UUID?) -> String? {
+        guard let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue,
+              let vaultURL = currentVaultURL else {
+            return L10n.meetingUnavailable
+        }
+
+        do {
+            let repository = MeetingRepository(dbQueue: dbQueue)
+            guard let meeting = try repository.fetchMeeting(id: meetingId),
+                  let vault = try repository.fetchAllVaults().first(where: { $0.id == meeting.vaultId }),
+                  vault.url.standardizedFileURL == vaultURL.standardizedFileURL else {
+                return L10n.meetingUnavailable
+            }
+            guard meeting.projectId != projectId else { return nil }
+
+            try ProjectWorkspaceService(repository: repository, vault: vault)
+                .moveMeeting(id: meeting.id, toProjectId: projectId)
+            let project = try projectId.flatMap(repository.fetchProject(id:))
+            setExplicitProjectContext(
+                projectURL: project.map { vaultURL.appending(path: $0.name, directoryHint: .isDirectory) },
+                projectId: projectId,
+                projectName: project?.name
+            )
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     func presentBatchTranscriptionConfirmation() {
@@ -713,7 +808,11 @@ final class CaptionViewModel: ObservableObject {
             initialLanguageSelection: languageSelection,
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
             purpose: confirmation.purpose,
-            initiallyGeneratesSummary: summaryGenerationOptions != nil
+            initiallyGeneratesSummary: summaryGenerationOptions != nil,
+            projectSelection: makeBatchTranscriptionProjectSelection(
+                meetingId: confirmation.meetingId,
+                context: batchSummaryContextsBySessionId[confirmation.sessionId]
+            )
         )
         let batchSummaryContext = batchSummaryContextsBySessionId[confirmation.sessionId]
         updatePendingBatchSummaryRequest(
@@ -2289,11 +2388,13 @@ final class CaptionViewModel: ObservableObject {
         dbQueue: DatabaseQueue?,
         vaultURL: URL?
     ) {
+        var context: BatchSummaryContext?
         if let dbQueue, let vaultURL {
-            batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
+            context = BatchSummaryContext(
                 dbQueue: dbQueue,
                 vaultURL: vaultURL
             )
+            batchSummaryContextsBySessionId[sessionId] = context
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
@@ -2307,7 +2408,8 @@ final class CaptionViewModel: ObservableObject {
             retainAudioAfterBatch: preferences.retainsAudio,
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
-            initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription
+            initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription,
+            projectSelection: makeBatchTranscriptionProjectSelection(meetingId: meetingId, context: context)
         )
         MainWindowOpener.shared.openMainWindow()
     }
@@ -2555,7 +2657,8 @@ final class CaptionViewModel: ObservableObject {
     }
 
     /// 確認画面で選択した設定を使って手動要約を実行する。
-    func triggerManualSummary(options: SummaryGenerationOptions = .manual) {
+    @discardableResult
+    func triggerManualSummary(options: SummaryGenerationOptions = .manual) -> Bool {
         triggerSummary(options: options)
     }
 
@@ -2590,11 +2693,11 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func triggerSummary(options: SummaryGenerationOptions) {
+    private func triggerSummary(options: SummaryGenerationOptions) -> Bool {
         guard canGenerateSummary,
               let meetingId = currentMeetingId,
               let vaultURL = currentVaultURL,
-              let dbQueue = currentDbQueue else { return }
+              let dbQueue = currentDbQueue else { return false }
         saveNoteImmediately()
         let repo = MeetingRepository(dbQueue: dbQueue)
         let meetingName = (try? repo.fetchMeeting(id: meetingId)?.name.nilIfBlank)
@@ -2616,7 +2719,7 @@ final class CaptionViewModel: ObservableObject {
             retriesFailedPersistence: true
         )
         requestShowSummaryTab = true
-        startSummaryGeneration(request)
+        return startSummaryGeneration(request)
     }
 
     private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
@@ -2718,8 +2821,9 @@ final class CaptionViewModel: ObservableObject {
         summaryErrorsByMeetingId[meetingId] = message
     }
 
-    private func startSummaryGeneration(_ request: SummaryGenerationRequest) {
-        guard !isSummaryGenerating(meetingId: request.meetingId) else { return }
+    @discardableResult
+    private func startSummaryGeneration(_ request: SummaryGenerationRequest) -> Bool {
+        guard !isSummaryGenerating(meetingId: request.meetingId) else { return false }
         let job = SummaryGenerationJob(meetingId: request.meetingId, meetingName: request.meetingName)
         let exportOptions = request.options.exportOptions
         job.progress.vaultExport = exportOptions.exportsToVault ? .pending : .skipped
@@ -2735,6 +2839,7 @@ final class CaptionViewModel: ObservableObject {
         Task { [weak self] in
             await self?.runSummaryGeneration(request, job: job)
         }
+        return true
     }
 
     private func runSummaryGeneration(_ request: SummaryGenerationRequest, job: SummaryGenerationJob) async {

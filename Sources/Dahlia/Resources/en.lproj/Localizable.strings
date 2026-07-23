@@ -687,6 +687,7 @@
 "Generate Summary After Transcription" = "Generate Summary After Transcription";
 "Automatically generate a summary when batch transcription succeeds." = "Automatically generate a summary when batch transcription succeeds.";
 "Summary and Export" = "Summary and Export";
+"Project" = "Project";
 "Previous Meetings in Context" = "Previous Meetings in Context";
 "Include the latest meetings from the same calendar series in the summary context." = "Include the latest meetings from the same calendar series in the summary context.";
 "Generate this summary?" = "Generate this summary?";

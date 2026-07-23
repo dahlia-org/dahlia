@@ -9,6 +9,94 @@ import GRDB
     @Suite(.serialized)
     struct CaptionViewModelSummaryGenerationTests {
         @Test
+        func manualSummaryUsesProjectSelectedBeforeGeneration() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try fixture.insertProject(name: "Selected", description: "Selected context")
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+            )
+
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
+            viewModel.triggerManualSummary(options: options)
+            await runner.waitForCallCount(1)
+
+            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectDescription == "Selected context")
+            runner.complete(meetingID: fixture.first.id, title: "Summary")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
+        func batchConfirmationWithoutPersistenceContextDoesNotBlockTranscription() throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let viewModel = CaptionViewModel()
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+
+            viewModel.presentBatchTranscriptionConfirmation(
+                sessionId: sessionID,
+                meetingId: fixture.first.id,
+                dbQueue: fixture.database.dbQueue
+            )
+
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.projectSelection == .unavailable)
+            #expect(viewModel.assignPendingBatchTranscriptionProject(nil) == nil)
+        }
+
+        @Test
+        func manualSummaryReportsWhenGenerationBecomesUnavailable() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            viewModel.setScreenshotDeletionInProgressForTesting(true)
+
+            #expect(!viewModel.triggerManualSummary(options: .manual))
+            #expect(runner.calls.isEmpty)
+            #expect(viewModel.summaryGenerationJobs.isEmpty)
+        }
+
+        @Test
+        func automaticBatchSummaryReloadsProjectSelectedAtConfirmation() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try fixture.insertProject(name: "Batch", description: "Batch context")
+            try fixture.assign(fixture.first, to: project)
+            let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+            )
+
+            viewModel.registerPendingBatchSummaryForTesting(
+                sessionID: sessionID,
+                meetingID: fixture.first.id,
+                options: options,
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL
+            )
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .completed(sessionId: sessionID)
+            ))
+            await runner.waitForCallCount(1)
+
+            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectDescription == "Batch context")
+            runner.complete(meetingID: fixture.first.id, title: "Summary")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
         func selectedMeetingsRegenerateConcurrentlyWithoutChangingCurrentMeeting() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -379,6 +467,7 @@ import GRDB
             }
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try original.insertProject(name: "Original Project", description: "Original context")
             let options = SummaryGenerationOptions(
                 previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
@@ -392,6 +481,19 @@ import GRDB
             )
 
             await destination.select(destination.first, in: viewModel, note: "destination")
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            let projectSelection = confirmation.projectSelection
+            #expect(projectSelection.projects.map(\.id) == [project.id])
+            #expect(projectSelection.selectedProjectId == nil)
+            #expect(projectSelection.errorMessage == nil)
+
+            #expect(viewModel.assignPendingBatchTranscriptionProject(.v7()) != nil)
+            #expect(try original.projectId(for: original.first.id) == nil)
+            #expect(viewModel.assignPendingBatchTranscriptionProject(project.id) == nil)
+            #expect(try original.projectId(for: original.first.id) == project.id)
+            #expect(viewModel.currentMeetingId == destination.first.id)
+            #expect(viewModel.currentProjectId == nil)
+
             viewModel.confirmPendingBatchSummaryForTesting(
                 sessionID: sessionID,
                 meetingID: original.first.id,
@@ -404,6 +506,8 @@ import GRDB
             await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].meetingID == original.first.id)
+            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectDescription == project.description)
             runner.complete(meetingID: original.first.id, title: "Original summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
             #expect(try original.summary(for: original.first.id) != nil)
@@ -429,6 +533,8 @@ import GRDB
         struct Call {
             let meetingID: UUID
             let noteText: String?
+            let projectName: String?
+            let projectDescription: String?
             let settings: SummaryGenerationSettings
             let recordingSessionIDs: [UUID]
         }
@@ -445,6 +551,8 @@ import GRDB
             calls.append(Call(
                 meetingID: input.promptContext.meetingId,
                 noteText: input.noteText,
+                projectName: input.promptContext.projectName,
+                projectDescription: input.promptContext.projectDescription,
                 settings: input.generationSettings,
                 recordingSessionIDs: input.recordingSessions.map(\.id)
             ))
@@ -564,6 +672,34 @@ import GRDB
         func summary(for meetingID: UUID) throws -> SummaryRecord? {
             try database.dbQueue.read { db in
                 try SummaryRecord.fetchOne(db, key: meetingID)
+            }
+        }
+
+        func projectId(for meetingID: UUID) throws -> UUID? {
+            try database.dbQueue.read { db in
+                try MeetingRecord.fetchOne(db, key: meetingID)?.projectId
+            }
+        }
+
+        func insertProject(name: String, description: String) throws -> ProjectRecord {
+            let projectURL = vaultURL.appending(path: name, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                name: name,
+                createdAt: first.createdAt,
+                description: description
+            )
+            try database.dbQueue.write { db in try project.insert(db) }
+            return project
+        }
+
+        func assign(_ meeting: MeetingRecord, to project: ProjectRecord) throws {
+            _ = try database.dbQueue.write { db in
+                try MeetingRecord
+                    .filter(key: meeting.id)
+                    .updateAll(db, Column("projectId").set(to: project.id))
             }
         }
 

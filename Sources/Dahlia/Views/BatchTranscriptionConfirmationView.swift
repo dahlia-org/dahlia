@@ -4,8 +4,9 @@ struct BatchTranscriptionConfirmationView: View {
     let locales: [Locale]
     let automaticLanguageLocales: [Locale]
     let displayLocale: Locale
+    let projects: [FlatProjectRow]
     let isRetranscription: Bool
-    let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?) -> Void
+    let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?, UUID?) -> String?
     let onPostpone: () -> Void
 
     @State private var languageSelection: BatchTranscriptionLanguageSelection
@@ -14,22 +15,28 @@ struct BatchTranscriptionConfirmationView: View {
     @State private var exportBatchSummaryToVault: Bool
     @State private var exportBatchSummaryToGoogleDocs: Bool
     @State private var previousMeetingCount: Int
+    @State private var selectedProjectId: UUID?
+    @State private var errorMessage: String?
 
     init(
         locales: [Locale],
         automaticLanguageLocales: [Locale],
         displayLocale: Locale,
+        projects: [FlatProjectRow],
+        initialProjectId: UUID?,
+        initialErrorMessage: String?,
         initialLanguageSelection: BatchTranscriptionLanguageSelection,
         initiallyRetainsAudioAfterBatch: Bool,
         initiallyGeneratesSummary: Bool,
         summaryGenerationOptions: SummaryGenerationOptions,
         isRetranscription: Bool,
-        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?) -> Void,
+        onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions?, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
         self.locales = locales
         self.automaticLanguageLocales = automaticLanguageLocales
         self.displayLocale = displayLocale
+        self.projects = projects
         self.onStart = onStart
         self.onPostpone = onPostpone
         self.isRetranscription = isRetranscription
@@ -39,6 +46,8 @@ struct BatchTranscriptionConfirmationView: View {
         _exportBatchSummaryToVault = State(initialValue: summaryGenerationOptions.exportOptions.exportsToVault)
         _exportBatchSummaryToGoogleDocs = State(initialValue: summaryGenerationOptions.exportOptions.exportsToGoogleDocs)
         _previousMeetingCount = State(initialValue: summaryGenerationOptions.previousMeetingCount)
+        _selectedProjectId = State(initialValue: initialProjectId)
+        _errorMessage = State(initialValue: initialErrorMessage)
     }
 
     var body: some View {
@@ -66,8 +75,19 @@ struct BatchTranscriptionConfirmationView: View {
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,
                 exportBatchSummaryToVault: $exportBatchSummaryToVault,
                 exportBatchSummaryToGoogleDocs: $exportBatchSummaryToGoogleDocs,
-                previousMeetingCount: $previousMeetingCount
+                previousMeetingCount: $previousMeetingCount,
+                projects: projects,
+                selectedProjectId: $selectedProjectId
             )
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
 
             Divider()
 
@@ -103,7 +123,12 @@ struct BatchTranscriptionConfirmationView: View {
                 )
             )
             : nil
-        onStart(languageSelection, !deleteAudioAfterTranscription, summaryOptions)
+        errorMessage = onStart(
+            languageSelection,
+            !deleteAudioAfterTranscription,
+            summaryOptions,
+            selectedProjectId
+        )
     }
 
     private func persistSummaryPreferencesIfNeeded() {

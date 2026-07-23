@@ -1,5 +1,17 @@
 import Foundation
 
+struct BatchTranscriptionProjectSelection: Equatable {
+    let projects: [FlatProjectRow]
+    let selectedProjectId: UUID?
+    let errorMessage: String?
+
+    static let unavailable = BatchTranscriptionProjectSelection(
+        projects: [],
+        selectedProjectId: nil,
+        errorMessage: nil
+    )
+}
+
 struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     enum Purpose: Equatable {
         case initialOrRetry
@@ -14,6 +26,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
     let automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot?
     let purpose: Purpose
     let initiallyGeneratesSummary: Bool
+    let projectSelection: BatchTranscriptionProjectSelection
 
     init(
         sessionId: UUID,
@@ -23,7 +36,8 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         initialLanguageSelection: BatchTranscriptionLanguageSelection? = nil,
         automaticLanguageCandidateSnapshot: BatchLanguageDetectionCandidateSnapshot? = nil,
         purpose: Purpose = .initialOrRetry,
-        initiallyGeneratesSummary: Bool = false
+        initiallyGeneratesSummary: Bool = false,
+        projectSelection: BatchTranscriptionProjectSelection = .unavailable
     ) {
         if case let .retranscription(sessionIds) = purpose {
             precondition(!sessionIds.isEmpty && sessionIds.contains(sessionId))
@@ -37,6 +51,7 @@ struct BatchTranscriptionConfirmation: Identifiable, Equatable {
         self.automaticLanguageCandidateSnapshot = automaticLanguageCandidateSnapshot
         self.purpose = purpose
         self.initiallyGeneratesSummary = initiallyGeneratesSummary
+        self.projectSelection = projectSelection
     }
 
     var id: UUID { sessionId }

@@ -49,6 +49,7 @@ struct RecordToolbarButton: View {
 
 struct GenerateSummaryToolbarButton: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var sidebarViewModel: SidebarViewModel
     @State private var isConfirmationPresented = false
 
     private var isGeneratingCurrentMeeting: Bool {
@@ -73,7 +74,11 @@ struct GenerateSummaryToolbarButton: View {
         .disabled(isGeneratingCurrentMeeting || !viewModel.canGenerateSummary)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
-            SummaryGenerationConfirmationView(onGenerate: generateSummary)
+            SummaryGenerationConfirmationView(
+                projects: sidebarViewModel.flatProjects,
+                initialProjectId: viewModel.currentProjectId,
+                onGenerate: generateSummary
+            )
         }
     }
 
@@ -81,8 +86,12 @@ struct GenerateSummaryToolbarButton: View {
         isConfirmationPresented = true
     }
 
-    private func generateSummary(options: SummaryGenerationOptions) {
-        viewModel.triggerManualSummary(options: options)
+    private func generateSummary(options: SummaryGenerationOptions, projectId: UUID?) -> String? {
+        if let error = viewModel.assignCurrentMeetingProject(projectId) {
+            return error
+        }
+        guard !viewModel.triggerManualSummary(options: options) else { return nil }
+        return viewModel.isSummaryGenerating ? nil : L10n.summaryGenerationFailed
     }
 }
 

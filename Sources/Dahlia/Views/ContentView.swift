@@ -101,12 +101,25 @@ struct ContentView: View {
                     snapshot: confirmation.automaticLanguageCandidateSnapshot
                 ).locales,
                 displayLocale: AppSettings.shared.appLanguage.locale,
+                projects: confirmation.projectSelection.projects,
+                initialProjectId: confirmation.projectSelection.selectedProjectId,
+                initialErrorMessage: confirmation.projectSelection.errorMessage,
                 initialLanguageSelection: confirmation.initialLanguageSelection,
                 initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
                 initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
                 summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
                 isRetranscription: confirmation.isRetranscription,
-                onStart: viewModel.confirmBatchTranscription,
+                onStart: { languageSelection, retainAudio, summaryOptions, projectId in
+                    if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
+                        return error
+                    }
+                    viewModel.confirmBatchTranscription(
+                        languageSelection: languageSelection,
+                        retainAudioAfterBatch: retainAudio,
+                        summaryGenerationOptions: summaryOptions
+                    )
+                    return nil
+                },
                 onPostpone: viewModel.postponeBatchTranscription
             )
             .interactiveDismissDisabled()

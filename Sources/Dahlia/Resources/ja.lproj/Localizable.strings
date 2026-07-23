@@ -687,6 +687,7 @@
 "Generate Summary After Transcription" = "文字起こし後に要約を生成";
 "Automatically generate a summary when batch transcription succeeds." = "バッチ文字起こしが成功したら、自動的に要約を生成します。";
 "Summary and Export" = "要約と書き出し";
+"Project" = "プロジェクト";
 "Previous Meetings in Context" = "過去ミーティングのコンテキスト";
 "Include the latest meetings from the same calendar series in the summary context." = "同じカレンダー予定系列の直近ミーティングを要約コンテキストに含めます。";
 "Generate this summary?" = "要約を生成しますか？";
