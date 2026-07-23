@@ -75,6 +75,7 @@ actor BatchTranscriptionCoordinator {
     private var runningSessionId: UUID?
     private var runningProgress: BatchTranscriptionProgress?
     private var processorTask: Task<Void, Never>?
+    private var progressNotificationTask: Task<Void, Never>?
 
     init(
         dbQueue: DatabaseQueue,
@@ -586,7 +587,7 @@ extension BatchTranscriptionCoordinator {
                         }
                     }
                     if didCompleteFile {
-                        await notifyProgress(
+                        enqueueProgressNotification(
                             meetingId: meetingId,
                             sessionId: sessionId,
                             completedFileCount: completedFileCount,
@@ -594,12 +595,41 @@ extension BatchTranscriptionCoordinator {
                         )
                     }
                 }
+                await finishProgressNotifications()
                 return results
             } catch {
                 group.cancelAll()
+                await finishProgressNotifications()
                 throw error
             }
         }
+    }
+
+    private func enqueueProgressNotification(
+        meetingId: UUID,
+        sessionId: UUID,
+        completedFileCount: Int,
+        totalFileCount: Int
+    ) {
+        let progress = BatchTranscriptionProgress(
+            completedFileCount: completedFileCount,
+            totalFileCount: totalFileCount
+        )
+        runningProgress = progress
+        let update = BatchTranscriptionUpdate(
+            meetingId: meetingId,
+            state: .running(sessionId: sessionId, progress: progress)
+        )
+        let precedingTask = progressNotificationTask
+        progressNotificationTask = Task { [onStateChange] in
+            await precedingTask?.value
+            await onStateChange(update)
+        }
+    }
+
+    private func finishProgressNotifications() async {
+        await progressNotificationTask?.value
+        progressNotificationTask = nil
     }
 
     private func notifyProgress(

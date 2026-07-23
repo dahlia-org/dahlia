@@ -51,7 +51,8 @@ import GRDB
         func slowProgressCallbackDoesNotDelayNextRecognition() async throws {
             let fixture = try makeFixture(name: "BatchProgressCallbackConcurrency", duration: 0.025)
             defer { fixture.removeFiles() }
-            try await createSeparateAutomaticRecordingFiles(fixture: fixture, fileCount: 5)
+            let fileCount = BatchTranscriptionConcurrency.appleSpeechMaximum * 2
+            try await createSeparateAutomaticRecordingFiles(fixture: fixture, fileCount: fileCount)
             let stateProbe = SuspendingBatchProgressStateProbe()
             defer { Task { await stateProbe.releaseProgressCallback() } }
             let recognizer = ProgressSpeechRecognizer()
@@ -59,7 +60,7 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
                 languageDetector: ProgressLanguageDetector(
-                    detections: Array(repeating: "ja", count: 5)
+                    detections: Array(repeating: "ja", count: fileCount)
                 ),
                 speechRecognizer: recognizer,
                 supportedLocalesProvider: {
@@ -72,11 +73,15 @@ import GRDB
 
             await coordinator.enqueue(sessionId: fixture.session.id)
             try await waitUntil { await stateProbe.isHoldingProgressCallback }
-            try await waitUntil { await recognizer.callCount == 5 }
-            #expect(await coordinator.runningState(sessionId: fixture.session.id) == .running(
+            try await waitUntil { await recognizer.callCount == fileCount }
+            let finalRunningState = BatchTranscriptionState.running(
                 sessionId: fixture.session.id,
-                progress: BatchTranscriptionProgress(completedFileCount: 1, totalFileCount: 5)
-            ))
+                progress: BatchTranscriptionProgress(completedFileCount: fileCount, totalFileCount: fileCount)
+            )
+            try await waitUntil {
+                await coordinator.runningState(sessionId: fixture.session.id) == finalRunningState
+            }
+            #expect(await coordinator.runningState(sessionId: fixture.session.id) == finalRunningState)
 
             await stateProbe.releaseProgressCallback()
             try await waitUntil { await stateProbe.didComplete }
