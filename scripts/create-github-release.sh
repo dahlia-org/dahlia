@@ -19,6 +19,9 @@ DMG_SPARKLE_FEED_URL=""
 DMG_SPARKLE_PUBLIC_KEY=""
 DMG_SPARKLE_REQUIRES_SIGNED_FEED=""
 DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION=""
+DMG_SPARKLE_AUTOMATIC_CHECKS=""
+DMG_SPARKLE_CHECK_INTERVAL=""
+DMG_SPARKLE_AUTOMATIC_UPDATES=""
 
 cleanup() {
     if [ -n "$DMG_MOUNT_DIR" ]; then
@@ -86,6 +89,9 @@ validate_dmg_versions() {
     DMG_SPARKLE_PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$app_info_plist")"
     DMG_SPARKLE_REQUIRES_SIGNED_FEED="$(/usr/libexec/PlistBuddy -c "Print :SURequireSignedFeed" "$app_info_plist")"
     DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION="$(/usr/libexec/PlistBuddy -c "Print :SUVerifyUpdateBeforeExtraction" "$app_info_plist")"
+    DMG_SPARKLE_AUTOMATIC_CHECKS="$(/usr/libexec/PlistBuddy -c "Print :SUEnableAutomaticChecks" "$app_info_plist")"
+    DMG_SPARKLE_CHECK_INTERVAL="$(/usr/libexec/PlistBuddy -c "Print :SUScheduledCheckInterval" "$app_info_plist")"
+    DMG_SPARKLE_AUTOMATIC_UPDATES="$(/usr/libexec/PlistBuddy -c "Print :SUAutomaticallyUpdate" "$app_info_plist")"
 
     hdiutil detach "$DMG_MOUNT_DIR" >/dev/null
     rmdir "$DMG_MOUNT_DIR"
@@ -174,6 +180,18 @@ EOF
     fi
     if [ "$DMG_SPARKLE_REQUIRES_SIGNED_FEED" != "true" ] || [ "$DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION" != "true" ]; then
         echo "error: DMG must require a signed Sparkle feed and verify updates before extraction" >&2
+        exit 1
+    fi
+    if [ "$DMG_SPARKLE_AUTOMATIC_CHECKS" != "true" ]; then
+        echo "error: DMG must enable automatic Sparkle update checks" >&2
+        exit 1
+    fi
+    if [ "$DMG_SPARKLE_CHECK_INTERVAL" != "86400" ]; then
+        echo "error: DMG Sparkle update check interval is ${DMG_SPARKLE_CHECK_INTERVAL}, expected 86400" >&2
+        exit 1
+    fi
+    if [ "$DMG_SPARKLE_AUTOMATIC_UPDATES" != "false" ]; then
+        echo "error: DMG must not enable automatic Sparkle updates by default" >&2
         exit 1
     fi
 
