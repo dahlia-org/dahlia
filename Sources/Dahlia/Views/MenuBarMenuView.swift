@@ -1,12 +1,22 @@
 import SwiftUI
 
 struct MenuBarMenuView: View {
-    @ObservedObject var viewModel: CaptionViewModel
     let recordingCoordinator: RecordingCoordinator
     let calendarViewModel: MenuBarCalendarViewModel
 
+    @State private var recordingState: MenuBarRecordingState
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.openSettings) private var openSettings
+
+    init(
+        viewModel: CaptionViewModel,
+        recordingCoordinator: RecordingCoordinator,
+        calendarViewModel: MenuBarCalendarViewModel
+    ) {
+        self.recordingCoordinator = recordingCoordinator
+        self.calendarViewModel = calendarViewModel
+        _recordingState = State(initialValue: MenuBarRecordingState(viewModel: viewModel))
+    }
 
     var body: some View {
         VStack {
@@ -14,7 +24,8 @@ struct MenuBarMenuView: View {
                 MenuBarCalendarSectionView(
                     agenda: calendarViewModel.agenda,
                     now: calendarViewModel.currentDate,
-                    canStartRecording: recordingCoordinator.canStartNewMeeting,
+                    canStartRecording: recordingState.canBeginRecording
+                        && recordingCoordinator.canStartNewMeeting,
                     onJoinAndRecordEvent: joinAndRecordEvent,
                     onJoinEvent: joinEvent,
                     onShowEventInCalendar: showEventInCalendar,
@@ -25,7 +36,7 @@ struct MenuBarMenuView: View {
             }
 
             MenuBarRecordingControls(
-                viewModel: viewModel,
+                state: recordingState,
                 recordingCoordinator: recordingCoordinator
             )
 
