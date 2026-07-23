@@ -83,7 +83,7 @@ xcrun notarytool store-credentials "dahlia-notary" \
 
 `./scripts/notarize.sh` は `NOTARY_PROFILE` 環境変数（既定値: `dahlia-notary`）を使い、署名・notarization・staple 済みの `Dahlia.dmg` を作成します。
 
-Dahlia のアプリ内更新には Sparkle 2 を使用します。Ed25519 秘密鍵はログインキーチェーンの `com.dahlia.app` アカウントに保存されるため、安全な場所へバックアップしてください。別のリリースマシンでは Sparkle の `generate_keys` ツールで既存の秘密鍵をインポートし、代替鍵を新規生成したり、エクスポートした秘密鍵をコミットしたりしないでください。`create-github-release.sh` はこの鍵で DMG 更新と appcast に署名し、GitHub Release へ `Dahlia.dmg` と `appcast.xml` をアップロードします。
+Dahlia のアプリ内更新には Sparkle 2 を使用します。製品版は24時間ごとに更新を確認し、利用可能な場合はユーザーに案内します。更新は既定では自動インストールしません。Ed25519 秘密鍵はログインキーチェーンの `com.dahlia.app` アカウントに保存されるため、安全な場所へバックアップしてください。別のリリースマシンでは Sparkle の `generate_keys` ツールで既存の秘密鍵をインポートし、代替鍵を新規生成したり、エクスポートした秘密鍵をコミットしたりしないでください。`create-github-release.sh` はこの鍵で DMG 更新と appcast に署名し、GitHub Release へ `Dahlia.dmg` と `appcast.xml` をアップロードします。
 
 リリース用ラップトップを交換するときは、次の手順で Sparkle 鍵を移行します。エクスポートファイルはパスワードと同等に機密性の高い、暗号化されていない秘密鍵です。暗号化済みのオフラインストレージへ直接エクスポートし、信頼できる経路で移してください。リポジトリ、クラウド同期フォルダ、チャット、Issue の添付ファイルには置かないでください。
 

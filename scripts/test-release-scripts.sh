@@ -102,6 +102,9 @@ test_sparkle_configuration_validation() {
     DMG_SPARKLE_PUBLIC_KEY="test-public-key"
     DMG_SPARKLE_REQUIRES_SIGNED_FEED="true"
     DMG_SPARKLE_VERIFIES_BEFORE_EXTRACTION="true"
+    DMG_SPARKLE_AUTOMATIC_CHECKS="true"
+    DMG_SPARKLE_CHECK_INTERVAL="86400"
+    DMG_SPARKLE_AUTOMATIC_UPDATES="false"
     gh() {
         printf '%s\n' "dahlia-org/dahlia"
     }
@@ -112,6 +115,15 @@ test_sparkle_configuration_validation() {
     expect_failure validate_sparkle_release_configuration
     DMG_SPARKLE_FEED_URL="https://github.com/dahlia-org/dahlia/releases/latest/download/appcast.xml"
     DMG_SPARKLE_PUBLIC_KEY="wrong-key"
+    expect_failure validate_sparkle_release_configuration
+    DMG_SPARKLE_PUBLIC_KEY="test-public-key"
+    DMG_SPARKLE_AUTOMATIC_CHECKS="false"
+    expect_failure validate_sparkle_release_configuration
+    DMG_SPARKLE_AUTOMATIC_CHECKS="true"
+    DMG_SPARKLE_CHECK_INTERVAL="3600"
+    expect_failure validate_sparkle_release_configuration
+    DMG_SPARKLE_CHECK_INTERVAL="86400"
+    DMG_SPARKLE_AUTOMATIC_UPDATES="true"
     expect_failure validate_sparkle_release_configuration
 }
 

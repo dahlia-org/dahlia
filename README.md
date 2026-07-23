@@ -85,7 +85,7 @@ xcrun notarytool store-credentials "dahlia-notary" \
 
 `./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
 
-Dahlia uses Sparkle 2 for in-app updates. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update and appcast with this key, then uploads both `Dahlia.dmg` and `appcast.xml` to the GitHub Release.
+Dahlia uses Sparkle 2 for in-app updates. Production builds check for updates every 24 hours and prompt the user when one is available; updates are not installed automatically by default. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update and appcast with this key, then uploads both `Dahlia.dmg` and `appcast.xml` to the GitHub Release.
 
 When replacing the release laptop, migrate the Sparkle key as follows. The exported file is an unencrypted private key with the same sensitivity as a password. Export it directly to encrypted offline storage, transfer it through a trusted channel, and never place it in the repository, cloud-synced folders, chat, or issue attachments.
 
