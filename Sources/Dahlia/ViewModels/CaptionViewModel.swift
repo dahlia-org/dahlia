@@ -121,7 +121,11 @@ final class CaptionViewModel: ObservableObject {
     var chatLiveModeFailureHandler: (@MainActor () -> Void)?
 
     @Published var isListening = false
-    @Published var isFinalizingRecording = false
+    @Published var isFinalizingRecording = false {
+        didSet { updateCanBeginRecording() }
+    }
+
+    @Published private(set) var canBeginRecording = true
     @Published var analyzerReady = false
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
@@ -130,10 +134,22 @@ final class CaptionViewModel: ObservableObject {
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
     @Published var errorMessage: String?
     @Published var availableMicrophones: [MicrophoneDevice] = []
-    @Published private(set) var defaultInputDeviceID: AudioDeviceID?
-    @Published private var hasResolvedDefaultInputDevice = false
-    @Published var microphoneSelection: MicrophoneSelection = .systemDefault
-    @Published var isSystemAudioEnabled = true
+    @Published private(set) var defaultInputDeviceID: AudioDeviceID? {
+        didSet { updateCanBeginRecording() }
+    }
+
+    @Published private var hasResolvedDefaultInputDevice = false {
+        didSet { updateCanBeginRecording() }
+    }
+
+    @Published var microphoneSelection: MicrophoneSelection = .systemDefault {
+        didSet { updateCanBeginRecording() }
+    }
+
+    @Published var isSystemAudioEnabled = true {
+        didSet { updateCanBeginRecording() }
+    }
+
     @Published var selectedLocale: String = AppSettings.shared.transcriptionLocale {
         didSet {
             guard selectedLocale != oldValue else { return }
@@ -317,8 +333,18 @@ final class CaptionViewModel: ObservableObject {
     }
 
     var systemDefaultMicrophoneTitle: String {
-        guard let defaultDeviceID = defaultInputDeviceID,
-              let deviceName = availableMicrophones.first(where: { $0.id == defaultDeviceID })?.name else {
+        Self.systemDefaultMicrophoneTitle(
+            microphones: availableMicrophones,
+            defaultDeviceID: defaultInputDeviceID
+        )
+    }
+
+    static func systemDefaultMicrophoneTitle(
+        microphones: [MicrophoneDevice],
+        defaultDeviceID: AudioDeviceID?
+    ) -> String {
+        guard let defaultDeviceID,
+              let deviceName = microphones.first(where: { $0.id == defaultDeviceID })?.name else {
             return L10n.sameAsSystem
         }
         return L10n.sameAsSystem(deviceName)
@@ -373,12 +399,6 @@ final class CaptionViewModel: ObservableObject {
 
     /// 少なくとも 1 つの音声ソースが有効か。
     var hasEnabledAudioSource: Bool { isMicEnabled || isSystemAudioEnabled }
-
-    var canBeginRecording: Bool {
-        recordingLifecycle == .idle
-            && !isFinalizingRecording
-            && hasEnabledAudioSource
-    }
 
     private var enabledRecordingAudioSources: Set<RecordingAudioSource> {
         var sources: Set<RecordingAudioSource> = []
@@ -436,7 +456,10 @@ final class CaptionViewModel: ObservableObject {
     private var activeTranscriptionPlan: TranscriptionSessionPlan?
     private var activeRecordingSessionId: UUID?
     private var activeControllerSources: Set<RecordingAudioSource> = []
-    private var recordingLifecycle: RecordingLifecycle = .idle
+    private var recordingLifecycle: RecordingLifecycle = .idle {
+        didSet { updateCanBeginRecording() }
+    }
+
     private var recordingConfigurationTasks: [Int: Task<Void, Never>] = [:]
     private var nextRecordingConfigurationID = 0
     private var pendingRealtimeRecognitionFailure: (source: RecordingAudioSource?, message: String)?
@@ -458,6 +481,14 @@ final class CaptionViewModel: ObservableObject {
     private let transcriptTranslationService = TranscriptTranslationService()
     private let summaryGenerationRunner: SummaryGenerationRunner
     private let summaryJobSleeper: SummaryJobSleeper
+
+    private func updateCanBeginRecording() {
+        let updatedValue = recordingLifecycle == .idle
+            && !isFinalizingRecording
+            && hasEnabledAudioSource
+        guard canBeginRecording != updatedValue else { return }
+        canBeginRecording = updatedValue
+    }
 
     private var activeDbQueueForSessionControls: DatabaseQueue? {
         recordingContext?.dbQueue ?? currentDbQueue

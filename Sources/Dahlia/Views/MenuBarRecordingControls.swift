@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MenuBarRecordingControls: View {
-    @ObservedObject var viewModel: CaptionViewModel
+    let state: MenuBarRecordingState
     let recordingCoordinator: RecordingCoordinator
 
     @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
@@ -10,11 +10,15 @@ struct MenuBarRecordingControls: View {
         VStack {
             Button(action: toggleRecording) {
                 Label(
-                    viewModel.isListening ? L10n.menuBarStopRecording : L10n.menuBarStartRecording,
-                    systemImage: viewModel.isListening ? "stop.fill" : "record.circle"
+                    state.isListening ? L10n.menuBarStopRecording : L10n.menuBarStartRecording,
+                    systemImage: state.isListening ? "stop.fill" : "record.circle"
                 )
             }
-            .disabled(!viewModel.isListening && !recordingCoordinator.canStartNewMeeting && AppSettings.shared.currentVault != nil)
+            .disabled(
+                !state.isListening
+                    && (!state.canBeginRecording || !recordingCoordinator.canStartNewMeeting)
+                    && AppSettings.shared.currentVault != nil
+            )
 
             Toggle(isOn: $liveSubtitleOverlayEnabled) {
                 Label(L10n.menuBarShowLiveSubtitles, systemImage: "text.bubble")
@@ -22,103 +26,136 @@ struct MenuBarRecordingControls: View {
             recordingSettingsMenus
         }
         .onAppear {
-            viewModel.refreshAvailableWindows()
+            state.refreshAvailableWindows()
         }
         .task {
-            await viewModel.refreshAvailableMicrophones()
+            await state.refreshAvailableMicrophones()
         }
     }
 
     @ViewBuilder
     private var recordingSettingsMenus: some View {
         Menu {
-            Picker(selection: $viewModel.microphoneSelection) {
-                Text(L10n.none).tag(MicrophoneSelection.none)
-                Divider()
-                Text(viewModel.systemDefaultMicrophoneTitle).tag(MicrophoneSelection.systemDefault)
-
-                if !viewModel.availableMicrophones.isEmpty {
-                    Divider()
-                }
-
-                ForEach(viewModel.availableMicrophones) { microphone in
-                    Text(microphone.name).tag(MicrophoneSelection.device(microphone.id))
-                }
+            Button {
+                state.selectMicrophone(.none)
             } label: {
-                EmptyView()
+                selectionLabel(L10n.none, isSelected: state.microphoneSelection == .none)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-            .onChange(of: viewModel.microphoneSelection) { oldValue, newValue in
-                viewModel.handleMicrophoneSelectionChange(from: oldValue, to: newValue)
+            Divider()
+            Button {
+                state.selectMicrophone(.systemDefault)
+            } label: {
+                selectionLabel(
+                    state.systemDefaultMicrophoneTitle,
+                    isSelected: state.microphoneSelection == .systemDefault
+                )
+            }
+
+            if !state.availableMicrophones.isEmpty {
+                Divider()
+            }
+
+            ForEach(state.availableMicrophones) { microphone in
+                Button {
+                    state.selectMicrophone(.device(microphone.id))
+                } label: {
+                    selectionLabel(
+                        microphone.name,
+                        isSelected: state.microphoneSelection == .device(microphone.id)
+                    )
+                }
             }
         } label: {
             Label(L10n.microphone, systemImage: "mic.fill")
         }
 
         Menu {
-            Picker(selection: $viewModel.isSystemAudioEnabled) {
-                Text(L10n.noComputerAudio).tag(false)
-                Text(L10n.recordComputerAudio).tag(true)
+            Button {
+                state.setSystemAudioEnabled(false)
             } label: {
-                EmptyView()
+                selectionLabel(L10n.noComputerAudio, isSelected: !state.isSystemAudioEnabled)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
-            .onChange(of: viewModel.isSystemAudioEnabled) { oldValue, newValue in
-                viewModel.handleSystemAudioSelectionChange(from: oldValue, to: newValue)
+            Button {
+                state.setSystemAudioEnabled(true)
+            } label: {
+                selectionLabel(L10n.recordComputerAudio, isSelected: state.isSystemAudioEnabled)
             }
         } label: {
             Label(L10n.systemAudio, systemImage: "speaker.wave.2.fill")
         }
 
         Menu {
-            Picker(selection: $viewModel.selectedLocale) {
-                if viewModel.filteredLocales.isEmpty {
-                    let id = viewModel.selectedLocale
-                    let name = Locale.current.localizedString(forIdentifier: id) ?? id
-                    Text(name).tag(id)
-                } else {
-                    ForEach(viewModel.filteredLocales, id: \.identifier) { locale in
-                        let id = locale.identifier
-                        let name = locale.localizedString(forIdentifier: id) ?? id
-                        Text(name).tag(id)
+            if state.filteredLocales.isEmpty {
+                let identifier = state.selectedLocale
+                let name = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+                Button {
+                    state.selectLocale(identifier)
+                } label: {
+                    selectionLabel(name, isSelected: true)
+                }
+            } else {
+                ForEach(state.filteredLocales, id: \.identifier) { locale in
+                    let identifier = locale.identifier
+                    let name = locale.localizedString(forIdentifier: identifier) ?? identifier
+                    Button {
+                        state.selectLocale(identifier)
+                    } label: {
+                        selectionLabel(name, isSelected: state.selectedLocale == identifier)
                     }
                 }
-            } label: {
-                EmptyView()
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         } label: {
             Label(L10n.language, systemImage: "globe")
         }
 
         Menu {
-            Picker(selection: $viewModel.screenshotCaptureSource) {
-                Text(L10n.notSelected).tag(ScreenshotCaptureSource.none)
-                Divider()
-                Text(L10n.entireDesktop).tag(ScreenshotCaptureSource.entireDesktop)
-
-                if !viewModel.availableWindows.isEmpty {
-                    Divider()
-                }
-
-                ForEach(viewModel.availableWindows) { window in
-                    Text(window.displayName).tag(ScreenshotCaptureSource.window(window.id))
-                }
+            Button {
+                state.selectScreenshotSource(.none)
             } label: {
-                EmptyView()
+                selectionLabel(L10n.notSelected, isSelected: state.screenshotCaptureSource == .none)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            Divider()
+            Button {
+                state.selectScreenshotSource(.entireDesktop)
+            } label: {
+                selectionLabel(
+                    L10n.entireDesktop,
+                    isSelected: state.screenshotCaptureSource == .entireDesktop
+                )
+            }
+
+            if !state.availableWindows.isEmpty {
+                Divider()
+            }
+
+            ForEach(state.availableWindows) { window in
+                Button {
+                    state.selectScreenshotSource(.window(window.id))
+                } label: {
+                    selectionLabel(
+                        window.displayName,
+                        isSelected: state.screenshotCaptureSource == .window(window.id)
+                    )
+                }
+            }
         } label: {
             Label(L10n.source, systemImage: "rectangle.on.rectangle")
         }
     }
 
+    private func selectionLabel(_ title: String, isSelected: Bool) -> some View {
+        Group {
+            if isSelected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private func toggleRecording() {
-        if viewModel.isListening {
+        if state.isListening {
             recordingCoordinator.stopRecording()
         } else if AppSettings.shared.currentVault == nil {
             MainWindowOpener.shared.openMainWindow()
