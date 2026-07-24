@@ -42,6 +42,7 @@
     <link rel="apple-touch-icon" href="../assets/app-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
     <link rel="stylesheet" href="../styles.css" />
+    <noscript><style>.reveal { opacity: 1; transform: none; }</style></noscript>
     <title>Dahlia — 会話に集中。あとはAIに聞けばいい。</title>
   </head>
   <body>
@@ -69,6 +70,7 @@
           <a href="#features">プロダクト</a>
           <a href="#ai">AI &amp; MCP</a>
           <a href="#workflow">使い方</a>
+          <a href="#google-data">Googleデータ</a>
           <a href="privacy/">プライバシー</a>
           <a class="language-link" href="../" lang="en" aria-label="View this page in English">EN</a>
           <a
@@ -90,13 +92,15 @@
           <div class="hero-copy">
             <div class="eyebrow reveal">会議の記憶を、あなたのMacに</div>
             <h1 class="reveal reveal-delay-1">
-              <span class="heading-line">会話に集中。</span>
-              <span class="heading-line">あとは、<span class="hero-accent">AI</span>に</span>
-              <span class="heading-line">聞けばいい。</span>
+              <span class="heading-line">Dahlia</span>
+              <span class="hero-tagline">
+                <span class="heading-line">会話に集中。</span>
+                <span class="heading-line">あとはAIに聞けばいい。</span>
+              </span>
             </h1>
             <p class="hero-lead reveal reveal-delay-2">
-              <span class="copy-line">会議を記録し、あとから使える知識に。</span>
-              <span class="copy-line">必要なことは、DahliaやいつものAIに聞けます。</span>
+              <span class="copy-line">Dahliaは、マイクとシステム音声を録音し、Mac上で会議を文字起こしして、</span>
+              <span class="copy-line">内容の確認・要約・質問に使えるmacOSアプリです。</span>
             </p>
             <div class="hero-actions reveal reveal-delay-3">
               <a
@@ -268,6 +272,52 @@
               <span class="copy-line"><span class="mobile-copy-line">Macに蓄積され、いつでも検索し、質問できる</span><span class="mobile-copy-line">会議の記憶です。</span></span>
               <span class="copy-line"><span class="mobile-copy-line">決定の背景も、次のアクションも、</span><span class="mobile-copy-line">必要なときにすぐ取り出せます。</span></span>
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="google-data-section" id="google-data">
+        <div class="section-shell">
+          <div class="google-data-heading reveal">
+            <p class="section-index">任意のGOOGLE連携</p>
+            <h2>Dahliaによる<br />Googleデータの利用</h2>
+            <p>
+              Google連携は任意です。Dahliaは、ユーザーがGoogleアカウントを接続した場合にのみ、
+              以下の機能に必要なデータへアクセスします。
+            </p>
+          </div>
+
+          <div class="google-data-cards">
+            <article class="google-data-card reveal">
+              <span class="google-data-icon" aria-hidden="true">▦</span>
+              <div>
+                <h3>Google Calendar</h3>
+                <p>
+                  Dahliaは、Googleアカウントとユーザーが選択したカレンダーへの読み取り専用アクセスを使用して、
+                  今後の予定と会議リンクを表示し、予定から録音を開始できるようにします。
+                  カレンダーの予定を作成、変更、削除することはありません。
+                </p>
+              </div>
+            </article>
+
+            <article class="google-data-card reveal">
+              <span class="google-data-icon" aria-hidden="true">□</span>
+              <div>
+                <h3>Google Drive</h3>
+                <p>
+                  Dahliaは、Google Driveへのアクセスを使用して、Meeting Notesフォルダと、
+                  ユーザーがDahliaから書き出すGoogle Docsを作成・更新します。
+                  Dahliaは無関係なDriveファイルにアクセスできません。
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="google-data-footer reveal">
+            <a class="google-data-link" href="https://dahlia-ai.org/privacy/">
+              プライバシーポリシーを読む <span aria-hidden="true">→</span>
+            </a>
+            <p>DahliaによるGoogleユーザーデータへのアクセス、保存、共有、削除について説明しています。</p>
           </div>
         </div>
       </section>

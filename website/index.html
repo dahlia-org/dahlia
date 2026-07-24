@@ -42,6 +42,7 @@
     <link rel="apple-touch-icon" href="assets/app-icon.png" />
     <link rel="manifest" href="site.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
+    <noscript><style>.reveal { opacity: 1; transform: none; }</style></noscript>
     <title>Dahlia — Stay present. Ask later.</title>
   </head>
   <body>
@@ -69,6 +70,7 @@
           <a href="#features">Product</a>
           <a href="#ai">AI &amp; MCP</a>
           <a href="#workflow">How it works</a>
+          <a href="#google-data">Google data</a>
           <a href="privacy/">Privacy</a>
           <a class="language-link" href="ja/" lang="ja" aria-label="このページを日本語で表示">JA</a>
           <a
@@ -90,12 +92,12 @@
           <div class="hero-copy">
             <div class="eyebrow reveal">Your private meeting memory for macOS</div>
             <h1 class="reveal reveal-delay-1">
-              Stay present.<br />
-              <span>Ask later.</span>
+              <span class="heading-line">Dahlia</span>
+              <span class="hero-tagline">Stay present. Ask later.</span>
             </h1>
             <p class="hero-lead reveal reveal-delay-2">
-              Dahlia captures the conversation, turns it into clear meeting memory,<br class="desktop-break" />
-              and lets you ask questions in the app—or from Claude Code and Codex.
+              Dahlia is a macOS app that records microphone and system audio, transcribes meetings on your Mac,
+              and helps you review, summarize, and ask questions about what was discussed.
             </p>
             <div class="hero-actions reveal reveal-delay-3">
               <a
@@ -265,6 +267,51 @@
               Dahlia keeps the conversation as structured, local meeting memory—not another document to forget.
               Summarize it, ask it questions, or bring it into the AI tools where your work already happens.
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="google-data-section" id="google-data">
+        <div class="section-shell">
+          <div class="google-data-heading reveal">
+            <p class="section-index">OPTIONAL GOOGLE INTEGRATIONS</p>
+            <h2>How Dahlia uses<br />Google data.</h2>
+            <p>
+              Google integrations are optional. Dahlia accesses Google data only after you choose to connect your
+              account and only to provide the features below.
+            </p>
+          </div>
+
+          <div class="google-data-cards">
+            <article class="google-data-card reveal">
+              <span class="google-data-icon" aria-hidden="true">▦</span>
+              <div>
+                <h3>Google Calendar</h3>
+                <p>
+                  Dahlia uses read-only access to your Google account and calendars you select to show upcoming events
+                  and meeting links and to start a recording from an event. Dahlia does not create, edit, or delete
+                  calendar events.
+                </p>
+              </div>
+            </article>
+
+            <article class="google-data-card reveal">
+              <span class="google-data-icon" aria-hidden="true">□</span>
+              <div>
+                <h3>Google Drive</h3>
+                <p>
+                  Dahlia uses Google Drive access to create and update the Meeting Notes folder and Google Docs you
+                  choose to export from Dahlia. Dahlia cannot access unrelated Drive files.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="google-data-footer reveal">
+            <a class="google-data-link" href="https://dahlia-ai.org/privacy/">
+              Read the Privacy Policy <span aria-hidden="true">→</span>
+            </a>
+            <p>Learn how Dahlia accesses, stores, shares, and deletes Google user data.</p>
           </div>
         </div>
       </section>
