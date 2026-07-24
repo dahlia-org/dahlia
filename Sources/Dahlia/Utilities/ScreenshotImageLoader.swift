@@ -24,7 +24,7 @@ actor ScreenshotImageLoader {
     private struct InFlightDecode {
         let id: UInt64
         let sourceData: Data
-        var task: Task<Void, Never>?
+        var decodeTask: Task<Void, Never>?
         var waiters: [UInt64: CheckedContinuation<CGImage?, Never>] = [:]
     }
 
@@ -73,11 +73,11 @@ actor ScreenshotImageLoader {
         nextDecodeID &+= 1
         let decode = InFlightDecode(id: nextDecodeID, sourceData: data)
         inFlightDecodes[key] = decode
-        let task = Task { [cacheableDecoder] in
+        let decodeTask = Task { [cacheableDecoder] in
             let image = await cacheableDecoder(data, maxPixelSize)
             self.finishDecode(image, key: key, id: decode.id)
         }
-        inFlightDecodes[key]?.task = task
+        inFlightDecodes[key]?.decodeTask = decodeTask
         return await waitForDecode(key: key, decodeID: decode.id)
     }
 
@@ -138,7 +138,6 @@ actor ScreenshotImageLoader {
         guard let decode = inFlightDecodes[key], decode.id == id else { return }
         inFlightDecodes[key] = nil
 
-        let result: CGImage?
         if let image {
             accessCounter &+= 1
             let cost = image.bytesPerRow * image.height + decode.sourceData.count
@@ -150,16 +149,13 @@ actor ScreenshotImageLoader {
             )
             cacheCost += cost
             evictIfNeeded(excluding: key)
-            result = image
-        } else {
-            result = nil
         }
-        decode.waiters.values.forEach { $0.resume(returning: result) }
+        decode.waiters.values.forEach { $0.resume(returning: image) }
     }
 
     private func invalidateDecode(for key: CacheKey) {
         guard let decode = inFlightDecodes.removeValue(forKey: key) else { return }
-        decode.task?.cancel()
+        decode.decodeTask?.cancel()
         decode.waiters.values.forEach { $0.resume(returning: nil) }
     }
 
@@ -173,7 +169,7 @@ actor ScreenshotImageLoader {
               let continuation = decode.waiters.removeValue(forKey: waiterID) else { return }
         if decode.waiters.isEmpty {
             inFlightDecodes[key] = nil
-            decode.task?.cancel()
+            decode.decodeTask?.cancel()
         } else {
             inFlightDecodes[key] = decode
         }

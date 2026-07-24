@@ -6,9 +6,9 @@ import Foundation
 struct ScreenshotImageContentIdentity: Equatable {
     private static let sampleSize = 32
 
-    let byteCount: Int
-    let contentSample: Data
-    let mimeType: String
+    private let byteCount: Int
+    private let contentSample: Data
+    private let mimeType: String
 
     init(_ screenshot: MeetingScreenshotRecord) {
         let data = screenshot.imageData
@@ -19,8 +19,7 @@ struct ScreenshotImageContentIdentity: Equatable {
 
     private static func contentSample(from data: Data) -> Data {
         guard data.count > sampleSize * 3 else { return data }
-        let middleIndex = data.index(data.startIndex, offsetBy: data.count / 2)
-        let middleStart = data.index(middleIndex, offsetBy: -(sampleSize / 2))
+        let middleStart = data.index(data.startIndex, offsetBy: (data.count - sampleSize) / 2)
         let middleEnd = data.index(middleStart, offsetBy: sampleSize)
         var sample = Data()
         sample.reserveCapacity(sampleSize * 3)
