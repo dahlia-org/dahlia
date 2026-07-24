@@ -31,8 +31,8 @@ actor ScreenshotImageDecodeWorker {
         Self.logger.debug(
             """
             Screenshot decode lane=\(self.lane.rawValue, privacy: .public) \
-            queueWaitMs=\(Self.milliseconds(queueWait), privacy: .public) \
-            decodeMs=\(Self.milliseconds(decodeDuration), privacy: .public) \
+            queueWaitMs=\(queueWait.milliseconds, privacy: .public) \
+            decodeMs=\(decodeDuration.milliseconds, privacy: .public) \
             maxPixelSize=\(maxPixelSize, privacy: .public)
             """
         )
@@ -45,7 +45,7 @@ actor ScreenshotImageDecodeWorker {
     ) {
         logger.debug(
             """
-            Screenshot overlay presented latencyMs=\(milliseconds(requestedAt.duration(to: .now)), privacy: .public) \
+            Screenshot overlay presented latencyMs=\(requestedAt.duration(to: .now).milliseconds, privacy: .public) \
             hasPreview=\(hasPreview, privacy: .public)
             """
         )
@@ -53,13 +53,7 @@ actor ScreenshotImageDecodeWorker {
 
     nonisolated static func recordInteractiveImageApplied(requestedAt: ContinuousClock.Instant) {
         logger.debug(
-            "Screenshot interactive image applied latencyMs=\(milliseconds(requestedAt.duration(to: .now)), privacy: .public)"
+            "Screenshot interactive image applied latencyMs=\(requestedAt.duration(to: .now).milliseconds, privacy: .public)"
         )
-    }
-
-    private nonisolated static func milliseconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) * 1000
-            + Double(components.attoseconds) / 1_000_000_000_000_000
     }
 }

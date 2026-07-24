@@ -10,7 +10,8 @@ struct CodexChatReasoningView: View {
         DisclosureGroup(isExpanded: $isExpanded) {
             CodexChatMarkdownView(
                 markdown: reasoning,
-                isStreaming: isStreaming
+                isStreaming: isStreaming,
+                usesLazyLayout: false
             )
             .padding(.top, 8)
         } label: {

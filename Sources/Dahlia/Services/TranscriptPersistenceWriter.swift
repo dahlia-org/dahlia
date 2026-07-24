@@ -240,24 +240,19 @@ actor TranscriptPersistenceWriter {
             events=\(eventCount, privacy: .public) textBytes=\(textByteCount, privacy: .public) \
             pendingEvents=\(self.pendingEvents.count, privacy: .public) \
             pendingTextBytes=\(self.pendingTextByteCount, privacy: .public) \
-            oldestPendingMs=\(Self.milliseconds(oldestPendingAge ?? .zero), privacy: .public) \
+            oldestPendingMs=\((oldestPendingAge ?? .zero).milliseconds, privacy: .public) \
             highWaterEvents=\(self.highWaterEventCount, privacy: .public) \
             highWaterTextBytes=\(self.highWaterTextByteCount, privacy: .public) \
-            durationMs=\(Self.milliseconds(self.lastWriteDuration), privacy: .public) \
-            maximumDurationMs=\(Self.milliseconds(self.maximumWriteDuration), privacy: .public) \
+            durationMs=\(self.lastWriteDuration.milliseconds, privacy: .public) \
+            maximumDurationMs=\(self.maximumWriteDuration.milliseconds, privacy: .public) \
             failedAttempts=\(self.failedWriteAttemptCount, privacy: .public) \
-            retryBackoffMs=\(Self.milliseconds(self.currentRetryBackoff ?? .zero), privacy: .public) \
+            retryBackoffMs=\((self.currentRetryBackoff ?? .zero).milliseconds, privacy: .public) \
             writeInProgress=\(self.isFlushing, privacy: .public) \
             waitingFlushes=\(self.flushWaiters.count, privacy: .public)
             """
         )
     }
 
-    private static func milliseconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) * 1000
-            + Double(components.attoseconds) / 1_000_000_000_000_000
-    }
 }
 
 private struct TranscriptPersistencePlan {

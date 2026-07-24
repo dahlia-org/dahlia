@@ -2252,11 +2252,12 @@ final class CaptionViewModel: ObservableObject {
         var firstFailureMessage: String?
         do {
             stopResult = try await recordingSessionController.stop()
-            firstFailureMessage = stopResult?.captureFailureMessage
+            if context.transcriptionMode != .batch {
+                firstFailureMessage = stopResult?.captureFailureMessage
+            }
         } catch {
             firstFailureMessage = error.localizedDescription
             ErrorReportingService.capture(error, context: ["source": "stopRecordingSession"])
-            await recordingSessionController.abort()
         }
         for task in context.configurationTasks {
             await task.value

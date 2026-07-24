@@ -2,31 +2,32 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// MainActor 上で画像全体を比較せず、同じ backing storage の再利用だけを識別する。
-///
-/// 小さな `Data` は inline storage を使うため、比較量を固定上限内に抑えて値で比較する。
+/// MainActor 上で画像全体を比較せず、内容から抽出した固定長の標本で変更を識別する。
 struct ScreenshotImageContentIdentity: Equatable {
-    private static let boundedValueComparisonLimit = 64
+    private static let sampleSize = 32
 
-    let data: Data
+    let byteCount: Int
+    let contentSample: Data
     let mimeType: String
 
     init(_ screenshot: MeetingScreenshotRecord) {
-        data = screenshot.imageData
+        let data = screenshot.imageData
+        byteCount = data.count
+        contentSample = Self.contentSample(from: data)
         mimeType = screenshot.mimeType
     }
 
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        guard lhs.mimeType == rhs.mimeType,
-              lhs.data.count == rhs.data.count else { return false }
-        guard lhs.data.count > boundedValueComparisonLimit else {
-            return lhs.data == rhs.data
-        }
-        return lhs.data.withUnsafeBytes { lhsBytes in
-            rhs.data.withUnsafeBytes { rhsBytes in
-                lhsBytes.baseAddress == rhsBytes.baseAddress
-            }
-        }
+    private static func contentSample(from data: Data) -> Data {
+        guard data.count > sampleSize * 3 else { return data }
+        let middleIndex = data.index(data.startIndex, offsetBy: data.count / 2)
+        let middleStart = data.index(middleIndex, offsetBy: -(sampleSize / 2))
+        let middleEnd = data.index(middleStart, offsetBy: sampleSize)
+        var sample = Data()
+        sample.reserveCapacity(sampleSize * 3)
+        sample.append(data.prefix(sampleSize))
+        sample.append(data[middleStart ..< middleEnd])
+        sample.append(data.suffix(sampleSize))
+        return sample
     }
 }
 

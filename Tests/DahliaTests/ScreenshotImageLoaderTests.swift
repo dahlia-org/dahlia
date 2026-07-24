@@ -312,6 +312,47 @@ import Foundation
         }
 
         @Test
+        func cancellingTheLeadingRequestKeepsTheSharedDecodeForRemainingWaiters() async throws {
+            let thumbnail = try #require(makeImage(width: 32, height: 18))
+            let decoder = ControlledImageDecoder(image: thumbnail, startsBlocked: true)
+            let loader = ScreenshotImageLoader(
+                cacheCostLimit: 1024 * 1024,
+                cacheableDecoder: decoder.decode
+            )
+            let screenshotID = UUID.v7()
+            let leader = Task {
+                await loader.image(
+                    screenshotID: screenshotID,
+                    data: Data([1]),
+                    maxPixelSize: 64
+                )
+            }
+            await decoder.waitForCallCount(1)
+            let follower = Task {
+                await loader.image(
+                    screenshotID: screenshotID,
+                    data: Data([1]),
+                    maxPixelSize: 64
+                )
+            }
+            #expect(await waitUntil {
+                await loader.inFlightCacheableRequestCount() == 2
+            })
+
+            leader.cancel()
+
+            #expect(await leader.value == nil)
+            #expect(await waitUntil {
+                await loader.inFlightCacheableRequestCount() == 1
+            })
+            #expect(await decoder.isWaiting)
+
+            await decoder.resume()
+            #expect(await follower.value != nil)
+            #expect(await loader.cacheEntryCount() == 1)
+        }
+
+        @Test
         func removalDuringDecodePreventsCacheReinsertion() async throws {
             let thumbnail = try #require(makeImage(width: 32, height: 18))
             let decoder = ControlledImageDecoder(image: thumbnail, startsBlocked: true)

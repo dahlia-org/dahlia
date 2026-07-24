@@ -3,12 +3,18 @@ import SwiftUI
 struct CodexChatMarkdownView: View {
     let markdown: String
     let isStreaming: Bool
+    let usesLazyLayout: Bool
 
     @State private var projectionModel: CodexChatMarkdownProjectionModel
 
-    init(markdown: String, isStreaming: Bool = false) {
+    init(
+        markdown: String,
+        isStreaming: Bool = false,
+        usesLazyLayout: Bool = true
+    ) {
         self.markdown = markdown
         self.isStreaming = isStreaming
+        self.usesLazyLayout = usesLazyLayout
         _projectionModel = State(initialValue: CodexChatMarkdownProjectionModel())
     }
 
@@ -19,7 +25,8 @@ struct CodexChatMarkdownView: View {
                projectionModel.canDisplayPendingSuffix {
                 CodexChatMarkdownProjectionView(
                     blocks: projection.blocks,
-                    pendingSuffix: projectionModel.pendingSuffix
+                    pendingSuffix: projectionModel.pendingSuffix,
+                    usesLazyLayout: usesLazyLayout
                 )
             } else {
                 Text(markdown)

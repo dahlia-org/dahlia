@@ -216,7 +216,7 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | Capture hot path | Conforms | `AudioSourcePipeline.capture` と `AudioFrameRouter.route` は小さな lock と同期処理で構成され、per-frame task を作らない |
 | Immutable audio ingestion | Conforms | `SegmentedAudioSourceWriter.appendBuffer` は bounded queue を使い、overflow を明示的な recording error にする |
 | UI／persistence separation | Conforms | `enqueue` は suspension より前に durable ingress を確定し、observer と MainActor projection はその後に処理する |
-| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse して block layout を lazy 化する。完了済み cache は件数と byte cost で制限する |
+| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
 | Realtime recognition backlog | Conforms (documented unbounded) | batch 音声がない realtime mode は再生成不能な入力を落とさない lossless queue、batch mode は bounded latest-wins を使う。長時間の Speech stall による process-wide memory exhaustion は保証対象外 |
 | Persistence overload | Gap (measurement-ready) | ingress／retry backlog の event count、text bytes、oldest age、queue／SQLite duration、retry backoff、single-flight write state と high-water を OSLog と test snapshot で取得できるが、queue policy と bounded implementation は未決定 |
 | Recording-start MainActor I/O | Conforms | `createNew`／`createAppending` が DB transaction を非同期実行し、MainActor は完了後の store／context 反映だけを行う |

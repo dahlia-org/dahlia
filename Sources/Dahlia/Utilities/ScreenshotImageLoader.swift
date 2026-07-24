@@ -24,6 +24,7 @@ actor ScreenshotImageLoader {
     private struct InFlightDecode {
         let id: UInt64
         let sourceData: Data
+        var task: Task<Void, Never>?
         var waiters: [UInt64: CheckedContinuation<CGImage?, Never>] = [:]
     }
 
@@ -72,8 +73,12 @@ actor ScreenshotImageLoader {
         nextDecodeID &+= 1
         let decode = InFlightDecode(id: nextDecodeID, sourceData: data)
         inFlightDecodes[key] = decode
-        let image = await cacheableDecoder(data, maxPixelSize)
-        return finishDecode(image, key: key, id: decode.id)
+        let task = Task { [cacheableDecoder] in
+            let image = await cacheableDecoder(data, maxPixelSize)
+            self.finishDecode(image, key: key, id: decode.id)
+        }
+        inFlightDecodes[key]?.task = task
+        return await waitForDecode(key: key, decodeID: decode.id)
     }
 
     /// User-initiated detail decode. This lane never reads or writes the shared image cache.
@@ -87,7 +92,7 @@ actor ScreenshotImageLoader {
     }
 
     func inFlightCacheableRequestCount() -> Int {
-        inFlightDecodes.values.reduce(0) { $0 + $1.waiters.count + 1 }
+        inFlightDecodes.values.reduce(0) { $0 + $1.waiters.count }
     }
 
     func remove(screenshotID: UUID) {
@@ -129,13 +134,12 @@ actor ScreenshotImageLoader {
         }
     }
 
-    private func finishDecode(_ image: CGImage?, key: CacheKey, id: UInt64) -> CGImage? {
-        guard let decode = inFlightDecodes[key], decode.id == id else { return nil }
+    private func finishDecode(_ image: CGImage?, key: CacheKey, id: UInt64) {
+        guard let decode = inFlightDecodes[key], decode.id == id else { return }
         inFlightDecodes[key] = nil
 
         let result: CGImage?
-        if let image,
-           !Task.isCancelled {
+        if let image {
             accessCounter &+= 1
             let cost = image.bytesPerRow * image.height + decode.sourceData.count
             cache[key] = CacheEntry(
@@ -151,11 +155,11 @@ actor ScreenshotImageLoader {
             result = nil
         }
         decode.waiters.values.forEach { $0.resume(returning: result) }
-        return result
     }
 
     private func invalidateDecode(for key: CacheKey) {
         guard let decode = inFlightDecodes.removeValue(forKey: key) else { return }
+        decode.task?.cancel()
         decode.waiters.values.forEach { $0.resume(returning: nil) }
     }
 
@@ -167,7 +171,12 @@ actor ScreenshotImageLoader {
         guard var decode = inFlightDecodes[key],
               decode.id == decodeID,
               let continuation = decode.waiters.removeValue(forKey: waiterID) else { return }
-        inFlightDecodes[key] = decode
+        if decode.waiters.isEmpty {
+            inFlightDecodes[key] = nil
+            decode.task?.cancel()
+        } else {
+            inFlightDecodes[key] = decode
+        }
         continuation.resume(returning: nil)
     }
 

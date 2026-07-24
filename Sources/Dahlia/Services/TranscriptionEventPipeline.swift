@@ -734,11 +734,11 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
             """
             Pipeline persistence batch events=\(events.count, privacy: .public) \
             textBytes=\(batchTextByteCount, privacy: .public) \
-            queueWaitMs=\(Self.milliseconds(queueWait), privacy: .public) \
-            sinkMs=\(Self.milliseconds(self.lastPersistenceSinkDuration), privacy: .public) \
+            queueWaitMs=\(queueWait.milliseconds, privacy: .public) \
+            sinkMs=\(self.lastPersistenceSinkDuration.milliseconds, privacy: .public) \
             pendingEvents=\(self.persistenceIngressTimes.count, privacy: .public) \
             pendingTextBytes=\(self.queuedPersistenceTextByteCount, privacy: .public) \
-            oldestPendingMs=\(Self.milliseconds(oldestPendingAge ?? .zero), privacy: .public) \
+            oldestPendingMs=\((oldestPendingAge ?? .zero).milliseconds, privacy: .public) \
             highWaterEvents=\(self.persistenceHighWaterEventCount, privacy: .public) \
             highWaterTextBytes=\(self.persistenceHighWaterTextByteCount, privacy: .public)
             """
@@ -767,11 +767,6 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
         }
     }
 
-    private static func milliseconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) * 1000
-            + Double(components.attoseconds) / 1_000_000_000_000_000
-    }
 }
 
 private extension TranscriptionEvent {

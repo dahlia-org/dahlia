@@ -351,6 +351,29 @@ struct ScreenshotCollectionViewTests {
     }
 }
 
+extension ScreenshotCollectionViewTests {
+    @Test
+    func imageIdentityMatchesEqualContentFromSeparateAllocations() {
+        let bytes = (0 ..< 256).map { UInt8($0 % 251) }
+        var first = makeScreenshot()
+        first.imageData = Data(bytes)
+        var second = first
+        second.imageData = bytes.withUnsafeBytes { Data($0) }
+
+        #expect(ScreenshotImageContentIdentity(first) == ScreenshotImageContentIdentity(second))
+    }
+
+    @Test
+    func imageIdentityDetectsSampledContentChanges() {
+        var original = makeScreenshot()
+        original.imageData = Data(repeating: 0, count: 256)
+        var changed = original
+        changed.imageData[changed.imageData.count / 2] = 1
+
+        #expect(ScreenshotImageContentIdentity(original) != ScreenshotImageContentIdentity(changed))
+    }
+}
+
 private actor ControlledThumbnailProvider {
     private var continuations: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
 

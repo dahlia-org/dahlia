@@ -47,31 +47,6 @@ final class MeetingRepository {
         }
     }
 
-    struct AppendRecordingContext {
-        let meetingCreatedAt: Date?
-        let firstSegmentStartTime: Date?
-        let lastSegmentEndTime: Date?
-        let segmentIds: Set<UUID>
-        let recordingSessions: [RecordingSessionRecord]
-
-        var nextOffsetSeconds: TimeInterval {
-            let sessionDuration = recordingSessions.reduce(0) { total, session in
-                let duration = session.duration
-                    ?? session.endedAt.map { max(0, $0.timeIntervalSince(session.startedAt)) }
-                    ?? 0
-                return total + duration
-            }
-
-            if sessionDuration > 0 {
-                return sessionDuration
-            }
-
-            guard let firstSegmentStartTime,
-                  let lastSegmentEndTime else { return 0 }
-            return max(0, lastSegmentEndTime.timeIntervalSince(firstSegmentStartTime))
-        }
-    }
-
     private static let generatedSummaryTagColorHex = "#808080"
 
     private let dbQueue: DatabaseQueue
@@ -199,37 +174,6 @@ final class MeetingRepository {
     func fetchMeeting(id: UUID) throws -> MeetingRecord? {
         try dbQueue.read { db in
             try MeetingRecord.fetchOne(db, key: id)
-        }
-    }
-
-    func fetchAppendRecordingContext(forMeetingId meetingId: UUID) throws -> AppendRecordingContext {
-        try dbQueue.read { db in
-            let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
-            let segments = try TranscriptSegmentRecord
-                .filter(Column("meetingId") == meetingId)
-                .order(Column("startTime").asc)
-                .fetchAll(db)
-            let sessions = try RecordingSessionRecord
-                .filter(Column("meetingId") == meetingId)
-                .order(Column("offsetSeconds").asc, Column("startedAt").asc)
-                .fetchAll(db)
-            return AppendRecordingContext(
-                meetingCreatedAt: meeting?.createdAt,
-                firstSegmentStartTime: segments.first?.startTime,
-                lastSegmentEndTime: segments.last.map { $0.endTime ?? $0.startTime },
-                segmentIds: Set(segments.map(\.id)),
-                recordingSessions: sessions
-            )
-        }
-    }
-
-    func updateMeetingCreatedAt(id: UUID, createdAt: Date) throws {
-        try dbQueue.write { db in
-            if var record = try MeetingRecord.fetchOne(db, key: id) {
-                record.createdAt = createdAt
-                record.updatedAt = createdAt
-                try record.update(db)
-            }
         }
     }
 
