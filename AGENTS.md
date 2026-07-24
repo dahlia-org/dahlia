@@ -19,6 +19,10 @@ Dahlia は、マイクとシステム音声を同時にキャプチャし、Appl
 
 `CLAUDE.md` は同じ階層の `AGENTS.md` への互換シンボリックリンクであり、内容を二重管理しない。
 
+## 実装方針
+
+IMPORTANT: Do not write overly defensive code. Always prefer simplicity over pathological complexity.
+
 ## 技術と不変条件
 
 - Swift 6.2 / SwiftUI / macOS 26+ / Swift 6 strict concurrency。
