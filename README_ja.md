@@ -120,22 +120,12 @@ swift package resolve
 
 ## アーキテクチャ
 
-```
-MicrophoneAudioCaptureSession (マイク / ScreenCaptureKit raw + 必要時 AEC3)
-SystemAudioCaptureManager (システム音声 / ScreenCaptureKit)
-    ↓ onAudioBuffer
-AudioSourcePipeline → CapturedAudioChunk
-    ↓ AudioFrameRouter (音源ごとに物理 capture 1 回)
-    ├─ BatchAudioFileWriter (欠落のない録音保存)
-    └─ AudioBufferBridge → SpeechTranscriberService (低遅延文字起こし)
-        ↓ TranscriptionEvent
-        ├─ TranscriptStore (リアルタイム状態)
-        └─ LiveCaptionStore (一時字幕)
-    ↓ Combine debounce(500ms)
-MeetingPersistenceService → SQLite (GRDB)
-```
+現在の runtime data flow、目標 architecture、実装との適合状況、remediation plan、UI 応答性の方針は
+[ARCHITECTURE.md](ARCHITECTURE.md)を参照してください。過去の設計判断と置換関係は
+[Architecture Decision Records](docs/adr/README.md)にまとめています。
 
-UID／RECURRENCE-IDのキー形式、source対応、Meetingとのカーディナリティは[カレンダー予定の永続化スキーマ](docs/calendar-event-schema.md)を参照してください。
+UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディナリティは
+[カレンダー予定の永続化スキーマ](docs/calendar-event-schema.md)を参照してください。
 
 ### プロジェクト構成
 
