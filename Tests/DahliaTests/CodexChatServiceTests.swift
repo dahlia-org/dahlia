@@ -279,7 +279,7 @@ import Foundation
             #expect(config["web_search"] == .string("live"))
             #expect(config["mcp_servers"] == .object([
                 "dahlia": .object([
-                    "args": .array([.string("--vault-id"), .string(vaultID.uuidString)]),
+                    "args": .array([.string("--vault-id"), .string(vaultID.uuidString), .string("--write")]),
                     "command": .string("/tmp/dahlia-mcp"),
                     "enabled": .bool(true),
                 ]),

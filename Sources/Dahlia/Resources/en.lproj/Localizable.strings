@@ -886,6 +886,26 @@
 
 /* MCP */
 "MCP" = "MCP";
+"Parent Project" = "Parent Project";
+"Vault Root" = "Vault Root";
+"Project Type" = "Project Type";
+"Hierarchy and Type" = "Hierarchy and Type";
+"Move Project" = "Move Project";
+"Update Project Type" = "Update Project Type";
+"Moving or changing a root type also updates every descendant's path or inherited type." = "Moving or changing a root type also updates every descendant's path or inherited type.";
+"This subproject inherits its Project Type from the root Project." = "This subproject inherits its Project Type from the root Project.";
+"Inherited from %@" = "Inherited from %@";
+"Customer" = "Customer";
+"Internal" = "Internal";
+"Personal" = "Personal";
+"Undefined" = "Undefined";
+"Subprojects inherit their Project Type from the root Project." = "Subprojects inherit their Project Type from the root Project.";
+"The Project changed before this update. Its current revision is %lld." = "The Project changed before this update. Its current revision is %lld.";
+"A Project cannot be moved inside itself or one of its descendants." = "A Project cannot be moved inside itself or one of its descendants.";
+"Another Project operation is already running for this Vault." = "Another Project operation is already running for this Vault.";
+"Read-only" = "Read-only";
+"Write enabled" = "Write enabled";
+"Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults." = "Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults.";
 "Vault Name" = "Vault Name";
 "Vault ID" = "Vault ID";
 "Copy Command" = "Copy Command";

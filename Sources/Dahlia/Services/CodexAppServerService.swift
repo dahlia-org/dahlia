@@ -409,7 +409,8 @@ actor CodexAppServerService {
         var servers = config["mcp_servers"]?.objectValue ?? [:]
         servers["dahlia"] = dahliaMCPServer(
             executableURL: helperURL,
-            vaultID: vaultID
+            vaultID: vaultID,
+            allowsWrites: true
         )
         config["mcp_servers"] = .object(servers)
         config["web_search"] = .string("live")
@@ -419,16 +420,18 @@ actor CodexAppServerService {
     private nonisolated static func dahliaMCPServer(
         executableURL: URL,
         vaultID: UUID,
-        allowedMeetingIDs: [UUID] = []
+        allowedMeetingIDs: [UUID] = [],
+        allowsWrites: Bool = false
     ) -> JSONValue {
         let meetingArguments = allowedMeetingIDs.flatMap { meetingID in
             [JSONValue.string("--meeting-id"), .string(meetingID.uuidString)]
         }
+        let writeArguments: [JSONValue] = allowsWrites ? [.string("--write")] : []
         return .object([
             "args": .array([
                 .string("--vault-id"),
                 .string(vaultID.uuidString),
-            ] + meetingArguments),
+            ] + meetingArguments + writeArguments),
             "command": .string(executableURL.path),
             "enabled": .bool(true),
         ])

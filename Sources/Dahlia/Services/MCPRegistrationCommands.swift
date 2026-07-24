@@ -4,6 +4,8 @@ import Foundation
 struct MCPRegistrationCommands: Equatable {
     let codex: String
     let claude: String
+    let codexWrite: String
+    let claudeWrite: String
 
     init(
         helperURL: URL,
@@ -17,9 +19,17 @@ struct MCPRegistrationCommands: Equatable {
         codex mcp remove dahlia
         codex mcp add dahlia -- \(invocation) --vault-id \(vault)
         """
+        codexWrite = """
+        codex mcp remove dahlia
+        codex mcp add dahlia -- \(invocation) --vault-id \(vault) --write
+        """
         claude = """
         claude mcp remove --scope user dahlia
         claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault)
+        """
+        claudeWrite = """
+        claude mcp remove --scope user dahlia
+        claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault) --write
         """
     }
 

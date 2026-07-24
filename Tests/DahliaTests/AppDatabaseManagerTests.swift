@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -33,6 +34,336 @@ import GRDB
             #expect(columns.contains("googleDriveFolderId"))
             #expect(columns.contains("description"))
             #expect(columns.contains("legacyContextMigrated"))
+            #expect(columns.contains("parentProjectId"))
+            #expect(columns.contains("leafName"))
+            #expect(columns.contains("leafNameKey"))
+            #expect(columns.contains("projectType"))
+            #expect(columns.contains("revision"))
+        }
+
+        @Test
+        func projectHierarchyMigrationPreservesUUIDsAndSynthesizesIntermediateProjects() throws {
+            let queue = try DatabaseQueue()
+            let vaultID = UUID.v7()
+            let childID = UUID.v7()
+            let meetingID = UUID.v7()
+            try queue.write { db in
+                try db.execute(sql: """
+                CREATE TABLE vaults (
+                    id BLOB PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    lastOpenedAt DATETIME NOT NULL
+                );
+                CREATE TABLE projects (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    googleDriveFolderId TEXT,
+                    missingOnDisk BOOLEAN NOT NULL DEFAULT 0,
+                    description TEXT NOT NULL DEFAULT '',
+                    legacyContextMigrated BOOLEAN NOT NULL DEFAULT 0,
+                    UNIQUE(vaultId, name)
+                );
+                CREATE TABLE meetings (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    projectId BLOB REFERENCES projects(id) ON DELETE SET NULL
+                );
+                """)
+                try db.execute(
+                    sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
+                    arguments: [vaultID, "/tmp/vault", "Vault", Date.now, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO projects (
+                        id, vaultId, name, createdAt, googleDriveFolderId,
+                        missingOnDisk, description, legacyContextMigrated
+                    )
+                    VALUES (?, ?, ?, ?, ?, 0, ?, 1)
+                    """,
+                    arguments: [childID, vaultID, "Acme/Platform/API", Date.now, "drive-id", "Preserved"]
+                )
+                try db.execute(
+                    sql: "INSERT INTO meetings (id, vaultId, projectId) VALUES (?, ?, ?)",
+                    arguments: [meetingID, vaultID, childID]
+                )
+
+                try ProjectHierarchyMigration.migrate(in: db)
+            }
+
+            let result = try queue.read { db in
+                try (
+                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
+                    UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
+                )
+            }
+            let projects = result.0
+            let child = try #require(projects.first(where: { $0.id == childID }))
+            #expect(projects.map(\.name) == ["Acme", "Acme/Platform", "Acme/Platform/API"])
+            #expect(child.description == "Preserved")
+            #expect(child.projectType == nil)
+            #expect(ProjectRecord.effectiveType(for: childID, records: projects)?.type == .undefined)
+            #expect(result.1 == childID)
+            let driveID = try queue.read { db in
+                try String.fetchOne(db, sql: "SELECT googleDriveFolderId FROM projects WHERE id = ?", arguments: [childID])
+            }
+            #expect(driveID == "drive-id")
+        }
+
+        @Test
+        func projectHierarchyMigrationPreservesLegacyCaseCollisions() throws {
+            let queue = try DatabaseQueue()
+            let vaultID = UUID.v7()
+            let firstID = UUID.v7()
+            let secondID = UUID.v7()
+            let meetingID = UUID.v7()
+            try queue.write { db in
+                try db.execute(sql: """
+                CREATE TABLE vaults (
+                    id BLOB PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    lastOpenedAt DATETIME NOT NULL
+                );
+                CREATE TABLE projects (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    googleDriveFolderId TEXT,
+                    missingOnDisk BOOLEAN NOT NULL DEFAULT 0,
+                    description TEXT NOT NULL DEFAULT '',
+                    legacyContextMigrated BOOLEAN NOT NULL DEFAULT 0,
+                    UNIQUE(vaultId, name)
+                );
+                CREATE TABLE meetings (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    projectId BLOB
+                );
+                CREATE TABLE summary_exports (
+                    meetingId BLOB NOT NULL,
+                    type TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    updatedAt DATETIME NOT NULL,
+                    PRIMARY KEY (meetingId, type)
+                );
+                """)
+                try db.execute(
+                    sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
+                    arguments: [vaultID, "/tmp/vault", "Vault", Date.now, Date.now]
+                )
+                for (id, name) in [(firstID, "Acme"), (secondID, "acme")] {
+                    try db.execute(
+                        sql: """
+                        INSERT INTO projects (
+                            id, vaultId, name, createdAt, googleDriveFolderId,
+                            missingOnDisk, description, legacyContextMigrated
+                        )
+                        VALUES (?, ?, ?, ?, NULL, 0, '', 1)
+                        """,
+                        arguments: [id, vaultID, name, Date.now]
+                    )
+                }
+                try db.execute(
+                    sql: "INSERT INTO meetings VALUES (?, ?, ?)",
+                    arguments: [meetingID, vaultID, secondID]
+                )
+                try SummaryExportRecord(
+                    meetingId: meetingID,
+                    type: .vault,
+                    url: "vault:///acme/Note.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+
+                try ProjectHierarchyMigration.migrate(in: db)
+            }
+
+            let result = try queue.read { db in
+                try (
+                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
+                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db)
+                )
+            }
+            let projects = result.0
+            #expect(Set(projects.map(\.id)) == [firstID, secondID])
+            #expect(Set(projects.map(\.leafNameKey)).count == 2)
+            #expect(projects.filter(\.missingOnDisk).count == 1)
+            #expect(result.1?.vaultRelativePath == "acme (2)/Note.md")
+        }
+
+        @Test
+        func deletingVaultCascadesThroughNestedProjects() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/nested-project-vault",
+                name: "Nested",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try repository.insertVault(vault)
+            let root = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Root",
+                description: "",
+                projectType: .customer
+            )
+            _ = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: root.id,
+                leafName: "Child",
+                description: "",
+                projectType: nil
+            )
+
+            try repository.deleteVault(id: vault.id)
+
+            let counts = try database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM vaults WHERE id = ?", arguments: [vault.id]) ?? -1,
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE vaultId = ?", arguments: [vault.id]) ?? -1
+                )
+            }
+            #expect(counts.0 == 0)
+            #expect(counts.1 == 0)
+        }
+
+        @Test
+        func rootProjectRequiresExplicitTypeAtDatabaseBoundary() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultID = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultID,
+                    path: "/tmp/project-type-constraint",
+                    name: "Type constraint",
+                    createdAt: .now,
+                    lastOpenedAt: .now
+                ).insert(db)
+            }
+
+            #expect(throws: DatabaseError.self) {
+                try database.dbQueue.write { db in
+                    try db.execute(
+                        sql: """
+                        INSERT INTO projects (
+                            id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, missingOnDisk,
+                            description, legacyContextMigrated, projectType, revision
+                        )
+                        VALUES (?, ?, NULL, ?, ?, ?, 0, '', 1, NULL, 1)
+                        """,
+                        arguments: [
+                            UUID.v7(),
+                            vaultID,
+                            "Invalid root",
+                            DahliaProjectName.siblingKey("Invalid root"),
+                            Date.now,
+                        ]
+                    )
+                }
+            }
+        }
+
+        @Test
+        func projectLeafNameConstraintsRejectInvalidDirectWrites() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultID = UUID.v7()
+            try database.dbQueue.write { db in
+                try VaultRecord(
+                    id: vaultID,
+                    path: "/tmp/project-leaf-constraint",
+                    name: "Leaf constraint",
+                    createdAt: .now,
+                    lastOpenedAt: .now
+                ).insert(db)
+            }
+
+            let invalidNames = [
+                "", " ", ".", "..", ".hidden", "_internal", "a/b", "a:b",
+                "control\u{001F}", String(repeating: "a", count: 256),
+            ]
+            for invalidName in invalidNames {
+                #expect(throws: DatabaseError.self) {
+                    try database.dbQueue.write { db in
+                        try db.execute(
+                            sql: """
+                            INSERT INTO projects (
+                                id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, missingOnDisk,
+                                description, legacyContextMigrated, projectType, revision
+                            )
+                            VALUES (?, ?, NULL, ?, ?, ?, 0, '', 1, 'undefined', 1)
+                            """,
+                            arguments: [UUID.v7(), vaultID, invalidName, "invalid-key", Date.now]
+                        )
+                    }
+                }
+            }
+        }
+
+        @Test
+        func hierarchyMigrationDropsCrossVaultMeetingMembership() throws {
+            let queue = try DatabaseQueue()
+            let firstVaultID = UUID.v7()
+            let secondVaultID = UUID.v7()
+            let projectID = UUID.v7()
+            let meetingID = UUID.v7()
+            try queue.write { db in
+                try db.execute(sql: """
+                CREATE TABLE vaults (
+                    id BLOB PRIMARY KEY,
+                    path TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    lastOpenedAt DATETIME NOT NULL
+                );
+                CREATE TABLE projects (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    name TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL,
+                    googleDriveFolderId TEXT,
+                    missingOnDisk BOOLEAN NOT NULL DEFAULT 0,
+                    description TEXT NOT NULL DEFAULT '',
+                    legacyContextMigrated BOOLEAN NOT NULL DEFAULT 0
+                );
+                CREATE TABLE meetings (
+                    id BLOB PRIMARY KEY,
+                    vaultId BLOB NOT NULL,
+                    projectId BLOB
+                );
+                """)
+                for (id, path) in [(firstVaultID, "/tmp/first"), (secondVaultID, "/tmp/second")] {
+                    try db.execute(
+                        sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
+                        arguments: [id, path, path, Date.now, Date.now]
+                    )
+                }
+                try db.execute(
+                    sql: "INSERT INTO projects VALUES (?, ?, ?, ?, NULL, 0, '', 1)",
+                    arguments: [projectID, secondVaultID, "Other", Date.now]
+                )
+                try db.execute(
+                    sql: "INSERT INTO meetings VALUES (?, ?, ?)",
+                    arguments: [meetingID, firstVaultID, projectID]
+                )
+
+                try ProjectHierarchyMigration.migrate(in: db)
+            }
+
+            let membership = try queue.read { db in
+                try UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
+            }
+            #expect(membership == nil)
         }
 
         @Test
@@ -48,6 +379,13 @@ import GRDB
             try legacyQueue.write { db in
                 try db.execute(
                     sql: """
+                    CREATE TABLE vaults (
+                        id BLOB PRIMARY KEY,
+                        path TEXT NOT NULL UNIQUE,
+                        name TEXT NOT NULL,
+                        createdAt DATETIME NOT NULL,
+                        lastOpenedAt DATETIME NOT NULL
+                    );
                     CREATE TABLE projects (
                         id BLOB PRIMARY KEY,
                         vaultId BLOB NOT NULL,
@@ -58,6 +396,10 @@ import GRDB
                         UNIQUE(vaultId, name)
                     )
                     """
+                )
+                try db.execute(
+                    sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
+                    arguments: [vaultId, "/tmp/existing-project-vault", "Existing", Date.now, Date.now]
                 )
                 try db.create(table: "grdb_migrations") { table in
                     table.column("identifier", .text).primaryKey()
@@ -421,7 +763,11 @@ import GRDB
             try repository.insertVault(vault)
 
             let project = try repository.fetchOrCreateProject(name: "Project A", vaultId: vault.id)
-            try repository.updateProjectDescription(id: project.id, description: "Customer rollout")
+            try repository.updateProjectDescription(
+                id: project.id,
+                vaultId: vault.id,
+                description: "Customer rollout"
+            )
 
             let fetchedProject = try repository.fetchProject(id: project.id)
             let updatedProject = try #require(fetchedProject)
@@ -760,7 +1106,11 @@ import GRDB
             try repository.insertVault(vault)
 
             let project = try repository.fetchOrCreateProject(name: "Project A", vaultId: vault.id)
-            try repository.updateProjectDescription(id: project.id, description: "Customer rollout")
+            try repository.updateProjectDescription(
+                id: project.id,
+                vaultId: vault.id,
+                description: "Customer rollout"
+            )
 
             let updatedProject = try XCTUnwrap(repository.fetchProject(id: project.id))
             XCTAssertEqual(updatedProject.description, "Customer rollout")

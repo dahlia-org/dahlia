@@ -1,3 +1,5 @@
+import DahliaRuntimeSupport
+import Darwin
 import Foundation
 
 @MainActor
@@ -39,7 +41,93 @@ final class ProjectWorkspaceService {
         self.summaryFileResolver = summaryFileResolver
     }
 
-    func createProject(leafName: String, parentProjectId: UUID?) throws -> ProjectRecord {
+    func createProject(
+        leafName: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType? = nil,
+        description: String = ""
+    ) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            try createProjectUnlocked(
+                leafName: leafName,
+                parentProjectId: parentProjectId,
+                projectType: projectType,
+                description: description
+            )
+        }
+    }
+
+    func fetchOrCreateRootProject(leafName: String) throws -> ProjectRecord {
+        let leafName = try Self.validatedLeafName(leafName)
+        let (project, changed) = try withMutationLock {
+            let projects = try repository.fetchAllProjects(vaultId: vault.id)
+            if let existing = projects.first(where: {
+                $0.parentProjectId == nil
+                    && DahliaProjectName.siblingKey($0.leafName) == DahliaProjectName.siblingKey(leafName)
+            }) {
+                guard existing.missingOnDisk else { return (existing, false) }
+
+                let matchingURL = try fileManager.contentsOfDirectory(
+                    at: vault.url,
+                    includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                    options: [.skipsHiddenFiles]
+                ).first {
+                    DahliaProjectName.siblingKey($0.lastPathComponent)
+                        == DahliaProjectName.siblingKey(existing.leafName)
+                }
+                let createdURL: URL?
+                if let matchingURL {
+                    let values = try matchingURL.resourceValues(forKeys: [
+                        .isDirectoryKey,
+                        .isSymbolicLinkKey,
+                    ])
+                    guard values.isDirectory == true,
+                          values.isSymbolicLink != true else {
+                        throw ProjectWorkspaceError.folderAlreadyExists(matchingURL.lastPathComponent)
+                    }
+                    createdURL = nil
+                } else {
+                    let projectURL = vault.url.appending(
+                        path: existing.leafName,
+                        directoryHint: .isDirectory
+                    )
+                    try fileManager.createDirectory(
+                        at: projectURL,
+                        withIntermediateDirectories: false
+                    )
+                    createdURL = projectURL
+                }
+                do {
+                    try repository.upsertProjects(
+                        names: [matchingURL?.lastPathComponent ?? existing.leafName],
+                        vaultId: vault.id
+                    )
+                    return try (repository.fetchProject(id: existing.id) ?? existing, true)
+                } catch {
+                    if let createdURL {
+                        try? removeNewEmptyDirectory(createdURL)
+                    }
+                    throw error
+                }
+            }
+
+            return try (
+                createProjectUnlocked(leafName: leafName, parentProjectId: nil),
+                true
+            )
+        }
+        if changed {
+            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        }
+        return project
+    }
+
+    private func createProjectUnlocked(
+        leafName: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType? = nil,
+        description: String = ""
+    ) throws -> ProjectRecord {
         let leafName = try Self.validatedLeafName(leafName)
         let parent = try parentProjectId.map { id in
             guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
@@ -48,23 +136,48 @@ final class ProjectWorkspaceService {
             guard !project.missingOnDisk else { throw ProjectWorkspaceError.parentFolderMissing }
             return project
         }
+        if parent != nil, projectType != nil {
+            throw ProjectWorkspaceError.typeOwnedByRoot
+        }
         let name = parent.map { "\($0.name)/\(leafName)" } ?? leafName
         try ensureProjectDoesNotExist(name: name, excludingProjectId: nil)
 
         let parentURL = parent.map { projectURL(name: $0.name) } ?? vault.url
+        guard isDirectoryInsideVault(parentURL) else {
+            throw ProjectWorkspaceError.invalidMoveDestination
+        }
         try ensureFolderDoesNotExist(named: leafName, in: parentURL, excluding: nil)
         let url = parentURL.appending(path: leafName, directoryHint: .isDirectory)
         try fileManager.createDirectory(at: url, withIntermediateDirectories: false)
 
         do {
-            return try repository.fetchOrCreateProject(name: name, vaultId: vault.id)
-        } catch {
-            removeNewEmptyDirectoryIfPossible(url)
-            throw error
+            return try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: parentProjectId,
+                leafName: leafName,
+                description: description,
+                projectType: projectType
+            )
+        } catch let operationError {
+            do {
+                try removeNewEmptyDirectory(url)
+            } catch let rollbackError {
+                throw ProjectWorkspaceError.rollbackFailed(
+                    operation: operationError.localizedDescription,
+                    rollback: rollbackError.localizedDescription
+                )
+            }
+            throw operationError
         }
     }
 
     func renameProject(id: UUID, newLeafName: String) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            try renameProjectUnlocked(id: id, newLeafName: newLeafName)
+        }
+    }
+
+    private func renameProjectUnlocked(id: UUID, newLeafName: String) throws -> ProjectRecord {
         guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
@@ -80,6 +193,9 @@ final class ProjectWorkspaceService {
 
         let oldURL = projectURL(name: project.name)
         let newURL = projectURL(name: newName)
+        guard isDirectoryInsideVault(oldURL) else {
+            throw ProjectWorkspaceError.invalidMoveDestination
+        }
         try ensureFolderDoesNotExist(
             named: newLeafName,
             in: oldURL.deletingLastPathComponent(),
@@ -87,8 +203,13 @@ final class ProjectWorkspaceService {
         )
         try moveProjectFolder(from: oldURL, to: newURL)
 
+        let renamed: ProjectRecord
         do {
-            try repository.renameProjectsByPrefix(oldPrefix: project.name, newPrefix: newName, vaultId: vault.id)
+            renamed = try repository.renameProjectsByPrefix(
+                oldPrefix: project.name,
+                newPrefix: newName,
+                vaultId: vault.id
+            )
         } catch {
             do {
                 try moveProjectFolder(from: newURL, to: oldURL)
@@ -101,10 +222,115 @@ final class ProjectWorkspaceService {
             throw error
         }
 
-        guard let renamed = try repository.fetchProject(id: id) else {
+        return renamed
+    }
+
+    func reparentProject(id: UUID, parentProjectId: UUID?) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            try reparentProjectUnlocked(id: id, parentProjectId: parentProjectId)
+        }
+    }
+
+    private func reparentProjectUnlocked(id: UUID, parentProjectId: UUID?) throws -> ProjectRecord {
+        guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
-        return renamed
+        guard !project.missingOnDisk else { throw ProjectWorkspaceError.folderMissing }
+        guard project.parentProjectId != parentProjectId else { return project }
+
+        let projects = try repository.fetchAllProjects(vaultId: vault.id)
+        let descendantIds = Set(
+            projects.filter { candidate in
+                candidate.id != project.id
+                    && ProjectRecord.belongsToHierarchy(candidate.name, prefix: project.name)
+            }
+            .map(\.id)
+        )
+        guard parentProjectId != id,
+              parentProjectId.map({ !descendantIds.contains($0) }) ?? true else {
+            throw ProjectWorkspaceError.cycleDetected
+        }
+
+        let parent = try parentProjectId.map { parentId in
+            guard let parent = projects.first(where: { $0.id == parentId }),
+                  parent.vaultId == vault.id else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            guard !parent.missingOnDisk else { throw ProjectWorkspaceError.parentFolderMissing }
+            return parent
+        }
+        let newName = parent.map { "\($0.name)/\(project.leafName)" } ?? project.leafName
+        try ensureProjectDoesNotExist(name: newName, excludingProjectId: id)
+
+        let oldURL = projectURL(name: project.name)
+        let destinationParentURL = parent.map { projectURL(name: $0.name) } ?? vault.url
+        guard isDirectoryInsideVault(oldURL) else {
+            throw ProjectWorkspaceError.invalidMoveDestination
+        }
+        guard isDirectoryInsideVault(destinationParentURL) else {
+            throw ProjectWorkspaceError.invalidMoveDestination
+        }
+        try ensureFolderDoesNotExist(named: project.leafName, in: destinationParentURL, excluding: oldURL)
+        let newURL = destinationParentURL.appending(path: project.leafName, directoryHint: .isDirectory)
+        try moveProjectFolder(from: oldURL, to: newURL)
+
+        let moved: ProjectRecord
+        do {
+            moved = try repository.renameProjectsByPrefix(
+                oldPrefix: project.name,
+                newPrefix: newName,
+                vaultId: vault.id
+            )
+        } catch {
+            do {
+                try moveProjectFolder(from: newURL, to: oldURL)
+            } catch let rollbackError {
+                throw ProjectWorkspaceError.rollbackFailed(
+                    operation: error.localizedDescription,
+                    rollback: rollbackError.localizedDescription
+                )
+            }
+            throw error
+        }
+
+        return moved
+    }
+
+    func updateRootProjectType(id: UUID, projectType: ProjectType) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            return try repository.updateRootProjectType(
+                id: id,
+                vaultId: vault.id,
+                projectType: projectType
+            )
+        }
+    }
+
+    func updateProjectDescription(
+        id: UUID,
+        description: String,
+        expectedRevision: Int? = nil
+    ) throws -> Bool {
+        let changed = try withMutationLock {
+            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            if let expectedRevision, project.revision != expectedRevision {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
+            }
+            return try repository.updateProjectDescription(
+                id: id,
+                vaultId: vault.id,
+                description: description
+            )
+        }
+        if changed {
+            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        }
+        return changed
     }
 
     func moveMeeting(id: UUID, toProjectId: UUID?) throws {
@@ -112,8 +338,17 @@ final class ProjectWorkspaceService {
     }
 
     func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) throws {
+        let changed = try withMutationLock {
+            try moveMeetingsUnlocked(ids: ids, toProjectId: toProjectId)
+        }
+        if changed {
+            DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        }
+    }
+
+    private func moveMeetingsUnlocked(ids: Set<UUID>, toProjectId: UUID?) throws -> Bool {
         let plan = try makeMeetingMovePlan(ids: ids, toProjectId: toProjectId)
-        guard !plan.meetingIds.isEmpty else { return }
+        guard !plan.meetingIds.isEmpty else { return false }
 
         try performSummaryRelocations(plan.relocations) {
             try repository.commitMeetingMove(
@@ -123,9 +358,19 @@ final class ProjectWorkspaceService {
                 vaultExportUpdates: plan.vaultExportUpdates
             )
         }
+        return true
     }
 
     func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) async throws {
+        try withNotifyingMutation {
+            try deleteProjectHierarchyUnlocked(id: id, meetingDisposition: meetingDisposition)
+        }
+    }
+
+    private func deleteProjectHierarchyUnlocked(
+        id: UUID,
+        meetingDisposition: ProjectMeetingDisposition
+    ) throws {
         guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
@@ -145,17 +390,13 @@ final class ProjectWorkspaceService {
             movePlan = nil
         }
 
-        if meetingDisposition == .deleteMeetings {
-            try await repository.prepareSegmentedAudioForProjectDeletion(
-                name: project.name,
-                vaultId: vault.id,
-                managedRootURL: managedAudioRootURL
-            )
-        }
-
         let relocations = movePlan?.relocations ?? []
         try performSummaryRelocations(relocations) {
             let originalURL = projectURL(name: project.name)
+            if fileManager.fileExists(atPath: originalURL.path),
+               !isDirectoryInsideVault(originalURL) {
+                throw ProjectWorkspaceError.invalidMoveDestination
+            }
             let trashedURL: URL? = if fileManager.fileExists(atPath: originalURL.path) {
                 try trashHandler(originalURL)
             } else {
@@ -167,7 +408,8 @@ final class ProjectWorkspaceService {
                     name: project.name,
                     vaultId: vault.id,
                     meetingDisposition: meetingDisposition,
-                    vaultExportUpdates: movePlan?.vaultExportUpdates ?? []
+                    vaultExportUpdates: movePlan?.vaultExportUpdates ?? [],
+                    managedAudioRootURL: managedAudioRootURL
                 )
             } catch {
                 guard let trashedURL else { throw error }
@@ -186,27 +428,37 @@ final class ProjectWorkspaceService {
 
     static func validatedLeafName(_ name: String) throws -> String {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty,
-              name != ".",
-              name != "..",
-              !name.hasPrefix("."),
-              !name.hasPrefix("_"),
-              !name.contains("/"),
-              !name.contains(":"),
-              name.rangeOfCharacter(from: .controlCharacters) == nil
-        else {
+        guard name.utf8.count <= 255 else { throw ProjectWorkspaceError.nameTooLong }
+        guard DahliaProjectName.normalizedLeafName(name) == name else {
             throw ProjectWorkspaceError.invalidName
         }
-        guard name.utf8.count <= 255 else { throw ProjectWorkspaceError.nameTooLong }
         return name
     }
 }
 
 extension ProjectWorkspaceService {
+    private func withNotifyingMutation<T>(_ operation: () throws -> T) throws -> T {
+        let result = try withMutationLock(operation)
+        DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        return result
+    }
+
+    private func withMutationLock<T>(_ operation: () throws -> T) throws -> T {
+        do {
+            return try DahliaVaultMutationLock.withLock(
+                vaultURL: vault.url,
+                vaultID: vault.id,
+                operation: operation
+            )
+        } catch is DahliaVaultMutationLockError {
+            throw ProjectWorkspaceError.vaultBusy
+        }
+    }
+
     private func ensureProjectDoesNotExist(name: String, excludingProjectId: UUID?) throws {
         let projects = try repository.fetchAllProjects(vaultId: vault.id)
         if projects.contains(where: {
-            $0.id != excludingProjectId && $0.name.caseInsensitiveCompare(name) == .orderedSame
+            $0.id != excludingProjectId && ProjectRecord.pathKey($0.name) == ProjectRecord.pathKey(name)
         }) {
             throw ProjectWorkspaceError.projectAlreadyExists(name)
         }
@@ -221,7 +473,7 @@ extension ProjectWorkspaceService {
         )
         if urls.contains(where: {
             $0.standardizedFileURL != excludedURL
-                && $0.lastPathComponent.caseInsensitiveCompare(name) == .orderedSame
+                && DahliaProjectName.siblingKey($0.lastPathComponent) == DahliaProjectName.siblingKey(name)
         }) {
             throw ProjectWorkspaceError.folderAlreadyExists(name)
         }
@@ -239,25 +491,32 @@ extension ProjectWorkspaceService {
         let destinationDirectory = try summaryDestinationDirectory(toProjectId: toProjectId)
         let candidates = try repository.fetchMeetingMoveCandidates(ids: ids, vaultId: vault.id)
             .filter { $0.projectId != toProjectId }
+        guard !candidates.isEmpty else {
+            return MeetingMovePlan(meetingIds: [], relocations: [], vaultExportUpdates: [])
+        }
         let meetingIds = Set(candidates.map(\.meetingId))
-        let sharedSummaryPaths = try repository.externallySharedVaultSummaryPaths(
-            relativePaths: Set(candidates.compactMap(\.vaultRelativePath)),
+        let externalSummaryPaths = try repository.externalVaultSummaryPaths(
             movingMeetingIds: meetingIds,
             vaultId: vault.id
         )
+        let externallyReferencedSources = try Set(externalSummaryPaths.compactMap { relativePath
+                -> DahliaWorkspaceFileIdentity? in
+            guard let url = try summaryFileResolver(relativePath, vault.url) else { return nil }
+            return DahliaWorkspaceFileIdentity.resolve(url, fileManager: fileManager)
+        })
+        let existingDestinationKeys = try normalizedSiblingKeys(in: destinationDirectory)
         var relocations: [SummaryRelocation] = []
         var updates: [MeetingRepository.MeetingVaultExportUpdate] = []
         var destinationPaths: Set<String> = []
-        var destinationBySourcePath: [String: URL] = [:]
+        var destinationBySource: [DahliaWorkspaceFileIdentity: URL] = [:]
 
         for candidate in candidates where candidate.hasVaultExport {
-            guard let sourceURL = try summaryFileResolver(candidate.vaultRelativePath, vault.url),
-                  isInsideVaultAfterResolvingSymlinks(sourceURL)
-            else {
+            guard let sourceURL = try summaryFileResolver(candidate.vaultRelativePath, vault.url) else {
+                updates.append(.init(meetingId: candidate.meetingId, relativePath: nil))
                 continue
             }
-            if let relativePath = candidate.vaultRelativePath, sharedSummaryPaths.contains(relativePath) {
-                throw ProjectWorkspaceError.summaryFileShared(sourceURL.lastPathComponent)
+            guard isInsideVaultAfterResolvingSymlinks(sourceURL) else {
+                throw ProjectWorkspaceError.invalidMoveDestination
             }
 
             let destinationURL = destinationDirectory
@@ -275,19 +534,27 @@ extension ProjectWorkspaceService {
             updates.append(.init(meetingId: candidate.meetingId, relativePath: relativePath))
             guard standardizedSourceURL != destinationURL else { continue }
 
-            let sourceKey = standardizedSourceURL.path.lowercased()
-            if let plannedDestination = destinationBySourcePath[sourceKey] {
+            let sourceIdentity = DahliaWorkspaceFileIdentity.resolve(
+                standardizedSourceURL,
+                fileManager: fileManager
+            )
+            guard !externallyReferencedSources.contains(sourceIdentity) else {
+                throw ProjectWorkspaceError.summaryFileShared(sourceURL.lastPathComponent)
+            }
+            if let plannedDestination = destinationBySource[sourceIdentity] {
                 guard plannedDestination == destinationURL else {
                     throw ProjectWorkspaceError.summaryFileAlreadyExists(destinationURL.lastPathComponent)
                 }
                 continue
             }
 
-            let destinationKey = destinationURL.path.lowercased()
-            if !destinationPaths.insert(destinationKey).inserted || fileManager.fileExists(atPath: destinationURL.path) {
+            let destinationKey = DahliaProjectName.siblingKey(destinationURL.path)
+            let destinationLeafKey = DahliaProjectName.siblingKey(destinationURL.lastPathComponent)
+            if !destinationPaths.insert(destinationKey).inserted
+                || existingDestinationKeys.contains(destinationLeafKey) {
                 throw ProjectWorkspaceError.summaryFileAlreadyExists(destinationURL.lastPathComponent)
             }
-            destinationBySourcePath[sourceKey] = destinationURL
+            destinationBySource[sourceIdentity] = destinationURL
             relocations.append(.init(sourceURL: standardizedSourceURL, destinationURL: destinationURL))
         }
 
@@ -317,9 +584,20 @@ extension ProjectWorkspaceService {
         return destinationDirectory
     }
 
+    private func normalizedSiblingKeys(in directory: URL) throws -> Set<String> {
+        try Set(
+            fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ).map { DahliaProjectName.siblingKey($0.lastPathComponent) }
+        )
+    }
+
     private func isDirectoryInsideVault(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             && isInsideVaultAfterResolvingSymlinks(url)
+            && pathContainsNoSymlinks(url)
     }
 
     private func isInsideVaultAfterResolvingSymlinks(_ url: URL) -> Bool {
@@ -329,6 +607,24 @@ extension ProjectWorkspaceService {
         return candidatePath == vaultPath || candidatePath.hasPrefix(prefix)
     }
 
+    private func pathContainsNoSymlinks(_ url: URL) -> Bool {
+        let root = vault.url.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        let rootComponents = root.pathComponents
+        let candidateComponents = candidate.pathComponents
+        guard candidateComponents.starts(with: rootComponents) else { return false }
+
+        var current = root
+        for component in candidateComponents.dropFirst(rootComponents.count) {
+            current.append(path: component)
+            guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else {
+                return false
+            }
+        }
+        return true
+    }
+
     static func resolveSummaryFile(storedRelativePath: String?, vaultURL: URL) throws -> URL? {
         guard let storedRelativePath,
               let fileURL = VaultSummaryFileLocator.fileURL(for: storedRelativePath, vaultURL: vaultURL),
@@ -336,8 +632,8 @@ extension ProjectWorkspaceService {
         else { return nil }
 
         do {
-            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
-            return values.isRegularFile == true ? fileURL : nil
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            return values.isRegularFile == true && values.isSymbolicLink != true ? fileURL : nil
         } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
             return nil
         } catch let error as POSIXError where error.code == .ENOENT {
@@ -378,7 +674,8 @@ extension ProjectWorkspaceService {
     }
 
     private func moveProjectFolder(from sourceURL: URL, to destinationURL: URL) throws {
-        if sourceURL.lastPathComponent.caseInsensitiveCompare(destinationURL.lastPathComponent) == .orderedSame {
+        if DahliaProjectName.siblingKey(sourceURL.lastPathComponent)
+            == DahliaProjectName.siblingKey(destinationURL.lastPathComponent) {
             let temporaryURL = sourceURL.deletingLastPathComponent()
                 .appending(path: ".dahlia-rename-\(UUID().uuidString)", directoryHint: .isDirectory)
             try fileManager.moveItem(at: sourceURL, to: temporaryURL)
@@ -400,9 +697,14 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func removeNewEmptyDirectoryIfPossible(_ url: URL) {
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: url.path), contents.isEmpty else { return }
-        try? fileManager.removeItem(at: url)
+    private func removeNewEmptyDirectory(_ url: URL) throws {
+        let result: Int32 = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return -1 }
+            return Darwin.rmdir(path)
+        }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
     }
 
     private static func moveToTrash(_ url: URL) throws -> URL {

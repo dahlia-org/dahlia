@@ -3,6 +3,7 @@ import SwiftUI
 struct ProjectContextSectionView: View {
     let vaultName: String
     let project: ProjectOverviewItem
+    let parentName: String?
     let includedSubprojectCount: Int
     let hierarchyMeetingCount: Int
 
@@ -15,6 +16,14 @@ struct ProjectContextSectionView: View {
             LabeledContent(L10n.projectLocation) {
                 Text(projectPath)
                     .textSelection(.enabled)
+            }
+
+            LabeledContent(L10n.parentProject) {
+                Text(parentName ?? L10n.vaultRoot)
+            }
+
+            LabeledContent(L10n.projectType) {
+                Text(L10n.projectTypeName(project.effectiveProjectType))
             }
 
             LabeledContent(L10n.meetingsInThisProject) {

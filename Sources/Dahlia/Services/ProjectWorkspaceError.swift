@@ -8,6 +8,10 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
     case projectAlreadyExists(String)
     case folderAlreadyExists(String)
     case folderMissing
+    case typeOwnedByRoot
+    case staleRevision(current: Int)
+    case cycleDetected
+    case vaultBusy
     case trashLocationUnavailable
     case invalidMoveDestination
     case summaryFileAlreadyExists(String)
@@ -30,6 +34,14 @@ enum ProjectWorkspaceError: LocalizedError, Equatable {
             L10n.projectFolderAlreadyExists(name)
         case .folderMissing:
             L10n.projectFolderMissingForOperation
+        case .typeOwnedByRoot:
+            L10n.subprojectTypeInheritanceError
+        case let .staleRevision(current):
+            L10n.staleProjectRevision(current)
+        case .cycleDetected:
+            L10n.projectCycleError
+        case .vaultBusy:
+            L10n.projectVaultBusy
         case .trashLocationUnavailable:
             L10n.projectTrashLocationUnavailable
         case .invalidMoveDestination:

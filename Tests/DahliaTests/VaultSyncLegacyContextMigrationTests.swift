@@ -43,5 +43,49 @@ import Foundation
             let project = try #require(projects.first(where: { $0.name == "Customer" }))
             #expect(project.description == "Customer rollout planning.")
         }
+
+        @Test
+        func doesNotImportLegacyContextThroughProjectSymlink() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-legacy-context-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            let outsideURL = rootURL.appending(path: "Outside", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: true)
+            try "Outside data".write(
+                to: outsideURL.appending(path: "CONTEXT.md"),
+                atomically: true,
+                encoding: .utf8
+            )
+            try FileManager.default.createSymbolicLink(
+                at: vaultURL.appending(path: "Linked", directoryHint: .isDirectory),
+                withDestinationURL: outsideURL
+            )
+
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: vaultURL.path,
+                name: "Test Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try repository.insertVault(vault)
+            let project = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Linked",
+                description: "",
+                projectType: .undefined
+            )
+
+            VaultSyncService(vaultURL: vaultURL, dbQueue: database.dbQueue, vaultId: vault.id).performInitialSync()
+
+            let migrated = try #require(try repository.fetchProject(id: project.id))
+            #expect(migrated.description.isEmpty)
+            #expect(migrated.missingOnDisk)
+        }
     }
 #endif

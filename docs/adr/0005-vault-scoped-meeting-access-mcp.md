@@ -1,7 +1,11 @@
 # ADR 0005: Vault-scoped read-only meeting access over local MCP
 
-- Status: Accepted
+- Status: Accepted, amended by ADR 0009
 - Date: 2026-07-16
+
+> ADR 0009 retains this Vault boundary and read-only default, and adds an explicit `--write` capability for Project
+> workspace and Meeting-membership mutations. Its write contract supersedes this ADR's statements that the helper never
+> writes and that future write tools require a separate decision.
 
 ## Context
 
@@ -11,7 +15,8 @@ Dahlia's in-app AI chat and terminal agents such as Claude Code and Codex need o
 
 Dahlia ships a signed local stdio helper named `dahlia-mcp`. The process requires `--vault-id <UUID>` at launch and its scope cannot change during its lifetime. The UUID is the authorization boundary; the vault name is display metadata only. Every meeting query predicates on `meetings.vaultId`, and a meeting ID from another vault is reported as not found.
 
-The helper opens Dahlia's SQLite database read-only and never runs migrations, changes permissions, or writes application data. It exposes three tools:
+By default, the helper opens Dahlia's SQLite database read-only and never runs migrations, changes permissions, or
+writes application data. The initial interface exposed three tools:
 
 - `query_meetings` searches compact metadata: AI meeting name and description, calendar title, project, and tags. It does not search summary or transcript bodies.
 - `get_meeting` returns metadata and the stored Markdown summary, or `null` when absent.
@@ -19,7 +24,9 @@ The helper opens Dahlia's SQLite database read-only and never runs migrations, c
 
 The helper validates the database schema during MCP initialization. After an application update that adds a migration, Dahlia must be opened once before external clients use the helper.
 
-Opaque cursors contain and validate vault, meeting, and ordering identity. Notes, screenshots, audio, translated text, and unconfirmed transcript text are outside the initial interface.
+Opaque cursors contain and validate vault, meeting, and ordering identity. Notes, audio, translated text, and
+unconfirmed transcript text remain outside the interface. Resized screenshots were added later through
+`get_meeting_screenshots`.
 
 AI summary documents use schema version 3 and add a one-line description of at most 240 characters. Successful summary persistence updates the meeting name with a nonblank generated title of at most 120 characters and updates the meeting description when a nonblank generated value is available. Missing or blank legacy description values preserve the latest useful description. Existing meetings are not backfilled.
 
@@ -32,4 +39,6 @@ Settings only displays and copies CLI registration commands. It does not edit Cl
 - Both embedded and external agents share the same query semantics and security boundary.
 - The initial API remains small and avoids transferring large transcript bodies during discovery.
 - Users must explicitly re-register the external MCP server when changing vaults.
-- Future write tools, full-text body search, or additional media require a separate security and privacy decision.
+- ADR 0009 defines the current Project read tools and the three write tools exposed only by `--write`; deletion and
+  merge remain unsupported.
+- Full-text body search or additional media require a separate security and privacy decision.

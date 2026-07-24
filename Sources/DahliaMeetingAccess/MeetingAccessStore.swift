@@ -8,14 +8,20 @@ public final class MeetingAccessStore: Sendable {
             .appending(path: "dahlia.sqlite")
     }
 
-    private let database: DatabaseQueue
+    let database: DatabaseQueue
     public let vaultID: UUID
+    public let allowsWrites: Bool
 
-    public init(databaseURL: URL = MeetingAccessStore.defaultDatabaseURL, vaultID: UUID) throws {
+    public init(
+        databaseURL: URL = MeetingAccessStore.defaultDatabaseURL,
+        vaultID: UUID,
+        allowsWrites: Bool = false
+    ) throws {
         var configuration = Configuration()
-        configuration.readonly = true
+        configuration.readonly = !allowsWrites
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
+        self.allowsWrites = allowsWrites
     }
 
     public func scopedVault() throws -> ScopedVault {
@@ -79,9 +85,21 @@ public final class MeetingAccessStore: Sendable {
     }
 
     private func meetingRows(in db: Database, components: QueryComponents) throws -> [Row] {
-        try Row.fetchAll(
+        var arguments: StatementArguments = [vaultID, vaultID]
+        arguments += components.arguments
+        return try Row.fetchAll(
             db,
             sql: """
+            WITH RECURSIVE project_paths(id, vaultId, name) AS (
+                SELECT id, vaultId, leafName
+                FROM projects
+                WHERE parentProjectId IS NULL AND vaultId = ?
+                UNION ALL
+                SELECT child.id, child.vaultId, project_paths.name || '/' || child.leafName
+                FROM projects AS child
+                JOIN project_paths ON project_paths.id = child.parentProjectId
+                WHERE child.vaultId = ?
+            )
             SELECT
                 meetings.id,
                 meetings.name,
@@ -102,7 +120,7 @@ public final class MeetingAccessStore: Sendable {
                  FROM meeting_tags JOIN tags ON tags.id = meeting_tags.tagId
                  WHERE meeting_tags.meetingId = meetings.id) AS tags
             FROM meetings
-            LEFT JOIN projects
+            LEFT JOIN project_paths AS projects
               ON projects.id = meetings.projectId
              AND projects.vaultId = meetings.vaultId
             LEFT JOIN calendar_events
@@ -113,7 +131,7 @@ public final class MeetingAccessStore: Sendable {
             ORDER BY meetings.createdAt DESC, meetings.id DESC
             LIMIT ?
             """,
-            arguments: components.arguments
+            arguments: arguments
         )
     }
 
@@ -642,10 +660,12 @@ extension MeetingAccessStore {
     private func fetchVault(in db: Database) throws -> ScopedVault {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
+        let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
-              summaryColumns.isDisjoint(with: legacySummaryColumns)
+              summaryColumns.isDisjoint(with: legacySummaryColumns),
+              projectColumns.isSuperset(of: ["parentProjectId", "leafName", "projectType", "revision"])
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -663,6 +683,16 @@ extension MeetingAccessStore {
         try Row.fetchOne(
             db,
             sql: """
+            WITH RECURSIVE project_paths(id, vaultId, name) AS (
+                SELECT id, vaultId, leafName
+                FROM projects
+                WHERE parentProjectId IS NULL AND vaultId = ?
+                UNION ALL
+                SELECT child.id, child.vaultId, project_paths.name || '/' || child.leafName
+                FROM projects AS child
+                JOIN project_paths ON project_paths.id = child.parentProjectId
+                WHERE child.vaultId = ?
+            )
             SELECT
                 meetings.id,
                 meetings.name,
@@ -684,7 +714,7 @@ extension MeetingAccessStore {
                  FROM meeting_tags JOIN tags ON tags.id = meeting_tags.tagId
                  WHERE meeting_tags.meetingId = meetings.id) AS tags
             FROM meetings
-            LEFT JOIN projects
+            LEFT JOIN project_paths AS projects
               ON projects.id = meetings.projectId
              AND projects.vaultId = meetings.vaultId
             LEFT JOIN calendar_events
@@ -693,7 +723,7 @@ extension MeetingAccessStore {
             LEFT JOIN summaries ON summaries.meetingId = meetings.id
             WHERE meetings.id = ? AND meetings.vaultId = ?
             """,
-            arguments: [id, vaultID]
+            arguments: [vaultID, vaultID, id, vaultID]
         )
     }
 

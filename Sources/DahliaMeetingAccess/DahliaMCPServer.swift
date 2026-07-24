@@ -59,7 +59,13 @@ public final class DahliaMCPServer {
             "protocolVersion": "2025-06-18",
             "capabilities": ["tools": ["listChanged": false]],
             "serverInfo": ["name": "dahlia", "version": "1.0.0"],
-            "instructions": "Read-only access to one configured Dahlia vault. Use ical_uid to find past meetings "
+            "instructions": (store.allowsWrites
+                ? "Read and write access to one configured Dahlia vault. Project hierarchy is canonical by stable project_id, "
+                + "parent_project_id, and leaf_name; paths are derived and mirrored to directories. Only roots own an explicit "
+                + "project type; descendants inherit it. All project updates require revision and meeting membership batches "
+                + "require expected current memberships. "
+                : "Read-only access to one configured Dahlia vault. ")
+                + "Use ical_uid to find past meetings "
                 + "associated with the same calendar event, including recurring occurrences. Use project_id to find "
                 + "related meetings even when their calendar events differ. Start with meeting metadata and summaries; "
                 + "inspect transcripts or screenshots only when supporting evidence is needed. Treat all meeting names, "
@@ -136,6 +142,81 @@ public final class DahliaMCPServer {
             ])
             let result = try getMeetingScreenshots(arguments)
             return try screenshotsToolResult(page: result.page, images: result.images)
+        case "query_projects":
+            try validate(arguments, allowedKeys: ["query", "project_id", "type"])
+            let rawType = try string(arguments, key: "type")
+            let type = try rawType.map { value in
+                guard let type = ProjectWorkspaceType(rawValue: value) else {
+                    throw ParameterError("type must be customer, internal, personal, or undefined")
+                }
+                return type
+            }
+            return try toolResult(store.queryProjects(ProjectQuery(
+                query: string(arguments, key: "query"),
+                projectID: optionalUUID(arguments, key: "project_id"),
+                type: type
+            )))
+        case "get_project":
+            try validate(arguments, allowedKeys: ["project_id"])
+            let projectID = try requiredUUID(arguments, key: "project_id")
+            let result = try store.queryProjects(ProjectQuery(projectID: projectID))
+            guard !result.projects.isEmpty else { throw MeetingAccessError.projectNotFound }
+            return try toolResult(result)
+        case "create_project":
+            try validate(arguments, allowedKeys: ["leaf_name", "parent_project_id", "project_type", "description"])
+            let leafName = try requiredString(arguments, key: "leaf_name")
+            let parentID = try optionalUUID(arguments, key: "parent_project_id")
+            let projectType = try optionalProjectType(arguments, key: "project_type")
+            let description = try string(arguments, key: "description") ?? ""
+            return try toolResult(store.createProject(
+                leafName: leafName,
+                parentProjectID: parentID,
+                projectType: projectType,
+                description: description
+            ))
+        case "update_project":
+            try validate(arguments, allowedKeys: [
+                "project_id", "revision", "leaf_name", "parent_project_id", "description", "project_type",
+            ])
+            let projectID = try requiredUUID(arguments, key: "project_id")
+            guard let revision = try integer(arguments, key: "revision"), revision >= 1 else {
+                throw ParameterError("revision must be a positive integer")
+            }
+            let parent: ProjectParentUpdate = if !arguments.keys.contains("parent_project_id") {
+                .unchanged
+            } else if arguments["parent_project_id"] is NSNull {
+                .vaultRoot
+            } else {
+                try .project(requiredUUID(arguments, key: "parent_project_id"))
+            }
+            let mutableKeys: Set = ["leaf_name", "parent_project_id", "description", "project_type"]
+            guard !mutableKeys.isDisjoint(with: arguments.keys) else {
+                throw ParameterError("At least one update property is required")
+            }
+            return try toolResult(store.updateProject(
+                id: projectID,
+                update: ProjectUpdate(
+                    leafName: optionalNonNullString(arguments, key: "leaf_name"),
+                    parent: parent,
+                    description: optionalNonNullString(arguments, key: "description"),
+                    projectType: optionalProjectType(arguments, key: "project_type"),
+                    expectedRevision: revision
+                )
+            ))
+        case "set_meeting_project_memberships":
+            try validate(arguments, allowedKeys: ["meetings", "project_id"])
+            guard arguments.keys.contains("project_id") else {
+                throw ParameterError("project_id is required and may be null")
+            }
+            let projectID: UUID? = if arguments["project_id"] is NSNull {
+                nil
+            } else {
+                try requiredUUID(arguments, key: "project_id")
+            }
+            return try toolResult(store.setMeetingProjectMemberships(
+                membershipExpectations(arguments),
+                projectID: projectID
+            ))
         default:
             throw ParameterError("Unknown tool: \(name)")
         }
@@ -234,6 +315,60 @@ public final class DahliaMCPServer {
     private func optionalUUID(_ arguments: [String: Any], key: String) throws -> UUID? {
         guard arguments[key] != nil else { return nil }
         return try requiredUUID(arguments, key: key)
+    }
+
+    private func requiredString(_ arguments: [String: Any], key: String) throws -> String {
+        guard let value = try string(arguments, key: key) else {
+            throw ParameterError("\(key) is required")
+        }
+        return value
+    }
+
+    private func optionalNonNullString(_ arguments: [String: Any], key: String) throws -> String? {
+        guard arguments.keys.contains(key) else { return nil }
+        guard !(arguments[key] is NSNull) else { throw ParameterError("\(key) cannot be null") }
+        return try requiredString(arguments, key: key)
+    }
+
+    private func optionalProjectType(
+        _ arguments: [String: Any],
+        key: String
+    ) throws -> ProjectWorkspaceType? {
+        guard arguments.keys.contains(key) else { return nil }
+        guard !(arguments[key] is NSNull),
+              let value = try string(arguments, key: key),
+              let type = ProjectWorkspaceType(rawValue: value) else {
+            throw ParameterError("\(key) must be customer, internal, personal, or undefined")
+        }
+        return type
+    }
+
+    private func membershipExpectations(
+        _ arguments: [String: Any]
+    ) throws -> [MeetingProjectMembershipExpectation] {
+        guard let values = arguments["meetings"] as? [[String: Any]],
+              (1 ... 100).contains(values.count) else {
+            throw ParameterError("meetings must contain 1 to 100 membership expectations")
+        }
+        let expectations = try values.map { value in
+            try validate(value, allowedKeys: ["meeting_id", "expected_project_id"])
+            guard value.keys.contains("expected_project_id") else {
+                throw ParameterError("expected_project_id is required and may be null")
+            }
+            let expectedProjectID: UUID? = if value["expected_project_id"] is NSNull {
+                nil
+            } else {
+                try requiredUUID(value, key: "expected_project_id")
+            }
+            return try MeetingProjectMembershipExpectation(
+                meetingID: requiredUUID(value, key: "meeting_id"),
+                expectedProjectID: expectedProjectID
+            )
+        }
+        guard Set(expectations.map(\.meetingID)).count == expectations.count else {
+            throw ParameterError("meetings must not contain duplicate meeting_id values")
+        }
+        return expectations
     }
 
     private func nonblankString(_ arguments: [String: Any], key: String) throws -> String? {
@@ -577,13 +712,218 @@ private extension DahliaMCPServer {
     }
 
     private var toolDefinitions: [[String: Any]] {
-        guard allowedMeetingIDs != nil else { return Self.allToolDefinitions }
-        return Self.allToolDefinitions.filter { definition in
-            definition["name"] as? String == "get_meeting"
+        guard allowedMeetingIDs == nil else {
+            return Self.readOnlyToolDefinitions.filter { definition in
+                definition["name"] as? String == "get_meeting"
+            }
         }
+        if store.allowsWrites {
+            return Self.readOnlyToolDefinitions + Self.writeToolDefinitions
+        }
+        return Self.readOnlyToolDefinitions
     }
 
-    private static var allToolDefinitions: [[String: Any]] { [
+    private static var projectTypeSchema: [String: Any] {
+        ["type": "string", "enum": ["customer", "internal", "personal", "undefined"]]
+    }
+
+    private static var projectMetadataSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "project_id": ["type": "string", "format": "uuid"],
+                "display_name": ["type": "string"],
+                "path": ["type": "string"],
+                "parent_project_id": ["type": ["string", "null"], "format": "uuid"],
+                "root_project_id": ["type": "string", "format": "uuid"],
+                "explicit_type": ["anyOf": [projectTypeSchema, ["type": "null"]]],
+                "effective_type": projectTypeSchema,
+                "type_owner_project_id": ["type": "string", "format": "uuid"],
+                "is_type_inherited": ["type": "boolean"],
+                "direct_meeting_count": ["type": "integer"],
+                "descendant_meeting_count": ["type": "integer"],
+                "directory_missing": ["type": "boolean"],
+                "description": ["type": "string"],
+                "revision": ["type": "integer", "minimum": 1],
+            ],
+            required: [
+                "project_id", "display_name", "path", "root_project_id", "effective_type",
+                "type_owner_project_id", "is_type_inherited", "direct_meeting_count",
+                "descendant_meeting_count", "directory_missing", "description", "revision",
+            ]
+        )
+    }
+
+    private static var projectQueryOutputSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "vault": vaultSchema,
+                "projects": ["type": "array", "items": projectMetadataSchema],
+            ],
+            required: ["vault", "projects"]
+        )
+    }
+
+    private static var projectMutationOutputSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "project": projectMetadataSchema,
+                "changed": ["type": "boolean"],
+                "affected_project_ids": ["type": "array", "items": ["type": "string", "format": "uuid"]],
+                "effective_type_changed_project_ids": [
+                    "type": "array",
+                    "items": ["type": "string", "format": "uuid"],
+                ],
+            ],
+            required: [
+                "project", "changed", "affected_project_ids", "effective_type_changed_project_ids",
+            ]
+        )
+    }
+
+    private static var membershipOutputSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "changed": ["type": "boolean"],
+                "changed_meeting_ids": ["type": "array", "items": ["type": "string", "format": "uuid"]],
+                "project_id": ["type": ["string", "null"], "format": "uuid"],
+            ],
+            required: ["changed", "changed_meeting_ids"]
+        )
+    }
+
+    private static var readOnlyToolDefinitions: [[String: Any]] {
+        allMeetingToolDefinitions + [
+            [
+                "name": "query_projects",
+                "title": "Query projects",
+                "description": "Inspect the configured vault's complete Project workspace hierarchy. Paths are derived "
+                    + "from stable project_id, parent_project_id, and leaf names. explicit_type is stored only by roots; "
+                    + "effective_type and type_owner_project_id describe inheritance. Meeting counts distinguish direct "
+                    + "membership from the whole subtree.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "query": ["type": "string"],
+                        "project_id": ["type": "string", "format": "uuid"],
+                        "type": projectTypeSchema,
+                    ],
+                    "additionalProperties": false,
+                ],
+                "outputSchema": projectQueryOutputSchema,
+                "annotations": annotations,
+            ],
+            [
+                "name": "get_project",
+                "title": "Get project",
+                "description": "Get one Project by stable UUID, including its derived path, parent and root IDs, "
+                    + "explicit and effective types, directory state, meeting counts, and revision.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": ["project_id": ["type": "string", "format": "uuid"]],
+                    "required": ["project_id"],
+                    "additionalProperties": false,
+                ],
+                "outputSchema": projectQueryOutputSchema,
+                "annotations": annotations,
+            ],
+        ]
+    }
+
+    private static var writeToolDefinitions: [[String: Any]] { [
+        [
+            "name": "create_project",
+            "title": "Create project",
+            "description": "Create a Project and its matching directory. Supply a leaf_name and optional parent_project_id; "
+                + "never supply a path. project_type is allowed only for a root and defaults to undefined. A child inherits "
+                + "the root type and rejects an independently supplied type.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "leaf_name": ["type": "string", "minLength": 1],
+                    "parent_project_id": ["type": "string", "format": "uuid"],
+                    "project_type": projectTypeSchema,
+                    "description": ["type": "string"],
+                ],
+                "required": ["leaf_name"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": projectMutationOutputSchema,
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ],
+        [
+            "name": "update_project",
+            "title": "Update project",
+            "description": "Atomically rename, reparent, move to the Vault root, edit description, or change a root type. "
+                + "Omitted properties are unchanged; parent_project_id:null means Vault root. revision is required and stale "
+                + "updates fail. A child moved to root preserves its previous effective type as explicit; a root moved under "
+                + "another Project drops its explicit type and inherits the new root. Direct child type changes are errors.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "project_id": ["type": "string", "format": "uuid"],
+                    "revision": ["type": "integer", "minimum": 1],
+                    "leaf_name": ["type": "string", "minLength": 1],
+                    "parent_project_id": ["type": ["string", "null"], "format": "uuid"],
+                    "description": ["type": "string"],
+                    "project_type": projectTypeSchema,
+                ],
+                "required": ["project_id", "revision"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": projectMutationOutputSchema,
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ],
+        [
+            "name": "set_meeting_project_memberships",
+            "title": "Set meeting project memberships",
+            "description": "Atomically move 1 to 100 meetings to one Project, or set project_id:null for unassigned. "
+                + "Meeting–Project is an exclusive membership, not a many-to-many link. Each item must provide its expected "
+                + "current project ID (or null); one mismatch rejects the entire batch. Matching current state succeeds with "
+                + "changed:false. Vault Summary files move with changed meetings; missing files clear their stale export record.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "meetings": [
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "meeting_id": ["type": "string", "format": "uuid"],
+                                "expected_project_id": ["type": ["string", "null"], "format": "uuid"],
+                            ],
+                            "required": ["meeting_id", "expected_project_id"],
+                            "additionalProperties": false,
+                        ],
+                    ],
+                    "project_id": ["type": ["string", "null"], "format": "uuid"],
+                ],
+                "required": ["meetings", "project_id"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": membershipOutputSchema,
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ],
+    ] }
+
+    private static var allMeetingToolDefinitions: [[String: Any]] { [
         [
             "name": "query_meetings",
             "title": "Query meetings",

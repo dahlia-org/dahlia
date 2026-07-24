@@ -8,6 +8,11 @@ enum BatchAudioCleanupService {
         let relativePath: String
     }
 
+    struct StagedFile {
+        let originalURL: URL
+        let stagedURL: URL
+    }
+
     static func deletionTargets(
         meetingIds: Set<UUID>,
         dbQueue: DatabaseQueue,
@@ -74,6 +79,47 @@ enum BatchAudioCleanupService {
                 baseURL: target.baseURL,
                 relativePaths: [target.relativePath]
             )
+        }
+    }
+
+    static func stageFiles(_ targets: [DeletionTarget]) throws -> [StagedFile] {
+        var stagedFiles: [StagedFile] = []
+        var seenPaths: Set<String> = []
+        do {
+            for target in targets {
+                guard let finalURL = BatchAudioStorage.safeURL(
+                    baseURL: target.baseURL,
+                    relativePath: target.relativePath
+                ) else {
+                    throw RecordingAudioStoreError.invalidPath
+                }
+                let partialURL = finalURL.deletingPathExtension().appendingPathExtension("partial.caf")
+                for originalURL in [finalURL, partialURL]
+                    where seenPaths.insert(originalURL.standardizedFileURL.path).inserted
+                    && FileManager.default.fileExists(atPath: originalURL.path) {
+                    let stagedURL = originalURL.deletingLastPathComponent()
+                        .appending(path: ".dahlia-delete-\(UUID().uuidString)-\(originalURL.lastPathComponent)")
+                    try FileManager.default.moveItem(at: originalURL, to: stagedURL)
+                    stagedFiles.append(StagedFile(originalURL: originalURL, stagedURL: stagedURL))
+                }
+            }
+            return stagedFiles
+        } catch {
+            try? restoreStagedFiles(stagedFiles)
+            throw error
+        }
+    }
+
+    static func restoreStagedFiles(_ stagedFiles: [StagedFile]) throws {
+        for stagedFile in stagedFiles.reversed() {
+            guard FileManager.default.fileExists(atPath: stagedFile.stagedURL.path) else { continue }
+            try FileManager.default.moveItem(at: stagedFile.stagedURL, to: stagedFile.originalURL)
+        }
+    }
+
+    static func discardStagedFiles(_ stagedFiles: [StagedFile]) {
+        for stagedFile in stagedFiles {
+            try? FileManager.default.removeItem(at: stagedFile.stagedURL)
         }
     }
 }

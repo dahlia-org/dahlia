@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -83,10 +84,27 @@ final class MeetingRepository {
         let meetingIds = try meetingIds(vaultId: id)
         try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(vaultId: id, dbQueue: dbQueue)
+        try dbQueue.writeWithoutTransaction { db in
+            try db.inTransaction {
+                try Self.deleteVaultRows(id: id, in: db)
+                return .rollback
+            }
+        }
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
-            _ = try VaultRecord.deleteOne(db, key: id)
+            try Self.deleteVaultRows(id: id, in: db)
         }
+    }
+
+    private static func deleteVaultRows(id: UUID, in db: Database) throws {
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
+            .sorted {
+                $0.name.split(separator: "/").count > $1.name.split(separator: "/").count
+            }
+        for project in projects {
+            _ = try ProjectRecord.deleteOne(db, key: project.id)
+        }
+        _ = try VaultRecord.deleteOne(db, key: id)
     }
 
     func deleteVaultSafely(
@@ -274,20 +292,15 @@ final class MeetingRepository {
         }
     }
 
-    func externallySharedVaultSummaryPaths(
-        relativePaths: Set<String>,
+    func externalVaultSummaryPaths(
         movingMeetingIds: Set<UUID>,
         vaultId: UUID
-    ) throws -> Set<String> {
-        let pathsByURL = Dictionary(grouping: relativePaths.compactMap { relativePath in
-            SummaryExportRecord.vaultURL(relativePath: relativePath).map { ($0.lowercased(), relativePath) }
-        }, by: \.0)
-        guard !pathsByURL.isEmpty else { return [] }
+    ) throws -> [String] {
+        guard !movingMeetingIds.isEmpty else { return [] }
         return try dbQueue.read { db in
-            let normalizedURLs = Array(pathsByURL.keys)
-            let placeholders = normalizedURLs.map { _ in "?" }.joined(separator: ",")
+            let placeholders = movingMeetingIds.map { _ in "?" }.joined(separator: ",")
             var arguments: StatementArguments = [SummaryExportType.vault, vaultId]
-            arguments += StatementArguments(normalizedURLs)
+            arguments += StatementArguments(movingMeetingIds)
             let records = try SummaryExportRecord.fetchAll(
                 db,
                 sql: """
@@ -296,20 +309,11 @@ final class MeetingRepository {
                 JOIN meetings ON meetings.id = summary_exports.meetingId
                 WHERE summary_exports.type = ?
                   AND meetings.vaultId = ?
-                  AND LOWER(summary_exports.url) IN (\(placeholders))
+                  AND summary_exports.meetingId NOT IN (\(placeholders))
                 """,
                 arguments: arguments
             )
-            let externallySharedURLs = Set(records.compactMap { record -> String? in
-                let key = record.url.lowercased()
-                guard pathsByURL[key] != nil,
-                      !movingMeetingIds.contains(record.meetingId)
-                else { return nil }
-                return key
-            })
-            return Set(externallySharedURLs.flatMap { key in
-                pathsByURL[key, default: []].map(\.1)
-            })
+            return records.compactMap(\.vaultRelativePath)
         }
     }
 
