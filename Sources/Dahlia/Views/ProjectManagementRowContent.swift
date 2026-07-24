@@ -35,8 +35,18 @@ struct ProjectManagementRowContent: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
         } icon: {
-            Image(systemName: node.project.missingOnDisk ? "folder.badge.questionmark" : "folder")
+            Image(systemName: folderSystemImage)
                 .foregroundStyle(folderColor)
+        }
+    }
+
+    private var folderSystemImage: String {
+        if node.project.missingOnDisk {
+            "folder.badge.questionmark"
+        } else if node.project.parentProjectId == nil {
+            "externaldrive"
+        } else {
+            "folder"
         }
     }
 

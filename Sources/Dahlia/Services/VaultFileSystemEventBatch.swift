@@ -48,6 +48,7 @@ struct VaultFileSystemEventBatch {
         fileManager: FileManager
     ) -> Event? {
         guard path.hasPrefix(vaultPath) else { return nil }
+        guard flag & UInt32(kFSEventStreamEventFlagItemIsSymlink) == 0 else { return nil }
         let relativePath = String(path.dropFirst(vaultPath.count))
         guard !relativePath.isEmpty else { return nil }
 
@@ -68,6 +69,11 @@ struct VaultFileSystemEventBatch {
         guard !components.contains(where: { $0.hasPrefix(".") || $0.hasPrefix("_") }) else { return nil }
 
         let exists = fileManager.fileExists(atPath: path)
+        if exists,
+           let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isSymbolicLinkKey]),
+           values.isSymbolicLink == true {
+            return nil
+        }
         if flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0 {
             return .directoryRename(relativePath, exists: exists)
         }

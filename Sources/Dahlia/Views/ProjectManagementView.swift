@@ -9,9 +9,11 @@ struct ProjectManagementView: View {
     @State private var isShowingProjectCreation = false
     @State private var projectCreationParentId: UUID?
     @State private var newProjectName = ""
-    @State private var isShowingProjectCreationError = false
+    @State private var newProjectType = ProjectType.undefined
     @State private var projectCreationErrorMessage = ""
     @State private var projectName = ""
+    @State private var projectParentId: UUID?
+    @State private var projectType = ProjectType.undefined
     @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var requestedExpandedProjectIds: Set<UUID> = []
     @State private var isShowingProjectOperationError = false
@@ -20,6 +22,7 @@ struct ProjectManagementView: View {
     @State private var descriptionStatusMessage: String?
     @State private var descriptionSaveFailed = false
     @State private var lastSavedProjectDescription = ""
+    @State private var lastLoadedProjectRevision: Int?
     @State private var descriptionSaveTask: Task<Void, Never>?
     @State private var isRevertingSelectionAfterSaveFailure = false
     @State private var projectDescriptionChangeTracker = ProjectDescriptionChangeTracker()
@@ -38,8 +41,9 @@ struct ProjectManagementView: View {
             selectInitialProjectIfNeeded()
             loadProjectDetails(for: selectedProjectId)
         }
-        .onChange(of: sidebarViewModel.allProjectItems) { _, projects in
+        .onChange(of: sidebarViewModel.allProjectItems) { previousProjects, projects in
             reconcileSelection(with: projects)
+            refreshSelectedProjectAfterExternalChange(from: previousProjects, to: projects)
         }
         .onChange(of: selectedProjectId) { oldProjectId, newProjectId in
             if isRevertingSelectionAfterSaveFailure {
@@ -72,6 +76,20 @@ struct ProjectManagementView: View {
                 onConfirm: { disposition in
                     await deleteProject(project, meetingDisposition: disposition)
                 }
+            )
+        }
+        .sheet(isPresented: $isShowingProjectCreation) {
+            ProjectCreationSheet(
+                parentName: projectCreationParent?.projectName,
+                projectName: $newProjectName,
+                projectType: $newProjectType,
+                errorMessage: projectCreationErrorMessage,
+                onCancel: {
+                    isShowingProjectCreation = false
+                    projectCreationParentId = nil
+                    projectCreationErrorMessage = ""
+                },
+                onCreate: createProject
             )
         }
         .alert(L10n.projectOperationFailed, isPresented: $isShowingProjectOperationError) {} message: {
@@ -168,7 +186,7 @@ struct ProjectManagementView: View {
                     ProjectManagementTreeRow(
                         node: node,
                         selectedProjectId: selectedProjectId,
-                        requestedExpandedProjectIds: requestedExpandedProjectIds,
+                        expandedProjectIds: $requestedExpandedProjectIds,
                         expandsAllDescendants: isSearchingProjects
                     )
                 }
@@ -202,23 +220,6 @@ struct ProjectManagementView: View {
                         .help(L10n.newProject)
                 }
             }
-        }
-        .alert(L10n.newProject, isPresented: $isShowingProjectCreation) {
-            TextField(L10n.projectName, text: $newProjectName)
-            Button(L10n.cancel, role: .cancel) {
-                projectCreationParentId = nil
-            }
-            Button(L10n.create, action: createProject)
-                .disabled(trimmedNewProjectName.isEmpty)
-        } message: {
-            if let parent = projectCreationParent {
-                Text(L10n.projectCreationLocation(parent.projectName))
-            } else {
-                Text(L10n.projectCreationAtVaultTop)
-            }
-        }
-        .alert(L10n.projectCreationFailed, isPresented: $isShowingProjectCreationError) {} message: {
-            Text(projectCreationErrorMessage)
         }
     }
 
@@ -271,16 +272,61 @@ private extension ProjectManagementView {
             ProjectContextSectionView(
                 vaultName: AppSettings.shared.currentVault?.name ?? L10n.vault,
                 project: project,
+                parentName: project.parentProjectId.flatMap(projectName(id:)),
                 includedSubprojectCount: max(hierarchy.count - 1, 0),
                 hierarchyMeetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount }
             )
 
             projectNameSection(for: project)
+            hierarchySection(for: project)
             descriptionSection
             destinationSection(for: project)
             projectDeletionSection
         }
         .formStyle(.grouped)
+    }
+
+    private func hierarchySection(for project: ProjectOverviewItem) -> some View {
+        Section {
+            Picker(L10n.parentProject, selection: $projectParentId) {
+                Text(L10n.vaultRoot).tag(UUID?.none)
+                ForEach(projectMoveDestinations(excluding: project)) { candidate in
+                    Text(candidate.projectName).tag(Optional(candidate.projectId))
+                }
+            }
+            Button(L10n.moveProject, action: applyParentChange)
+                .disabled(project.missingOnDisk || projectParentId == project.parentProjectId)
+
+            if projectParentId == nil {
+                Picker(L10n.projectType, selection: $projectType) {
+                    ForEach(ProjectType.allCases, id: \.self) { type in
+                        Text(L10n.projectTypeName(type)).tag(type)
+                    }
+                }
+                Button(L10n.updateProjectType, action: applyTypeChange)
+                    .disabled(
+                        project.missingOnDisk
+                            || project.parentProjectId != nil
+                            || projectType == projectedProjectType(for: project)
+                    )
+            } else {
+                LabeledContent(L10n.projectType) {
+                    VStack(alignment: .trailing) {
+                        Text(L10n.projectTypeName(projectedProjectType(for: project)))
+                        if let ownerName = projectedTypeOwnerProjectId(for: project).flatMap(projectName(id:)) {
+                            Text(L10n.inheritedFromProject(ownerName))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+        } header: {
+            Text(L10n.projectHierarchyAndType)
+        } footer: {
+            Text(L10n.projectHierarchyChangeHelp)
+        }
     }
 
     private func projectNameSection(for project: ProjectOverviewItem) -> some View {
@@ -391,26 +437,30 @@ private extension ProjectManagementView {
     private func presentProjectCreation(parentProjectId: UUID?) {
         projectCreationParentId = parentProjectId
         newProjectName = ""
+        newProjectType = .undefined
+        projectCreationErrorMessage = ""
         isShowingProjectCreation = true
     }
 
     private func createProject() {
         let projectName = trimmedNewProjectName
         guard !projectName.isEmpty else { return }
-        defer { projectCreationParentId = nil }
 
         guard let project = sidebarViewModel.createProject(
             leafName: projectName,
-            parentProjectId: projectCreationParentId
+            parentProjectId: projectCreationParentId,
+            projectType: projectCreationParentId == nil ? newProjectType : nil
         ) else {
             projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
-            isShowingProjectCreationError = true
             return
         }
 
         projectSearchText = ""
         requestExpansion(toReveal: project.name)
         selectedProjectId = project.id
+        isShowingProjectCreation = false
+        projectCreationParentId = nil
+        projectCreationErrorMessage = ""
     }
 
     private func reconcileSelection(with projects: [ProjectOverviewItem]) {
@@ -418,6 +468,30 @@ private extension ProjectManagementView {
             return
         }
         selectedProjectId = projects.first?.projectId
+    }
+
+    private func refreshSelectedProjectAfterExternalChange(
+        from previousProjects: [ProjectOverviewItem],
+        to projects: [ProjectOverviewItem]
+    ) {
+        guard let selectedProjectId,
+              let previous = previousProjects.first(where: { $0.projectId == selectedProjectId }),
+              let current = projects.first(where: { $0.projectId == selectedProjectId }),
+              previous.revision != current.revision else {
+            return
+        }
+
+        let hadUnsavedFields = projectName != leafName(for: previous.projectName)
+            || projectParentId != previous.parentProjectId
+            || projectType != previous.effectiveProjectType
+            || projectDescription != lastSavedProjectDescription
+        descriptionSaveTask?.cancel()
+        descriptionSaveTask = nil
+        loadProjectDetails(for: selectedProjectId)
+        if hadUnsavedFields {
+            projectOperationErrorMessage = L10n.staleProjectRevision(current.revision)
+            isShowingProjectOperationError = true
+        }
     }
 
     private func projectFolderURL(for project: ProjectOverviewItem) -> URL? {
@@ -451,6 +525,12 @@ private extension ProjectManagementView {
             .flatMap { id in sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) }
             .map { leafName(for: $0.projectName) }
             ?? ""
+        let project = projectId.flatMap { id in
+            sidebarViewModel.allProjectItems.first(where: { $0.projectId == id })
+        }
+        lastLoadedProjectRevision = project?.revision
+        projectParentId = project?.parentProjectId
+        projectType = project?.effectiveProjectType ?? .undefined
     }
 
     private func scheduleProjectDescriptionSave() {
@@ -475,14 +555,26 @@ private extension ProjectManagementView {
         guard let projectId,
               projectDescription != lastSavedProjectDescription else { return true }
 
-        switch sidebarViewModel.updateProjectDescription(id: projectId, description: projectDescription) {
+        switch sidebarViewModel.updateProjectDescription(
+            id: projectId,
+            description: projectDescription,
+            expectedRevision: lastLoadedProjectRevision
+        ) {
         case .saved:
             lastSavedProjectDescription = projectDescription
+            lastLoadedProjectRevision = sidebarViewModel.allProjectItems
+                .first(where: { $0.projectId == projectId })?
+                .revision
             descriptionStatusMessage = L10n.saved
             descriptionSaveFailed = false
         case .projectNotFound:
             descriptionStatusMessage = nil
             descriptionSaveFailed = false
+        case let .staleRevision(current):
+            lastLoadedProjectRevision = current
+            descriptionStatusMessage = L10n.staleProjectRevision(current)
+            descriptionSaveFailed = true
+            return false
         case .failed:
             descriptionStatusMessage = L10n.projectDescriptionSaveFailed
             descriptionSaveFailed = true
@@ -564,6 +656,51 @@ private extension ProjectManagementView {
         }
     }
 
+    private func projectedProjectType(for project: ProjectOverviewItem) -> ProjectType {
+        guard let projectParentId else { return project.effectiveProjectType }
+        return sidebarViewModel.allProjectItems
+            .first(where: { $0.projectId == projectParentId })?
+            .effectiveProjectType ?? .undefined
+    }
+
+    private func projectedTypeOwnerProjectId(for project: ProjectOverviewItem) -> UUID? {
+        guard let projectParentId else { return project.projectId }
+        return sidebarViewModel.allProjectItems
+            .first(where: { $0.projectId == projectParentId })?
+            .typeOwnerProjectId
+    }
+
+    private func applyParentChange() {
+        guard let selectedProject else { return }
+        guard let moved = sidebarViewModel.reparentProject(
+            id: selectedProject.projectId,
+            parentProjectId: projectParentId
+        ) else {
+            showProjectOperationError()
+            loadProjectDetails(for: selectedProject.projectId)
+            return
+        }
+        requestExpansion(toReveal: moved.name)
+        loadProjectDetails(for: selectedProject.projectId)
+    }
+
+    private func applyTypeChange() {
+        guard let selectedProject,
+              sidebarViewModel.updateRootProjectType(
+                  id: selectedProject.projectId,
+                  projectType: projectType
+              ) != nil else {
+            showProjectOperationError()
+            loadProjectDetails(for: selectedProjectId)
+            return
+        }
+        loadProjectDetails(for: selectedProject.projectId)
+    }
+
+    private func projectName(id: UUID) -> String? {
+        sidebarViewModel.allProjectItems.first(where: { $0.projectId == id })?.projectName
+    }
+
     private func requestExpansion(toReveal projectName: String) {
         let ancestorIds = sidebarViewModel.allProjectItems.compactMap { project -> UUID? in
             projectName.hasPrefix(project.projectName + "/") ? project.projectId : nil
@@ -578,5 +715,54 @@ private extension ProjectManagementView {
     private func showProjectOperationError() {
         projectOperationErrorMessage = sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
         isShowingProjectOperationError = true
+    }
+}
+
+private struct ProjectCreationSheet: View {
+    let parentName: String?
+    @Binding var projectName: String
+    @Binding var projectType: ProjectType
+    let errorMessage: String
+    let onCancel: () -> Void
+    let onCreate: () -> Void
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent(L10n.parentProject, value: parentName ?? L10n.vaultRoot)
+                TextField(L10n.projectName, text: $projectName)
+                if parentName == nil {
+                    Picker(L10n.projectType, selection: $projectType) {
+                        ForEach(ProjectType.allCases, id: \.self) { type in
+                            Text(L10n.projectTypeName(type)).tag(type)
+                        }
+                    }
+                } else {
+                    Text(L10n.subprojectTypeInheritanceHelp)
+                        .foregroundStyle(.secondary)
+                }
+                if !errorMessage.isEmpty {
+                    SettingsStatusMessage(
+                        text: errorMessage,
+                        systemImage: "exclamationmark.triangle",
+                        tint: .orange
+                    )
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minWidth: 420, minHeight: 220)
+        .navigationTitle(L10n.newProject)
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Spacer()
+                Button(L10n.cancel, role: .cancel, action: onCancel)
+                Button(L10n.create, action: onCreate)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding()
+            .background(.bar)
+        }
     }
 }

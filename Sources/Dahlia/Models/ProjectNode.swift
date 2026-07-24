@@ -13,15 +13,15 @@ struct FlatProjectRow: Identifiable, Equatable {
     static func buildRows(fromRecords records: [ProjectRecord]) -> [FlatProjectRow] {
         guard !records.isEmpty else { return [] }
 
-        let parentNames = parentNames(in: records)
+        let parentIDs = Set(records.compactMap(\.parentProjectId))
         var rows: [FlatProjectRow] = []
         rows.reserveCapacity(records.count)
 
         for record in records {
             let components = record.name.split(separator: "/")
-            let displayName = components.last.map(String.init) ?? record.name
+            let displayName = record.leafName
             let depth = max(components.count - 1, 0)
-            let hasChildren = parentNames.contains(record.name)
+            let hasChildren = parentIDs.contains(record.id)
 
             rows.append(
                 FlatProjectRow(
@@ -47,20 +47,6 @@ struct FlatProjectRow: Identifiable, Equatable {
         }
     }
 
-    private static func parentNames(in records: [ProjectRecord]) -> Set<String> {
-        var parentNames = Set<String>()
-
-        for record in records {
-            let components = record.name.split(separator: "/")
-            guard components.count > 1 else { continue }
-
-            for depth in 1 ..< components.count {
-                parentNames.insert(components[0 ..< depth].joined(separator: "/"))
-            }
-        }
-
-        return parentNames
-    }
 }
 
 /// SwiftUI の OutlineGroup に渡すプロジェクトツリー行。
@@ -75,28 +61,27 @@ struct ProjectTreeNode: Identifiable, Equatable {
     static func buildNodes(from projects: [ProjectOverviewItem]) -> [ProjectTreeNode] {
         guard !projects.isEmpty else { return [] }
 
-        let projectNames = Set(projects.map(\.projectName))
         var roots: [ProjectOverviewItem] = []
-        var childrenByParent: [String: [ProjectOverviewItem]] = [:]
+        var childrenByParent: [UUID: [ProjectOverviewItem]] = [:]
 
         for project in projects {
-            guard let parentName = parentName(for: project.projectName),
-                  projectNames.contains(parentName) else {
+            guard let parentProjectId = project.parentProjectId else {
                 roots.append(project)
                 continue
             }
 
-            childrenByParent[parentName, default: []].append(project)
+            childrenByParent[parentProjectId, default: []].append(project)
         }
 
         func buildNode(for project: ProjectOverviewItem) -> ProjectTreeNode {
-            let childNodes = childrenByParent[project.projectName, default: []].map(buildNode)
-            let hasParent = parentName(for: project.projectName).map(projectNames.contains) ?? false
+            let childNodes = childrenByParent[project.projectId, default: []].map(buildNode)
             let totalMeetingCount = project.meetingCount + childNodes.reduce(0) { $0 + $1.meetingCount }
 
             return ProjectTreeNode(
                 project: project,
-                displayName: displayName(for: project.projectName, hasParent: hasParent),
+                displayName: project.projectLeafName.nilIfBlank
+                    ?? project.projectName.split(separator: "/").last.map(String.init)
+                    ?? project.projectName,
                 meetingCount: totalMeetingCount,
                 children: childNodes.isEmpty ? nil : childNodes
             )
@@ -122,15 +107,4 @@ struct ProjectTreeNode: Identifiable, Equatable {
             || displayName.localizedStandardContains(query)
     }
 
-    private static func parentName(for name: String) -> String? {
-        let components = name.split(separator: "/")
-        guard components.count > 1 else { return nil }
-        return components.dropLast().joined(separator: "/")
-    }
-
-    private static func displayName(for name: String, hasParent: Bool) -> String {
-        guard hasParent,
-              let leafName = name.split(separator: "/").last else { return name }
-        return String(leafName)
-    }
 }

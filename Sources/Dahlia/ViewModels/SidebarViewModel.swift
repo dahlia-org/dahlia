@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 import Observation
@@ -53,6 +54,7 @@ final class SidebarViewModel {
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var projectDescriptionDrafts: [UUID: String] = [:]
+    @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
 
     /// プロジェクト名から vault 内の URL を返す。
     func projectURL(for name: String) -> URL {
@@ -80,6 +82,10 @@ final class SidebarViewModel {
         projectCatalogObservationTracker.invalidate()
         instructionsObservation?.cancel()
         fileWatcher?.stopMonitoring()
+        if let workspaceChangeObserver {
+            DistributedNotificationCenter.default().removeObserver(workspaceChangeObserver)
+            self.workspaceChangeObserver = nil
+        }
 
         vaultSyncService = nil
         fileWatcher = nil
@@ -131,6 +137,20 @@ final class SidebarViewModel {
         startTagsObservation(dbQueue: dbQueue)
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
         startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
+        workspaceChangeObserver = DistributedNotificationCenter.default().addObserver(
+            forName: DahliaWorkspaceChangeNotification.name(vaultID: vaultId),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self,
+                      self.currentVault?.id == vaultId,
+                      let dbQueue = self.dbQueue else { return }
+                self.startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startAllMeetingsObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
+            }
+        }
     }
 
     private func startVaultObservation(dbQueue: DatabaseQueue) {
@@ -151,10 +171,7 @@ final class SidebarViewModel {
 
     private func startProjectObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
         let observation = ValueObservation.tracking { db in
-            try ProjectRecord
-                .filter(Column("vaultId") == vaultId)
-                .order(Column("name").asc)
-                .fetchAll(db)
+            try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         }
         projectObservation = observation.start(
             in: dbQueue,
@@ -172,14 +189,14 @@ final class SidebarViewModel {
 
     private func startAllMeetingsObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
         let observation = ValueObservation.tracking { db in
-            try MeetingOverviewItem.fetchAll(
+            var meetings = try MeetingOverviewItem.fetchAll(
                 db,
                 sql: """
                 SELECT
                     meetings.id AS meetingId,
                     meetings.vaultId AS vaultId,
                     meetings.projectId AS projectId,
-                    projects.name AS projectName,
+                    NULL AS projectName,
                     meetings.name AS meetingName,
                     meetings.description AS meetingDescription,
                     meetings.status AS status,
@@ -204,7 +221,6 @@ final class SidebarViewModel {
                      INNER JOIN tags t ON t.id = mt.tagId
                      WHERE mt.meetingId = meetings.id) AS tags
                 FROM meetings
-                LEFT JOIN projects ON projects.id = meetings.projectId
                 LEFT JOIN calendar_events
                   ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
                  AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
@@ -215,6 +231,14 @@ final class SidebarViewModel {
                 """,
                 arguments: [vaultId]
             )
+            let projectPaths = try Dictionary(
+                uniqueKeysWithValues: ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+                    .map { ($0.id, $0.name) }
+            )
+            for index in meetings.indices {
+                meetings[index].projectName = meetings[index].projectId.flatMap { projectPaths[$0] }
+            }
+            return meetings
         }
         allMeetingsObservation = observation.start(
             in: dbQueue,
@@ -259,15 +283,12 @@ final class SidebarViewModel {
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
         let observation = ValueObservation.tracking { db in
-            let projects = try ProjectOverviewItem.fetchAll(
+            let projectRecords = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            let aggregateRows = try Row.fetchAll(
                 db,
                 sql: """
                 SELECT
                     projects.id AS projectId,
-                    projects.name AS projectName,
-                    projects.description AS projectDescription,
-                    projects.createdAt AS createdAt,
-                    projects.missingOnDisk AS missingOnDisk,
                     COUNT(meetings.id) AS meetingCount,
                     MAX(meetings.createdAt) AS latestMeetingDate
                 FROM projects
@@ -277,12 +298,30 @@ final class SidebarViewModel {
                 """,
                 arguments: [vaultId]
             )
-            return projects.sorted { lhs, rhs in
-                let comparison = lhs.projectName.localizedStandardCompare(rhs.projectName)
-                if comparison == .orderedSame {
-                    return lhs.projectId.uuidString < rhs.projectId.uuidString
-                }
-                return comparison == .orderedAscending
+            let aggregates = Dictionary(uniqueKeysWithValues: aggregateRows.map { row -> (UUID, (Int, Date?)) in
+                let id: UUID = row["projectId"]
+                let count: Int = row["meetingCount"]
+                let latest: Date? = row["latestMeetingDate"]
+                return (id, (count, latest))
+            })
+            let effectiveTypes = ProjectRecord.effectiveTypes(projectRecords)
+            return projectRecords.map { project in
+                let effectiveType = effectiveTypes[project.id]
+                return ProjectOverviewItem(
+                    projectId: project.id,
+                    projectName: project.name,
+                    projectLeafName: project.leafName,
+                    parentProjectId: project.parentProjectId,
+                    projectDescription: project.description,
+                    explicitProjectType: project.projectType,
+                    effectiveProjectType: effectiveType?.type ?? .undefined,
+                    typeOwnerProjectId: effectiveType?.ownerProjectId,
+                    revision: project.revision,
+                    createdAt: project.createdAt,
+                    missingOnDisk: project.missingOnDisk,
+                    meetingCount: aggregates[project.id]?.0 ?? 0,
+                    latestMeetingDate: aggregates[project.id]?.1
+                )
             }
         }
         allProjectsObservation = observation.start(
@@ -431,12 +470,17 @@ final class SidebarViewModel {
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vault.id)
     }
 
-    func createProject(leafName: String, parentProjectId: UUID?) -> ProjectRecord? {
+    func createProject(
+        leafName: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType? = nil
+    ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
                 leafName: leafName,
-                parentProjectId: parentProjectId
+                parentProjectId: parentProjectId,
+                projectType: projectType
             )
             lastError = nil
             return project
@@ -450,6 +494,30 @@ final class SidebarViewModel {
         guard let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.renameProject(id: id, newLeafName: newLeafName)
+            lastError = nil
+            return project
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func reparentProject(id: UUID, parentProjectId: UUID?) -> ProjectRecord? {
+        guard let projectWorkspaceService else { return nil }
+        do {
+            let project = try projectWorkspaceService.reparentProject(id: id, parentProjectId: parentProjectId)
+            lastError = nil
+            return project
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func updateRootProjectType(id: UUID, projectType: ProjectType) -> ProjectRecord? {
+        guard let projectWorkspaceService else { return nil }
+        do {
+            let project = try projectWorkspaceService.updateRootProjectType(id: id, projectType: projectType)
             lastError = nil
             return project
         } catch {
@@ -477,15 +545,11 @@ final class SidebarViewModel {
     /// プロジェクトを取得または作成し、対応するフォルダ URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {
         guard let vault = currentVault,
-              let repository = meetingRepository else { return nil }
+              let projectWorkspaceService else { return nil }
 
-        let projectURL = vault.url.appendingPathComponent(name, isDirectory: true)
         do {
-            try FileManager.default.createDirectory(
-                at: projectURL,
-                withIntermediateDirectories: true
-            )
-            let record = try repository.fetchOrCreateProject(name: name, vaultId: vault.id)
+            let record = try projectWorkspaceService.fetchOrCreateRootProject(leafName: name)
+            let projectURL = vault.url.appending(path: record.name, directoryHint: .isDirectory)
             return (record, projectURL)
         } catch {
             lastError = error.localizedDescription
@@ -569,15 +633,44 @@ final class SidebarViewModel {
 }
 
 extension SidebarViewModel {
-    func updateProjectDescription(id: UUID, description: String) -> ProjectDescriptionUpdateResult {
+    func updateProjectDescription(
+        id: UUID,
+        description: String,
+        expectedRevision: Int? = nil
+    ) -> ProjectDescriptionUpdateResult {
         guard let meetingRepository else { return .failed }
         do {
-            guard try meetingRepository.updateProjectDescription(id: id, description: description) else {
+            guard try meetingRepository.fetchProject(id: id) != nil else {
+                projectDescriptionDrafts[id] = nil
+                return .projectNotFound
+            }
+            let updated: Bool
+            if let projectWorkspaceService {
+                updated = try projectWorkspaceService.updateProjectDescription(
+                    id: id,
+                    description: description,
+                    expectedRevision: expectedRevision
+                )
+            } else {
+                guard let vaultId = currentVault?.id else { return .failed }
+                updated = try meetingRepository.updateProjectDescription(
+                    id: id,
+                    vaultId: vaultId,
+                    description: description
+                )
+            }
+            guard updated else {
                 projectDescriptionDrafts[id] = nil
                 return .projectNotFound
             }
             projectDescriptionDrafts[id] = nil
             return .saved
+        } catch ProjectWorkspaceError.projectNotFound {
+            projectDescriptionDrafts[id] = nil
+            return .projectNotFound
+        } catch let ProjectWorkspaceError.staleRevision(current) {
+            projectDescriptionDrafts[id] = description
+            return .staleRevision(current: current)
         } catch {
             projectDescriptionDrafts[id] = description
             lastError = error.localizedDescription

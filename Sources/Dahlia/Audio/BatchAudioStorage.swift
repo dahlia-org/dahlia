@@ -41,7 +41,7 @@ enum BatchAudioStorage {
         }
     }
 
-    private static func safeURL(baseURL: URL, relativePath: String) -> URL? {
+    static func safeURL(baseURL: URL, relativePath: String) -> URL? {
         guard !relativePath.isEmpty, !relativePath.hasPrefix("/") else { return nil }
         let standardizedBaseURL = baseURL.standardizedFileURL.resolvingSymlinksInPath()
         let candidateURL = standardizedBaseURL

@@ -707,10 +707,7 @@ final class CaptionViewModel: ObservableObject {
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
-                let projects = try ProjectRecord
-                    .filter(Column("vaultId") == meeting.vaultId)
-                    .order(Column("name").asc)
-                    .fetchAll(db)
+                let projects = try ProjectRecord.fetchResolvedAll(vaultId: meeting.vaultId, in: db)
                 return (meeting, projects)
             }
             return BatchTranscriptionProjectSelection(
@@ -1636,7 +1633,7 @@ final class CaptionViewModel: ObservableObject {
     ) -> (url: URL, name: String)? {
         guard let projectId,
               let project = try? dbQueue.read({ db in
-                  try ProjectRecord.fetchOne(db, key: projectId)
+                  try ProjectRecord.fetchResolved(id: projectId, in: db)
               }) else { return nil }
 
         return (
@@ -2810,7 +2807,7 @@ final class CaptionViewModel: ObservableObject {
     ) throws -> SummaryGenerationRequest {
         let snapshot = try dbQueue.read { db in
             let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
-            let project = try meeting?.projectId.flatMap { try ProjectRecord.fetchOne(db, key: $0) }
+            let project = try meeting?.projectId.flatMap { try ProjectRecord.fetchResolved(id: $0, in: db) }
             let note = try MeetingNoteRecord.fetchOne(db, key: meetingId)
             let recordingSessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)

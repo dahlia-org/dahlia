@@ -444,7 +444,7 @@ actor BatchTranscriptionCoordinator {
                 throw CocoaError(.fileNoSuchFile)
             }
             let projectName: String = if let projectId = meeting.projectId,
-                                         let project = try ProjectRecord.fetchOne(db, key: projectId) {
+                                         let project = try ProjectRecord.fetchResolved(id: projectId, in: db) {
                 project.name
             } else {
                 ""
