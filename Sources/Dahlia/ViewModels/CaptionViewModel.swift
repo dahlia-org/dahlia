@@ -2386,14 +2386,14 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL?,
         dbQueue: DatabaseQueue?
     ) async {
-        let recordingFailed = stopResult?.batchRecordingSucceeded != true || !persistenceResult.succeeded
-        if recordingFailed {
+        if let failureMessage = Self.stoppedBatchRecordingFailureMessage(
+            stopResult: stopResult,
+            persistenceResult: persistenceResult
+        ) {
             if currentMeetingId == meetingId {
                 batchTranscriptionState = .failed(
                     sessionId: recordingSessionId,
-                    message: stopResult?.batchFailureMessage
-                        ?? persistenceResult.failureMessage.map(L10n.batchAudioWriteFailed)
-                        ?? L10n.batchAudioWriteFailed("")
+                    message: failureMessage
                 )
             }
         } else if let meetingId {
@@ -2413,6 +2413,20 @@ final class CaptionViewModel: ObservableObject {
             vaultURL: vaultURL,
             dbQueue: dbQueue
         )
+    }
+
+    static func stoppedBatchRecordingFailureMessage(
+        stopResult: RecordingSessionController.StopResult?,
+        persistenceResult: MeetingPersistenceStopResult
+    ) -> String? {
+        let recordingFailed = stopResult?.batchRecordingSucceeded != true
+            || stopResult?.captureFailureMessage != nil
+            || !persistenceResult.succeeded
+        guard recordingFailed else { return nil }
+        return stopResult?.batchFailureMessage
+            ?? stopResult?.captureFailureMessage
+            ?? persistenceResult.failureMessage.map(L10n.batchAudioWriteFailed)
+            ?? L10n.batchAudioWriteFailed("")
     }
 
     private func presentBatchTranscriptionConfirmation(

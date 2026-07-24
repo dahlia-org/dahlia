@@ -221,7 +221,7 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | Persistence overload | Gap (measurement-ready) | ingress／retry backlog の event count、text bytes、oldest age、queue／SQLite duration、retry backoff、single-flight write state と high-water を OSLog と test snapshot で取得できるが、queue policy と bounded implementation は未決定 |
 | Recording-start MainActor I/O | Conforms | `createNew`／`createAppending` が DB transaction を非同期実行し、MainActor は完了後の store／context 反映だけを行う |
 | System-audio runtime isolation | Conforms (app-owned boundary) | manager actor が generation ごとの single-flight stop と callback drain を所有する。delegate adapter の lock は sample admission だけに限定し、停止前に受理済みの callback は routing まで完了させる。concrete `SCStream` の動作は OS integration validation として別に扱う |
-| Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain し、capture の最初の失敗を realtime では throw、batch では有効な録音結果と併せて返す |
+| Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
 | Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
 | Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
 | MainActor-stall proof | Conforms | MainActor を有限時間同期占有する回帰テストが、解放前の audio acceptance と finalized persistence、解放後の UI catch-up を検証する |
