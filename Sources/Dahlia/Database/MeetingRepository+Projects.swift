@@ -210,7 +210,12 @@ extension MeetingRepository {
         }
 
         let audioTargets: [BatchAudioCleanupService.DeletionTarget]
+        let segmentedAudioLease: RecordingAudioStore.ParentDeletionLease?
         if meetingDisposition == .deleteMeetings {
+            segmentedAudioLease = try RecordingAudioStore.acquireParentDeletionLease(
+                sessions: recordingSessionsForParentDeletion(meetingIds: meetingIds),
+                managedRootURL: managedAudioRootURL
+            )
             try ensureNoActiveSegmentedAudio(meetingIds: meetingIds)
             audioTargets = try BatchAudioCleanupService.deletionTargets(
                 meetingIds: meetingIds,
@@ -220,8 +225,10 @@ extension MeetingRepository {
                 managedRootURL: managedAudioRootURL
             )
         } else {
+            segmentedAudioLease = nil
             audioTargets = []
         }
+        defer { withExtendedLifetime(segmentedAudioLease) {} }
         let stagedAudio = try BatchAudioCleanupService.stageFiles(audioTargets)
         do {
             try dbQueue.write { db in
@@ -323,6 +330,30 @@ extension MeetingRepository {
                 BatchAudioCleanupService.DeletionTarget(
                     baseURL: managedRootURL,
                     relativePath: $0
+                )
+            }
+        }
+    }
+
+    private func recordingSessionsForParentDeletion(
+        meetingIds: Set<UUID>
+    ) throws -> [RecordingAudioStore.ParentDeletionSession] {
+        guard !meetingIds.isEmpty else { return [] }
+        return try dbQueue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT DISTINCT recording_sessions.id, recording_sessions.meetingId
+                FROM recording_sessions
+                JOIN recording_audio_segments
+                  ON recording_audio_segments.recordingSessionId = recording_sessions.id
+                WHERE recording_sessions.meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
+                """,
+                arguments: StatementArguments(meetingIds)
+            ).map { row in
+                RecordingAudioStore.ParentDeletionSession(
+                    meetingId: row["meetingId"],
+                    sessionId: row["id"]
                 )
             }
         }

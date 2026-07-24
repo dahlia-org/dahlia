@@ -800,6 +800,54 @@ import GRDB
         }
 
         @Test
+        func rejectsDeleteWhileBatchTranscriptionReadsSegmentedAudio() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: project.id, context: context)
+            let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
+            let sessionId = try await context.database.dbQueue.read { db in
+                try #require(
+                    try UUID.fetchOne(
+                        db,
+                        sql: "SELECT id FROM recording_sessions WHERE meetingId = ?",
+                        arguments: [meeting.id]
+                    )
+                )
+            }
+            let store = try RecordingAudioStore(
+                dbQueue: context.database.dbQueue,
+                managedRootURL: context.rootURL.appending(path: "ManagedAudio", directoryHint: .isDirectory)
+            )
+            let started = AsyncStream<Void>.makeStream()
+            let release = AsyncStream<Void>.makeStream()
+            let reader = Task {
+                try await store.withVerifiedTranscribableSegments(sessionId: sessionId) { _ in
+                    started.continuation.yield()
+                    for await _ in release.stream {
+                        break
+                    }
+                }
+            }
+            var startedIterator = started.stream.makeAsyncIterator()
+            #expect(await startedIterator.next() != nil)
+
+            await #expect(throws: RecordingAudioStoreError.activeSession) {
+                try await context.service.deleteProjectHierarchy(
+                    id: project.id,
+                    meetingDisposition: .deleteMeetings
+                )
+            }
+            #expect(FileManager.default.fileExists(atPath: audioURL.path))
+            #expect(try context.repository.fetchProject(id: project.id) != nil)
+            #expect(try context.repository.fetchMeeting(id: meeting.id) != nil)
+
+            release.continuation.finish()
+            try await reader.value
+        }
+
+        @Test
         func restoresFolderWhenDeleteDatabaseUpdateFails() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
