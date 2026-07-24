@@ -122,22 +122,12 @@ To publish a release, install and authenticate the GitHub CLI (`gh`), increment 
 
 ## Architecture
 
-```
-MicrophoneAudioCaptureSession (microphone / ScreenCaptureKit raw + optional AEC3)
-SystemAudioCaptureManager (system audio / ScreenCaptureKit)
-    ↓ onAudioBuffer
-AudioSourcePipeline → CapturedAudioChunk
-    ↓ AudioFrameRouter (one physical capture per source)
-    ├─ BatchAudioFileWriter (lossless recording)
-    └─ AudioBufferBridge → SpeechTranscriberService (low-latency transcription)
-        ↓ TranscriptionEvent
-        ├─ TranscriptStore (real-time state)
-        └─ LiveCaptionStore (ephemeral captions)
-    ↓ Combine debounce(500ms)
-MeetingPersistenceService → SQLite (GRDB)
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the current runtime data flow, target architecture, conformance status,
+remediation plan, and UI responsiveness policy. Historical decisions and their supersession relationships are indexed in
+[Architecture Decision Records](docs/adr/README.md).
 
-See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping, and Meeting cardinality contract.
+See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping,
+and Meeting cardinality contract.
 
 ### Project Structure
 

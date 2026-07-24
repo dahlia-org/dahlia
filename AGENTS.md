@@ -19,6 +19,22 @@ This file applies to the entire repository. Before editing a path covered by a m
 
 `CLAUDE.md` is a compatibility symlink to the `AGENTS.md` in the same directory. Do not maintain duplicate content.
 
+## Documentation Router
+
+Use progressive disclosure: read the scoped `AGENTS.md` first, then open only the references required by the task.
+
+| Task | Additional reference |
+| --- | --- |
+| Current runtime boundaries or data flow | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
+| Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
+| UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
+| Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
+| Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
+
+Do not read every ADR by default. `ARCHITECTURE.md` describes the current system, target state, and conformance gaps;
+ADRs preserve decision history; and `AGENTS.md` contains actionable instructions. Keep detailed architecture out of
+`AGENTS.md` except for short safety invariants whose omission could cause data loss.
+
 ## Engineering Constraints
 
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.

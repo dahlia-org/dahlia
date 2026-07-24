@@ -2,51 +2,41 @@
 
 This file applies under `Sources/Dahlia/`. Changes under `Database/` must also follow `Database/AGENTS.md`.
 
-## Architecture Invariants
+## Reference Routing
 
-Preserve the following ownership model for the recording pipeline:
+- For current ownership and data flow, read [`Runtime Data Flow`](../../ARCHITECTURE.md#runtime-data-flow).
+- For recording, transcription, persistence, or queue changes, also read
+  [`Reliability Scope`](../../ARCHITECTURE.md#reliability-scope) and
+  [`Failure and Overload Policy`](../../ARCHITECTURE.md#failure-and-overload-policy).
+- For UI, view-model, rendering, loading, or interaction work, read
+  [`UI and Interaction Responsiveness`](../../ARCHITECTURE.md#ui-and-interaction-responsiveness) when the change can affect workload behavior.
+- When fixing a documented architecture deviation, follow its target and completion criteria in the
+  [`Remediation Plan`](../../ARCHITECTURE.md#remediation-plan).
+- For a new or reversed architecture decision, start at the [`ADR index`](../../docs/adr/README.md) and read only the related records.
 
-```text
-MicrophoneAudioCaptureSession (microphone / raw ScreenCaptureKit + AEC3 when needed)
-SystemAudioCaptureManager (system audio / ScreenCaptureKit)
-    ↓ onAudioBuffer
-AudioSourcePipeline → CapturedAudioChunk (with session-relative timestamp)
-    ↓ AudioFrameRouter
-    ├─ SegmentedAudioSourceWriter (lossless, bounded immutable segments)
-    └─ AudioBufferBridge → SpeechTranscriberService (low latency, at most one per source)
-        ↓ TranscriptionEvent
-        ↓ TranscriptionEventPipeline
-        ├─ UI lane (latest preview per source; finalized backlog coalesces into reload notices)
-        │   ├─ TranscriptStore (reloadable display projection, maximum 300 entries)
-        │   └─ LiveCaptionStore (temporary captions during recording only)
-        └─ persistence lane (finalized and translation events must not be dropped)
-            ↓ TranscriptPersistenceWriter
-            GRDB/SQLite (durable source of truth for finalized segments)
-```
+## Safety Invariants
 
-- The `RecordingSessionController` actor owns the runtime resources for capture, recognition, CAF recording, and batch scheduling.
-- `CaptionViewModel` owns session requests, UI state, event projection into stores, and meeting persistence. It must not retain AVFoundation or Speech runtime resources.
-- `TranscriptionEventPipeline` splits recognition events into UI and persistence lanes so MainActor rendering stalls cannot delay finalized-segment persistence.
-- Summaries and exports that require the complete transcript must read SQLite off the MainActor, not the bounded `TranscriptStore`.
-
-## Component Placement
-
-| Layer | Primary components |
-| --- | --- |
-| Audio | `AudioCaptureManager`, `SystemAudioCaptureManager`, `AudioSourcePipeline`, `AudioFrameRouter`, `AudioBufferBridge` |
-| Speech | `SpeechTranscriberService`, `PreviewTranslationCoordinator` |
-| Models / Storage | `TranscriptStore`, `MeetingPersistenceService`, `MeetingRepository`, `AppDatabaseManager` |
-| Services | `RecordingSessionController`, `SummaryService`, `VaultSyncService`, Google Calendar / Drive, exports |
-| UI | `CaptionViewModel`, `SidebarViewModel`, `ContentView`, `MeetingListSidebarView`, `ControlPanelView`, `SettingsView` |
-
-Before adding a responsibility that does not fit these ownership boundaries, inspect similar components and avoid creating a duplicate coordinator, store, or repository.
+- `RecordingSessionController` owns capture, recognition, segmented recording, and batch-scheduling runtime resources.
+- The capture callback path stays short, bounded, synchronous, and independent of MainActor. Do not add per-frame `Task` or actor hops.
+- Finalized transcripts and translations use the durable persistence lane. UI rendering, observers, previews, and caches must not gate it.
+- Audio frames, finalized data, and recording ranges are never silently dropped. Queue overflow or persistence failure must surface as failure.
+- `TranscriptStore` is a bounded, reloadable UI projection. Complete-transcript consumers read SQLite off MainActor.
+- Normal stop drains capture, recognition, the event pipeline, and persistence in the documented order.
+- `CaptionViewModel` owns requests and UI state, not AVFoundation or Speech runtime resources.
 
 ## Concurrency
 
 - Isolate UI-exposed state, view models, stores, and repositories to `@MainActor`.
-- Actors own capture, recognition, and other long-lived mutable runtimes. Do not bypass the existing `RecordingSessionController` ownership boundary.
+- Keep small, bounded, in-memory work synchronous. Do not add `async` or an actor only because an API might become expensive later.
+- Move database, disk, network, synchronous OS queries, and input-sized decode or parsing work off MainActor through an owned service or worker.
+- Actors own long-lived mutable runtimes and ordering. They are not dedicated threads or priority queues; do not serialize unrelated priority classes through one actor.
+- User-initiated UI work takes precedence over prefetch and off-screen work. Show acknowledgement or a bounded partial result before waiting for heavy work.
+- Cancel obsolete rebuildable UI work and reject stale completion results by identity or generation.
 - Avoid new `@unchecked Sendable` conformances. When an Apple framework or delegate boundary requires one, confine it to a small adapter and document the mutable-state isolation in code.
 - Use `@preconcurrency import` only at import boundaries that compensate for missing Sendable conformance in Apple frameworks. Do not use it to hide application data races.
+
+Before adding a responsibility that does not fit the documented ownership boundaries, inspect similar components and avoid creating a duplicate coordinator,
+store, repository, or global worker.
 
 ## Implementation Conventions
 

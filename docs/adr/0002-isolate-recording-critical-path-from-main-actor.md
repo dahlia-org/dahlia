@@ -7,6 +7,10 @@ Accepted
 UI projection の全件保持と停止時 fallback に関する決定は、
 [ADR-0006](0006-bounded-transcript-projection.md) により部分的に置き換えられた。
 
+同期／非同期の一般的な選択基準、UI workload の優先順位、負荷時の縮退順序は、
+[ADR-0009](0009-execution-context-and-degradation-order.md) により部分的に置き換えられた。
+本 ADR にある個別の画像サイズや cache 実装の記述は決定時点の履歴であり、現在の横断的な UI 規範ではない。
+
 ## Date
 
 2026-07-14
