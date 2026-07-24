@@ -125,6 +125,98 @@ public struct MeetingScreenshotImage: Sendable, Equatable {
     public let mimeType: String
 }
 
+public enum ProjectWorkspaceType: String, Codable, CaseIterable, Sendable {
+    case customer
+    case `internal`
+    case personal
+    case undefined
+}
+
+public struct ProjectQuery: Sendable, Equatable {
+    public var query: String?
+    public var projectID: UUID?
+    public var type: ProjectWorkspaceType?
+
+    public init(query: String? = nil, projectID: UUID? = nil, type: ProjectWorkspaceType? = nil) {
+        self.query = query
+        self.projectID = projectID
+        self.type = type
+    }
+}
+
+public struct ProjectMetadata: Codable, Sendable, Equatable {
+    public let projectID: UUID
+    public let displayName: String
+    public let path: String
+    public let parentProjectID: UUID?
+    public let rootProjectID: UUID
+    public let explicitType: ProjectWorkspaceType?
+    public let effectiveType: ProjectWorkspaceType
+    public let typeOwnerProjectID: UUID
+    public let isTypeInherited: Bool
+    public let directMeetingCount: Int
+    public let descendantMeetingCount: Int
+    public let directoryMissing: Bool
+    public let description: String
+    public let revision: Int
+}
+
+public struct ProjectQueryResult: Codable, Sendable, Equatable {
+    public let vault: ScopedVault
+    public let projects: [ProjectMetadata]
+}
+
+public enum ProjectParentUpdate: Sendable, Equatable {
+    case unchanged
+    case vaultRoot
+    case project(UUID)
+}
+
+public struct ProjectUpdate: Sendable, Equatable {
+    public var leafName: String?
+    public var parent: ProjectParentUpdate
+    public var description: String?
+    public var projectType: ProjectWorkspaceType?
+    public var expectedRevision: Int
+
+    public init(
+        leafName: String? = nil,
+        parent: ProjectParentUpdate = .unchanged,
+        description: String? = nil,
+        projectType: ProjectWorkspaceType? = nil,
+        expectedRevision: Int
+    ) {
+        self.leafName = leafName
+        self.parent = parent
+        self.description = description
+        self.projectType = projectType
+        self.expectedRevision = expectedRevision
+    }
+}
+
+public struct ProjectMutationResult: Codable, Sendable, Equatable {
+    public let project: ProjectMetadata
+    public let changed: Bool
+    public let affectedProjectIDs: [UUID]
+    public let effectiveTypeChangedProjectIDs: [UUID]
+}
+
+public struct MeetingProjectMembershipExpectation: Sendable, Equatable {
+    public let meetingID: UUID
+    public let expectedProjectID: UUID?
+
+    public init(meetingID: UUID, expectedProjectID: UUID?) {
+        self.meetingID = meetingID
+        self.expectedProjectID = expectedProjectID
+    }
+}
+
+public struct MeetingProjectMembershipResult: Codable, Sendable, Equatable {
+    public let changed: Bool
+    public let changedMeetingIDs: [UUID]
+    public let projectID: UUID?
+}
+
 public enum JSONValue: Codable, Sendable, Equatable {
     case object([String: Self])
     case array([Self])
@@ -173,6 +265,16 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case invalidTimeRange
     case screenshotNotFound
     case screenshotEncodingFailed
+    case writeAccessRequired
+    case projectNotFound
+    case projectConflict(String)
+    case invalidProjectName
+    case projectDirectoryMissing
+    case projectFileConflict(String)
+    case projectTypeOwnedByRoot
+    case meetingMembershipConflict
+    case workspaceBusy
+    case workspaceRollbackFailed
 
     public var errorDescription: String? {
         switch self {
@@ -194,6 +296,26 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The screenshot was not found in the configured meeting and vault."
         case .screenshotEncodingFailed:
             "The screenshot could not be resized for MCP access."
+        case .writeAccessRequired:
+            "This dahlia-mcp process is read-only. Restart it with --write to use update tools."
+        case .projectNotFound:
+            "The project was not found in the configured vault."
+        case let .projectConflict(message):
+            "Project update conflict: \(message)"
+        case .invalidProjectName:
+            "Project leaf_name must be a non-hidden single directory name."
+        case .projectDirectoryMissing:
+            "The project directory is missing."
+        case let .projectFileConflict(path):
+            "A directory or file already exists at \(path)."
+        case .projectTypeOwnedByRoot:
+            "Only a root project can have an explicit project type."
+        case .meetingMembershipConflict:
+            "At least one meeting no longer has the expected project membership; no meetings were changed."
+        case .workspaceBusy:
+            "Another Dahlia process is updating this vault. Refresh the project state and try again."
+        case .workspaceRollbackFailed:
+            "The workspace update failed and its filesystem rollback also failed."
         }
     }
 }

@@ -7,10 +7,7 @@ import Foundation
         @Test
         func marksDirectParentAsHavingChildren() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: [
-                    project(named: "foo"),
-                    project(named: "foo/bar"),
-                ]
+                fromRecords: projects(named: ["foo", "foo/bar"])
             )
 
             #expect(rows.map(\.hasChildren) == [true, false])
@@ -19,11 +16,7 @@ import Foundation
         @Test
         func ignoresSiblingPrefixesWhenDeterminingChildren() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: [
-                    project(named: "foo"),
-                    project(named: "foo-archive"),
-                    project(named: "foo/bar"),
-                ]
+                fromRecords: projects(named: ["foo", "foo-archive", "foo/bar"])
             )
 
             #expect(rows.map(\.hasChildren) == [true, false, false])
@@ -32,12 +25,7 @@ import Foundation
         @Test
         func ignoresNonDescendantPrefixMatches() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: [
-                    project(named: "foo"),
-                    project(named: "foo.bar"),
-                    project(named: "foo/bar"),
-                    project(named: "foo0"),
-                ]
+                fromRecords: projects(named: ["foo", "foo.bar", "foo/bar", "foo0"])
             )
 
             #expect(rows.map(\.hasChildren) == [true, false, false, false])
@@ -46,11 +34,7 @@ import Foundation
         @Test
         func marksIntermediateNodesAsHavingChildren() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: [
-                    project(named: "a/b"),
-                    project(named: "a/b/c"),
-                    project(named: "z"),
-                ]
+                fromRecords: projects(named: ["a/b", "a/b/c", "z"])
             )
 
             #expect(rows.map(\.hasChildren) == [true, false, false])
@@ -59,11 +43,7 @@ import Foundation
         @Test
         func keepsInputOrderWhileComputingChildrenIndependently() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: [
-                    project(named: "foo/bar"),
-                    project(named: "foo"),
-                    project(named: "foo/baz"),
-                ]
+                fromRecords: projects(named: ["foo/bar", "foo", "foo/baz"])
             )
 
             #expect(rows.map(\.name) == ["foo/bar", "foo", "foo/baz"])
@@ -73,12 +53,9 @@ import Foundation
         @Test
         func buildsNestedProjectTreeWithRecursiveMeetingCounts() {
             let nodes = ProjectTreeNode.buildNodes(
-                from: [
-                    projectOverview(named: "foo", meetingCount: 2),
-                    projectOverview(named: "foo/bar", meetingCount: 1),
-                    projectOverview(named: "foo/bar/baz", meetingCount: 3),
-                    projectOverview(named: "z", meetingCount: 4),
-                ]
+                from: projectOverviews(named: [
+                    ("foo", 2), ("foo/bar", 1), ("foo/bar/baz", 3), ("z", 4),
+                ])
             )
 
             #expect(nodes.map(\.displayName) == ["foo", "z"])
@@ -91,12 +68,9 @@ import Foundation
         @Test
         func filtersProjectTreeKeepingAncestorsAndAggregateCounts() {
             let nodes = ProjectTreeNode.buildNodes(
-                from: [
-                    projectOverview(named: "foo", meetingCount: 2),
-                    projectOverview(named: "foo/bar", meetingCount: 1),
-                    projectOverview(named: "foo/bar/baz", meetingCount: 3),
-                    projectOverview(named: "z", meetingCount: 4),
-                ]
+                from: projectOverviews(named: [
+                    ("foo", 2), ("foo/bar", 1), ("foo/bar/baz", 3), ("z", 4),
+                ])
             )
             let filteredNodes = nodes.compactMap { $0.filtered(matching: "baz") }
 
@@ -110,11 +84,9 @@ import Foundation
         @Test
         func projectSearchUsesLocalizedStandardMatching() {
             let nodes = ProjectTreeNode.buildNodes(
-                from: [
-                    projectOverview(named: "Café", meetingCount: 0),
-                    projectOverview(named: "Café/Planning", meetingCount: 2),
-                    projectOverview(named: "Archive", meetingCount: 1),
-                ]
+                from: projectOverviews(named: [
+                    ("Café", 0), ("Café/Planning", 2), ("Archive", 1),
+                ])
             )
 
             let filteredNodes = nodes.compactMap { $0.filtered(matching: "cafe") }
@@ -126,25 +98,46 @@ import Foundation
         @Test
         func projectSearchReturnsNoNodesForUnmatchedQuery() {
             let nodes = ProjectTreeNode.buildNodes(
-                from: [projectOverview(named: "Alpha/Beta", meetingCount: 1)]
+                from: projectOverviews(named: [("Alpha", 0), ("Alpha/Beta", 1)])
             )
 
             #expect(nodes.compactMap { $0.filtered(matching: "Gamma") }.isEmpty)
         }
 
-        private func project(named name: String) -> ProjectRecord {
-            ProjectRecord(id: .v7(), vaultId: .v7(), name: name, createdAt: Date())
+        private func projects(named names: [String]) -> [ProjectRecord] {
+            let ids = Dictionary(uniqueKeysWithValues: names.map { ($0, UUID.v7()) })
+            let vaultID = UUID.v7()
+            return names.map { name in
+                let components = name.split(separator: "/")
+                let parentPath = components.dropLast().joined(separator: "/")
+                return ProjectRecord(
+                    id: ids[name]!,
+                    vaultId: vaultID,
+                    parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
+                    leafName: String(components.last!),
+                    createdAt: Date(),
+                    projectType: parentPath.isEmpty ? .undefined : nil,
+                    resolvedPath: name
+                )
+            }
         }
 
-        private func projectOverview(named name: String, meetingCount: Int) -> ProjectOverviewItem {
-            ProjectOverviewItem(
-                projectId: .v7(),
-                projectName: name,
-                createdAt: Date(),
-                missingOnDisk: false,
-                meetingCount: meetingCount,
-                latestMeetingDate: nil
-            )
+        private func projectOverviews(named values: [(String, Int)]) -> [ProjectOverviewItem] {
+            let ids = Dictionary(uniqueKeysWithValues: values.map { ($0.0, UUID.v7()) })
+            return values.map { name, meetingCount in
+                let components = name.split(separator: "/")
+                let parentPath = components.dropLast().joined(separator: "/")
+                return ProjectOverviewItem(
+                    projectId: ids[name]!,
+                    projectName: name,
+                    projectLeafName: String(components.last!),
+                    parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
+                    createdAt: Date(),
+                    missingOnDisk: false,
+                    meetingCount: meetingCount,
+                    latestMeetingDate: nil
+                )
+            }
         }
     }
 

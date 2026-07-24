@@ -63,6 +63,15 @@ actor RecordingAudioStore {
         )
     }
 
+    struct ParentDeletionSession: Sendable {
+        let meetingId: UUID
+        let sessionId: UUID
+    }
+
+    struct ParentDeletionLease: Sendable {
+        fileprivate let locks: [AdvisoryFileLock]
+    }
+
     struct SegmentCreation {
         let record: RecordingAudioSegmentRecord
         let partialURL: URL
@@ -143,6 +152,32 @@ actor RecordingAudioStore {
         self.configuration = configuration
         try Self.ensureDirectory(at: self.managedRootURL)
         try Self.repairManagedPermissions(rootURL: self.managedRootURL)
+    }
+
+    /// Holds the same per-session advisory locks used by recording and transcription
+    /// while a caller stages files and commits or rolls back a parent deletion.
+    static func acquireParentDeletionLease(
+        sessions: [ParentDeletionSession],
+        managedRootURL: URL
+    ) throws -> ParentDeletionLease {
+        guard !sessions.isEmpty else { return ParentDeletionLease(locks: []) }
+        let managedRootURL = managedRootURL.standardizedFileURL
+        try ensureDirectory(at: managedRootURL)
+
+        var locks: [AdvisoryFileLock] = []
+        for session in sessions.sorted(by: { $0.sessionId.uuidString < $1.sessionId.uuidString }) {
+            let directoryURL = sessionDirectoryURL(
+                meetingId: session.meetingId,
+                sessionId: session.sessionId,
+                managedRootURL: managedRootURL
+            )
+            guard try !parentPathContainsSymbolicLink(directoryURL, stoppingAt: managedRootURL) else {
+                throw RecordingAudioStoreError.invalidPath
+            }
+            try ensureDirectory(at: directoryURL)
+            try locks.append(acquireTemporaryLease(at: directoryURL.appending(path: ".lease")))
+        }
+        return ParentDeletionLease(locks: locks)
     }
 
     func acquireSessionLease(meetingId: UUID, sessionId: UUID) throws {
@@ -1255,15 +1290,9 @@ actor RecordingAudioStore {
             }
             return meetingId
         }
-        do {
-            return try AdvisoryFileLock.acquire(
-                at: sessionDirectoryURL(meetingId: meetingId, sessionId: sessionId).appending(path: ".lease")
-            )
-        } catch AdvisoryFileLockError.alreadyLocked {
-            throw RecordingAudioStoreError.activeSession
-        } catch {
-            throw RecordingAudioStoreError.storageUnavailable
-        }
+        return try Self.acquireTemporaryLease(
+            at: sessionDirectoryURL(meetingId: meetingId, sessionId: sessionId).appending(path: ".lease")
+        )
     }
 
     private func markReady(segmentId: UUID, at finalizedAt: Date = .now) async throws -> RecordingAudioSegmentRecord {
@@ -1406,9 +1435,31 @@ actor RecordingAudioStore {
     }
 
     private func sessionDirectoryURL(meetingId: UUID, sessionId: UUID) -> URL {
+        Self.sessionDirectoryURL(
+            meetingId: meetingId,
+            sessionId: sessionId,
+            managedRootURL: managedRootURL
+        )
+    }
+
+    private static func sessionDirectoryURL(
+        meetingId: UUID,
+        sessionId: UUID,
+        managedRootURL: URL
+    ) -> URL {
         managedRootURL
             .appending(path: meetingId.uuidString, directoryHint: .isDirectory)
             .appending(path: sessionId.uuidString, directoryHint: .isDirectory)
+    }
+
+    private static func acquireTemporaryLease(at url: URL) throws -> AdvisoryFileLock {
+        do {
+            return try AdvisoryFileLock.acquire(at: url)
+        } catch AdvisoryFileLockError.alreadyLocked {
+            throw RecordingAudioStoreError.activeSession
+        } catch {
+            throw RecordingAudioStoreError.storageUnavailable
+        }
     }
 
     private func safeURL(relativePath: String) throws -> URL {

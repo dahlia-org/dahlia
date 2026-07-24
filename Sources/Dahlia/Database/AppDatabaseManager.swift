@@ -130,6 +130,10 @@ final class AppDatabaseManager: Sendable {
             try addBatchLanguageOptionsIfNeeded(in: db)
         }
 
+        migrator.registerMigration("v24_projectWorkspaceHierarchy") { db in
+            try ProjectHierarchyMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

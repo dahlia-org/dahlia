@@ -886,6 +886,26 @@
 
 /* MCP */
 "MCP" = "MCP";
+"Parent Project" = "親 Project";
+"Vault Root" = "Vault 直下";
+"Project Type" = "Project の種類";
+"Hierarchy and Type" = "階層と種類";
+"Move Project" = "Project を移動";
+"Update Project Type" = "Project Type を更新";
+"Moving or changing a root type also updates every descendant's path or inherited type." = "移動やルートの種類変更は、すべての子孫のパスまたは継承される種類にも反映されます。";
+"This subproject inherits its Project Type from the root Project." = "このサブプロジェクトはルート Project から種類を継承します。";
+"Inherited from %@" = "%@ から継承";
+"Customer" = "顧客";
+"Internal" = "社内";
+"Personal" = "個人";
+"Undefined" = "未分類";
+"Subprojects inherit their Project Type from the root Project." = "サブプロジェクトはルート Project から種類を継承します。";
+"The Project changed before this update. Its current revision is %lld." = "この Project は更新されています。現在のリビジョンは %lld です。";
+"A Project cannot be moved inside itself or one of its descendants." = "Project を自分自身または子孫の配下へ移動できません。";
+"Another Project operation is already running for this Vault." = "この Vault では別の Project 操作を実行中です。";
+"Read-only" = "読み取り専用";
+"Write enabled" = "書き込み可";
+"Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults." = "Agent に Project やミーティングの所属を整理させる場合だけ、書き込み可を選んでください。すべてのコマンドは選択中の Vault だけに制限されます。Vault を切り替えた後は、選んだコマンドを再実行してください。";
 "Vault Name" = "保管庫名";
 "Vault ID" = "保管庫 ID";
 "Copy Command" = "コマンドをコピー";

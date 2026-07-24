@@ -176,6 +176,34 @@ enum L10n {
     }
 
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
+    static var parentProject: String { String(localized: "Parent Project", bundle: bundle) }
+    static var vaultRoot: String { String(localized: "Vault Root", bundle: bundle) }
+    static var projectType: String { String(localized: "Project Type", bundle: bundle) }
+    static var projectHierarchyAndType: String { String(localized: "Hierarchy and Type", bundle: bundle) }
+    static var moveProject: String { String(localized: "Move Project", bundle: bundle) }
+    static var updateProjectType: String { String(localized: "Update Project Type", bundle: bundle) }
+    static var projectHierarchyChangeHelp: String { String(
+        localized: "Moving or changing a root type also updates every descendant's path or inherited type.",
+        bundle: bundle
+    ) }
+    static var subprojectTypeInheritanceHelp: String { String(
+        localized: "This subproject inherits its Project Type from the root Project.",
+        bundle: bundle
+    ) }
+
+    static func inheritedFromProject(_ name: String) -> String {
+        String(localized: "Inherited from \(name)", bundle: bundle)
+    }
+
+    static func projectTypeName(_ type: ProjectType) -> String {
+        switch type {
+        case .customer: String(localized: "Customer", bundle: bundle)
+        case .internal: String(localized: "Internal", bundle: bundle)
+        case .personal: String(localized: "Personal", bundle: bundle)
+        case .undefined: String(localized: "Undefined", bundle: bundle)
+        }
+    }
+
     static var renameProject: String { String(localized: "Rename Project", bundle: bundle) }
     static var projectNameHelp: String { String(
         localized: "Renaming also updates the project folder and all subprojects.",
@@ -374,6 +402,22 @@ enum L10n {
 
     static var projectFolderMissingForOperation: String { String(
         localized: "The project folder must exist before it can be renamed.",
+        bundle: bundle
+    ) }
+    static var subprojectTypeInheritanceError: String { String(
+        localized: "Subprojects inherit their Project Type from the root Project.",
+        bundle: bundle
+    ) }
+    static func staleProjectRevision(_ revision: Int) -> String {
+        String(localized: "The Project changed before this update. Its current revision is \(revision).", bundle: bundle)
+    }
+
+    static var projectCycleError: String { String(
+        localized: "A Project cannot be moved inside itself or one of its descendants.",
+        bundle: bundle
+    ) }
+    static var projectVaultBusy: String { String(
+        localized: "Another Project operation is already running for this Vault.",
         bundle: bundle
     ) }
     static var projectTrashLocationUnavailable: String { String(
@@ -875,13 +919,15 @@ enum L10n {
     static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
+    static var mcpReadOnly: String { String(localized: "Read-only", bundle: bundle) }
+    static var mcpWriteEnabled: String { String(localized: "Write enabled", bundle: bundle) }
     static var mcpHelperUnavailable: String { String(
         localized: "The MCP helper is not available in this app build.",
         bundle: bundle
     ) }
     static var selectVaultForMCP: String { String(localized: "Select a vault before configuring MCP.", bundle: bundle) }
     static var mcpFooter: String { String(
-        localized: "Each command registers read-only access to only the selected vault. Run it again after switching vaults.",
+        localized: "Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults.",
         bundle: bundle
     ) }
     static func registrationCommand(_ name: String) -> String {
