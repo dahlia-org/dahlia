@@ -5,6 +5,8 @@ This file applies under `Sources/Dahlia/`. Changes under `Database/` must also f
 ## Reference Routing
 
 - For current ownership and data flow, read [`Runtime Data Flow`](../../ARCHITECTURE.md#runtime-data-flow).
+- For audio capture, recording, live subtitles, realtime/batch mode combinations, persistence timing, or stop order, read
+  [`Audio and Transcription Data Flow`](../../docs/architecture/audio-transcription-data-flow.md).
 - For recording, transcription, persistence, or queue changes, also read
   [`Reliability Scope`](../../ARCHITECTURE.md#reliability-scope) and
   [`Failure and Overload Policy`](../../ARCHITECTURE.md#failure-and-overload-policy).

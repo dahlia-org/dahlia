@@ -25,7 +25,8 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 
 | Task | Additional reference |
 | --- | --- |
-| Current runtime boundaries or data flow | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
+| Current runtime ownership or workload boundaries | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
+| Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
 | UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |

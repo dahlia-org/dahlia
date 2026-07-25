@@ -6,6 +6,7 @@
 
 - `AGENTS.md`: Codex が最初に読む、短いルーティングと必須ガードレール
 - `ARCHITECTURE.md`: 現在の構成、横断的な設計原則、未適合箇所、修正の到達条件
+- `docs/architecture/`: 特定領域の現在の data flow、runtime scenario、永続化境界
 - `docs/adr/`: 決定時点の背景、選択肢、トレードオフを残す履歴
 
 `Reliability Scope` から `Failure and Overload Policy` までは normative な target state である。
@@ -38,6 +39,9 @@ UI の応答性と録音データの保全は別の品質軸として扱う。�
 
 ## Runtime Data Flow
 
+音声と文字起こしの mode／ライブ機能の組み合わせ、データごとの永続化境界、開始・停止・異常時の runtime scenario は
+[`音声・文字起こしデータフロー`](docs/architecture/audio-transcription-data-flow.md) を正本とする。
+
 ```text
 MicrophoneAudioCaptureSession / SystemAudioCaptureManager
     ↓ capture callback
@@ -69,22 +73,14 @@ AudioFrameRouter
                 GRDB / SQLite
 ```
 
-| Boundary | Primary owner | Responsibility |
-| --- | --- | --- |
-| Physical capture | `MicrophoneAudioCaptureSession`, `SystemAudioCaptureManager` | OS capture lifecycle and raw buffers |
-| Per-source routing | `AudioSourcePipeline`, `AudioFrameRouter` | Timestamp assignment and fan-out without per-frame task creation |
-| Recording runtime | `RecordingSessionController`, `SegmentedAudioSourceWriter` | Resource ownership, bounded ingestion, immutable segment lifecycle |
-| Recognition | `LiveAudioFrameWorker`, `AudioBufferBridge`, `SpeechTranscriberService` | Capture-independent conversion and transcription |
-| Event distribution | `TranscriptionEventPipeline` | Separate UI projection and durable persistence lanes |
-| UI projection | `CaptionViewModel`, `TranscriptStore`, `LiveCaptionStore` | User requests and bounded, reloadable presentation state |
-| Durable transcript | `TranscriptPersistenceWriter`, GRDB/SQLite | Ordered persistence and complete transcript source of truth |
-
 `RecordingSessionController` actor が capture、recognizer、segmented writer、batch scheduler の runtime resource を所有する。
 `CaptionViewModel` はユーザー要求、UI 状態、表示 projection、停止シーケンスの調整を担当し、AVFoundation や Speech の
 runtime resource を所有しない。
 
 `TranscriptStore` は再読込可能な bounded UI projection であり、確定文字起こしの正本ではない。
 完全な文字起こしを必要とするサマリー、書き出し、外部アクセスは SQLite を MainActor 外で読む。
+録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
+対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
 ## Workload Classes
 
