@@ -47,17 +47,53 @@
             #expect(lastSegment.text == "final 149")
         }
 
+        @Test
+        func trimmingPreservesClearPreviewAcrossAnotherSourcesBacklog() async {
+            let recorder = LiveCaptionEventRecorder(blocksFirstDelivery: true)
+            let relay = LiveCaptionEventRelay { events in
+                await recorder.append(events)
+            }
+            let sessionID = UUID.v7()
+
+            await relay.enqueue(.preview(makeSegment(
+                sessionID: sessionID,
+                text: "stale preview",
+                sourceLabel: "microphone"
+            )))
+            await recorder.waitForDelivery()
+            await relay.enqueue(.clearPreview(sessionId: sessionID, sourceLabel: "microphone"))
+
+            for index in 0 ..< 150 {
+                await relay.enqueue(.finalized(makeSegment(
+                    sessionID: sessionID,
+                    text: "system final \(index)",
+                    isConfirmed: true
+                )))
+            }
+            #expect(await relay.pendingEventCount() == LiveCaptionEventRelay.maximumPendingEventCount)
+
+            await recorder.open()
+            await relay.finish()
+
+            let deliveredEvents = await recorder.events()
+            #expect(deliveredEvents.contains {
+                guard case let .clearPreview(deliveredSessionID, sourceLabel) = $0 else { return false }
+                return deliveredSessionID == sessionID && sourceLabel == "microphone"
+            })
+        }
+
         private func makeSegment(
             sessionID: UUID,
             text: String,
-            isConfirmed: Bool = false
+            isConfirmed: Bool = false,
+            sourceLabel: String = "system"
         ) -> TranscriptSegment {
             TranscriptSegment(
                 sessionId: sessionID,
                 startTime: Date(timeIntervalSince1970: 1_776_384_000),
                 text: text,
                 isConfirmed: isConfirmed,
-                speakerLabel: "system"
+                speakerLabel: sourceLabel
             )
         }
     }

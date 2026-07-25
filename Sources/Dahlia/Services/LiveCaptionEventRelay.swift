@@ -79,7 +79,13 @@ actor LiveCaptionEventRelay {
 
     private func trimPendingEventsIfNeeded() {
         guard pendingEvents.count > Self.maximumPendingEventCount else { return }
-        pendingEvents.removeFirst(pendingEvents.count - Self.maximumPendingEventCount)
+        while pendingEvents.count > Self.maximumPendingEventCount {
+            let removalIndex = pendingEvents.firstIndex {
+                guard case .clearPreview = $0 else { return true }
+                return false
+            } ?? pendingEvents.startIndex
+            pendingEvents.remove(at: removalIndex)
+        }
     }
 
     private func startWorkerIfNeeded() {
