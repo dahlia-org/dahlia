@@ -44,6 +44,7 @@ struct ScreenshotOverlayView: View {
         ZStack(alignment: .topTrailing) {
             Color.black.opacity(0.7)
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
 
             GeometryReader { proxy in
                 Group {
