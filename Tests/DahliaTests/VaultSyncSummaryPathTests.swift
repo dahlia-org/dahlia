@@ -34,6 +34,46 @@ import GRDB
         }
 
         @Test
+        func laterBatchProcessesAfterRetryExhaustion() throws {
+            let context = try makeContext(
+                projectName: "Project",
+                summaryRelativePath: "Project/Original.md",
+                maximumEventRetryAttempts: 0
+            )
+            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+
+            let originalURL = context.vaultURL.appending(path: "Project/Original.md")
+            let renamedURL = context.vaultURL.appending(path: "Project/Renamed.md")
+            try Data("Summary".utf8).write(to: originalURL, options: .atomic)
+            try FileManager.default.moveItem(at: originalURL, to: renamedURL)
+            try context.repository.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_summary_path_update
+                BEFORE UPDATE ON summary_exports
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced summary path failure');
+                END
+                """)
+            }
+            let renameFlag = UInt32(kFSEventStreamEventFlagItemRenamed)
+                | UInt32(kFSEventStreamEventFlagItemIsFile)
+
+            context.syncService.handleEvents(
+                paths: [originalURL.path, renamedURL.path],
+                flags: [renameFlag, renameFlag]
+            )
+            try context.repository.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_summary_path_update")
+            }
+            context.syncService.handleEvents(
+                paths: [originalURL.path, renamedURL.path],
+                flags: [renameFlag, renameFlag]
+            )
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == "Project/Renamed.md")
+        }
+
+        @Test
         func markdownRenameThroughParentSymlinkClearsUnsafeStoredPath() throws {
             let context = try makeContext(projectName: "Project", summaryRelativePath: "Project/Original.md")
             let originalURL = context.vaultURL.appending(path: "Project/Original.md")
@@ -132,7 +172,11 @@ import GRDB
             #expect(vaultExport?.vaultRelativePath == "Project/Original.md")
         }
 
-        private func makeContext(projectName: String, summaryRelativePath: String) throws -> TestContext {
+        private func makeContext(
+            projectName: String,
+            summaryRelativePath: String,
+            maximumEventRetryAttempts: Int = 5
+        ) throws -> TestContext {
             let vaultURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString, directoryHint: .isDirectory)
             try FileManager.default.createDirectory(
@@ -180,7 +224,12 @@ import GRDB
                 repository: repository,
                 project: project,
                 meeting: meeting,
-                syncService: VaultSyncService(vaultURL: vaultURL, dbQueue: manager.dbQueue, vaultId: vault.id)
+                syncService: VaultSyncService(
+                    vaultURL: vaultURL,
+                    dbQueue: manager.dbQueue,
+                    vaultId: vault.id,
+                    maximumEventRetryAttempts: maximumEventRetryAttempts
+                )
             )
         }
 

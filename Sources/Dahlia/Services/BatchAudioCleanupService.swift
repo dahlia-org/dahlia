@@ -117,9 +117,20 @@ enum BatchAudioCleanupService {
         }
     }
 
-    static func discardStagedFiles(_ stagedFiles: [StagedFile]) {
+    static func discardStagedFiles(
+        _ stagedFiles: [StagedFile],
+        removeItem: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
+    ) throws {
+        var firstError: (any Error)?
         for stagedFile in stagedFiles {
-            try? FileManager.default.removeItem(at: stagedFile.stagedURL)
+            do {
+                try removeItem(stagedFile.stagedURL)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
         }
     }
 }

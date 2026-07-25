@@ -56,5 +56,32 @@ struct ProjectDescriptionEditingStateTests {
         #expect(result == .projectNotFound)
         #expect(viewModel.projectDescriptionDraft(id: deletedProjectId) == nil)
     }
+
+    @Test
+    func localProjectRevisionObservationIsNotReportedAsExternal() {
+        let projectId = UUID.v7()
+        var tracker = ProjectRevisionObservationTracker()
+
+        tracker.record(projectId: projectId, revision: 2)
+        let consumedLocalRevision = tracker.consume(projectId: projectId, revision: 2)
+        let consumedUnknownRevision = tracker.consume(projectId: projectId, revision: 3)
+
+        #expect(consumedLocalRevision)
+        #expect(!consumedUnknownRevision)
+    }
+
+    @Test
+    func coalescedLocalProjectRevisionObservationsAreConsumed() {
+        let projectId = UUID.v7()
+        var tracker = ProjectRevisionObservationTracker()
+
+        tracker.record(projectId: projectId, revision: 2)
+        tracker.record(projectId: projectId, revision: 3)
+        let consumedLatestRevision = tracker.consume(projectId: projectId, revision: 3)
+        let consumedSupersededRevision = tracker.consume(projectId: projectId, revision: 2)
+
+        #expect(consumedLatestRevision)
+        #expect(!consumedSupersededRevision)
+    }
 }
 #endif

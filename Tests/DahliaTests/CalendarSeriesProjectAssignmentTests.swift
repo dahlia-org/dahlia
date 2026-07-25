@@ -61,6 +61,47 @@ import GRDB
         }
 
         @Test
+        func inheritedSubprojectUsesResolvedLogicalPath() async throws {
+            let (database, vault) = try makeDatabase()
+            let root = project(named: "Acme", vaultId: vault.id)
+            let child = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: root.id,
+                leafName: "Platform",
+                createdAt: .now,
+                projectType: nil
+            )
+            let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
+            let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
+
+            try await database.dbQueue.write { db in
+                try root.insert(db)
+                try child.insert(db)
+                try insertSeriesMeeting(
+                    event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
+                    projectId: child.id,
+                    vaultId: vault.id,
+                    createdAt: previousStart,
+                    in: db
+                )
+            }
+
+            let service = try await MeetingPersistenceService.createNew(
+                store: TranscriptStore(),
+                dbQueue: database.dbQueue,
+                vaultId: vault.id,
+                projectId: nil,
+                initialName: "Current occurrence",
+                calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
+            )
+            await service.stop()
+
+            #expect(service.projectId == child.id)
+            #expect(service.projectName == "Acme/Platform")
+        }
+
+        @Test
         func legacyMissingDirectoryFlagDoesNotChangeSeriesProjectMembership() async throws {
             let (database, vault) = try makeDatabase()
             let availableProject = project(named: "Available project", vaultId: vault.id)

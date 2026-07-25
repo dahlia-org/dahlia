@@ -248,7 +248,7 @@ extension MeetingRepository {
         meetingDisposition: ProjectMeetingDisposition,
         vaultExportUpdates: [MeetingVaultExportUpdate] = [],
         managedAudioRootURL: URL = BatchAudioStorage.managedRootURL
-    ) throws {
+    ) throws -> [BatchAudioCleanupService.StagedFile] {
         let meetingIds = try dbQueue.read { db in
             let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
             guard !projectIds.isEmpty else { return Set<UUID>() }
@@ -314,7 +314,7 @@ extension MeetingRepository {
             try BatchAudioCleanupService.restoreStagedFiles(stagedAudio)
             throw error
         }
-        BatchAudioCleanupService.discardStagedFiles(stagedAudio)
+        return stagedAudio
     }
 
     func prepareSegmentedAudioForProjectDeletion(

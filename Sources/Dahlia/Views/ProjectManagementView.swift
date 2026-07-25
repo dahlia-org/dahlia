@@ -26,6 +26,7 @@ struct ProjectManagementView: View {
     @State private var descriptionSaveTask: Task<Void, Never>?
     @State private var isRevertingSelectionAfterSaveFailure = false
     @State private var projectDescriptionChangeTracker = ProjectDescriptionChangeTracker()
+    @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
 
     private let sidebarWidth: CGFloat = 300
 
@@ -482,7 +483,15 @@ private extension ProjectManagementView {
               previous.revision != current.revision else {
             return
         }
+        if projectRevisionObservationTracker.consume(
+            projectId: selectedProjectId,
+            revision: current.revision
+        ) {
+            requestExpansion(toReveal: current.projectName)
+            return
+        }
 
+        projectRevisionObservationTracker.discard(projectId: selectedProjectId)
         let hadUnsavedFields = projectName != leafName(for: previous.projectName)
             || projectParentId != previous.parentProjectId
             || projectType != previous.effectiveProjectType
@@ -576,7 +585,13 @@ private extension ProjectManagementView {
         ) {
         case .saved:
             lastSavedProjectDescription = projectDescription
-            lastLoadedProjectRevision = lastLoadedProjectRevision.map { $0 + 1 }
+            if let committedRevision = lastLoadedProjectRevision.map({ $0 + 1 }) {
+                lastLoadedProjectRevision = committedRevision
+                projectRevisionObservationTracker.record(
+                    projectId: projectId,
+                    revision: committedRevision
+                )
+            }
             descriptionStatusMessage = L10n.saved
             descriptionSaveFailed = false
         case .projectNotFound:
@@ -634,6 +649,10 @@ private extension ProjectManagementView {
         }
         projectName = leafName(for: renamed.name)
         lastLoadedProjectRevision = renamed.revision
+        projectRevisionObservationTracker.record(
+            projectId: selectedProject.projectId,
+            revision: renamed.revision
+        )
         projectSearchText = ""
         requestExpansion(toReveal: renamed.name)
     }
@@ -711,6 +730,10 @@ private extension ProjectManagementView {
             return
         }
         lastLoadedProjectRevision = moved.revision
+        projectRevisionObservationTracker.record(
+            projectId: selectedProject.projectId,
+            revision: moved.revision
+        )
         requestExpansion(toReveal: moved.name)
     }
 
@@ -732,6 +755,10 @@ private extension ProjectManagementView {
             return
         }
         lastLoadedProjectRevision = updated.revision
+        projectRevisionObservationTracker.record(
+            projectId: selectedProject.projectId,
+            revision: updated.revision
+        )
     }
 
     private func projectName(id: UUID) -> String? {

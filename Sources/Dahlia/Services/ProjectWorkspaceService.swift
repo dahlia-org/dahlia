@@ -312,20 +312,22 @@ final class ProjectWorkspaceService {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool = false
     ) async throws {
-        try withNotifyingMutation {
+        let stagedAudio = try withMutationLock {
             try deleteProjectHierarchyUnlocked(
                 id: id,
                 meetingDisposition: meetingDisposition,
                 deletesSummaryFiles: deletesSummaryFiles
             )
         }
+        DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
+        try BatchAudioCleanupService.discardStagedFiles(stagedAudio)
     }
 
     private func deleteProjectHierarchyUnlocked(
         id: UUID,
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool
-    ) throws {
+    ) throws -> [BatchAudioCleanupService.StagedFile] {
         guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
             throw ProjectWorkspaceError.projectNotFound
         }
@@ -348,8 +350,9 @@ final class ProjectWorkspaceService {
             ? try trashTrackedSummaries(projectPath: project.name)
             : []
         let relocations = movePlan?.relocations ?? []
+        let stagedAudio: [BatchAudioCleanupService.StagedFile]
         do {
-            try performSummaryRelocations(relocations) {
+            stagedAudio = try performSummaryRelocations(relocations) {
                 try repository.deleteProjectHierarchy(
                     name: project.name,
                     vaultId: vault.id,
@@ -362,6 +365,7 @@ final class ProjectWorkspaceService {
             try restoreTrashedSummaries(trashedSummaries)
             throw error
         }
+        return stagedAudio
     }
 
     private func trashTrackedSummaries(projectPath: String) throws -> [TrashedSummary] {
@@ -783,10 +787,10 @@ extension ProjectWorkspaceService {
     }
 
     /// File system and SQLite operations cannot share a transaction. Runtime failures are compensated here.
-    private func performSummaryRelocations(
+    private func performSummaryRelocations<Result>(
         _ relocations: [SummaryRelocation],
-        operation: () throws -> Void
-    ) throws {
+        operation: () throws -> Result
+    ) throws -> Result {
         let createdDirectories = try createOutputDirectories(for: relocations)
         var completed: [SummaryRelocation] = []
         do {
@@ -794,7 +798,7 @@ extension ProjectWorkspaceService {
                 try fileManager.moveItem(at: relocation.sourceURL, to: relocation.destinationURL)
                 completed.append(relocation)
             }
-            try operation()
+            return try operation()
         } catch let operationError {
             var rollbackError: (any Error)?
             for relocation in completed.reversed() {

@@ -302,7 +302,7 @@ private enum MeetingPersistenceStarter {
             )
             try recordingSession.insert(db)
             let projectName = try projectId.flatMap { id in
-                try ProjectRecord.fetchOne(db, key: id)?.name
+                try ProjectRecord.fetchResolved(id: id, in: db)?.name
             }
             return NewResult(
                 projectId: projectId,

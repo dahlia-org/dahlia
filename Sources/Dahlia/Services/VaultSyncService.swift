@@ -10,6 +10,7 @@ final class VaultSyncService: @unchecked Sendable {
     private let dbQueue: DatabaseQueue
     private let vaultId: UUID
     private let summaryPathSynchronizer: VaultSummaryPathSynchronizer
+    private let maximumEventRetryAttempts: Int
     private var stream: FSEventStreamRef?
     private let fileManager = FileManager.default
     private let callbackQueue = DispatchQueue(label: "com.dahlia.vault-sync", qos: .utility)
@@ -24,10 +25,16 @@ final class VaultSyncService: @unchecked Sendable {
         var attempt = 0
     }
 
-    init(vaultURL: URL, dbQueue: DatabaseQueue, vaultId: UUID) {
+    init(
+        vaultURL: URL,
+        dbQueue: DatabaseQueue,
+        vaultId: UUID,
+        maximumEventRetryAttempts: Int = 5
+    ) {
         self.vaultURL = vaultURL
         self.dbQueue = dbQueue
         self.vaultId = vaultId
+        self.maximumEventRetryAttempts = maximumEventRetryAttempts
         summaryPathSynchronizer = VaultSummaryPathSynchronizer(dbQueue: dbQueue, vaultId: vaultId)
     }
 
@@ -205,8 +212,10 @@ final class VaultSyncService: @unchecked Sendable {
                 pendingEventBatches.removeFirst()
             } catch {
                 pendingEventBatches[0].attempt += 1
-                guard pendingEventBatches[0].attempt <= 5 else {
-                    return
+                guard pendingEventBatches[0].attempt <= maximumEventRetryAttempts else {
+                    pendingEventBatches.removeFirst()
+                    ErrorReportingService.capture(error, context: ["source": "vaultSummaryPathSync"])
+                    continue
                 }
                 eventRetryScheduled = true
                 let delay = min(pow(2, Double(pendingEventBatches[0].attempt - 1)) * 0.1, 1.6)
