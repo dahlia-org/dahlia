@@ -49,6 +49,8 @@ ADRs preserve decision history; and `AGENTS.md` contains actionable instructions
 - For requests to answer, explain, review, diagnose, or plan, inspect the relevant files and logs and report the result. Do not edit unless the request also asks for a change.
 - For requests to change, implement, or fix, make the in-scope local edits and run relevant non-destructive validation without asking first. Preserve existing uncommitted work and leave unrelated changes untouched.
 - Get confirmation before destructive actions, external writes, dependency changes, or a material expansion of scope.
+- When asking the user a question, treat it as blocking and wait for an explicit response. Do not resolve it automatically through a timeout, default, or recommended choice. If the active agent or tool provides wait-duration or automatic-resolution controls, configure them for indefinite waiting or disable automatic resolution. If that is not supported, leave the question unresolved and stop rather than proceeding without the user's answer.
+- When a requested GitHub operation requires GitHub CLI access to existing authentication credentials, agents may run the necessary `gh` commands outside the sandbox without additional confirmation. Use the environment's supported escalation mechanism, keep access scoped to the requested operation, and never reveal, export, copy, or persist credential values. Reauthentication or other changes to authentication state still require explicit user authorization.
 
 ## Commands
 
