@@ -2,31 +2,32 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// MainActor 上で画像全体を比較せず、内容から抽出した固定長の標本で変更を識別する。
+/// MainActor 上で画像全体を比較せず、Data の backing storage から変更を識別する。
+///
+/// Data を保持するため、旧 storage の解放後に同じアドレスが再利用されても false-equal にはならない。
+/// 同じ内容の別 storage は保守的に変更として扱い、stale thumbnail を避ける。
 struct ScreenshotImageContentIdentity: Equatable {
-    private static let sampleSize = 32
+    private static let maximumDirectComparisonByteCount = 64
 
-    private let byteCount: Int
-    private let contentSample: Data
+    private let imageData: Data
     private let mimeType: String
 
     init(_ screenshot: MeetingScreenshotRecord) {
-        let data = screenshot.imageData
-        byteCount = data.count
-        contentSample = Self.contentSample(from: data)
+        imageData = screenshot.imageData
         mimeType = screenshot.mimeType
     }
 
-    private static func contentSample(from data: Data) -> Data {
-        guard data.count > sampleSize * 3 else { return data }
-        let middleStart = data.index(data.startIndex, offsetBy: (data.count - sampleSize) / 2)
-        let middleEnd = data.index(middleStart, offsetBy: sampleSize)
-        var sample = Data()
-        sample.reserveCapacity(sampleSize * 3)
-        sample.append(data.prefix(sampleSize))
-        sample.append(data[middleStart ..< middleEnd])
-        sample.append(data.suffix(sampleSize))
-        return sample
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.mimeType == rhs.mimeType,
+              lhs.imageData.count == rhs.imageData.count else { return false }
+        if lhs.imageData.count <= maximumDirectComparisonByteCount {
+            return lhs.imageData == rhs.imageData
+        }
+        return lhs.imageData.withUnsafeBytes { lhsBytes in
+            rhs.imageData.withUnsafeBytes { rhsBytes in
+                lhsBytes.baseAddress == rhsBytes.baseAddress
+            }
+        }
     }
 }
 

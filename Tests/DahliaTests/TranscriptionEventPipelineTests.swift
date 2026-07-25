@@ -659,13 +659,25 @@
             buffer.frameLength = 160
 
             let uiEvents = TranscriptionEventProbe()
+            let liveCaptionEvents = TranscriptionEventProbe()
             let persistedEvents = TranscriptionEventProbe()
-            let event = TranscriptionEvent.finalized(
-                makeSegment(sessionId: session.id, text: "continues", isConfirmed: true)
-            )
+            let events = [
+                TranscriptionEvent.finalized(
+                    makeSegment(sessionId: session.id, text: "continues", isConfirmed: true)
+                ),
+                TranscriptionEvent.finalized(
+                    makeSegment(sessionId: session.id, text: "still continues", isConfirmed: true)
+                ),
+            ]
+            let liveCaptionRelay = LiveCaptionEventRelay { events in
+                await liveCaptionEvents.append(contentsOf: events)
+            }
             let pipeline = TranscriptionEventPipeline(
                 uiSink: { events in
                     await uiEvents.append(contentsOf: events)
+                },
+                eventObserver: { event in
+                    await liveCaptionRelay.enqueue(event)
                 },
                 persistenceSink: { events in
                     await persistedEvents.append(contentsOf: events)
@@ -681,23 +693,27 @@
             defer { stall.release() }
 
             writer.appendBuffer(buffer)
-            await pipeline.enqueue(event)
-            await persistedEvents.waitForCount(1)
+            for event in events {
+                await pipeline.enqueue(event)
+            }
+            await persistedEvents.waitForCount(2)
 
             #expect(stall.isBlocking)
             #expect(writer.acceptedFrameCount == 160)
             #expect(await uiEvents.snapshot().isEmpty)
-            #expect(await persistedEvents.snapshot() == [event])
+            #expect(await persistedEvents.snapshot() == events)
 
             stall.release()
             await stallTask.value
-            await uiEvents.waitForCount(1)
+            await uiEvents.waitForCount(2)
             try await pipeline.finish()
+            await liveCaptionRelay.finish()
             writer.seal()
             try await writer.finish()
             await audioStore.releaseSessionLease(sessionId: session.id)
 
-            #expect(await uiEvents.snapshot() == [event])
+            #expect(await uiEvents.snapshot() == events)
+            #expect(await liveCaptionEvents.snapshot() == events)
         }
 
         private func makeSegment(

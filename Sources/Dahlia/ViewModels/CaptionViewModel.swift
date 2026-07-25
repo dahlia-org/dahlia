@@ -460,6 +460,7 @@ final class CaptionViewModel: ObservableObject {
     private var failedTranscriptionEventPipeline: TranscriptionEventPipeline?
     private var summaryPersistenceRecoveryTask: Task<String?, Never>?
     private var transcriptionEventPipeline: TranscriptionEventPipeline?
+    private var liveCaptionEventRelay: LiveCaptionEventRelay?
     private var liveTranscriptRelay: FinalizedLiveTranscriptRelay?
     private var isChatLiveModeEnabled = false
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
@@ -1845,6 +1846,7 @@ final class CaptionViewModel: ObservableObject {
     ) {
         persistenceService = nil
         transcriptionEventPipeline = nil
+        liveCaptionEventRelay = nil
         liveTranscriptRelay = nil
         stopAutomaticScreenshotCapture()
 
@@ -1980,9 +1982,15 @@ final class CaptionViewModel: ObservableObject {
 
     private func installTranscriptionEventPipeline(persistenceService: MeetingPersistenceService) {
         let recordingTranscriptStore = store
+        let liveCaptionEventRelay = LiveCaptionEventRelay { [weak self] events in
+            for event in events {
+                self?.handleObservedTranscriptionEvent(event)
+            }
+        }
         let liveTranscriptRelay = FinalizedLiveTranscriptRelay { [weak self] delivery in
             self?.forwardFinalizedLiveTranscript(delivery)
         }
+        self.liveCaptionEventRelay = liveCaptionEventRelay
         self.liveTranscriptRelay = liveTranscriptRelay
         transcriptionEventPipeline = TranscriptionEventPipeline(
             uiSink: { [weak self] events in
@@ -1990,10 +1998,8 @@ final class CaptionViewModel: ObservableObject {
                     self?.handleTranscriptProjectionEvent(event)
                 }
             },
-            eventObserver: { [weak self] event in
-                // Batch live captions are ephemeral and cannot be recovered by the
-                // bounded transcript UI lane's database reload.
-                await self?.handleObservedTranscriptionEvent(event)
+            eventObserver: { event in
+                await liveCaptionEventRelay.enqueue(event)
                 guard case let .finalized(segment) = event,
                       segment.isConfirmed,
                       let sessionID = segment.sessionId else { return }
@@ -2033,6 +2039,7 @@ final class CaptionViewModel: ObservableObject {
         errorMessage = error.localizedDescription
         ErrorReportingService.capture(error, context: ["source": "startListening"])
         await recordingSessionController.abort()
+        let stoppingLiveCaptionEventRelay = liveCaptionEventRelay
         if let transcriptionEventPipeline {
             do {
                 try await transcriptionEventPipeline.finish()
@@ -2040,8 +2047,10 @@ final class CaptionViewModel: ObservableObject {
                 ErrorReportingService.capture(error, context: ["source": "startTranscriptionPersistence"])
             }
         }
+        await stoppingLiveCaptionEventRelay?.finish()
         await liveTranscriptRelay?.finish()
         transcriptionEventPipeline = nil
+        liveCaptionEventRelay = nil
         liveTranscriptRelay = nil
         stopAutomaticScreenshotCapture()
         await persistenceService?.cancel()
@@ -2261,11 +2270,13 @@ final class CaptionViewModel: ObservableObject {
         } catch {
             firstFailureMessage = error.localizedDescription
             ErrorReportingService.capture(error, context: ["source": "stopRecordingSession"])
+            await recordingSessionController.abort()
         }
         for task in context.configurationTasks {
             await task.value
         }
         let stoppingPipeline = transcriptionEventPipeline
+        let stoppingLiveCaptionEventRelay = liveCaptionEventRelay
         let stoppingLiveTranscriptRelay = liveTranscriptRelay
         if let stoppingPipeline {
             do {
@@ -2275,8 +2286,10 @@ final class CaptionViewModel: ObservableObject {
                 ErrorReportingService.capture(error, context: ["source": "stopTranscriptionPersistence"])
             }
         }
+        await stoppingLiveCaptionEventRelay?.finish()
         await stoppingLiveTranscriptRelay?.finish()
         transcriptionEventPipeline = nil
+        liveCaptionEventRelay = nil
         liveTranscriptRelay = nil
         let stoppingPersistenceService = persistenceService
         let persistenceResult = await stoppingPersistenceService?.stop()

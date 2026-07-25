@@ -302,8 +302,6 @@ actor RecordingSessionController {
             isFatal: snapshot.plan.finalMode == .realtime
         )
         let batchResult = await finishBatchRecording(sessionId: snapshot.sessionId)
-        sourceRuntimes.removeAll()
-        batchRecording = nil
         if snapshot.plan.finalMode == .realtime {
             if let firstCaptureFailure {
                 throw firstCaptureFailure
@@ -312,6 +310,8 @@ actor RecordingSessionController {
                 throw recognitionFailure
             }
         }
+        sourceRuntimes.removeAll()
+        batchRecording = nil
         return StopResult(
             sessionId: snapshot.sessionId,
             finalMode: snapshot.plan.finalMode,

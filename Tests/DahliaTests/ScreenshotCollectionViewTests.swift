@@ -353,22 +353,31 @@ struct ScreenshotCollectionViewTests {
 
 extension ScreenshotCollectionViewTests {
     @Test
-    func imageIdentityMatchesEqualContentFromSeparateAllocations() {
+    func imageIdentityMatchesSharedBackingStorage() {
+        var first = makeScreenshot()
+        first.imageData = Data((0 ..< 256).map { UInt8($0 % 251) })
+        let second = first
+
+        #expect(ScreenshotImageContentIdentity(first) == ScreenshotImageContentIdentity(second))
+    }
+
+    @Test
+    func imageIdentityConservativelyTreatsSeparateAllocationsAsChanged() {
         let bytes = (0 ..< 256).map { UInt8($0 % 251) }
         var first = makeScreenshot()
         first.imageData = Data(bytes)
         var second = first
         second.imageData = bytes.withUnsafeBytes { Data($0) }
 
-        #expect(ScreenshotImageContentIdentity(first) == ScreenshotImageContentIdentity(second))
+        #expect(ScreenshotImageContentIdentity(first) != ScreenshotImageContentIdentity(second))
     }
 
     @Test
-    func imageIdentityDetectsSampledContentChanges() {
+    func imageIdentityDetectsChangesOutsideTheFormerSampleWindows() {
         var original = makeScreenshot()
         original.imageData = Data(repeating: 0, count: 256)
         var changed = original
-        changed.imageData[changed.imageData.count / 2] = 1
+        changed.imageData[80] = 1
 
         #expect(ScreenshotImageContentIdentity(original) != ScreenshotImageContentIdentity(changed))
     }

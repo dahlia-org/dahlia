@@ -429,9 +429,10 @@
             await #expect(throws: FakeRuntimeError.self) {
                 try await realtime.controller.stop()
             }
-            let realtimeEntries = await realtimeFailures.entries
-            #expect(realtimeEntries.contains { $0.source == .microphone && $0.isFatal })
-            await realtime.controller.completeStop()
+            #expect(await realtimeFailures.entries.contains { $0.source == .microphone && $0.isFatal })
+            #expect(await realtime.controller.resourceCounts().captures == 2)
+            await realtime.controller.abort()
+            #expect(await realtime.controller.resourceCounts().captures == 0)
 
             let batchFailures = RuntimeFailureRecorder()
             let batch = try await makeRuntime(
@@ -445,8 +446,7 @@
             #expect(batchResult.batchRecordingSucceeded)
             await batch.controller.completeStop()
 
-            let batchEntries = await batchFailures.entries
-            #expect(batchEntries.contains { $0.source == .microphone && !$0.isFatal })
+            #expect(await batchFailures.entries.contains { $0.source == .microphone && !$0.isFatal })
             let batchActions = await batch.probe.actions
             #expect(batchActions.contains(.batchFinish))
             #expect(!batchActions.contains(.batchEnqueue))

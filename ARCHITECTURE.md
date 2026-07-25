@@ -56,8 +56,8 @@ AudioFrameRouter
         AudioBufferBridge → SpeechTranscriberService
             ↓ TranscriptionEvent
         TranscriptionEventPipeline
-            ├─ ephemeral observer
-            │   └─ LiveCaptionStore
+            ├─ bounded live-caption relay
+            │   └─ MainActor → LiveCaptionStore
             │
             ├─ UI lane
             │   ├─ latest preview / bounded reloadable projection
@@ -217,13 +217,13 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | --- | --- | --- |
 | Capture hot path | Conforms | `AudioSourcePipeline.capture` と `AudioFrameRouter.route` は小さな lock と同期処理で構成され、per-frame task を作らない |
 | Immutable audio ingestion | Conforms | `SegmentedAudioSourceWriter.appendBuffer` は bounded queue を使い、overflow を明示的な recording error にする |
-| UI／persistence separation | Conforms | `enqueue` は suspension より前に durable ingress を確定し、observer と MainActor projection はその後に処理する |
-| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。batch mode の一時的なライブ字幕は DB reload で復元できないため every-event observer から `LiveCaptionStore` へ分離し、保持を 20 segment に制限したうえで overlay projection を latest-wins の最大 5 Hz に集約する。reloadable な `TranscriptStore` projection だけを bounded UI lane に置く。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
+| UI／persistence separation | Conforms | `enqueue` は suspension より前に durable ingress を確定する。逐次 recognition producer は MainActor を直接待たず、ライブ字幕は bounded relay への短い actor enqueue 後に独立して配送する |
+| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。batch mode の一時的なライブ字幕は DB reload で復元できないため、100 event 上限で preview／translation を latest-wins にする専用 relay から `LiveCaptionStore` へ分離し、保持を 20 segment、overlay projection を最大 5 Hz に制限する。reloadable な `TranscriptStore` projection だけを bounded UI lane に置く。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
 | Realtime recognition backlog | Conforms (documented unbounded) | batch 音声がない realtime mode は再生成不能な入力を落とさない lossless queue、batch mode は bounded latest-wins を使う。長時間の Speech stall による process-wide memory exhaustion は保証対象外 |
 | Persistence overload | Gap (measurement-ready) | ingress／retry backlog の event count、text bytes、oldest age、queue／SQLite duration、retry backoff、single-flight write state と high-water を OSLog と test snapshot で取得できるが、queue policy と bounded implementation は未決定 |
 | Recording-start MainActor I/O | Conforms | `createNew`／`createAppending` が DB transaction を非同期実行し、MainActor は完了後の store／context 反映だけを行う |
 | System-audio runtime isolation | Conforms (app-owned boundary) | manager actor が generation ごとの single-flight stop と callback drain を所有する。delegate adapter の lock は sample admission だけに限定し、停止前に受理済みの callback は routing まで完了させる。concrete `SCStream` の動作は OS integration validation として別に扱う |
-| Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
+| Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。realtime stop が失敗した場合は controller が runtime 参照を保持し、呼び出し側が `abort()` で capture／recognition／batch resource を解放してから state を reset する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
 | Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
 | Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
 | MainActor-stall proof | Conforms | MainActor を有限時間同期占有する回帰テストが、解放前の audio acceptance と finalized persistence、解放後の UI catch-up を検証する |
@@ -238,13 +238,15 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 実施状況: Completed (2026-07-24)
 
 `TranscriptionEventPipeline.enqueue` では、acceptance check と durable event の persistence ingress の間に `await` を置かない。
-UI projection と optional observer はその後に処理し、observer の停止、cancellation、reentrancy が durable acceptance を変更しないようにする。
-observer が独自に backlog を持つ場合は rebuildable lane として容量と集約規則を定める。
+UI projection と optional observer はその後に処理する。逐次 producer が後続 event を生成できるよう、MainActor や外部 I/O を
+observer callback 内で直接待たない。observer が独自に backlog を持つ場合は rebuildable lane として容量と集約規則を定め、
+callback はその lane への短い enqueue だけを行う。
 
 完了条件:
 
 - block した observer を解放する前に finalized event が persistence sink へ到達する。
 - observer の停止中も、後続の finalized event と translation event の順序が persistence lane で維持される。
+- MainActor の同期停止中も逐次 recognition producer が後続 finalized event を durable ingress へ渡せる。
 - `finish()` と同時に `enqueue` が再開しても、close 済み stream へ受理済み扱いで書き込まない。
 
 ### R2: 録音開始時の同期 DB transaction を MainActor から外す
