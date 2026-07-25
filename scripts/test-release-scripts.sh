@@ -358,13 +358,13 @@ test_codesigning_keychain_unlock() {
     SIGN_IDENTITY="Developer ID Application: Test"
     unset CODESIGN_KEYCHAIN
     unlock_codesigning_keychain_if_needed
-    rg -q '^</tmp/Test Keychain.keychain-db>$' "$keychain_log" \
+    grep -Fxq '</tmp/Test Keychain.keychain-db>' "$keychain_log" \
         || fail "quoted default keychain path was not normalized"
 
     : > "$keychain_log"
     keychain_mode="unlocked"
     unlock_codesigning_keychain_if_needed
-    ! rg -q '^<unlock-keychain>$' "$keychain_log" \
+    ! grep -Fxq '<unlock-keychain>' "$keychain_log" \
         || fail "an unlocked keychain was unlocked again"
 
     keychain_mode="failure"
