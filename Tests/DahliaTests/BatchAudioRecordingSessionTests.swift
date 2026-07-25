@@ -435,16 +435,22 @@ import GRDB
         func finalizationFailureKeepsSourceProgressFailed() async throws {
             let fixture = try BatchAudioTestFixture(name: "FailedSourceProgress")
             defer { fixture.removeFiles() }
+            let finalizationGate = AudioConsumptionGate()
             let configuration = RecordingAudioStore.Configuration(
                 targetSegmentDuration: .seconds(60),
                 maximumFinalizingSegmentCountPerSource: 2,
                 maximumActiveSegmentDuration: .seconds(600),
                 maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                 minimumAvailableCapacity: 0,
-                capacityCheckInterval: .seconds(5),
-                simulatedFinalizationDelay: .milliseconds(250)
+                capacityCheckInterval: .seconds(5)
             )
-            let recorder = try makeRecorder(fixture: fixture, configuration: configuration)
+            let recorder = try makeRecorder(
+                fixture: fixture,
+                configuration: configuration,
+                beforeFinalizationVerification: {
+                    await finalizationGate.wait()
+                }
+            )
             let writer = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
@@ -452,20 +458,17 @@ import GRDB
             )
             try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
             let finishTask = Task { try await recorder.finish() }
+            defer { Task { await finalizationGate.open() } }
 
-            var finalizingSegment: RecordingAudioSegmentRecord?
-            for _ in 0 ..< 100 {
-                finalizingSegment = try await fixture.database.dbQueue.read { db in
-                    try RecordingAudioSegmentRecord.fetchOne(db)
-                }
-                if finalizingSegment?.state == .finalizing { break }
-                try await Task.sleep(for: .milliseconds(10))
+            try await finalizationGate.waitUntilWaiting()
+            let finalizingSegment = try await fixture.database.dbQueue.read { db in
+                try RecordingAudioSegmentRecord.fetchOne(db)
             }
             let segment = try #require(finalizingSegment)
             #expect(segment.state == .finalizing)
-            try await Task.sleep(for: .milliseconds(50))
             let partialURL = fixture.managedRootURL.appending(path: segment.partialRelativePath)
             try Data("not a caf".utf8).write(to: partialURL)
+            await finalizationGate.open()
 
             await #expect(throws: RecordingAudioStoreError.integrityMismatch) {
                 try await finishTask.value
@@ -550,7 +553,8 @@ import GRDB
         private func makeRecorder(
             fixture: BatchAudioTestFixture,
             configuration: RecordingAudioStore.Configuration = .production,
-            beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk? = nil
+            beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk? = nil,
+            beforeFinalizationVerification: RecordingAudioStore.BeforeFinalizationVerification? = nil
         ) throws -> BatchAudioRecordingSession {
             try BatchAudioRecordingSession(
                 dbQueue: fixture.database.dbQueue,
@@ -560,7 +564,8 @@ import GRDB
                 recordingStartTime: fixture.now,
                 sampleRate: 16000,
                 configuration: configuration,
-                beforeConsumingChunk: beforeConsumingChunk
+                beforeConsumingChunk: beforeConsumingChunk,
+                beforeFinalizationVerification: beforeFinalizationVerification
             )
         }
 

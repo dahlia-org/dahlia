@@ -18,6 +18,9 @@ if [ -f .env.local ]; then
     set +a
 fi
 
+SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
+unlock_codesigning_keychain_if_needed
+
 export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
@@ -82,7 +85,6 @@ fi
 embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
 
-SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true
 
 SIGNED_RESOURCE_BUNDLE="${CONTENTS}/Resources/Dahlia_Dahlia.bundle"

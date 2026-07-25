@@ -4,7 +4,6 @@ import Foundation
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct CodexAppServerConcurrencyTests {
         @Test
         func cancellingOneConcurrentGenerationDoesNotInterruptTheOther() async throws {
@@ -69,11 +68,11 @@ import Foundation
             let second = Task { try await service.generate(request) }
 
             try await service.waitUntilActiveTurnCountForTesting(2)
-            let turns = startedTurns(in: await transport.messages())
+            let turns = await startedTurns(in: transport.messages())
             await failTurn(turns[0], transport: transport)
             await completeTurn(turns[1], text: #"{"status":"survived"}"#, transport: transport)
 
-            let results = [await result(of: first), await result(of: second)]
+            let results = await [result(of: first), result(of: second)]
             #expect(results.count(where: {
                 guard case let .success(value) = $0 else { return false }
                 return value == #"{"status":"survived"}"#
@@ -113,7 +112,7 @@ import Foundation
             })
             await completeTurn(remaining, text: #"{"status":"survived"}"#, transport: transport)
 
-            let results = [await result(of: first), await result(of: second)]
+            let results = await [result(of: first), result(of: second)]
             #expect(results.count(where: {
                 guard case let .success(value) = $0 else { return false }
                 return value == #"{"status":"survived"}"#
@@ -194,7 +193,7 @@ import Foundation
 
         private func result(of task: Task<String, any Error>) async -> Result<String, any Error> {
             do {
-                return .success(try await task.value)
+                return try await .success(task.value)
             } catch {
                 return .failure(error)
             }

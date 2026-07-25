@@ -1,5 +1,6 @@
 #if canImport(Testing)
     // swiftlint:disable file_length
+    @preconcurrency import AVFoundation
     import Foundation
     import os
     import Testing
@@ -490,6 +491,231 @@
             await uiGate.open()
         }
 
+        @Test
+        func blockedObserverCannotDelayOrReorderDurableIngress() async throws {
+            let observerGate = AsyncTestGate()
+            let persistedEvents = TranscriptionEventProbe()
+            let sessionID = UUID.v7()
+            let segment = makeSegment(sessionId: sessionID, text: "final", isConfirmed: true)
+            let finalized = TranscriptionEvent.finalized(segment)
+            let translation = TranscriptionEvent.translation(
+                sessionId: sessionID,
+                segmentID: segment.id,
+                translatedText: "translated"
+            )
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { _ in },
+                eventObserver: { _ in
+                    await observerGate.wait()
+                },
+                persistenceSink: { events in
+                    await persistedEvents.append(contentsOf: events)
+                }
+            )
+
+            await pipeline.start()
+            let finalizedTask = Task {
+                await pipeline.enqueue(finalized)
+            }
+            await persistedEvents.waitForCount(1)
+            let translationTask = Task {
+                await pipeline.enqueue(translation)
+            }
+            await persistedEvents.waitForCount(2)
+
+            #expect(await persistedEvents.snapshot() == [finalized, translation])
+            try await pipeline.finish()
+            await pipeline.enqueue(.finalized(
+                makeSegment(sessionId: sessionID, text: "closed", isConfirmed: true)
+            ))
+            #expect(await persistedEvents.snapshot() == [finalized, translation])
+
+            await observerGate.open()
+            await finalizedTask.value
+            await translationTask.value
+        }
+
+        @Test
+        func persistenceMetricsMeasureQueuedBytesWaitAndSinkDuration() async throws {
+            let batchGate = AsyncTestGate()
+            let sinkGate = AsyncTestGate()
+            let persistedEvents = TranscriptionEventProbe()
+            let sessionID = UUID.v7()
+            let segment = makeSegment(sessionId: sessionID, text: "durable", isConfirmed: true)
+            let finalized = TranscriptionEvent.finalized(segment)
+            let translation = TranscriptionEvent.translation(
+                sessionId: sessionID,
+                segmentID: segment.id,
+                translatedText: "translated"
+            )
+            let expectedBytes = finalized.durableTextByteCount + translation.durableTextByteCount
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { _ in },
+                persistenceSink: { events in
+                    await persistedEvents.append(contentsOf: events)
+                    await sinkGate.wait()
+                },
+                persistenceBatchSleep: {
+                    await batchGate.wait()
+                }
+            )
+
+            await pipeline.start()
+            await pipeline.enqueue(finalized)
+            await pipeline.enqueue(translation)
+            let queued = await pipeline.persistenceMetricsSnapshot()
+            #expect(queued.queuedEventCount == 2)
+            #expect(queued.queuedTextByteCount == expectedBytes)
+            #expect(queued.highWaterEventCount == 2)
+            #expect(queued.highWaterTextByteCount == expectedBytes)
+            #expect(queued.oldestEventAge != nil)
+
+            await batchGate.open()
+            await persistedEvents.waitForCount(2)
+            let blocked = await pipeline.persistenceMetricsSnapshot()
+            #expect(blocked.queuedEventCount == 2)
+
+            await sinkGate.open()
+            try await pipeline.finish()
+            let drained = await pipeline.persistenceMetricsSnapshot()
+            #expect(drained.queuedEventCount == 0)
+            #expect(drained.queuedTextByteCount == 0)
+            #expect(drained.oldestEventAge == nil)
+            #expect(drained.maximumQueueWait > .zero)
+            #expect(drained.lastSinkDuration > .zero)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func synchronousMainActorStallDoesNotBlockAudioAcceptanceOrPersistence() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let rootURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-main-actor-stall-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let now = Date(timeIntervalSince1970: 1_776_384_000)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: rootURL.appending(path: "Vault", directoryHint: .isDirectory).path,
+                name: "Stall",
+                createdAt: now,
+                lastOpenedAt: now
+            )
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                projectId: nil,
+                name: "Stall",
+                status: .ready,
+                createdAt: now,
+                updatedAt: now
+            )
+            let session = RecordingSessionRecord(
+                id: .v7(),
+                meetingId: meeting.id,
+                startedAt: now,
+                endedAt: nil,
+                duration: nil,
+                offsetSeconds: 0,
+                createdAt: now,
+                updatedAt: now
+            )
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try session.insert(db)
+            }
+            let audioStore = try RecordingAudioStore(
+                dbQueue: database.dbQueue,
+                managedRootURL: rootURL.appending(path: "Managed", directoryHint: .isDirectory),
+                configuration: RecordingAudioStore.Configuration(
+                    targetSegmentDuration: .seconds(30),
+                    maximumFinalizingSegmentCountPerSource: 2,
+                    maximumActiveSegmentDuration: .seconds(600),
+                    maximumActiveSegmentByteCount: 64 * 1024 * 1024,
+                    minimumAvailableCapacity: 0,
+                    capacityCheckInterval: .seconds(5)
+                )
+            )
+            try await audioStore.acquireSessionLease(meetingId: meeting.id, sessionId: session.id)
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: 16_000,
+                channels: 1,
+                interleaved: false
+            ))
+            let writer = SegmentedAudioSourceWriter(
+                source: .microphone,
+                format: format,
+                store: audioStore,
+                meetingId: meeting.id,
+                sessionId: session.id,
+                locale: Locale(identifier: "ja_JP"),
+                firstSegmentIndex: 0,
+                requiredSource: true,
+                eventHandler: { _ in }
+            )
+            try await writer.start(sessionOffsetSeconds: 0)
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+            buffer.frameLength = 160
+
+            let uiEvents = TranscriptionEventProbe()
+            let liveCaptionEvents = TranscriptionEventProbe()
+            let persistedEvents = TranscriptionEventProbe()
+            let events = [
+                TranscriptionEvent.finalized(
+                    makeSegment(sessionId: session.id, text: "continues", isConfirmed: true)
+                ),
+                TranscriptionEvent.finalized(
+                    makeSegment(sessionId: session.id, text: "still continues", isConfirmed: true)
+                ),
+            ]
+            let liveCaptionRelay = LiveCaptionEventRelay { events in
+                await liveCaptionEvents.append(contentsOf: events)
+            }
+            let pipeline = TranscriptionEventPipeline(
+                uiSink: { events in
+                    await uiEvents.append(contentsOf: events)
+                },
+                eventObserver: { event in
+                    await liveCaptionRelay.enqueue(event)
+                },
+                persistenceSink: { events in
+                    await persistedEvents.append(contentsOf: events)
+                }
+            )
+            await pipeline.start()
+
+            let stall = FiniteMainActorStall()
+            let stallTask = Task { @MainActor in
+                stall.block()
+            }
+            await stall.waitUntilStarted()
+            defer { stall.release() }
+
+            writer.appendBuffer(buffer)
+            for event in events {
+                await pipeline.enqueue(event)
+            }
+            await persistedEvents.waitForCount(2)
+
+            #expect(stall.isBlocking)
+            #expect(writer.acceptedFrameCount == 160)
+            #expect(await uiEvents.snapshot().isEmpty)
+            #expect(await persistedEvents.snapshot() == events)
+
+            stall.release()
+            await stallTask.value
+            await uiEvents.waitForCount(2)
+            try await pipeline.finish()
+            await liveCaptionRelay.finish()
+            writer.seal()
+            try await writer.finish()
+            await audioStore.releaseSessionLease(sessionId: session.id)
+
+            #expect(await uiEvents.snapshot() == events)
+            #expect(await liveCaptionEvents.snapshot() == events)
+        }
+
         private func makeSegment(
             sessionId: UUID,
             text: String,
@@ -642,6 +868,44 @@
             await withCheckedContinuation { continuation in
                 attemptWaiters.append(continuation)
             }
+        }
+    }
+
+    private final class FiniteMainActorStall: @unchecked Sendable {
+        private struct State {
+            var hasStarted = false
+            var isBlocking = false
+        }
+
+        private let state = OSAllocatedUnfairLock(initialState: State())
+        private let releaseSemaphore = DispatchSemaphore(value: 0)
+
+        var isBlocking: Bool {
+            state.withLock(\.isBlocking)
+        }
+
+        func block() {
+            state.withLock { state in
+                state.hasStarted = true
+                state.isBlocking = true
+            }
+            _ = releaseSemaphore.wait(timeout: .now() + 3)
+            state.withLock { $0.isBlocking = false }
+        }
+
+        func release() {
+            releaseSemaphore.signal()
+        }
+
+        func waitUntilStarted() async {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
+                if state.withLock(\.hasStarted) {
+                    return
+                }
+                await Task.yield()
+            }
+            Issue.record("Timed out waiting for MainActor stall to start")
         }
     }
 #endif

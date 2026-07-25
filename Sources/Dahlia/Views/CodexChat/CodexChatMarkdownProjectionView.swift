@@ -3,20 +3,33 @@ import SwiftUI
 struct CodexChatMarkdownProjectionView: View {
     let blocks: [CodexChatMarkdownRenderedBlock]
     let pendingSuffix: String?
+    let usesLazyLayout: Bool
 
     init(
         blocks: [CodexChatMarkdownRenderedBlock],
-        pendingSuffix: String? = nil
+        pendingSuffix: String? = nil,
+        usesLazyLayout: Bool = true
     ) {
         self.blocks = blocks
         self.pendingSuffix = pendingSuffix
+        self.usesLazyLayout = usesLazyLayout
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(blocks.indices, id: \.self) { index in
-                CodexChatMarkdownBlockView(block: block(at: index))
+        if usesLazyLayout {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                blockViews
             }
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                blockViews
+            }
+        }
+    }
+
+    private var blockViews: some View {
+        ForEach(blocks.indices, id: \.self) { index in
+            CodexChatMarkdownBlockView(block: block(at: index))
         }
     }
 

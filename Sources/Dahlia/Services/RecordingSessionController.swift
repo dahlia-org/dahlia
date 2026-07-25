@@ -74,6 +74,7 @@ actor RecordingSessionController {
         let finalMode: TranscriptionMode
         let batchRecordingSucceeded: Bool
         let batchFailureMessage: String?
+        let captureFailureMessage: String?
     }
 
     struct ResourceCounts: Equatable {
@@ -295,62 +296,95 @@ actor RecordingSessionController {
         }
         state = .stopping(snapshot)
 
-        for source in Self.sortedSources(sourceRuntimes.keys) {
-            try? await sourceRuntimes[source]?.capture.stop()
+        let firstCaptureFailure = await stopCaptures()
+        await drainRouters()
+        let recognitionFailure = await finishRecognitions(
+            isFatal: snapshot.plan.finalMode == .realtime
+        )
+        let captureFailureMessage = firstCaptureFailure?.localizedDescription
+        let batchResult = await finishBatchRecording(
+            sessionId: snapshot.sessionId,
+            captureFailureMessage: captureFailureMessage
+        )
+        if snapshot.plan.finalMode == .realtime {
+            if let firstCaptureFailure {
+                throw firstCaptureFailure
+            }
+            if let recognitionFailure {
+                throw recognitionFailure
+            }
         }
+        sourceRuntimes.removeAll()
+        batchRecording = nil
+        return StopResult(
+            sessionId: snapshot.sessionId,
+            finalMode: snapshot.plan.finalMode,
+            batchRecordingSucceeded: batchResult.succeeded,
+            batchFailureMessage: batchResult.failureMessage,
+            captureFailureMessage: captureFailureMessage
+        )
+    }
+
+    private func drainRouters() async {
         for runtime in sourceRuntimes.values {
             runtime.pipeline.router.removeAllConsumers()
         }
         for runtime in sourceRuntimes.values {
             await runtime.pipeline.router.waitUntilIdle()
         }
-        var recognitionFailure: Error?
+    }
+
+    private func finishRecognitions(isFatal: Bool) async -> Error? {
+        var firstFailure: Error?
         for source in Self.sortedSources(sourceRuntimes.keys) {
             guard let recognition = sourceRuntimes[source]?.recognition else { continue }
             do {
                 try await recognition.finish()
             } catch {
-                if recognitionFailure == nil {
-                    recognitionFailure = error
-                }
+                firstFailure = firstFailure ?? error
                 await onRuntimeFailure?(
                     source,
                     error.localizedDescription,
-                    snapshot.plan.finalMode == .realtime
+                    isFatal
                 )
             }
         }
+        return firstFailure
+    }
 
-        var batchSucceeded = batchRuntimeFailureMessage == nil
-        var batchFailureMessage = batchRuntimeFailureMessage
+    private func finishBatchRecording(
+        sessionId: UUID,
+        captureFailureMessage: String?
+    ) async -> (succeeded: Bool, failureMessage: String?) {
+        var succeeded = batchRuntimeFailureMessage == nil
+        var failureMessage = batchRuntimeFailureMessage
         if let batchRecording {
             do {
                 try await batchRecording.finish()
             } catch {
-                batchSucceeded = false
-                if batchFailureMessage == nil {
-                    batchFailureMessage = error.localizedDescription
-                }
+                succeeded = false
+                failureMessage = failureMessage ?? error.localizedDescription
             }
         }
-        if let batchFailureMessage {
+        if let recordingFailureMessage = failureMessage ?? captureFailureMessage {
             await batchScheduler?.recordRecordingFailure(
-                sessionId: snapshot.sessionId,
-                message: batchFailureMessage
+                sessionId: sessionId,
+                message: recordingFailureMessage
             )
         }
-        sourceRuntimes.removeAll()
-        self.batchRecording = nil
-        if snapshot.plan.finalMode == .realtime,
-           let recognitionFailure {
-            throw recognitionFailure
+        return (succeeded, failureMessage)
+    }
+
+    private func stopCaptures() async -> Error? {
+        var firstFailure: Error?
+        for source in Self.sortedSources(sourceRuntimes.keys) {
+            do {
+                try await sourceRuntimes[source]?.capture.stop()
+            } catch {
+                firstFailure = firstFailure ?? error
+            }
         }
-        return StopResult(
-            sessionId: snapshot.sessionId,
-            finalMode: snapshot.plan.finalMode,
-            batchRecordingSucceeded: batchSucceeded,
-            batchFailureMessage: batchFailureMessage
-        )
+        return firstFailure
     }
 
     /// persistence終了後にセッションをidleへ戻す。batch enqueueはユーザー確認後に行う。

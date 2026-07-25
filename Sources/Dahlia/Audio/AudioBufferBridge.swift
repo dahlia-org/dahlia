@@ -9,7 +9,9 @@ import Speech
 /// append(_:) を呼び出し、SpeechAnalyzer.start(inputSequence:) に stream を渡す。
 final class AudioBufferBridge: Sendable {
     enum BufferingMode: Equatable {
+        /// Realtime-only mode. Inputs cannot be replayed because no batch audio source exists.
         case lossless
+        /// Batch audio remains the source of truth, so stale live inputs may be replaced.
         case lowLatency(maximumInputCount: Int)
     }
 

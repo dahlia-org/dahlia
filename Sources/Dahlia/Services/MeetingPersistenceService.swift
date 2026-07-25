@@ -27,14 +27,47 @@ final class MeetingPersistenceService {
     nonisolated let meetingId: UUID
     nonisolated let recordingSessionId: UUID
     private(set) var projectId: UUID?
+    private(set) var projectName: String?
     private var recordingSession: RecordingSessionRecord
     private let createsMeeting: Bool
     private let persistencePolicy: TranscriptPersistencePolicy
     private let now: () -> Date
     private nonisolated let transcriptWriter: TranscriptPersistenceWriter
 
-    /// 新規ミーティングを作成して録音を開始する。
-    init(
+    private init(
+        store: TranscriptStore,
+        dbQueue: DatabaseQueue,
+        meetingId: UUID,
+        projectId: UUID?,
+        projectName: String?,
+        recordingSession: RecordingSessionRecord,
+        createsMeeting: Bool,
+        existingSegmentIds: Set<UUID>,
+        persistencePolicy: TranscriptPersistencePolicy,
+        now: @escaping () -> Date = { .now }
+    ) {
+        self.store = store
+        self.dbQueue = dbQueue
+        self.meetingId = meetingId
+        self.recordingSessionId = recordingSession.id
+        self.projectId = projectId
+        self.projectName = projectName
+        self.recordingSession = recordingSession
+        self.createsMeeting = createsMeeting
+        self.persistencePolicy = persistencePolicy
+        self.now = now
+        self.transcriptWriter = TranscriptPersistenceWriter(
+            dbQueue: dbQueue,
+            meetingId: meetingId,
+            recordingSessionId: recordingSession.id,
+            persistencePolicy: persistencePolicy,
+            existingSegmentIds: existingSegmentIds
+        )
+        store.upsertRecordingSession(RecordingSessionTimeline(from: recordingSession))
+    }
+
+    /// DB transaction を MainActor 外で完了してから、新規ミーティングの UI-facing service を生成する。
+    static func createNew(
         store: TranscriptStore,
         dbQueue: DatabaseQueue,
         vaultId: UUID,
@@ -47,115 +80,83 @@ final class MeetingPersistenceService {
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false,
         now: @escaping () -> Date = { .now }
-    ) throws {
-        self.store = store
-        self.dbQueue = dbQueue
-        self.meetingId = .v7()
-        self.recordingSessionId = recordingSessionId
-        self.projectId = projectId
-        self.createsMeeting = true
-        self.persistencePolicy = persistencePolicy
-        self.now = now
-
-        let now = store.recordingStartTime ?? Date()
-        let session = Self.makeRecordingSession(
-            id: recordingSessionId,
-            meetingId: meetingId,
-            startedAt: now,
-            offsetSeconds: 0,
-            transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch,
-            audioRetentionPolicy: transcriptionMode == .batch
-                ? (retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription)
-                : nil
+    ) async throws -> MeetingPersistenceService {
+        let meetingId = UUID.v7()
+        let startedAt = store.recordingStartTime ?? Date.now
+        let prepared = try await MeetingPersistenceStarter.createNew(
+            MeetingPersistenceStarter.NewRequest(
+                meetingId: meetingId,
+                recordingSessionId: recordingSessionId,
+                vaultId: vaultId,
+                requestedProjectId: projectId,
+                initialName: initialName,
+                allowsCalendarSeriesProjectInheritance: allowsCalendarSeriesProjectInheritance,
+                calendarEvent: calendarEvent,
+                startedAt: startedAt,
+                transcriptionMode: transcriptionMode,
+                retainAudioAfterBatch: retainAudioAfterBatch
+            ),
+            dbQueue: dbQueue
         )
-        self.recordingSession = session
-        self.transcriptWriter = TranscriptPersistenceWriter(
+        return MeetingPersistenceService(
+            store: store,
             dbQueue: dbQueue,
             meetingId: meetingId,
-            recordingSessionId: recordingSessionId,
-            persistencePolicy: persistencePolicy
+            projectId: prepared.projectId,
+            projectName: prepared.projectName,
+            recordingSession: prepared.recordingSession,
+            createsMeeting: true,
+            existingSegmentIds: [],
+            persistencePolicy: persistencePolicy,
+            now: now
         )
-        let trimmedInitialName = initialName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let calendarEventKey = calendarEvent?.key
-
-        let resolvedProjectId = try dbQueue.write { db in
-            if let calendarEvent {
-                try CalendarEventRecord.upsert(event: calendarEvent, now: now, in: db)
-            }
-            let resolvedProjectId = try MeetingRecord.resolvedProjectIdForNewMeeting(
-                requestedProjectId: projectId,
-                calendarEvent: calendarEvent,
-                vaultId: vaultId,
-                allowsCalendarSeriesProjectInheritance: allowsCalendarSeriesProjectInheritance,
-                in: db
-            )
-            let meeting = MeetingRecord(
-                id: meetingId,
-                vaultId: vaultId,
-                projectId: resolvedProjectId,
-                name: trimmedInitialName,
-                status: transcriptionMode == .realtime ? .ready : .transcriptNotFound,
-                createdAt: now,
-                updatedAt: now,
-                calendarEventIcalUid: calendarEventKey?.icalUid,
-                calendarEventRecurrenceId: calendarEventKey?.recurrenceId
-            )
-            try meeting.insert(db)
-            try session.insert(db)
-            return resolvedProjectId
-        }
-        self.projectId = resolvedProjectId
-
-        store.upsertRecordingSession(RecordingSessionTimeline(from: session))
     }
 
-    /// 既存のミーティングに追記する（追記モード）。
-    init(
+    /// 既存 meeting の読込・時刻補正・session insert を一つの非同期 transaction で行う。
+    static func createAppending(
         store: TranscriptStore,
         dbQueue: DatabaseQueue,
         existingMeetingId: UUID,
-        existingSegmentIds: Set<UUID>,
-        recordingStartDate: Date = Date(),
-        recordingOffsetSeconds: TimeInterval = 0,
+        recordingStartDate: Date = .now,
+        updatesMeetingStartWhenTranscriptIsEmpty: Bool = false,
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false,
         now: @escaping () -> Date = { .now }
-    ) throws {
-        self.store = store
-        self.dbQueue = dbQueue
-        self.meetingId = existingMeetingId
-        self.recordingSessionId = recordingSessionId
-        self.projectId = nil
-        self.createsMeeting = false
-        self.persistencePolicy = persistencePolicy
-        self.now = now
-        let session = Self.makeRecordingSession(
-            id: recordingSessionId,
-            meetingId: existingMeetingId,
-            startedAt: recordingStartDate,
-            offsetSeconds: recordingOffsetSeconds,
-            transcriptionMode: transcriptionMode,
-            retainAudioAfterBatch: retainAudioAfterBatch,
-            audioRetentionPolicy: transcriptionMode == .batch
-                ? (retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription)
-                : nil
-        )
-        self.recordingSession = session
-        self.transcriptWriter = TranscriptPersistenceWriter(
-            dbQueue: dbQueue,
-            meetingId: existingMeetingId,
-            recordingSessionId: recordingSessionId,
-            persistencePolicy: persistencePolicy,
-            existingSegmentIds: existingSegmentIds
+    ) async throws -> MeetingPersistenceService {
+        let prepared = try await MeetingPersistenceStarter.createAppending(
+            MeetingPersistenceStarter.AppendRequest(
+                meetingId: existingMeetingId,
+                recordingSessionId: recordingSessionId,
+                recordingStartDate: recordingStartDate,
+                existingRecordingStartTime: store.recordingStartTime,
+                updatesMeetingStartWhenTranscriptIsEmpty: updatesMeetingStartWhenTranscriptIsEmpty,
+                transcriptionMode: transcriptionMode,
+                retainAudioAfterBatch: retainAudioAfterBatch
+            ),
+            dbQueue: dbQueue
         )
 
-        try dbQueue.write { db in
-            try session.insert(db)
+        if !prepared.previousRecordingSessions.isEmpty {
+            store.loadRecordingSessions(prepared.previousRecordingSessions.map(RecordingSessionTimeline.init))
         }
-        store.upsertRecordingSession(RecordingSessionTimeline(from: session))
+        if store.recordingStartTime == nil {
+            store.recordingStartTime = prepared.resolvedRecordingStartTime
+        }
+
+        return MeetingPersistenceService(
+            store: store,
+            dbQueue: dbQueue,
+            meetingId: existingMeetingId,
+            projectId: nil,
+            projectName: nil,
+            recordingSession: prepared.recordingSession,
+            createsMeeting: false,
+            existingSegmentIds: prepared.existingSegmentIds,
+            persistencePolicy: persistencePolicy,
+            now: now
+        )
     }
 
     nonisolated func persist(_ event: TranscriptionEvent) async throws {
@@ -168,6 +169,10 @@ final class MeetingPersistenceService {
 
     nonisolated func flushPendingTranscriptEvents() async throws {
         try await transcriptWriter.flushPending()
+    }
+
+    nonisolated func persistenceMetricsSnapshot() async -> TranscriptPersistenceWriter.MetricsSnapshot {
+        await transcriptWriter.metricsSnapshot()
     }
 
     /// 最終保存とミーティング完了の記録を行う。
@@ -220,16 +225,178 @@ final class MeetingPersistenceService {
         }
     }
 
+}
+
+/// 録音開始時の DB I/O を MainActor から分離し、開始に必要な値だけを返す。
+private enum MeetingPersistenceStarter {
+    struct NewRequest {
+        let meetingId: UUID
+        let recordingSessionId: UUID
+        let vaultId: UUID
+        let requestedProjectId: UUID?
+        let initialName: String
+        let allowsCalendarSeriesProjectInheritance: Bool
+        let calendarEvent: CalendarEvent?
+        let startedAt: Date
+        let transcriptionMode: TranscriptionMode
+        let retainAudioAfterBatch: Bool
+    }
+
+    struct NewResult {
+        let projectId: UUID?
+        let projectName: String?
+        let recordingSession: RecordingSessionRecord
+    }
+
+    struct AppendRequest {
+        let meetingId: UUID
+        let recordingSessionId: UUID
+        let recordingStartDate: Date
+        let existingRecordingStartTime: Date?
+        let updatesMeetingStartWhenTranscriptIsEmpty: Bool
+        let transcriptionMode: TranscriptionMode
+        let retainAudioAfterBatch: Bool
+    }
+
+    struct AppendResult {
+        let recordingSession: RecordingSessionRecord
+        let existingSegmentIds: Set<UUID>
+        let previousRecordingSessions: [RecordingSessionRecord]
+        let resolvedRecordingStartTime: Date
+    }
+
+    static func createNew(
+        _ request: NewRequest,
+        dbQueue: DatabaseQueue
+    ) async throws -> NewResult {
+        try await dbQueue.write { db in
+            if let calendarEvent = request.calendarEvent {
+                try CalendarEventRecord.upsert(event: calendarEvent, now: request.startedAt, in: db)
+            }
+            let projectId = try MeetingRecord.resolvedProjectIdForNewMeeting(
+                requestedProjectId: request.requestedProjectId,
+                calendarEvent: request.calendarEvent,
+                vaultId: request.vaultId,
+                allowsCalendarSeriesProjectInheritance: request.allowsCalendarSeriesProjectInheritance,
+                in: db
+            )
+            let calendarEventKey = request.calendarEvent?.key
+            try MeetingRecord(
+                id: request.meetingId,
+                vaultId: request.vaultId,
+                projectId: projectId,
+                name: request.initialName.trimmingCharacters(in: .whitespacesAndNewlines),
+                status: request.transcriptionMode == .realtime ? .ready : .transcriptNotFound,
+                createdAt: request.startedAt,
+                updatedAt: request.startedAt,
+                calendarEventIcalUid: calendarEventKey?.icalUid,
+                calendarEventRecurrenceId: calendarEventKey?.recurrenceId
+            ).insert(db)
+            let recordingSession = makeRecordingSession(
+                id: request.recordingSessionId,
+                meetingId: request.meetingId,
+                startedAt: request.startedAt,
+                offsetSeconds: 0,
+                transcriptionMode: request.transcriptionMode,
+                retainAudioAfterBatch: request.retainAudioAfterBatch
+            )
+            try recordingSession.insert(db)
+            let projectName = try projectId.flatMap { id in
+                try ProjectRecord.fetchOne(db, key: id)?.name
+            }
+            return NewResult(
+                projectId: projectId,
+                projectName: projectName,
+                recordingSession: recordingSession
+            )
+        }
+    }
+
+    static func createAppending(
+        _ request: AppendRequest,
+        dbQueue: DatabaseQueue
+    ) async throws -> AppendResult {
+        try await dbQueue.write { db in
+            let meeting = try MeetingRecord.fetchOne(db, key: request.meetingId)
+            let segments = try TranscriptSegmentRecord
+                .filter(Column("meetingId") == request.meetingId)
+                .order(Column("startTime").asc)
+                .fetchAll(db)
+            let previousSessions = try RecordingSessionRecord
+                .filter(Column("meetingId") == request.meetingId)
+                .order(Column("offsetSeconds").asc, Column("startedAt").asc)
+                .fetchAll(db)
+            let firstSegmentStartTime = segments.first?.startTime
+            let lastSegmentEndTime = segments.last.map { $0.endTime ?? $0.startTime }
+            let resolvedRecordingStartTime: Date
+            if let existingRecordingStartTime = request.existingRecordingStartTime {
+                resolvedRecordingStartTime = existingRecordingStartTime
+            } else if let firstSegmentStartTime {
+                resolvedRecordingStartTime = meeting?.createdAt ?? firstSegmentStartTime
+            } else {
+                resolvedRecordingStartTime = request.recordingStartDate
+                if request.updatesMeetingStartWhenTranscriptIsEmpty, var meeting {
+                    meeting.createdAt = request.recordingStartDate
+                    meeting.updatedAt = request.recordingStartDate
+                    try meeting.update(db)
+                }
+            }
+
+            let recordingSession = makeRecordingSession(
+                id: request.recordingSessionId,
+                meetingId: request.meetingId,
+                startedAt: request.recordingStartDate,
+                offsetSeconds: nextOffsetSeconds(
+                    sessions: previousSessions,
+                    firstSegmentStartTime: firstSegmentStartTime,
+                    lastSegmentEndTime: lastSegmentEndTime
+                ),
+                transcriptionMode: request.transcriptionMode,
+                retainAudioAfterBatch: request.retainAudioAfterBatch
+            )
+            try recordingSession.insert(db)
+            return AppendResult(
+                recordingSession: recordingSession,
+                existingSegmentIds: Set(segments.map(\.id)),
+                previousRecordingSessions: previousSessions,
+                resolvedRecordingStartTime: resolvedRecordingStartTime
+            )
+        }
+    }
+
+    private static func nextOffsetSeconds(
+        sessions: [RecordingSessionRecord],
+        firstSegmentStartTime: Date?,
+        lastSegmentEndTime: Date?
+    ) -> TimeInterval {
+        let sessionDuration = sessions.reduce(0) { total, session in
+            total + (
+                session.duration
+                    ?? session.endedAt.map { max(0, $0.timeIntervalSince(session.startedAt)) }
+                    ?? 0
+            )
+        }
+        if sessionDuration > 0 {
+            return sessionDuration
+        }
+        guard let firstSegmentStartTime, let lastSegmentEndTime else { return 0 }
+        return max(0, lastSegmentEndTime.timeIntervalSince(firstSegmentStartTime))
+    }
+
     private static func makeRecordingSession(
         id: UUID,
         meetingId: UUID,
         startedAt: Date,
         offsetSeconds: TimeInterval,
         transcriptionMode: TranscriptionMode,
-        retainAudioAfterBatch: Bool,
-        audioRetentionPolicy: RecordingAudioRetentionPolicy? = nil
+        retainAudioAfterBatch: Bool
     ) -> RecordingSessionRecord {
-        RecordingSessionRecord(
+        let audioRetentionPolicy: RecordingAudioRetentionPolicy? = if transcriptionMode == .batch {
+            retainAudioAfterBatch ? .keepInApp : .deleteAfterTranscription
+        } else {
+            nil
+        }
+        return RecordingSessionRecord(
             id: id,
             meetingId: meetingId,
             startedAt: startedAt,

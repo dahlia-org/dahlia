@@ -1,8 +1,10 @@
 @preconcurrency import AVFoundation
 import os
 
-/// capture callback からライブ変換処理を切り離す低遅延 bounded queue。
-/// backlog 超過時は古いフレームを捨て、batch consumer には影響させない。
+/// capture callback からライブ変換処理を切り離す、モード別の認識 queue。
+///
+/// batch 音声が再処理の正本になる場合は bounded latest-wins、正本がない realtime
+/// 録音では再生成不能なフレームを落とさないため、明示的に unbounded とする。
 final class LiveAudioFrameWorker: Sendable {
     typealias Consumer = @Sendable (CapturedAudioChunk) -> Bool
     typealias FailureHandler = @Sendable () -> Void

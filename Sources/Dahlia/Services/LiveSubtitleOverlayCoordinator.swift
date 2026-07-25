@@ -26,7 +26,9 @@ final class LiveSubtitleOverlayCoordinator {
             }
 
         storeCancellable = viewModel.liveCaptionStore.objectWillChange
-            .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+            // Publish the newest partial caption at most five times per second.
+            // Unlike debounce, throttle keeps progressing during continuous speech.
+            .throttle(for: .milliseconds(200), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in
                 self?.sync()
             }

@@ -156,6 +156,41 @@ has_boolean_entitlement() {
     [ "$value" = "true" ]
 }
 
+unlock_codesigning_keychain_if_needed() {
+    local keychain_path="${CODESIGN_KEYCHAIN:-}"
+
+    if [ "$SIGN_IDENTITY" = "-" ]; then
+        return
+    fi
+
+    if [ -z "$keychain_path" ]; then
+        if ! keychain_path="$(security default-keychain -d user 2>/dev/null)"; then
+            echo "error: could not determine the default user keychain" >&2
+            return 1
+        fi
+        keychain_path="${keychain_path#*\"}"
+        keychain_path="${keychain_path%\"*}"
+    fi
+
+    if security show-keychain-info "$keychain_path" >/dev/null 2>&1; then
+        return
+    fi
+
+    echo "=== Unlocking code-signing keychain: ${keychain_path} ==="
+    if security unlock-keychain "$keychain_path"; then
+        return
+    fi
+
+    cat >&2 <<EOF
+error: the code-signing keychain could not be unlocked.
+
+Unlock it in Keychain Access, or run:
+  security unlock-keychain "${keychain_path}"
+Then retry this command.
+EOF
+    return 1
+}
+
 codesign_path() {
     local path="$1"
     shift

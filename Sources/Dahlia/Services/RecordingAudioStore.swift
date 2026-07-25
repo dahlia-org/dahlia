@@ -10,6 +10,8 @@ import os
 
 /// The sole mutation boundary for app-managed recording audio.
 actor RecordingAudioStore {
+    typealias BeforeFinalizationVerification = @Sendable () async -> Void
+
     private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
     private enum FilePresence: Equatable {
         case missing
@@ -129,6 +131,7 @@ actor RecordingAudioStore {
 
     private let dbQueue: DatabaseQueue
     private let managedRootURL: URL
+    private let beforeFinalizationVerification: BeforeFinalizationVerification?
     private var sessionLeases: [UUID: AdvisoryFileLock] = [:]
     private var readLeaseCounts: [UUID: Int] = [:]
     private var lastCapacityChecks: [String: ContinuousClock.Instant] = [:]
@@ -136,11 +139,13 @@ actor RecordingAudioStore {
     init(
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
-        configuration: Configuration = .production
+        configuration: Configuration = .production,
+        beforeFinalizationVerification: BeforeFinalizationVerification? = nil
     ) throws {
         self.dbQueue = dbQueue
         self.managedRootURL = managedRootURL.standardizedFileURL
         self.configuration = configuration
+        self.beforeFinalizationVerification = beforeFinalizationVerification
         try Self.ensureDirectory(at: self.managedRootURL)
         try Self.repairManagedPermissions(rootURL: self.managedRootURL)
     }
@@ -363,6 +368,7 @@ actor RecordingAudioStore {
         }
         let partialURL = try safeURL(relativePath: record.partialRelativePath)
         let finalURL = try safeURL(relativePath: record.finalRelativePath)
+        await beforeFinalizationVerification?()
         if configuration.simulatedFinalizationDelay > .zero {
             try await Task.sleep(for: configuration.simulatedFinalizationDelay)
         }

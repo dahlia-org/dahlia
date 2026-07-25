@@ -3,6 +3,7 @@
 
 import Foundation
 import GRDB
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -12,13 +13,13 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct MeetingPersistenceServiceTests {
         @Test
-        func newMeetingStartsPersistedAsReady() throws {
+        func newMeetingStartsPersistedAsReady() async throws {
             let database = try makeDatabase()
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -26,12 +27,55 @@ import GRDB
                 initialName: "Runtime status meeting"
             )
 
-            let persisted = try database.dbQueue.read { db in
+            let persisted = try await database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: service.meetingId)
                 return try #require(meeting)
             }
 
             #expect(persisted.status == .ready)
+        }
+
+        @Test
+        func delayedStartTransactionSuspendsWithoutBlockingMainActor() async throws {
+            let database = try makeDatabase()
+            let databaseGate = SynchronousDatabaseGate()
+            let databaseBlocker = Task {
+                try await database.dbQueue.write { _ in
+                    databaseGate.block()
+                }
+            }
+            #expect(await databaseGate.waitUntilStarted())
+            defer { databaseGate.release() }
+
+            let factoryState = OSAllocatedUnfairLock(initialState: (started: false, finished: false))
+            let factoryTask = Task { @MainActor in
+                factoryState.withLock { $0.started = true }
+                let service = try await MeetingPersistenceService.createNew(
+                    store: TranscriptStore(),
+                    dbQueue: database.dbQueue,
+                    vaultId: testVault.id,
+                    projectId: nil,
+                    initialName: "Delayed transaction"
+                )
+                factoryState.withLock { $0.finished = true }
+                return service
+            }
+            let factoryStartDeadline = ContinuousClock.now + .seconds(10)
+            while !factoryState.withLock({ $0.started }),
+                  ContinuousClock.now < factoryStartDeadline {
+                await Task.yield()
+            }
+            let didStartFactory = factoryState.withLock(\.started)
+            #expect(didStartFactory)
+
+            let mainActorResponded = await Task { @MainActor in true }.value
+            #expect(mainActorResponded)
+            #expect(!factoryState.withLock { $0.finished })
+
+            databaseGate.release()
+            _ = try await factoryTask.value
+            try await databaseBlocker.value
+            #expect(factoryState.withLock { $0.finished })
         }
 
         @Test
@@ -41,7 +85,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -81,7 +125,7 @@ import GRDB
             let database = try makeDatabase()
             let store = TranscriptStore()
             store.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -134,11 +178,10 @@ import GRDB
                 ).insert(db)
             }
 
-            _ = try MeetingPersistenceService(
+            _ = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                existingMeetingId: meetingId,
-                existingSegmentIds: []
+                existingMeetingId: meetingId
             )
 
             let persisted = try await database.dbQueue.read { db in
@@ -173,11 +216,10 @@ import GRDB
                 ).insert(db)
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: store,
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
-                existingSegmentIds: [],
                 recordingStartDate: sessionStartDate,
                 now: { sessionEndDate }
             )
@@ -229,13 +271,11 @@ import GRDB
                 ).insert(db)
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: store,
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
-                existingSegmentIds: [],
                 recordingStartDate: secondSessionStart,
-                recordingOffsetSeconds: 10,
                 now: { secondSessionEnd }
             )
             let segment = TranscriptSegment(
@@ -287,11 +327,10 @@ import GRDB
                 ).insert(db)
                 try TranscriptSegmentRecord(from: legacySegment, meetingId: meetingId).insert(db)
             }
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
-                existingSegmentIds: [legacySegment.id],
                 recordingStartDate: createdAt.addingTimeInterval(60)
             )
             let appendedSegment = TranscriptSegment(
@@ -324,7 +363,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -367,7 +406,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -412,7 +451,7 @@ import GRDB
                 conferenceURI: nil
             )
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -459,11 +498,10 @@ import GRDB
                 ).insert(db)
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                existingMeetingId: meetingId,
-                existingSegmentIds: []
+                existingMeetingId: meetingId
             )
             await service.stop()
 
@@ -585,7 +623,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -618,7 +656,7 @@ import GRDB
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -660,7 +698,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -701,7 +739,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -734,7 +772,7 @@ import GRDB
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -776,7 +814,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -832,11 +870,10 @@ import GRDB
                 ).insert(db)
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
-                existingMeetingId: meetingId,
-                existingSegmentIds: []
+                existingMeetingId: meetingId
             )
             await service.stop()
 
@@ -932,7 +969,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -964,7 +1001,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -1003,7 +1040,7 @@ import GRDB
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: database.dbQueue,
                 vaultId: testVault.id,
@@ -1100,6 +1137,31 @@ private func linkedCalendarEvent(meetingId: UUID, in db: Database) throws -> Cal
         key: CalendarEventKey(icalUid: icalUid, recurrenceId: recurrenceId),
         in: db
     )
+}
+
+private final class SynchronousDatabaseGate: @unchecked Sendable {
+    private let hasStarted = OSAllocatedUnfairLock(initialState: false)
+    private let releaseSemaphore = DispatchSemaphore(value: 0)
+
+    func block() {
+        hasStarted.withLock { $0 = true }
+        _ = releaseSemaphore.wait(timeout: .now() + 10)
+    }
+
+    func release() {
+        releaseSemaphore.signal()
+    }
+
+    func waitUntilStarted() async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while ContinuousClock.now < deadline {
+            if hasStarted.withLock(\.self) {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
 }
 
 private func fixtureEvent(startDate: Date) -> GoogleCalendarEvent {

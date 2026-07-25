@@ -12,7 +12,7 @@ struct ScreenshotCollectionView: NSViewRepresentable {
     let referencedScreenshotIDs: Set<UUID>
     let isDeletionDisabled: Bool
     @Binding var selectedScreenshotIDs: Set<UUID>
-    let open: (MeetingScreenshotRecord) -> Void
+    let open: (MeetingScreenshotRecord, CGImage?) -> Void
     let download: (MeetingScreenshotRecord) -> Void
     let delete: (MeetingScreenshotRecord) -> Void
 
@@ -246,14 +246,16 @@ extension ScreenshotCollectionView {
                     isDeletionDisabled: parent.isDeletionDisabled
                 ),
                 actions: .init(
-                    activate: { [weak self] in self?.activate(id: id) },
+                    activate: { [weak self] previewImage in
+                        self?.activate(id: id, previewImage: previewImage)
+                    },
                     download: { [weak self] in self?.download(id: id) },
                     delete: { [weak self] in self?.delete(id: id) }
                 )
             )
         }
 
-        private func activate(id: UUID) {
+        private func activate(id: UUID, previewImage: CGImage?) {
             guard let screenshot = screenshot(for: id) else { return }
             if parent.isSelecting {
                 guard !parent.referencedScreenshotIDs.contains(id) else { return }
@@ -263,7 +265,7 @@ extension ScreenshotCollectionView {
                     parent.selectedScreenshotIDs.insert(id)
                 }
             } else {
-                parent.open(screenshot)
+                parent.open(screenshot, previewImage)
             }
         }
 
@@ -359,11 +361,13 @@ extension ScreenshotCollectionView {
             let id: UUID
             let sessionID: UUID?
             let capturedAt: Date
+            let imageIdentity: ScreenshotImageContentIdentity
 
             init(_ screenshot: MeetingScreenshotRecord) {
                 id = screenshot.id
                 sessionID = screenshot.sessionId
                 capturedAt = screenshot.capturedAt
+                imageIdentity = ScreenshotImageContentIdentity(screenshot)
             }
         }
 

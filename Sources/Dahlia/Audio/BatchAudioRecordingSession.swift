@@ -27,7 +27,8 @@ actor BatchAudioRecordingSession {
         recordingStartTime: Date,
         sampleRate: Double,
         configuration: RecordingAudioStore.Configuration = .production,
-        beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk? = nil
+        beforeConsumingChunk: SegmentedAudioSourceWriter.BeforeConsumingChunk? = nil,
+        beforeFinalizationVerification: RecordingAudioStore.BeforeFinalizationVerification? = nil
     ) throws {
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
@@ -43,7 +44,8 @@ actor BatchAudioRecordingSession {
         store = try RecordingAudioStore(
             dbQueue: dbQueue,
             managedRootURL: managedRootURL,
-            configuration: configuration
+            configuration: configuration,
+            beforeFinalizationVerification: beforeFinalizationVerification
         )
         self.meetingId = meetingId
         self.recordingSessionId = recordingSessionId
@@ -176,10 +178,6 @@ actor BatchAudioRecordingSession {
             )
         }
         return result
-    }
-
-    func endActiveRanges() async throws {
-        // Open ranges are sealed atomically with their physical segment during finish.
     }
 
     func endRangeForReconfiguration(source: RecordingAudioSource) async throws {

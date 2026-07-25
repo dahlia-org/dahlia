@@ -45,7 +45,7 @@ import GRDB
                 )
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: vault.id,
@@ -90,7 +90,7 @@ import GRDB
                 )
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: vault.id,
@@ -125,7 +125,7 @@ import GRDB
                 )
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: vault.id,
@@ -158,7 +158,7 @@ import GRDB
                 )
             }
 
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: vault.id,

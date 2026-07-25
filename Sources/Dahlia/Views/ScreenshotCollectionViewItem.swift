@@ -1,5 +1,35 @@
 import AppKit
 import CoreGraphics
+import Foundation
+
+/// MainActor 上で画像全体を比較せず、Data の backing storage から変更を識別する。
+///
+/// Data を保持するため、旧 storage の解放後に同じアドレスが再利用されても false-equal にはならない。
+/// 同じ内容の別 storage は保守的に変更として扱い、stale thumbnail を避ける。
+struct ScreenshotImageContentIdentity: Equatable {
+    private static let maximumDirectComparisonByteCount = 64
+
+    private let imageData: Data
+    private let mimeType: String
+
+    init(_ screenshot: MeetingScreenshotRecord) {
+        imageData = screenshot.imageData
+        mimeType = screenshot.mimeType
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        guard lhs.mimeType == rhs.mimeType,
+              lhs.imageData.count == rhs.imageData.count else { return false }
+        if lhs.imageData.count <= maximumDirectComparisonByteCount {
+            return lhs.imageData == rhs.imageData
+        }
+        return lhs.imageData.withUnsafeBytes { lhsBytes in
+            rhs.imageData.withUnsafeBytes { rhsBytes in
+                lhsBytes.baseAddress == rhsBytes.baseAddress
+            }
+        }
+    }
+}
 
 @MainActor
 private final class PassthroughImageView: NSImageView {
@@ -43,7 +73,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     }
 
     struct Actions {
-        let activate: () -> Void
+        let activate: (CGImage?) -> Void
         let download: () -> Void
         let delete: () -> Void
     }
@@ -67,10 +97,11 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     private var thumbnailTask: Task<Void, Never>?
     private var thumbnailLoadState = ThumbnailLoadState.idle
     private var loadGeneration: UInt64 = 0
-    private var activationHandler: (() -> Void)?
+    private var activationHandler: ((CGImage?) -> Void)?
     private var downloadHandler: (() -> Void)?
     private var deleteHandler: (() -> Void)?
-    private var representedImageData: Data?
+    private var representedImageIdentity: ScreenshotImageContentIdentity?
+    private var loadedThumbnailImage: CGImage?
 
     private(set) var representedScreenshotID: UUID?
     private(set) var renderedState: RenderedState?
@@ -137,7 +168,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     private func releaseRepresentedContent() {
         releaseThumbnail()
         representedScreenshotID = nil
-        representedImageData = nil
+        representedImageIdentity = nil
         renderedState = nil
         activationHandler = nil
         downloadHandler = nil
@@ -155,11 +186,12 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     ) {
         loadViewIfNeeded()
         let screenshot = configuration.screenshot
+        let imageIdentity = ScreenshotImageContentIdentity(screenshot)
         let shouldStartThumbnailLoad = representedScreenshotID != screenshot.id
-            || representedImageData != screenshot.imageData
+            || representedImageIdentity != imageIdentity
             || thumbnailLoadState == .idle
         representedScreenshotID = screenshot.id
-        representedImageData = screenshot.imageData
+        representedImageIdentity = imageIdentity
         timestampLabel.stringValue = configuration.timestamp
         timestampLabel.toolTip = configuration.timestamp
         activationHandler = actions.activate
@@ -216,6 +248,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         thumbnailTask = nil
         thumbnailLoadState = .idle
         loadGeneration &+= 1
+        loadedThumbnailImage = nil
         thumbnailButton.image = nil
     }
 
@@ -277,6 +310,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
                 return
             }
             self.thumbnailLoadState = .loaded
+            self.loadedThumbnailImage = image
             self.thumbnailButton.image = NSImage(
                 cgImage: image,
                 size: NSSize(width: image.width, height: image.height)
@@ -293,7 +327,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     }
 
     @objc private func activateThumbnail() {
-        activationHandler?()
+        activationHandler?(loadedThumbnailImage)
     }
 
     @objc private func downloadScreenshot() {

@@ -13,7 +13,7 @@ import GRDB
             let store = TranscriptStore()
             let startDate = Date(timeIntervalSince1970: 1_776_384_000)
             store.recordingStartTime = startDate
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -43,7 +43,7 @@ import GRDB
             let fixture = try makeDatabase()
             let store = TranscriptStore()
             store.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -98,11 +98,10 @@ import GRDB
             }
             let store = TranscriptStore()
             store.loadSegments([legacySegment])
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: store,
                 dbQueue: fixture.database.dbQueue,
                 existingMeetingId: meetingId,
-                existingSegmentIds: [legacySegment.id],
                 recordingStartDate: .now
             )
             let newSegment = TranscriptSegment(

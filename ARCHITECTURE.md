@@ -9,10 +9,10 @@
 - `docs/adr/`: 決定時点の背景、選択肢、トレードオフを残す履歴
 
 `Reliability Scope` から `Failure and Overload Policy` までは normative な target state である。
-`Runtime Data Flow` と `Conformance Status` は現在の実装を記述する。未適合箇所は既成事実として追認せず、
-`Remediation Plan` に従って減らす。
+`Runtime Data Flow` と `Conformance Status` は現在の実装を記述する。未適合箇所は既成事実として追認せず、保証範囲、
+source of truth、再生成可能性、実測値に基づいて target state を再評価するか、`Remediation Plan` に従って減らす。
 
-最終確認日: 2026-07-24
+最終確認日: 2026-07-25
 
 ## Reliability Scope
 
@@ -56,10 +56,12 @@ AudioFrameRouter
         AudioBufferBridge → SpeechTranscriberService
             ↓ TranscriptionEvent
         TranscriptionEventPipeline
+            ├─ bounded live-caption relay
+            │   └─ MainActor → LiveCaptionStore
+            │
             ├─ UI lane
             │   ├─ latest preview / bounded reloadable projection
-            │   ├─ TranscriptStore
-            │   └─ LiveCaptionStore
+            │   └─ TranscriptStore
             │
             └─ persistence lane
                 TranscriptPersistenceWriter
@@ -118,8 +120,15 @@ durable work を開始する UI は、操作を受理したことと保存が完
 - actor は状態の直列化境界であり、専用 thread や priority queue ではない。優先度の異なる処理を一つの actor に無差別に集約しない。
 - lock 内では I/O、外部 callback、unbounded allocation、`await` を行わない。
 - queue と stream は、容量、overflow 時の意味、終了方法、drain 方法を所有者の契約として定める。
+- unbounded queue は、drop した入力を再生成できず、別の durable source of truth もない場合に限って使い、理由と停止時の
+  drain を明記する。この例外は process-wide stall や OOM を保証対象へ追加するものではない。
 - `Task.detached` を MainActor 回避の一般解として使わず、lifecycle と cancellation を所有する worker を優先する。
 - Apple framework の同期 API を `Task {}` で包むだけでは MainActor から離れない場合がある。呼び出し元の isolation を確認する。
+
+realtime-only recognition は、batch 音声という再処理可能な正本を持たないため、`LiveAudioFrameWorker` と
+`AudioBufferBridge` の lossless queue を意図的に unbounded とする。batch 音声を保存する mode では live recognition を
+rebuildable projection として bounded latest-wins にできる。この選択はモードごとに行い、同じ capture frame を
+recording-critical lane から捨てる根拠にはしない。
 
 ## UI and Interaction Responsiveness
 
@@ -145,6 +154,10 @@ durable work を開始する UI は、操作を受理したことと保存が完
 表示専用データは windowing、pagination、coalescing、byte cost など、データ特性に合う上限を持たせる。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
+
+ここでいう上限は、必ずしもユーザーが閲覧する一つの完全な文書を切り詰めることではない。チャット本文のように raw content
+自体を完全に残す必要がある場合は、同時に保持する解析世代、待機要求、cache cost、実際に materialize する layout を有界にし、
+入力サイズ依存の parse を MainActor 外へ置く。完全な raw content の保持と、再生成可能な projection の負荷制御を混同しない。
 
 ### MainActor budget
 
@@ -197,21 +210,23 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 
 ## Conformance Status
 
-2026-07-24 時点の実装を target state と照合した結果を示す。`Partial`、`Gap`、`Unverified` は修正または証明が必要であり、
-現在の実装を新しい設計判断の前例にしてはならない。
+2026-07-25 時点の実装を target state と照合した結果を示す。`Partial`、`Gap`、`Unverified` は修正、証明、または target state
+自体の再評価が必要である。意図的な unbounded queue や OS-owned stage は根拠と保証範囲を表中に明記し、記載範囲を超えた前例にしない。
 
 | Area | Status | Evidence and deviation |
 | --- | --- | --- |
 | Capture hot path | Conforms | `AudioSourcePipeline.capture` と `AudioFrameRouter.route` は小さな lock と同期処理で構成され、per-frame task を作らない |
 | Immutable audio ingestion | Conforms | `SegmentedAudioSourceWriter.appendBuffer` は bounded queue を使い、overflow を明示的な recording error にする |
-| UI／persistence separation | Partial | worker は分離済みだが、`enqueue` は durable ingress より前に optional `eventObserver` を `await` する |
-| Bounded UI projection | Conforms | preview は集約され、文字起こしと streaming Markdown は reload 可能な bounded projection を使う |
-| Persistence overload | Gap | persistence `AsyncStream` と retry 中の `pendingEvents` に memory bound がない |
-| MainActor I/O | Gap | `MeetingPersistenceService` の `@MainActor` initializer が同期 `DatabaseQueue.write` を実行する |
-| Runtime isolation | Partial | `RecordingSessionController` の ownership は明確だが、`SystemAudioCaptureManager` などの広い `@unchecked Sendable` が残る |
-| Async surface | Partial | suspension のない `preparedCaptureFormat` と非同期 no-op の `endActiveRanges` が API を不必要に非同期化している |
-| Interactive UI scheduling | Partial | rebuildable UI の共有直列 worker には user-initiated work を background work より優先する契約がない |
-| MainActor-stall proof | Unverified | 現在の pipeline test は async suspension を主に模擬し、MainActor の同期的な占有を end-to-end で検証していない |
+| UI／persistence separation | Conforms | `enqueue` は suspension より前に durable ingress を確定する。逐次 recognition producer は MainActor を直接待たず、ライブ字幕は bounded relay への短い actor enqueue 後に独立して配送する |
+| Bounded UI projection | Conforms | preview と文字起こしは集約／window 化する。batch mode の一時的なライブ字幕は DB reload で復元できないため、100 event 上限で preview／translation を latest-wins にする専用 relay から `LiveCaptionStore` へ分離し、保持を 20 segment、overlay projection を最大 5 Hz に制限する。reloadable な `TranscriptStore` projection だけを bounded UI lane に置く。streaming Markdown は完全な raw 本文を残しつつ、実行中 1 件と置換可能な最新 1 件へ解析要求を集約し、MainActor 外で parse する。会話の scroll 文脈では block layout を lazy 化し、固有サイズが必要な reasoning の開閉領域では eager layout を使う。完了済み cache は件数と byte cost で制限する |
+| Realtime recognition backlog | Conforms (documented unbounded) | batch 音声がない realtime mode は再生成不能な入力を落とさない lossless queue、batch mode は bounded latest-wins を使う。長時間の Speech stall による process-wide memory exhaustion は保証対象外 |
+| Persistence overload | Gap (measurement-ready) | ingress／retry backlog の event count、text bytes、oldest age、queue／SQLite duration、retry backoff、single-flight write state と high-water を OSLog と test snapshot で取得できるが、queue policy と bounded implementation は未決定 |
+| Recording-start MainActor I/O | Conforms | `createNew`／`createAppending` が DB transaction を非同期実行し、MainActor は完了後の store／context 反映だけを行う |
+| System-audio runtime isolation | Conforms (app-owned boundary) | manager actor が generation ごとの single-flight stop と callback drain を所有する。delegate adapter の lock は sample admission だけに限定し、停止前に受理済みの callback は routing まで完了させる。concrete `SCStream` の動作は OS integration validation として別に扱う |
+| Normal stop drain and failure | Conforms | capture の新規受付を閉じて in-flight callback、recognition、batch writer を drain する。realtime stop が失敗した場合は controller が runtime 参照を保持し、呼び出し側が `abort()` で capture／recognition／batch resource を解放してから state を reset する。capture の最初の失敗は realtime では throw し、batch では有効な録音結果と併せて返して batch 専用の failure state で明示する |
+| Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
+| Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
+| MainActor-stall proof | Conforms | MainActor を有限時間同期占有する回帰テストが、解放前の audio acceptance と finalized persistence、解放後の UI catch-up を検証する |
 | Process-wide isolation | Out of scope | helper process は導入せず、process-wide hang の証拠が得られた場合に別 ADR で判断する |
 
 ## Remediation Plan
@@ -220,17 +235,23 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 
 ### R1: Durable ingress を observer より先に確定する
 
+実施状況: Completed (2026-07-24)
+
 `TranscriptionEventPipeline.enqueue` では、acceptance check と durable event の persistence ingress の間に `await` を置かない。
-UI projection と optional observer はその後に処理し、observer の停止、cancellation、reentrancy が durable acceptance を変更しないようにする。
-observer が独自に backlog を持つ場合は rebuildable lane として容量と集約規則を定める。
+UI projection と optional observer はその後に処理する。逐次 producer が後続 event を生成できるよう、MainActor や外部 I/O を
+observer callback 内で直接待たない。observer が独自に backlog を持つ場合は rebuildable lane として容量と集約規則を定め、
+callback はその lane への短い enqueue だけを行う。
 
 完了条件:
 
 - block した observer を解放する前に finalized event が persistence sink へ到達する。
 - observer の停止中も、後続の finalized event と translation event の順序が persistence lane で維持される。
+- MainActor の同期停止中も逐次 recognition producer が後続 finalized event を durable ingress へ渡せる。
 - `finish()` と同時に `enqueue` が再開しても、close 済み stream へ受理済み扱いで書き込まない。
 
 ### R2: 録音開始時の同期 DB transaction を MainActor から外す
+
+実施状況: Completed (2026-07-24)
 
 `MeetingPersistenceService` の initializer から DB read／write を除き、MainActor 外の async factory または既存 repository 境界で
 meeting、recording session、継承 project を一つの transaction として準備する。MainActor は返された値を UI state へ反映する。
@@ -244,6 +265,8 @@ DB transaction 自体は非同期化する正当な理由があるが、結果�
 
 ### R3: MainActor stall に対する保証を同期的に検証する
 
+実施状況: Completed (2026-07-24)
+
 有限時間 MainActor を同期的に占有する test harness を追加し、その間に別 executor から audio ingestion と finalized event を進める。
 async gate だけを使った既存テストは残し、異なる failure mode として扱う。
 
@@ -255,6 +278,8 @@ async gate だけを使った既存テストは残し、異なる failure mode �
 
 ### R4: 正当な suspension がない async API を同期化する
 
+実施状況: Completed (2026-07-24)
+
 `preparedCaptureFormat` は同期関数へ戻す。未使用の `endActiveRanges` は、protocol requirement でなければ削除し、
 必要なら実際の lifecycle operation を表す名前と契約に置き換える。機械的に周辺 API まで同期化せず、各 `await` の理由を確認する。
 
@@ -264,6 +289,14 @@ async gate だけを使った既存テストは残し、異なる failure mode �
 - recording start、reconfiguration、finish の順序が変わらない。
 
 ### R5: Persistence backlog の上限と failure mode を決める
+
+実施状況: Instrumentation completed (2026-07-24)。queue policy の決定と bounded implementation は Pending。
+
+pipeline ingress と writer retry backlog について、event count、UTF-8 text bytes、oldest age、high-water、
+queue wait、sink／SQLite duration、失敗回数、retry backoff、write in-progress／waiter count を
+content／identifier なしで OSLog と test snapshot へ記録する。writer の DB transaction は single-flight とし、
+書き込み中に受理した event は同じ owner が続けて drain する。
+SQLite stall の実測結果を得るまでは `.unbounded` と retry 保持の動作を変更しない。
 
 durable event を drop する `AsyncStream.bufferingNewest/Oldest` への単純置換は行わない。まず event count、text bytes、
 SQLite stall duration、retry backlog を計測する。その結果から、audio writer と独立した bounded backpressure または
@@ -280,17 +313,38 @@ disk-backed recovery のどちらを使うかを決める。選択した容量�
 
 ### R6: `@unchecked Sendable` の ownership を狭める
 
+実施状況: Completed for the app-owned `SystemAudioCaptureManager` lifecycle (2026-07-24)。
+署名済み debug build／launch smoke も同日に完了した。実 `SCStream` の start／stop を伴う手動 integration scenario は未実施であり、
+app-owned lifecycle の完了状況とは分けて扱う。
+
 Apple delegate callback を受ける adapter と、可変 capture state の owner を分離する。`@unchecked Sendable` が必要な場合は
 最小の adapter に限定し、各 mutable property が actor、serial queue、lock のどれで保護されるかを型またはコード上で一意にする。
+同じ generation の重複 stop は一つの framework operation を共有し、停止完了は serial audio callback queue の drain 後にだけ返す。
+format／converter はその serial queue に閉じ込め、lock は sample admission の短い更新と参照だけに使う。
 
 完了条件:
 
 - `SystemAudioCaptureManager` の start、callback、stop が同じ state をどの executor から変更するか説明できる。
 - strict concurrency を抑制する範囲が拡大せず、start／stop／unexpected stop の race test を維持する。
 
+ScreenCaptureKit の concrete stream 自体を fake 化するためだけの abstraction は追加しない。抽出した lifecycle state、
+sample admission、serial callback drain を決定的に検証する。実 `SCStream` の start／stop は自動 test の完了条件と混同せず、
+framework wiring を変更した場合の署名済み debug app による手動 integration scenario として扱う。
+
 ### R7: Interactive UI と speculative work の競合を計測して解消する
 
-操作受付、worker queue wait、実処理、最初の描画を別々に計測する。user-initiated request が共有直列 worker の
+実施状況: Completed for app-owned screenshot enlargement stages (2026-07-24)
+
+スクリーンショット一覧の cacheable decode と拡大表示の interactive decode は別 worker lane を使う。
+クリック時は collection item が保持する thumbnail を overlay へ渡して shell と同時に表示し、詳細 decode 完了後に置き換える。
+拡大画像は共有 cache を読み書きせず、閉じると解放し、再度開いた場合は再 decode する。操作から overlay 表示、
+worker queue wait、decode、適用までを content／identifier なしで OSLog に記録する。cacheable lane の同一 key miss は
+single-flight に集約し、削除中の decode 完了は cache へ再挿入しない。
+
+操作受付、SwiftUI overlay の挿入、worker queue wait、実処理、MainActor への画像適用を別々に計測する。
+SwiftUI から compositor の最初の frame presentation を正確には観測できないため、app log の「overlay 表示」「画像適用」を
+compositor paint と呼ばない。pixel presentation が必要な性能検証では Instruments など外部 trace を使う。
+user-initiated request が共有直列 worker の
 background backlog 後方で待つことが確認された場合、cache ownership は共有したまま admission lane を分離するか、
 不要な speculative work をキャンセルする。すべての UI 処理へ新しい scheduler を導入しない。
 
@@ -300,8 +354,9 @@ background backlog 後方で待つことが確認された場合、cache ownersh
 - user-initiated work が開始済みの bounded unit を超えて speculative backlog の後ろへ滞留しない。
 - cancellation、cache cost、stale-result rejection の既存保証を維持する。
 
-R1〜R3 を信頼性境界の修正と証明として先に行い、R4 と R6 で concurrency surface を簡素化する。
-R5 と R7 は計測結果を得てから実装方式を選ぶ。
+R1〜R4 と R6 は完了した。R7 は報告されたスクリーンショット拡大経路について app-owned stage の計測点を追加し、
+lane を分離した。R5 は instrumentation のみ完了しており、backpressure／disk-backed recovery／明示的 failure の選択は
+実測後に別変更として行う。
 
 ## Decision Records
 

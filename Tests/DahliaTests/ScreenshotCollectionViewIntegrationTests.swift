@@ -187,7 +187,7 @@ extension ScreenshotCollectionViewTests {
                 get: { selection.value },
                 set: { selection.value = $0 }
             ),
-            open: { actionRecorder?.openedScreenshot = $0 },
+            open: { screenshot, _ in actionRecorder?.openedScreenshot = screenshot },
             download: { actionRecorder?.downloadedScreenshot = $0 },
             delete: { actionRecorder?.deletedScreenshot = $0 }
         )

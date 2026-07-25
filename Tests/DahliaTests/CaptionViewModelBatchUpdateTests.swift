@@ -294,4 +294,44 @@ import GRDB
             return condition()
         }
     }
+
+    extension CaptionViewModelBatchUpdateTests {
+        @Test
+        func captureStopFailureBecomesBatchRecordingFailure() {
+            let sessionID = UUID.v7()
+            let captureFailure = "capture stop failed"
+            let stopResult = RecordingSessionController.StopResult(
+                sessionId: sessionID,
+                finalMode: .batch,
+                batchRecordingSucceeded: true,
+                batchFailureMessage: nil,
+                captureFailureMessage: captureFailure
+            )
+
+            let message = CaptionViewModel.stoppedBatchRecordingFailureMessage(
+                stopResult: stopResult,
+                persistenceResult: .success
+            )
+
+            #expect(message == captureFailure)
+        }
+
+        @Test
+        func successfulBatchStopHasNoFailureMessage() {
+            let stopResult = RecordingSessionController.StopResult(
+                sessionId: .v7(),
+                finalMode: .batch,
+                batchRecordingSucceeded: true,
+                batchFailureMessage: nil,
+                captureFailureMessage: nil
+            )
+
+            let message = CaptionViewModel.stoppedBatchRecordingFailureMessage(
+                stopResult: stopResult,
+                persistenceResult: .success
+            )
+
+            #expect(message == nil)
+        }
+    }
 #endif

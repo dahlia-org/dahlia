@@ -26,58 +26,10 @@ enum DetailTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// スクリーンショット拡大表示オーバーレイ。
-private struct ScreenshotOverlayView: View {
-    /// Retina の全画面キャプチャを元解像度でレイヤー化すると、RenderBox の
-    /// surface allocation が枯渇し得る。画面表示には十分なサイズへ制限する。
-    private static let maximumDisplayPixelSize = 2400
-
+private struct ExpandedScreenshotPresentation {
     let screenshot: MeetingScreenshotRecord
-    let onDismiss: () -> Void
-    @StateObject private var imageLoader = ScreenshotImageLoadModel()
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button(action: onDismiss) {
-                Color.black.opacity(0.7)
-                    .ignoresSafeArea()
-            }
-            .buttonStyle(.plain)
-            .pointerStyle(.link)
-            .accessibilityLabel(L10n.close)
-
-            if case let .loaded(image) = imageLoader.state {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding(24)
-            } else if case .failed = imageLoader.state {
-                Text(L10n.summaryImageUnavailable)
-                    .foregroundStyle(.secondary)
-            } else {
-                ProgressView()
-            }
-
-            Button(L10n.close, systemImage: "xmark.circle.fill", action: onDismiss)
-                .labelStyle(.iconOnly)
-                .font(.title2)
-                .foregroundStyle(.black)
-                .padding(8)
-                .background(.white, in: Circle())
-                .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-                .padding(16)
-                .buttonStyle(.plain)
-                .pointerStyle(.link)
-        }
-        .task(id: screenshot.id) {
-            await imageLoader.load(
-                screenshotID: screenshot.id,
-                data: screenshot.imageData,
-                maxPixelSize: Self.maximumDisplayPixelSize
-            )
-        }
-    }
+    let previewImage: CGImage?
+    let requestedAt: ContinuousClock.Instant
 }
 
 /// ミーティング詳細のタイトル。クリックでインライン編集できる。
@@ -299,7 +251,7 @@ struct ControlPanelView: View {
     let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .notes
-    @State private var expandedScreenshot: MeetingScreenshotRecord?
+    @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
@@ -445,8 +397,12 @@ struct ControlPanelView: View {
             Text(L10n.deleteSelectedScreenshotsConfirmation)
         }
         .overlay {
-            if let screenshot = expandedScreenshot {
-                ScreenshotOverlayView(screenshot: screenshot) {
+            if let presentation = expandedScreenshot {
+                ScreenshotOverlayView(
+                    screenshot: presentation.screenshot,
+                    previewImage: presentation.previewImage,
+                    requestedAt: presentation.requestedAt
+                ) {
                     withAnimation(.easeOut(duration: 0.15)) {
                         expandedScreenshot = nil
                     }
@@ -607,9 +563,14 @@ struct ControlPanelView: View {
         }
     }
 
-    private func openScreenshot(_ screenshot: MeetingScreenshotRecord) {
+    private func openScreenshot(_ screenshot: MeetingScreenshotRecord, previewImage: CGImage?) {
+        let presentation = ExpandedScreenshotPresentation(
+            screenshot: screenshot,
+            previewImage: previewImage,
+            requestedAt: .now
+        )
         withAnimation(.easeOut(duration: 0.15)) {
-            expandedScreenshot = screenshot
+            expandedScreenshot = presentation
         }
     }
 

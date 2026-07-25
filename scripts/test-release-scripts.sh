@@ -341,6 +341,44 @@ test_whisperkit_license_embedding_validation() {
     expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
 }
 
+test_codesigning_keychain_unlock() {
+    local keychain_log="${TEST_DIR}/keychain.log"
+    local keychain_mode="locked"
+
+    security() {
+        printf '<%s>\n' "$@" >> "$keychain_log"
+        case "$1" in
+            default-keychain) printf '%s\n' '    "/tmp/Test Keychain.keychain-db"' ;;
+            show-keychain-info) [ "$keychain_mode" = "unlocked" ] ;;
+            unlock-keychain) [ "$keychain_mode" != "failure" ] ;;
+            *) return 1 ;;
+        esac
+    }
+
+    SIGN_IDENTITY="Developer ID Application: Test"
+    unset CODESIGN_KEYCHAIN
+    unlock_codesigning_keychain_if_needed
+    grep -Fxq '</tmp/Test Keychain.keychain-db>' "$keychain_log" \
+        || fail "quoted default keychain path was not normalized"
+
+    : > "$keychain_log"
+    keychain_mode="unlocked"
+    unlock_codesigning_keychain_if_needed
+    ! grep -Fxq '<unlock-keychain>' "$keychain_log" \
+        || fail "an unlocked keychain was unlocked again"
+
+    keychain_mode="failure"
+    expect_failure unlock_codesigning_keychain_if_needed
+
+    : > "$keychain_log"
+    SIGN_IDENTITY="-"
+    unlock_codesigning_keychain_if_needed
+    [ ! -s "$keychain_log" ] || fail "ad-hoc signing should not access a keychain"
+
+    unset -f security
+    unset SIGN_IDENTITY
+}
+
 test_build_version_validation
 test_latest_release_build_validation
 test_sparkle_configuration_validation
@@ -350,5 +388,6 @@ test_release_upload_arguments
 test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
+test_codesigning_keychain_unlock
 
 echo "Release script tests passed"

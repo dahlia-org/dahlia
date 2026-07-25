@@ -103,7 +103,7 @@ import GRDB
         func cancellingNewMeetingDeletesUnreferencedCalendarEvent() async throws {
             let (database, vault) = try makeDatabase(named: "Cancellation Cleanup")
             let calendarEvent = event()
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 vaultId: vault.id,

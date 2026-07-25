@@ -48,5 +48,45 @@ import Foundation
             let payload = try #require(presenter.lastPayload)
             #expect(payload.entries.map(\.primaryText) == ["Ephemeral live caption"])
         }
+
+        @Test
+        func continuouslyChangingPreviewPublishesLatestAtBoundedCadence() async throws {
+            let previousSetting = AppSettings.shared.liveSubtitleOverlayEnabled
+            AppSettings.shared.liveSubtitleOverlayEnabled = true
+            defer { AppSettings.shared.liveSubtitleOverlayEnabled = previousSetting }
+
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let sessionID = UUID.v7()
+            viewModel.isListening = true
+            viewModel.liveCaptionStore.start(sessionId: sessionID)
+            let presenter = FakeLiveSubtitlePresenter()
+            let coordinator = LiveSubtitleOverlayCoordinator(
+                viewModel: viewModel,
+                liveSubtitleOverlayService: presenter
+            )
+            try await Task.sleep(for: .milliseconds(20))
+            let initialUpdateCount = presenter.updateCount
+
+            for index in 0 ..< 20 {
+                viewModel.liveCaptionStore.apply(event: .preview(
+                    TranscriptSegment(
+                        sessionId: sessionID,
+                        startTime: .now,
+                        text: "Preview \(index)",
+                        speakerLabel: "system"
+                    )
+                ))
+            }
+
+            try await Task.sleep(for: .milliseconds(500))
+
+            let payload = try #require(presenter.lastPayload)
+            #expect(payload.entries.map(\.primaryText) == ["Preview 19"])
+            #expect(presenter.updateCount - initialUpdateCount <= 2)
+            withExtendedLifetime(coordinator) {}
+        }
     }
 #endif

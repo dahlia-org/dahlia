@@ -1,6 +1,7 @@
 #if canImport(Testing)
     import Foundation
     import GRDB
+    import os
     import Testing
     @testable import Dahlia
 
@@ -10,7 +11,7 @@
         @Test
         func stopRetriesEventsRetainedAfterATemporaryDatabaseFailure() async throws {
             let fixture = try makePersistenceFixture()
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -24,6 +25,14 @@
                 try await service.persist(.finalized(segment))
                 Issue.record("The forced insert failure should be reported")
             } catch {}
+            let failedMetrics = await service.persistenceMetricsSnapshot()
+            #expect(failedMetrics.pendingEventCount == 1)
+            #expect(failedMetrics.pendingTextByteCount == segment.text.utf8.count)
+            #expect(failedMetrics.oldestPendingEventAge != nil)
+            #expect(failedMetrics.highWaterEventCount == 1)
+            #expect(failedMetrics.highWaterTextByteCount == segment.text.utf8.count)
+            #expect(failedMetrics.failedWriteAttemptCount >= 1)
+            #expect(failedMetrics.currentRetryBackoff != nil)
 
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: "DROP TRIGGER fail_transcript_insert")
@@ -35,12 +44,69 @@
 
             #expect(result.succeeded)
             #expect(persisted?.text == "retained")
+            let drainedMetrics = await service.persistenceMetricsSnapshot()
+            #expect(drainedMetrics.pendingEventCount == 0)
+            #expect(drainedMetrics.pendingTextByteCount == 0)
+            #expect(drainedMetrics.oldestPendingEventAge == nil)
+            #expect(drainedMetrics.currentRetryBackoff == nil)
+        }
+
+        @Test
+        func concurrentFlushesShareTheInFlightDatabaseWrite() async throws {
+            let fixture = try makePersistenceFixture()
+            let service = try await MeetingPersistenceService.createNew(
+                store: TranscriptStore(),
+                dbQueue: fixture.database.dbQueue,
+                vaultId: fixture.vault.id,
+                projectId: nil,
+                initialName: "Single flight"
+            )
+            let databaseGate = PersistenceDatabaseGate()
+            let databaseBlocker = Task {
+                try await fixture.database.dbQueue.write { _ in
+                    databaseGate.block()
+                }
+            }
+            #expect(await databaseGate.waitUntilStarted())
+            defer { databaseGate.release() }
+
+            let segment = TranscriptSegment(startTime: .now, text: "once", isConfirmed: true)
+            let persistTask = Task {
+                try await service.persist(.finalized(segment))
+            }
+            #expect(await waitUntil {
+                await service.persistenceMetricsSnapshot().isWriteInProgress
+            })
+
+            let flushTask = Task {
+                try await service.flushPendingTranscriptEvents()
+            }
+            #expect(await waitUntil {
+                await service.persistenceMetricsSnapshot().waitingFlushCount == 1
+            })
+
+            databaseGate.release()
+            try await persistTask.value
+            try await flushTask.value
+            try await databaseBlocker.value
+
+            let persistedCount = try await fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord
+                    .filter(Column("id") == segment.id)
+                    .fetchCount(db)
+            }
+            let metrics = await service.persistenceMetricsSnapshot()
+            #expect(persistedCount == 1)
+            #expect(metrics.pendingEventCount == 0)
+            #expect(!metrics.isWriteInProgress)
+            #expect(metrics.waitingFlushCount == 0)
+            #expect(metrics.failedWriteAttemptCount == 0)
         }
 
         @Test
         func temporaryFailureRetriesWithoutWaitingForAnotherEvent() async throws {
             let fixture = try makePersistenceFixture()
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -73,7 +139,7 @@
         @Test
         func persistentFailureRetainsNewEventsForStop() async throws {
             let fixture = try makePersistenceFixture()
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -111,7 +177,7 @@
         @Test
         func repeatedFlushFailureDoesNotCompleteTheRecordingSession() async throws {
             let fixture = try makePersistenceFixture()
-            let service = try MeetingPersistenceService(
+            let service = try await MeetingPersistenceService.createNew(
                 store: TranscriptStore(),
                 dbQueue: fixture.database.dbQueue,
                 vaultId: fixture.vault.id,
@@ -175,6 +241,45 @@
     ) async {
         while !condition() {
             try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(10),
+        condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private final class PersistenceDatabaseGate: @unchecked Sendable {
+        private let hasStarted = OSAllocatedUnfairLock(initialState: false)
+        private let releaseSemaphore = DispatchSemaphore(value: 0)
+
+        func block() {
+            hasStarted.withLock { $0 = true }
+            _ = releaseSemaphore.wait(timeout: .now() + 10)
+        }
+
+        func release() {
+            releaseSemaphore.signal()
+        }
+
+        func waitUntilStarted() async -> Bool {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
+                if hasStarted.withLock(\.self) {
+                    return true
+                }
+                await Task.yield()
+            }
+            return false
         }
     }
 #endif

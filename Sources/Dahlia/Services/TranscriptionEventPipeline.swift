@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // swiftlint:disable file_length
 /// 認識イベントを、欠落させない永続化レーンと負荷を制限した UI レーンへ分配する。
@@ -13,6 +14,16 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     typealias PersistenceFlushSink = @Sendable () async throws -> Void
     typealias PersistenceResetSink = @Sendable () async throws -> Void
     typealias PersistenceBatchSleep = @Sendable () async throws -> Void
+
+    struct PersistenceMetricsSnapshot: Equatable, Sendable {
+        let queuedEventCount: Int
+        let queuedTextByteCount: Int
+        let oldestEventAge: Duration?
+        let highWaterEventCount: Int
+        let highWaterTextByteCount: Int
+        let maximumQueueWait: Duration
+        let lastSinkDuration: Duration
+    }
 
     static let maximumPendingUIEventCount = 300
     static let maximumUIFinishWait: Duration = .seconds(2)
@@ -44,8 +55,14 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
         let barrierID: UUID?
     }
 
+    private struct QueuedPersistenceEvent {
+        let event: TranscriptionEvent
+        let enqueuedAt: ContinuousClock.Instant
+        let textByteCount: Int
+    }
+
     private enum PersistenceItem {
-        case event(TranscriptionEvent)
+        case event(QueuedPersistenceEvent)
         case flush(CheckedContinuation<Result<Void, Error>, Never>)
         case reset(CheckedContinuation<Result<Void, Error>, Never>)
         case scheduledFlush(UInt64)
@@ -85,10 +102,17 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     private var uiReloadRetryGeneration: UInt64 = 0
     private var uiReloadRetryDelay: Duration = .milliseconds(250)
 
-    private var pendingPersistenceEvents: [TranscriptionEvent] = []
+    private var pendingPersistenceEvents: [QueuedPersistenceEvent] = []
     private var persistenceBatchTask: Task<Void, Never>?
     private var persistenceBatchGeneration: UInt64 = 0
     private var firstPersistenceError: Error?
+    private var queuedPersistenceTextByteCount = 0
+    private var persistenceIngressTimes: [ContinuousClock.Instant] = []
+    private var persistenceHighWaterEventCount = 0
+    private var persistenceHighWaterTextByteCount = 0
+    private var maximumPersistenceQueueWait: Duration = .zero
+    private var lastPersistenceSinkDuration: Duration = .zero
+    private static let persistenceLogger = Logger(subsystem: "com.dahlia", category: "TranscriptPersistence")
 
     init(
         uiSink: @escaping UISink,
@@ -150,15 +174,29 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
     func enqueue(_ event: TranscriptionEvent) async {
         guard isAcceptingEvents else { return }
 
-        // Observers that require every event must run before the bounded UI projection
-        // compacts finalized events into a reload marker.
-        await eventObserver?(event)
+        // Durable acceptance is completed before any suspension point. A blocked observer or
+        // MainActor projection must never delay finalized transcript persistence.
+        if event.requiresDurablePersistence {
+            enqueueDurablePersistenceEvent(event)
+        }
+
         enqueueUIEvent(event)
         uiSignalContinuation.yield()
 
-        if event.requiresDurablePersistence {
-            persistenceContinuation.yield(.event(event))
-        }
+        // Observers receive every event even if the bounded UI projection later compacts it.
+        await eventObserver?(event)
+    }
+
+    func persistenceMetricsSnapshot() -> PersistenceMetricsSnapshot {
+        PersistenceMetricsSnapshot(
+            queuedEventCount: persistenceIngressTimes.count,
+            queuedTextByteCount: queuedPersistenceTextByteCount,
+            oldestEventAge: persistenceIngressTimes.first.map { $0.duration(to: .now) },
+            highWaterEventCount: persistenceHighWaterEventCount,
+            highWaterTextByteCount: persistenceHighWaterTextByteCount,
+            maximumQueueWait: maximumPersistenceQueueWait,
+            lastSinkDuration: lastPersistenceSinkDuration
+        )
     }
 
     /// この呼び出しより前の永続化イベントを保存してから、writer の追跡状態を直列にリセットする。
@@ -442,7 +480,34 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
             : UIDelivery(events: events, requiresReload: requiresReload, barrierID: nil)
     }
 
-    private func enqueuePersistenceBatch(_ event: TranscriptionEvent) {
+    private func enqueueDurablePersistenceEvent(_ event: TranscriptionEvent) {
+        let queuedEvent = QueuedPersistenceEvent(
+            event: event,
+            enqueuedAt: .now,
+            textByteCount: event.durableTextByteCount
+        )
+        switch persistenceContinuation.yield(.event(queuedEvent)) {
+        case .enqueued:
+            queuedPersistenceTextByteCount += queuedEvent.textByteCount
+            persistenceIngressTimes.append(queuedEvent.enqueuedAt)
+            persistenceHighWaterEventCount = max(
+                persistenceHighWaterEventCount,
+                persistenceIngressTimes.count
+            )
+            persistenceHighWaterTextByteCount = max(
+                persistenceHighWaterTextByteCount,
+                queuedPersistenceTextByteCount
+            )
+        case .dropped, .terminated:
+            // The actor closes acceptance before the stream, so accepted durable events
+            // cannot reach this branch.
+            assertionFailure("Durable persistence stream rejected an accepted event")
+        @unknown default:
+            assertionFailure("Unknown durable persistence stream yield result")
+        }
+    }
+
+    private func enqueuePersistenceBatch(_ event: QueuedPersistenceEvent) {
         pendingPersistenceEvents.append(event)
         schedulePersistenceBatchIfNeeded()
     }
@@ -649,13 +714,35 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
             return
         }
 
-        let events = pendingPersistenceEvents
+        let queuedEvents = pendingPersistenceEvents
         pendingPersistenceEvents.removeAll(keepingCapacity: true)
+        let events = queuedEvents.map(\.event)
+        let batchTextByteCount = queuedEvents.reduce(0) { $0 + $1.textByteCount }
+        let queueWait = queuedEvents.first?.enqueuedAt.duration(to: .now) ?? .zero
+        maximumPersistenceQueueWait = max(maximumPersistenceQueueWait, queueWait)
+        let sinkStartedAt = ContinuousClock.now
         do {
             try await persistenceSink(events)
         } catch {
             recordPersistenceError(error)
         }
+        lastPersistenceSinkDuration = sinkStartedAt.duration(to: .now)
+        queuedPersistenceTextByteCount -= batchTextByteCount
+        persistenceIngressTimes.removeFirst(queuedEvents.count)
+        let oldestPendingAge = persistenceIngressTimes.first.map { $0.duration(to: .now) }
+        Self.persistenceLogger.debug(
+            """
+            Pipeline persistence batch events=\(events.count, privacy: .public) \
+            textBytes=\(batchTextByteCount, privacy: .public) \
+            queueWaitMs=\(queueWait.milliseconds, privacy: .public) \
+            sinkMs=\(self.lastPersistenceSinkDuration.milliseconds, privacy: .public) \
+            pendingEvents=\(self.persistenceIngressTimes.count, privacy: .public) \
+            pendingTextBytes=\(self.queuedPersistenceTextByteCount, privacy: .public) \
+            oldestPendingMs=\((oldestPendingAge ?? .zero).milliseconds, privacy: .public) \
+            highWaterEvents=\(self.persistenceHighWaterEventCount, privacy: .public) \
+            highWaterTextBytes=\(self.persistenceHighWaterTextByteCount, privacy: .public)
+            """
+        )
 
         persistenceBatchTask = nil
         if !pendingPersistenceEvents.isEmpty {
@@ -679,6 +766,7 @@ actor TranscriptionEventPipeline { // swiftlint:disable:this type_body_length
             firstPersistenceError = error
         }
     }
+
 }
 
 private extension TranscriptionEvent {

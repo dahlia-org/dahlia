@@ -13,7 +13,7 @@ extension RecordingSessionController {
             source: configuration.source,
             sessionId: snapshot.sessionId
         )
-        let captureFormat = try await preparedCaptureFormat(for: preparedSource)
+        let captureFormat = try preparedCaptureFormat(for: preparedSource)
         let captureOriginDate = Date.now
         let pipeline = AudioSourcePipeline(
             source: configuration.source,
@@ -89,7 +89,7 @@ extension RecordingSessionController {
         return attachment.origin
     }
 
-    private func preparedCaptureFormat(for source: PreparedSource) async throws -> AVAudioFormat {
+    private func preparedCaptureFormat(for source: PreparedSource) throws -> AVAudioFormat {
         if let batchRecording {
             return batchRecording.targetFormat
         }

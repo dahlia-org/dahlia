@@ -1,18 +1,23 @@
 /// 1つの逐次認識イベントを、セッションプランに応じた保存先へ分配する。
 enum TranscriptionEventRouter {
     @MainActor
-    static func route(
+    static func routeTranscriptProjection(
         _ event: TranscriptionEvent,
         plan: TranscriptionSessionPlan,
-        transcriptStore: TranscriptStore,
+        transcriptStore: TranscriptStore
+    ) {
+        guard plan.persistsRealtimeTranscript else { return }
+        apply(event, to: transcriptStore)
+    }
+
+    @MainActor
+    static func routeLiveCaption(
+        _ event: TranscriptionEvent,
+        plan: TranscriptionSessionPlan,
         liveCaptionStore: LiveCaptionStore
     ) {
-        if plan.persistsRealtimeTranscript {
-            apply(event, to: transcriptStore)
-        }
-        if plan.liveSubtitlesEnabled {
-            liveCaptionStore.apply(event: event)
-        }
+        guard plan.liveSubtitlesEnabled else { return }
+        liveCaptionStore.apply(event: event)
     }
 
     @MainActor

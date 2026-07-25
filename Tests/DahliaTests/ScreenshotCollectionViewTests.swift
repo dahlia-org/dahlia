@@ -162,10 +162,12 @@ struct ScreenshotCollectionViewTests {
     }
 
     @Test
-    func nativeButtonsRouteOpenDownloadAndDeleteActions() throws {
+    func nativeButtonsRouteOpenDownloadAndDeleteActionsWithImmediatePreview() async throws {
         let item = ScreenshotCollectionViewItem()
         let screenshot = makeScreenshot()
+        let preview = try #require(makeImage(width: 32, height: 18))
         var invokedActions: [String] = []
+        var activatedPreviewSize: CGSize?
         item.configure(
             .init(
                 screenshot: screenshot,
@@ -175,13 +177,17 @@ struct ScreenshotCollectionViewTests {
                 isReferencedBySummary: false,
                 isDeletionDisabled: false
             ),
-            thumbnailProvider: { _, _, _ in nil },
+            thumbnailProvider: { _, _, _ in preview },
             actions: .init(
-                activate: { invokedActions.append("open") },
+                activate: { image in
+                    activatedPreviewSize = image.map { CGSize(width: $0.width, height: $0.height) }
+                    invokedActions.append("open")
+                },
                 download: { invokedActions.append("download") },
                 delete: { invokedActions.append("delete") }
             )
         )
+        await waitUntil { item.loadedThumbnailSize != nil }
 
         let buttons = descendantViews(of: item.view).compactMap { $0 as? NSButton }
         let openButton = try #require(buttons.first { $0.accessibilityLabel() == L10n.open })
@@ -193,6 +199,7 @@ struct ScreenshotCollectionViewTests {
         deleteButton.performClick(nil)
 
         #expect(invokedActions == ["open", "download", "delete"])
+        #expect(activatedPreviewSize == CGSize(width: 32, height: 18))
     }
 
     @Test
@@ -288,7 +295,7 @@ struct ScreenshotCollectionViewTests {
                 isDeletionDisabled: state.isDeletionDisabled
             ),
             thumbnailProvider: provider,
-            actions: .init(activate: {}, download: {}, delete: {})
+            actions: .init(activate: { _ in }, download: {}, delete: {})
         )
     }
 
@@ -341,6 +348,38 @@ struct ScreenshotCollectionViewTests {
             await Task.yield()
         }
         Issue.record("Timed out waiting for asynchronous state")
+    }
+}
+
+extension ScreenshotCollectionViewTests {
+    @Test
+    func imageIdentityMatchesSharedBackingStorage() {
+        var first = makeScreenshot()
+        first.imageData = Data((0 ..< 256).map { UInt8($0 % 251) })
+        let second = first
+
+        #expect(ScreenshotImageContentIdentity(first) == ScreenshotImageContentIdentity(second))
+    }
+
+    @Test
+    func imageIdentityConservativelyTreatsSeparateAllocationsAsChanged() {
+        let bytes = (0 ..< 256).map { UInt8($0 % 251) }
+        var first = makeScreenshot()
+        first.imageData = Data(bytes)
+        var second = first
+        second.imageData = bytes.withUnsafeBytes { Data($0) }
+
+        #expect(ScreenshotImageContentIdentity(first) != ScreenshotImageContentIdentity(second))
+    }
+
+    @Test
+    func imageIdentityDetectsChangesOutsideTheFormerSampleWindows() {
+        var original = makeScreenshot()
+        original.imageData = Data(repeating: 0, count: 256)
+        var changed = original
+        changed.imageData[80] = 1
+
+        #expect(ScreenshotImageContentIdentity(original) != ScreenshotImageContentIdentity(changed))
     }
 }
 
