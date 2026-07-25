@@ -1,0 +1,229 @@
+#if canImport(Testing)
+import AppKit
+import Testing
+@testable import Dahlia
+
+@MainActor
+struct ScreenshotOverlayViewTests {
+    @Test
+    func fittedSizePreservesLandscapeAndPortraitAspectRatios() {
+        #expect(ScreenshotOverlayLayout.fittedSize(
+            imageSize: CGSize(width: 1_600, height: 900),
+            availableSize: CGSize(width: 800, height: 600)
+        ) == CGSize(width: 800, height: 450))
+        #expect(ScreenshotOverlayLayout.fittedSize(
+            imageSize: CGSize(width: 900, height: 1_600),
+            availableSize: CGSize(width: 800, height: 600)
+        ) == CGSize(width: 337.5, height: 600))
+    }
+
+    @Test
+    func fittedSizeRejectsEmptyDimensions() {
+        #expect(ScreenshotOverlayLayout.fittedSize(
+            imageSize: .zero,
+            availableSize: CGSize(width: 800, height: 600)
+        ) == .zero)
+        #expect(ScreenshotOverlayLayout.fittedSize(
+            imageSize: CGSize(width: 1_600, height: 900),
+            availableSize: .zero
+        ) == .zero)
+    }
+
+    @Test
+    func imageClickIsForwardedWithoutDismissal() throws {
+        let fixture = try makeMouseFixture(
+            eventType: .leftMouseDown,
+            eventLocation: CGPoint(x: 50, y: 50)
+        )
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+        #expect(handledEvent === fixture.event)
+        #expect(dismissCount == 0)
+    }
+
+    @Test
+    func outsideMouseClicksAreForwardedAndDismiss() async throws {
+        for eventType in [NSEvent.EventType.leftMouseDown, .rightMouseDown, .otherMouseDown] {
+            let fixture = try makeMouseFixture(
+                eventType: eventType,
+                eventLocation: CGPoint(x: 150, y: 150)
+            )
+            var dismissCount = 0
+            let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+                dismissCount += 1
+            }
+
+            let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+            #expect(handledEvent === fixture.event)
+            #expect(dismissCount == 0)
+            await waitUntil { dismissCount == 1 }
+            #expect(dismissCount == 1)
+        }
+    }
+
+    @Test
+    func mouseUpOutsideImageIsForwardedWithoutDismissal() throws {
+        let fixture = try makeMouseFixture(
+            eventType: .leftMouseUp,
+            eventLocation: CGPoint(x: 150, y: 150)
+        )
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+        #expect(handledEvent === fixture.event)
+        #expect(dismissCount == 0)
+    }
+
+    @Test
+    func installedMonitorReceivesOutsideMouseDown() async throws {
+        let fixture = try makeMouseFixture(
+            eventType: .leftMouseDown,
+            eventLocation: CGPoint(x: 150, y: 150)
+        )
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+        coordinator.startMonitoring(view: fixture.view)
+        defer { coordinator.stopMonitoring() }
+
+        NSApp.sendEvent(fixture.event)
+
+        await waitUntil { dismissCount == 1 }
+        #expect(dismissCount == 1)
+    }
+
+    @Test
+    func escapeInOverlayWindowIsConsumedAndDismisses() throws {
+        let fixture = try makeKeyFixture(keyCode: 53)
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+        #expect(handledEvent == nil)
+        #expect(dismissCount == 1)
+    }
+
+    @Test
+    func otherKeysAreForwardedWithoutDismissal() throws {
+        let fixture = try makeKeyFixture(keyCode: 36)
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+        #expect(handledEvent === fixture.event)
+        #expect(dismissCount == 0)
+    }
+
+    @Test
+    func eventInAnotherWindowIsForwardedWithoutDismissal() throws {
+        let fixture = try makeMouseFixture(
+            eventType: .leftMouseDown,
+            eventLocation: CGPoint(x: 150, y: 150)
+        )
+        let otherWindow = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 200, height: 200),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        let event = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: CGPoint(x: 150, y: 150),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: otherWindow.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0
+        ))
+        var dismissCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(event, in: fixture.view)
+
+        #expect(handledEvent === event)
+        #expect(dismissCount == 0)
+    }
+
+    private func makeMouseFixture(
+        eventType: NSEvent.EventType,
+        eventLocation: CGPoint
+    ) throws -> (event: NSEvent, view: NSView) {
+        let window = makeWindow()
+        let view = makeView(in: window)
+        let event = try #require(NSEvent.mouseEvent(
+            with: eventType,
+            location: eventLocation,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0
+        ))
+        return (event, view)
+    }
+
+    private func makeKeyFixture(keyCode: UInt16) throws -> (event: NSEvent, view: NSView) {
+        let window = makeWindow()
+        let view = makeView(in: window)
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: keyCode
+        ))
+        return (event, view)
+    }
+
+    private func makeWindow() -> NSWindow {
+        NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 200, height: 200),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+    }
+
+    private func makeView(in window: NSWindow) -> NSView {
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.contentView?.addSubview(view)
+        return view
+    }
+
+    private func waitUntil(_ predicate: @MainActor () -> Bool) async {
+        for _ in 0 ..< 1_000 {
+            if predicate() { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for MainActor state")
+    }
+}
+#endif
