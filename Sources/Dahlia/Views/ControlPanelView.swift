@@ -401,12 +401,9 @@ struct ControlPanelView: View {
                 ScreenshotOverlayView(
                     screenshot: presentation.screenshot,
                     previewImage: presentation.previewImage,
-                    requestedAt: presentation.requestedAt
-                ) {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        expandedScreenshot = nil
-                    }
-                }
+                    requestedAt: presentation.requestedAt,
+                    onDismiss: dismissExpandedScreenshot
+                )
                 .transition(.opacity)
             }
         }
@@ -455,10 +452,8 @@ struct ControlPanelView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     SummaryDocumentView(
                         document: document,
-                        imageDataProvider: { screenshotId in
-                            guard let record = viewModel.screenshots.first(where: { $0.id == screenshotId }) else { return nil }
-                            return record.imageData
-                        },
+                        imageDataProvider: { screenshotRecord(withID: $0)?.imageData },
+                        onOpenImage: openSummaryScreenshot,
                         transcriptTextProvider: summaryTranscriptText,
                         allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
                     )
@@ -571,6 +566,22 @@ struct ControlPanelView: View {
         )
         withAnimation(.easeOut(duration: 0.15)) {
             expandedScreenshot = presentation
+        }
+    }
+
+    private func openSummaryScreenshot(_ screenshotID: UUID, previewImage: CGImage) {
+        guard let screenshot = screenshotRecord(withID: screenshotID) else { return }
+        openScreenshot(screenshot, previewImage: previewImage)
+    }
+
+    private func screenshotRecord(withID id: UUID) -> MeetingScreenshotRecord? {
+        viewModel.screenshots.first { $0.id == id }
+    }
+
+    private func dismissExpandedScreenshot() {
+        guard expandedScreenshot != nil else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            expandedScreenshot = nil
         }
     }
 

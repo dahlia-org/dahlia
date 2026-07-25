@@ -510,6 +510,8 @@
 "Could not add the vault." = "保管庫を追加できませんでした。";
 "Could not remove the vault." = "保管庫の登録を解除できませんでした。";
 "Open" = "開く";
+"Enlarge screenshot" = "スクリーンショットを拡大表示";
+"Enlarge screenshot: %@" = "スクリーンショット「%@」を拡大表示";
 "Loading supported languages..." = "対応言語を読み込み中...";
 "Search languages..." = "言語を検索...";
 "No matching languages" = "該当する言語がありません";

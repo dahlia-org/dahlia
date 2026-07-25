@@ -54,6 +54,14 @@ enum L10n {
         bundle: bundle
     ) }
     static var screenshotUsedInSummary: String { String(localized: "Used in summary", bundle: bundle) }
+
+    static func enlargeScreenshot(caption: String?) -> String {
+        guard let caption else {
+            return String(localized: "Enlarge screenshot", bundle: bundle)
+        }
+        return String(localized: "Enlarge screenshot: \(caption)", bundle: bundle)
+    }
+
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var actions: String { String(localized: "Actions", bundle: bundle) }
     static var status: String { String(localized: "Status", bundle: bundle) }

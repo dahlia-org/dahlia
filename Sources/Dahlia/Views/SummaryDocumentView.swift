@@ -3,17 +3,20 @@ import SwiftUI
 struct SummaryDocumentView: View {
     let document: SummaryDocument
     let imageDataProvider: (UUID) -> Data?
+    let onOpenImage: (UUID, CGImage) -> Void
     let transcriptTextProvider: (TranscriptReference) -> String?
     let allowsTranscriptReferencePopovers: Bool
 
     init(
         document: SummaryDocument,
         imageDataProvider: @escaping (UUID) -> Data?,
+        onOpenImage: @escaping (UUID, CGImage) -> Void,
         transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil },
         allowsTranscriptReferencePopovers: Bool = true
     ) {
         self.document = document
         self.imageDataProvider = imageDataProvider
+        self.onOpenImage = onOpenImage
         self.transcriptTextProvider = transcriptTextProvider
         self.allowsTranscriptReferencePopovers = allowsTranscriptReferencePopovers
     }
@@ -152,7 +155,12 @@ struct SummaryDocumentView: View {
     private func imageView(screenshotId: UUID, caption: SummaryText) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let data = imageDataProvider(screenshotId) {
-                SummaryScreenshotImageView(screenshotID: screenshotId, data: data)
+                SummaryScreenshotImageView(
+                    screenshotID: screenshotId,
+                    data: data,
+                    accessibilityLabel: L10n.enlargeScreenshot(caption: caption.text.nilIfBlank),
+                    onOpen: onOpenImage
+                )
             } else {
                 Text(L10n.summaryImageUnavailable)
                     .font(.callout)
@@ -249,17 +257,27 @@ struct SummaryDocumentView: View {
 
 }
 
-private struct SummaryScreenshotImageView: View {
+struct SummaryScreenshotImageView: View {
     let screenshotID: UUID
     let data: Data
+    let accessibilityLabel: String
+    let onOpen: (UUID, CGImage) -> Void
     @StateObject private var imageLoader = ScreenshotImageLoadModel()
 
     var body: some View {
         Group {
             if case let .loaded(image) = imageLoader.state {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .scaledToFit()
+                Button {
+                    activate(image)
+                } label: {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .scaledToFit()
+                }
+                .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .accessibilityLabel(accessibilityLabel)
+                .help(accessibilityLabel)
             } else if case .failed = imageLoader.state {
                 Text(L10n.summaryImageUnavailable)
                     .font(.callout)
@@ -278,6 +296,10 @@ private struct SummaryScreenshotImageView: View {
                 maxPixelSize: 1200
             )
         }
+    }
+
+    func activate(_ image: CGImage) {
+        onOpen(screenshotID, image)
     }
 }
 

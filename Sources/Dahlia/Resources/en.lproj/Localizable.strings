@@ -510,6 +510,8 @@
 "Could not add the vault." = "Could not add the vault.";
 "Could not remove the vault." = "Could not remove the vault.";
 "Open" = "Open";
+"Enlarge screenshot" = "Enlarge screenshot";
+"Enlarge screenshot: %@" = "Enlarge screenshot: %@";
 "Loading supported languages..." = "Loading supported languages...";
 "Search languages..." = "Search languages...";
 "No matching languages" = "No matching languages";
