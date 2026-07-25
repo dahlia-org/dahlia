@@ -6,9 +6,36 @@ import Testing
 
 struct LiveSubtitleOverlayPayloadTests {
     @Test
+    func latestDefaultsToSystemAudioOnly() {
+        let payload = LiveSubtitleOverlayPayload.latest(
+            from: [
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: 1_776_384_000),
+                    text: "Microphone",
+                    isConfirmed: true,
+                    speakerLabel: "mic"
+                ),
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: 1_776_384_001),
+                    text: "System",
+                    isConfirmed: true,
+                    speakerLabel: "system"
+                ),
+            ],
+            transcriptionLocaleIdentifier: "en_US",
+            translationEnabled: false,
+            targetLanguageIdentifier: "ja",
+            maxEntries: 2
+        )
+
+        #expect(payload?.entries.map(\.primaryText) == ["System"])
+    }
+
+    @Test
     func latestReturnsNilForEmptySegments() {
         let payload = LiveSubtitleOverlayPayload.latest(
             from: [],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -29,6 +56,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -52,6 +80,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -75,6 +104,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "en",
@@ -103,6 +133,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     isConfirmed: true
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -140,6 +171,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -170,6 +202,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -194,6 +227,7 @@ struct LiveSubtitleOverlayPayloadTests {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -213,6 +247,7 @@ struct LiveSubtitleOverlayPayloadTests {
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_001), text: "Two", isConfirmed: true),
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_002), text: "Three", isConfirmed: true),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: false,
             targetLanguageIdentifier: "ja",
@@ -283,6 +318,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
     func testLatestReturnsNilForEmptySegments() {
         let payload = LiveSubtitleOverlayPayload.latest(
             from: [],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -302,6 +338,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -324,6 +361,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -346,6 +384,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "mic"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "en",
@@ -373,6 +412,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     isConfirmed: true
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -409,6 +449,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -438,6 +479,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -461,6 +503,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                     speakerLabel: "system"
                 ),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: true,
             targetLanguageIdentifier: "ja",
@@ -479,6 +522,7 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_001), text: "Two", isConfirmed: true),
                 TranscriptSegment(startTime: Date(timeIntervalSince1970: 1_776_384_002), text: "Three", isConfirmed: true),
             ],
+            sourceMode: .includeMicrophone,
             transcriptionLocaleIdentifier: "en_US",
             translationEnabled: false,
             targetLanguageIdentifier: "ja",

@@ -1,18 +1,19 @@
-import Foundation
-
-enum LiveSubtitleSourceMode: String, CaseIterable, Identifiable {
+enum LiveSubtitleSourceMode: String {
     case systemAudioOnly
     case includeMicrophone
 
-    var id: String { rawValue }
+    static let defaultMode: Self = .systemAudioOnly
 
-    var displayName: String {
-        switch self {
-        case .systemAudioOnly:
-            L10n.systemAudioOnly
-        case .includeMicrophone:
-            L10n.includeMicrophone
-        }
+    init(storedRawValue: String) {
+        self = Self(rawValue: storedRawValue) ?? .defaultMode
+    }
+
+    init(includesMicrophone: Bool) {
+        self = includesMicrophone ? .includeMicrophone : .systemAudioOnly
+    }
+
+    var includesMicrophone: Bool {
+        self == .includeMicrophone
     }
 
     func includesSpeakerLabel(_ speakerLabel: String?) -> Bool {

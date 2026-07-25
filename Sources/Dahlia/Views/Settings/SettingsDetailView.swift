@@ -21,6 +21,8 @@ struct SettingsDetailView: View {
                 )
             case .transcription:
                 TranscriptionSettingsView()
+            case .liveSubtitles:
+                LiveSubtitleSettingsView()
             case .screenshots:
                 ScreenshotSettingsView()
             case .calendar:
