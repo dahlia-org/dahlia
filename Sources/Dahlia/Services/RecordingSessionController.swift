@@ -301,7 +301,11 @@ actor RecordingSessionController {
         let recognitionFailure = await finishRecognitions(
             isFatal: snapshot.plan.finalMode == .realtime
         )
-        let batchResult = await finishBatchRecording(sessionId: snapshot.sessionId)
+        let captureFailureMessage = firstCaptureFailure?.localizedDescription
+        let batchResult = await finishBatchRecording(
+            sessionId: snapshot.sessionId,
+            captureFailureMessage: captureFailureMessage
+        )
         if snapshot.plan.finalMode == .realtime {
             if let firstCaptureFailure {
                 throw firstCaptureFailure
@@ -317,7 +321,7 @@ actor RecordingSessionController {
             finalMode: snapshot.plan.finalMode,
             batchRecordingSucceeded: batchResult.succeeded,
             batchFailureMessage: batchResult.failureMessage,
-            captureFailureMessage: firstCaptureFailure?.localizedDescription
+            captureFailureMessage: captureFailureMessage
         )
     }
 
@@ -349,7 +353,8 @@ actor RecordingSessionController {
     }
 
     private func finishBatchRecording(
-        sessionId: UUID
+        sessionId: UUID,
+        captureFailureMessage: String?
     ) async -> (succeeded: Bool, failureMessage: String?) {
         var succeeded = batchRuntimeFailureMessage == nil
         var failureMessage = batchRuntimeFailureMessage
@@ -361,10 +366,10 @@ actor RecordingSessionController {
                 failureMessage = failureMessage ?? error.localizedDescription
             }
         }
-        if let failureMessage {
+        if let recordingFailureMessage = failureMessage ?? captureFailureMessage {
             await batchScheduler?.recordRecordingFailure(
                 sessionId: sessionId,
-                message: failureMessage
+                message: recordingFailureMessage
             )
         }
         return (succeeded, failureMessage)

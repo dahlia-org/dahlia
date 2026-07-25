@@ -284,7 +284,8 @@
             let batchFinish = try #require(actions.firstIndex(of: .batchFinish))
 
             #expect(result.captureFailureMessage == FakeRuntimeError.captureStop.localizedDescription)
-            #expect(result.batchRecordingSucceeded)
+            #expect(result.batchRecordingSucceeded
+                && actions.contains(.batchRecordingFailure(FakeRuntimeError.captureStop.localizedDescription)))
             #expect(lastCaptureStop < firstRecognitionFinish)
             #expect(firstRecognitionFinish < batchFinish)
             await runtime.controller.completeStop()
@@ -620,8 +621,7 @@
             case recognitionFinish(RecordingAudioSource)
             case recognitionCancel(RecordingAudioSource)
             case batchFinish
-            case batchCancel
-            case batchEnqueue
+            case batchCancel, batchEnqueue, batchRecordingFailure(String)
 
             var isCaptureStop: Bool {
                 if case .captureStop = self { return true }
@@ -978,7 +978,7 @@
         }
 
         func isRunning(sessionId _: UUID) async -> Bool { false }
-        func recordRecordingFailure(sessionId _: UUID, message _: String) async {}
+        func recordRecordingFailure(sessionId _: UUID, message: String) async { await probe.append(.batchRecordingFailure(message)) }
     }
 
     private enum FakeRecognitionFailureMode: Equatable {
