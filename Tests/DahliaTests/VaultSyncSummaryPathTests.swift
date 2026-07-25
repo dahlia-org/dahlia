@@ -34,7 +34,38 @@ import GRDB
         }
 
         @Test
-        func projectFolderRenameUpdatesStoredSummaryPathByPrefix() throws {
+        func markdownRenameThroughParentSymlinkClearsUnsafeStoredPath() throws {
+            let context = try makeContext(projectName: "Project", summaryRelativePath: "Project/Original.md")
+            let originalURL = context.vaultURL.appending(path: "Project/Original.md")
+            let outsideDirectory = context.vaultURL.deletingLastPathComponent()
+                .appending(path: "Outside-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer {
+                try? FileManager.default.removeItem(at: context.vaultURL)
+                try? FileManager.default.removeItem(at: outsideDirectory)
+            }
+            let linkURL = context.vaultURL.appending(path: "Link", directoryHint: .isDirectory)
+            let unsafeURL = linkURL.appending(path: "Renamed.md")
+            try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: outsideDirectory)
+            try Data("Summary".utf8).write(to: originalURL, options: .atomic)
+            try FileManager.default.moveItem(
+                at: originalURL,
+                to: outsideDirectory.appending(path: "Renamed.md")
+            )
+
+            let renameFlag = UInt32(kFSEventStreamEventFlagItemRenamed)
+                | UInt32(kFSEventStreamEventFlagItemIsFile)
+            context.syncService.handleEvents(
+                paths: [originalURL.path, unsafeURL.path],
+                flags: [renameFlag, renameFlag]
+            )
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == nil)
+            #expect(FileManager.default.fileExists(atPath: unsafeURL.path))
+        }
+
+        @Test
+        func directoryRenameUpdatesOnlyStoredSummaryPath() throws {
             let context = try makeContext(projectName: "Original", summaryRelativePath: "Original/Summary.md")
             defer { try? FileManager.default.removeItem(at: context.vaultURL) }
 
@@ -55,9 +86,30 @@ import GRDB
                 type: .vault
             )
             let project = try #require(fetchedProject)
-            #expect(project.name == "Renamed")
+            #expect(project.id == context.project.id)
+            #expect(project.name == "Original")
             #expect(vaultExport?.url == "vault:///Renamed/Summary.md")
             #expect(vaultExport?.vaultRelativePath == "Renamed/Summary.md")
+        }
+
+        @Test
+        func directoryRemovalClearsSummaryPathWithoutChangingProject() throws {
+            let context = try makeContext(projectName: "Project", summaryRelativePath: "Project/Summary.md")
+            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            let projectURL = context.vaultURL.appending(path: "Project", directoryHint: .isDirectory)
+            try Data("Summary".utf8).write(to: projectURL.appending(path: "Summary.md"), options: .atomic)
+            try FileManager.default.removeItem(at: projectURL)
+
+            context.syncService.handleEvents(
+                paths: [projectURL.path],
+                flags: [
+                    UInt32(kFSEventStreamEventFlagItemRemoved)
+                        | UInt32(kFSEventStreamEventFlagItemIsDir),
+                ]
+            )
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == nil)
+            #expect(try context.repository.fetchProject(id: context.project.id)?.name == "Project")
         }
 
         @Test

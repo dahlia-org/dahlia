@@ -1,9 +1,9 @@
 # ADR 0005: Vault-scoped read-only meeting access over local MCP
 
-- Status: Accepted, amended by ADR 0009
+- Status: Accepted, amended by ADR 0010
 - Date: 2026-07-16
 
-> ADR 0009 retains this Vault boundary and read-only default, and adds an explicit `--write` capability for Project
+> ADR 0010 retains this Vault boundary and read-only default, and adds an explicit `--write` capability for Project
 > workspace and Meeting-membership mutations. Its write contract supersedes this ADR's statements that the helper never
 > writes and that future write tools require a separate decision.
 
@@ -39,6 +39,6 @@ Settings only displays and copies CLI registration commands. It does not edit Cl
 - Both embedded and external agents share the same query semantics and security boundary.
 - The initial API remains small and avoids transferring large transcript bodies during discovery.
 - Users must explicitly re-register the external MCP server when changing vaults.
-- ADR 0009 defines the current Project read tools and the three write tools exposed only by `--write`; deletion and
+- ADR 0010 defines the current Project read tools and the three write tools exposed only by `--write`; deletion and
   merge remain unsupported.
 - Full-text body search or additional media require a separate security and privacy decision.

@@ -17,7 +17,13 @@ struct VaultFileSystemEventBatch {
         var removedSummaryPaths: [String] = []
 
         for (path, flag) in zip(paths, flags) {
-            guard let event = Self.classify(path: path, flag: flag, vaultPath: vaultPath, fileManager: fileManager) else { continue }
+            guard let event = Self.classify(
+                path: path,
+                flag: flag,
+                vaultURL: vaultURL,
+                vaultPath: vaultPath,
+                fileManager: fileManager
+            ) else { continue }
             switch event {
             case let .directoryRename(path, exists):
                 pendingDirectoryRenames.append((path, exists))
@@ -44,6 +50,7 @@ struct VaultFileSystemEventBatch {
     private static func classify(
         path: String,
         flag: UInt32,
+        vaultURL: URL,
         vaultPath: String,
         fileManager: FileManager
     ) -> Event? {
@@ -56,7 +63,13 @@ struct VaultFileSystemEventBatch {
         if isDirectory {
             return classifyDirectory(path: path, relativePath: relativePath, flag: flag, fileManager: fileManager)
         }
-        return classifyFile(path: path, relativePath: relativePath, flag: flag, fileManager: fileManager)
+        return classifyFile(
+            path: path,
+            relativePath: relativePath,
+            flag: flag,
+            vaultURL: vaultURL,
+            fileManager: fileManager
+        )
     }
 
     private static func classifyDirectory(
@@ -90,6 +103,7 @@ struct VaultFileSystemEventBatch {
         path: String,
         relativePath: String,
         flag: UInt32,
+        vaultURL: URL,
         fileManager: FileManager
     ) -> Event? {
         let components = relativePath.split(separator: "/")
@@ -102,12 +116,34 @@ struct VaultFileSystemEventBatch {
         let isRenamed = flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
         let isRemoved = flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
         if isRenamed {
+            guard !exists || isSafeVaultPath(URL(fileURLWithPath: path), vaultURL: vaultURL) else {
+                return nil
+            }
             return .summaryRename(relativePath, exists: exists)
         }
         if !exists, isRemoved {
             return .summaryRemoved(relativePath)
         }
         return nil
+    }
+
+    private static func isSafeVaultPath(_ url: URL, vaultURL: URL) -> Bool {
+        let vault = vaultURL.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return false }
+
+        var current = vault
+        for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
+            current.append(path: component)
+            guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else {
+                return false
+            }
+        }
+
+        let resolvedVaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedCandidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolvedCandidatePath.hasPrefix(resolvedVaultPath + "/")
     }
 
     private static func resolveRenames(

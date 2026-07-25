@@ -2969,8 +2969,6 @@ final class CaptionViewModel: ObservableObject {
             generationSettings: request.generationSettings
         ))
 
-        let storedSummaryRelativePath = try repo.fetchSummaryVaultRelativePath(forMeetingId: meetingId)
-
         try repo.applyGeneratedSummary(
             toMeetingId: meetingId,
             document: generatedSummary.document,
@@ -2986,24 +2984,71 @@ final class CaptionViewModel: ObservableObject {
         if exportOptions.exportsToVault {
             job.progress.vaultExport = .running
             do {
-                let fileURL = try await VaultSummaryExportService.exportSummaryBundle(
-                    projectURL: request.projectURL,
+                guard let vaultID = try repo.fetchMeeting(id: meetingId)?.vaultId else {
+                    throw SummaryGenerationPreparationError.meetingUnavailable
+                }
+                let exportResult = try DahliaVaultMutationLock.withLock(
                     vaultURL: request.vaultURL,
-                    storedSummaryRelativePath: storedSummaryRelativePath,
+                    vaultID: vaultID
+                ) {
+                    let latest = try request.dbQueue.read { db in
+                        let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                        let project = try meeting?.projectId.flatMap {
+                            try ProjectRecord.fetchResolved(id: $0, in: db)
+                        }
+                        let storedPath = try SummaryExportRecord.fetchOne(
+                            meetingId: meetingId,
+                            type: .vault,
+                            in: db
+                        )?.vaultRelativePath
+                        return (meeting, project, storedPath)
+                    }
+                    guard let latestMeeting = latest.0,
+                          latestMeeting.vaultId == vaultID else {
+                        throw SummaryGenerationPreparationError.meetingUnavailable
+                    }
+                    let latestProjectName = latest.1?.name ?? ""
+                    let latestProjectURL = latest.1.map {
+                        request.vaultURL.appending(path: $0.name, directoryHint: .isDirectory)
+                    }
+                    let fileURL = try VaultSummaryExportService.resolveSummaryFileURL(
+                        projectURL: latestProjectURL,
+                        vaultURL: request.vaultURL,
+                        storedSummaryRelativePath: latest.2,
+                        meetingId: meetingId,
+                        summaryFileName: generatedSummary.fileName
+                    )
+                    _ = try VaultSummaryExportService.writeSummaryFile(
+                        fileURL: fileURL,
+                        markdown: generatedSummary.markdown
+                    )
+                    if let relativePath = VaultSummaryFileLocator.relativePath(
+                        for: fileURL,
+                        vaultURL: request.vaultURL
+                    ) {
+                        try repo.updateSummaryVaultRelativePath(
+                            forMeetingId: meetingId,
+                            relativePath: relativePath
+                        )
+                    }
+                    return (fileURL, latestProjectName)
+                }
+                _ = try TranscriptExportService.exportTranscript(
+                    vaultURL: request.vaultURL,
                     meetingId: meetingId,
+                    projectName: exportResult.1,
                     createdAt: request.createdAt,
-                    projectName: request.projectName,
                     segments: summaryInput.segments,
-                    recordingSessions: request.recordingSessions,
-                    screenshots: screenshots,
-                    summaryFileName: generatedSummary.fileName,
-                    summaryMarkdown: generatedSummary.markdown
+                    recordingSessions: request.recordingSessions
                 )
-                if let relativePath = VaultSummaryFileLocator.relativePath(for: fileURL, vaultURL: request.vaultURL) {
-                    try repo.updateSummaryVaultRelativePath(forMeetingId: meetingId, relativePath: relativePath)
+                if !screenshots.isEmpty {
+                    _ = try ScreenshotExportService.exportScreenshots(
+                        vaultURL: request.vaultURL,
+                        screenshots: screenshots
+                    )
                 }
                 job.progress.vaultExport = .completed
-                if currentMeetingId == meetingId { lastSummaryURL = fileURL }
+                if currentMeetingId == meetingId { lastSummaryURL = exportResult.0 }
             } catch {
                 job.progress.vaultExport = .failed(error.localizedDescription)
                 summaryErrorsByMeetingId[meetingId] = error.localizedDescription

@@ -1,12 +1,14 @@
 import CoreServices
 import Foundation
+import GRDB
 #if canImport(Testing)
     import Testing
     @testable import Dahlia
 
+    @MainActor
     struct VaultSyncProjectHierarchyTests {
         @Test
-        func initialSyncCreatesEveryIntermediateProjectWithCanonicalParents() throws {
+        func initialSyncNeverCreatesProjectsFromDirectories() throws {
             let fixture = try Fixture()
             defer { fixture.cleanup() }
             try FileManager.default.createDirectory(
@@ -19,124 +21,21 @@ import Foundation
             let projects = try fixture.database.dbQueue.read { db in
                 try ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db)
             }
-            #expect(projects.map(\.name) == ["Acme", "Acme/Platform", "Acme/Platform/API"])
-            let root = try #require(projects.first(where: { $0.name == "Acme" }))
-            let platform = try #require(projects.first(where: { $0.name == "Acme/Platform" }))
-            let api = try #require(projects.first(where: { $0.name == "Acme/Platform/API" }))
-            #expect(root.parentProjectId == nil)
-            #expect(platform.parentProjectId == root.id)
-            #expect(api.parentProjectId == platform.id)
-        }
-
-        @Test
-        func initialSyncMarksMissingProjectWithoutDeletingItsIdentity() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            try FileManager.default.createDirectory(
-                at: fixture.vaultURL.appending(path: "Personal", directoryHint: .isDirectory),
-                withIntermediateDirectories: false
-            )
-            fixture.service.performInitialSync()
-            let project = try fixture.database.dbQueue.read { db in
-                try #require(ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db).first)
-            }
-
-            try FileManager.default.removeItem(at: fixture.vaultURL.appending(path: "Personal"))
-            fixture.service.performInitialSync()
-
-            let missing = try fixture.database.dbQueue.read { db in
-                try ProjectRecord.fetchResolved(id: project.id, in: db)
-            }
-            #expect(missing?.id == project.id)
-            #expect(missing?.missingOnDisk == true)
-        }
-
-        @Test
-        func initialSyncPreservesIdentityAndRevisionAcrossOfflineCaseRename() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            let originalURL = fixture.vaultURL.appending(path: "Acme", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: originalURL, withIntermediateDirectories: false)
-            fixture.service.performInitialSync()
-            let original = try fixture.database.dbQueue.read { db in
-                try #require(ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db).first)
-            }
-
-            let temporaryURL = fixture.vaultURL.appending(path: "case-rename-temporary")
-            let renamedURL = fixture.vaultURL.appending(path: "acme", directoryHint: .isDirectory)
-            try FileManager.default.moveItem(at: originalURL, to: temporaryURL)
-            try FileManager.default.moveItem(at: temporaryURL, to: renamedURL)
-            fixture.service.performInitialSync()
-
-            let renamed = try fixture.database.dbQueue.read { db in
-                try #require(try ProjectRecord.fetchResolved(id: original.id, in: db))
-            }
-            #expect(renamed.id == original.id)
-            #expect(renamed.name == "acme")
-            #expect(!renamed.missingOnDisk)
-            #expect(renamed.revision > original.revision)
-        }
-
-        @Test
-        func restoringMissingDirectoryInvalidatesOldRevision() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            let projectURL = fixture.vaultURL.appending(path: "Personal", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: false)
-            fixture.service.performInitialSync()
-            let id = try fixture.database.dbQueue.read { db in
-                try #require(ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db).first).id
-            }
-
-            try FileManager.default.removeItem(at: projectURL)
-            fixture.service.performInitialSync()
-            let missingRevision = try fixture.database.dbQueue.read { db in
-                try #require(try ProjectRecord.fetchResolved(id: id, in: db)).revision
-            }
-            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: false)
-            fixture.service.performInitialSync()
-
-            let restored = try fixture.database.dbQueue.read { db in
-                try #require(try ProjectRecord.fetchResolved(id: id, in: db))
-            }
-            #expect(!restored.missingOnDisk)
-            #expect(restored.revision > missingRevision)
-        }
-
-        @Test
-        func directoryScanDoesNotTraverseSymlinks() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            let outsideURL = fixture.rootURL.appending(path: "Outside/Child", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: true)
-            try FileManager.default.createSymbolicLink(
-                at: fixture.vaultURL.appending(path: "Linked", directoryHint: .isDirectory),
-                withDestinationURL: outsideURL.deletingLastPathComponent()
-            )
-
-            fixture.service.performInitialSync()
-
-            let projects = try fixture.database.dbQueue.read { db in
-                try ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db)
-            }
             #expect(projects.isEmpty)
         }
 
         @Test
-        func liveDirectoryEventDoesNotProjectizeSymlink() throws {
+        func directoryCreationEventNeverCreatesAProject() throws {
             let fixture = try Fixture()
             defer { fixture.cleanup() }
-            let outsideURL = fixture.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
-            let linkedURL = fixture.vaultURL.appending(path: "Linked", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: true)
-            try FileManager.default.createSymbolicLink(at: linkedURL, withDestinationURL: outsideURL)
+            let directory = fixture.vaultURL.appending(path: "Personal", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
 
             fixture.service.handleEvents(
-                paths: [linkedURL.path],
+                paths: [directory.path],
                 flags: [
                     UInt32(kFSEventStreamEventFlagItemCreated)
-                        | UInt32(kFSEventStreamEventFlagItemIsDir)
-                        | UInt32(kFSEventStreamEventFlagItemIsSymlink),
+                        | UInt32(kFSEventStreamEventFlagItemIsDir),
                 ]
             )
 
@@ -144,6 +43,50 @@ import Foundation
                 try ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db)
             }
             #expect(projects.isEmpty)
+        }
+
+        @Test
+        func directoryRenameDoesNotChangeProjectIdentityPathOrRevision() throws {
+            let fixture = try Fixture()
+            defer { fixture.cleanup() }
+            let project = try fixture.insertProject(named: "Original")
+            let originalURL = fixture.vaultURL.appending(path: "Original", directoryHint: .isDirectory)
+            let renamedURL = fixture.vaultURL.appending(path: "Renamed", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: originalURL, withIntermediateDirectories: false)
+            try FileManager.default.moveItem(at: originalURL, to: renamedURL)
+
+            let renameFlag = UInt32(kFSEventStreamEventFlagItemRenamed)
+                | UInt32(kFSEventStreamEventFlagItemIsDir)
+            fixture.service.handleEvents(
+                paths: [originalURL.path, renamedURL.path],
+                flags: [renameFlag, renameFlag]
+            )
+
+            let unchanged = try fixture.database.dbQueue.read { db in
+                try #require(try ProjectRecord.fetchResolved(id: project.id, in: db))
+            }
+            #expect(unchanged.id == project.id)
+            #expect(unchanged.name == "Original")
+            #expect(unchanged.revision == project.revision)
+        }
+
+        @Test
+        func missingDerivedDirectoryDoesNotChangeProject() throws {
+            let fixture = try Fixture()
+            defer { fixture.cleanup() }
+            let project = try fixture.insertProject(named: "No Output Yet")
+
+            fixture.service.performInitialSync()
+
+            let unchanged = try fixture.database.dbQueue.read { db in
+                try #require(try ProjectRecord.fetchResolved(id: project.id, in: db))
+            }
+            #expect(unchanged.id == project.id)
+            #expect(unchanged.name == project.leafName)
+            #expect(unchanged.parentProjectId == project.parentProjectId)
+            #expect(unchanged.projectType == project.projectType)
+            #expect(unchanged.revision == project.revision)
+            #expect(!FileManager.default.fileExists(atPath: fixture.vaultURL.appending(path: project.name).path))
         }
     }
 
@@ -175,6 +118,21 @@ import Foundation
 
             func cleanup() {
                 try? FileManager.default.removeItem(at: rootURL)
+            }
+
+            func insertProject(named name: String) throws -> ProjectRecord {
+                let project = ProjectRecord(
+                    id: .v7(),
+                    vaultId: vaultID,
+                    parentProjectId: nil,
+                    leafName: name,
+                    createdAt: .now,
+                    projectType: .undefined
+                )
+                try database.dbQueue.write { db in
+                    try project.insert(db)
+                }
+                return project
             }
         }
     }

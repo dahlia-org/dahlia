@@ -73,8 +73,12 @@ struct ProjectManagementView: View {
                 projectCount: hierarchy.count,
                 meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
                 moveDestinations: projectMoveDestinations(excluding: project),
-                onConfirm: { disposition in
-                    await deleteProject(project, meetingDisposition: disposition)
+                onConfirm: { disposition, deletesSummaryFiles in
+                    await deleteProject(
+                        project,
+                        meetingDisposition: disposition,
+                        deletesSummaryFiles: deletesSummaryFiles
+                    )
                 }
             )
         }
@@ -204,7 +208,7 @@ struct ProjectManagementView: View {
                             systemImage: "folder.badge.plus",
                             action: presentSubprojectCreation
                         )
-                        .disabled(selectedProject.missingOnDisk)
+                        .disabled(selectedProject.parentProjectId != nil)
 
                         Button(
                             L10n.newTopLevelProject,
@@ -295,7 +299,7 @@ private extension ProjectManagementView {
                 }
             }
             Button(L10n.moveProject, action: applyParentChange)
-                .disabled(project.missingOnDisk || projectParentId == project.parentProjectId)
+                .disabled(projectParentId == project.parentProjectId)
 
             if projectParentId == nil {
                 Picker(L10n.projectType, selection: $projectType) {
@@ -305,8 +309,7 @@ private extension ProjectManagementView {
                 }
                 Button(L10n.updateProjectType, action: applyTypeChange)
                     .disabled(
-                        project.missingOnDisk
-                            || project.parentProjectId != nil
+                        project.parentProjectId != nil
                             || projectType == projectedProjectType(for: project)
                     )
             } else {
@@ -409,7 +412,6 @@ private extension ProjectManagementView {
             } label: {
                 Label(L10n.openInFinder, systemImage: "folder")
             }
-            .disabled(projectFolderURL(for: project) == nil)
         } label: {
             Text(L10n.localSummaryFolder)
             Text(projectFolderPath(for: project) ?? L10n.noVaultSelected)
@@ -488,6 +490,7 @@ private extension ProjectManagementView {
         descriptionSaveTask?.cancel()
         descriptionSaveTask = nil
         loadProjectDetails(for: selectedProjectId)
+        requestExpansion(toReveal: current.projectName)
         if hadUnsavedFields {
             projectOperationErrorMessage = L10n.staleProjectRevision(current.revision)
             isShowingProjectOperationError = true
@@ -504,8 +507,19 @@ private extension ProjectManagementView {
     }
 
     private func openProjectFolder(for project: ProjectOverviewItem) {
-        guard let url = projectFolderURL(for: project) else { return }
-        NSWorkspace.shared.open(url)
+        guard let url = projectFolderURL(for: project),
+              let vaultURL = AppSettings.shared.currentVault?.url else { return }
+        Task {
+            let isSafe = await Task.detached {
+                ProjectFolderSafety.isSafeDirectory(url, inside: vaultURL)
+            }.value
+            guard isSafe else {
+                projectOperationErrorMessage = L10n.invalidSummaryOutputDestination
+                isShowingProjectOperationError = true
+                return
+            }
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func loadProjectDetails(for projectId: UUID?) {
@@ -562,9 +576,7 @@ private extension ProjectManagementView {
         ) {
         case .saved:
             lastSavedProjectDescription = projectDescription
-            lastLoadedProjectRevision = sidebarViewModel.allProjectItems
-                .first(where: { $0.projectId == projectId })?
-                .revision
+            lastLoadedProjectRevision = lastLoadedProjectRevision.map { $0 + 1 }
             descriptionStatusMessage = L10n.saved
             descriptionSaveFailed = false
         case .projectNotFound:
@@ -600,22 +612,28 @@ private extension ProjectManagementView {
 
     private func canRename(_ project: ProjectOverviewItem) -> Bool {
         let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !project.missingOnDisk
-            && !trimmedName.isEmpty
+        return !trimmedName.isEmpty
             && trimmedName != leafName(for: project.projectName)
     }
 
     private func renameSelectedProject() {
         guard let selectedProject else { return }
-        persistProjectDescriptionIfNeeded(for: selectedProject.projectId)
+        descriptionSaveTask?.cancel()
+        descriptionSaveTask = nil
+        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
+            showProjectOperationError()
+            return
+        }
         guard let renamed = sidebarViewModel.renameProject(
             id: selectedProject.projectId,
-            newLeafName: projectName
+            newLeafName: projectName,
+            expectedRevision: lastLoadedProjectRevision
         ) else {
             showProjectOperationError()
             return
         }
         projectName = leafName(for: renamed.name)
+        lastLoadedProjectRevision = renamed.revision
         projectSearchText = ""
         requestExpansion(toReveal: renamed.name)
     }
@@ -627,12 +645,14 @@ private extension ProjectManagementView {
 
     private func deleteProject(
         _ project: ProjectOverviewItem,
-        meetingDisposition: ProjectMeetingDisposition
+        meetingDisposition: ProjectMeetingDisposition,
+        deletesSummaryFiles: Bool
     ) async -> String? {
         descriptionSaveTask?.cancel()
         guard await sidebarViewModel.deleteProjectHierarchy(
             id: project.projectId,
-            meetingDisposition: meetingDisposition
+            meetingDisposition: meetingDisposition,
+            deletesSummaryFiles: deletesSummaryFiles
         ) else {
             return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
         }
@@ -650,8 +670,11 @@ private extension ProjectManagementView {
     }
 
     private func projectMoveDestinations(excluding project: ProjectOverviewItem) -> [ProjectOverviewItem] {
-        sidebarViewModel.allProjectItems.filter {
-            !$0.missingOnDisk
+        let canBecomeSubproject = project.parentProjectId != nil || projectHierarchy(for: project).count == 1
+        guard canBecomeSubproject else { return [] }
+
+        return sidebarViewModel.allProjectItems.filter {
+            $0.parentProjectId == nil
                 && !ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
         }
     }
@@ -672,29 +695,43 @@ private extension ProjectManagementView {
 
     private func applyParentChange() {
         guard let selectedProject else { return }
+        descriptionSaveTask?.cancel()
+        descriptionSaveTask = nil
+        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
+            showProjectOperationError()
+            return
+        }
         guard let moved = sidebarViewModel.reparentProject(
             id: selectedProject.projectId,
-            parentProjectId: projectParentId
+            parentProjectId: projectParentId,
+            expectedRevision: lastLoadedProjectRevision
         ) else {
             showProjectOperationError()
             loadProjectDetails(for: selectedProject.projectId)
             return
         }
+        lastLoadedProjectRevision = moved.revision
         requestExpansion(toReveal: moved.name)
-        loadProjectDetails(for: selectedProject.projectId)
     }
 
     private func applyTypeChange() {
-        guard let selectedProject,
-              sidebarViewModel.updateRootProjectType(
-                  id: selectedProject.projectId,
-                  projectType: projectType
-              ) != nil else {
+        guard let selectedProject else { return }
+        descriptionSaveTask?.cancel()
+        descriptionSaveTask = nil
+        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
+            showProjectOperationError()
+            return
+        }
+        guard let updated = sidebarViewModel.updateRootProjectType(
+            id: selectedProject.projectId,
+            projectType: projectType,
+            expectedRevision: lastLoadedProjectRevision
+        ) else {
             showProjectOperationError()
             loadProjectDetails(for: selectedProjectId)
             return
         }
-        loadProjectDetails(for: selectedProject.projectId)
+        lastLoadedProjectRevision = updated.revision
     }
 
     private func projectName(id: UUID) -> String? {
@@ -715,6 +752,31 @@ private extension ProjectManagementView {
     private func showProjectOperationError() {
         projectOperationErrorMessage = sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
         isShowingProjectOperationError = true
+    }
+}
+
+enum ProjectFolderSafety {
+    static func isSafeDirectory(_ url: URL, inside vaultURL: URL) -> Bool {
+        let vault = vaultURL.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return false }
+
+        var current = vault
+        for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
+            current.append(path: component, directoryHint: .isDirectory)
+            guard let values = try? current.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+            ]),
+                values.isDirectory == true,
+                values.isSymbolicLink != true else {
+                return false
+            }
+        }
+
+        let vaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
+        let candidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        return candidatePath.hasPrefix(vaultPath + "/")
     }
 }
 

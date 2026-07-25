@@ -156,7 +156,6 @@ public struct ProjectMetadata: Codable, Sendable, Equatable {
     public let isTypeInherited: Bool
     public let directMeetingCount: Int
     public let descendantMeetingCount: Int
-    public let directoryMissing: Bool
     public let description: String
     public let revision: Int
 }
@@ -269,7 +268,8 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case projectNotFound
     case projectConflict(String)
     case invalidProjectName
-    case projectDirectoryMissing
+    case projectHierarchyTooDeep
+    case projectAlreadyExists(String)
     case projectFileConflict(String)
     case projectTypeOwnedByRoot
     case meetingMembershipConflict
@@ -303,9 +303,11 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case let .projectConflict(message):
             "Project update conflict: \(message)"
         case .invalidProjectName:
-            "Project leaf_name must be a non-hidden single directory name."
-        case .projectDirectoryMissing:
-            "The project directory is missing."
+            "Project leaf_name must be a non-hidden single path component."
+        case .projectHierarchyTooDeep:
+            "Projects support one level of subprojects. The parent must be a root project."
+        case let .projectAlreadyExists(name):
+            "A Project named \(name) already exists under that parent."
         case let .projectFileConflict(path):
             "A directory or file already exists at \(path)."
         case .projectTypeOwnedByRoot:

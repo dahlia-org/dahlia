@@ -36,12 +36,24 @@ import Foundation
                 lastOpenedAt: .now
             )
             try repository.insertVault(vault)
+            let legacyProject = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Customer",
+                createdAt: .now,
+                legacyContextMigrated: false,
+                projectType: .undefined
+            )
+            try database.dbQueue.write { db in
+                try legacyProject.insert(db)
+            }
 
             VaultSyncService(vaultURL: vaultURL, dbQueue: database.dbQueue, vaultId: vault.id).performInitialSync()
 
-            let projects = try repository.fetchAllProjects(vaultId: vault.id)
-            let project = try #require(projects.first(where: { $0.name == "Customer" }))
+            let project = try #require(try repository.fetchProject(id: legacyProject.id))
             #expect(project.description == "Customer rollout planning.")
+            #expect(project.legacyContextMigrated)
         }
 
         @Test
@@ -73,19 +85,25 @@ import Foundation
                 lastOpenedAt: .now
             )
             try repository.insertVault(vault)
-            let project = try repository.createProject(
+            let project = ProjectRecord(
+                id: .v7(),
                 vaultId: vault.id,
                 parentProjectId: nil,
                 leafName: "Linked",
-                description: "",
+                createdAt: .now,
+                legacyContextMigrated: false,
                 projectType: .undefined
             )
+            try database.dbQueue.write { db in
+                try project.insert(db)
+            }
 
             VaultSyncService(vaultURL: vaultURL, dbQueue: database.dbQueue, vaultId: vault.id).performInitialSync()
 
             let migrated = try #require(try repository.fetchProject(id: project.id))
             #expect(migrated.description.isEmpty)
-            #expect(migrated.missingOnDisk)
+            #expect(migrated.legacyContextMigrated)
         }
+
     }
 #endif

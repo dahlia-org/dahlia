@@ -5,11 +5,12 @@ struct ProjectDeletionDialog: View {
     let projectCount: Int
     let meetingCount: Int
     let moveDestinations: [ProjectOverviewItem]
-    let onConfirm: (ProjectMeetingDisposition) async -> String?
+    let onConfirm: (ProjectMeetingDisposition, Bool) async -> String?
 
     @Environment(\.dismiss) private var dismiss
     @State private var deletesMeetings: Bool
     @State private var selectedDestinationId: UUID?
+    @State private var deletesSummaryFiles = false
     @State private var isDeleting = false
     @State private var deletionErrorMessage: String?
 
@@ -18,7 +19,7 @@ struct ProjectDeletionDialog: View {
         projectCount: Int,
         meetingCount: Int,
         moveDestinations: [ProjectOverviewItem],
-        onConfirm: @escaping (ProjectMeetingDisposition) async -> String?
+        onConfirm: @escaping (ProjectMeetingDisposition, Bool) async -> String?
     ) {
         self.project = project
         self.projectCount = projectCount
@@ -45,7 +46,7 @@ struct ProjectDeletionDialog: View {
                         systemImage: "trash"
                     )
 
-                    Text(L10n.projectFoldersMoveToTrash)
+                    Text(L10n.projectDirectoriesAreKept)
                         .foregroundStyle(.secondary)
 
                     if meetingCount > 0 {
@@ -75,6 +76,12 @@ struct ProjectDeletionDialog: View {
                             }
                         } else if moveDestinations.isEmpty {
                             Label(L10n.noProjectMoveDestination, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if deletesMeetings {
+                            Toggle(L10n.deleteExportedSummaries, isOn: $deletesSummaryFiles)
+                            Text(L10n.deleteExportedSummariesHelp)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -162,7 +169,7 @@ struct ProjectDeletionDialog: View {
         deletionErrorMessage = nil
         isDeleting = true
         Task {
-            if let errorMessage = await onConfirm(disposition) {
+            if let errorMessage = await onConfirm(disposition, deletesMeetings && deletesSummaryFiles) {
                 deletionErrorMessage = errorMessage
                 isDeleting = false
             } else {

@@ -37,9 +37,30 @@ import ImageIO
             )
             #expect(created.project.path == "Acme/Platform")
             #expect(created.project.isTypeInherited)
-            #expect(FileManager.default.fileExists(
+            #expect(!FileManager.default.fileExists(
                 atPath: fixture.primaryVaultURL.appending(path: "Acme/Platform").path
             ))
+            #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
+                try store.createProject(
+                    leafName: "API",
+                    parentProjectID: created.project.projectID,
+                    projectType: nil
+                )
+            }
+            let otherRoot = try store.createProject(
+                leafName: "Internal",
+                parentProjectID: nil,
+                projectType: .internal
+            )
+            #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
+                try store.updateProject(
+                    id: root.projectID,
+                    update: ProjectUpdate(
+                        parent: .project(otherRoot.project.projectID),
+                        expectedRevision: root.revision
+                    )
+                )
+            }
 
             #expect(throws: MeetingAccessError.projectTypeOwnedByRoot) {
                 try store.updateProject(
@@ -54,13 +75,25 @@ import ImageIO
                 )
             }
 
+            let reparented = try store.updateProject(
+                id: created.project.projectID,
+                update: ProjectUpdate(
+                    parent: .project(otherRoot.project.projectID),
+                    expectedRevision: created.project.revision
+                )
+            )
+            #expect(reparented.project.path == "Internal/Platform")
+            #expect(reparented.project.effectiveType == .internal)
+            #expect(reparented.project.isTypeInherited)
+            #expect(reparented.effectiveTypeChangedProjectIDs == [created.project.projectID])
+
             let promoted = try store.updateProject(
                 id: created.project.projectID,
-                update: ProjectUpdate(parent: .vaultRoot, expectedRevision: created.project.revision)
+                update: ProjectUpdate(parent: .vaultRoot, expectedRevision: reparented.project.revision)
             )
             #expect(promoted.project.projectID == created.project.projectID)
             #expect(promoted.project.path == "Platform")
-            #expect(promoted.project.explicitType == .undefined)
+            #expect(promoted.project.explicitType == .internal)
             #expect(!promoted.project.isTypeInherited)
         }
 
@@ -72,6 +105,12 @@ import ImageIO
                 leafName: "Destination",
                 parentProjectID: nil,
                 projectType: .internal
+            )
+            let outsideURL = fixture.rootURL.appending(path: "membership-external", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(
+                at: fixture.primaryVaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                withDestinationURL: outsideURL
             )
             try fixture.manager.dbQueue.write { db in
                 try SummaryExportRecord(
@@ -112,6 +151,15 @@ import ImageIO
             #expect(Set(moved.changedMeetingIDs) == [fixture.firstMeetingID, fixture.recurringMeetingID])
             #expect(try store.meeting(id: fixture.firstMeetingID).meeting.projectID == destination.project.projectID)
             #expect(try store.meeting(id: fixture.recurringMeetingID).meeting.projectID == destination.project.projectID)
+            let unchanged = try store.setMeetingProjectMemberships(
+                [
+                    .init(meetingID: fixture.firstMeetingID, expectedProjectID: destination.project.projectID),
+                    .init(meetingID: fixture.recurringMeetingID, expectedProjectID: destination.project.projectID),
+                ],
+                projectID: destination.project.projectID
+            )
+            #expect(!unchanged.changed)
+            #expect(unchanged.changedMeetingIDs.isEmpty)
             let staleExportCount = try fixture.manager.dbQueue.read { db in
                 try SummaryExportRecord
                     .filter(Column("meetingId") == fixture.firstMeetingID)
@@ -119,6 +167,7 @@ import ImageIO
                     .fetchCount(db)
             }
             #expect(staleExportCount == 0)
+            #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Missing.md").path))
         }
 
         @Test
@@ -160,7 +209,7 @@ import ImageIO
         }
 
         @Test
-        func projectMutationsRejectSourceAncestorSymlinks() throws {
+        func projectMutationWithoutTrackedSummaryDoesNotTouchSourceSymlink() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             let project = try #require(try store.queryProjects(ProjectQuery(
@@ -172,13 +221,14 @@ import ImageIO
             try FileManager.default.removeItem(at: projectURL)
             try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: external)
 
-            #expect(throws: MeetingAccessError.projectFileConflict(projectURL.path)) {
-                try store.updateProject(
-                    id: project.projectID,
-                    update: ProjectUpdate(leafName: "Renamed", expectedRevision: project.revision)
-                )
-            }
+            let renamed = try store.updateProject(
+                id: project.projectID,
+                update: ProjectUpdate(leafName: "Renamed", expectedRevision: project.revision)
+            )
+
+            #expect(renamed.project.path == "Renamed")
             #expect(FileManager.default.fileExists(atPath: external.path))
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: projectURL.path) == external.path)
         }
 
         @Test
@@ -191,7 +241,7 @@ import ImageIO
                 projectType: .customer
             )
 
-            #expect(throws: MeetingAccessError.projectFileConflict("e\u{301}QUIPE")) {
+            #expect(throws: MeetingAccessError.projectAlreadyExists("e\u{301}QUIPE")) {
                 try store.createProject(
                     leafName: "e\u{301}QUIPE",
                     parentProjectID: nil,
@@ -201,15 +251,12 @@ import ImageIO
         }
 
         @Test
-        func projectCreateRejectsMissingSiblingConflictBeforeFilesystemMutation() throws {
+        func projectCreateRejectsDuplicateSiblingWithoutFilesystemMutation() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             try FileManager.default.removeItem(at: fixture.primaryVaultURL.appending(path: "Acme"))
-            try fixture.manager.dbQueue.write { db in
-                try ProjectRecord.setMissing(ids: [fixture.primaryProjectID], missing: true, in: db)
-            }
 
-            #expect(throws: MeetingAccessError.projectFileConflict("acme")) {
+            #expect(throws: MeetingAccessError.projectAlreadyExists("acme")) {
                 try store.createProject(
                     leafName: "acme",
                     parentProjectID: nil,
@@ -242,13 +289,22 @@ import ImageIO
         }
 
         @Test
-        func projectUpdateRollsDirectoryBackWhenDatabaseCommitFails() throws {
+        func projectUpdateRollsSummaryBackWhenDatabaseCommitFails() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             let project = try #require(try store.queryProjects(ProjectQuery(
                 projectID: fixture.primaryProjectID
             )).projects.first)
+            let sourceSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
+            try Data("Summary".utf8).write(to: sourceSummary, options: .atomic)
             try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///Acme/Summary.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
                 try db.execute(sql: """
                 CREATE TRIGGER fail_mcp_project_update
                 BEFORE UPDATE OF leafName ON projects
@@ -264,8 +320,132 @@ import ImageIO
                     update: ProjectUpdate(leafName: "Renamed", expectedRevision: project.revision)
                 )
             }
-            #expect(FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Acme").path))
+            #expect(FileManager.default.fileExists(atPath: sourceSummary.path))
             #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Renamed").path))
+        }
+
+        @Test
+        func projectRenameMovesAlignedSummaryAndLeavesLegacyOutputUntouched() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let root = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let child = try store.createProject(
+                leafName: "Platform",
+                parentProjectID: root.projectID,
+                projectType: nil
+            ).project
+            let alignedSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
+            let legacyDirectory = fixture.primaryVaultURL.appending(path: "Legacy", directoryHint: .isDirectory)
+            let legacySummary = legacyDirectory.appending(path: "Budget.md")
+            let unrelatedFile = fixture.primaryVaultURL.appending(path: "Acme/keep.txt")
+            try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: false)
+            try Data("Aligned".utf8).write(to: alignedSummary, options: .atomic)
+            try Data("Legacy".utf8).write(to: legacySummary, options: .atomic)
+            try Data("Keep".utf8).write(to: unrelatedFile, options: .atomic)
+            try fixture.manager.dbQueue.write { db in
+                try SummaryRecord(
+                    meetingId: fixture.secondMeetingID,
+                    title: "Budget",
+                    document: "{}",
+                    createdAt: .now
+                ).insert(db)
+                for (meetingID, path) in [
+                    (fixture.firstMeetingID, "vault:///Acme/Summary.md"),
+                    (fixture.secondMeetingID, "vault:///Legacy/Budget.md"),
+                ] {
+                    try SummaryExportRecord(
+                        meetingId: meetingID,
+                        type: .vault,
+                        url: path,
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+
+            let result = try store.updateProject(
+                id: root.projectID,
+                update: ProjectUpdate(leafName: "Renamed", expectedRevision: root.revision)
+            )
+
+            #expect(Set(result.affectedProjectIDs) == [root.projectID, child.projectID])
+            let updatedChild = try #require(try store.queryProjects(ProjectQuery(
+                projectID: child.projectID
+            )).projects.first)
+            #expect(updatedChild.path == "Renamed/Platform")
+            #expect(updatedChild.revision == child.revision + 1)
+            #expect(FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Summary.md").path
+            ))
+            #expect(FileManager.default.fileExists(atPath: legacySummary.path))
+            #expect(FileManager.default.fileExists(atPath: unrelatedFile.path))
+            let paths = try fixture.manager.dbQueue.read { db in
+                try [
+                    SummaryExportRecord.fetchOne(
+                        meetingId: fixture.firstMeetingID,
+                        type: .vault,
+                        in: db
+                    )?.vaultRelativePath,
+                    SummaryExportRecord.fetchOne(
+                        meetingId: fixture.secondMeetingID,
+                        type: .vault,
+                        in: db
+                    )?.vaultRelativePath,
+                ]
+            }
+            #expect(paths == ["Renamed/Summary.md", "Legacy/Budget.md"])
+        }
+
+        @Test
+        func projectRenameRejectsSummarySharedWithRetainedLegacyExport() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let root = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let child = try store.createProject(
+                leafName: "Child",
+                parentProjectID: root.projectID,
+                projectType: nil
+            ).project
+            let sharedSummary = fixture.primaryVaultURL.appending(path: "Acme/Shared.md")
+            try Data("Shared".utf8).write(to: sharedSummary, options: .atomic)
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET projectId = ? WHERE id = ?",
+                    arguments: [child.projectID, fixture.secondMeetingID]
+                )
+                try SummaryRecord(
+                    meetingId: fixture.secondMeetingID,
+                    title: "Shared",
+                    document: "{}",
+                    createdAt: .now
+                ).insert(db)
+                for meetingID in [fixture.firstMeetingID, fixture.secondMeetingID] {
+                    try SummaryExportRecord(
+                        meetingId: meetingID,
+                        type: .vault,
+                        url: "vault:///Acme/Shared.md",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+
+            #expect(throws: MeetingAccessError.projectFileConflict(sharedSummary.path)) {
+                try store.updateProject(
+                    id: root.projectID,
+                    update: ProjectUpdate(leafName: "Renamed", expectedRevision: root.revision)
+                )
+            }
+
+            #expect(try store.queryProjects(ProjectQuery(projectID: root.projectID)).projects.first?.path == "Acme")
+            #expect(FileManager.default.fileExists(atPath: sharedSummary.path))
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Shared.md").path
+            ))
         }
 
         @Test

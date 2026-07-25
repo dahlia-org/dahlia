@@ -32,6 +32,37 @@ import GRDB
         }
 
         @Test
+        func summaryExportUsesProjectPathUpdatedDuringGeneration() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try fixture.insertProject(name: "Original", description: "")
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+            )
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
+            #expect(viewModel.triggerManualSummary(options: options))
+            await runner.waitForCallCount(1)
+
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let service = ProjectWorkspaceService(repository: repository, vault: fixture.vault)
+            _ = try service.renameProject(id: project.id, newLeafName: "Renamed")
+            runner.complete(meetingID: fixture.first.id, title: "Summary")
+
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(try fixture.summaryPath(for: fixture.first.id) == "Renamed/summary.md")
+            #expect(FileManager.default.fileExists(
+                atPath: fixture.vaultURL.appending(path: "Renamed/summary.md").path
+            ))
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.vaultURL.appending(path: "Original/summary.md").path
+            ))
+        }
+
+        @Test
         func batchConfirmationWithoutPersistenceContextDoesNotBlockTranscription() throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -672,6 +703,16 @@ import GRDB
         func summary(for meetingID: UUID) throws -> SummaryRecord? {
             try database.dbQueue.read { db in
                 try SummaryRecord.fetchOne(db, key: meetingID)
+            }
+        }
+
+        func summaryPath(for meetingID: UUID) throws -> String? {
+            try database.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: meetingID,
+                    type: .vault,
+                    in: db
+                )?.vaultRelativePath
             }
         }
 

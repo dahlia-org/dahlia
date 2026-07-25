@@ -11,7 +11,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Automatic Batch Language Detection** — Detect each recording file's language with WhisperKit, then transcribe it with Apple Speech
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
 - **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects through a vault-scoped local MCP server
-- **Project Management** — Organize transcripts into vault/project hierarchy synced with filesystem folders
+- **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy
 - **Meeting Detection** — Automatically detect meeting sessions with 3-layer detection
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries
 - **Automatic Updates** — Securely check, download, and install new releases with Sparkle 2

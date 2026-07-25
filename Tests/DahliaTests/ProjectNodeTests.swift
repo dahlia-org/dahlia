@@ -32,9 +32,9 @@ import Foundation
         }
 
         @Test
-        func marksIntermediateNodesAsHavingChildren() {
+        func marksRootAsHavingChildren() {
             let rows = FlatProjectRow.buildRows(
-                fromRecords: projects(named: ["a/b", "a/b/c", "z"])
+                fromRecords: projects(named: ["a", "a/b", "z"])
             )
 
             #expect(rows.map(\.hasChildren) == [true, false, false])
@@ -51,34 +51,32 @@ import Foundation
         }
 
         @Test
-        func buildsNestedProjectTreeWithRecursiveMeetingCounts() {
+        func buildsOneLevelProjectTreeWithAggregateMeetingCounts() {
             let nodes = ProjectTreeNode.buildNodes(
                 from: projectOverviews(named: [
-                    ("foo", 2), ("foo/bar", 1), ("foo/bar/baz", 3), ("z", 4),
+                    ("foo", 2), ("foo/bar", 3), ("z", 4),
                 ])
             )
 
             #expect(nodes.map(\.displayName) == ["foo", "z"])
-            #expect(nodes.map(\.meetingCount) == [6, 4])
+            #expect(nodes.map(\.meetingCount) == [5, 4])
             #expect(nodes.first?.children?.map(\.displayName) == ["bar"])
-            #expect(nodes.first?.children?.first?.meetingCount == 4)
-            #expect(nodes.first?.children?.first?.children?.map(\.displayName) == ["baz"])
+            #expect(nodes.first?.children?.first?.meetingCount == 3)
         }
 
         @Test
         func filtersProjectTreeKeepingAncestorsAndAggregateCounts() {
             let nodes = ProjectTreeNode.buildNodes(
                 from: projectOverviews(named: [
-                    ("foo", 2), ("foo/bar", 1), ("foo/bar/baz", 3), ("z", 4),
+                    ("foo", 2), ("foo/bar", 3), ("z", 4),
                 ])
             )
-            let filteredNodes = nodes.compactMap { $0.filtered(matching: "baz") }
+            let filteredNodes = nodes.compactMap { $0.filtered(matching: "bar") }
 
             #expect(filteredNodes.map(\.displayName) == ["foo"])
-            #expect(filteredNodes.first?.meetingCount == 6)
+            #expect(filteredNodes.first?.meetingCount == 5)
             #expect(filteredNodes.first?.children?.map(\.displayName) == ["bar"])
-            #expect(filteredNodes.first?.children?.first?.meetingCount == 4)
-            #expect(filteredNodes.first?.children?.first?.children?.map(\.displayName) == ["baz"])
+            #expect(filteredNodes.first?.children?.first?.meetingCount == 3)
         }
 
         @Test
@@ -102,6 +100,29 @@ import Foundation
             )
 
             #expect(nodes.compactMap { $0.filtered(matching: "Gamma") }.isEmpty)
+        }
+
+        @Test
+        func projectFolderSafetyRejectsAncestorSymlinkOutsideVault() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-project-folder-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            let outsideURL = rootURL.appending(path: "Outside", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: outsideURL.appending(path: "Child", directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.createSymbolicLink(
+                at: vaultURL.appending(path: "Root", directoryHint: .isDirectory),
+                withDestinationURL: outsideURL
+            )
+
+            #expect(!ProjectFolderSafety.isSafeDirectory(
+                vaultURL.appending(path: "Root/Child", directoryHint: .isDirectory),
+                inside: vaultURL
+            ))
         }
 
         private func projects(named names: [String]) -> [ProjectRecord] {
@@ -133,7 +154,6 @@ import Foundation
                     projectLeafName: String(components.last!),
                     parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
                     createdAt: Date(),
-                    missingOnDisk: false,
                     meetingCount: meetingCount,
                     latestMeetingDate: nil
                 )

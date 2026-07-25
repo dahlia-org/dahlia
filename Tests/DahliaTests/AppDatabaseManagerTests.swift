@@ -46,6 +46,7 @@ import GRDB
             let queue = try DatabaseQueue()
             let vaultID = UUID.v7()
             let childID = UUID.v7()
+            let existingSiblingID = UUID.v7()
             let meetingID = UUID.v7()
             try queue.write { db in
                 try db.execute(sql: """
@@ -88,6 +89,16 @@ import GRDB
                     arguments: [childID, vaultID, "Acme/Platform/API", Date.now, "drive-id", "Preserved"]
                 )
                 try db.execute(
+                    sql: """
+                    INSERT INTO projects (
+                        id, vaultId, name, createdAt, googleDriveFolderId,
+                        missingOnDisk, description, legacyContextMigrated
+                    )
+                    VALUES (?, ?, ?, ?, NULL, 0, '', 1)
+                    """,
+                    arguments: [existingSiblingID, vaultID, "Acme/API", Date.now]
+                )
+                try db.execute(
                     sql: "INSERT INTO meetings (id, vaultId, projectId) VALUES (?, ?, ?)",
                     arguments: [meetingID, vaultID, childID]
                 )
@@ -103,7 +114,7 @@ import GRDB
             }
             let projects = result.0
             let child = try #require(projects.first(where: { $0.id == childID }))
-            #expect(projects.map(\.name) == ["Acme", "Acme/Platform", "Acme/Platform/API"])
+            #expect(projects.map(\.name) == ["Acme", "Acme/API", "Acme/Platform", "Acme/Platform/API"])
             #expect(child.description == "Preserved")
             #expect(child.projectType == nil)
             #expect(ProjectRecord.effectiveType(for: childID, records: projects)?.type == .undefined)
@@ -112,15 +123,40 @@ import GRDB
                 try String.fetchOne(db, sql: "SELECT googleDriveFolderId FROM projects WHERE id = ?", arguments: [childID])
             }
             #expect(driveID == "drive-id")
+
+            try queue.write { db in
+                try ProjectHierarchyDepthMigration.migrate(in: db)
+            }
+            let flattened = try queue.read { db in
+                try (
+                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
+                    UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
+                )
+            }
+            #expect(flattened.0.map(\.name) == ["Acme", "Acme/API", "Acme/API (2)", "Acme/Platform"])
+            #expect(flattened.0.first(where: { $0.id == childID })?.name == "Acme/API (2)")
+            #expect(flattened.0.first(where: { $0.id == existingSiblingID })?.name == "Acme/API")
+            #expect(flattened.1 == childID)
         }
 
         @Test
         func projectHierarchyMigrationPreservesLegacyCaseCollisions() throws {
             let queue = try DatabaseQueue()
+            let vaultURL = URL.temporaryDirectory
+                .appending(path: "dahlia-project-migration-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
             let vaultID = UUID.v7()
             let firstID = UUID.v7()
             let secondID = UUID.v7()
             let meetingID = UUID.v7()
+            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            try FileManager.default.createDirectory(
+                at: vaultURL.appending(path: "acme", directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+            try Data("Legacy Summary".utf8).write(
+                to: vaultURL.appending(path: "acme/Note.md"),
+                options: .atomic
+            )
             try queue.write { db in
                 try db.execute(sql: """
                 CREATE TABLE vaults (
@@ -157,7 +193,7 @@ import GRDB
                 """)
                 try db.execute(
                     sql: "INSERT INTO vaults VALUES (?, ?, ?, ?, ?)",
-                    arguments: [vaultID, "/tmp/vault", "Vault", Date.now, Date.now]
+                    arguments: [vaultID, vaultURL.path, "Vault", Date.now, Date.now]
                 )
                 for (id, name) in [(firstID, "Acme"), (secondID, "acme")] {
                     try db.execute(
@@ -189,14 +225,16 @@ import GRDB
             let result = try queue.read { db in
                 try (
                     ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
-                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db)
+                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db),
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE missingOnDisk = 1") ?? 0
                 )
             }
             let projects = result.0
             #expect(Set(projects.map(\.id)) == [firstID, secondID])
             #expect(Set(projects.map(\.leafNameKey)).count == 2)
-            #expect(projects.filter(\.missingOnDisk).count == 1)
-            #expect(result.1?.vaultRelativePath == "acme (2)/Note.md")
+            #expect(result.2 == 1)
+            #expect(result.1?.vaultRelativePath == "acme/Note.md")
+            #expect(FileManager.default.fileExists(atPath: vaultURL.appending(path: "acme/Note.md").path))
         }
 
         @Test
@@ -236,6 +274,147 @@ import GRDB
             }
             #expect(counts.0 == 0)
             #expect(counts.1 == 0)
+        }
+
+        @Test
+        func databaseBoundaryEnforcesOneSubprojectLevel() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/project-depth-boundary",
+                name: "Depth",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try repository.insertVault(vault)
+            let root = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Root",
+                description: "",
+                projectType: .customer
+            )
+            let child = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: root.id,
+                leafName: "Child",
+                description: "",
+                projectType: nil
+            )
+            #expect(throws: ProjectWorkspaceError.typeOwnedByRoot) {
+                try repository.createProject(
+                    vaultId: vault.id,
+                    parentProjectId: root.id,
+                    leafName: "Typed child",
+                    description: "",
+                    projectType: .personal
+                )
+            }
+            let destination = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Destination",
+                description: "",
+                projectType: .internal
+            )
+
+            #expect(throws: DatabaseError.self) {
+                try database.dbQueue.write { db in
+                    try ProjectRecord(
+                        id: .v7(),
+                        vaultId: vault.id,
+                        parentProjectId: child.id,
+                        leafName: "Grandchild",
+                        createdAt: .now,
+                        projectType: nil
+                    ).insert(db)
+                }
+            }
+            #expect(throws: DatabaseError.self) {
+                try database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ?",
+                        arguments: [destination.id, root.id]
+                    )
+                }
+            }
+            let childlessRoot = try repository.createProject(
+                vaultId: vault.id,
+                parentProjectId: nil,
+                leafName: "Childless",
+                description: "",
+                projectType: .personal
+            )
+            try database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ?",
+                    arguments: [destination.id, childlessRoot.id]
+                )
+            }
+            #expect(try repository.fetchProject(id: childlessRoot.id)?.parentProjectId == destination.id)
+        }
+
+        @Test
+        func databaseBoundaryRejectsInvalidProjectParentsAndDuplicateRoots() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let firstVault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/project-parent-boundary",
+                name: "First",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let secondVault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/project-parent-boundary-other",
+                name: "Other",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try repository.insertVault(firstVault)
+            try repository.insertVault(secondVault)
+            let root = try repository.createProject(
+                vaultId: firstVault.id,
+                parentProjectId: nil,
+                leafName: "Root",
+                description: "",
+                projectType: .customer
+            )
+            let otherRoot = try repository.createProject(
+                vaultId: secondVault.id,
+                parentProjectId: nil,
+                leafName: "Other root",
+                description: "",
+                projectType: .undefined
+            )
+
+            #expect(throws: DatabaseError.self) {
+                try database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE projects SET parentProjectId = id, projectType = NULL WHERE id = ?",
+                        arguments: [root.id]
+                    )
+                }
+            }
+            #expect(throws: DatabaseError.self) {
+                try database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE projects SET parentProjectId = ?, projectType = NULL WHERE id = ?",
+                        arguments: [otherRoot.id, root.id]
+                    )
+                }
+            }
+            #expect(throws: DatabaseError.self) {
+                try repository.createProject(
+                    vaultId: firstVault.id,
+                    parentProjectId: nil,
+                    leafName: "root",
+                    description: "",
+                    projectType: .undefined
+                )
+            }
         }
 
         @Test

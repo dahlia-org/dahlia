@@ -33,4 +33,27 @@ struct VaultSummaryPathSynchronizer {
             }
         }
     }
+
+    func clearRemovedPathPrefixes(_ prefixes: [String]) throws {
+        guard !prefixes.isEmpty else { return }
+        try dbQueue.write { db in
+            let rows = try SummaryExportRecord.fetchAll(
+                db,
+                sql: """
+                SELECT summary_exports.*
+                FROM summary_exports
+                JOIN meetings ON meetings.id = summary_exports.meetingId
+                WHERE summary_exports.type = ? AND meetings.vaultId = ?
+                """,
+                arguments: [SummaryExportType.vault, vaultId]
+            )
+            let paths = Set(rows.compactMap(\.vaultRelativePath))
+            for path in paths {
+                guard prefixes.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else {
+                    continue
+                }
+                try SummaryExportRecord.clearVaultPath(path, vaultId: vaultId, in: db)
+            }
+        }
+    }
 }

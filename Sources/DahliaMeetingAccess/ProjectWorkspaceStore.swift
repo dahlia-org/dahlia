@@ -36,13 +36,15 @@ public extension MeetingAccessStore {
 
         do {
             let result = try withVaultMutationLock(vaultURL: vault.url) {
-                let plan = try database.read { db -> (parentPath: String?, parentID: UUID?) in
+                let parentID = try database.read { db -> UUID? in
                     let rows = try projectRows(in: db)
                     if let parentProjectID {
                         guard let parent = rows.first(where: { $0.id == parentProjectID }) else {
                             throw MeetingAccessError.projectNotFound
                         }
-                        guard !parent.missingOnDisk else { throw MeetingAccessError.projectDirectoryMissing }
+                        guard parent.parentProjectID == nil else {
+                            throw MeetingAccessError.projectHierarchyTooDeep
+                        }
                         guard projectType == nil else { throw MeetingAccessError.projectTypeOwnedByRoot }
                         try validateSiblingName(
                             leafName,
@@ -50,52 +52,35 @@ public extension MeetingAccessStore {
                             excluding: nil,
                             rows: rows
                         )
-                        return (resolvedProjectPaths(rows)[parent.id], parent.id)
+                        return parent.id
                     }
                     try validateSiblingName(leafName, parentProjectID: nil, excluding: nil, rows: rows)
-                    return (nil, nil)
+                    return nil
                 }
-
-                let parentURL = plan.parentPath.map {
-                    vault.url.appending(path: $0, directoryHint: .isDirectory)
-                } ?? vault.url
-                try validateExistingDirectoryInsideVault(parentURL, vaultURL: vault.url)
-                let destinationURL = parentURL.appending(path: leafName, directoryHint: .isDirectory)
-                try validateNoSiblingCollision(named: leafName, in: parentURL)
-                try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: false)
 
                 let id = workspaceUUIDv7()
-                do {
-                    try database.write { db in
-                        try db.execute(
-                            sql: """
-                            INSERT INTO projects (
-                                id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, missingOnDisk,
-                                description, legacyContextMigrated, projectType, revision
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1, ?, 1)
-                            """,
-                            arguments: [
-                                id,
-                                vaultID,
-                                plan.parentID,
-                                leafName,
-                                DahliaProjectName.siblingKey(leafName),
-                                Date.now,
-                                description,
-                                plan.parentID == nil ? (projectType ?? .undefined).rawValue : nil,
-                            ]
+                try database.write { db in
+                    try db.execute(
+                        sql: """
+                        INSERT INTO projects (
+                            id, vaultId, parentProjectId, leafName, leafNameKey, createdAt,
+                            description, legacyContextMigrated, projectType, revision
                         )
-                    }
-                    committed = true
-                } catch {
-                    do {
-                        try removeEmptyDirectory(destinationURL)
-                    } catch {
-                        throw MeetingAccessError.workspaceRollbackFailed
-                    }
-                    throw error
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 1)
+                        """,
+                        arguments: [
+                            id,
+                            vaultID,
+                            parentID,
+                            leafName,
+                            DahliaProjectName.siblingKey(leafName),
+                            Date.now,
+                            description,
+                            parentID == nil ? (projectType ?? .undefined).rawValue : nil,
+                        ]
+                    )
                 }
+                committed = true
 
                 let project = try requiredProjectMetadata(id: id)
                 return ProjectMutationResult(
@@ -132,35 +117,16 @@ public extension MeetingAccessStore {
                         effectiveTypeChangedProjectIDs: []
                     )
                 }
-                if plan.pathChanged, plan.projectWasMissingOnDisk {
-                    throw MeetingAccessError.projectDirectoryMissing
-                }
-
-                let oldURL = vault.url.appending(path: plan.oldPath, directoryHint: .isDirectory)
-                let newURL = vault.url.appending(path: plan.newPath, directoryHint: .isDirectory)
-                if plan.pathChanged {
-                    try validateExistingDirectoryInsideVault(oldURL, vaultURL: vault.url)
-                    let destinationParent = newURL.deletingLastPathComponent()
-                    try validateExistingDirectoryInsideVault(destinationParent, vaultURL: vault.url)
-                    try validateNoSiblingCollision(
-                        named: newURL.lastPathComponent,
-                        in: destinationParent,
-                        excluding: oldURL
+                let summaryPlan = plan.pathChanged
+                    ? try makeProjectSummaryMovePlan(plan: plan, rows: beforeRows, vault: vault)
+                    : SummaryMovePlan(moves: [], updates: [])
+                try performSummaryFileMoves(summaryPlan.moves, vaultURL: vault.url) {
+                    try commitProjectUpdate(
+                        id: id,
+                        expectedRevision: update.expectedRevision,
+                        plan: plan,
+                        summaryUpdates: summaryPlan.updates
                     )
-                    try moveItemSupportingCaseOnlyRename(from: oldURL, to: newURL)
-                }
-
-                do {
-                    try commitProjectUpdate(id: id, expectedRevision: update.expectedRevision, plan: plan)
-                } catch {
-                    if plan.pathChanged {
-                        do {
-                            try moveItemSupportingCaseOnlyRename(from: newURL, to: oldURL)
-                        } catch {
-                            throw MeetingAccessError.workspaceRollbackFailed
-                        }
-                    }
-                    throw error
                 }
 
                 committed = true
@@ -216,7 +182,6 @@ public extension MeetingAccessStore {
             let destinationDirectory = projectPath.map {
                 vault.url.appending(path: $0, directoryHint: .isDirectory)
             } ?? vault.url
-            try validateExistingDirectoryInsideVault(destinationDirectory, vaultURL: vault.url)
             let summaryPlan = try database.read { db in
                 try makeSummaryMovePlan(
                     meetingIDs: Set(changedIDs),
@@ -225,7 +190,7 @@ public extension MeetingAccessStore {
                     in: db
                 )
             }
-            try performSummaryFileMoves(summaryPlan.moves) {
+            try performSummaryFileMoves(summaryPlan.moves, vaultURL: vault.url) {
                 try commitMeetingMemberships(
                     expectations: expectations,
                     projectID: projectID,
@@ -260,7 +225,6 @@ private extension MeetingAccessStore {
         let id: UUID
         let parentProjectID: UUID?
         let leafName: String
-        let missingOnDisk: Bool
         let description: String
         let projectType: ProjectWorkspaceType?
         let revision: Int
@@ -278,7 +242,6 @@ private extension MeetingAccessStore {
         let explicitType: ProjectWorkspaceType?
         let oldPath: String
         let newPath: String
-        let projectWasMissingOnDisk: Bool
         let previousExplicitType: ProjectWorkspaceType?
         let hierarchyIDs: Set<UUID>
         let effectiveTypesBefore: [UUID: EffectiveProjectType]
@@ -342,7 +305,7 @@ private extension MeetingAccessStore {
         try Row.fetchAll(
             db,
             sql: """
-            SELECT id, parentProjectId, leafName, missingOnDisk, description, projectType, revision
+            SELECT id, parentProjectId, leafName, description, projectType, revision
             FROM projects
             WHERE vaultId = ?
             """,
@@ -353,7 +316,6 @@ private extension MeetingAccessStore {
                 id: row["id"],
                 parentProjectID: row["parentProjectId"],
                 leafName: row["leafName"],
-                missingOnDisk: row["missingOnDisk"],
                 description: row["description"],
                 projectType: rawType.flatMap(ProjectWorkspaceType.init(rawValue:)),
                 revision: row["revision"]
@@ -442,8 +404,11 @@ private extension MeetingAccessStore {
         if parentProjectID != nil, parent == nil {
             throw MeetingAccessError.projectNotFound
         }
-        if parent?.missingOnDisk == true {
-            throw MeetingAccessError.projectDirectoryMissing
+        if let parent, parent.parentProjectID != nil {
+            throw MeetingAccessError.projectHierarchyTooDeep
+        }
+        if parentProjectID != nil, hierarchyIDs.count > 1 {
+            throw MeetingAccessError.projectHierarchyTooDeep
         }
         if update.projectType != nil,
            project.parentProjectID != nil || parentProjectID != nil {
@@ -473,7 +438,6 @@ private extension MeetingAccessStore {
             explicitType: explicitType,
             oldPath: oldPath,
             newPath: newPath,
-            projectWasMissingOnDisk: project.missingOnDisk,
             previousExplicitType: project.projectType,
             hierarchyIDs: hierarchyIDs,
             effectiveTypesBefore: effectiveTypes,
@@ -500,7 +464,8 @@ private extension MeetingAccessStore {
     func commitProjectUpdate(
         id: UUID,
         expectedRevision: Int,
-        plan: ProjectUpdatePlan
+        plan: ProjectUpdatePlan,
+        summaryUpdates: [SummaryExportUpdate]
     ) throws {
         try database.write { db in
             guard try Int.fetchOne(
@@ -533,8 +498,8 @@ private extension MeetingAccessStore {
                     try incrementProjectRevisions(descendants, in: db)
                 }
             }
-            if plan.pathChanged {
-                try renameSummaryExportPaths(oldPrefix: plan.oldPath, newPrefix: plan.newPath, in: db)
+            for update in summaryUpdates {
+                try applySummaryExportUpdate(update, in: db)
             }
         }
     }
@@ -594,7 +559,6 @@ private extension MeetingAccessStore {
                 isTypeInherited: row.parentProjectID != nil,
                 directMeetingCount: directCounts[row.id, default: 0],
                 descendantMeetingCount: descendantCount(row.id),
-                directoryMissing: row.missingOnDisk,
                 description: row.description,
                 revision: row.revision
             )
@@ -631,71 +595,17 @@ private extension MeetingAccessStore {
                 && $0.parentProjectID == parentProjectID
                 && DahliaProjectName.siblingKey($0.leafName) == DahliaProjectName.siblingKey(leafName)
         }) else {
-            throw MeetingAccessError.projectFileConflict(leafName)
+            throw MeetingAccessError.projectAlreadyExists(leafName)
         }
     }
 
-    func validateNoSiblingCollision(
-        named leafName: String,
-        in parentDirectory: URL,
-        excluding excludedURL: URL? = nil
-    ) throws {
-        let excludedURL = excludedURL?.standardizedFileURL
-        let entries = try FileManager.default.contentsOfDirectory(
-            at: parentDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-        guard !entries.contains(where: {
-            $0.standardizedFileURL != excludedURL
-                && DahliaProjectName.siblingKey($0.lastPathComponent) == DahliaProjectName.siblingKey(leafName)
-        }) else {
-            throw MeetingAccessError.projectFileConflict(
-                parentDirectory.appending(path: leafName).path
-            )
-        }
-    }
-
-    func removeEmptyDirectory(_ url: URL) throws {
+    func removeNewEmptyDirectory(_ url: URL) throws {
         let result: Int32 = url.withUnsafeFileSystemRepresentation { path in
             guard let path else { return -1 }
             return Darwin.rmdir(path)
         }
         guard result == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
-    }
-
-    func validateExistingDirectoryInsideVault(_ directory: URL, vaultURL: URL) throws {
-        try validatePathContainsNoSymlink(directory, vaultURL: vaultURL)
-        let values = try directory.resourceValues(forKeys: [.isDirectoryKey])
-        guard values.isDirectory == true else { throw MeetingAccessError.projectDirectoryMissing }
-        let rootPath = vaultURL.resolvingSymlinksInPath().standardizedFileURL.path
-        let candidatePath = directory.resolvingSymlinksInPath().standardizedFileURL.path
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        guard candidatePath == rootPath || candidatePath.hasPrefix(prefix) else {
-            throw MeetingAccessError.projectFileConflict(directory.path)
-        }
-    }
-
-    func moveItemSupportingCaseOnlyRename(from source: URL, to destination: URL) throws {
-        if DahliaProjectName.siblingKey(source.lastPathComponent)
-            == DahliaProjectName.siblingKey(destination.lastPathComponent) {
-            let temporary = source.deletingLastPathComponent()
-                .appending(path: ".dahlia-rename-\(UUID().uuidString)")
-            try FileManager.default.moveItem(at: source, to: temporary)
-            do {
-                try FileManager.default.moveItem(at: temporary, to: destination)
-            } catch let operationError {
-                do {
-                    try FileManager.default.moveItem(at: temporary, to: source)
-                } catch {
-                    throw MeetingAccessError.workspaceRollbackFailed
-                }
-                throw operationError
-            }
-        } else {
-            try FileManager.default.moveItem(at: source, to: destination)
         }
     }
 
@@ -707,42 +617,12 @@ private extension MeetingAccessStore {
         )
     }
 
-    func renameSummaryExportPaths(oldPrefix: String, newPrefix: String, in db: Database) throws {
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT summary_exports.meetingId, summary_exports.url
-            FROM summary_exports
-            JOIN meetings ON meetings.id = summary_exports.meetingId
-            WHERE summary_exports.type = 'vault' AND meetings.vaultId = ?
-            """,
-            arguments: [vaultID]
-        )
-        for row in rows {
-            let url: String = row["url"]
-            guard let path = vaultRelativeSummaryPath(url),
-                  path == oldPrefix || path.hasPrefix(oldPrefix + "/") else { continue }
-            let newPath = newPrefix + path.dropFirst(oldPrefix.count)
-            let meetingID: UUID = row["meetingId"]
-            try db.execute(
-                sql: """
-                UPDATE summary_exports SET url = ?, updatedAt = ?
-                WHERE meetingId = ? AND type = 'vault'
-                """,
-                arguments: [vaultSummaryURL(String(newPath)), Date.now, meetingID]
-            )
-        }
-    }
-
     func membershipDestinationProjectPath(projectID: UUID?) throws -> String? {
         try database.read { db in
             let rows = try projectRows(in: db)
             guard let projectID else { return nil }
-            guard let project = rows.first(where: { $0.id == projectID }) else {
+            guard rows.contains(where: { $0.id == projectID }) else {
                 throw MeetingAccessError.projectNotFound
-            }
-            guard !project.missingOnDisk else {
-                throw MeetingAccessError.projectDirectoryMissing
             }
             return resolvedProjectPaths(rows)[projectID]
         }
@@ -832,8 +712,10 @@ private extension MeetingAccessStore {
 
     func performSummaryFileMoves(
         _ moves: [SummaryFileMove],
+        vaultURL: URL,
         operation: () throws -> Void
     ) throws {
+        let createdDirectories = try createOutputDirectories(for: moves, vaultURL: vaultURL)
         var completedMoves: [SummaryFileMove] = []
         do {
             for move in moves {
@@ -841,7 +723,7 @@ private extension MeetingAccessStore {
                 completedMoves.append(move)
             }
             try operation()
-        } catch {
+        } catch let operationError {
             var rollbackFailed = false
             for move in completedMoves.reversed() {
                 do {
@@ -850,10 +732,17 @@ private extension MeetingAccessStore {
                     rollbackFailed = true
                 }
             }
+            for directory in createdDirectories.reversed() {
+                do {
+                    try removeNewEmptyDirectory(directory)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
             if rollbackFailed {
                 throw MeetingAccessError.workspaceRollbackFailed
             }
-            throw error
+            throw operationError
         }
     }
 
@@ -874,27 +763,11 @@ private extension MeetingAccessStore {
             """,
             arguments: StatementArguments(meetingIDs)
         )
-        var externalArguments: StatementArguments = [vaultID]
-        externalArguments += StatementArguments(meetingIDs)
-        let externalURLs = try String.fetchAll(
-            db,
-            sql: """
-            SELECT summary_exports.url
-            FROM summary_exports
-            JOIN meetings ON meetings.id = summary_exports.meetingId
-            WHERE summary_exports.type = 'vault'
-              AND meetings.vaultId = ?
-              AND summary_exports.meetingId NOT IN (\(placeholders))
-            """,
-            arguments: externalArguments
+        let externallyReferencedSources = try externalSummaryIdentities(
+            excluding: meetingIDs,
+            vaultURL: vaultURL,
+            in: db
         )
-        let externallyReferencedSources = Set(externalURLs.compactMap { storedURL -> DahliaWorkspaceFileIdentity? in
-            guard let relativePath = vaultRelativeSummaryPath(storedURL) else { return nil }
-            let source = vaultURL.appending(path: relativePath).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: source.path) else { return nil }
-            return DahliaWorkspaceFileIdentity.resolve(source)
-        })
-        let existingDestinationKeys = try normalizedSiblingKeys(in: destinationDirectory)
         var moves: [SummaryFileMove] = []
         var updates: [SummaryExportUpdate] = []
         var destinations: Set<String> = []
@@ -922,6 +795,7 @@ private extension MeetingAccessStore {
                 continue
             }
             try validatePathContainsNoSymlink(source, vaultURL: vaultURL)
+            try validateOutputDirectory(destinationDirectory, vaultURL: vaultURL)
             let destination = destinationDirectory.appending(path: source.lastPathComponent).standardizedFileURL
             let newRelativePath = String(destination.path.dropFirst(vaultURL.standardizedFileURL.path.count + 1))
             updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: newRelativePath))
@@ -939,8 +813,13 @@ private extension MeetingAccessStore {
             }
             let key = DahliaProjectName.siblingKey(destination.path)
             guard destinations.insert(key).inserted,
-                  !existingDestinationKeys.contains(DahliaProjectName.siblingKey(destination.lastPathComponent)) else {
+                  try !destinationConflicts(destination, sourceIdentity: sourceIdentity) else {
                 throw MeetingAccessError.projectFileConflict(destination.path)
+            }
+            if FileManager.default.fileExists(atPath: destination.path),
+               DahliaWorkspaceFileIdentity.resolve(destination) == sourceIdentity {
+                destinationBySource[sourceIdentity] = destination
+                continue
             }
             destinationBySource[sourceIdentity] = destination
             moves.append(SummaryFileMove(source: source, destination: destination))
@@ -948,14 +827,248 @@ private extension MeetingAccessStore {
         return SummaryMovePlan(moves: moves, updates: updates)
     }
 
-    func normalizedSiblingKeys(in directory: URL) throws -> Set<String> {
-        try Set(
-            FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ).map { DahliaProjectName.siblingKey($0.lastPathComponent) }
+    func makeProjectSummaryMovePlan(
+        plan: ProjectUpdatePlan,
+        rows: [WorkspaceProjectRow],
+        vault: WorkspaceVault
+    ) throws -> SummaryMovePlan {
+        let paths = resolvedProjectPaths(rows)
+        let projectPlaceholders = plan.hierarchyIDs.map { _ in "?" }.joined(separator: ",")
+        let meetingIDs = try database.read { db in
+            try UUID.fetchSet(
+                db,
+                sql: """
+                SELECT id FROM meetings
+                WHERE vaultId = ? AND projectId IN (\(projectPlaceholders))
+                """,
+                arguments: StatementArguments([vaultID]) + StatementArguments(plan.hierarchyIDs)
+            )
+        }
+        guard !meetingIDs.isEmpty else {
+            return SummaryMovePlan(moves: [], updates: [])
+        }
+
+        let meetingPlaceholders = meetingIDs.map { _ in "?" }.joined(separator: ",")
+        let summaryRows = try database.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT summary_exports.meetingId, summary_exports.url, meetings.projectId
+                FROM summary_exports
+                JOIN meetings ON meetings.id = summary_exports.meetingId
+                WHERE summary_exports.type = 'vault'
+                  AND summary_exports.meetingId IN (\(meetingPlaceholders))
+                """,
+                arguments: StatementArguments(meetingIDs)
+            )
+        }
+        let externalIdentities = try database.read { db in
+            try externalSummaryIdentities(
+                excluding: meetingIDs,
+                vaultURL: vault.url,
+                in: db
+            )
+        }
+        var retainedIdentities: Set<DahliaWorkspaceFileIdentity> = []
+        for row in summaryRows {
+            let projectID: UUID = row["projectId"]
+            let storedURL: String = row["url"]
+            guard let projectPath = paths[projectID],
+                  let storedPath = vaultRelativeSummaryPath(storedURL),
+                  !storedPath.hasPrefix(projectPath + "/")
+            else {
+                continue
+            }
+            let source = vault.url.appending(path: storedPath).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            retainedIdentities.insert(DahliaWorkspaceFileIdentity.resolve(source))
+        }
+        let protectedIdentities = externalIdentities.union(retainedIdentities)
+        var moves: [SummaryFileMove] = []
+        var updates: [SummaryExportUpdate] = []
+        var destinations: Set<String> = []
+        var destinationBySource: [DahliaWorkspaceFileIdentity: URL] = [:]
+
+        for row in summaryRows {
+            let meetingID: UUID = row["meetingId"]
+            let projectID: UUID = row["projectId"]
+            let storedURL: String = row["url"]
+            guard let oldProjectPath = paths[projectID] else { continue }
+            let newProjectPath = oldProjectPath == plan.oldPath
+                ? plan.newPath
+                : plan.newPath + oldProjectPath.dropFirst(plan.oldPath.count)
+            guard let storedPath = vaultRelativeSummaryPath(storedURL) else {
+                updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
+                continue
+            }
+            let oldDirectoryPrefix = oldProjectPath + "/"
+            guard storedPath.hasPrefix(oldDirectoryPrefix) else {
+                // Exports retained at a legacy migration path do not move with later Project mutations.
+                continue
+            }
+            let suffix = storedPath.dropFirst(oldDirectoryPrefix.count)
+            guard !suffix.isEmpty else {
+                updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
+                continue
+            }
+            let source = vault.url.appending(path: storedPath).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: source.path) else {
+                updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
+                continue
+            }
+            guard isInsideVault(source, vaultURL: vault.url) else {
+                throw MeetingAccessError.projectFileConflict(source.path)
+            }
+            let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard source.pathExtension.lowercased() == "md",
+                  values.isRegularFile == true,
+                  values.isSymbolicLink != true else {
+                updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
+                continue
+            }
+            try validatePathContainsNoSymlink(source, vaultURL: vault.url)
+
+            let destinationRelativePath = "\(newProjectPath)/\(suffix)"
+            let destination = vault.url.appending(path: destinationRelativePath).standardizedFileURL
+            try validateOutputDirectory(destination.deletingLastPathComponent(), vaultURL: vault.url)
+            updates.append(SummaryExportUpdate(
+                meetingID: meetingID,
+                relativePath: destinationRelativePath
+            ))
+            guard source != destination else { continue }
+
+            let sourceIdentity = DahliaWorkspaceFileIdentity.resolve(source)
+            guard !protectedIdentities.contains(sourceIdentity) else {
+                throw MeetingAccessError.projectFileConflict(source.path)
+            }
+            if let plannedDestination = destinationBySource[sourceIdentity] {
+                guard plannedDestination == destination else {
+                    throw MeetingAccessError.projectFileConflict(source.path)
+                }
+                continue
+            }
+            let key = DahliaProjectName.siblingKey(destination.path)
+            guard destinations.insert(key).inserted,
+                  try !destinationConflicts(destination, sourceIdentity: sourceIdentity) else {
+                throw MeetingAccessError.projectFileConflict(destination.path)
+            }
+            if FileManager.default.fileExists(atPath: destination.path),
+               DahliaWorkspaceFileIdentity.resolve(destination) == sourceIdentity {
+                destinationBySource[sourceIdentity] = destination
+                continue
+            }
+            destinationBySource[sourceIdentity] = destination
+            moves.append(SummaryFileMove(source: source, destination: destination))
+        }
+        return SummaryMovePlan(moves: moves, updates: updates)
+    }
+
+    func validateOutputDirectory(_ directory: URL, vaultURL: URL) throws {
+        let root = vaultURL.standardizedFileURL
+        let candidate = directory.standardizedFileURL
+        let rootComponents = root.pathComponents
+        guard candidate.pathComponents.starts(with: rootComponents) else {
+            throw MeetingAccessError.projectFileConflict(candidate.path)
+        }
+        var current = root
+        for component in candidate.pathComponents.dropFirst(rootComponents.count) {
+            current.append(path: component, directoryHint: .isDirectory)
+            guard FileManager.default.fileExists(atPath: current.path) else {
+                guard isInsideVaultOrRoot(current, vaultURL: root) else {
+                    throw MeetingAccessError.projectFileConflict(current.path)
+                }
+                return
+            }
+            let values = try current.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true,
+                  values.isSymbolicLink != true,
+                  isInsideVaultOrRoot(current, vaultURL: root) else {
+                throw MeetingAccessError.projectFileConflict(current.path)
+            }
+        }
+    }
+
+    func destinationConflicts(
+        _ destination: URL,
+        sourceIdentity: DahliaWorkspaceFileIdentity
+    ) throws -> Bool {
+        let directory = destination.deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return false }
+        let destinationKey = DahliaProjectName.siblingKey(destination.lastPathComponent)
+        for entry in try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) where DahliaProjectName.siblingKey(entry.lastPathComponent) == destinationKey {
+            if DahliaWorkspaceFileIdentity.resolve(entry) != sourceIdentity {
+                return true
+            }
+        }
+        return false
+    }
+
+    func externalSummaryIdentities(
+        excluding meetingIDs: Set<UUID>,
+        vaultURL: URL,
+        in db: Database
+    ) throws -> Set<DahliaWorkspaceFileIdentity> {
+        let placeholders = meetingIDs.map { _ in "?" }.joined(separator: ",")
+        var arguments: StatementArguments = [vaultID]
+        arguments += StatementArguments(meetingIDs)
+        let urls = try String.fetchAll(
+            db,
+            sql: """
+            SELECT summary_exports.url
+            FROM summary_exports
+            JOIN meetings ON meetings.id = summary_exports.meetingId
+            WHERE summary_exports.type = 'vault'
+              AND meetings.vaultId = ?
+              AND summary_exports.meetingId NOT IN (\(placeholders))
+            """,
+            arguments: arguments
         )
+        return Set(urls.compactMap { storedURL in
+            guard let relativePath = vaultRelativeSummaryPath(storedURL) else { return nil }
+            let source = vaultURL.appending(path: relativePath).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: source.path) else { return nil }
+            return DahliaWorkspaceFileIdentity.resolve(source)
+        })
+    }
+
+    func createOutputDirectories(
+        for moves: [SummaryFileMove],
+        vaultURL: URL
+    ) throws -> [URL] {
+        let root = vaultURL.standardizedFileURL
+        let directories = Set(moves.map { $0.destination.deletingLastPathComponent().standardizedFileURL })
+            .sorted { $0.pathComponents.count < $1.pathComponents.count }
+        var created: [URL] = []
+        do {
+            for directory in directories {
+                try validateOutputDirectory(directory, vaultURL: root)
+                var current = root
+                for component in directory.pathComponents.dropFirst(root.pathComponents.count) {
+                    current.append(path: component, directoryHint: .isDirectory)
+                    guard !FileManager.default.fileExists(atPath: current.path) else { continue }
+                    try FileManager.default.createDirectory(at: current, withIntermediateDirectories: false)
+                    created.append(current)
+                }
+            }
+            return created
+        } catch {
+            var rollbackFailed = false
+            for directory in created.reversed() {
+                do {
+                    try removeNewEmptyDirectory(directory)
+                } catch {
+                    rollbackFailed = true
+                }
+            }
+            if rollbackFailed {
+                throw MeetingAccessError.workspaceRollbackFailed
+            }
+            throw error
+        }
     }
 
     func vaultRelativeSummaryPath(_ value: String) -> String? {
@@ -979,6 +1092,11 @@ private extension MeetingAccessStore {
         let valuePath = value.resolvingSymlinksInPath().standardizedFileURL.path
         let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
         return valuePath.hasPrefix(prefix)
+    }
+
+    func isInsideVaultOrRoot(_ value: URL, vaultURL: URL) -> Bool {
+        value.resolvingSymlinksInPath().standardizedFileURL == vaultURL.resolvingSymlinksInPath().standardizedFileURL
+            || isInsideVault(value, vaultURL: vaultURL)
     }
 
     func validatePathContainsNoSymlink(_ value: URL, vaultURL: URL) throws {

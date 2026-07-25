@@ -3,7 +3,7 @@ import Foundation
 public enum DahliaProjectName {
     private static let normalizationLocale = Locale(identifier: "en_US_POSIX")
 
-    /// Stable sibling identity shared by the app, database migration, sync, and MCP.
+    /// Stable sibling identity shared by the app, database migration, and MCP.
     public static func siblingKey(_ value: String) -> String {
         value
             .precomposedStringWithCanonicalMapping

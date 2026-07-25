@@ -318,7 +318,6 @@ final class SidebarViewModel {
                     typeOwnerProjectId: effectiveType?.ownerProjectId,
                     revision: project.revision,
                     createdAt: project.createdAt,
-                    missingOnDisk: project.missingOnDisk,
                     meetingCount: aggregates[project.id]?.0 ?? 0,
                     latestMeetingDate: aggregates[project.id]?.1
                 )
@@ -490,10 +489,18 @@ final class SidebarViewModel {
         }
     }
 
-    func renameProject(id: UUID, newLeafName: String) -> ProjectRecord? {
+    func renameProject(
+        id: UUID,
+        newLeafName: String,
+        expectedRevision: Int? = nil
+    ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
-            let project = try projectWorkspaceService.renameProject(id: id, newLeafName: newLeafName)
+            let project = try projectWorkspaceService.renameProject(
+                id: id,
+                newLeafName: newLeafName,
+                expectedRevision: expectedRevision
+            )
             lastError = nil
             return project
         } catch {
@@ -502,10 +509,18 @@ final class SidebarViewModel {
         }
     }
 
-    func reparentProject(id: UUID, parentProjectId: UUID?) -> ProjectRecord? {
+    func reparentProject(
+        id: UUID,
+        parentProjectId: UUID?,
+        expectedRevision: Int? = nil
+    ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
-            let project = try projectWorkspaceService.reparentProject(id: id, parentProjectId: parentProjectId)
+            let project = try projectWorkspaceService.reparentProject(
+                id: id,
+                parentProjectId: parentProjectId,
+                expectedRevision: expectedRevision
+            )
             lastError = nil
             return project
         } catch {
@@ -514,10 +529,18 @@ final class SidebarViewModel {
         }
     }
 
-    func updateRootProjectType(id: UUID, projectType: ProjectType) -> ProjectRecord? {
+    func updateRootProjectType(
+        id: UUID,
+        projectType: ProjectType,
+        expectedRevision: Int? = nil
+    ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
-            let project = try projectWorkspaceService.updateRootProjectType(id: id, projectType: projectType)
+            let project = try projectWorkspaceService.updateRootProjectType(
+                id: id,
+                projectType: projectType,
+                expectedRevision: expectedRevision
+            )
             lastError = nil
             return project
         } catch {
@@ -527,12 +550,17 @@ final class SidebarViewModel {
     }
 
     @discardableResult
-    func deleteProjectHierarchy(id: UUID, meetingDisposition: ProjectMeetingDisposition) async -> Bool {
+    func deleteProjectHierarchy(
+        id: UUID,
+        meetingDisposition: ProjectMeetingDisposition,
+        deletesSummaryFiles: Bool = false
+    ) async -> Bool {
         guard let projectWorkspaceService else { return false }
         do {
             try await projectWorkspaceService.deleteProjectHierarchy(
                 id: id,
-                meetingDisposition: meetingDisposition
+                meetingDisposition: meetingDisposition,
+                deletesSummaryFiles: deletesSummaryFiles
             )
             lastError = nil
             return true
@@ -542,7 +570,7 @@ final class SidebarViewModel {
         }
     }
 
-    /// プロジェクトを取得または作成し、対応するフォルダ URL を返す。
+    /// プロジェクトを取得または作成し、派生する Summary 書き出し先 URL を返す。
     func fetchOrCreateProject(name: String) -> (record: ProjectRecord, url: URL)? {
         guard let vault = currentVault,
               let projectWorkspaceService else { return nil }

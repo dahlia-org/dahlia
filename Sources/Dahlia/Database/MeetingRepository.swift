@@ -327,8 +327,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             if let toProjectId {
                 guard let destination = try ProjectRecord.fetchOne(db, key: toProjectId),
-                      destination.vaultId == vaultId,
-                      !destination.missingOnDisk
+                      destination.vaultId == vaultId
                 else {
                     throw ProjectWorkspaceError.invalidMoveDestination
                 }

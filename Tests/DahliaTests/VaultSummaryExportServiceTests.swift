@@ -12,7 +12,7 @@ import Foundation
             let projectURL = vaultURL.appendingPathComponent("Project", isDirectory: true)
             defer { try? FileManager.default.removeItem(at: vaultURL) }
 
-            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
 
             let meetingId = UUID()
             let screenshot = MeetingScreenshotRecord(
@@ -48,6 +48,9 @@ import Foundation
             )
 
             #expect(summaryURL == projectURL.appendingPathComponent("summary.md"))
+            #expect(
+                (try? projectURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            )
             #expect(try String(contentsOf: summaryURL, encoding: .utf8) == summaryMarkdown)
             #expect(FileManager.default.fileExists(atPath: vaultURL.appendingPathComponent("_dahlia/transcripts/\(meetingId.uuidString).md").path))
             #expect(
@@ -55,6 +58,45 @@ import Foundation
                     atPath: vaultURL.appendingPathComponent("_dahlia/screenshots/\(screenshot.id.uuidString).png").path
                 )
             )
+        }
+
+        @Test
+        func summaryOutputRejectsProjectSymlinkOutsideVault() throws {
+            let rootURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let vaultURL = rootURL.appendingPathComponent("Vault", isDirectory: true)
+            let outsideURL = rootURL.appendingPathComponent("Outside", isDirectory: true)
+            let projectURL = vaultURL.appendingPathComponent("Project", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+
+            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: outsideURL)
+
+            #expect(throws: ProjectWorkspaceError.invalidSummaryOutputDestination) {
+                try VaultSummaryExportService.resolveSummaryFileURL(
+                    projectURL: projectURL,
+                    vaultURL: vaultURL,
+                    storedSummaryRelativePath: nil,
+                    meetingId: UUID(),
+                    summaryFileName: "Summary.md"
+                )
+            }
+            #expect(!FileManager.default.fileExists(atPath: outsideURL.appendingPathComponent("Summary.md").path))
+
+            try Data("Existing".utf8).write(
+                to: outsideURL.appendingPathComponent("Existing.md"),
+                options: .atomic
+            )
+            #expect(throws: ProjectWorkspaceError.invalidSummaryOutputDestination) {
+                try VaultSummaryExportService.resolveSummaryFileURL(
+                    projectURL: projectURL,
+                    vaultURL: vaultURL,
+                    storedSummaryRelativePath: "Project/Existing.md",
+                    meetingId: UUID(),
+                    summaryFileName: "Summary.md"
+                )
+            }
         }
 
         @Test
@@ -102,6 +144,34 @@ import Foundation
             #expect(summaryURL.resolvingSymlinksInPath() == existingSummaryURL.resolvingSymlinksInPath())
             #expect(try String(contentsOf: existingSummaryURL, encoding: .utf8) == summaryMarkdown)
             #expect(!FileManager.default.fileExists(atPath: projectURL.appendingPathComponent("new-summary.md").path))
+        }
+
+        @Test
+        func newSummaryDoesNotOverwriteExistingFile() async throws {
+            let vaultURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let projectURL = vaultURL.appendingPathComponent("Project", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
+            let existingURL = projectURL.appendingPathComponent("summary.md")
+            try Data("Existing".utf8).write(to: existingURL, options: .atomic)
+            let meetingId = UUID()
+
+            let summaryURL = try await VaultSummaryExportService.exportSummaryBundle(
+                projectURL: projectURL,
+                vaultURL: vaultURL,
+                meetingId: meetingId,
+                createdAt: Date(timeIntervalSince1970: 0),
+                projectName: "Test Project",
+                segments: [],
+                screenshots: [],
+                summaryFileName: "summary.md",
+                summaryMarkdown: "New"
+            )
+
+            #expect(try String(contentsOf: existingURL, encoding: .utf8) == "Existing")
+            #expect(summaryURL.lastPathComponent == "summary-\(meetingId.uuidString).md")
+            #expect(try String(contentsOf: summaryURL, encoding: .utf8) == "New")
         }
 
         @Test

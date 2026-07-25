@@ -46,6 +46,12 @@ extension MeetingRepository {
                       parent.vaultId == vaultId else {
                     throw ProjectWorkspaceError.projectNotFound
                 }
+                guard parent.parentProjectId == nil else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+                guard projectType == nil else {
+                    throw ProjectWorkspaceError.typeOwnedByRoot
+                }
             }
             let record = ProjectRecord(
                 id: .v7(),
@@ -64,43 +70,78 @@ extension MeetingRepository {
     /// 指定名のプロジェクトを取得し、存在しなければ作成して返す。
     func fetchOrCreateProject(name: String, vaultId: UUID) throws -> ProjectRecord {
         try dbQueue.write { db in
-            try ProjectRecord.upsertAll(paths: [name], vaultId: vaultId, in: db)
-            guard let project = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-                .first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
-                throw ProjectWorkspaceError.projectNotFound
+            guard let leafName = DahliaProjectName.normalizedLeafName(name) else {
+                throw ProjectWorkspaceError.invalidName
             }
-            return project
+            let siblingKey = DahliaProjectName.siblingKey(leafName)
+            if let existing = try ProjectRecord
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("parentProjectId") == nil
+                        && Column("leafNameKey") == siblingKey
+                )
+                .fetchOne(db) {
+                return try ProjectRecord.fetchResolved(id: existing.id, in: db) ?? existing
+            }
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vaultId,
+                parentProjectId: nil,
+                leafName: leafName,
+                createdAt: .now,
+                projectType: .undefined
+            )
+            try project.insert(db)
+            return try ProjectRecord.fetchResolved(id: project.id, in: db) ?? project
         }
     }
 
-    /// 複数の name を一括で INSERT OR IGNORE する。
-    func upsertProjects(names: [String], vaultId: UUID) throws {
-        guard !names.isEmpty else { return }
-        try dbQueue.write { db in
-            try ProjectRecord.upsertAll(paths: names, vaultId: vaultId, in: db)
-        }
-    }
-
-    /// Updates one canonical parent/leaf relation and the paths affected by that relation.
-    func renameProjectsByPrefix(oldPrefix: String, newPrefix: String, vaultId: UUID) throws -> ProjectRecord {
+    /// Updates one canonical parent/leaf relation without deriving identity from a path or directory.
+    func updateProjectLocation(
+        id: UUID,
+        vaultId: UUID,
+        parentProjectId: UUID?,
+        leafName: String,
+        vaultExportUpdates: [MeetingVaultExportUpdate],
+        expectedRevision: Int? = nil
+    ) throws -> ProjectRecord {
         try dbQueue.write { db in
             let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-            guard var project = records.first(where: { $0.name == oldPrefix }) else {
+            guard var project = records.first(where: { $0.id == id }) else {
                 throw ProjectWorkspaceError.projectNotFound
             }
-            let components = newPrefix.split(separator: "/")
-            guard let leafName = components.last else { throw ProjectWorkspaceError.invalidName }
-            let parentPath = components.dropLast().joined(separator: "/")
-            let parentId = parentPath.isEmpty
-                ? nil
-                : records.first(where: { $0.name == parentPath })?.id
-            guard parentPath.isEmpty || parentId != nil else {
-                throw ProjectWorkspaceError.projectNotFound
+            if let expectedRevision, project.revision != expectedRevision {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
             }
-            project.parentProjectId = parentId
-            project.leafName = String(leafName)
-            project.projectType = parentId == nil
-                ? (ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined)
+            guard DahliaProjectName.normalizedLeafName(leafName) == leafName else {
+                throw ProjectWorkspaceError.invalidName
+            }
+            if let parentProjectId {
+                guard parentProjectId != id else {
+                    throw ProjectWorkspaceError.cycleDetected
+                }
+                guard let parent = records.first(where: { $0.id == parentProjectId }) else {
+                    throw ProjectWorkspaceError.projectNotFound
+                }
+                guard parent.parentProjectId == nil,
+                      !records.contains(where: { $0.parentProjectId == project.id }) else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+            }
+            guard !records.contains(where: {
+                $0.id != id
+                    && $0.parentProjectId == parentProjectId
+                    && $0.leafNameKey == DahliaProjectName.siblingKey(leafName)
+            }) else {
+                throw ProjectWorkspaceError.projectAlreadyExists(leafName)
+            }
+
+            let effectiveType = ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined
+            let wasRoot = project.parentProjectId == nil
+            project.parentProjectId = parentProjectId
+            project.leafName = leafName
+            project.projectType = parentProjectId == nil
+                ? (wasRoot ? project.projectType ?? .undefined : effectiveType)
                 : nil
             project.revision += 1
             try project.update(db)
@@ -111,10 +152,10 @@ extension MeetingRepository {
                     .map(\.id)
             )
             try ProjectRecord.incrementRevisions(descendantIds, in: db)
-            try SummaryExportRecord.renameVaultPathsByPrefix(
-                oldPrefix: oldPrefix,
-                newPrefix: newPrefix,
-                vaultId: vaultId,
+            let meetingIds = Set(vaultExportUpdates.map(\.meetingId))
+            try Self.updateVaultExports(
+                vaultExportUpdates,
+                forMeetingIds: meetingIds,
                 in: db
             )
             guard let resolved = try ProjectRecord.fetchResolved(id: project.id, in: db) else {
@@ -144,20 +185,21 @@ extension MeetingRepository {
         }
     }
 
-    /// 指定プレフィクスに一致するプロジェクトの missingOnDisk フラグをクリアする。
-    func clearProjectsMissing(prefix: String, vaultId: UUID) throws {
-        try dbQueue.write { db in
-            try ProjectRecord.setMissingByPrefix(prefix, missing: false, vaultId: vaultId, in: db)
-        }
-    }
-
     @discardableResult
-    func updateProjectDescription(id: UUID, vaultId: UUID, description: String) throws -> Bool {
+    func updateProjectDescription(
+        id: UUID,
+        vaultId: UUID,
+        description: String,
+        expectedRevision: Int? = nil
+    ) throws -> Bool {
         try dbQueue.write { db in
             guard var record = try ProjectRecord
                 .filter(Column("id") == id && Column("vaultId") == vaultId)
                 .fetchOne(db) else {
                 return false
+            }
+            if let expectedRevision, record.revision != expectedRevision {
+                throw ProjectWorkspaceError.staleRevision(current: record.revision)
             }
             record.description = description
             record.revision += 1
@@ -166,12 +208,20 @@ extension MeetingRepository {
         }
     }
 
-    func updateRootProjectType(id: UUID, vaultId: UUID, projectType: ProjectType) throws -> ProjectRecord {
+    func updateRootProjectType(
+        id: UUID,
+        vaultId: UUID,
+        projectType: ProjectType,
+        expectedRevision: Int? = nil
+    ) throws -> ProjectRecord {
         try dbQueue.write { db in
             guard var project = try ProjectRecord
                 .filter(Column("id") == id && Column("vaultId") == vaultId)
                 .fetchOne(db) else {
                 throw ProjectWorkspaceError.projectNotFound
+            }
+            if let expectedRevision, project.revision != expectedRevision {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
             }
             guard project.parentProjectId == nil else {
                 throw ProjectWorkspaceError.typeOwnedByRoot
@@ -240,7 +290,6 @@ extension MeetingRepository {
                 case let .move(destinationId):
                     guard let destination = try ProjectRecord.fetchOne(db, key: destinationId),
                           destination.vaultId == vaultId,
-                          !destination.missingOnDisk,
                           !projectIds.contains(destinationId)
                     else {
                         throw ProjectWorkspaceError.invalidMoveDestination

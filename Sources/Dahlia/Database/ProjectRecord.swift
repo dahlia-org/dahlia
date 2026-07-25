@@ -18,7 +18,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     var leafNameKey: String
     var createdAt: Date
     var description = ""
-    var missingOnDisk = false
+    var legacyContextMigrated = true
     var projectType: ProjectType?
     var revision = 1
 
@@ -37,7 +37,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         case leafNameKey
         case createdAt
         case description
-        case missingOnDisk
+        case legacyContextMigrated
         case projectType
         case revision
     }
@@ -49,7 +49,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         leafName: String,
         createdAt: Date,
         description: String = "",
-        missingOnDisk: Bool = false,
+        legacyContextMigrated: Bool = true,
         projectType: ProjectType?,
         revision: Int = 1,
         resolvedPath: String? = nil
@@ -61,7 +61,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         leafNameKey = DahliaProjectName.siblingKey(leafName)
         self.createdAt = createdAt
         self.description = description
-        self.missingOnDisk = missingOnDisk
+        self.legacyContextMigrated = legacyContextMigrated
         self.projectType = projectType
         self.revision = revision
         self.resolvedPath = resolvedPath
@@ -73,8 +73,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         vaultId: UUID,
         name: String,
         createdAt: Date,
-        description: String = "",
-        missingOnDisk: Bool = false
+        description: String = ""
     ) {
         self.init(
             id: id,
@@ -83,7 +82,6 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
             leafName: name.split(separator: "/").last.map(String.init) ?? name,
             createdAt: createdAt,
             description: description,
-            missingOnDisk: missingOnDisk,
             projectType: .undefined,
             resolvedPath: name
         )
@@ -195,100 +193,11 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         return result
     }
 
-    /// Synchronizes all intermediate directory paths without making paths canonical DB state.
-    static func upsertAll(paths: [String], vaultId: UUID, in db: Database) throws {
-        var records = try fetchResolvedAll(vaultId: vaultId, in: db)
-        var idByPath = Dictionary(uniqueKeysWithValues: records.map { (pathKey($0.name), $0.id) })
-        var indexByID = Dictionary(uniqueKeysWithValues: records.indices.map { (records[$0].id, $0) })
-
-        let allPaths = Set(paths.flatMap(allIntermediatePaths))
-            .sorted {
-                let lhsDepth = $0.split(separator: "/").count
-                let rhsDepth = $1.split(separator: "/").count
-                if lhsDepth != rhsDepth { return lhsDepth < rhsDepth }
-                return $0.utf8.lexicographicallyPrecedes($1.utf8)
-            }
-
-        for path in allPaths {
-            let key = pathKey(path)
-            if let existingId = idByPath[key] {
-                let leafName = path.split(separator: "/").last.map(String.init) ?? path
-                if let index = indexByID[existingId],
-                   records[index].missingOnDisk || records[index].leafName != leafName {
-                    _ = try ProjectRecord
-                        .filter(Column("id") == existingId)
-                        .updateAll(
-                            db,
-                            Column("leafName").set(to: leafName),
-                            Column("leafNameKey").set(to: DahliaProjectName.siblingKey(leafName)),
-                            Column("missingOnDisk").set(to: false),
-                            Column("revision").set(to: Column("revision") + 1)
-                        )
-                    records[index].leafName = leafName
-                    records[index].missingOnDisk = false
-                }
-                continue
-            }
-
-            let components = path.split(separator: "/")
-            guard let leaf = components.last else { continue }
-            let parentPath = components.dropLast().joined(separator: "/")
-            let parentId = parentPath.isEmpty ? nil : idByPath[pathKey(parentPath)]
-            guard parentPath.isEmpty || parentId != nil else { continue }
-
-            let record = ProjectRecord(
-                id: .v7(),
-                vaultId: vaultId,
-                parentProjectId: parentId,
-                leafName: String(leaf),
-                createdAt: .now,
-                projectType: parentId == nil ? .undefined : nil,
-                resolvedPath: path
-            )
-            try record.insert(db)
-            records.append(record)
-            indexByID[record.id] = records.index(before: records.endIndex)
-            idByPath[key] = record.id
-        }
-    }
-
-    static func setMissing(ids: Set<UUID>, missing: Bool, in db: Database) throws {
-        guard !ids.isEmpty else { return }
-        _ = try ProjectRecord
-            .filter(ids.contains(Column("id")))
-            .updateAll(
-                db,
-                Column("missingOnDisk").set(to: missing),
-                Column("revision").set(to: Column("revision") + 1)
-            )
-    }
-
     static func incrementRevisions(_ ids: Set<UUID>, in db: Database) throws {
         guard !ids.isEmpty else { return }
         _ = try ProjectRecord
             .filter(ids.contains(Column("id")))
             .updateAll(db, Column("revision").set(to: Column("revision") + 1))
-    }
-
-    static func setMissingByPrefix(
-        _ prefix: String,
-        missing: Bool,
-        vaultId: UUID,
-        in db: Database
-    ) throws {
-        let ids = try Set(
-            fetchResolvedAll(vaultId: vaultId, in: db)
-                .filter { belongsToHierarchy($0.name, prefix: prefix) }
-                .map(\.id)
-        )
-        try setMissing(ids: ids, missing: missing, in: db)
-    }
-
-    static func allIntermediatePaths(for path: String) -> [String] {
-        let components = path.split(separator: "/")
-        return components.indices.map { index in
-            components[...index].joined(separator: "/")
-        }
     }
 
     static func belongsToHierarchy(_ path: String, prefix: String) -> Bool {

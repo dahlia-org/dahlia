@@ -8,18 +8,20 @@ import GRDB
     @MainActor
     struct ProjectWorkspaceServiceTests {
         @Test
-        func createsTopLevelAndNestedProjects() throws {
+        func createsRootAndOneSubprojectWithoutCreatingDirectories() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
             let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
-            let grandchild = try context.service.createProject(leafName: "Grandchild", parentProjectId: child.id)
 
             #expect(parent.name == "Parent")
             #expect(child.name == "Parent/Child")
-            #expect(grandchild.name == "Parent/Child/Grandchild")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: grandchild.name).path))
+            #expect(throws: ProjectWorkspaceError.hierarchyTooDeep) {
+                try context.service.createProject(leafName: "Grandchild", parentProjectId: child.id)
+            }
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.name).path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: child.name).path))
         }
 
         @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside", "A/../../Outside"])
@@ -74,7 +76,7 @@ import GRDB
         }
 
         @Test
-        func rejectsExistingFolderCollisionAndOverlongName() throws {
+        func existingDirectoryDoesNotBlockProjectCreationButOverlongNameDoes() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -83,68 +85,60 @@ import GRDB
                 withIntermediateDirectories: false
             )
 
-            #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: "existing", parentProjectId: nil)
-            }
+            let project = try context.service.createProject(leafName: "existing", parentProjectId: nil)
             #expect(throws: ProjectWorkspaceError.self) {
                 try context.service.createProject(leafName: String(repeating: "é", count: 128), parentProjectId: nil)
             }
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).isEmpty)
-        }
-
-        @Test
-        func rejectsCreatingChildWhenParentFolderIsMissing() throws {
-            let context = try makeContext()
-            defer { try? FileManager.default.removeItem(at: context.rootURL) }
-
-            let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
-            try FileManager.default.removeItem(at: context.vaultURL.appending(path: parent.name))
-            try context.database.dbQueue.write { db in
-                try ProjectRecord.setMissingByPrefix(parent.name, missing: true, vaultId: context.vault.id, in: db)
-            }
-
-            #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
-            }
+            #expect(project.name == "existing")
             #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
         }
 
         @Test
-        func rejectsCreatingChildThroughSymlinkOutsideVault() throws {
+        func createsChildWithoutParentDirectory() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
-            let parentURL = context.vaultURL.appending(path: parent.name, directoryHint: .isDirectory)
+            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+
+            #expect(child.name == "Parent/Child")
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.name).path))
+        }
+
+        @Test
+        func projectCreationNeverWritesThroughAnExistingSymlink() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
-            try FileManager.default.removeItem(at: parentURL)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            let parentURL = context.vaultURL.appending(path: "Parent", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: parentURL, withDestinationURL: outsideURL)
 
-            #expect(throws: ProjectWorkspaceError.invalidMoveDestination) {
-                try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
-            }
+            let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
+            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+
             #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Child").path))
-            #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
+            #expect(child.name == "Parent/Child")
         }
 
         @Test
-        func rejectsRenamingProjectThroughSourceSymlinkOutsideVault() throws {
+        func renamingProjectWithoutTrackedSummaryDoesNotTouchSymlinkedDirectory() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let projectURL = context.vaultURL.appending(path: project.name, directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
-            try FileManager.default.removeItem(at: projectURL)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            let projectURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: outsideURL)
 
-            #expect(throws: ProjectWorkspaceError.invalidMoveDestination) {
-                try context.service.renameProject(id: project.id, newLeafName: "Renamed")
-            }
+            let project = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let renamed = try context.service.renameProject(id: project.id, newLeafName: "Renamed")
+
             #expect(FileManager.default.fileExists(atPath: outsideURL.path))
-            #expect(try context.repository.fetchProject(id: project.id)?.name == "Source")
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: projectURL.path) == outsideURL.path)
+            #expect(renamed.id == project.id)
+            #expect(renamed.name == "Renamed")
         }
 
         @Test
@@ -159,7 +153,7 @@ import GRDB
 
             #expect(try context.repository.fetchProject(id: source.id) == nil)
             #expect(try context.repository.fetchProject(id: sibling.id)?.name == "1000")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "1000").path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "1000").path))
         }
 
         @Test
@@ -175,7 +169,16 @@ import GRDB
                 description: "Keep me"
             )
             let meeting = try insertMeeting(projectId: child.id, context: context)
-            try insertSummary(meetingId: meeting.id, path: "Original/Child/Summary.md", context: context)
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Original/Child/Summary.md",
+                context: context,
+                writeFile: true
+            )
+            try Data("Unrelated".utf8).write(
+                to: context.vaultURL.appending(path: "Original/keep.txt"),
+                options: .atomic
+            )
 
             let renamed = try context.service.renameProject(id: parent.id, newLeafName: "Renamed")
 
@@ -190,8 +193,67 @@ import GRDB
             #expect(fetchedChild.description == "Keep me")
             #expect(vaultExport?.url == "vault:///Renamed/Child/Summary.md")
             #expect(vaultExport?.vaultRelativePath == "Renamed/Child/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Child").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Child/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/keep.txt").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/Child").path))
+        }
+
+        @Test
+        func renameLeavesLegacySummaryOutsideDerivedProjectPathUntouched() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let project = try context.service.createProject(leafName: "Original", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: project.id, context: context)
+            try FileManager.default.createDirectory(
+                at: context.vaultURL.appending(path: "Legacy", directoryHint: .isDirectory),
+                withIntermediateDirectories: false
+            )
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Legacy/Summary.md",
+                context: context,
+                writeFile: true
+            )
+
+            _ = try context.service.renameProject(id: project.id, newLeafName: "Renamed")
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Legacy/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Legacy/Summary.md").path))
+        }
+
+        @Test
+        func renameRejectsSummarySharedWithRetainedLegacyExport() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let root = try context.service.createProject(leafName: "Acme", parentProjectId: nil)
+            let child = try context.service.createProject(leafName: "Child", parentProjectId: root.id)
+            let rootMeeting = try insertMeeting(projectId: root.id, context: context)
+            let childMeeting = try insertMeeting(projectId: child.id, context: context)
+            try insertSummary(
+                meetingId: rootMeeting.id,
+                path: "Acme/Shared.md",
+                context: context,
+                writeFile: true
+            )
+            try insertSummary(
+                meetingId: childMeeting.id,
+                path: "Acme/Shared.md",
+                context: context
+            )
+
+            #expect(throws: ProjectWorkspaceError.summaryFileShared("Shared.md")) {
+                try context.service.renameProject(id: root.id, newLeafName: "Renamed")
+            }
+
+            #expect(try context.repository.fetchProject(id: root.id)?.name == "Acme")
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: rootMeeting.id)
+                == "Acme/Shared.md")
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: childMeeting.id)
+                == "Acme/Shared.md")
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Acme/Shared.md").path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed/Shared.md").path))
         }
 
         @Test
@@ -217,7 +279,52 @@ import GRDB
         }
 
         @Test
-        func reparentsHierarchyPreservesUUIDsAndUpdatesInheritedTypeAndSummaryPaths() throws {
+        func locationAndTypeUpdatesRejectStaleRevision() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let root = try context.service.createProject(
+                leafName: "Root",
+                parentProjectId: nil,
+                projectType: .customer
+            )
+            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            _ = try context.repository.updateProjectDescription(
+                id: root.id,
+                vaultId: context.vault.id,
+                description: "External update"
+            )
+
+            #expect(throws: ProjectWorkspaceError.staleRevision(current: root.revision + 1)) {
+                try context.service.renameProject(
+                    id: root.id,
+                    newLeafName: "Renamed",
+                    expectedRevision: root.revision
+                )
+            }
+            #expect(throws: ProjectWorkspaceError.staleRevision(current: root.revision + 1)) {
+                try context.service.reparentProject(
+                    id: root.id,
+                    parentProjectId: destination.id,
+                    expectedRevision: root.revision
+                )
+            }
+            #expect(throws: ProjectWorkspaceError.staleRevision(current: root.revision + 1)) {
+                try context.service.updateRootProjectType(
+                    id: root.id,
+                    projectType: .internal,
+                    expectedRevision: root.revision
+                )
+            }
+
+            let unchanged = try context.repository.fetchProject(id: root.id)
+            #expect(unchanged?.name == "Root")
+            #expect(unchanged?.parentProjectId == nil)
+            #expect(unchanged?.projectType == .customer)
+        }
+
+        @Test
+        func reparentsChildPreservesUUIDAndUpdatesInheritedTypeAndSummaryPath() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -227,29 +334,46 @@ import GRDB
                 projectType: .customer
             )
             let work = try context.service.createProject(leafName: "Work", parentProjectId: customer.id)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: work.id)
             let internalRoot = try context.service.createProject(
                 leafName: "Internal",
                 parentProjectId: nil,
                 projectType: .internal
             )
-            let meeting = try insertMeeting(projectId: child.id, context: context)
-            try insertSummary(meetingId: meeting.id, path: "Customer/Work/Child/Summary.md", context: context)
+            let meeting = try insertMeeting(projectId: work.id, context: context)
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Customer/Work/Summary.md",
+                context: context,
+                writeFile: true
+            )
 
             let moved = try context.service.reparentProject(id: work.id, parentProjectId: internalRoot.id)
             let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
-            let fetchedChild = try #require(projects.first(where: { $0.id == child.id }))
-            let childType = ProjectRecord.effectiveType(for: child.id, records: projects)
+            let effectiveType = ProjectRecord.effectiveType(for: work.id, records: projects)
 
             #expect(moved.id == work.id)
-            #expect(fetchedChild.id == child.id)
-            #expect(fetchedChild.name == "Internal/Work/Child")
-            #expect(childType?.type == .internal)
-            #expect(childType?.ownerProjectId == internalRoot.id)
+            #expect(moved.name == "Internal/Work")
+            #expect(effectiveType?.type == .internal)
+            #expect(effectiveType?.ownerProjectId == internalRoot.id)
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id)
-                == "Internal/Work/Child/Summary.md")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Internal/Work/Child").path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Customer/Work").path))
+                == "Internal/Work/Summary.md")
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Internal/Work/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Customer/Work").path))
+        }
+
+        @Test
+        func rejectsMovingRootWithChildUnderAnotherRoot() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            _ = try context.service.createProject(leafName: "Child", parentProjectId: source.id)
+            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+
+            #expect(throws: ProjectWorkspaceError.hierarchyTooDeep) {
+                try context.service.reparentProject(id: source.id, parentProjectId: destination.id)
+            }
+            #expect(try context.repository.fetchProject(id: source.id)?.parentProjectId == nil)
         }
 
         @Test
@@ -274,19 +398,41 @@ import GRDB
         }
 
         @Test
+        func movingChildlessRootUnderRootDropsExplicitType() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let customer = try context.service.createProject(
+                leafName: "Customer",
+                parentProjectId: nil,
+                projectType: .customer
+            )
+            let internalRoot = try context.service.createProject(
+                leafName: "Internal",
+                parentProjectId: nil,
+                projectType: .internal
+            )
+
+            let moved = try context.service.reparentProject(id: customer.id, parentProjectId: internalRoot.id)
+            let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
+
+            #expect(moved.parentProjectId == internalRoot.id)
+            #expect(moved.projectType == nil)
+            #expect(ProjectRecord.effectiveType(for: customer.id, records: projects)?.type == .internal)
+        }
+
+        @Test
         func rootTypeChangePropagatesAndChildTypeUpdateIsRejected() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let root = try context.service.createProject(leafName: "Root", parentProjectId: nil)
             let child = try context.service.createProject(leafName: "Child", parentProjectId: root.id)
-            let grandchild = try context.service.createProject(leafName: "Grandchild", parentProjectId: child.id)
 
             _ = try context.service.updateRootProjectType(id: root.id, projectType: .personal)
             let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
 
             #expect(ProjectRecord.effectiveType(for: child.id, records: projects)?.type == .personal)
-            #expect(ProjectRecord.effectiveType(for: grandchild.id, records: projects)?.type == .personal)
             #expect(throws: ProjectWorkspaceError.typeOwnedByRoot) {
                 try context.service.updateRootProjectType(id: child.id, projectType: .internal)
             }
@@ -343,15 +489,22 @@ import GRDB
 
             #expect(renamed.id == project.id)
             #expect(renamed.name == "project")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "project").path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "project").path))
         }
 
         @Test
-        func restoresFolderWhenRenameDatabaseUpdateFails() throws {
+        func restoresSummaryAndRemovesNewOutputDirectoryWhenRenameDatabaseUpdateFails() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let project = try context.service.createProject(leafName: "Original", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: project.id, context: context)
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Original/Summary.md",
+                context: context,
+                writeFile: true
+            )
             try context.database.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_project_rename
@@ -366,7 +519,7 @@ import GRDB
                 try context.service.renameProject(id: project.id, newLeafName: "Renamed")
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Original")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/Summary.md").path))
             #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Renamed").path))
         }
     }
@@ -442,6 +595,12 @@ import GRDB
             let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(meetingId: meeting.id, path: "Source/Missing.md", context: context)
+            let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(
+                at: context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                withDestinationURL: outsideURL
+            )
 
             try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
 
@@ -450,6 +609,7 @@ import GRDB
             }
             #expect(movedMeeting?.projectId == destination.id)
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == nil)
+            #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Missing.md").path))
         }
 
         @Test
@@ -462,7 +622,6 @@ import GRDB
             let meeting = try insertMeeting(projectId: source.id, context: context)
             let sourceURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
-            try FileManager.default.removeItem(at: sourceURL)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try Data("Outside".utf8).write(to: outsideURL.appending(path: "Summary.md"), options: .atomic)
             try FileManager.default.createSymbolicLink(at: sourceURL, withDestinationURL: outsideURL)
@@ -497,7 +656,6 @@ import GRDB
             )
             let destinationURL = context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
-            try FileManager.default.removeItem(at: destinationURL)
             try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
             try FileManager.default.createSymbolicLink(at: destinationURL, withDestinationURL: outsideURL)
 
@@ -610,6 +768,10 @@ import GRDB
                 path: "Source/Summary.md",
                 context: context,
                 writeFile: true
+            )
+            try FileManager.default.createDirectory(
+                at: context.vaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                withIntermediateDirectories: false
             )
             try Data("Existing".utf8).write(
                 to: context.vaultURL.appending(path: "Destination/Summary.md"),
@@ -739,7 +901,8 @@ import GRDB
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Destination/Summary.md").path))
             #expect(try context.repository.fetchProject(id: source.id) == nil)
             #expect(try context.repository.fetchProject(id: child.id) == nil)
-            #expect(FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Source").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Child").path))
+            #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Source").path))
         }
 
         @Test
@@ -779,7 +942,12 @@ import GRDB
 
             let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
-            try insertSummary(meetingId: meeting.id, path: "Source/Summary.md", context: context)
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Source/Summary.md",
+                context: context,
+                writeFile: true
+            )
             try insertSegment(meetingId: meeting.id, context: context)
             let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
 
@@ -797,6 +965,62 @@ import GRDB
             #expect(counts.2 == 0)
             #expect(!FileManager.default.fileExists(atPath: audioURL.path))
             #expect(try context.repository.fetchProject(id: source.id) == nil)
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+        }
+
+        @Test
+        func optionallyMovesTrackedSummaryToTrashWhenDeletingMeetings() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: source.id, context: context)
+            try insertSummary(
+                meetingId: meeting.id,
+                path: "Source/Summary.md",
+                context: context,
+                writeFile: true
+            )
+
+            try await context.service.deleteProjectHierarchy(
+                id: source.id,
+                meetingDisposition: .deleteMeetings,
+                deletesSummaryFiles: true
+            )
+
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source/Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Summary.md").path))
+            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Source").path))
+        }
+
+        @Test
+        func deletingProjectRejectsSummaryThroughSymlinkOutsideVault() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: project.id, context: context)
+            let outsideDirectory = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
+            let outsideSummary = outsideDirectory.appending(path: "Summary.md")
+            try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: false)
+            try Data("Outside".utf8).write(to: outsideSummary, options: .atomic)
+            try FileManager.default.createSymbolicLink(
+                at: context.vaultURL.appending(path: "Project", directoryHint: .isDirectory),
+                withDestinationURL: outsideDirectory
+            )
+            try insertSummary(meetingId: meeting.id, path: "Project/Summary.md", context: context)
+
+            await #expect(throws: ProjectWorkspaceError.invalidMoveDestination) {
+                try await context.service.deleteProjectHierarchy(
+                    id: project.id,
+                    meetingDisposition: .deleteMeetings,
+                    deletesSummaryFiles: true
+                )
+            }
+
+            #expect(try context.repository.fetchProject(id: project.id) != nil)
+            #expect(FileManager.default.fileExists(atPath: outsideSummary.path))
+            #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Summary.md").path))
         }
 
         @Test
@@ -848,7 +1072,7 @@ import GRDB
         }
 
         @Test
-        func restoresFolderWhenDeleteDatabaseUpdateFails() async throws {
+        func failedDeleteKeepsDatabaseProjectAndDoesNotTouchDirectories() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
@@ -867,7 +1091,7 @@ import GRDB
                 try await context.service.deleteProjectHierarchy(id: project.id, meetingDisposition: .deleteMeetings)
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Project")
-            #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Project").path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Project").path))
             #expect(!FileManager.default.fileExists(atPath: context.trashURL.appending(path: "Project").path))
         }
 
@@ -1025,7 +1249,12 @@ import GRDB
                 relativePath: path
             )
             if writeFile {
-                try Data("Summary".utf8).write(to: context.vaultURL.appending(path: path), options: .atomic)
+                let fileURL = context.vaultURL.appending(path: path)
+                try FileManager.default.createDirectory(
+                    at: fileURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try Data("Summary".utf8).write(to: fileURL, options: .atomic)
             }
         }
 

@@ -40,10 +40,6 @@ struct ProjectContextSectionView: View {
                 }
             }
 
-            if project.missingOnDisk {
-                Label(L10n.missingOnDisk, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-            }
         }
     }
 

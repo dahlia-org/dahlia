@@ -61,19 +61,21 @@ import GRDB
         }
 
         @Test
-        func newMeetingSkipsMostRecentProjectWhenItsFolderIsMissing() async throws {
+        func legacyMissingDirectoryFlagDoesNotChangeSeriesProjectMembership() async throws {
             let (database, vault) = try makeDatabase()
             let availableProject = project(named: "Available project", vaultId: vault.id)
-            var unavailableProject = project(named: "Missing project", vaultId: vault.id)
-            unavailableProject.missingOnDisk = true
-            let missingProject = unavailableProject
+            let recentProject = project(named: "Recent project", vaultId: vault.id)
             let olderStart = Date(timeIntervalSince1970: 1_776_200_000)
             let recentStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
             try await database.dbQueue.write { db in
                 try availableProject.insert(db)
-                try missingProject.insert(db)
+                try recentProject.insert(db)
+                try db.execute(
+                    sql: "UPDATE projects SET missingOnDisk = 1 WHERE id = ?",
+                    arguments: [recentProject.id]
+                )
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: olderStart, recurrenceId: "20260414T090000Z"),
                     projectId: availableProject.id,
@@ -83,7 +85,7 @@ import GRDB
                 )
                 try insertSeriesMeeting(
                     event: seriesEvent(startDate: recentStart, recurrenceId: "20260415T090000Z"),
-                    projectId: missingProject.id,
+                    projectId: recentProject.id,
                     vaultId: vault.id,
                     createdAt: recentStart,
                     in: db
@@ -101,8 +103,8 @@ import GRDB
             await service.stop()
 
             let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
-            #expect(meeting.projectId == availableProject.id)
-            #expect(service.projectId == availableProject.id)
+            #expect(meeting.projectId == recentProject.id)
+            #expect(service.projectId == recentProject.id)
         }
 
         @Test

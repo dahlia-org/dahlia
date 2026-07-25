@@ -55,16 +55,22 @@ public final class DahliaMCPServer {
     }
 
     private var initializationResult: [String: Any] {
-        [
+        let accessInstructions = store.allowsWrites
+            ? "Read and write access to one configured Dahlia vault. "
+            : "Read-only access to one configured Dahlia vault. "
+        let writeInstructions = store.allowsWrites
+            ? "All Project updates require revision and Meeting membership batches require expected current memberships. "
+            : ""
+        return [
             "protocolVersion": "2025-06-18",
             "capabilities": ["tools": ["listChanged": false]],
             "serverInfo": ["name": "dahlia", "version": "1.0.0"],
-            "instructions": (store.allowsWrites
-                ? "Read and write access to one configured Dahlia vault. Project hierarchy is canonical by stable project_id, "
-                + "parent_project_id, and leaf_name; paths are derived and mirrored to directories. Only roots own an explicit "
-                + "project type; descendants inherit it. All project updates require revision and meeting membership batches "
-                + "require expected current memberships. "
-                : "Read-only access to one configured Dahlia vault. ")
+            "instructions": accessInstructions
+                + "Project hierarchy is canonical in the database by stable project_id, parent_project_id, and leaf_name. "
+                + "It supports roots plus one subproject level only, and paths are derived from those fields. Directories are "
+                + "derived Summary export destinations and never define Project identity or hierarchy. Only roots own an "
+                + "explicit Project type; subprojects inherit it. "
+                + writeInstructions
                 + "Use ical_uid to find past meetings "
                 + "associated with the same calendar event, including recurring occurrences. Use project_id to find "
                 + "related meetings even when their calendar events differ. Start with meeting metadata and summaries; "
@@ -741,14 +747,13 @@ private extension DahliaMCPServer {
                 "is_type_inherited": ["type": "boolean"],
                 "direct_meeting_count": ["type": "integer"],
                 "descendant_meeting_count": ["type": "integer"],
-                "directory_missing": ["type": "boolean"],
                 "description": ["type": "string"],
                 "revision": ["type": "integer", "minimum": 1],
             ],
             required: [
                 "project_id", "display_name", "path", "root_project_id", "effective_type",
                 "type_owner_project_id", "is_type_inherited", "direct_meeting_count",
-                "descendant_meeting_count", "directory_missing", "description", "revision",
+                "descendant_meeting_count", "description", "revision",
             ]
         )
     }
@@ -796,10 +801,10 @@ private extension DahliaMCPServer {
             [
                 "name": "query_projects",
                 "title": "Query projects",
-                "description": "Inspect the configured vault's complete Project workspace hierarchy. Paths are derived "
-                    + "from stable project_id, parent_project_id, and leaf names. explicit_type is stored only by roots; "
-                    + "effective_type and type_owner_project_id describe inheritance. Meeting counts distinguish direct "
-                    + "membership from the whole subtree.",
+                "description": "Inspect the configured vault's complete two-level Project workspace hierarchy. Paths are "
+                    + "derived from stable project_id, parent_project_id, and leaf names; directories are not hierarchy input. "
+                    + "explicit_type is stored only by roots; effective_type and type_owner_project_id describe inheritance. "
+                    + "Meeting counts distinguish direct membership from the whole subtree.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -816,7 +821,7 @@ private extension DahliaMCPServer {
                 "name": "get_project",
                 "title": "Get project",
                 "description": "Get one Project by stable UUID, including its derived path, parent and root IDs, "
-                    + "explicit and effective types, directory state, meeting counts, and revision.",
+                    + "explicit and effective types, meeting counts, and revision.",
                 "inputSchema": [
                     "type": "object",
                     "properties": ["project_id": ["type": "string", "format": "uuid"]],
@@ -833,9 +838,9 @@ private extension DahliaMCPServer {
         [
             "name": "create_project",
             "title": "Create project",
-            "description": "Create a Project and its matching directory. Supply a leaf_name and optional parent_project_id; "
-                + "never supply a path. project_type is allowed only for a root and defaults to undefined. A child inherits "
-                + "the root type and rejects an independently supplied type.",
+            "description": "Create a database-backed Project. Supply a leaf_name and optional root parent_project_id; "
+                + "never supply a path. No directory is created until a Summary needs an export destination. project_type "
+                + "is allowed only for a root and defaults to undefined. A child inherits the root type.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -861,7 +866,8 @@ private extension DahliaMCPServer {
             "description": "Atomically rename, reparent, move to the Vault root, edit description, or change a root type. "
                 + "Omitted properties are unchanged; parent_project_id:null means Vault root. revision is required and stale "
                 + "updates fail. A child moved to root preserves its previous effective type as explicit; a root moved under "
-                + "another Project drops its explicit type and inherits the new root. Direct child type changes are errors.",
+                + "another root drops its explicit type and inherits that root. Parents must be roots, and a root with children "
+                + "cannot become a child. Only tracked Summary files move; unrelated directories and files are untouched.",
             "inputSchema": [
                 "type": "object",
                 "properties": [

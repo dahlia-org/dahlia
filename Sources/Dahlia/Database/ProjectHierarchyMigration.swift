@@ -17,8 +17,7 @@ enum ProjectHierarchyMigration {
     static func migrate(in db: Database) throws {
         let hasLegacyProjects = try db.tableExists("projects")
         let legacyProjects = hasLegacyProjects ? try MigratedProject.fetchLegacy(in: db) : []
-        let disambiguation = disambiguateSiblingNames(projectsIncludingMissingAncestors(legacyProjects))
-        let migratedProjects = disambiguation.projects
+        let migratedProjects = disambiguateSiblingNames(projectsIncludingMissingAncestors(legacyProjects))
         let preservesMeetingMemberships = hasLegacyProjects ? try db.tableExists("meetings") : false
 
         try createProjectsTable(in: db)
@@ -32,7 +31,6 @@ enum ProjectHierarchyMigration {
         try db.rename(table: "projects_v24", to: "projects")
         if preservesMeetingMemberships {
             try restoreMeetingMemberships(in: db)
-            try repairSummaryExportPaths(disambiguation.pathByOriginal, in: db)
         }
         try createIndexesAndTriggers(in: db)
         if try db.tableExists("vaults") {
@@ -72,57 +70,6 @@ enum ProjectHierarchyMigration {
         WHERE id IN (SELECT meetingId FROM project_memberships_v24);
         DROP TABLE project_memberships_v24;
         """)
-    }
-
-    private static func repairSummaryExportPaths(
-        _ pathByOriginal: [VaultPath: String],
-        in db: Database
-    ) throws {
-        guard try db.tableExists("summary_exports") else { return }
-        let changedPaths = pathByOriginal.filter { $0.key.path != $0.value }
-        guard !changedPaths.isEmpty else { return }
-
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT summary_exports.meetingId, summary_exports.url, meetings.vaultId
-            FROM summary_exports
-            JOIN meetings ON meetings.id = summary_exports.meetingId
-            WHERE summary_exports.type = ?
-            """,
-            arguments: [SummaryExportType.vault]
-        )
-        for row in rows {
-            let meetingID: UUID = row["meetingId"]
-            let vaultID: UUID = row["vaultId"]
-            let url: String = row["url"]
-            guard let relativePath = SummaryExportRecord(
-                meetingId: meetingID,
-                type: .vault,
-                url: url,
-                createdAt: .distantPast,
-                updatedAt: .distantPast
-            ).vaultRelativePath else { continue }
-
-            let match = changedPaths
-                .filter {
-                    $0.key.vaultId == vaultID
-                        && (relativePath == $0.key.path || relativePath.hasPrefix($0.key.path + "/"))
-                }
-                .max { $0.key.path.utf8.count < $1.key.path.utf8.count }
-            guard let match,
-                  let repairedURL = SummaryExportRecord.vaultURL(
-                      relativePath: match.value + relativePath.dropFirst(match.key.path.count)
-                  ) else { continue }
-            try db.execute(
-                sql: """
-                UPDATE summary_exports
-                SET url = ?, updatedAt = ?
-                WHERE meetingId = ? AND type = ?
-                """,
-                arguments: [repairedURL, Date.now, meetingID, SummaryExportType.vault]
-            )
-        }
     }
 
     private static func createProjectsTable(in db: Database) throws {
@@ -355,7 +302,7 @@ enum ProjectHierarchyMigration {
 
     /// Legacy binary uniqueness allowed case and Unicode-equivalent siblings. Keep every UUID and
     /// deterministically disambiguate only the canonical leaf name so v24 can always start.
-    private static func disambiguateSiblingNames(_ projects: [MigratedProject]) -> Disambiguation {
+    private static func disambiguateSiblingNames(_ projects: [MigratedProject]) -> [MigratedProject] {
         var adjustedPathByOriginal: [VaultPath: String] = [:]
         var siblingKeys: [VaultPath: Set<String>] = [:]
         var result: [MigratedProject] = []
@@ -390,7 +337,7 @@ enum ProjectHierarchyMigration {
                 )
             )
         }
-        return Disambiguation(projects: result, pathByOriginal: adjustedPathByOriginal)
+        return result
     }
 
     private static func intermediatePaths(for path: String) -> [String] {
@@ -422,10 +369,6 @@ enum ProjectHierarchyMigration {
         let path: String
     }
 
-    private struct Disambiguation {
-        let projects: [MigratedProject]
-        let pathByOriginal: [VaultPath: String]
-    }
 }
 
 private extension ProjectHierarchyMigration.MigratedProject {

@@ -13,7 +13,6 @@ struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable 
     var typeOwnerProjectId: UUID?
     var revision = 1
     var createdAt: Date
-    var missingOnDisk: Bool
     var meetingCount: Int
     var latestMeetingDate: Date?
 
