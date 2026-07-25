@@ -275,6 +275,15 @@ struct LiveSubtitleOverlayPayloadTests {
 
         #expect(payload == nil)
     }
+
+    @Test
+    func waitingBuildsSinglePlaceholderEntryWithoutTranslation() {
+        let payload = LiveSubtitleOverlayPayload.waiting(placeholderText: "Waiting…")
+
+        #expect(payload.entries == [
+            LiveSubtitleOverlayPayload.Entry(primaryText: "Waiting…", secondaryText: nil),
+        ])
+    }
 }
 #elseif canImport(XCTest)
 import XCTest
@@ -538,6 +547,14 @@ final class LiveSubtitleOverlayPayloadTests: XCTestCase {
         )
 
         XCTAssertNil(payload)
+    }
+
+    func testWaitingBuildsSinglePlaceholderEntryWithoutTranslation() {
+        let payload = LiveSubtitleOverlayPayload.waiting(placeholderText: "Waiting…")
+
+        XCTAssertEqual(payload.entries, [
+            LiveSubtitleOverlayPayload.Entry(primaryText: "Waiting…", secondaryText: nil),
+        ])
     }
 }
 #endif

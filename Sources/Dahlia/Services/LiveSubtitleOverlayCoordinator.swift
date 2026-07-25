@@ -50,15 +50,27 @@ final class LiveSubtitleOverlayCoordinator {
             return
         }
 
+        let sourceMode = AppSettings.shared.liveSubtitleSourceMode
         let payload = LiveSubtitleOverlayPayload.latest(
             from: viewModel.liveCaptionStore.segments,
-            sourceMode: AppSettings.shared.liveSubtitleSourceMode,
+            sourceMode: sourceMode,
             transcriptionLocaleIdentifier: AppSettings.shared.transcriptionLocale,
             translationEnabled: AppSettings.shared.transcriptTranslationEnabled,
             targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage,
             maxEntries: max(1, AppSettings.shared.liveSubtitleOverlaySegmentCount)
         )
 
-        liveSubtitleOverlayService.update(payload: payload)
+        // 字幕は有効で録音中のため、表示対象がまだ無くてもオーバーレイは隠さず待機表示にする。
+        // これにより「字幕 ON なのにパネルすら出ない」状態を防ぐ。
+        liveSubtitleOverlayService.update(payload: payload ?? .waiting(placeholderText: waitingText(for: sourceMode)))
+    }
+
+    private func waitingText(for sourceMode: LiveSubtitleSourceMode) -> String {
+        switch sourceMode {
+        case .systemAudioOnly:
+            L10n.liveSubtitleWaitingForSystemAudio
+        case .includeMicrophone:
+            L10n.liveSubtitleWaitingForAudio
+        }
     }
 }

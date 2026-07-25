@@ -502,6 +502,14 @@ enum L10n {
         localized: "Live subtitles stopped because the audio format could not be converted.",
         bundle: bundle
     ) }
+    static var liveSubtitleWaitingForAudio: String { String(
+        localized: "Waiting for audio to caption…",
+        bundle: bundle
+    ) }
+    static var liveSubtitleWaitingForSystemAudio: String { String(
+        localized: "Waiting for system audio… Microphone speech is not shown in this source mode.",
+        bundle: bundle
+    ) }
 
     // MARK: - Detail Tabs
 

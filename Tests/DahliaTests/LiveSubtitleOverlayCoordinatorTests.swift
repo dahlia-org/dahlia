@@ -50,6 +50,49 @@ import Foundation
         }
 
         @Test
+        func showsWaitingPlaceholderWhenSourceModeExcludesAvailableCaptions() throws {
+            let previousEnabled = AppSettings.shared.liveSubtitleOverlayEnabled
+            let previousSourceMode = AppSettings.shared.liveSubtitleSourceMode
+            AppSettings.shared.liveSubtitleOverlayEnabled = true
+            AppSettings.shared.liveSubtitleSourceMode = .systemAudioOnly
+            defer {
+                AppSettings.shared.liveSubtitleOverlayEnabled = previousEnabled
+                AppSettings.shared.liveSubtitleSourceMode = previousSourceMode
+            }
+
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let sessionID = UUID.v7()
+            viewModel.isListening = true
+            viewModel.liveCaptionStore.start(sessionId: sessionID)
+            // systemAudioOnly はマイク音声を除外するため、latest(...) は nil を返す。
+            viewModel.liveCaptionStore.apply(event: .finalized(
+                TranscriptSegment(
+                    sessionId: sessionID,
+                    startTime: .now,
+                    text: "Microphone speech",
+                    isConfirmed: true,
+                    speakerLabel: "mic"
+                )
+            ))
+            let presenter = FakeLiveSubtitlePresenter()
+
+            let coordinator = LiveSubtitleOverlayCoordinator(
+                viewModel: viewModel,
+                liveSubtitleOverlayService: presenter
+            )
+
+            // オーバーレイは隠されず、待機プレースホルダーが表示される。
+            let payload = try #require(presenter.lastPayload)
+            #expect(payload.entries.count == 1)
+            #expect(payload.entries.first?.secondaryText == nil)
+            #expect(presenter.hideCount == 0)
+            withExtendedLifetime(coordinator) {}
+        }
+
+        @Test
         func continuouslyChangingPreviewPublishesLatestAtBoundedCadence() async throws {
             let previousSetting = AppSettings.shared.liveSubtitleOverlayEnabled
             AppSettings.shared.liveSubtitleOverlayEnabled = true

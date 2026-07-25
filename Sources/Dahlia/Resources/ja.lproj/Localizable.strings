@@ -288,6 +288,8 @@
 "Overlay Segment Count" = "表示セグメント数";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "ライブ字幕オーバーレイに表示する最近の文字起こしセグメント数を選びます。";
 "Live subtitles stopped because the audio format could not be converted." = "音声形式を変換できなかったため、ライブ字幕を停止しました。";
+"Waiting for audio to caption…" = "字幕にする音声を待機しています…";
+"Waiting for system audio… Microphone speech is not shown in this source mode." = "システムオーディオを待機しています… このソース設定ではマイク音声は表示されません。";
 
 /* Detail Tabs */
 "Summary" = "要約";

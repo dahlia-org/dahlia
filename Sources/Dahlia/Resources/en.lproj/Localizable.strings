@@ -288,6 +288,8 @@
 "Overlay Segment Count" = "Overlay Segment Count";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "Choose how many recent transcript segments the live subtitle overlay shows.";
 "Live subtitles stopped because the audio format could not be converted." = "Live subtitles stopped because the audio format could not be converted.";
+"Waiting for audio to caption…" = "Waiting for audio to caption…";
+"Waiting for system audio… Microphone speech is not shown in this source mode." = "Waiting for system audio… Microphone speech is not shown in this source mode.";
 
 /* Detail Tabs */
 "Summary" = "Summary";

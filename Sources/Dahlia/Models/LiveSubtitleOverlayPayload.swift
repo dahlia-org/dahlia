@@ -8,6 +8,12 @@ struct LiveSubtitleOverlayPayload: Equatable {
 
     let entries: [Entry]
 
+    /// 字幕は有効で録音中だが、表示対象のセグメントがまだ無いときに示すプレースホルダー。
+    /// これによりオーバーレイを隠さず「字幕待機中」であることをユーザーへ伝える。
+    static func waiting(placeholderText: String) -> Self {
+        Self(entries: [Entry(primaryText: placeholderText, secondaryText: nil)])
+    }
+
     static func latest(
         from segments: [TranscriptSegment],
         sourceMode: LiveSubtitleSourceMode = .includeMicrophone,
