@@ -1,16 +1,6 @@
 import Foundation
 import Observation
 
-private enum CodexChatFailedSubmission {
-    case manual(CodexChatManualSubmission)
-    case liveTranscript(String)
-}
-
-private struct CodexChatLiveModeSubmissionState {
-    let isEnabled: Bool, includesContext: Bool
-    let generation: UInt
-}
-
 @MainActor
 @Observable
 final class CodexChatSessionModel: Identifiable {
@@ -31,16 +21,16 @@ final class CodexChatSessionModel: Identifiable {
     var selectedEffort: String
     private(set) var models: [CodexModel] = []
     private(set) var isLoading = false
-    private(set) var isGenerating = false
-    private(set) var errorMessage: String?
-    private(set) var noticeMessage: String?
+    var isGenerating = false
+    var errorMessage: String?
+    var noticeMessage: String?
     private(set) var activeTurnID: String?
-    private(set) var lastSubmittedText: String?
-    private(set) var attachedImages: [CodexChatImageAttachment] = []
+    var lastSubmittedText: String?
+    var attachedImages: [CodexChatImageAttachment] = []
     private(set) var pendingImagePreparationCount = 0
     private(set) var failedLiveTranscript: String?
     private(set) var availableMeetingReferences: [CodexChatMeetingReference] = []
-    private(set) var selectedMeetingReferenceIDs: [UUID] = []
+    var selectedMeetingReferenceIDs: [UUID] = []
     private(set) var meetingNamesByID: [UUID: String] = [:]
     private(set) var meetingReferencesByID: [UUID: CodexChatMeetingReference] = [:]
     private(set) var isLiveModeEnabled = false
@@ -51,25 +41,25 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     @ObservationIgnored private let service: any CodexChatServicing
-    @ObservationIgnored private let settings: AppSettings
-    @ObservationIgnored private let contextProvider: any CodexChatContextProviding
+    @ObservationIgnored let settings: AppSettings
+    @ObservationIgnored let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored private var isStopRequested = false
-    @ObservationIgnored private var isReleased = false
+    @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
-    @ObservationIgnored private var pendingManualInputs: [CodexChatManualSubmission] = []
-    @ObservationIgnored private var lastManualSubmission: CodexChatManualSubmission?
-    @ObservationIgnored private var isActiveTurnLiveTranscript = false
-    @ObservationIgnored private var didSendLiveModeContext = false
-    @ObservationIgnored private var liveModeGeneration: UInt = 0
+    @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
+    @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
+    @ObservationIgnored var isActiveTurnLiveTranscript = false
+    @ObservationIgnored var didSendLiveModeContext = false
+    @ObservationIgnored var liveModeGeneration: UInt = 0
     @ObservationIgnored private var activeSteerIsLiveTranscript = false
     @ObservationIgnored private var activeSteeringManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
-    @ObservationIgnored private var activeSubmissionID: UUID?
+    @ObservationIgnored var activeSubmissionID: UUID?
     @ObservationIgnored private var activeResponseID: String?
-    @ObservationIgnored private var turnTask: Task<Void, Never>?
+    @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?
     @ObservationIgnored private var usesLiveModePlaceholderTitle = false
@@ -298,7 +288,7 @@ final class CodexChatSessionModel: Identifiable {
     }
 }
 
-private extension CodexChatSessionModel {
+extension CodexChatSessionModel {
     func runTurn(
         text: String?,
         images: [CodexChatImageAttachment] = [],
@@ -537,7 +527,7 @@ private extension CodexChatSessionModel {
         apply(reconciledThread, preservingPendingMessages: thread.messages.count < messages.count)
     }
 
-    private func finishGeneration(
+    func finishGeneration(
         submissionID: UUID?
     ) {
         guard activeSubmissionID == submissionID else { return }
@@ -690,112 +680,7 @@ private extension CodexChatSessionModel {
     }
 }
 
-private extension CodexChatSessionModel {
-    func acceptedImageCandidates<Item>(from items: [Item]) -> [Item] {
-        let availableSlots = max(
-            0,
-            Self.maximumAttachedImages - attachedImages.count - pendingImagePreparationCount
-        )
-        let acceptedItems = Array(items.prefix(availableSlots))
-        if acceptedItems.count < items.count {
-            noticeMessage = L10n.chatImageLimitReached(Self.maximumAttachedImages)
-        }
-        return acceptedItems
-    }
-
-    func makeAppServerInputs(
-        text: String?,
-        context: CodexChatContext?,
-        includesLiveModeContext: Bool,
-        liveTranscript: String?,
-        images: [CodexChatImageAttachment]
-    ) -> [CodexAppServerInput] {
-        let textInputs = CodexChatPromptCodec.encodeTextBlocks(
-            text: text,
-            context: context,
-            includesLiveModeContext: includesLiveModeContext,
-            liveTranscript: liveTranscript
-        ).map(CodexAppServerInput.text)
-        return textInputs + images.map { .imageDataURI($0.dataURI) }
-    }
-
-    func submit(
-        _ text: String,
-        images: [CodexChatImageAttachment] = [],
-        composerSnapshot: CodexChatComposerSnapshot? = nil,
-        liveTranscript: String? = nil
-    ) {
-        guard isBoundToCurrentVault,
-              !isGenerating,
-              text.nilIfBlank != nil || !images.isEmpty || liveTranscript?.nilIfBlank != nil else { return }
-        guard images.isEmpty || models.isEmpty || selectedModelSupportsImages else {
-            noticeMessage = L10n.chatModelDoesNotSupportImages
-            return
-        }
-        prepareFailureStateForSubmission(liveTranscript: liveTranscript)
-        isGenerating = true
-        errorMessage = nil
-        isActiveTurnLiveTranscript = liveTranscript != nil
-        let isLiveModeSnapshot = liveTranscript != nil || isLiveModeEnabled
-        let liveModeState = CodexChatLiveModeSubmissionState(
-            isEnabled: isLiveModeSnapshot,
-            includesContext: liveTranscript != nil && isLiveModeSnapshot && !didSendLiveModeContext,
-            generation: liveModeGeneration
-        )
-        let submissionID = UUID.v7()
-        activeSubmissionID = submissionID
-
-        turnTask = Task { [weak self] in
-            await self?.resolveContextAndRunTurn(
-                text: text,
-                images: images,
-                composerSnapshot: composerSnapshot,
-                liveTranscript: liveTranscript,
-                liveModeState: liveModeState,
-                submissionID: submissionID
-            )
-        }
-    }
-
-    func resolveContextAndRunTurn(
-        text: String,
-        images: [CodexChatImageAttachment],
-        composerSnapshot: CodexChatComposerSnapshot?,
-        liveTranscript: String?,
-        liveModeState: CodexChatLiveModeSubmissionState,
-        submissionID: UUID
-    ) async {
-        defer {
-            finishGeneration(submissionID: submissionID)
-        }
-        let shouldResolveContext = !liveModeState.isEnabled || liveModeState.includesContext
-        let context: CodexChatContext?
-        do {
-            context = try await resolveContext(if: shouldResolveContext)
-            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
-        } catch is CancellationError {
-            return
-        } catch {
-            guard activeSubmissionID == submissionID else { return }
-            recordFailedSubmission(text: text, images: images, liveTranscript: liveTranscript)
-            errorMessage = error.localizedDescription
-            return
-        }
-        guard !isReleased, isBoundToCurrentVault else { return }
-        let responseID = "pending-\(UUID.v7().uuidString)"
-
-        _ = await runTurn(
-            text: liveTranscript == nil ? text : nil,
-            images: liveTranscript == nil ? images : [],
-            composerSnapshot: composerSnapshot,
-            liveTranscript: liveTranscript,
-            context: context,
-            responseID: responseID,
-            liveModeState: liveModeState,
-            submissionID: submissionID
-        )
-    }
-
+extension CodexChatSessionModel {
     func setLiveModeEnabled(_ isEnabled: Bool) {
         guard isLiveModeEnabled != isEnabled else { return }
         isLiveModeEnabled = isEnabled
@@ -815,26 +700,6 @@ private extension CodexChatSessionModel {
             }
         }
         liveModeChangeHandler?(isEnabled)
-    }
-
-    func enqueueManualInput(_ submission: CodexChatManualSubmission) {
-        lastSubmittedText = submission.text
-        lastManualSubmission = submission
-        pendingManualInputs.append(submission)
-        processPendingInputIfPossible()
-    }
-
-    func clearComposer(ifMatching snapshot: CodexChatComposerSnapshot?) {
-        guard let snapshot else { return }
-        if draft == snapshot.draft {
-            draft = ""
-        }
-        if selectedMeetingReferenceIDs == snapshot.referenceIDs {
-            selectedMeetingReferenceIDs = []
-        }
-        if attachedImages == snapshot.images {
-            attachedImages = []
-        }
     }
 
     func processPendingInputIfPossible() {
@@ -971,12 +836,6 @@ private extension CodexChatSessionModel {
         }
     }
 
-    func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {
-        guard isRequired else { return nil }
-        guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
-        return try await contextProvider.currentContext(vaultID: vaultID)
-    }
-
     func handleSteerFailure(
         _ error: any Error,
         input: CodexChatPendingInput,
@@ -1086,52 +945,6 @@ private extension CodexChatSessionModel {
         didTruncatePendingLiveTranscript = true
     }
 
-    static let maximumPendingLiveTranscriptCharacters = 100_000
-    static let maximumAttachedImages = CodexChatImageAttachment.maximumAttachmentCount
-}
-
-extension CodexChatSessionModel {
-    var displayTitle: String {
-        displayText(title.nilIfBlank ?? L10n.newChat)
-    }
-
-    var canSend: Bool {
-        isBoundToCurrentVault
-            && pendingImagePreparationCount == 0
-            && (attachedImages.isEmpty || selectedModelSupportsImages)
-            && (draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty)
-    }
-
-    var selectedModelSupportsImages: Bool {
-        models.first(where: { $0.model == selectedModelID })?.supportsImages == true
-    }
-
-    var attachmentValidationMessage: String? {
-        if pendingImagePreparationCount > 0 {
-            L10n.chatPreparingImages
-        } else if !attachedImages.isEmpty,
-                  models.contains(where: { $0.model == selectedModelID }),
-                  !selectedModelSupportsImages {
-            L10n.chatModelDoesNotSupportImages
-        } else {
-            nil
-        }
-    }
-
-    var hasRetryableSubmission: Bool {
-        failedLiveTranscript != nil || lastSubmittedText != nil
-    }
-
-    var effortOptions: [CodexReasoningEffortOption] {
-        guard let model = models.first(where: { $0.model == selectedModelID }) else { return [] }
-        return model.supportedReasoningEfforts.isEmpty
-            ? [CodexReasoningEffortOption(reasoningEffort: model.defaultReasoningEffort, description: "")]
-            : model.supportedReasoningEfforts
-    }
-
-    var isBoundToCurrentVault: Bool {
-        vaultID != nil && vaultID == settings.currentVault?.id
-    }
 }
 
 extension CodexChatSessionModel {
