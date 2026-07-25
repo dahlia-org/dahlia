@@ -282,9 +282,8 @@
 "Show live subtitles when recording starts." = "Show live subtitles when recording starts.";
 "Live subtitles are available with both real-time and batch transcription." = "Live subtitles are available with both real-time and batch transcription.";
 "In batch mode, subtitles are temporary and the final transcript is created after recording stops." = "In batch mode, subtitles are temporary and the final transcript is created after recording stops.";
-"System Audio Only" = "System Audio Only";
 "Include Microphone" = "Include Microphone";
-"Choose whether live subtitles only show system audio or also include microphone input." = "Choose whether live subtitles only show system audio or also include microphone input.";
+"Include microphone input in live subtitles. This does not change recorded audio or the final transcript." = "Include microphone input in live subtitles. This does not change recorded audio or the final transcript.";
 "Overlay Segment Count" = "Overlay Segment Count";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "Choose how many recent transcript segments the live subtitle overlay shows.";
 "Live subtitles stopped because the audio format could not be converted." = "Live subtitles stopped because the audio format could not be converted.";

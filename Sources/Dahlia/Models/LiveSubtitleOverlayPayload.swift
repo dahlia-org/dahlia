@@ -10,7 +10,7 @@ struct LiveSubtitleOverlayPayload: Equatable {
 
     static func latest(
         from segments: [TranscriptSegment],
-        sourceMode: LiveSubtitleSourceMode = .includeMicrophone,
+        sourceMode: LiveSubtitleSourceMode = .defaultMode,
         transcriptionLocaleIdentifier: String,
         translationEnabled: Bool,
         targetLanguageIdentifier: String,

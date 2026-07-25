@@ -175,7 +175,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("transcriptTranslationTargetLanguage") var transcriptTranslationTargetLanguage = TranscriptTranslationLanguage.defaultIdentifier
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
     @AppStorage("liveSubtitleOverlaySegmentCount") var liveSubtitleOverlaySegmentCount = 2
-    @AppStorage("liveSubtitleSourceMode") var liveSubtitleSourceModeRawValue = LiveSubtitleSourceMode.includeMicrophone.rawValue
+    @AppStorage("liveSubtitleSourceMode") var liveSubtitleSourceModeRawValue = LiveSubtitleSourceMode.defaultMode.rawValue
     @AppStorage("automaticScreenshotEnabled") var automaticScreenshotEnabled = true
     @AppStorage(AppSettings.automaticScreenshotIntervalSecondsUserDefaultsKey) private var storedAutomaticScreenshotIntervalSeconds =
         AppSettings.defaultAutomaticScreenshotIntervalSeconds
@@ -258,8 +258,13 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     }
 
     var liveSubtitleSourceMode: LiveSubtitleSourceMode {
-        get { LiveSubtitleSourceMode(rawValue: liveSubtitleSourceModeRawValue) ?? .includeMicrophone }
+        get { LiveSubtitleSourceMode(storedRawValue: liveSubtitleSourceModeRawValue) }
         set { liveSubtitleSourceModeRawValue = newValue.rawValue }
+    }
+
+    var includesMicrophoneInLiveSubtitles: Bool {
+        get { liveSubtitleSourceMode.includesMicrophone }
+        set { liveSubtitleSourceMode = LiveSubtitleSourceMode(includesMicrophone: newValue) }
     }
 
     var isTranscriptTranslationEffectivelyEnabled: Bool {

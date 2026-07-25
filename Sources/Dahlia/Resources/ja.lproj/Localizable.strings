@@ -282,9 +282,8 @@
 "Show live subtitles when recording starts." = "録音開始時にライブ字幕を表示します。";
 "Live subtitles are available with both real-time and batch transcription." = "ライブ字幕はリアルタイム文字起こしとバッチ文字起こしの両方で利用できます。";
 "In batch mode, subtitles are temporary and the final transcript is created after recording stops." = "バッチ方式では字幕は一時的な表示で、最終的な文字起こしは録音停止後に作成されます。";
-"System Audio Only" = "システムオーディオのみ";
 "Include Microphone" = "マイク入力を含める";
-"Choose whether live subtitles only show system audio or also include microphone input." = "ライブ字幕をシステムオーディオのみにするか、マイク入力も含めるかを選びます。";
+"Include microphone input in live subtitles. This does not change recorded audio or the final transcript." = "ライブ字幕にマイク入力を含めます。録音音声や最終的な文字起こしには影響しません。";
 "Overlay Segment Count" = "表示セグメント数";
 "Choose how many recent transcript segments the live subtitle overlay shows." = "ライブ字幕オーバーレイに表示する最近の文字起こしセグメント数を選びます。";
 "Live subtitles stopped because the audio format could not be converted." = "音声形式を変換できなかったため、ライブ字幕を停止しました。";

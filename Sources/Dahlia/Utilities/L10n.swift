@@ -487,10 +487,9 @@ enum L10n {
         bundle: bundle
     ) }
 
-    static var systemAudioOnly: String { String(localized: "System Audio Only", bundle: bundle) }
     static var includeMicrophone: String { String(localized: "Include Microphone", bundle: bundle) }
-    static var liveSubtitleSourceDescription: String { String(
-        localized: "Choose whether live subtitles only show system audio or also include microphone input.",
+    static var liveSubtitleMicrophoneDescription: String { String(
+        localized: "Include microphone input in live subtitles. This does not change recorded audio or the final transcript.",
         bundle: bundle
     ) }
     static var liveSubtitleOverlaySegmentCount: String { String(localized: "Overlay Segment Count", bundle: bundle) }

@@ -191,6 +191,10 @@ sequenceDiagram
 `TranscriptionEventPipeline.enqueue` は、確定イベントについて suspension より前に persistence lane への ingress を確定する。
 その後に UI と optional observer を処理するため、MainActor または字幕 consumer の停止が SQLite への進行を直接待たせない。
 
+ライブ字幕の音源設定は `LiveCaptionStore` からオーバーレイ payload を作る際の表示フィルタである。既定では
+システムオーディオだけを表示し、ユーザーが「マイク入力を含める」を有効にした場合はマイク由来の字幕も表示する。
+この設定は録音する音声、逐次認識器への入力、SQLite の正本文字起こしには影響しない。
+
 preview は保存しない。finalized segment と確定 translation は `TranscriptPersistenceWriter` が順序を保ち、
 SQLite failure 時は actor 内に保持して backoff 付きで再試行する。process が終了すれば memory backlog は失われ得るため、
 durable の境界は ingress ではなく SQLite commit である。

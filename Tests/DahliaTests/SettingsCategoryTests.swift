@@ -11,6 +11,7 @@
                 .permissions,
                 .backups,
                 .transcription,
+                .liveSubtitles,
                 .screenshots,
                 .calendar,
                 .cloudStorage,
@@ -46,6 +47,9 @@
             #expect(SettingsCategory.permissions.systemImage == "hand.raised")
             #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
             #expect(SettingsCategory.modelProvider.label == L10n.aiConnection)
+            #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
+            #expect(SettingsCategory.liveSubtitles.label == L10n.liveSubtitles)
+            #expect(SettingsCategory.liveSubtitles.systemImage == "captions.bubble")
             #expect(SettingsCategory.cloudStorage.rawValue == "cloudStorage")
             #expect(SettingsCategory.cloudStorage.label == L10n.export)
             #expect(SettingsCategory.mcp.rawValue == "mcp")
@@ -59,6 +63,7 @@
         func advancedSettingsRemainAtTheEnd() {
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [.general, .permissions, .backups])
+            #expect(SettingsGroup.recording.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.developer, .audioDiagnostics])
         }
 

@@ -98,43 +98,6 @@ struct TranscriptionSettingsView: View {
             }
 
             Section {
-                Toggle(isOn: $settings.liveSubtitleOverlayEnabled) {
-                    Text(L10n.liveSubtitles)
-                    Text(L10n.liveSubtitleOverlayToggleDescription)
-                }
-                .toggleStyle(.switch)
-
-                Picker(selection: $settings.liveSubtitleSourceModeRawValue) {
-                    ForEach(LiveSubtitleSourceMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode.rawValue)
-                    }
-                } label: {
-                    Text(L10n.source)
-                    Text(L10n.liveSubtitleSourceDescription)
-                }
-                .disabled(!settings.liveSubtitleOverlayEnabled)
-
-                Picker(selection: $settings.liveSubtitleOverlaySegmentCount) {
-                    ForEach(1 ..< 6, id: \.self) { count in
-                        Text("\(count)").tag(count)
-                    }
-                } label: {
-                    Text(L10n.liveSubtitleOverlaySegmentCount)
-                    Text(L10n.liveSubtitleOverlaySegmentCountDescription)
-                }
-                .disabled(!settings.liveSubtitleOverlayEnabled)
-            } header: {
-                Text(L10n.liveSubtitleOverlay)
-            } footer: {
-                VStack(alignment: .leading) {
-                    Text(L10n.liveSubtitleOverlayDescription)
-                    if !settings.liveSubtitleOverlayEnabled {
-                        Text(L10n.enableLiveSubtitlesToConfigure)
-                    }
-                }
-            }
-
-            Section {
                 Picker(L10n.languageRange, selection: languageScopeBinding) {
                     ForEach(TranscriptionLanguageScope.allCases) { scope in
                         Text(scope.displayName).tag(scope)
