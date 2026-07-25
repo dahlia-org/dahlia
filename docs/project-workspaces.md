@@ -126,10 +126,11 @@ and changes to Vault identity or setup are also outside this Project change.
 
 ## Migration
 
-The hierarchy migration retains existing Project UUIDs, metadata, and same-Vault Meeting memberships. Legacy
-slash-delimited paths first become stable parent/leaf records. The depth-limit migration then moves every Project below
-the supported subproject level directly under its original root. If flattening creates a sibling-name collision, Dahlia
-adds a deterministic numeric suffix. Moved records increment their revisions and inherit their root type.
+The single hierarchy migration retains existing Project UUIDs, metadata, and same-Vault Meeting memberships. It converts
+legacy slash-delimited paths into stable parent/leaf records and moves every Project below the supported subproject level
+directly under its original root before installing the bounded-hierarchy constraints. If flattening creates a
+sibling-name collision, Dahlia adds a deterministic numeric suffix. Moved records increment their revisions and inherit
+their root type.
 
 Migration does not move existing Summary files merely to match a newly flattened logical path. Their stored
 Vault-relative locations remain valid legacy locations until a later Meeting membership operation moves them. The

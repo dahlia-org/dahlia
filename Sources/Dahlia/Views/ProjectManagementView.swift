@@ -73,7 +73,10 @@ struct ProjectManagementView: View {
                 project: project,
                 projectCount: hierarchy.count,
                 meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
-                moveDestinations: projectMoveDestinations(excluding: project),
+                moveDestinations: ProjectDestinationOptions.meetingMoveCandidates(
+                    whenDeleting: project,
+                    projects: sidebarViewModel.allProjectItems
+                ),
                 onConfirm: { disposition, deletesSummaryFiles in
                     await deleteProject(
                         project,
@@ -295,7 +298,7 @@ private extension ProjectManagementView {
         Section {
             Picker(L10n.parentProject, selection: $projectParentId) {
                 Text(L10n.vaultRoot).tag(UUID?.none)
-                ForEach(projectMoveDestinations(excluding: project)) { candidate in
+                ForEach(projectReparentDestinations(for: project)) { candidate in
                     Text(candidate.projectName).tag(Optional(candidate.projectId))
                 }
             }
@@ -683,19 +686,17 @@ private extension ProjectManagementView {
     }
 
     private func projectHierarchy(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {
-        sidebarViewModel.allProjectItems.filter {
-            ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
-        }
+        ProjectDestinationOptions.hierarchy(
+            for: project,
+            projects: sidebarViewModel.allProjectItems
+        )
     }
 
-    private func projectMoveDestinations(excluding project: ProjectOverviewItem) -> [ProjectOverviewItem] {
-        let canBecomeSubproject = project.parentProjectId != nil || projectHierarchy(for: project).count == 1
-        guard canBecomeSubproject else { return [] }
-
-        return sidebarViewModel.allProjectItems.filter {
-            $0.parentProjectId == nil
-                && !ProjectRecord.belongsToHierarchy($0.projectName, prefix: project.projectName)
-        }
+    private func projectReparentDestinations(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {
+        ProjectDestinationOptions.reparentCandidates(
+            for: project,
+            projects: sidebarViewModel.allProjectItems
+        )
     }
 
     private func projectedProjectType(for project: ProjectOverviewItem) -> ProjectType {

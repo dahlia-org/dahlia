@@ -114,29 +114,18 @@ import GRDB
             }
             let projects = result.0
             let child = try #require(projects.first(where: { $0.id == childID }))
-            #expect(projects.map(\.name) == ["Acme", "Acme/API", "Acme/Platform", "Acme/Platform/API"])
+            #expect(projects.map(\.name) == ["Acme", "Acme/API", "Acme/API (2)", "Acme/Platform"])
+            #expect(child.name == "Acme/API (2)")
             #expect(child.description == "Preserved")
             #expect(child.projectType == nil)
+            #expect(child.revision == 2)
             #expect(ProjectRecord.effectiveType(for: childID, records: projects)?.type == .undefined)
             #expect(result.1 == childID)
             let driveID = try queue.read { db in
                 try String.fetchOne(db, sql: "SELECT googleDriveFolderId FROM projects WHERE id = ?", arguments: [childID])
             }
             #expect(driveID == "drive-id")
-
-            try queue.write { db in
-                try ProjectHierarchyDepthMigration.migrate(in: db)
-            }
-            let flattened = try queue.read { db in
-                try (
-                    ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
-                    UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
-                )
-            }
-            #expect(flattened.0.map(\.name) == ["Acme", "Acme/API", "Acme/API (2)", "Acme/Platform"])
-            #expect(flattened.0.first(where: { $0.id == childID })?.name == "Acme/API (2)")
-            #expect(flattened.0.first(where: { $0.id == existingSiblingID })?.name == "Acme/API")
-            #expect(flattened.1 == childID)
+            #expect(projects.first(where: { $0.id == existingSiblingID })?.name == "Acme/API")
         }
 
         @Test
@@ -232,7 +221,7 @@ import GRDB
             let projects = result.0
             #expect(Set(projects.map(\.id)) == [firstID, secondID])
             #expect(Set(projects.map(\.leafNameKey)).count == 2)
-            #expect(result.2 == 1)
+            #expect(result.2 == 0)
             #expect(result.1?.vaultRelativePath == "acme/Note.md")
             #expect(FileManager.default.fileExists(atPath: vaultURL.appending(path: "acme/Note.md").path))
         }

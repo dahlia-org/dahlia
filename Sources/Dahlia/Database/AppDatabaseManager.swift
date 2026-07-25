@@ -134,10 +134,6 @@ final class AppDatabaseManager: Sendable {
             try ProjectHierarchyMigration.migrate(in: db)
         }
 
-        migrator.registerMigration("v25_projectHierarchyDepthLimit") { db in
-            try ProjectHierarchyDepthMigration.migrate(in: db)
-        }
-
         return migrator
     }()
 
