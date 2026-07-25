@@ -1987,10 +1987,13 @@ final class CaptionViewModel: ObservableObject {
         transcriptionEventPipeline = TranscriptionEventPipeline(
             uiSink: { [weak self] events in
                 for event in events {
-                    self?.handleTranscriptionEvent(event)
+                    self?.handleTranscriptProjectionEvent(event)
                 }
             },
-            eventObserver: { event in
+            eventObserver: { [weak self] event in
+                // Batch live captions are ephemeral and cannot be recovered by the
+                // bounded transcript UI lane's database reload.
+                await self?.handleObservedTranscriptionEvent(event)
                 guard case let .finalized(segment) = event,
                       segment.isConfirmed,
                       let sessionID = segment.sessionId else { return }
@@ -3589,15 +3592,22 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Pipeline Construction
 
-    private func handleTranscriptionEvent(_ event: TranscriptionEvent) {
+    private func handleTranscriptProjectionEvent(_ event: TranscriptionEvent) {
         guard let plan = activeTranscriptionPlan else { return }
-        TranscriptionEventRouter.route(
+        TranscriptionEventRouter.routeTranscriptProjection(
             event,
             plan: plan,
-            transcriptStore: activeTranscriptStore,
+            transcriptStore: activeTranscriptStore
+        )
+    }
+
+    private func handleObservedTranscriptionEvent(_ event: TranscriptionEvent) {
+        guard let plan = activeTranscriptionPlan else { return }
+        TranscriptionEventRouter.routeLiveCaption(
+            event,
+            plan: plan,
             liveCaptionStore: liveCaptionStore
         )
-
         guard case let .failure(_, _, sourceLabel, message) = event else { return }
 
         let source = RecordingAudioSource(speakerLabel: sourceLabel)

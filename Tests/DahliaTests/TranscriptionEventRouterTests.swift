@@ -19,10 +19,14 @@ import Foundation
                 retainBatchAudio: false
             )
 
-            TranscriptionEventRouter.route(
+            TranscriptionEventRouter.routeTranscriptProjection(
                 .finalized(segment),
                 plan: plan,
-                transcriptStore: transcriptStore,
+                transcriptStore: transcriptStore
+            )
+            TranscriptionEventRouter.routeLiveCaption(
+                .finalized(segment),
+                plan: plan,
                 liveCaptionStore: liveStore
             )
 
@@ -31,7 +35,7 @@ import Foundation
         }
 
         @Test
-        func batchAndLiveKeepsPreviewOutOfAuthoritativeTranscript() {
+        func batchLiveCaptionRoutesIndependentlyFromReloadableTranscriptProjection() {
             let sessionID = UUID.v7()
             let segment = makeSegment(sessionID: sessionID)
             let transcriptStore = TranscriptStore()
@@ -43,10 +47,14 @@ import Foundation
                 retainBatchAudio: false
             )
 
-            TranscriptionEventRouter.route(
+            TranscriptionEventRouter.routeTranscriptProjection(
                 .finalized(segment),
                 plan: plan,
-                transcriptStore: transcriptStore,
+                transcriptStore: transcriptStore
+            )
+            TranscriptionEventRouter.routeLiveCaption(
+                .finalized(segment),
+                plan: plan,
                 liveCaptionStore: liveStore
             )
 
@@ -57,6 +65,7 @@ import Foundation
         @Test
         func batchWithoutLiveIgnoresStreamingEvents() {
             let sessionID = UUID.v7()
+            let segment = makeSegment(sessionID: sessionID)
             let transcriptStore = TranscriptStore()
             let liveStore = LiveCaptionStore()
             liveStore.start(sessionId: sessionID)
@@ -66,10 +75,14 @@ import Foundation
                 retainBatchAudio: false
             )
 
-            TranscriptionEventRouter.route(
-                .finalized(makeSegment(sessionID: sessionID)),
+            TranscriptionEventRouter.routeTranscriptProjection(
+                .finalized(segment),
                 plan: plan,
-                transcriptStore: transcriptStore,
+                transcriptStore: transcriptStore
+            )
+            TranscriptionEventRouter.routeLiveCaption(
+                .finalized(segment),
+                plan: plan,
                 liveCaptionStore: liveStore
             )
 
@@ -82,7 +95,6 @@ import Foundation
             let sessionID = UUID.v7()
             let segmentID = UUID.v7()
             let transcriptStore = TranscriptStore()
-            let liveStore = LiveCaptionStore()
             let plan = TranscriptionSessionPlan(
                 finalMode: .realtime,
                 liveSubtitlesEnabled: false,
@@ -100,17 +112,15 @@ import Foundation
             final.text = "Final"
             final.isConfirmed = true
 
-            TranscriptionEventRouter.route(
+            TranscriptionEventRouter.routeTranscriptProjection(
                 .preview(preview),
                 plan: plan,
-                transcriptStore: transcriptStore,
-                liveCaptionStore: liveStore
+                transcriptStore: transcriptStore
             )
-            TranscriptionEventRouter.route(
+            TranscriptionEventRouter.routeTranscriptProjection(
                 .finalized(final),
                 plan: plan,
-                transcriptStore: transcriptStore,
-                liveCaptionStore: liveStore
+                transcriptStore: transcriptStore
             )
 
             #expect(transcriptStore.segments == [final])
