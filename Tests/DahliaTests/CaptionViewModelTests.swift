@@ -482,7 +482,9 @@ import GRDB
                 vaultURL: testVaultURL
             )
 
-            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let meetingId = try #require(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             let persisted = try database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
                 let calendarEvent = try linkedCalendarEvent(meetingId: meetingId, in: db)
@@ -550,7 +552,9 @@ import GRDB
                 vaultURL: testVaultURL
             )
 
-            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let meetingId = try #require(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             let persisted = try database.dbQueue.read { db in
                 let calendarEvent = try linkedCalendarEvent(meetingId: meetingId, in: db)
                 let source = try CalendarEventSourceRecord
@@ -761,7 +765,9 @@ import GRDB
                 vaultURL: testVaultURL
             )
 
-            let meetingId = try XCTUnwrap(viewModel.materializeDraftMeeting())
+            let meetingId = try XCTUnwrap(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             let persisted = try database.dbQueue.read { db in
                 try (
                     XCTUnwrap(MeetingRecord.fetchOne(db, key: meetingId)),

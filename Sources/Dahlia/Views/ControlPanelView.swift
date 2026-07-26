@@ -725,7 +725,9 @@ struct ControlPanelView: View {
             sidebarViewModel.renameMeeting(id: meeting.id, newName: trimmed)
         } else if viewModel.hasDraftMeeting {
             viewModel.updateDraftMeetingTitle(trimmed)
-            if let meetingId = viewModel.materializeDraftMeeting() {
+            if let meetingId = viewModel.materializeDraftMeeting(
+                customerIntelligenceIngestion: .afterMeetingPersistence
+            ) {
                 sidebarViewModel.selectMeeting(meetingId)
             }
         }

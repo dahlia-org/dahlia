@@ -251,7 +251,9 @@ struct DahliaApp: App {
                 if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                     event,
                     vaultId: vault.id,
-                    ingestsCustomerIntelligence: !startTranscription
+                    customerIntelligenceIngestion: startTranscription
+                        ? .afterCaptureStarts
+                        : .afterMeetingPersistence
                 ) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
                     if startTranscription {
@@ -277,7 +279,9 @@ struct DahliaApp: App {
                 vaultURL: vault.url
             )
             guard let meetingId = viewModel.materializeDraftMeeting(
-                ingestsCustomerIntelligence: !startTranscription
+                customerIntelligenceIngestion: startTranscription
+                    ? .afterCaptureStarts
+                    : .afterMeetingPersistence
             ) else { return }
             sidebarViewModel.selectMeeting(meetingId)
             if startTranscription {

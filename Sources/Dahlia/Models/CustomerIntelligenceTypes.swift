@@ -41,6 +41,11 @@ enum MeetingParticipantResponseStatus: String, Codable, CaseIterable, DatabaseVa
     case unknown
 }
 
+enum CustomerIntelligenceIngestionPolicy: Equatable, Sendable {
+    case afterMeetingPersistence
+    case afterCaptureStarts
+}
+
 enum CalendarParticipantKind: String, Codable, CaseIterable, Sendable {
     case person
     case room

@@ -805,7 +805,7 @@ import ImageIO
             let insight = try repository.createInsight(
                 vaultId: fixture.primaryVaultID,
                 content: "Owner is the technical sponsor",
-                metadataJSON: #"{"rank":2}"#
+                metadataJSON: #"{"decisionMaker":"Owner","foo_bar":"kept","rank":2}"#
             )
             _ = try repository.addInsightReference(
                 insightId: insight.id,
@@ -871,6 +871,16 @@ import ImageIO
             {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact"}}}
             """#))
             #expect((invalidFilterCall["error"] as? [String: Any])?["code"] as? Int == -32602)
+            let insightCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact","resource_id":"\#(contact
+                .id.uuidString)"}}}
+            """#))
+            let insightContent = (insightCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            let encodedMetadata = (insightContent?["insights"] as? [[String: Any]])?.first?["metadata"]
+                as? [String: Any]
+            #expect(encodedMetadata?["decisionMaker"] as? String == "Owner")
+            #expect(encodedMetadata?["foo_bar"] as? String == "kept")
+            #expect(encodedMetadata?["decision_maker"] == nil)
 
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
             #expect(try otherStore.queryOrganizations().organizations.isEmpty)
@@ -1169,6 +1179,26 @@ import ImageIO
 
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.scopedVault()
+            }
+        }
+
+        @Test
+        func v24DatabaseKeepsMeetingAccessButRejectsCustomerIntelligenceAccess() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v24-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v25")
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v24_projectWorkspaceHierarchy")
+            try queue.write { db in
+                try vault.insert(db)
+            }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+
+            #expect(try store.scopedVault().id == vault.id)
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.queryOrganizations()
             }
         }
 

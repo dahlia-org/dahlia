@@ -611,7 +611,13 @@ import os
             #expect(linkedMeetingCount == 2)
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            #expect(try repository.resolveMeetingIdForCalendarEvent(event, vaultId: testVault.id) == secondMeetingId)
+            #expect(
+                try repository.resolveMeetingIdForCalendarEvent(
+                    event,
+                    vaultId: testVault.id,
+                    customerIntelligenceIngestion: .afterMeetingPersistence
+                ) == secondMeetingId
+            )
 
             #expect(throws: Error.self) {
                 try database.dbQueue.write { db in
@@ -664,7 +670,11 @@ import os
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: testVault.id)
+            let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: testVault.id,
+                customerIntelligenceIngestion: .afterMeetingPersistence
+            )
 
             #expect(resolvedMeetingId == meetingId)
         }
@@ -975,7 +985,11 @@ import os
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             XCTAssertEqual(
-                try repository.resolveMeetingIdForCalendarEvent(event, vaultId: testVault.id),
+                try repository.resolveMeetingIdForCalendarEvent(
+                    event,
+                    vaultId: testVault.id,
+                    customerIntelligenceIngestion: .afterMeetingPersistence
+                ),
                 secondMeetingId
             )
             try repository.deleteMeeting(id: firstMeetingId)
@@ -1011,7 +1025,11 @@ import os
             }
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: testVault.id)
+            let resolvedMeetingId = try repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: testVault.id,
+                customerIntelligenceIngestion: .afterMeetingPersistence
+            )
 
             XCTAssertEqual(resolvedMeetingId, meetingId)
         }

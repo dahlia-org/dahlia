@@ -79,7 +79,11 @@ final class RecordingCoordinator {
 
         let repository = MeetingRepository(dbQueue: dbQueue)
         do {
-            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
+            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: vault.id,
+                customerIntelligenceIngestion: .afterMeetingPersistence
+            ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return
             }
@@ -169,7 +173,7 @@ final class RecordingCoordinator {
             if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
                 event,
                 vaultId: vault.id,
-                ingestsCustomerIntelligence: false
+                customerIntelligenceIngestion: .afterCaptureStarts
             ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return startRecording(

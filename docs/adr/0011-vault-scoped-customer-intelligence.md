@@ -51,9 +51,10 @@ returns persisted canonical values without re-normalizing them.
 
 The first observation of a non-public attendee domain creates an Organization whose initial editable name is the domain.
 Later observations update domain freshness but never overwrite a user-edited Organization name. Public mailbox domains
-such as Gmail create Contacts but do not create Organizations automatically. Ordinary calendar-linked Meetings are
-ingested after creation; recording flows wait until capture starts successfully. Existing Meetings and all Calendar
-events are not backfilled.
+such as Gmail create Contacts but do not create Organizations automatically. Every Meeting materialization call site
+must explicitly choose whether ingestion runs after Meeting persistence or only after capture starts. Ordinary
+calendar-linked Meetings use the former; recording flows use the latter. Existing Meetings and all Calendar events are
+not backfilled.
 
 Domains use the complete canonical host after `@`; Dahlia does not calculate a registrable domain. For example,
 `mail.example.co.jp` and `example.co.jp` identify different Organizations. The public-mailbox check is a best-effort
@@ -80,10 +81,11 @@ Extend the local MCP with read-only, Vault-scoped tools for Organizations, Conta
 Glossary terms. Keep them unavailable in Meeting-limited sessions. Bounded queries use a maximum of 100 results and
 keyset cursors bound to the Vault and normalized filter set. Nested Organizations, memberships, Project links, Insight
 references, and Glossary references return at most 100 rows plus an explicit truncation flag; recent Contact Meetings
-return at most 25. Contact interaction counts and last interaction exclude declined participants and are derived from
-`meeting_participants` joined to Meetings, supported by `meeting_participants(contactId, meetingId)` and the existing
-Vault/creation-time Meeting index. Interaction time is the Meeting record's `createdAt`, which normally approximates
-recording start; it is not the linked calendar event's scheduled start.
+return at most 25. Contact interaction counts, last interaction, and recent Meeting lists exclude declined participants
+and are derived from `meeting_participants` joined to Meetings, supported by
+`meeting_participants(contactId, meetingId)` and the existing Vault/creation-time Meeting index. Interaction time is the
+Meeting record's `createdAt`, which normally approximates recording start; it is not the linked calendar event's
+scheduled start.
 
 Contact and Organization MCP responses include names and complete primary email addresses. Invoking those tools makes
 that personal data available to the configured in-app or external agent within the selected Vault. The MCP instructions
@@ -134,6 +136,8 @@ preserve experiments without coupling canonical records to them.
 - The Vault identity of Contacts, Meetings, Insights, and Glossary terms is immutable after insertion, preventing an
   existing typed relation from being moved across a Vault boundary.
 - Invalid IDNA input is skipped during calendar ingestion and rejected by explicit repository writes.
+- Deleting an Organization through the Repository deletes its descendants from the leaves upward so the self-referencing
+  hierarchy and polymorphic-reference cleanup triggers remain consistent.
 - Customer-intelligence ingestion is best effort after the core Meeting transaction. For a recording, it is scheduled
   only after capture starts successfully; ordinary calendar materialization schedules it after Meeting creation. Its
   failure is sanitized and reported but never rolls back a successfully created Meeting or interrupts recording startup.

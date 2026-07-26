@@ -141,6 +141,12 @@ import Foundation
         func customerIntelligenceDetailsCannotCrossVaults() throws {
             let fixture = try Fixture()
             let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let organization = try repository.createOrganization(
+                vaultId: fixture.primaryVaultID,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Acme"
+            )
             let contact = try repository.upsertContact(
                 vaultId: fixture.primaryVaultID,
                 email: "owner@example.com",
@@ -153,6 +159,9 @@ import Foundation
             )
 
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
+            #expect(throws: MeetingAccessError.organizationNotFound) {
+                try otherStore.organization(id: organization.id)
+            }
             #expect(throws: MeetingAccessError.contactNotFound) {
                 try otherStore.contact(id: contact.id)
             }
@@ -189,6 +198,50 @@ import Foundation
             ).contacts.first)
             #expect(result.meetingCount == 0)
             #expect(result.lastInteractionAt == nil)
+            #expect(try store.contact(id: contact.id).recentMeetings.isEmpty)
+        }
+
+        @Test
+        func malformedOptionalJSONFallsBackWithoutPoisoningPages() throws {
+            let fixture = try Fixture()
+            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let malformedInsight = try repository.createInsight(
+                vaultId: fixture.primaryVaultID,
+                content: "Malformed metadata"
+            )
+            let validInsight = try repository.createInsight(
+                vaultId: fixture.primaryVaultID,
+                content: "Valid metadata"
+            )
+            let malformedGlossary = try repository.createGlossaryTerm(
+                vaultId: fixture.primaryVaultID,
+                term: "Malformed aliases",
+                definition: "Malformed aliases fixture"
+            )
+            let validGlossary = try repository.createGlossaryTerm(
+                vaultId: fixture.primaryVaultID,
+                term: "Valid aliases",
+                definition: "Valid aliases fixture",
+                aliases: ["Valid"]
+            )
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE insights SET metadataJSON = '5' WHERE id = ?",
+                    arguments: [malformedInsight.id]
+                )
+                try db.execute(
+                    sql: "UPDATE glossary_terms SET aliasesJSON = '{}' WHERE id = ?",
+                    arguments: [malformedGlossary.id]
+                )
+            }
+
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let insights = try store.queryInsights().insights
+            #expect(Set(insights.map(\.id)) == [malformedInsight.id, validInsight.id])
+            #expect(insights.first(where: { $0.id == malformedInsight.id })?.metadata == .object([:]))
+            let terms = try store.queryGlossaryTerms().terms
+            #expect(Set(terms.map(\.id)) == [malformedGlossary.id, validGlossary.id])
+            #expect(terms.first(where: { $0.id == malformedGlossary.id })?.aliases == [])
         }
     }
 #endif

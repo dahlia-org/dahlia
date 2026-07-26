@@ -18,7 +18,7 @@ public extension MeetingAccessStore {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             var predicates = ["organizations.vaultId = ?"]
             var arguments: StatementArguments = [vaultID]
             if let nodeKind = query.nodeKind {
@@ -32,7 +32,7 @@ public extension MeetingAccessStore {
                 arguments += [parentOrganizationID]
             }
             if let value = searchValue {
-                let pattern = "%\(customerEscapedLikePattern(value))%"
+                let pattern = "%\(escapedLikePattern(value))%"
                 predicates.append("""
                 (
                     organizations.name LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -85,7 +85,7 @@ public extension MeetingAccessStore {
 
     func organization(id: UUID) throws -> OrganizationAccessDetail {
         try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             guard let row = try organizationRow(id: id, in: db) else {
                 throw MeetingAccessError.organizationNotFound
             }
@@ -157,7 +157,7 @@ public extension MeetingAccessStore {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             var predicates = ["contacts.vaultId = ?"]
             var arguments: StatementArguments = [vaultID]
             if let organizationID = query.organizationID {
@@ -174,7 +174,7 @@ public extension MeetingAccessStore {
                 arguments += [organizationID]
             }
             if let value = searchValue {
-                let pattern = "%\(customerEscapedLikePattern(value))%"
+                let pattern = "%\(escapedLikePattern(value))%"
                 predicates.append("""
                 (
                     contacts.email LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -218,7 +218,7 @@ public extension MeetingAccessStore {
 
     func contact(id: UUID) throws -> ContactAccessDetail {
         try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             let rows = try contactRows(
                 predicates: ["contacts.vaultId = ?", "contacts.id = ?"],
                 arguments: [vaultID, id],
@@ -257,6 +257,7 @@ public extension MeetingAccessStore {
                 FROM meeting_participants AS participants
                 JOIN meetings ON meetings.id = participants.meetingId
                 WHERE participants.contactId = ? AND meetings.vaultId = ?
+                  AND participants.responseStatus <> 'declined'
                 ORDER BY meetings.createdAt DESC, meetings.id DESC
                 LIMIT 25
                 """,
@@ -305,7 +306,7 @@ public extension MeetingAccessStore {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             guard try Bool.fetchOne(
                 db,
                 sql: "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ? AND vaultId = ?)",
@@ -362,7 +363,7 @@ public extension MeetingAccessStore {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             var predicates = ["insights.vaultId = ?"]
             var arguments: StatementArguments = [vaultID]
             if let reviewState = query.reviewState {
@@ -441,11 +442,11 @@ public extension MeetingAccessStore {
         }
 
         return try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             var predicates = ["glossary_terms.vaultId = ?"]
             var arguments: StatementArguments = [vaultID]
             if let value = searchValue {
-                let pattern = "%\(customerEscapedLikePattern(value))%"
+                let pattern = "%\(escapedLikePattern(value))%"
                 predicates.append("""
                 (
                     glossary_terms.term LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -518,7 +519,7 @@ public extension MeetingAccessStore {
 
     func glossaryTerm(id: UUID) throws -> GlossaryTermAccessDetail {
         try database.read { db in
-            let vault = try fetchVault(in: db)
+            let vault = try fetchCustomerIntelligenceVault(in: db)
             guard let row = try Row.fetchOne(
                 db,
                 sql: "SELECT * FROM glossary_terms WHERE id = ? AND vaultId = ?",
@@ -540,6 +541,17 @@ public extension MeetingAccessStore {
 
 private extension MeetingAccessStore {
     static let customerNestedLimit = 100
+
+    func fetchCustomerIntelligenceVault(in db: Database) throws -> ScopedVault {
+        guard try Bool.fetchOne(
+            db,
+            sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
+            arguments: ["v25_customerIntelligence"]
+        ) == true else {
+            throw MeetingAccessError.databaseUpgradeRequired
+        }
+        return try fetchVault(in: db)
+    }
 
     func validateCustomerLimit(_ limit: Int) throws {
         guard (1 ... 100).contains(limit) else {
@@ -568,11 +580,18 @@ private extension MeetingAccessStore {
         limit: Int,
         in db: Database
     ) throws -> [Row] {
-        var arguments = arguments
-        arguments += [limit]
+        var queryArguments: StatementArguments = [vaultID]
+        queryArguments += arguments
+        queryArguments += [limit]
         return try Row.fetchAll(
             db,
             sql: """
+            WITH child_counts AS (
+                SELECT parentOrganizationId AS organizationId, COUNT(*) AS childCount
+                FROM organizations
+                WHERE vaultId = ? AND parentOrganizationId IS NOT NULL
+                GROUP BY parentOrganizationId
+            )
             SELECT
                 organizations.*,
                 (
@@ -590,17 +609,14 @@ private extension MeetingAccessStore {
                     FROM organization_memberships
                     WHERE organizationId = organizations.id
                 ) AS memberCount,
-                (
-                    SELECT COUNT(*)
-                    FROM organizations AS children
-                    WHERE children.parentOrganizationId = organizations.id
-                ) AS childCount
+                COALESCE(child_counts.childCount, 0) AS childCount
             FROM organizations
+            LEFT JOIN child_counts ON child_counts.organizationId = organizations.id
             WHERE \(predicates.joined(separator: " AND "))
             ORDER BY organizations.name COLLATE NOCASE ASC, organizations.id ASC
             LIMIT ?
             """,
-            arguments: arguments
+            arguments: queryArguments
         )
     }
 
@@ -628,8 +644,8 @@ private extension MeetingAccessStore {
         limit: Int,
         in db: Database
     ) throws -> [Row] {
-        var arguments = arguments
-        arguments += [limit]
+        var queryArguments = arguments
+        queryArguments += [limit]
         return try Row.fetchAll(
             db,
             sql: """
@@ -641,28 +657,21 @@ private extension MeetingAccessStore {
                     FROM organization_memberships
                     WHERE organization_memberships.contactId = contacts.id
                 ) AS organizationCount,
-                (
-                    SELECT COUNT(*)
-                    FROM meeting_participants
-                    JOIN meetings ON meetings.id = meeting_participants.meetingId
-                    WHERE meeting_participants.contactId = contacts.id
-                      AND meetings.vaultId = contacts.vaultId
-                      AND meeting_participants.responseStatus <> 'declined'
-                ) AS meetingCount,
-                (
-                    SELECT MAX(meetings.createdAt)
-                    FROM meeting_participants
-                    JOIN meetings ON meetings.id = meeting_participants.meetingId
-                    WHERE meeting_participants.contactId = contacts.id
-                      AND meetings.vaultId = contacts.vaultId
-                      AND meeting_participants.responseStatus <> 'declined'
-                ) AS lastInteractionAt
+                COUNT(interaction_meetings.id) AS meetingCount,
+                MAX(interaction_meetings.createdAt) AS lastInteractionAt
             FROM contacts
+            LEFT JOIN meeting_participants AS interaction_participants
+              ON interaction_participants.contactId = contacts.id
+             AND interaction_participants.responseStatus <> 'declined'
+            LEFT JOIN meetings AS interaction_meetings
+              ON interaction_meetings.id = interaction_participants.meetingId
+             AND interaction_meetings.vaultId = contacts.vaultId
             WHERE \(predicates.joined(separator: " AND "))
+            GROUP BY contacts.id
             ORDER BY sortKey COLLATE NOCASE ASC, contacts.id ASC
             LIMIT ?
             """,
-            arguments: arguments
+            arguments: queryArguments
         )
     }
 
@@ -762,11 +771,14 @@ private extension MeetingAccessStore {
     }
 
     func insightMetadata(from row: Row, referenceRows: [Row]) throws -> InsightAccessMetadata {
-        guard let reviewState = InsightAccessReviewState(rawValue: row["reviewState"]),
-              let metadata = decodeJSONValue(row["metadataJSON"]),
-              case .object = metadata
-        else {
+        guard let reviewState = InsightAccessReviewState(rawValue: row["reviewState"]) else {
             throw MeetingAccessError.invalidCustomerIntelligenceData
+        }
+        let decodedMetadata = decodeJSONValue(row["metadataJSON"])
+        let metadata: JSONValue = if let decodedMetadata, case .object = decodedMetadata {
+            decodedMetadata
+        } else {
+            .object([:])
         }
         let id: UUID = row["id"]
         let references = try referenceRows.prefix(Self.customerNestedLimit).map { referenceRow in
@@ -798,11 +810,8 @@ private extension MeetingAccessStore {
 
     func glossaryTermMetadata(from row: Row, referenceRows: [Row]) throws -> GlossaryTermAccessMetadata {
         let aliasesJSON: String = row["aliasesJSON"]
-        guard let aliasesData = aliasesJSON.data(using: .utf8),
-              let aliases = try? JSONDecoder().decode([String].self, from: aliasesData)
-        else {
-            throw MeetingAccessError.invalidCustomerIntelligenceData
-        }
+        let aliases = aliasesJSON.data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
         let id: UUID = row["id"]
         let references = try referenceRows.prefix(Self.customerNestedLimit).map { referenceRow in
             guard let resourceType = CustomerResourceAccessType(rawValue: referenceRow["resourceType"]) else {
@@ -967,13 +976,6 @@ private extension MeetingAccessStore {
     func customerSearchValue(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed?.isEmpty == false ? trimmed : nil
-    }
-
-    func customerEscapedLikePattern(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     func customerCursorScope(_ name: String, components: [String?]) -> String {

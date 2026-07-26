@@ -1,5 +1,25 @@
 import Foundation
 
+enum AccessCursorCodec {
+    static func encode(_ cursor: some Encodable) -> String {
+        (try? JSONEncoder().encode(cursor).base64EncodedString()) ?? ""
+    }
+
+    static func decode<T: Decodable>(
+        _ type: T.Type,
+        from value: String,
+        isValid: (T) -> Bool
+    ) throws -> T {
+        guard let data = Data(base64Encoded: value),
+              let cursor = try? JSONDecoder().decode(type, from: data),
+              isValid(cursor)
+        else {
+            throw MeetingAccessError.invalidCursor
+        }
+        return cursor
+    }
+}
+
 struct CustomerTextCursor: Codable {
     let vaultID: UUID
     let scope: String
@@ -7,18 +27,13 @@ struct CustomerTextCursor: Codable {
     let id: UUID
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(_ value: String, vaultID: UUID, scope: String) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.scope == scope
-        else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID && cursor.scope == scope
         }
-        return cursor
     }
 }
 
@@ -29,17 +44,12 @@ struct CustomerDateCursor: Codable {
     let id: UUID
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(_ value: String, vaultID: UUID, scope: String) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.scope == scope
-        else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID && cursor.scope == scope
         }
-        return cursor
     }
 }

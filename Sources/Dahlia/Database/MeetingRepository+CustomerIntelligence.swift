@@ -135,15 +135,6 @@ extension MeetingRepository {
             guard let name = CustomerIdentityNormalizer.organizationName(name) else {
                 throw CustomerIntelligenceError.invalidName
             }
-            let records = try OrganizationRecord
-                .filter(Column("vaultId") == vaultId)
-                .fetchAll(db)
-            try Self.validateOrganizationPlacement(
-                id: nil,
-                nodeKind: nodeKind,
-                parentOrganizationId: parentOrganizationId,
-                records: records
-            )
             let organization = OrganizationRecord(
                 id: .v7(),
                 vaultId: vaultId,
@@ -153,7 +144,11 @@ extension MeetingRepository {
                 createdAt: now,
                 updatedAt: now
             )
-            try organization.insert(db)
+            do {
+                try organization.insert(db)
+            } catch {
+                throw Self.organizationWriteError(from: error) ?? error
+            }
             return organization
         }
     }
@@ -188,30 +183,47 @@ extension MeetingRepository {
         now: Date = .now
     ) throws -> OrganizationRecord {
         try dbQueue.write { db in
-            var records = try OrganizationRecord
-                .filter(Column("vaultId") == vaultId)
-                .fetchAll(db)
-            guard let index = records.firstIndex(where: { $0.id == id }) else {
+            guard var organization = try OrganizationRecord
+                .filter(Column("id") == id && Column("vaultId") == vaultId)
+                .fetchOne(db)
+            else {
                 throw CustomerIntelligenceError.organizationNotFound
             }
-            try Self.validateOrganizationPlacement(
-                id: id,
-                nodeKind: records[index].nodeKind,
-                parentOrganizationId: parentOrganizationId,
-                records: records
-            )
-            records[index].parentOrganizationId = parentOrganizationId
-            records[index].updatedAt = now
-            try records[index].update(db)
-            return records[index]
+            organization.parentOrganizationId = parentOrganizationId
+            organization.updatedAt = now
+            do {
+                try organization.update(db)
+            } catch {
+                throw Self.organizationWriteError(from: error) ?? error
+            }
+            return organization
         }
     }
 
     func deleteOrganization(id: UUID, vaultId: UUID) throws {
         try dbQueue.write { db in
-            _ = try OrganizationRecord
-                .filter(Column("id") == id && Column("vaultId") == vaultId)
-                .deleteAll(db)
+            let subtreeIDs = try UUID.fetchAll(
+                db,
+                sql: """
+                WITH RECURSIVE subtree(id, depth) AS (
+                    SELECT id, 0
+                    FROM organizations
+                    WHERE id = ? AND vaultId = ?
+                    UNION ALL
+                    SELECT child.id, subtree.depth + 1
+                    FROM organizations AS child
+                    JOIN subtree ON child.parentOrganizationId = subtree.id
+                    WHERE child.vaultId = ? AND subtree.depth < ?
+                )
+                SELECT id
+                FROM subtree
+                ORDER BY depth DESC
+                """,
+                arguments: [id, vaultId, vaultId, CustomerIntelligenceMigration.maximumOrganizationDepth]
+            )
+            for subtreeID in subtreeIDs {
+                _ = try OrganizationRecord.deleteOne(db, key: subtreeID)
+            }
         }
     }
 
@@ -415,7 +427,7 @@ extension MeetingRepository {
             guard let content = CustomerIdentityNormalizer.organizationName(content) else {
                 throw CustomerIntelligenceError.invalidName
             }
-            let metadataJSON = try Self.canonicalJSONObject(metadataJSON)
+            let metadataJSON = try Self.validatedJSONObject(metadataJSON)
             let insight = InsightRecord(
                 id: .v7(),
                 vaultId: vaultId,
@@ -446,7 +458,7 @@ extension MeetingRepository {
             }
             insight.reviewState = reviewState
             if let metadataJSON {
-                insight.metadataJSON = try Self.canonicalJSONObject(metadataJSON)
+                insight.metadataJSON = try Self.validatedJSONObject(metadataJSON)
             }
             insight.updatedAt = now
             try insight.update(db)
@@ -546,82 +558,30 @@ extension MeetingRepository {
         }
     }
 
-    private static func validateOrganizationPlacement(
-        id: UUID?,
-        nodeKind: OrganizationNodeKind,
-        parentOrganizationId: UUID?,
-        records: [OrganizationRecord]
-    ) throws {
-        if parentOrganizationId == nil, nodeKind != .organization {
-            throw CustomerIntelligenceError.invalidOrganizationParent
-        }
-        if let parentOrganizationId {
-            guard let parent = records.first(where: { $0.id == parentOrganizationId }),
-                  nodeKind != .organization || parent.nodeKind == .organization
-            else {
-                throw CustomerIntelligenceError.invalidOrganizationParent
-            }
-            if parent.id == id {
-                throw CustomerIntelligenceError.organizationCycle
-            }
-        }
-
-        var parentByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.parentOrganizationId) })
-        if let id {
-            parentByID[id] = parentOrganizationId
-        }
-        try validateOrganizationHierarchy(parentByID)
-        if id == nil {
-            try validateNewOrganizationDepth(parentOrganizationId, parentByID: parentByID)
+    private static func organizationWriteError(from error: Error) -> CustomerIntelligenceError? {
+        guard let message = (error as? DatabaseError)?.message else { return nil }
+        switch message {
+        case "organization hierarchy cannot contain a cycle":
+            return .organizationCycle
+        case "organization hierarchy exceeds maximum depth":
+            return .organizationHierarchyTooDeep
+        case "organization root must have organization kind",
+             "organization parent must exist in the same vault",
+             "an organization cannot be placed under a unit":
+            return .invalidOrganizationParent
+        default:
+            return nil
         }
     }
 
-    private static func validateOrganizationHierarchy(
-        _ parentByID: [UUID: UUID?]
-    ) throws {
-        for id in parentByID.keys {
-            var currentId: UUID? = id
-            var visited: Set<UUID> = []
-            var depth = -1
-            while let resolvedId = currentId {
-                guard visited.insert(resolvedId).inserted else {
-                    throw CustomerIntelligenceError.organizationCycle
-                }
-                depth += 1
-                guard depth <= CustomerIntelligenceMigration.maximumOrganizationDepth else {
-                    throw CustomerIntelligenceError.organizationHierarchyTooDeep
-                }
-                currentId = parentByID[resolvedId, default: nil]
-            }
-        }
-    }
-
-    private static func validateNewOrganizationDepth(
-        _ parentOrganizationId: UUID?,
-        parentByID: [UUID: UUID?]
-    ) throws {
-        var currentId = parentOrganizationId
-        var depth = 0
-        while let resolvedId = currentId {
-            depth += 1
-            guard depth <= CustomerIntelligenceMigration.maximumOrganizationDepth else {
-                throw CustomerIntelligenceError.organizationHierarchyTooDeep
-            }
-            currentId = parentByID[resolvedId, default: nil]
-        }
-    }
-
-    private static func canonicalJSONObject(_ value: String) throws -> String {
-        guard let data = value.data(using: .utf8),
+    private static func validatedJSONObject(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
-              object is [String: Any],
-              let encoded = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+              object is [String: Any]
         else {
             throw CustomerIntelligenceError.invalidJSON
         }
-        guard let result = String(bytes: encoded, encoding: .utf8) else {
-            throw CustomerIntelligenceError.invalidJSON
-        }
-        return result
+        return trimmed
     }
 }

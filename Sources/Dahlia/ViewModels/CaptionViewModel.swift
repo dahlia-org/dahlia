@@ -1402,7 +1402,7 @@ final class CaptionViewModel: ObservableObject {
         projectURL: URL? = nil,
         projectId: UUID? = nil,
         projectName: String? = nil,
-        ingestsCustomerIntelligence: Bool = true
+        customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
     ) -> UUID? {
         if let currentMeetingId {
             return currentMeetingId
@@ -1466,7 +1466,8 @@ final class CaptionViewModel: ObservableObject {
             projectName: resolvedProject?.name ?? requestedProjectName,
             vaultURL: vaultURL
         )
-        if ingestsCustomerIntelligence, let event = draftMeeting.linkedCalendarEvent {
+        if customerIntelligenceIngestion == .afterMeetingPersistence,
+           let event = draftMeeting.linkedCalendarEvent {
             CustomerIntelligenceIngestionService.schedule(
                 calendarEvent: event,
                 meetingId: meetingId,

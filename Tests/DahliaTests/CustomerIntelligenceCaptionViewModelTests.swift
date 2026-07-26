@@ -47,7 +47,9 @@ import GRDB
                 vaultURL: vaultURL
             )
 
-            let meetingID = try #require(viewModel.materializeDraftMeeting())
+            let meetingID = try #require(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             try await waitForParticipant(meetingID: meetingID, dbQueue: fixture.manager.dbQueue)
             let contact = try await fixture.manager.dbQueue.read { db in
                 try ContactRecord.fetchOne(db)

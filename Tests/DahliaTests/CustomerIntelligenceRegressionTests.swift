@@ -229,7 +229,8 @@ import GRDB
             let resolvedMeetingID = try fixture.repository.resolveMeetingIdForCalendarEvent(
                 event,
                 vaultId: fixture.vault.id,
-                observedAt: observedAt
+                observedAt: observedAt,
+                customerIntelligenceIngestion: .afterMeetingPersistence
             )
 
             #expect(resolvedMeetingID == meeting.id)
@@ -283,7 +284,7 @@ import GRDB
                 event,
                 vaultId: fixture.vault.id,
                 observedAt: observedAt,
-                ingestsCustomerIntelligence: false
+                customerIntelligenceIngestion: .afterCaptureStarts
             )
 
             #expect(resolvedMeetingID == meeting.id)

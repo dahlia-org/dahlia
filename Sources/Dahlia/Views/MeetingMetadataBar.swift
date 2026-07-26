@@ -165,7 +165,9 @@ private struct MeetingTagsView: View {
         if let meetingId = viewModel.currentMeetingId {
             return meetingId
         }
-        return viewModel.materializeDraftMeeting()
+        return viewModel.materializeDraftMeeting(
+            customerIntelligenceIngestion: .afterMeetingPersistence
+        )
     }
 }
 
@@ -444,7 +446,8 @@ struct MeetingProjectPicker: View {
         guard let meetingId = viewModel.materializeDraftMeeting(
             projectURL: projectURL,
             projectId: projectId,
-            projectName: projectName
+            projectName: projectName,
+            customerIntelligenceIngestion: .afterMeetingPersistence
         ) else { return }
 
         if projectId != viewModel.currentProjectId,

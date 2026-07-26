@@ -662,27 +662,10 @@ extension MeetingAccessStore {
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
-        let customerIntelligenceTables: Set = [
-            "contacts",
-            "organizations",
-            "organization_domains",
-            "organization_memberships",
-            "meeting_participants",
-            "project_resource_references",
-            "insights",
-            "insight_references",
-            "glossary_terms",
-            "glossary_term_references",
-        ]
-        let availableTables = try Set(String.fetchAll(
-            db,
-            sql: "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ))
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
-              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
-              availableTables.isSuperset(of: customerIntelligenceTables)
+              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"])
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -764,7 +747,7 @@ extension MeetingAccessStore {
         )
     }
 
-    private func escapedLikePattern(_ value: String) -> String {
+    func escapedLikePattern(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
@@ -813,16 +796,13 @@ private struct MeetingCursor: Codable {
     let meetingID: UUID
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(_ value: String, vaultID: UUID) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
         }
-        return cursor
     }
 }
 
@@ -836,7 +816,7 @@ private struct TranscriptCursor: Codable {
     let toElapsedSeconds: Double?
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(
@@ -846,15 +826,12 @@ private struct TranscriptCursor: Codable {
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.meetingID == meetingID,
-              cursor.fromElapsedSeconds == fromElapsedSeconds,
-              cursor.toElapsedSeconds == toElapsedSeconds else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
+                && cursor.meetingID == meetingID
+                && cursor.fromElapsedSeconds == fromElapsedSeconds
+                && cursor.toElapsedSeconds == toElapsedSeconds
         }
-        return cursor
     }
 }
 
@@ -867,7 +844,7 @@ private struct ScreenshotCursor: Codable {
     let toElapsedSeconds: Double?
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(
@@ -877,14 +854,11 @@ private struct ScreenshotCursor: Codable {
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.meetingID == meetingID,
-              cursor.fromElapsedSeconds == fromElapsedSeconds,
-              cursor.toElapsedSeconds == toElapsedSeconds else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
+                && cursor.meetingID == meetingID
+                && cursor.fromElapsedSeconds == fromElapsedSeconds
+                && cursor.toElapsedSeconds == toElapsedSeconds
         }
-        return cursor
     }
 }

@@ -840,7 +840,7 @@ extension MeetingRepository {
         _ event: CalendarEvent,
         vaultId: UUID,
         observedAt: Date = .now,
-        ingestsCustomerIntelligence: Bool = true
+        customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
     ) throws -> UUID? {
         guard let key = event.key else { return nil }
         let meetingId = try dbQueue.write { db in
@@ -857,7 +857,7 @@ extension MeetingRepository {
             }
             return meetingId
         }
-        if ingestsCustomerIntelligence, let meetingId {
+        if customerIntelligenceIngestion == .afterMeetingPersistence, let meetingId {
             CustomerIntelligenceIngestionService.schedule(
                 calendarEvent: event,
                 meetingId: meetingId,
