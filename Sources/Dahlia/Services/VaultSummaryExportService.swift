@@ -91,6 +91,62 @@ enum VaultSummaryExportService {
         }
     }
 
+    // swiftlint:disable:next function_parameter_count
+    static func exportSupportingArtifacts(
+        vaultURL: URL,
+        meetingId: UUID,
+        projectName: String,
+        createdAt: Date,
+        segments: [TranscriptSegment],
+        recordingSessions: [RecordingSessionTimeline],
+        screenshots: [MeetingScreenshotRecord]
+    ) async throws {
+        try await exportSupportingArtifacts(
+            vaultURL: vaultURL,
+            meetingId: meetingId,
+            projectName: projectName,
+            createdAt: createdAt,
+            segments: segments,
+            recordingSessions: recordingSessions,
+            screenshots: screenshots,
+            exportTranscript: TranscriptExportService.exportTranscript,
+            exportScreenshots: ScreenshotExportService.exportScreenshots
+        )
+    }
+
+    // Test seams add exporter closures to the same supporting-artifact payload.
+    // swiftlint:disable:next function_parameter_count
+    static func exportSupportingArtifacts(
+        vaultURL: URL,
+        meetingId: UUID,
+        projectName: String,
+        createdAt: Date,
+        segments: [TranscriptSegment],
+        recordingSessions: [RecordingSessionTimeline],
+        screenshots: [MeetingScreenshotRecord],
+        exportTranscript: @escaping TranscriptExporter,
+        exportScreenshots: @escaping ScreenshotExporter
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                _ = try exportTranscript(
+                    vaultURL,
+                    meetingId,
+                    projectName,
+                    createdAt,
+                    segments,
+                    recordingSessions
+                )
+            }
+            if !screenshots.isEmpty {
+                group.addTask {
+                    _ = try exportScreenshots(vaultURL, screenshots)
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
+
     static func resolveSummaryFileURL(
         projectURL: URL?,
         vaultURL: URL,

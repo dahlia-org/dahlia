@@ -1,10 +1,45 @@
 import Foundation
+import os
 @testable import Dahlia
 
 #if canImport(Testing)
     import Testing
 
     struct VaultSummaryExportServiceTests {
+        @MainActor
+        @Test
+        func supportingArtifactExportsDoNotBlockMainActor() async throws {
+            let ranOnMainThread = OSAllocatedUnfairLock(initialState: false)
+            let screenshot = MeetingScreenshotRecord(
+                id: .v7(),
+                meetingId: .v7(),
+                capturedAt: .now,
+                imageData: Data([0x89, 0x50, 0x4E, 0x47]),
+                mimeType: "image/png"
+            )
+
+            try await VaultSummaryExportService.exportSupportingArtifacts(
+                vaultURL: FileManager.default.temporaryDirectory,
+                meetingId: .v7(),
+                projectName: "Project",
+                createdAt: .now,
+                segments: [],
+                recordingSessions: [],
+                screenshots: [screenshot],
+                exportTranscript: { _, _, _, _, _, _ in
+                    ranOnMainThread.withLock { $0 = $0 || Thread.isMainThread }
+                    return ""
+                },
+                exportScreenshots: { _, _ in
+                    ranOnMainThread.withLock { $0 = $0 || Thread.isMainThread }
+                    return []
+                }
+            )
+
+            let didRunOnMainThread = ranOnMainThread.withLock { $0 }
+            #expect(!didRunOnMainThread)
+        }
+
         @Test
         func exportSummaryBundleWritesSummaryTranscriptAndScreenshots() async throws {
             let vaultURL = FileManager.default.temporaryDirectory

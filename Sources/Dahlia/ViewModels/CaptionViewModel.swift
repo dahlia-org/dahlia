@@ -3039,20 +3039,15 @@ final class CaptionViewModel: ObservableObject {
                     }
                     return (fileURL, latestProjectName)
                 }
-                _ = try TranscriptExportService.exportTranscript(
+                try await VaultSummaryExportService.exportSupportingArtifacts(
                     vaultURL: request.vaultURL,
                     meetingId: meetingId,
                     projectName: exportResult.1,
                     createdAt: request.createdAt,
                     segments: summaryInput.segments,
-                    recordingSessions: request.recordingSessions
+                    recordingSessions: request.recordingSessions,
+                    screenshots: screenshots
                 )
-                if !screenshots.isEmpty {
-                    _ = try ScreenshotExportService.exportScreenshots(
-                        vaultURL: request.vaultURL,
-                        screenshots: screenshots
-                    )
-                }
                 job.progress.vaultExport = .completed
                 if currentMeetingId == meetingId { lastSummaryURL = exportResult.0 }
             } catch {
