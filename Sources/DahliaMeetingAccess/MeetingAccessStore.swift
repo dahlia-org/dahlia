@@ -657,7 +657,7 @@ extension MeetingAccessStore {
         }
     }
 
-    private func fetchVault(in db: Database) throws -> ScopedVault {
+    func fetchVault(in db: Database) throws -> ScopedVault {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
@@ -747,7 +747,7 @@ extension MeetingAccessStore {
         )
     }
 
-    private func escapedLikePattern(_ value: String) -> String {
+    func escapedLikePattern(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
@@ -796,16 +796,13 @@ private struct MeetingCursor: Codable {
     let meetingID: UUID
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(_ value: String, vaultID: UUID) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
         }
-        return cursor
     }
 }
 
@@ -819,7 +816,7 @@ private struct TranscriptCursor: Codable {
     let toElapsedSeconds: Double?
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(
@@ -829,15 +826,12 @@ private struct TranscriptCursor: Codable {
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.meetingID == meetingID,
-              cursor.fromElapsedSeconds == fromElapsedSeconds,
-              cursor.toElapsedSeconds == toElapsedSeconds else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
+                && cursor.meetingID == meetingID
+                && cursor.fromElapsedSeconds == fromElapsedSeconds
+                && cursor.toElapsedSeconds == toElapsedSeconds
         }
-        return cursor
     }
 }
 
@@ -850,7 +844,7 @@ private struct ScreenshotCursor: Codable {
     let toElapsedSeconds: Double?
 
     func encoded() -> String {
-        (try? JSONEncoder().encode(self).base64EncodedString()) ?? ""
+        AccessCursorCodec.encode(self)
     }
 
     static func decode(
@@ -860,14 +854,11 @@ private struct ScreenshotCursor: Codable {
         fromElapsedSeconds: Double?,
         toElapsedSeconds: Double?
     ) throws -> Self {
-        guard let data = Data(base64Encoded: value),
-              let cursor = try? JSONDecoder().decode(Self.self, from: data),
-              cursor.vaultID == vaultID,
-              cursor.meetingID == meetingID,
-              cursor.fromElapsedSeconds == fromElapsedSeconds,
-              cursor.toElapsedSeconds == toElapsedSeconds else {
-            throw MeetingAccessError.invalidCursor
+        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
+            cursor.vaultID == vaultID
+                && cursor.meetingID == meetingID
+                && cursor.fromElapsedSeconds == fromElapsedSeconds
+                && cursor.toElapsedSeconds == toElapsedSeconds
         }
-        return cursor
     }
 }

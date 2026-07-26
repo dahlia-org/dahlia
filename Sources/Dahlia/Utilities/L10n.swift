@@ -944,7 +944,7 @@ enum L10n {
     static var selectVaultForMCP: String { String(localized: "Select a vault before configuring MCP.", bundle: bundle) }
     static var mcpFooter: String { String(
         // swiftlint:disable:next line_length
-        localized: "Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults.",
+        localized: "Choose read-only access unless the agent should reorganize Projects and meeting memberships. Both modes let the agent read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Run the selected command again after switching Vaults.",
         bundle: bundle
     ) }
     static func registrationCommand(_ name: String) -> String {

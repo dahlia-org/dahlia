@@ -199,7 +199,9 @@ import GRDB
                 vaultURL: vault.url
             )
 
-            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let meetingId = try #require(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             let meeting = try fetchMeeting(id: meetingId, from: database.dbQueue)
 
             #expect(meeting.projectId == inheritedProject.id)
@@ -241,7 +243,9 @@ import GRDB
             )
             viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
 
-            let meetingId = try #require(viewModel.materializeDraftMeeting())
+            let meetingId = try #require(
+                viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            )
             let meeting = try fetchMeeting(id: meetingId, from: database.dbQueue)
 
             #expect(meeting.projectId == nil)

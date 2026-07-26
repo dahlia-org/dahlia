@@ -396,11 +396,99 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
                 || event.organizer?.isCurrentUser == true
                 || event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .accepted,
             isOutOfOffice: event.availability == .unavailable,
+            participants: calendarParticipants(from: event),
             conferenceURI: CalendarConferenceURIExtractor.conferenceURI(
                 url: event.url,
                 textFields: [event.notes, event.location]
             )
         )
+    }
+
+    private static func calendarParticipants(from event: EKEvent) -> [CalendarParticipant] {
+        var participants = (event.attendees ?? []).map { calendarParticipant($0) }
+        if let organizer = event.organizer {
+            participants.insert(calendarParticipant(organizer, role: .organizer), at: 0)
+        }
+        return participants
+    }
+
+    private static func calendarParticipant(
+        _ participant: EKParticipant,
+        role: MeetingParticipantRole? = nil
+    ) -> CalendarParticipant {
+        CalendarParticipant(
+            email: participantEmail(participant),
+            displayName: participant.name,
+            role: role ?? participantRole(participant),
+            responseStatus: participantResponseStatus(participant),
+            kind: participantKind(participant),
+            isCurrentUser: participant.isCurrentUser,
+            source: CalendarEventPlatform.macOSCalendar
+        )
+    }
+
+    private static func participantEmail(_ participant: EKParticipant) -> String? {
+        let absoluteString = participant.url.absoluteString
+        guard absoluteString.lowercased().hasPrefix("mailto:") else { return nil }
+        let value = String(absoluteString.dropFirst("mailto:".count))
+            .split(separator: "?", maxSplits: 1)
+            .first
+            .map(String.init)?
+            .removingPercentEncoding
+        return value?.nilIfBlank
+    }
+
+    private static func participantRole(_ participant: EKParticipant) -> MeetingParticipantRole {
+        switch participant.participantRole {
+        case .chair:
+            .organizer
+        case .required:
+            .required
+        case .optional:
+            .optional
+        case .nonParticipant:
+            .attendee
+        case .unknown:
+            .unknown
+        @unknown default:
+            .unknown
+        }
+    }
+
+    private static func participantResponseStatus(
+        _ participant: EKParticipant
+    ) -> MeetingParticipantResponseStatus {
+        switch participant.participantStatus {
+        case .accepted:
+            .accepted
+        case .declined:
+            .declined
+        case .tentative:
+            .tentative
+        case .pending:
+            .needsAction
+        case .unknown, .delegated, .completed, .inProcess:
+            .unknown
+        @unknown default:
+            .unknown
+        }
+    }
+
+    private static func participantKind(_ participant: EKParticipant) -> CalendarParticipantKind {
+        switch participant.participantType {
+        case .person:
+            .person
+        case .room:
+            .room
+        case .resource:
+            .resource
+        case .group:
+            .group
+        case .unknown:
+            .unknown
+        @unknown default:
+            .unknown
+        }
     }
 
     static func sortAndFilter(_ events: [CalendarEvent], now: Date, intervalEnd: Date) -> [CalendarEvent] {

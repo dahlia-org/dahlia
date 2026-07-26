@@ -754,6 +754,143 @@ import ImageIO
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
+        func customerIntelligenceAccessIsVaultScopedAndResolvesTypedReferences() throws {
+            let fixture = try Fixture()
+            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let organization = try repository.createOrganization(
+                vaultId: fixture.primaryVaultID,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Acme"
+            )
+            let unit = try repository.createOrganization(
+                vaultId: fixture.primaryVaultID,
+                parentOrganizationId: organization.id,
+                nodeKind: .unit,
+                name: "Platform"
+            )
+            _ = try repository.addOrganizationDomain(
+                organizationId: organization.id,
+                vaultId: fixture.primaryVaultID,
+                domainName: "acme.example"
+            )
+            let contact = try repository.upsertContact(
+                vaultId: fixture.primaryVaultID,
+                email: "owner@acme.example",
+                displayName: "Owner"
+            )
+            _ = try repository.upsertContact(
+                vaultId: fixture.otherVaultID,
+                email: "owner@acme.example",
+                displayName: "Other Owner"
+            )
+            _ = try repository.addOrganizationMembership(
+                organizationId: unit.id,
+                contactId: contact.id,
+                roleLabel: "Lead"
+            )
+            _ = try repository.addProjectResourceReference(
+                projectId: fixture.primaryProjectID,
+                resourceType: .organization,
+                resourceId: organization.id,
+                relationLabel: "customer"
+            )
+            _ = try repository.addProjectResourceReference(
+                projectId: fixture.primaryProjectID,
+                resourceType: .contact,
+                resourceId: contact.id,
+                relationLabel: "sponsor"
+            )
+            let insight = try repository.createInsight(
+                vaultId: fixture.primaryVaultID,
+                content: "Owner is the technical sponsor",
+                metadataJSON: #"{"decisionMaker":"Owner","foo_bar":"kept","rank":2}"#
+            )
+            _ = try repository.addInsightReference(
+                insightId: insight.id,
+                resourceType: .contact,
+                resourceId: contact.id,
+                role: .evidence
+            )
+            let glossary = try repository.createGlossaryTerm(
+                vaultId: fixture.primaryVaultID,
+                term: "DRI",
+                definition: "Directly responsible individual",
+                aliases: ["Owner"]
+            )
+            _ = try repository.addGlossaryTermReference(
+                glossaryTermId: glossary.id,
+                resourceType: .organization,
+                resourceId: organization.id
+            )
+
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let firstPage = try store.queryOrganizations(OrganizationAccessQuery(limit: 1))
+            #expect(firstPage.organizations.count == 1)
+            let cursor = try #require(firstPage.nextCursor)
+            let secondPage = try store.queryOrganizations(OrganizationAccessQuery(limit: 1, cursor: cursor))
+            #expect(secondPage.organizations.count == 1)
+            #expect(Set((firstPage.organizations + secondPage.organizations).map(\.id)) == [
+                organization.id,
+                unit.id,
+            ])
+            let organizationDetail = try store.organization(id: organization.id)
+            #expect(organizationDetail.domains.map(\.domainName) == ["acme.example"])
+            #expect(organizationDetail.projectResources.map(\.relationLabel) == ["customer"])
+
+            let contacts = try store.queryContacts()
+            #expect(contacts.contacts.map(\.id) == [contact.id])
+            let contactDetail = try store.contact(id: contact.id)
+            #expect(contactDetail.memberships.map(\.organizationID) == [unit.id])
+            #expect(contactDetail.projectResources.map(\.relationLabel) == ["sponsor"])
+            let projectResources = try store.queryProjectResources(ProjectResourceAccessQuery(
+                projectID: fixture.primaryProjectID
+            ))
+            #expect(Set(projectResources.resources.map(\.resourceID)) == [organization.id, contact.id])
+            let insights = try store.queryInsights(InsightAccessQuery(
+                resourceType: .contact,
+                resourceID: contact.id
+            ))
+            #expect(insights.insights.map(\.id) == [insight.id])
+            #expect(insights.insights.first?.references.first?.resourceName == "Owner")
+            let terms = try store.queryGlossaryTerms(GlossaryAccessQuery(query: "Owner"))
+            #expect(terms.terms.map(\.id) == [glossary.id])
+            #expect(try store.glossaryTerm(id: glossary.id).term.references.first?.resourceName == "Acme")
+
+            let server = DahliaMCPServer(store: store)
+            _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
+            let contactCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_contacts","arguments":{"organization_id":"\#(unit
+                .id.uuidString)"}}}
+            """#))
+            let contactContent = (contactCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            #expect((contactContent?["contacts"] as? [[String: Any]])?.first?["id"] as? String == contact.id.uuidString)
+            let invalidFilterCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact"}}}
+            """#))
+            #expect((invalidFilterCall["error"] as? [String: Any])?["code"] as? Int == -32602)
+            let insightCall = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact","resource_id":"\#(contact
+                .id.uuidString)"}}}
+            """#))
+            let insightContent = (insightCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            let encodedMetadata = (insightContent?["insights"] as? [[String: Any]])?.first?["metadata"]
+                as? [String: Any]
+            #expect(encodedMetadata?["decisionMaker"] as? String == "Owner")
+            #expect(encodedMetadata?["foo_bar"] as? String == "kept")
+            #expect(encodedMetadata?["decision_maker"] == nil)
+
+            let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
+            #expect(try otherStore.queryOrganizations().organizations.isEmpty)
+            #expect(try otherStore.queryContacts().contacts.count == 1)
+            #expect(throws: MeetingAccessError.organizationNotFound) {
+                try otherStore.organization(id: organization.id)
+            }
+        }
+
+        @Test
         func mcpProtocolRequiresInitializationAndReportsScopedVaultErrors() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
@@ -768,13 +905,16 @@ import ImageIO
             #expect((initialized["result"] as? [String: Any])?["serverInfo"] != nil)
             let instructions = (initialized["result"] as? [String: Any])?["instructions"] as? String
             #expect(instructions?.contains("Primary") == false)
-            #expect(instructions?.contains("untrusted data") == true)
+            let expectedInstructions = ["personal data", "do not repeat them unnecessarily", "untrusted data"]
+            #expect(expectedInstructions.allSatisfy { instructions?.contains($0) == true })
             #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
             let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
                 "query_meetings", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
+                "query_organizations", "get_organization", "query_contacts", "get_contact",
+                "query_project_resources", "query_insights", "query_glossary_terms", "get_glossary_term",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
             #expect(definitions.allSatisfy { $0["outputSchema"] != nil })
@@ -1043,6 +1183,26 @@ import ImageIO
         }
 
         @Test
+        func v24DatabaseKeepsMeetingAccessButRejectsCustomerIntelligenceAccess() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v24-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v25")
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v24_projectWorkspaceHierarchy")
+            try queue.write { db in
+                try vault.insert(db)
+            }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+
+            #expect(try store.scopedVault().id == vault.id)
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.queryOrganizations()
+            }
+        }
+
+        @Test
         func projectSchemaWithoutNameKeyRequiresOpeningDahliaForMigration() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-project-schema-\(UUID.v7().uuidString)")
@@ -1239,7 +1399,11 @@ import ImageIO
             """#))
             #expect((deniedMeeting["error"] as? [String: Any])?["code"] as? Int == -32602)
 
-            for (id, name) in [(5, "query_meetings"), (6, "get_meeting_transcript")] {
+            for (id, name) in [
+                (5, "query_meetings"),
+                (6, "get_meeting_transcript"),
+                (7, "query_contacts"),
+            ] {
                 let deniedTool = try Self.json(server.handleLine("""
                 {"jsonrpc":"2.0","id":\(id),"method":"tools/call","params":{"name":"\(name)","arguments":{}}}
                 """))

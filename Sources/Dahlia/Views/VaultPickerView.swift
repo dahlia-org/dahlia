@@ -6,6 +6,7 @@ struct VaultPickerView: View {
     let appDatabase: AppDatabaseManager?
     let onVaultSelected: (VaultRecord) -> Void
 
+    @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var settings = AppSettings.shared
     @State private var vaults: [VaultRecord] = []
@@ -69,6 +70,12 @@ struct VaultPickerView: View {
         switch result {
         case let .success(urls):
             guard let url = urls.first else { return }
+            let isAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if isAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
             registerVault(url: url)
         case let .failure(error):
             guard (error as? CocoaError)?.code != .userCancelled else { return }
@@ -96,7 +103,14 @@ struct VaultPickerView: View {
     }
 
     private func registerVault(url: URL) {
-        guard let repository else { return }
+        guard let repository else {
+            presentError(
+                L10n.vaultAddFailed,
+                error: VaultPickerError.databaseUnavailable,
+                source: "registerVault"
+            )
+            return
+        }
 
         let normalizedURL = url.standardizedFileURL
         if let existingVault = vaults.first(where: { $0.url.standardizedFileURL == normalizedURL }) {
@@ -146,7 +160,12 @@ struct VaultPickerView: View {
     private func openVault(_ vault: VaultRecord) {
         onVaultSelected(vault)
         openWindow(id: WindowID.main)
+        dismissWindow(id: WindowID.vaultManager)
         NSApp.activate(ignoringOtherApps: true)
+        Task { @MainActor in
+            await Task.yield()
+            MainWindowOpener.shared.focusExistingMainWindow()
+        }
     }
 
     private func presentError(_ message: String, error: any Error, source: String) {
@@ -154,4 +173,8 @@ struct VaultPickerView: View {
         isShowingError = true
         ErrorReportingService.capture(error, context: ["source": source])
     }
+}
+
+private enum VaultPickerError: Error {
+    case databaseUnavailable
 }

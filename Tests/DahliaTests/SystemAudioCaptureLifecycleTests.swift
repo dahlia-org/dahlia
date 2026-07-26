@@ -149,7 +149,7 @@
                 if hasStarted.withLock(\.self) {
                     return true
                 }
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(10))
             }
             return false
         }

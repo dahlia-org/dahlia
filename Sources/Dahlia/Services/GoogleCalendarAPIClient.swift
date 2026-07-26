@@ -149,6 +149,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             isDeclined: item.isDeclinedByCurrentUser,
             isAttending: item.isCurrentUserAttending,
             isOutOfOffice: item.eventType == "outOfOffice",
+            participants: item.calendarParticipants,
             conferenceURI: conferenceURI(for: item),
             url: absoluteURL(from: item.htmlLink)
         )
@@ -462,6 +463,14 @@ extension GoogleCalendarAPIClient {
             attendees == nil
                 || organizer?.isCurrentUser == true
                 || attendees?.first(where: \.isCurrentUser)?.responseStatus == "accepted"
+        }
+
+        var calendarParticipants: [CalendarParticipant] {
+            var participants = (attendees ?? []).map { $0.calendarParticipant() }
+            if let organizer {
+                participants.insert(organizer.calendarParticipant(role: .organizer), at: 0)
+            }
+            return participants
         }
     }
 }

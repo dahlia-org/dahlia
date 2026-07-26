@@ -839,10 +839,11 @@ extension MeetingRepository {
     func resolveMeetingIdForCalendarEvent(
         _ event: CalendarEvent,
         vaultId: UUID,
-        observedAt: Date = .now
+        observedAt: Date = .now,
+        customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
     ) throws -> UUID? {
         guard let key = event.key else { return nil }
-        return try dbQueue.write { db in
+        let meetingId = try dbQueue.write { db in
             let meetingId = try MeetingRecord
                 .select(Column("id"))
                 .filter(Column("vaultId") == vaultId)
@@ -856,6 +857,16 @@ extension MeetingRepository {
             }
             return meetingId
         }
+        if customerIntelligenceIngestion == .afterMeetingPersistence, let meetingId {
+            CustomerIntelligenceIngestionService.schedule(
+                calendarEvent: event,
+                meetingId: meetingId,
+                vaultId: vaultId,
+                observedAt: observedAt,
+                dbQueue: dbQueue
+            )
+        }
+        return meetingId
     }
 }
 

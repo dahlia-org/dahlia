@@ -38,8 +38,9 @@ final class SidebarViewModel {
 
     // MARK: - Active Database & Vault
 
+    @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
-    var currentVault: VaultRecord? { AppSettings.shared.currentVault }
+    var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
 
     @ObservationIgnored private var meetingRepository: MeetingRepository?
@@ -56,6 +57,10 @@ final class SidebarViewModel {
     @ObservationIgnored private var projectDescriptionDrafts: [UUID: String] = [:]
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
 
+    init(settings: AppSettings = .shared) {
+        self.settings = settings
+    }
+
     /// プロジェクト名から vault 内の URL を返す。
     func projectURL(for name: String) -> URL {
         currentVault!.url.appendingPathComponent(name, isDirectory: true)
@@ -67,7 +72,7 @@ final class SidebarViewModel {
     }
 
     /// アプリ起動時に AppDatabaseManager と保管庫を設定する。
-    /// 呼び出し前に AppSettings.shared.currentVault を設定しておくこと。
+    /// 呼び出し前に設定の currentVault を設定しておくこと。
     func setAppDatabase(_ database: AppDatabaseManager?) {
         appDatabase = database
         meetingRepository = database.map { MeetingRepository(dbQueue: $0.dbQueue) }
@@ -104,14 +109,14 @@ final class SidebarViewModel {
 
         guard let dbQueue = database?.dbQueue else {
             allVaults.removeAll()
-            AppSettings.shared.selectedInstructionID = nil
+            settings.selectedInstructionID = nil
             return
         }
 
         startVaultObservation(dbQueue: dbQueue)
 
         guard let vault = currentVault else {
-            AppSettings.shared.selectedInstructionID = nil
+            settings.selectedInstructionID = nil
             return
         }
 
@@ -376,9 +381,9 @@ final class SidebarViewModel {
                         }
                     }
 
-                    if let selectedInstructionID = AppSettings.shared.selectedInstructionID,
+                    if let selectedInstructionID = self.settings.selectedInstructionID,
                        !instructions.contains(where: { $0.id == selectedInstructionID }) {
-                        AppSettings.shared.selectedInstructionID = nil
+                        self.settings.selectedInstructionID = nil
                     }
                 }
             }
@@ -408,7 +413,7 @@ final class SidebarViewModel {
     // MARK: - Instruction CRUD
 
     func useInstructionForSummary(_ instructionID: UUID?) {
-        AppSettings.shared.selectedInstructionID = instructionID
+        settings.selectedInstructionID = instructionID
     }
 
     func createInstruction() -> InstructionRecord? {
@@ -446,8 +451,8 @@ final class SidebarViewModel {
             if selectedInstruction?.id == id {
                 selectedInstruction = nil
             }
-            if AppSettings.shared.selectedInstructionID == id {
-                AppSettings.shared.selectedInstructionID = nil
+            if settings.selectedInstructionID == id {
+                settings.selectedInstructionID = nil
             }
         } catch {
             lastError = error.localizedDescription

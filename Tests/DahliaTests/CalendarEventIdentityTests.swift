@@ -1,4 +1,5 @@
 import Foundation
+@testable import DahliaRuntimeSupport
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -82,6 +83,72 @@ import Foundation
             #expect([googleEvent, macEvent].deduplicatedAcrossSources() == [expected])
             #expect([macEvent, googleEvent].deduplicatedAcrossSources() == [expected])
         }
+
+        @Test
+        func deduplicationMergesParticipantsByCanonicalEmail() throws {
+            let googleEvent = makeEvent(
+                platform: CalendarEventPlatform.googleCalendar,
+                participants: [
+                    participant(
+                        email: "ALICE@EXAMPLE.COM",
+                        role: .unknown,
+                        responseStatus: .unknown,
+                        source: CalendarEventPlatform.googleCalendar
+                    ),
+                ]
+            )
+            let macEvent = makeEvent(
+                platform: CalendarEventPlatform.macOSCalendar,
+                participants: [
+                    participant(
+                        email: "alice@example.com",
+                        displayName: "Alice",
+                        role: .required,
+                        responseStatus: .accepted,
+                        isCurrentUser: true,
+                        source: CalendarEventPlatform.macOSCalendar
+                    ),
+                    participant(
+                        email: "bob@example.com",
+                        displayName: "Bob",
+                        role: .optional,
+                        responseStatus: .tentative,
+                        source: CalendarEventPlatform.macOSCalendar
+                    ),
+                ]
+            )
+
+            for events in [[googleEvent, macEvent], [macEvent, googleEvent]] {
+                let merged = try #require(events.deduplicatedAcrossSources().first)
+                #expect(merged.participants.count == 2)
+                let alice = try #require(merged.participants.first {
+                    CustomerIdentityNormalizer.email($0.email ?? "") == "alice@example.com"
+                })
+                #expect(alice.displayName == "Alice")
+                #expect(alice.role == .required)
+                #expect(alice.responseStatus == .accepted)
+                #expect(alice.isCurrentUser)
+                #expect(alice.source == CalendarEventPlatform.googleCalendar)
+            }
+        }
+
+        @Test
+        func participantChangesAffectCalendarEventEquality() {
+            let original = makeEvent(platform: CalendarEventPlatform.googleCalendar)
+            let updated = makeEvent(
+                platform: CalendarEventPlatform.googleCalendar,
+                participants: [
+                    participant(
+                        email: "alice@example.com",
+                        role: .required,
+                        responseStatus: .accepted,
+                        source: CalendarEventPlatform.googleCalendar
+                    ),
+                ]
+            )
+
+            #expect(original != updated)
+        }
     }
 
     private func makeEvent(
@@ -89,6 +156,7 @@ import Foundation
         recurrenceId: String = ICalendarRecurrenceID.singleEvent,
         startDate: Date = Date(timeIntervalSince1970: 1_776_387_600),
         description: String = "",
+        participants: [CalendarParticipant] = [],
         conferenceURI: URL? = nil,
         url: URL? = nil
     ) -> CalendarEvent {
@@ -106,8 +174,28 @@ import Foundation
             startDate: startDate,
             endDate: startDate.addingTimeInterval(3600),
             isAllDay: false,
+            participants: participants,
             conferenceURI: conferenceURI,
             url: url
+        )
+    }
+
+    private func participant(
+        email: String,
+        displayName: String? = nil,
+        role: MeetingParticipantRole,
+        responseStatus: MeetingParticipantResponseStatus,
+        isCurrentUser: Bool = false,
+        source: String
+    ) -> CalendarParticipant {
+        CalendarParticipant(
+            email: email,
+            displayName: displayName,
+            role: role,
+            responseStatus: responseStatus,
+            kind: .person,
+            isCurrentUser: isCurrentUser,
+            source: source
         )
     }
 #endif

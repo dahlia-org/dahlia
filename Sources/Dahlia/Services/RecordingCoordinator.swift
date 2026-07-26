@@ -79,7 +79,11 @@ final class RecordingCoordinator {
 
         let repository = MeetingRepository(dbQueue: dbQueue)
         do {
-            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
+            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: vault.id,
+                customerIntelligenceIngestion: .afterMeetingPersistence
+            ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return
             }
@@ -106,7 +110,10 @@ final class RecordingCoordinator {
     }
 
     @discardableResult
-    func startRecording(appendingTo meetingId: UUID) -> Bool {
+    func startRecording(
+        appendingTo meetingId: UUID,
+        customerIntelligenceEvent: CalendarEvent? = nil
+    ) -> Bool {
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
@@ -132,6 +139,17 @@ final class RecordingCoordinator {
                 vaultURL: vault.url,
                 appendingTo: meetingId
             )
+            if let customerIntelligenceEvent,
+               viewModel.isListening,
+               viewModel.recordingMeetingId == meetingId {
+                CustomerIntelligenceIngestionService.schedule(
+                    calendarEvent: customerIntelligenceEvent,
+                    meetingId: meetingId,
+                    vaultId: vault.id,
+                    observedAt: .now,
+                    dbQueue: dbQueue
+                )
+            }
             sidebarViewModel.selectMeeting(meetingId)
         }
         return true
@@ -152,9 +170,16 @@ final class RecordingCoordinator {
 
         let repository = MeetingRepository(dbQueue: dbQueue)
         do {
-            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
+            if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: vault.id,
+                customerIntelligenceIngestion: .afterCaptureStarts
+            ) {
                 sidebarViewModel.selectMeeting(existingMeetingId)
-                return startRecording(appendingTo: existingMeetingId)
+                return startRecording(
+                    appendingTo: existingMeetingId,
+                    customerIntelligenceEvent: event
+                )
             }
         } catch {
             viewModel.errorMessage = error.localizedDescription

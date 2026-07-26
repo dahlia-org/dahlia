@@ -173,11 +173,19 @@ import GRDB
 
             let repository = MeetingRepository(dbQueue: database.dbQueue)
             #expect(
-                try repository.resolveMeetingIdForCalendarEvent(event, vaultId: activeVault.id)
+                try repository.resolveMeetingIdForCalendarEvent(
+                    event,
+                    vaultId: activeVault.id,
+                    customerIntelligenceIngestion: .afterMeetingPersistence
+                )
                     == tiedActiveMeetingId
             )
             #expect(
-                try repository.resolveMeetingIdForCalendarEvent(event, vaultId: otherVault.id)
+                try repository.resolveMeetingIdForCalendarEvent(
+                    event,
+                    vaultId: otherVault.id,
+                    customerIntelligenceIngestion: .afterMeetingPersistence
+                )
                     == otherMeetingId
             )
         }

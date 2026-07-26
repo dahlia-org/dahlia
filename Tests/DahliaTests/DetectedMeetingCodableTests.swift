@@ -68,6 +68,7 @@ import Foundation
             legacyObject.removeValue(forKey: "isDeclined")
             legacyObject.removeValue(forKey: "isAttending")
             legacyObject.removeValue(forKey: "isOutOfOffice")
+            legacyObject.removeValue(forKey: "participants")
             let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
 
             let decoded = try JSONDecoder().decode(CalendarEvent.self, from: legacyData)
@@ -79,6 +80,7 @@ import Foundation
             #expect(!decoded.isDeclined)
             #expect(!decoded.isAttending)
             #expect(!decoded.isOutOfOffice)
+            #expect(decoded.participants.isEmpty)
         }
     }
 #endif

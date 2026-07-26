@@ -145,7 +145,12 @@ struct GoogleCalendarAPIClientTests {
               "end": { "dateTime": "2026-04-17T02:00:00Z" },
               "attendees": [
                 { "email": "me@example.com", "self": true, "responseStatus": "declined" },
-                { "email": "colleague@example.com", "responseStatus": "accepted" }
+                {
+                  "email": "colleague@example.com",
+                  "displayName": "Colleague",
+                  "optional": true,
+                  "responseStatus": "accepted"
+                }
               ]
             }
           ]
@@ -163,6 +168,13 @@ struct GoogleCalendarAPIClientTests {
         #expect(event.hasOtherAttendees)
         #expect(event.isDeclined)
         #expect(!event.isAttending)
+        #expect(event.participants.count == 2)
+        #expect(event.participants.first?.isCurrentUser == true)
+        let colleague = try #require(event.participants.first { $0.email == "colleague@example.com" })
+        #expect(colleague.displayName == "Colleague")
+        #expect(colleague.role == .optional)
+        #expect(colleague.responseStatus == .accepted)
+        #expect(colleague.kind == .person)
     }
 
     @Test
