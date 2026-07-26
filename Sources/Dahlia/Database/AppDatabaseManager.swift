@@ -25,6 +25,10 @@ final class AppDatabaseManager: Sendable {
             )
         }
         dbQueue = try DatabaseQueue(path: path)
+        try LegacyDatabaseCompatibility.reconcileIfNeeded(
+            dbQueue,
+            canonicalMigrator: Self.migrator
+        )
         try Self.migrator.migrate(dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
@@ -153,6 +157,13 @@ final class AppDatabaseManager: Sendable {
         schemaVersion(from: currentMigrationIdentifier) ?? 0
     }
 
+    static func hasUnexpectedMigrationIdentifiers(_ db: Database) throws -> Bool {
+        let appliedIdentifiers = try migrator.appliedIdentifiers(db)
+        let recognizedIdentifiers = Set(migrationIdentifiers)
+            .union(LegacyDatabaseCompatibility.retiredMigrationIdentifiers)
+        return !appliedIdentifiers.isSubset(of: recognizedIdentifiers)
+    }
+
     nonisolated static func schemaVersion(from migrationIdentifier: String) -> Int? {
         guard migrationIdentifier.first == "v" else { return nil }
         let digits = migrationIdentifier.dropFirst().prefix(while: \Character.isNumber)
@@ -189,10 +200,45 @@ final class AppDatabaseManager: Sendable {
             let sql: String = row["sql"]
             return (type, name, table, sql)
         }.filter { object in
-            !excludingTableNames.contains(object.1) && !excludingTableNames.contains(object.2)
+            !excludingTableNames.contains(object.1)
+                && !excludingTableNames.contains(object.2)
+                && !LegacyDatabaseCompatibility.isArchivedTable(object.2)
         }.map { object in
-            "\(object.0)\u{0}\(object.1)\u{0}\(object.2)\u{0}\(object.3)"
+            if object.0 == "table", object.1 == "transcript_segments" {
+                return try transcriptSegmentsStructureSignature(in: db)
+            }
+            return "\(object.0)\u{0}\(object.1)\u{0}\(object.2)\u{0}\(object.3)"
         }
+    }
+
+    /// Released databases can have `translatedText` after `speakerLabel` because v6 added it
+    /// in place. Column order is not semantically relevant, so compare this table structurally.
+    private static func transcriptSegmentsStructureSignature(in db: Database) throws -> String {
+        let columns = try Row.fetchAll(db, sql: "PRAGMA table_xinfo('transcript_segments')")
+            .map { row -> String in
+                let name: String = row["name"]
+                let type: String = row["type"]
+                let notNull: Int = row["notnull"]
+                let defaultValue: String? = row["dflt_value"]
+                let primaryKey: Int = row["pk"]
+                let hidden: Int = row["hidden"]
+                return [name, type, String(notNull), defaultValue ?? "", String(primaryKey), String(hidden)]
+                    .joined(separator: "\u{0}")
+            }
+            .sorted()
+        let foreignKeys = try Row.fetchAll(db, sql: "PRAGMA foreign_key_list('transcript_segments')")
+            .map { row -> String in
+                let referencedTable: String = row["table"]
+                let from: String = row["from"]
+                let to: String? = row["to"]
+                let onUpdate: String = row["on_update"]
+                let onDelete: String = row["on_delete"]
+                let match: String = row["match"]
+                return [referencedTable, from, to ?? "", onUpdate, onDelete, match]
+                    .joined(separator: "\u{0}")
+            }
+            .sorted()
+        return (["table", "transcript_segments"] + columns + foreignKeys).joined(separator: "\u{1}")
     }
 
     private static func addTranscriptPagingIndexIfNeeded(in db: Database) throws {

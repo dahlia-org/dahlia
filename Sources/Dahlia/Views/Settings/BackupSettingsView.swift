@@ -3,6 +3,11 @@ import GRDB
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum BackupFileFormat {
+    static let pathExtension = "sqlite"
+    static let contentType = UTType(filenameExtension: pathExtension) ?? .data
+}
+
 struct BackupSettingsView: View {
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
@@ -241,20 +246,36 @@ struct BackupSettingsView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.database]
+        panel.allowedContentTypes = [BackupFileFormat.contentType]
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            Task { await model.importBackup(from: url) }
+            Task {
+                let isAccessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if isAccessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                await model.importBackup(from: url)
+            }
         }
     }
 
     private func exportBackup(_ generation: BackupGeneration) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.database]
+        panel.allowedContentTypes = [BackupFileFormat.contentType]
         panel.nameFieldStringValue = generation.fileURL.lastPathComponent
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            Task { await model.exportBackup(generation, to: url) }
+            Task {
+                let isAccessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if isAccessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                await model.exportBackup(generation, to: url)
+            }
         }
     }
 }

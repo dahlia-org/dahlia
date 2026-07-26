@@ -142,7 +142,7 @@ enum BackupRestoreStartupProcessor {
             guard quickCheck == "ok",
                   try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty,
                   try AppDatabaseManager.migrator.hasCompletedMigrations(db),
-                  try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
+                  try !AppDatabaseManager.hasUnexpectedMigrationIdentifiers(db),
                   try !db.tableExists(BackupService.metadataTableName),
                   try AppDatabaseManager.hasExpectedCurrentSchema(db) else {
                 throw BackupServiceError.integrityCheckFailed(quickCheck)
