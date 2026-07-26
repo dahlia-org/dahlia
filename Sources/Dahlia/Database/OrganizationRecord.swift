@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct OrganizationRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable {
+struct OrganizationRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
     static let databaseTableName = "organizations"
 
     var id: UUID
@@ -9,6 +9,7 @@ struct OrganizationRecord: Codable, FetchableRecord, PersistableRecord, Identifi
     var parentOrganizationId: UUID?
     var nodeKind: OrganizationNodeKind
     var name: String
+    var revision: Int
     var createdAt: Date
     var updatedAt: Date
 }

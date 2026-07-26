@@ -1,5 +1,10 @@
 # 顧客インテリジェンス、Ontology、Insight に関する調査
 
+> Implementation note (2026-07-27): 「組織」画面は一社のルートに限定した bounded hierarchy viewer として
+> 実装した。巨大な graph canvas、graph DB、自由座標は導入せず、人物は inspector に置く。AI の判断は
+> 正準データから分離した reviewable proposal とする。詳細は
+> [ADR 0012](../adr/0012-reviewable-customer-intelligence-workspace.md) を参照。
+
 - 調査日: 2026-07-26
 - 状態: v1 の設計判断に反映
 - 対象: Dahlia の議事録・Calendar attendee から構築する組織、人物、プロジェクト、用語、AI示唆のローカルデータ基盤

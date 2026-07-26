@@ -50,7 +50,7 @@ final class MeetingRepository {
 
     private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
-    let dbQueue: DatabaseQueue
+    nonisolated let dbQueue: DatabaseQueue
 
     nonisolated init(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue

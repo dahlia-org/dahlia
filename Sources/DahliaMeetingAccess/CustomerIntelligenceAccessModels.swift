@@ -58,6 +58,7 @@ public struct OrganizationAccessMetadata: Codable, Sendable, Equatable {
     public let domainCount: Int
     public let memberCount: Int
     public let childCount: Int
+    public let revision: Int
     public let createdAt: Date
     public let updatedAt: Date
 }
@@ -77,9 +78,30 @@ public struct OrganizationDomainAccessMetadata: Codable, Sendable, Equatable {
 
 public struct OrganizationMemberAccessMetadata: Codable, Sendable, Equatable {
     public let contactID: UUID
-    public let email: String
+    public let email: String?
     public let displayName: String?
+    public let isProvisional: Bool
+    public let revision: Int
     public let roleLabel: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case contactID
+        case email
+        case displayName
+        case isProvisional
+        case revision
+        case roleLabel
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(contactID, forKey: .contactID)
+        try container.encode(email, forKey: .email)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
+        try container.encode(isProvisional, forKey: .isProvisional)
+        try container.encode(revision, forKey: .revision)
+        try container.encodeIfPresent(roleLabel, forKey: .roleLabel)
+    }
 }
 
 public struct OrganizationAccessDetail: Codable, Sendable, Equatable {
@@ -114,13 +136,42 @@ public struct ContactAccessQuery: Sendable, Equatable {
 
 public struct ContactAccessMetadata: Codable, Sendable, Equatable {
     public let id: UUID
-    public let email: String
+    public let email: String?
     public let displayName: String?
+    public let isProvisional: Bool
+    public let revision: Int
     public let organizationCount: Int
     public let meetingCount: Int
     public let lastInteractionAt: Date?
     public let createdAt: Date
     public let updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case displayName
+        case isProvisional
+        case revision
+        case organizationCount
+        case meetingCount
+        case lastInteractionAt
+        case createdAt
+        case updatedAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(email, forKey: .email)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
+        try container.encode(isProvisional, forKey: .isProvisional)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(organizationCount, forKey: .organizationCount)
+        try container.encode(meetingCount, forKey: .meetingCount)
+        try container.encodeIfPresent(lastInteractionAt, forKey: .lastInteractionAt)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 public struct ContactAccessPage: Codable, Sendable, Equatable {

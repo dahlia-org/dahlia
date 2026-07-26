@@ -104,7 +104,7 @@ public extension MeetingAccessStore {
             let memberRows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT contacts.id, contacts.email, contacts.displayName, memberships.roleLabel
+                SELECT contacts.id, contacts.email, contacts.displayName, contacts.revision, memberships.roleLabel
                 FROM organization_memberships AS memberships
                 JOIN contacts ON contacts.id = memberships.contactId
                 WHERE memberships.organizationId = ? AND contacts.vaultId = ?
@@ -135,6 +135,8 @@ public extension MeetingAccessStore {
                         contactID: $0["id"],
                         email: $0["email"],
                         displayName: $0["displayName"],
+                        isProvisional: ($0["email"] as String?) == nil,
+                        revision: $0["revision"],
                         roleLabel: $0["roleLabel"]
                     )
                 },
@@ -539,14 +541,14 @@ public extension MeetingAccessStore {
     }
 }
 
-private extension MeetingAccessStore {
+extension MeetingAccessStore {
     static let customerNestedLimit = 100
 
     func fetchCustomerIntelligenceVault(in db: Database) throws -> ScopedVault {
         guard try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
-            arguments: ["v25_customerIntelligence"]
+            arguments: ["v27_customerIntelligenceTopicReferenceTimestamp"]
         ) == true else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -633,6 +635,7 @@ private extension MeetingAccessStore {
             domainCount: row["domainCount"],
             memberCount: row["memberCount"],
             childCount: row["childCount"],
+            revision: row["revision"],
             createdAt: row["createdAt"],
             updatedAt: row["updatedAt"]
         )
@@ -680,6 +683,8 @@ private extension MeetingAccessStore {
             id: row["id"],
             email: row["email"],
             displayName: row["displayName"],
+            isProvisional: (row["email"] as String?) == nil,
+            revision: row["revision"],
             organizationCount: row["organizationCount"],
             meetingCount: row["meetingCount"],
             lastInteractionAt: row["lastInteractionAt"],

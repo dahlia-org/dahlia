@@ -151,6 +151,120 @@ enum L10n {
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
+    static var organizations: String { String(localized: "Organizations", bundle: bundle) }
+    static var department: String { String(localized: "Department", bundle: bundle) }
+    static var people: String { String(localized: "People", bundle: bundle) }
+    static var topics: String { String(localized: "Topics", bundle: bundle) }
+    static var topicMeetingEvidence: String { String(localized: "Topic Meeting Evidence", bundle: bundle) }
+    static func organizationAIPrompt(
+        organizationID: UUID,
+        projectID: UUID?,
+        start: String,
+        end: String
+    ) -> String {
+        String(
+            format: String(localized: "Organization AI Prompt", bundle: bundle),
+            locale: .current,
+            organizationID.uuidString,
+            projectID?.uuidString ?? String(localized: "Not specified", bundle: bundle),
+            start,
+            end
+        )
+    }
+
+    static var topic: String { String(localized: "Topic", bundle: bundle) }
+    static var proposals: String { String(localized: "Proposals", bundle: bundle) }
+    static var openOrganizationWorkspace: String {
+        String(localized: "Open Organization Workspace", bundle: bundle)
+    }
+
+    static var organizationCanvas: String { String(localized: "Organization hierarchy canvas", bundle: bundle) }
+    static var unassignedPeople: String { String(localized: "Unassigned People", bundle: bundle) }
+    static var unnamedPerson: String { String(localized: "Unnamed Person", bundle: bundle) }
+    static var provisionalPerson: String { String(localized: "Provisional person", bundle: bundle) }
+    static var provisionalPersonName: String { String(localized: "Provisional person name", bundle: bundle) }
+    static var newOrganization: String { String(localized: "New Organization", bundle: bundle) }
+    static var newDepartment: String { String(localized: "New Department", bundle: bundle) }
+    static var addToDepartment: String { String(localized: "Add to Department", bundle: bundle) }
+    static var removeFromDepartment: String { String(localized: "Remove from Department", bundle: bundle) }
+    static var parentDepartment: String { String(localized: "Parent Department", bundle: bundle) }
+    static var move: String { String(localized: "Move", bundle: bundle) }
+    static var person: String { String(localized: "Person", bundle: bundle) }
+    static var role: String { String(localized: "Role", bundle: bundle) }
+    static var saveTopicState: String { String(localized: "Save Topic State", bundle: bundle) }
+    static var deleteProvisionalPerson: String { String(localized: "Delete Provisional Person?", bundle: bundle) }
+    static var deleteOrganization: String { String(localized: "Delete Organization?", bundle: bundle) }
+    static var deleteTopic: String { String(localized: "Delete Topic?", bundle: bundle) }
+    static var searchOrganizations: String { String(localized: "Search organizations", bundle: bundle) }
+    static var noOrganizations: String { String(localized: "No Organizations", bundle: bundle) }
+    static var noOrganizationsDescription: String {
+        String(localized: "Calendar participants or reviewed proposals can create the first organization.", bundle: bundle)
+    }
+
+    static var selectOrganization: String { String(localized: "Select an Organization", bundle: bundle) }
+    static var allTopics: String { String(localized: "All Topics", bundle: bundle) }
+    static var allProjects: String { String(localized: "All Projects", bundle: bundle) }
+    static var organizationWorkspaceError: String {
+        String(localized: "Could Not Update Organization Workspace", bundle: bundle)
+    }
+
+    static var organizationWorkspaceBusy: String {
+        String(localized: "Dahlia data is busy. No changes were applied. Please retry.", bundle: bundle)
+    }
+
+    static var zoomIn: String { String(localized: "Zoom In", bundle: bundle) }
+    static var zoomOut: String { String(localized: "Zoom Out", bundle: bundle) }
+    static var fitToView: String { String(localized: "Fit to View", bundle: bundle) }
+    static var organizeWithAI: String { String(localized: "Organize with AI", bundle: bundle) }
+    static var analysisScope: String { String(localized: "Analysis Scope", bundle: bundle) }
+    static var aiScopeDoesNotSend: String {
+        String(localized: "This prepares an exact prompt in Chat. It does not send it automatically.", bundle: bundle)
+    }
+
+    static var prepareChat: String { String(localized: "Prepare Chat", bundle: bundle) }
+    static var readyForReview: String { String(localized: "Ready for review", bundle: bundle) }
+    static var reject: String { String(localized: "Reject", bundle: bundle) }
+    static var add: String { String(localized: "Add", bundle: bundle) }
+    static var save: String { String(localized: "Save", bundle: bundle) }
+    static var name: String { String(localized: "Name", bundle: bundle) }
+
+    static func pastDays(_ count: Int) -> String {
+        String(localized: "Past \(count) days", bundle: bundle)
+    }
+
+    static func topicDerivedSummary(meetings: Int, organizations: Int) -> String {
+        String(localized: "\(meetings) meetings · \(organizations) departments", bundle: bundle)
+    }
+
+    static func proposalDependencies(_ count: Int) -> String {
+        String(localized: "\(count) dependencies", bundle: bundle)
+    }
+
+    static func proposalReferences(_ count: Int) -> String {
+        String(localized: "\(count) references", bundle: bundle)
+    }
+
+    static func contactDeletionImpact(_ impact: ProvisionalContactDeletionImpact) -> String {
+        String(
+            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, \(impact.glossaryTerms) glossary terms, and \(impact.topics) Topics will be detached.",
+            bundle: bundle
+        )
+    }
+
+    static func organizationDeletionImpact(_ impact: OrganizationDeletionImpact) -> String {
+        String(
+            localized: "This deletes \(impact.organizationCount) organization nodes and detaches \(impact.memberships) memberships, \(impact.projects) Projects, and \(impact.topics) Topics.",
+            bundle: bundle
+        )
+    }
+
+    static func topicDeletionImpact(_ impact: TopicDeletionImpact) -> String {
+        String(
+            localized: "This removes \(impact.meetings) Meeting references and \(impact.relatedResources) related resources. The source records are preserved.",
+            bundle: bundle
+        )
+    }
+
     static var instructions: String { String(localized: "Instructions", bundle: bundle) }
     static var context: String { String(localized: "Context", bundle: bundle) }
     static var actionItems: String { String(localized: "Action Items", bundle: bundle) }

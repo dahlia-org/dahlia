@@ -74,10 +74,11 @@ extension MeetingRepository {
         }
     }
 
-    func updateContactDisplayName(
+    nonisolated func updateContactDisplayName(
         id: UUID,
         vaultId: UUID,
         displayName: String?,
+        expectedRevision: Int? = nil,
         now: Date = .now
     ) throws -> ContactRecord {
         try dbQueue.write { db in
@@ -87,7 +88,11 @@ extension MeetingRepository {
             else {
                 throw CustomerIntelligenceError.contactNotFound
             }
+            if let expectedRevision, contact.revision != expectedRevision {
+                throw CustomerIntelligenceError.proposalConflict
+            }
             contact.displayName = CustomerIdentityNormalizer.displayName(displayName)
+            contact.revision += 1
             contact.updatedAt = now
             try contact.update(db)
             return contact
@@ -95,16 +100,12 @@ extension MeetingRepository {
     }
 
     func deleteContact(id: UUID, vaultId: UUID) throws {
-        try dbQueue.write { db in
-            _ = try ContactRecord
-                .filter(Column("id") == id && Column("vaultId") == vaultId)
-                .deleteAll(db)
-        }
+        try deleteProvisionalContact(id: id, vaultId: vaultId)
     }
 
     // MARK: - Organizations
 
-    func fetchOrganizations(vaultId: UUID) throws -> [OrganizationRecord] {
+    nonisolated func fetchOrganizations(vaultId: UUID) throws -> [OrganizationRecord] {
         try dbQueue.read { db in
             try OrganizationRecord
                 .filter(Column("vaultId") == vaultId)
@@ -113,7 +114,7 @@ extension MeetingRepository {
         }
     }
 
-    func fetchOrganization(id: UUID, vaultId: UUID) throws -> OrganizationRecord? {
+    nonisolated func fetchOrganization(id: UUID, vaultId: UUID) throws -> OrganizationRecord? {
         try dbQueue.read { db in
             try OrganizationRecord
                 .filter(Column("id") == id && Column("vaultId") == vaultId)
@@ -121,7 +122,7 @@ extension MeetingRepository {
         }
     }
 
-    func createOrganization(
+    nonisolated func createOrganization(
         vaultId: UUID,
         parentOrganizationId: UUID?,
         nodeKind: OrganizationNodeKind,
@@ -141,6 +142,7 @@ extension MeetingRepository {
                 parentOrganizationId: parentOrganizationId,
                 nodeKind: nodeKind,
                 name: name,
+                revision: 1,
                 createdAt: now,
                 updatedAt: now
             )
@@ -153,10 +155,11 @@ extension MeetingRepository {
         }
     }
 
-    func updateOrganizationName(
+    nonisolated func updateOrganizationName(
         id: UUID,
         vaultId: UUID,
         name: String,
+        expectedRevision: Int? = nil,
         now: Date = .now
     ) throws -> OrganizationRecord {
         try dbQueue.write { db in
@@ -166,20 +169,25 @@ extension MeetingRepository {
             else {
                 throw CustomerIntelligenceError.organizationNotFound
             }
+            if let expectedRevision, organization.revision != expectedRevision {
+                throw CustomerIntelligenceError.proposalConflict
+            }
             guard let name = CustomerIdentityNormalizer.organizationName(name) else {
                 throw CustomerIntelligenceError.invalidName
             }
             organization.name = name
+            organization.revision += 1
             organization.updatedAt = now
             try organization.update(db)
             return organization
         }
     }
 
-    func moveOrganization(
+    nonisolated func moveOrganization(
         id: UUID,
         vaultId: UUID,
         parentOrganizationId: UUID?,
+        expectedRevision: Int? = nil,
         now: Date = .now
     ) throws -> OrganizationRecord {
         try dbQueue.write { db in
@@ -189,7 +197,11 @@ extension MeetingRepository {
             else {
                 throw CustomerIntelligenceError.organizationNotFound
             }
+            if let expectedRevision, organization.revision != expectedRevision {
+                throw CustomerIntelligenceError.proposalConflict
+            }
             organization.parentOrganizationId = parentOrganizationId
+            organization.revision += 1
             organization.updatedAt = now
             do {
                 try organization.update(db)
@@ -200,8 +212,27 @@ extension MeetingRepository {
         }
     }
 
-    func deleteOrganization(id: UUID, vaultId: UUID) throws {
+    nonisolated func deleteOrganization(
+        id: UUID,
+        vaultId: UUID,
+        expectedRevision: Int? = nil,
+        expectedImpact: OrganizationDeletionImpact? = nil,
+        now: Date = .now
+    ) throws {
         try dbQueue.write { db in
+            guard let organization = try OrganizationRecord
+                .filter(Column("id") == id && Column("vaultId") == vaultId)
+                .fetchOne(db)
+            else {
+                throw CustomerIntelligenceError.organizationNotFound
+            }
+            guard expectedRevision.map({ $0 == organization.revision }) ?? true else {
+                throw CustomerIntelligenceError.proposalConflict
+            }
+            if let expectedImpact,
+               try Self.organizationDeletionImpact(id: id, vaultId: vaultId, in: db) != expectedImpact {
+                throw CustomerIntelligenceError.proposalConflict
+            }
             let subtreeIDs = try UUID.fetchAll(
                 db,
                 sql: """
@@ -220,6 +251,13 @@ extension MeetingRepository {
                 ORDER BY depth DESC
                 """,
                 arguments: [id, vaultId, vaultId, CustomerIntelligenceMigration.maximumOrganizationDepth]
+            )
+            try Self.markProposalsStale(
+                vaultId: vaultId,
+                referencing: Set(subtreeIDs),
+                reason: "organizationDeleted",
+                now: now,
+                in: db
             )
             for subtreeID in subtreeIDs {
                 _ = try OrganizationRecord.deleteOne(db, key: subtreeID)
@@ -325,13 +363,23 @@ extension MeetingRepository {
         }
     }
 
-    func addOrganizationMembership(
+    nonisolated func addOrganizationMembership(
         organizationId: UUID,
         contactId: UUID,
         roleLabel: String? = nil,
+        expectedOrganizationRevision: Int? = nil,
         createdAt: Date = .now
     ) throws -> OrganizationMembershipRecord {
         try dbQueue.write { db in
+            if let expectedOrganizationRevision {
+                guard try Int.fetchOne(
+                    db,
+                    sql: "SELECT revision FROM organizations WHERE id = ?",
+                    arguments: [organizationId]
+                ) == expectedOrganizationRevision else {
+                    throw CustomerIntelligenceError.proposalConflict
+                }
+            }
             let normalizedRole = CustomerIdentityNormalizer.displayName(roleLabel)
             if var existing = try OrganizationMembershipRecord
                 .filter(Column("organizationId") == organizationId && Column("contactId") == contactId)
@@ -353,8 +401,21 @@ extension MeetingRepository {
         }
     }
 
-    func removeOrganizationMembership(organizationId: UUID, contactId: UUID) throws {
+    nonisolated func removeOrganizationMembership(
+        organizationId: UUID,
+        contactId: UUID,
+        expectedOrganizationRevision: Int? = nil
+    ) throws {
         try dbQueue.write { db in
+            if let expectedOrganizationRevision {
+                guard try Int.fetchOne(
+                    db,
+                    sql: "SELECT revision FROM organizations WHERE id = ?",
+                    arguments: [organizationId]
+                ) == expectedOrganizationRevision else {
+                    throw CustomerIntelligenceError.proposalConflict
+                }
+            }
             _ = try OrganizationMembershipRecord
                 .filter(Column("organizationId") == organizationId && Column("contactId") == contactId)
                 .deleteAll(db)
@@ -558,7 +619,7 @@ extension MeetingRepository {
         }
     }
 
-    private static func organizationWriteError(from error: Error) -> CustomerIntelligenceError? {
+    private nonisolated static func organizationWriteError(from error: Error) -> CustomerIntelligenceError? {
         guard let message = (error as? DatabaseError)?.message else { return nil }
         switch message {
         case "organization hierarchy cannot contain a cycle":

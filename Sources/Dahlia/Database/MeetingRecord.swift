@@ -35,7 +35,7 @@ enum MeetingStatus: String, Codable, DatabaseValueConvertible, Sendable {
 }
 
 /// ミーティングセッションを表す GRDB レコード。
-struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
     static let databaseTableName = "meetings"
 
     var id: UUID

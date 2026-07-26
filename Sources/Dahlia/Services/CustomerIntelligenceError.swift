@@ -17,6 +17,14 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
     case organizationHierarchyTooDeep
     case domainAlreadyAssigned
     case unsupportedProjectResource
+    case topicNotFound
+    case proposalNotFound
+    case proposalConflict
+    case proposalDependency
+    case proposalCycle
+    case invalidProposal
+    case provisionalContactRequired
+    case provisionalContactHasParticipant
 
     var errorDescription: String? {
         switch self {
@@ -52,6 +60,22 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
             "The domain is already assigned to another organization."
         case .unsupportedProjectResource:
             "Projects can reference only organizations and contacts."
+        case .topicNotFound:
+            "The conversation topic was not found."
+        case .proposalNotFound:
+            "The proposal was not found."
+        case .proposalConflict:
+            "The proposal conflicts with newer customer intelligence data."
+        case .proposalDependency:
+            "A required proposal has not been selected or applied."
+        case .proposalCycle:
+            "Proposal dependencies cannot contain a cycle."
+        case .invalidProposal:
+            "The proposal operation is invalid."
+        case .provisionalContactRequired:
+            "Only a provisional contact can be changed this way."
+        case .provisionalContactHasParticipant:
+            "This provisional contact has calendar participation data and cannot be deleted."
         }
     }
 }

@@ -4,6 +4,9 @@ public struct MeetingQuery: Sendable, Equatable {
     public var query: String?
     public var project: String?
     public var projectID: UUID?
+    public var organizationID: UUID?
+    public var includeOrganizationDescendants: Bool
+    public var topicID: UUID?
     public var icalUID: String?
     public var createdFrom: Date?
     public var createdBefore: Date?
@@ -14,6 +17,9 @@ public struct MeetingQuery: Sendable, Equatable {
         query: String? = nil,
         project: String? = nil,
         projectID: UUID? = nil,
+        organizationID: UUID? = nil,
+        includeOrganizationDescendants: Bool = false,
+        topicID: UUID? = nil,
         icalUID: String? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
@@ -23,6 +29,9 @@ public struct MeetingQuery: Sendable, Equatable {
         self.query = query
         self.project = project
         self.projectID = projectID
+        self.organizationID = organizationID
+        self.includeOrganizationDescendants = includeOrganizationDescendants
+        self.topicID = topicID
         self.icalUID = icalUID
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
@@ -280,6 +289,9 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case invalidCustomerIntelligenceData
     case workspaceBusy
     case workspaceRollbackFailed
+    case invalidProposal
+    case proposalConflict
+    case proposalDependency
 
     public var errorDescription: String? {
         switch self {
@@ -333,6 +345,12 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "Another Dahlia process is updating this vault. Refresh the project state and try again."
         case .workspaceRollbackFailed:
             "The workspace update failed and its filesystem rollback also failed."
+        case .invalidProposal:
+            "The customer intelligence proposal is invalid."
+        case .proposalConflict:
+            "Customer intelligence changed during review; no proposal was applied."
+        case .proposalDependency:
+            "A required customer intelligence proposal is missing or not selected."
         }
     }
 }

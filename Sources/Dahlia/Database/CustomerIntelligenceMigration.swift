@@ -139,7 +139,7 @@ enum CustomerIntelligenceMigration {
         """)
     }
 
-    private static func createIndexes(in db: Database) throws {
+    static func createIndexes(in db: Database) throws {
         try db.execute(sql: """
         CREATE INDEX contacts_on_vaultId_sortKey_id
             ON contacts(vaultId, COALESCE(displayName, email) COLLATE NOCASE, id);
@@ -175,7 +175,7 @@ enum CustomerIntelligenceMigration {
         """)
     }
 
-    private static func createVaultImmutabilityTriggers(in db: Database) throws {
+    static func createVaultImmutabilityTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER contacts_prevent_vault_change
         BEFORE UPDATE OF vaultId ON contacts
@@ -212,7 +212,7 @@ enum CustomerIntelligenceMigration {
     }
 
     // swiftlint:disable:next function_body_length
-    private static func createOrganizationTriggers(in db: Database) throws {
+    static func createOrganizationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organizations_validate_insert
         BEFORE INSERT ON organizations
@@ -391,7 +391,7 @@ enum CustomerIntelligenceMigration {
         """)
     }
 
-    private static func createRelationshipValidationTriggers(in db: Database) throws {
+    static func createRelationshipValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organization_memberships_validate_insert
         BEFORE INSERT ON organization_memberships
@@ -448,7 +448,7 @@ enum CustomerIntelligenceMigration {
     }
 
     // swiftlint:disable:next function_body_length
-    private static func createReferenceValidationTriggers(in db: Database) throws {
+    static func createReferenceValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER project_resource_references_validate_insert
         BEFORE INSERT ON project_resource_references
@@ -650,7 +650,7 @@ enum CustomerIntelligenceMigration {
         """)
     }
 
-    private static func createReferenceCleanupTriggers(in db: Database) throws {
+    static func createReferenceCleanupTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organizations_cleanup_resource_references
         AFTER DELETE ON organizations

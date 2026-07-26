@@ -790,6 +790,19 @@ import ImageIO
                 contactId: contact.id,
                 roleLabel: "Lead"
             )
+            try fixture.manager.dbQueue.write { db in
+                for meetingID in [fixture.firstMeetingID, fixture.secondMeetingID] {
+                    try MeetingParticipantRecord(
+                        meetingId: meetingID,
+                        contactId: contact.id,
+                        role: .required,
+                        responseStatus: .accepted,
+                        source: "calendar",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
             _ = try repository.addProjectResourceReference(
                 projectId: fixture.primaryProjectID,
                 resourceType: .organization,
@@ -824,6 +837,19 @@ import ImageIO
                 resourceType: .organization,
                 resourceId: organization.id
             )
+            let topic = try repository.createConversationTopic(
+                vaultId: fixture.primaryVaultID,
+                title: "Platform rollout",
+                currentState: "Owner aligned",
+                references: [
+                    .init(resourceType: .organization, resourceID: unit.id),
+                    .init(
+                        resourceType: .meeting,
+                        resourceID: fixture.firstMeetingID,
+                        note: "Rollout owner confirmed"
+                    ),
+                ]
+            )
 
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
             let firstPage = try store.queryOrganizations(OrganizationAccessQuery(limit: 1))
@@ -857,6 +883,23 @@ import ImageIO
             let terms = try store.queryGlossaryTerms(GlossaryAccessQuery(query: "Owner"))
             #expect(terms.terms.map(\.id) == [glossary.id])
             #expect(try store.glossaryTerm(id: glossary.id).term.references.first?.resourceName == "Acme")
+            let topicPage = try store.queryConversationTopics(.init(organizationID: unit.id))
+            #expect(topicPage.topics.map(\.id) == [topic.id])
+            let topicDetail = try store.conversationTopic(id: topic.id)
+            #expect(topicDetail.references.count == 2)
+            #expect(!topicDetail.referencesExpectation.isEmpty)
+            let meetingsByTopic = try store.queryMeetings(.init(topicID: topic.id))
+            #expect(meetingsByTopic.meetings.map(\.id) == [fixture.firstMeetingID])
+            let meetingsByRoot = try store.queryMeetings(.init(
+                organizationID: organization.id,
+                includeOrganizationDescendants: true,
+                limit: 1
+            ))
+            #expect(meetingsByRoot.meetings.count == 1)
+            let organizationCursor = try #require(meetingsByRoot.nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.queryMeetings(.init(topicID: topic.id, limit: 1, cursor: organizationCursor))
+            }
 
             let server = DahliaMCPServer(store: store)
             _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
@@ -872,8 +915,10 @@ import ImageIO
             """#))
             #expect((invalidFilterCall["error"] as? [String: Any])?["code"] as? Int == -32602)
             let insightCall = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact","resource_id":"\#(contact
-                .id.uuidString)"}}}
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_insights","arguments":{"resource_type":"contact","resource_id":"\#(
+                contact
+                    .id.uuidString
+            )"}}}
             """#))
             let insightContent = (insightCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
             let encodedMetadata = (insightContent?["insights"] as? [[String: Any]])?.first?["metadata"]
@@ -913,7 +958,10 @@ import ImageIO
             #expect(definitions.map { $0["name"] as? String } == [
                 "query_meetings", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
-                "query_organizations", "get_organization", "query_contacts", "get_contact",
+                "query_organizations", "get_organization", "query_organization_chart",
+                "query_contacts", "get_contact",
+                "query_conversation_topics", "get_conversation_topic",
+                "query_customer_intelligence_proposals",
                 "query_project_resources", "query_insights", "query_glossary_terms", "get_glossary_term",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
@@ -1015,6 +1063,9 @@ import ImageIO
             )
             let readOnlyDefinitions = ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_project" })
+            #expect(!readOnlyDefinitions.contains {
+                $0["name"] as? String == "propose_customer_intelligence_changes"
+            })
             let deniedWrite = try Self.json(readOnlyServer.handleLine(#"""
             {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"Denied"}}}
             """#))
@@ -1033,6 +1084,15 @@ import ImageIO
             #expect(writeDefinitions.suffix(3).compactMap { $0["name"] as? String } == [
                 "create_project", "update_project", "set_meeting_project_memberships",
             ])
+            #expect(writeDefinitions.contains {
+                $0["name"] as? String == "propose_customer_intelligence_changes"
+            })
+            #expect(writeDefinitions.contains {
+                $0["name"] as? String == "apply_customer_intelligence_proposals"
+            })
+            #expect(writeDefinitions.contains {
+                $0["name"] as? String == "reject_customer_intelligence_proposals"
+            })
             let destructiveByName: [String: Bool] = Dictionary(
                 uniqueKeysWithValues: writeDefinitions.compactMap { definition -> (String, Bool)? in
                     guard let name = definition["name"] as? String,
@@ -1112,6 +1172,312 @@ import ImageIO
             }}}
             """))
             #expect((nullName["error"] as? [String: Any])?["code"] as? Int == -32602)
+        }
+
+        @Test
+        func customerIntelligenceWriteStoreCreatesAndAppliesDependentProposals() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let callerSuppliedID = UUID.v7()
+            let creation = try store.proposeCustomerIntelligenceChanges([
+                .init(
+                    localKey: "organization",
+                    operationType: .createOrganization,
+                    payload: .init(
+                        targetID: callerSuppliedID,
+                        nodeKind: "organization",
+                        name: "Enterprise Customer"
+                    )
+                ),
+                .init(
+                    localKey: "person",
+                    operationType: .createProvisionalContact,
+                    payload: .init(name: "Customer Owner")
+                ),
+                .init(
+                    localKey: "membership",
+                    operationType: .setMembership,
+                    payload: .init(
+                        organizationLocalKey: "organization",
+                        contactLocalKey: "person",
+                        roleLabel: "Sponsor",
+                        expectations: [.init(field: "role_label", value: nil)]
+                    ),
+                    dependsOn: ["organization", "person"]
+                ),
+            ])
+            let organizationID = try #require(creation.entityIDsByLocalKey["organization"])
+            let contactID = try #require(creation.entityIDsByLocalKey["person"])
+            #expect(organizationID != callerSuppliedID)
+
+            let proposed = try store.queryCustomerIntelligenceProposals(.init(status: .proposed, limit: 10))
+            #expect(proposed.proposals.count == 3)
+            let revisions = Dictionary(uniqueKeysWithValues: proposed.proposals.map { ($0.id, $0.revision) })
+            _ = try store.applyCustomerIntelligenceProposals(revisions)
+
+            let chart = try store.queryOrganizationChart(.init(rootOrganizationID: organizationID))
+            #expect(chart.nodes.map(\.id) == [organizationID])
+            #expect(chart.nodes.first?.memberCount == 1)
+            let contact = try store.contact(id: contactID)
+            #expect(contact.contact.email == nil)
+            #expect(contact.contact.isProvisional)
+            #expect(contact.memberships.first?.roleLabel == "Sponsor")
+
+            let server = DahliaMCPServer(store: store)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let contactResponse = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"get_contact","arguments":{"contact_id":"\#(contactID.uuidString)"}
+            }}
+            """#))
+            let encodedContact = try #require(
+                ((contactResponse["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["contact"]
+                    as? [String: Any]
+            )
+            #expect(encodedContact.keys.contains("email"))
+            #expect(encodedContact["email"] is NSNull)
+
+            let otherOrganization = try MeetingRepository(dbQueue: fixture.manager.dbQueue).createOrganization(
+                vaultId: fixture.otherVaultID,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Other"
+            )
+            #expect(throws: MeetingAccessError.invalidProposal) {
+                try store.proposeCustomerIntelligenceChanges([
+                    .init(
+                        localKey: "cross-vault",
+                        operationType: .renameOrganization,
+                        payload: .init(
+                            targetID: otherOrganization.id,
+                            name: "Forbidden",
+                            expectations: [.init(field: "name", value: "Other")]
+                        )
+                    ),
+                ])
+            }
+        }
+
+        @Test
+        func customerIntelligenceWriteStoreValidatesInputsAndSameFieldBatchConflicts() throws {
+            let fixture = try Fixture()
+            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let organization = try repository.createOrganization(
+                vaultId: fixture.primaryVaultID,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Acme"
+            )
+            let provisional = try repository.createProvisionalContact(
+                vaultId: fixture.primaryVaultID,
+                displayName: "Owner"
+            )
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            #expect(throws: MeetingAccessError.invalidProposal) {
+                try store.proposeCustomerIntelligenceChanges([
+                    .init(
+                        localKey: "invalid-email",
+                        operationType: .resolveProvisionalContact,
+                        payload: .init(
+                            targetID: provisional.id,
+                            email: "owner@invalid",
+                            expectations: [.init(field: "email", value: nil)]
+                        )
+                    ),
+                ])
+            }
+            #expect(throws: MeetingAccessError.invalidProposal) {
+                try store.proposeCustomerIntelligenceChanges([
+                    .init(
+                        localKey: "duplicate-evidence",
+                        operationType: .renameOrganization,
+                        payload: .init(
+                            targetID: organization.id,
+                            name: "Renamed",
+                            expectations: [.init(field: "name", value: "Acme")]
+                        ),
+                        evidence: [
+                            .init(resourceType: .meeting, resourceID: fixture.firstMeetingID),
+                            .init(resourceType: .meeting, resourceID: fixture.firstMeetingID),
+                        ]
+                    ),
+                ])
+            }
+
+            _ = try store.proposeCustomerIntelligenceChanges([
+                .init(
+                    localKey: "first",
+                    operationType: .renameOrganization,
+                    payload: .init(
+                        targetID: organization.id,
+                        name: "First",
+                        expectations: [.init(field: "name", value: "Acme")]
+                    )
+                ),
+                .init(
+                    localKey: "second",
+                    operationType: .renameOrganization,
+                    payload: .init(
+                        targetID: organization.id,
+                        name: "Second",
+                        expectations: [.init(field: "name", value: "Acme")]
+                    )
+                ),
+            ])
+            let proposals = try store.queryCustomerIntelligenceProposals(.init(status: .proposed))
+            #expect(throws: MeetingAccessError.proposalConflict) {
+                try store.applyCustomerIntelligenceProposals(
+                    Dictionary(uniqueKeysWithValues: proposals.proposals.map { ($0.id, $0.revision) })
+                )
+            }
+            #expect(try repository.fetchOrganization(
+                id: organization.id,
+                vaultId: fixture.primaryVaultID
+            )?.name == "Acme")
+        }
+
+        @Test
+        func mcpContactResolutionMovesTopicReferenceAndCanRejectStaleProposal() throws {
+            let fixture = try Fixture()
+            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let provisional = try repository.createProvisionalContact(
+                vaultId: fixture.primaryVaultID,
+                displayName: "Owner"
+            )
+            let identified = try repository.upsertContact(
+                vaultId: fixture.primaryVaultID,
+                email: "owner@example.com",
+                displayName: "Known Owner"
+            )
+            let topic = try repository.createConversationTopic(
+                vaultId: fixture.primaryVaultID,
+                title: "Security",
+                currentState: "Open",
+                references: [.init(resourceType: .contact, resourceID: provisional.id)]
+            )
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            _ = try store.proposeCustomerIntelligenceChanges([
+                .init(
+                    localKey: "stale",
+                    operationType: .renameProvisionalContact,
+                    payload: .init(
+                        targetID: provisional.id,
+                        name: "Corrected",
+                        expectations: [.init(field: "display_name", value: "Owner")]
+                    )
+                ),
+                .init(
+                    localKey: "resolve",
+                    operationType: .resolveProvisionalContact,
+                    payload: .init(
+                        targetID: provisional.id,
+                        email: "owner@example.com",
+                        expectations: [.init(field: "email", value: nil)]
+                    )
+                ),
+            ])
+            let proposed = try store.queryCustomerIntelligenceProposals(.init(status: .proposed))
+            let resolve = try #require(proposed.proposals.first { $0.operationType == .resolveProvisionalContact })
+            _ = try store.applyCustomerIntelligenceProposals([resolve.id: resolve.revision])
+
+            #expect(try store.conversationTopic(id: topic.id).references.first?.resourceID == identified.id)
+            let stale = try #require(
+                store.queryCustomerIntelligenceProposals(.init(status: .stale)).proposals.first
+            )
+            _ = try store.rejectCustomerIntelligenceProposals([stale.id: stale.revision])
+            let rejected = try #require(
+                store.queryCustomerIntelligenceProposals(.init(status: .rejected)).proposals.first
+            )
+            #expect(rejected.staleReason == nil)
+        }
+
+        @Test
+        func meetingCursorScopeDistinguishesDelimitersAndSubsecondDates() throws {
+            let fixture = try Fixture()
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET name = ? WHERE id IN (?, ?)",
+                    arguments: ["Plan\u{1f}Acme", fixture.firstMeetingID, fixture.secondMeetingID]
+                )
+            }
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let delimiterCursor = try #require(store.queryMeetings(.init(
+                query: "Plan\u{1f}Acme",
+                limit: 1
+            )).nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.queryMeetings(.init(
+                    query: "Plan",
+                    project: "Acme",
+                    limit: 1,
+                    cursor: delimiterCursor
+                ))
+            }
+
+            let dateCursor = try #require(store.queryMeetings(.init(
+                createdFrom: Date(timeIntervalSince1970: 0.1),
+                limit: 1
+            )).nextCursor)
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.queryMeetings(.init(
+                    createdFrom: Date(timeIntervalSince1970: 0.2),
+                    limit: 1,
+                    cursor: dateCursor
+                ))
+            }
+        }
+
+        @Test
+        func customerIntelligenceApplyReportsBusyWithoutPartialChanges() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let creation = try store.proposeCustomerIntelligenceChanges([
+                .init(
+                    localKey: "organization",
+                    operationType: .createOrganization,
+                    payload: .init(nodeKind: "organization", name: "Blocked Customer")
+                ),
+            ])
+            let proposalID = try #require(creation.proposalIDsByLocalKey["organization"])
+            let entityID = try #require(creation.entityIDsByLocalKey["organization"])
+            let proposal = try #require(
+                store.queryCustomerIntelligenceProposals(.init(status: .proposed))
+                    .proposals.first { $0.id == proposalID }
+            )
+            let server = DahliaMCPServer(store: store)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+            let blocker = try DatabaseQueue(path: fixture.databaseURL.path)
+            try blocker.write { db in
+                try db.execute(
+                    sql: "UPDATE vaults SET lastOpenedAt = lastOpenedAt WHERE id = ?",
+                    arguments: [fixture.primaryVaultID]
+                )
+                let response = try Self.json(server.handleLine("""
+                {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                    "name":"apply_customer_intelligence_proposals","arguments":{"proposals":[{
+                        "proposal_id":"\(proposalID.uuidString)","revision":\(proposal.revision)
+                    }]}
+                }}
+                """))
+                let result = try #require(response["result"] as? [String: Any])
+                #expect(result["isError"] as? Bool == true)
+                let content = try #require(result["content"] as? [[String: Any]])
+                #expect((content.first?["text"] as? String)?.contains("refresh and retry") == true)
+            }
+
+            let after = try #require(
+                store.queryCustomerIntelligenceProposals(.init())
+                    .proposals.first { $0.id == proposalID }
+            )
+            #expect(after.status == .proposed)
+            #expect(try MeetingRepository(dbQueue: fixture.manager.dbQueue).fetchOrganization(
+                id: entityID,
+                vaultId: fixture.primaryVaultID
+            ) == nil)
         }
 
         @Test
@@ -1199,6 +1565,26 @@ import ImageIO
             #expect(try store.scopedVault().id == vault.id)
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.queryOrganizations()
+            }
+        }
+
+        @Test
+        func v25DatabaseRejectsWorkspaceAccessWithUpgradeError() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v25-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v26")
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v25_customerIntelligence")
+            try queue.write { try vault.insert($0) }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.queryOrganizations()
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.queryConversationTopics()
             }
         }
 
@@ -1316,6 +1702,15 @@ import ImageIO
             let inputProperties = try #require(inputSchema["properties"] as? [String: Any])
             #expect(inputProperties["ical_uid"] != nil)
             #expect(inputProperties["project_id"] != nil)
+            #expect(inputProperties["organization_id"] != nil)
+            #expect(inputProperties["include_descendants"] != nil)
+            #expect(inputProperties["topic_id"] != nil)
+            #expect(definitions.contains { $0["name"] as? String == "query_organization_chart" })
+            #expect(definitions.contains { $0["name"] as? String == "query_conversation_topics" })
+            #expect(definitions.contains { $0["name"] as? String == "get_conversation_topic" })
+            #expect(definitions.contains {
+                $0["name"] as? String == "query_customer_intelligence_proposals"
+            })
             let outputSchema = try #require(queryDefinition["outputSchema"] as? [String: Any])
             let outputProperties = try #require(outputSchema["properties"] as? [String: Any])
             let meetingsSchema = try #require(outputProperties["meetings"] as? [String: Any])
