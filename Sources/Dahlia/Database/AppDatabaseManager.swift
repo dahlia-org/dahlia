@@ -134,6 +134,10 @@ final class AppDatabaseManager: Sendable {
             try ProjectHierarchyMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v25_customerIntelligence") { db in
+            try CustomerIntelligenceMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

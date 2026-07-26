@@ -657,15 +657,32 @@ extension MeetingAccessStore {
         }
     }
 
-    private func fetchVault(in db: Database) throws -> ScopedVault {
+    func fetchVault(in db: Database) throws -> ScopedVault {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
+        let customerIntelligenceTables: Set = [
+            "contacts",
+            "organizations",
+            "organization_domains",
+            "organization_memberships",
+            "meeting_participants",
+            "project_resource_references",
+            "insights",
+            "insight_references",
+            "glossary_terms",
+            "glossary_term_references",
+        ]
+        let availableTables = try Set(String.fetchAll(
+            db,
+            sql: "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ))
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
-              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"])
+              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
+              availableTables.isSuperset(of: customerIntelligenceTables)
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }

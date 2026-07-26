@@ -1401,7 +1401,8 @@ final class CaptionViewModel: ObservableObject {
     func materializeDraftMeeting(
         projectURL: URL? = nil,
         projectId: UUID? = nil,
-        projectName: String? = nil
+        projectName: String? = nil,
+        ingestsCustomerIntelligence: Bool = true
     ) -> UUID? {
         if let currentMeetingId {
             return currentMeetingId
@@ -1465,6 +1466,15 @@ final class CaptionViewModel: ObservableObject {
             projectName: resolvedProject?.name ?? requestedProjectName,
             vaultURL: vaultURL
         )
+        if ingestsCustomerIntelligence, let event = draftMeeting.linkedCalendarEvent {
+            CustomerIntelligenceIngestionService.schedule(
+                calendarEvent: event,
+                meetingId: meetingId,
+                vaultId: vault.id,
+                observedAt: now,
+                dbQueue: dbQueue
+            )
+        }
         if !noteText.isEmpty {
             saveNoteImmediately()
         }
@@ -2211,6 +2221,17 @@ final class CaptionViewModel: ObservableObject {
 
             completePersistenceStart(existingMeetingId: existingMeetingId)
             markRecordingStarted(recordingSessionId: recordingSessionId)
+            if existingMeetingId == nil,
+               let event = activeDraftMeeting?.linkedCalendarEvent,
+               let meetingId = currentMeetingId {
+                CustomerIntelligenceIngestionService.schedule(
+                    calendarEvent: event,
+                    meetingId: meetingId,
+                    vaultId: vaultId,
+                    observedAt: recordingStartTime,
+                    dbQueue: dbQueue
+                )
+            }
             pendingRealtimeRecognitionFailure = nil
         } catch {
             await handleRecordingStartFailure(

@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 enum CalendarEventPlatform {
@@ -23,6 +24,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
     let isDeclined: Bool
     let isAttending: Bool
     let isOutOfOffice: Bool
+    let participants: [CalendarParticipant]
     let conferenceURI: URL?
     let url: URL?
 
@@ -44,6 +46,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         isDeclined: Bool = false,
         isAttending: Bool = false,
         isOutOfOffice: Bool = false,
+        participants: [CalendarParticipant] = [],
         conferenceURI: URL?,
         url: URL? = nil
     ) {
@@ -64,6 +67,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         self.isDeclined = isDeclined
         self.isAttending = isAttending && !isDeclined
         self.isOutOfOffice = isOutOfOffice || Self.titleIndicatesOutOfOffice(title)
+        self.participants = participants
         self.conferenceURI = conferenceURI
         self.url = url
     }
@@ -141,9 +145,29 @@ private extension CalendarEvent {
             isDeclined: isDeclined || fallback.isDeclined,
             isAttending: isAttending || fallback.isAttending,
             isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
+            participants: mergedParticipants(with: fallback.participants),
             conferenceURI: conferenceURI ?? fallback.conferenceURI,
             url: url ?? fallback.url
         )
+    }
+
+    func mergedParticipants(with fallbackParticipants: [CalendarParticipant]) -> [CalendarParticipant] {
+        var result: [CalendarParticipant] = []
+        var indexByEmail: [String: Int] = [:]
+
+        for participant in participants + fallbackParticipants {
+            guard let email = participant.email.flatMap(CustomerIdentityNormalizer.email) else {
+                result.append(participant)
+                continue
+            }
+            guard let existingIndex = indexByEmail[email] else {
+                indexByEmail[email] = result.count
+                result.append(participant)
+                continue
+            }
+            result[existingIndex] = result[existingIndex].mergingMissingMetadata(from: participant)
+        }
+        return result
     }
 }
 
@@ -166,6 +190,7 @@ extension CalendarEvent {
         case isDeclined
         case isAttending
         case isOutOfOffice
+        case participants
         case conferenceURI
         case url
     }
@@ -197,6 +222,7 @@ extension CalendarEvent {
         isAttending = decodedIsAttending && !isDeclined
         let decodedIsOutOfOffice = try container.decodeIfPresent(Bool.self, forKey: .isOutOfOffice) ?? false
         isOutOfOffice = decodedIsOutOfOffice || Self.titleIndicatesOutOfOffice(title)
+        participants = try container.decodeIfPresent([CalendarParticipant].self, forKey: .participants) ?? []
         conferenceURI = try container.decodeIfPresent(URL.self, forKey: .conferenceURI)
             ?? legacyContainer.decodeIfPresent(URL.self, forKey: .meetingURL)
         url = try container.decodeIfPresent(URL.self, forKey: .url)

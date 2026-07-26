@@ -8,6 +8,7 @@ enum ErrorReportingService {
         case googleDrive = "google_drive_error"
         case googleDriveExportFolder = "google_drive_export_folder_error"
         case googleDocsExport = "google_docs_export_error"
+        case customerIntelligenceIngestion = "customer_intelligence_ingestion_error"
     }
 
     struct ReleaseMetadata: Equatable {

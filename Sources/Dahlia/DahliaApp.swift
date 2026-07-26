@@ -251,7 +251,11 @@ struct DahliaApp: App {
                 if let existingMeetingId = try repository.resolveMeetingIdForCalendarEvent(event, vaultId: vault.id) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
                     if startTranscription {
-                        startTranscriptionForMeeting(existingMeetingId, in: db, vault: vault)
+                        startTranscriptionForMeeting(
+                            existingMeetingId,
+                            in: db,
+                            vault: vault
+                        )
                     }
                     return
                 }
@@ -267,10 +271,17 @@ struct DahliaApp: App {
                 dbQueue: db.dbQueue,
                 vaultURL: vault.url
             )
-            guard let meetingId = viewModel.materializeDraftMeeting() else { return }
+            guard let meetingId = viewModel.materializeDraftMeeting(
+                ingestsCustomerIntelligence: !startTranscription
+            ) else { return }
             sidebarViewModel.selectMeeting(meetingId)
             if startTranscription {
-                startTranscriptionForMeeting(meetingId, in: db, vault: vault)
+                startTranscriptionForMeeting(
+                    meetingId,
+                    in: db,
+                    vault: vault,
+                    customerIntelligenceEvent: event
+                )
             }
             return
         }
@@ -291,7 +302,12 @@ struct DahliaApp: App {
         }
     }
 
-    private func startTranscriptionForMeeting(_ meetingId: UUID, in db: AppDatabaseManager, vault: VaultRecord) {
+    private func startTranscriptionForMeeting(
+        _ meetingId: UUID,
+        in db: AppDatabaseManager,
+        vault: VaultRecord,
+        customerIntelligenceEvent: CalendarEvent? = nil
+    ) {
         let ctx: (projectURL: URL?, projectId: UUID?, projectName: String?)
         do {
             ctx = try meetingContext(for: meetingId, in: db, vault: vault)
@@ -310,6 +326,17 @@ struct DahliaApp: App {
                 vaultURL: vault.url,
                 appendingTo: meetingId
             )
+            if let customerIntelligenceEvent,
+               viewModel.isListening,
+               viewModel.recordingMeetingId == meetingId {
+                CustomerIntelligenceIngestionService.schedule(
+                    calendarEvent: customerIntelligenceEvent,
+                    meetingId: meetingId,
+                    vaultId: vault.id,
+                    observedAt: .now,
+                    dbQueue: db.dbQueue
+                )
+            }
         }
     }
 

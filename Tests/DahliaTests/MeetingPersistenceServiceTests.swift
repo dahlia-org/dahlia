@@ -36,6 +36,59 @@ import os
         }
 
         @Test
+        func newMeetingCreationDefersCustomerIntelligenceUntilRecordingStarts() async throws {
+            let database = try makeDatabase()
+            let startDate = Date(timeIntervalSince1970: 1_776_384_000)
+            let store = TranscriptStore()
+            store.recordingStartTime = startDate
+            let event = CalendarEvent(
+                id: "customer-event",
+                calendarID: "work",
+                calendarName: "Work",
+                calendarColorHex: nil,
+                platformId: "customer-event",
+                title: "Customer sync",
+                description: "",
+                icalUid: "customer-event@example.com",
+                startDate: startDate,
+                endDate: startDate.addingTimeInterval(1800),
+                isAllDay: false,
+                participants: [
+                    CalendarParticipant(
+                        email: "owner@acme.example",
+                        displayName: "Owner",
+                        role: .required,
+                        responseStatus: .accepted,
+                        kind: .person,
+                        isCurrentUser: false,
+                        source: CalendarEventPlatform.googleCalendar
+                    ),
+                ],
+                conferenceURI: nil
+            )
+
+            let service = try await MeetingPersistenceService.createNew(
+                store: store,
+                dbQueue: database.dbQueue,
+                vaultId: testVault.id,
+                projectId: nil,
+                initialName: "Customer sync",
+                calendarEvent: event
+            )
+
+            let result = try await database.dbQueue.read { db in
+                try (
+                    MeetingRecord.filter(key: service.meetingId).fetchCount(db),
+                    ContactRecord.fetchCount(db),
+                    OrganizationRecord.fetchCount(db)
+                )
+            }
+            #expect(result.0 == 1)
+            #expect(result.1 == 0)
+            #expect(result.2 == 0)
+        }
+
+        @Test
         func delayedStartTransactionSuspendsWithoutBlockingMainActor() async throws {
             let database = try makeDatabase()
             let databaseGate = SynchronousDatabaseGate()

@@ -273,6 +273,11 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case projectFileConflict(String)
     case projectTypeOwnedByRoot
     case meetingMembershipConflict
+    case organizationNotFound
+    case contactNotFound
+    case glossaryTermNotFound
+    case invalidResourceFilter
+    case invalidCustomerIntelligenceData
     case workspaceBusy
     case workspaceRollbackFailed
 
@@ -314,6 +319,16 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "Only a root project can have an explicit project type."
         case .meetingMembershipConflict:
             "At least one meeting no longer has the expected project membership; no meetings were changed."
+        case .organizationNotFound:
+            "The organization was not found in the configured vault."
+        case .contactNotFound:
+            "The contact was not found in the configured vault."
+        case .glossaryTermNotFound:
+            "The glossary term was not found in the configured vault."
+        case .invalidResourceFilter:
+            "resource_type and resource_id must be supplied together, using a supported resource type."
+        case .invalidCustomerIntelligenceData:
+            "Stored customer intelligence data is invalid. Open Dahlia and repair or remove the affected record."
         case .workspaceBusy:
             "Another Dahlia process is updating this vault. Refresh the project state and try again."
         case .workspaceRollbackFailed:

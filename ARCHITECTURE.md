@@ -82,6 +82,36 @@ runtime resource を所有しない。
 録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
+顧客インテリジェンスは録音クリティカルパス外の、再試行可能な補助永続化である。
+
+```text
+Google Calendar / EventKit
+    ↓ CalendarEvent.participants
+Meeting creation / recording-start coordinator
+    ├─ core Meeting transaction
+    └─ post-commit CustomerIntelligenceIngestionService (best effort)
+       └─ recordings: only after capture starts successfully
+            ├─ Vault-scoped Contact
+            ├─ Meeting participant
+            ├─ domain → Organization
+            └─ Organization membership
+
+SQLite typed records
+    ├─ Organization / unit / domain / membership
+    ├─ Contact / Meeting participation
+    ├─ Project resource reference
+    ├─ Glossary term
+    └─ Insight + typed evidence/context reference
+            ↓ bounded, read-only, Vault-scoped queries
+        Dahlia MCP
+```
+
+Contactのローカルidentityは `UUID + (vaultId, email)` であり、Vault横断またはクラウド全体の人物identityではない。
+Organization/Contactなどの正準レコードと、AIまたは人によるInsightを分離する。Insightのreview状態は正準レコードへの
+write-backを発生させない。汎用参照は書き込み時にtarget存在とVault一致を検証し、target削除時はtriggerで除去する。
+詳細な判断と将来のContact統合条件は
+[ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
+
 ## Workload Classes
 
 機能全体ではなく、処理の各段階を durability、latency、overload behavior によって分類する。
