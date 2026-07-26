@@ -756,9 +756,9 @@ final class CaptionViewModel: ObservableObject {
             if currentMeetingId == meeting.id, currentDbQueue === context.dbQueue {
                 let project = try projectId.flatMap(repository.fetchProject(id:))
                 setExplicitProjectContext(
-                    projectURL: project.map { context.vaultURL.appending(path: $0.name, directoryHint: .isDirectory) },
+                    projectURL: project.map { context.vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
                     projectId: projectId,
-                    projectName: project?.name
+                    projectName: project?.path
                 )
             }
             return nil
@@ -787,9 +787,9 @@ final class CaptionViewModel: ObservableObject {
                 .moveMeeting(id: meeting.id, toProjectId: projectId)
             let project = try projectId.flatMap(repository.fetchProject(id:))
             setExplicitProjectContext(
-                projectURL: project.map { vaultURL.appending(path: $0.name, directoryHint: .isDirectory) },
+                projectURL: project.map { vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
                 projectId: projectId,
-                projectName: project?.name
+                projectName: project?.path
             )
             return nil
         } catch {
@@ -1649,8 +1649,8 @@ final class CaptionViewModel: ObservableObject {
               }) else { return nil }
 
         return (
-            vaultURL.appending(path: project.name, directoryHint: .isDirectory),
-            project.name
+            vaultURL.appending(path: project.path, directoryHint: .isDirectory),
+            project.path
         )
     }
 
@@ -2769,7 +2769,7 @@ final class CaptionViewModel: ObservableObject {
             meetingName: meetingName,
             dbQueue: dbQueue,
             projectURL: currentProjectURL,
-            projectName: project?.name ?? selectedProjectName ?? "",
+            projectName: project?.path ?? selectedProjectName ?? "",
             projectDescription: project?.description,
             createdAt: store.timeBase,
             vaultURL: vaultURL,
@@ -2854,8 +2854,8 @@ final class CaptionViewModel: ObservableObject {
             meetingId: meetingId,
             meetingName: meeting.name.nilIfBlank ?? L10n.newMeeting,
             dbQueue: dbQueue,
-            projectURL: project.map { vaultURL.appending(path: $0.name, directoryHint: .isDirectory) },
-            projectName: project?.name ?? "",
+            projectURL: project.map { vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
+            projectName: project?.path ?? "",
             projectDescription: project?.description,
             createdAt: meeting.createdAt,
             vaultURL: vaultURL,
@@ -2969,15 +2969,20 @@ final class CaptionViewModel: ObservableObject {
             generationSettings: request.generationSettings
         ))
 
-        try repo.applyGeneratedSummary(
-            toMeetingId: meetingId,
-            document: generatedSummary.document,
-            tags: generatedSummary.document.tags
-        )
-        job.progress.summaryGeneration = .completed
-        if currentMeetingId == meetingId {
-            currentSummaryDocument = generatedSummary.document
-            currentSummaryGoogleFileId = nil
+        var summaryWasApplied = false
+        func persistGeneratedSummary() throws {
+            guard !summaryWasApplied else { return }
+            try repo.applyGeneratedSummary(
+                toMeetingId: meetingId,
+                document: generatedSummary.document,
+                tags: generatedSummary.document.tags
+            )
+            summaryWasApplied = true
+            job.progress.summaryGeneration = .completed
+            if currentMeetingId == meetingId {
+                currentSummaryDocument = generatedSummary.document
+                currentSummaryGoogleFileId = nil
+            }
         }
 
         let exportOptions = request.options.exportOptions
@@ -3007,9 +3012,10 @@ final class CaptionViewModel: ObservableObject {
                           latestMeeting.vaultId == vaultID else {
                         throw SummaryGenerationPreparationError.meetingUnavailable
                     }
-                    let latestProjectName = latest.1?.name ?? ""
+                    try persistGeneratedSummary()
+                    let latestProjectName = latest.1?.path ?? ""
                     let latestProjectURL = latest.1.map {
-                        request.vaultURL.appending(path: $0.name, directoryHint: .isDirectory)
+                        request.vaultURL.appending(path: $0.path, directoryHint: .isDirectory)
                     }
                     let fileURL = try VaultSummaryExportService.resolveSummaryFileURL(
                         projectURL: latestProjectURL,
@@ -3050,10 +3056,13 @@ final class CaptionViewModel: ObservableObject {
                 job.progress.vaultExport = .completed
                 if currentMeetingId == meetingId { lastSummaryURL = exportResult.0 }
             } catch {
+                try persistGeneratedSummary()
                 job.progress.vaultExport = .failed(error.localizedDescription)
                 summaryErrorsByMeetingId[meetingId] = error.localizedDescription
                 ErrorReportingService.capture(error, context: ["source": "vaultSummaryExport"])
             }
+        } else {
+            try persistGeneratedSummary()
         }
 
         if exportOptions.exportsToGoogleDocs {

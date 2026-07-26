@@ -3,7 +3,7 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// Tracks exported Summary paths under a Vault and imports one-time legacy Project descriptions.
+/// Tracks exported Summary paths under a Vault.
 /// Project identity and hierarchy are never inferred from filesystem state.
 final class VaultSyncService: @unchecked Sendable {
     private let vaultURL: URL
@@ -14,8 +14,6 @@ final class VaultSyncService: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private let fileManager = FileManager.default
     private let callbackQueue = DispatchQueue(label: "com.dahlia.vault-sync", qos: .utility)
-    private var initialMigrationRetryScheduled = false
-    private var initialMigrationRetryAttempt = 0
     private var pendingEventBatches: [PendingEventBatch] = []
     private var eventRetryScheduled = false
 
@@ -40,119 +38,6 @@ final class VaultSyncService: @unchecked Sendable {
 
     deinit {
         stopMonitoring()
-    }
-
-    // MARK: - Initial Sync
-
-    /// Performs one-time legacy metadata migration. Project hierarchy is never inferred from disk.
-    func performInitialSync() {
-        do {
-            try withMutationLock {
-                try migrateLegacyProjectDescriptions()
-            }
-            initialMigrationRetryAttempt = 0
-        } catch is DahliaVaultMutationLockError {
-            scheduleInitialMigrationRetry()
-        } catch {
-            initialMigrationRetryAttempt = 0
-        }
-    }
-
-    /// CONTEXT.md の管理廃止に伴い、既存内容を一度だけ projects.description へ移行する。
-    private func migrateLegacyProjectDescriptions() throws {
-        let projects: [(id: UUID, name: String, description: String)]
-        projects = try dbQueue.read { db in
-            let pendingIds = try UUID.fetchSet(
-                db,
-                sql: "SELECT id FROM projects WHERE vaultId = ? AND legacyContextMigrated = 0",
-                arguments: [self.vaultId]
-            )
-            return try ProjectRecord.fetchResolvedAll(vaultId: self.vaultId, in: db)
-                .filter { pendingIds.contains($0.id) }
-                .map {
-                    (
-                        id: $0.id,
-                        name: $0.name,
-                        description: $0.description
-                    )
-                }
-        }
-
-        let migrations = projects.map { project in
-            let migratedDescription = project.description.isEmpty
-                ? legacyProjectDescription(projectName: project.name)
-                : project.description
-            return (
-                id: project.id,
-                originalDescription: project.description,
-                migratedDescription: migratedDescription
-            )
-        }
-
-        try dbQueue.write { db in
-            for migration in migrations {
-                try db.execute(
-                    sql: """
-                    UPDATE projects
-                    SET description = ?,
-                        legacyContextMigrated = 1,
-                        revision = revision + CASE WHEN description <> ? THEN 1 ELSE 0 END
-                    WHERE id = ? AND legacyContextMigrated = 0 AND description = ?
-                    """,
-                    arguments: [
-                        migration.migratedDescription,
-                        migration.migratedDescription,
-                        migration.id,
-                        migration.originalDescription,
-                    ]
-                )
-            }
-        }
-    }
-
-    private func legacyProjectDescription(projectName: String) -> String {
-        let projectURL = vaultURL.appending(path: projectName, directoryHint: .isDirectory)
-        let contextURL = projectURL.appending(path: "CONTEXT.md")
-        guard pathContainsNoSymlinks(projectURL),
-              let values = try? contextURL.resourceValues(forKeys: [
-                  .isRegularFileKey,
-                  .isSymbolicLinkKey,
-              ]),
-              values.isRegularFile == true,
-              values.isSymbolicLink != true,
-              isInsideVaultAfterResolvingSymlinks(contextURL)
-        else { return "" }
-        guard let content = try? String(contentsOf: contextURL, encoding: .utf8) else { return "" }
-        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let openingTag = trimmedContent.range(of: "<context>"),
-              let closingTag = trimmedContent.range(of: "</context>", range: openingTag.upperBound ..< trimmedContent.endIndex) else {
-            return trimmedContent
-        }
-        return trimmedContent[openingTag.upperBound ..< closingTag.lowerBound]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func pathContainsNoSymlinks(_ url: URL) -> Bool {
-        let vault = vaultURL.standardizedFileURL
-        let candidate = url.standardizedFileURL
-        let relativeComponents = candidate.pathComponents.dropFirst(vault.pathComponents.count)
-        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return false }
-
-        var current = vault
-        for component in relativeComponents {
-            current.append(path: component)
-            guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
-                  values.isSymbolicLink != true else {
-                return false
-            }
-        }
-        return true
-    }
-
-    private func isInsideVaultAfterResolvingSymlinks(_ url: URL) -> Bool {
-        let vaultPath = vaultURL.resolvingSymlinksInPath().standardizedFileURL.path
-        let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
-        return candidatePath.hasPrefix(vaultPath.hasSuffix("/") ? vaultPath : vaultPath + "/")
     }
 
     // MARK: - FSEvents Monitoring
@@ -252,22 +137,6 @@ final class VaultSyncService: @unchecked Sendable {
 
             try summaryPathSynchronizer.clearRemovedPathPrefixes(events.removedDirectories)
             try summaryPathSynchronizer.clearRemovedPaths(events.removedSummaryPaths)
-        }
-    }
-
-    private func scheduleInitialMigrationRetry() {
-        callbackQueue.async { [weak self] in
-            guard let self,
-                  !self.initialMigrationRetryScheduled,
-                  self.initialMigrationRetryAttempt < 5 else { return }
-            self.initialMigrationRetryScheduled = true
-            self.initialMigrationRetryAttempt += 1
-            let delay = min(pow(2, Double(self.initialMigrationRetryAttempt - 1)) * 0.1, 1.6)
-            self.callbackQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self else { return }
-                self.initialMigrationRetryScheduled = false
-                self.performInitialSync()
-            }
         }
     }
 

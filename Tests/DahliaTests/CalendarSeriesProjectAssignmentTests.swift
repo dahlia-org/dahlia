@@ -68,7 +68,7 @@ import GRDB
                 id: .v7(),
                 vaultId: vault.id,
                 parentProjectId: root.id,
-                leafName: "Platform",
+                name: "Platform",
                 createdAt: .now,
                 projectType: nil
             )
@@ -99,53 +99,6 @@ import GRDB
 
             #expect(service.projectId == child.id)
             #expect(service.projectName == "Acme/Platform")
-        }
-
-        @Test
-        func legacyMissingDirectoryFlagDoesNotChangeSeriesProjectMembership() async throws {
-            let (database, vault) = try makeDatabase()
-            let availableProject = project(named: "Available project", vaultId: vault.id)
-            let recentProject = project(named: "Recent project", vaultId: vault.id)
-            let olderStart = Date(timeIntervalSince1970: 1_776_200_000)
-            let recentStart = Date(timeIntervalSince1970: 1_776_300_000)
-            let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
-
-            try await database.dbQueue.write { db in
-                try availableProject.insert(db)
-                try recentProject.insert(db)
-                try db.execute(
-                    sql: "UPDATE projects SET missingOnDisk = 1 WHERE id = ?",
-                    arguments: [recentProject.id]
-                )
-                try insertSeriesMeeting(
-                    event: seriesEvent(startDate: olderStart, recurrenceId: "20260414T090000Z"),
-                    projectId: availableProject.id,
-                    vaultId: vault.id,
-                    createdAt: olderStart,
-                    in: db
-                )
-                try insertSeriesMeeting(
-                    event: seriesEvent(startDate: recentStart, recurrenceId: "20260415T090000Z"),
-                    projectId: recentProject.id,
-                    vaultId: vault.id,
-                    createdAt: recentStart,
-                    in: db
-                )
-            }
-
-            let service = try await MeetingPersistenceService.createNew(
-                store: TranscriptStore(),
-                dbQueue: database.dbQueue,
-                vaultId: vault.id,
-                projectId: nil,
-                initialName: "Current occurrence",
-                calendarEvent: seriesEvent(startDate: currentStart, recurrenceId: "20260416T090000Z")
-            )
-            await service.stop()
-
-            let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
-            #expect(meeting.projectId == recentProject.id)
-            #expect(service.projectId == recentProject.id)
         }
 
         @Test
@@ -317,7 +270,7 @@ import GRDB
         ProjectRecord(
             id: .v7(),
             vaultId: vaultId,
-            name: name,
+            path: name,
             createdAt: .now
         )
     }

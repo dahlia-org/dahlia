@@ -123,9 +123,6 @@ final class SidebarViewModel {
 
         let syncService = VaultSyncService(vaultURL: vaultURL, dbQueue: dbQueue, vaultId: vaultId)
         vaultSyncService = syncService
-        Task.detached(priority: .userInitiated) {
-            syncService.performInitialSync()
-        }
         syncService.startMonitoring()
 
         let watcher = TranscriptFileWatcher(dbQueue: dbQueue, vaultURL: vaultURL)
@@ -231,13 +228,7 @@ final class SidebarViewModel {
                 """,
                 arguments: [vaultId]
             )
-            let projectPaths = try Dictionary(
-                uniqueKeysWithValues: ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-                    .map { ($0.id, $0.name) }
-            )
-            for index in meetings.indices {
-                meetings[index].projectName = meetings[index].projectId.flatMap { projectPaths[$0] }
-            }
+            try Self.resolveProjectPaths(in: &meetings, vaultId: vaultId, database: db)
             return meetings
         }
         allMeetingsObservation = observation.start(
@@ -258,6 +249,20 @@ final class SidebarViewModel {
                 }
             }
         )
+    }
+
+    nonisolated static func resolveProjectPaths(
+        in meetings: inout [MeetingOverviewItem],
+        vaultId: UUID,
+        database: Database
+    ) throws {
+        let projectPaths = try Dictionary(
+            uniqueKeysWithValues: ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: database)
+                .map { ($0.id, $0.path) }
+        )
+        for index in meetings.indices {
+            meetings[index].projectName = meetings[index].projectId.flatMap { projectPaths[$0] }
+        }
     }
 
     private func startTagsObservation(dbQueue: DatabaseQueue) {
@@ -309,8 +314,8 @@ final class SidebarViewModel {
                 let effectiveType = effectiveTypes[project.id]
                 return ProjectOverviewItem(
                     projectId: project.id,
-                    projectName: project.name,
-                    projectLeafName: project.leafName,
+                    projectName: project.path,
+                    projectDisplayName: project.name,
                     parentProjectId: project.parentProjectId,
                     projectDescription: project.description,
                     explicitProjectType: project.projectType,
@@ -470,14 +475,14 @@ final class SidebarViewModel {
     }
 
     func createProject(
-        leafName: String,
+        name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil
     ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
-                leafName: leafName,
+                name: name,
                 parentProjectId: parentProjectId,
                 projectType: projectType
             )
@@ -491,14 +496,14 @@ final class SidebarViewModel {
 
     func renameProject(
         id: UUID,
-        newLeafName: String,
+        newName: String,
         expectedRevision: Int? = nil
     ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.renameProject(
                 id: id,
-                newLeafName: newLeafName,
+                newName: newName,
                 expectedRevision: expectedRevision
             )
             lastError = nil
@@ -576,8 +581,8 @@ final class SidebarViewModel {
               let projectWorkspaceService else { return nil }
 
         do {
-            let record = try projectWorkspaceService.fetchOrCreateRootProject(leafName: name)
-            let projectURL = vault.url.appending(path: record.name, directoryHint: .isDirectory)
+            let record = try projectWorkspaceService.fetchOrCreateRootProject(name: name)
+            let projectURL = vault.url.appending(path: record.path, directoryHint: .isDirectory)
             return (record, projectURL)
         } catch {
             lastError = error.localizedDescription

@@ -323,8 +323,8 @@ struct DahliaApp: App {
             return (nil, nil, nil)
         }
         let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
-        let projectURL = project.map { vault.url.appending(path: $0.name, directoryHint: .isDirectory) }
-        return (projectURL, project?.id, project?.name)
+        let projectURL = project.map { vault.url.appending(path: $0.path, directoryHint: .isDirectory) }
+        return (projectURL, project?.id, project?.path)
     }
 }
 

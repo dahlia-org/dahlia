@@ -5,7 +5,7 @@ import GRDB
 // MARK: - Projects
 
 extension MeetingRepository {
-    /// 指定保管庫のプロジェクトを name 順で取得する。
+    /// 指定保管庫のプロジェクトを論理パス順で取得する。
     func fetchAllProjects(vaultId: UUID) throws -> [ProjectRecord] {
         try dbQueue.read { db in
             try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
@@ -33,12 +33,12 @@ extension MeetingRepository {
     func createProject(
         vaultId: UUID,
         parentProjectId: UUID?,
-        leafName: String,
+        name: String,
         description: String,
         projectType: ProjectType?
     ) throws -> ProjectRecord {
         try dbQueue.write { db in
-            guard DahliaProjectName.normalizedLeafName(leafName) == leafName else {
+            guard DahliaProjectName.normalizedName(name) == name else {
                 throw ProjectWorkspaceError.invalidName
             }
             if let parentProjectId {
@@ -57,7 +57,7 @@ extension MeetingRepository {
                 id: .v7(),
                 vaultId: vaultId,
                 parentProjectId: parentProjectId,
-                leafName: leafName,
+                name: name,
                 createdAt: .now,
                 description: description,
                 projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
@@ -70,15 +70,15 @@ extension MeetingRepository {
     /// 指定名のプロジェクトを取得し、存在しなければ作成して返す。
     func fetchOrCreateProject(name: String, vaultId: UUID) throws -> ProjectRecord {
         try dbQueue.write { db in
-            guard let leafName = DahliaProjectName.normalizedLeafName(name) else {
+            guard let name = DahliaProjectName.normalizedName(name) else {
                 throw ProjectWorkspaceError.invalidName
             }
-            let siblingKey = DahliaProjectName.siblingKey(leafName)
+            let siblingKey = DahliaProjectName.siblingKey(name)
             if let existing = try ProjectRecord
                 .filter(
                     Column("vaultId") == vaultId
                         && Column("parentProjectId") == nil
-                        && Column("leafNameKey") == siblingKey
+                        && Column("nameKey") == siblingKey
                 )
                 .fetchOne(db) {
                 return try ProjectRecord.fetchResolved(id: existing.id, in: db) ?? existing
@@ -87,7 +87,7 @@ extension MeetingRepository {
                 id: .v7(),
                 vaultId: vaultId,
                 parentProjectId: nil,
-                leafName: leafName,
+                name: name,
                 createdAt: .now,
                 projectType: .undefined
             )
@@ -96,12 +96,12 @@ extension MeetingRepository {
         }
     }
 
-    /// Updates one canonical parent/leaf relation without deriving identity from a path or directory.
+    /// Updates one canonical parent/name relation without deriving identity from a path or directory.
     func updateProjectLocation(
         id: UUID,
         vaultId: UUID,
         parentProjectId: UUID?,
-        leafName: String,
+        name: String,
         vaultExportUpdates: [MeetingVaultExportUpdate],
         expectedRevision: Int? = nil
     ) throws -> ProjectRecord {
@@ -113,7 +113,7 @@ extension MeetingRepository {
             if let expectedRevision, project.revision != expectedRevision {
                 throw ProjectWorkspaceError.staleRevision(current: project.revision)
             }
-            guard DahliaProjectName.normalizedLeafName(leafName) == leafName else {
+            guard DahliaProjectName.normalizedName(name) == name else {
                 throw ProjectWorkspaceError.invalidName
             }
             if let parentProjectId {
@@ -131,15 +131,15 @@ extension MeetingRepository {
             guard !records.contains(where: {
                 $0.id != id
                     && $0.parentProjectId == parentProjectId
-                    && $0.leafNameKey == DahliaProjectName.siblingKey(leafName)
+                    && $0.nameKey == DahliaProjectName.siblingKey(name)
             }) else {
-                throw ProjectWorkspaceError.projectAlreadyExists(leafName)
+                throw ProjectWorkspaceError.projectAlreadyExists(name)
             }
 
             let effectiveType = ProjectRecord.effectiveType(for: project.id, records: records)?.type ?? .undefined
             let wasRoot = project.parentProjectId == nil
             project.parentProjectId = parentProjectId
-            project.leafName = leafName
+            project.name = name
             project.projectType = parentProjectId == nil
                 ? (wasRoot ? project.projectType ?? .undefined : effectiveType)
                 : nil
@@ -175,7 +175,7 @@ extension MeetingRepository {
     func deleteProjectsByPrefix(name: String, vaultId: UUID) throws {
         try dbQueue.write { db in
             let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-            guard let project = records.first(where: { $0.name == name }) else { return }
+            guard let project = records.first(where: { $0.path == name }) else { return }
             let ids = try ProjectRecord.hierarchy(projectId: project.id, vaultId: vaultId, in: db)
                 .reversed()
                 .map(\.id)
@@ -247,7 +247,9 @@ extension MeetingRepository {
         vaultId: UUID,
         meetingDisposition: ProjectMeetingDisposition,
         vaultExportUpdates: [MeetingVaultExportUpdate] = [],
-        managedAudioRootURL: URL = BatchAudioStorage.managedRootURL
+        managedAudioRootURL: URL = BatchAudioStorage.managedRootURL,
+        restoreStagedAudio: ([BatchAudioCleanupService.StagedFile]) throws -> Void =
+            BatchAudioCleanupService.restoreStagedFiles
     ) throws -> [BatchAudioCleanupService.StagedFile] {
         let meetingIds = try dbQueue.read { db in
             let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
@@ -310,9 +312,16 @@ extension MeetingRepository {
                     _ = try ProjectRecord.deleteOne(db, key: id)
                 }
             }
-        } catch {
-            try BatchAudioCleanupService.restoreStagedFiles(stagedAudio)
-            throw error
+        } catch let operationError {
+            do {
+                try restoreStagedAudio(stagedAudio)
+            } catch let rollbackError {
+                throw ProjectWorkspaceError.rollbackFailed(
+                    operation: operationError.localizedDescription,
+                    rollback: rollbackError.localizedDescription
+                )
+            }
+            throw operationError
         }
         return stagedAudio
     }

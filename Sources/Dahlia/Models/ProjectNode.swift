@@ -17,15 +17,15 @@ struct FlatProjectRow: Identifiable, Equatable {
         rows.reserveCapacity(records.count)
 
         for record in records {
-            let components = record.name.split(separator: "/")
-            let displayName = record.leafName
+            let components = record.path.split(separator: "/")
+            let displayName = record.name
             let depth = max(components.count - 1, 0)
             let hasChildren = parentIDs.contains(record.id)
 
             rows.append(
                 FlatProjectRow(
                     id: record.id,
-                    name: record.name,
+                    name: record.path,
                     displayName: displayName,
                     depth: depth,
                     hasChildren: hasChildren
@@ -77,7 +77,7 @@ struct ProjectTreeNode: Identifiable, Equatable {
 
             return ProjectTreeNode(
                 project: project,
-                displayName: project.projectLeafName.nilIfBlank
+                displayName: project.projectDisplayName.nilIfBlank
                     ?? project.projectName.split(separator: "/").last.map(String.init)
                     ?? project.projectName,
                 meetingCount: totalMeetingCount,

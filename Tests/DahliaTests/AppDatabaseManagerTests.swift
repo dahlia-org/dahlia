@@ -24,21 +24,17 @@ import GRDB
         }
 
         @Test
-        func initializesInMemoryDatabaseWithGoogleDriveFolderColumn() throws {
+        func initializesInMemoryDatabaseWithCanonicalProjectColumns() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
             }
 
-            #expect(columns.contains("googleDriveFolderId"))
-            #expect(columns.contains("description"))
-            #expect(columns.contains("legacyContextMigrated"))
-            #expect(columns.contains("parentProjectId"))
-            #expect(columns.contains("leafName"))
-            #expect(columns.contains("leafNameKey"))
-            #expect(columns.contains("projectType"))
-            #expect(columns.contains("revision"))
+            #expect(columns == [
+                "id", "vaultId", "parentProjectId", "name", "nameKey",
+                "createdAt", "description", "projectType", "revision",
+            ])
         }
 
         @Test
@@ -114,18 +110,14 @@ import GRDB
             }
             let projects = result.0
             let child = try #require(projects.first(where: { $0.id == childID }))
-            #expect(projects.map(\.name) == ["Acme", "Acme/API", "Acme/API (2)", "Acme/Platform"])
-            #expect(child.name == "Acme/API (2)")
+            #expect(projects.map(\.path) == ["Acme", "Acme/API", "Acme/API (2)", "Acme/Platform"])
+            #expect(child.path == "Acme/API (2)")
             #expect(child.description == "Preserved")
             #expect(child.projectType == nil)
             #expect(child.revision == 2)
             #expect(ProjectRecord.effectiveType(for: childID, records: projects)?.type == .undefined)
             #expect(result.1 == childID)
-            let driveID = try queue.read { db in
-                try String.fetchOne(db, sql: "SELECT googleDriveFolderId FROM projects WHERE id = ?", arguments: [childID])
-            }
-            #expect(driveID == "drive-id")
-            #expect(projects.first(where: { $0.id == existingSiblingID })?.name == "Acme/API")
+            #expect(projects.first(where: { $0.id == existingSiblingID })?.path == "Acme/API")
         }
 
         @Test
@@ -214,14 +206,12 @@ import GRDB
             let result = try queue.read { db in
                 try (
                     ProjectRecord.fetchResolvedAll(vaultId: vaultID, in: db),
-                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db),
-                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE missingOnDisk = 1") ?? 0
+                    SummaryExportRecord.fetchOne(meetingId: meetingID, type: .vault, in: db)
                 )
             }
             let projects = result.0
             #expect(Set(projects.map(\.id)) == [firstID, secondID])
-            #expect(Set(projects.map(\.leafNameKey)).count == 2)
-            #expect(result.2 == 0)
+            #expect(Set(projects.map(\.nameKey)).count == 2)
             #expect(result.1?.vaultRelativePath == "acme/Note.md")
             #expect(FileManager.default.fileExists(atPath: vaultURL.appending(path: "acme/Note.md").path))
         }
@@ -241,14 +231,14 @@ import GRDB
             let root = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: nil,
-                leafName: "Root",
+                name: "Root",
                 description: "",
                 projectType: .customer
             )
             _ = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: root.id,
-                leafName: "Child",
+                name: "Child",
                 description: "",
                 projectType: nil
             )
@@ -280,14 +270,14 @@ import GRDB
             let root = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: nil,
-                leafName: "Root",
+                name: "Root",
                 description: "",
                 projectType: .customer
             )
             let child = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: root.id,
-                leafName: "Child",
+                name: "Child",
                 description: "",
                 projectType: nil
             )
@@ -295,7 +285,7 @@ import GRDB
                 try repository.createProject(
                     vaultId: vault.id,
                     parentProjectId: root.id,
-                    leafName: "Typed child",
+                    name: "Typed child",
                     description: "",
                     projectType: .personal
                 )
@@ -303,7 +293,7 @@ import GRDB
             let destination = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: nil,
-                leafName: "Destination",
+                name: "Destination",
                 description: "",
                 projectType: .internal
             )
@@ -314,7 +304,7 @@ import GRDB
                         id: .v7(),
                         vaultId: vault.id,
                         parentProjectId: child.id,
-                        leafName: "Grandchild",
+                        name: "Grandchild",
                         createdAt: .now,
                         projectType: nil
                     ).insert(db)
@@ -331,7 +321,7 @@ import GRDB
             let childlessRoot = try repository.createProject(
                 vaultId: vault.id,
                 parentProjectId: nil,
-                leafName: "Childless",
+                name: "Childless",
                 description: "",
                 projectType: .personal
             )
@@ -367,14 +357,14 @@ import GRDB
             let root = try repository.createProject(
                 vaultId: firstVault.id,
                 parentProjectId: nil,
-                leafName: "Root",
+                name: "Root",
                 description: "",
                 projectType: .customer
             )
             let otherRoot = try repository.createProject(
                 vaultId: secondVault.id,
                 parentProjectId: nil,
-                leafName: "Other root",
+                name: "Other root",
                 description: "",
                 projectType: .undefined
             )
@@ -399,7 +389,7 @@ import GRDB
                 try repository.createProject(
                     vaultId: firstVault.id,
                     parentProjectId: nil,
-                    leafName: "root",
+                    name: "root",
                     description: "",
                     projectType: .undefined
                 )
@@ -425,10 +415,10 @@ import GRDB
                     try db.execute(
                         sql: """
                         INSERT INTO projects (
-                            id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, missingOnDisk,
-                            description, legacyContextMigrated, projectType, revision
+                            id, vaultId, parentProjectId, name, nameKey, createdAt,
+                            description, projectType, revision
                         )
-                        VALUES (?, ?, NULL, ?, ?, ?, 0, '', 1, NULL, 1)
+                        VALUES (?, ?, NULL, ?, ?, ?, '', NULL, 1)
                         """,
                         arguments: [
                             UUID.v7(),
@@ -443,7 +433,7 @@ import GRDB
         }
 
         @Test
-        func projectLeafNameConstraintsRejectInvalidDirectWrites() throws {
+        func projectNameConstraintsRejectInvalidDirectWrites() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vaultID = UUID.v7()
             try database.dbQueue.write { db in
@@ -466,10 +456,10 @@ import GRDB
                         try db.execute(
                             sql: """
                             INSERT INTO projects (
-                                id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, missingOnDisk,
-                                description, legacyContextMigrated, projectType, revision
+                                id, vaultId, parentProjectId, name, nameKey, createdAt,
+                                description, projectType, revision
                             )
-                            VALUES (?, ?, NULL, ?, ?, ?, 0, '', 1, 'undefined', 1)
+                            VALUES (?, ?, NULL, ?, ?, ?, '', 'undefined', 1)
                             """,
                             arguments: [UUID.v7(), vaultID, invalidName, "invalid-key", Date.now]
                         )
@@ -535,7 +525,7 @@ import GRDB
         }
 
         @Test
-        func existingProjectsGainEmptyDescriptionWithoutDataLoss() throws {
+        func legacyProjectSchemaUpgradesWithoutLosingProjectIdentity() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: UUID().uuidString)
                 .appendingPathExtension("sqlite")
@@ -597,19 +587,25 @@ import GRDB
             }
 
             let migrated = try AppDatabaseManager(path: databaseURL.path)
-            let row = try migrated.dbQueue.read { db in
-                try Row.fetchOne(
-                    db,
-                    sql: "SELECT * FROM projects WHERE id = ?",
-                    arguments: [projectId]
+            let result = try migrated.dbQueue.read { db in
+                try (
+                    Row.fetchOne(
+                        db,
+                        sql: "SELECT * FROM projects WHERE id = ?",
+                        arguments: [projectId]
+                    ),
+                    String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
                 )
             }
 
-            let existingRow = try #require(row)
+            let existingRow = try #require(result.0)
             let existingProject = try ProjectRecord(row: existingRow)
+            #expect(existingProject.id == projectId)
             #expect(existingProject.name == "Existing Project")
             #expect(existingProject.description.isEmpty)
-            #expect(existingRow["googleDriveFolderId"] == "folder-123" as String?)
+            #expect(!result.1.contains("googleDriveFolderId"))
+            #expect(!result.1.contains("missingOnDisk"))
+            #expect(!result.1.contains("legacyContextMigrated"))
         }
 
         @Test
@@ -1231,14 +1227,20 @@ import GRDB
 
     @MainActor
     final class AppDatabaseManagerTests: XCTestCase {
-        func testInitializesInMemoryDatabaseWithGoogleDriveFolderColumn() throws {
+        func testInitializesInMemoryDatabaseWithCanonicalProjectColumns() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 
             let columns = try database.dbQueue.read { db in
                 try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')")
             }
 
-            XCTAssertTrue(columns.contains("googleDriveFolderId"))
+            XCTAssertEqual(
+                columns,
+                [
+                    "id", "vaultId", "parentProjectId", "name", "nameKey",
+                    "createdAt", "description", "projectType", "revision",
+                ]
+            )
         }
 
         func testInitializesInMemoryDatabaseWithoutLegacySummaryColumns() throws {

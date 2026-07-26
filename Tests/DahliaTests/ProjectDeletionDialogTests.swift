@@ -96,7 +96,7 @@ import Foundation
             ProjectOverviewItem(
                 projectId: id,
                 projectName: name,
-                projectLeafName: name.split(separator: "/").last.map(String.init) ?? name,
+                projectDisplayName: name.split(separator: "/").last.map(String.init) ?? name,
                 parentProjectId: parentId,
                 createdAt: .now,
                 meetingCount: 0,

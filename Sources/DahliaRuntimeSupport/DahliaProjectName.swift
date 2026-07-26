@@ -10,7 +10,7 @@ public enum DahliaProjectName {
             .folding(options: [.caseInsensitive], locale: normalizationLocale)
     }
 
-    public static func normalizedLeafName(_ value: String) -> String? {
+    public static func normalizedName(_ value: String) -> String? {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty,
               value != ".",
@@ -26,7 +26,7 @@ public enum DahliaProjectName {
         return value
     }
 
-    public static func migrationSafeLeafName(_ value: String, suffix: String = "") -> String {
+    public static func migrationSafeName(_ value: String, suffix: String = "") -> String {
         var base = String(value.unicodeScalars.map { scalar -> Character in
             if scalar == "/" || scalar == ":" || CharacterSet.controlCharacters.contains(scalar) {
                 return "-"

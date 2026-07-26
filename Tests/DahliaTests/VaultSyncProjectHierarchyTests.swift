@@ -8,23 +8,6 @@ import GRDB
     @MainActor
     struct VaultSyncProjectHierarchyTests {
         @Test
-        func initialSyncNeverCreatesProjectsFromDirectories() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            try FileManager.default.createDirectory(
-                at: fixture.vaultURL.appending(path: "Acme/Platform/API", directoryHint: .isDirectory),
-                withIntermediateDirectories: true
-            )
-
-            fixture.service.performInitialSync()
-
-            let projects = try fixture.database.dbQueue.read { db in
-                try ProjectRecord.fetchResolvedAll(vaultId: fixture.vaultID, in: db)
-            }
-            #expect(projects.isEmpty)
-        }
-
-        @Test
         func directoryCreationEventNeverCreatesAProject() throws {
             let fixture = try Fixture()
             defer { fixture.cleanup() }
@@ -69,25 +52,6 @@ import GRDB
             #expect(unchanged.name == "Original")
             #expect(unchanged.revision == project.revision)
         }
-
-        @Test
-        func missingDerivedDirectoryDoesNotChangeProject() throws {
-            let fixture = try Fixture()
-            defer { fixture.cleanup() }
-            let project = try fixture.insertProject(named: "No Output Yet")
-
-            fixture.service.performInitialSync()
-
-            let unchanged = try fixture.database.dbQueue.read { db in
-                try #require(try ProjectRecord.fetchResolved(id: project.id, in: db))
-            }
-            #expect(unchanged.id == project.id)
-            #expect(unchanged.name == project.leafName)
-            #expect(unchanged.parentProjectId == project.parentProjectId)
-            #expect(unchanged.projectType == project.projectType)
-            #expect(unchanged.revision == project.revision)
-            #expect(!FileManager.default.fileExists(atPath: fixture.vaultURL.appending(path: project.name).path))
-        }
     }
 
     private extension VaultSyncProjectHierarchyTests {
@@ -125,7 +89,7 @@ import GRDB
                     id: .v7(),
                     vaultId: vaultID,
                     parentProjectId: nil,
-                    leafName: name,
+                    name: name,
                     createdAt: .now,
                     projectType: .undefined
                 )

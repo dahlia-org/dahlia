@@ -251,7 +251,7 @@ struct ProjectManagementView: View {
             }
         } else if let selectedProject {
             projectDetailForm(for: selectedProject)
-                .navigationTitle(leafName(for: selectedProject.projectName))
+                .navigationTitle(displayName(for: selectedProject.projectName))
         } else if sidebarViewModel.allProjectItems.isEmpty {
             ContentUnavailableView {
                 Label(L10n.noProjectsYet, systemImage: "folder.badge.plus")
@@ -453,7 +453,7 @@ private extension ProjectManagementView {
         guard !projectName.isEmpty else { return }
 
         guard let project = sidebarViewModel.createProject(
-            leafName: projectName,
+            name: projectName,
             parentProjectId: projectCreationParentId,
             projectType: projectCreationParentId == nil ? newProjectType : nil
         ) else {
@@ -462,7 +462,7 @@ private extension ProjectManagementView {
         }
 
         projectSearchText = ""
-        requestExpansion(toReveal: project.name)
+        requestExpansion(toReveal: project.path)
         selectedProjectId = project.id
         isShowingProjectCreation = false
         projectCreationParentId = nil
@@ -495,7 +495,7 @@ private extension ProjectManagementView {
         }
 
         projectRevisionObservationTracker.discard(projectId: selectedProjectId)
-        let hadUnsavedFields = projectName != leafName(for: previous.projectName)
+        let hadUnsavedFields = projectName != displayName(for: previous.projectName)
             || projectParentId != previous.parentProjectId
             || projectType != previous.effectiveProjectType
             || projectDescription != lastSavedProjectDescription
@@ -522,15 +522,19 @@ private extension ProjectManagementView {
         guard let url = projectFolderURL(for: project),
               let vaultURL = AppSettings.shared.currentVault?.url else { return }
         Task {
-            let isSafe = await Task.detached {
-                ProjectFolderSafety.isSafeDirectory(url, inside: vaultURL)
+            let status = await Task.detached {
+                ProjectFolderSafety.status(of: url, inside: vaultURL)
             }.value
-            guard isSafe else {
+            switch status {
+            case .available:
+                NSWorkspace.shared.open(url)
+            case .missing:
+                projectOperationErrorMessage = L10n.summaryOutputFolderNotCreated
+                isShowingProjectOperationError = true
+            case .unsafe:
                 projectOperationErrorMessage = L10n.invalidSummaryOutputDestination
                 isShowingProjectOperationError = true
-                return
             }
-            NSWorkspace.shared.open(url)
         }
     }
 
@@ -549,7 +553,7 @@ private extension ProjectManagementView {
         descriptionSaveFailed = editingState.hasUnsavedChanges
         projectName = projectId
             .flatMap { id in sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) }
-            .map { leafName(for: $0.projectName) }
+            .map { displayName(for: $0.projectName) }
             ?? ""
         let project = projectId.flatMap { id in
             sidebarViewModel.allProjectItems.first(where: { $0.projectId == id })
@@ -631,7 +635,7 @@ private extension ProjectManagementView {
     private func canRename(_ project: ProjectOverviewItem) -> Bool {
         let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmedName.isEmpty
-            && trimmedName != leafName(for: project.projectName)
+            && trimmedName != displayName(for: project.projectName)
     }
 
     private func renameSelectedProject() {
@@ -644,20 +648,20 @@ private extension ProjectManagementView {
         }
         guard let renamed = sidebarViewModel.renameProject(
             id: selectedProject.projectId,
-            newLeafName: projectName,
+            newName: projectName,
             expectedRevision: lastLoadedProjectRevision
         ) else {
             showProjectOperationError()
             return
         }
-        projectName = leafName(for: renamed.name)
+        projectName = displayName(for: renamed.path)
         lastLoadedProjectRevision = renamed.revision
         projectRevisionObservationTracker.record(
             projectId: selectedProject.projectId,
             revision: renamed.revision
         )
         projectSearchText = ""
-        requestExpansion(toReveal: renamed.name)
+        requestExpansion(toReveal: renamed.path)
     }
 
     private func requestSelectedProjectDeletion() {
@@ -735,7 +739,7 @@ private extension ProjectManagementView {
             projectId: selectedProject.projectId,
             revision: moved.revision
         )
-        requestExpansion(toReveal: moved.name)
+        requestExpansion(toReveal: moved.path)
     }
 
     private func applyTypeChange() {
@@ -773,7 +777,7 @@ private extension ProjectManagementView {
         requestedExpandedProjectIds.formUnion(ancestorIds)
     }
 
-    private func leafName(for projectName: String) -> String {
+    private func displayName(for projectName: String) -> String {
         projectName.split(separator: "/").last.map(String.init) ?? projectName
     }
 
@@ -783,28 +787,40 @@ private extension ProjectManagementView {
     }
 }
 
+enum ProjectFolderStatus {
+    case available
+    case missing
+    case unsafe
+}
+
 enum ProjectFolderSafety {
-    static func isSafeDirectory(_ url: URL, inside vaultURL: URL) -> Bool {
+    static func status(of url: URL, inside vaultURL: URL) -> ProjectFolderStatus {
+        let fileManager = FileManager.default
         let vault = vaultURL.standardizedFileURL
         let candidate = url.standardizedFileURL
-        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return false }
+        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return .unsafe }
 
         var current = vault
         for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
             current.append(path: component, directoryHint: .isDirectory)
-            guard let values = try? current.resourceValues(forKeys: [
-                .isDirectoryKey,
-                .isSymbolicLinkKey,
-            ]),
-                values.isDirectory == true,
-                values.isSymbolicLink != true else {
-                return false
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: current.path, isDirectory: &isDirectory) else {
+                return .missing
+            }
+            guard isDirectory.boolValue,
+                  let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else {
+                return .unsafe
             }
         }
 
         let vaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
         let candidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
-        return candidatePath.hasPrefix(vaultPath + "/")
+        return candidatePath.hasPrefix(vaultPath + "/") ? .available : .unsafe
+    }
+
+    static func isSafeDirectory(_ url: URL, inside vaultURL: URL) -> Bool {
+        status(of: url, inside: vaultURL) == .available
     }
 }
 

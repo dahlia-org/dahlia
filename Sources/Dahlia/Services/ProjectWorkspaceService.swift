@@ -6,6 +6,7 @@ import Foundation
 final class ProjectWorkspaceService {
     typealias TrashHandler = @MainActor (URL) throws -> URL
     typealias SummaryFileResolver = @MainActor (String?, URL) throws -> URL?
+    typealias StagedAudioRestorer = @MainActor ([BatchAudioCleanupService.StagedFile]) throws -> Void
 
     private struct SummaryRelocation {
         let sourceURL: URL
@@ -34,6 +35,7 @@ final class ProjectWorkspaceService {
     private let fileManager: FileManager
     private let trashHandler: TrashHandler
     private let summaryFileResolver: SummaryFileResolver
+    private let stagedAudioRestorer: StagedAudioRestorer
 
     init(
         repository: MeetingRepository,
@@ -41,7 +43,8 @@ final class ProjectWorkspaceService {
         managedAudioRootURL: URL = BatchAudioStorage.managedRootURL,
         fileManager: FileManager = .default,
         trashHandler: @escaping TrashHandler = ProjectWorkspaceService.moveToTrash,
-        summaryFileResolver: @escaping SummaryFileResolver = ProjectWorkspaceService.resolveSummaryFile
+        summaryFileResolver: @escaping SummaryFileResolver = ProjectWorkspaceService.resolveSummaryFile,
+        stagedAudioRestorer: @escaping StagedAudioRestorer = BatchAudioCleanupService.restoreStagedFiles
     ) {
         self.repository = repository
         self.vault = vault
@@ -49,17 +52,18 @@ final class ProjectWorkspaceService {
         self.fileManager = fileManager
         self.trashHandler = trashHandler
         self.summaryFileResolver = summaryFileResolver
+        self.stagedAudioRestorer = stagedAudioRestorer
     }
 
     func createProject(
-        leafName: String,
+        name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
         description: String = ""
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
             try createProjectUnlocked(
-                leafName: leafName,
+                name: name,
                 parentProjectId: parentProjectId,
                 projectType: projectType,
                 description: description
@@ -67,18 +71,18 @@ final class ProjectWorkspaceService {
         }
     }
 
-    func fetchOrCreateRootProject(leafName: String) throws -> ProjectRecord {
-        let leafName = try Self.validatedLeafName(leafName)
+    func fetchOrCreateRootProject(name: String) throws -> ProjectRecord {
+        let name = try Self.validatedName(name)
         let (project, changed) = try withMutationLock {
             let projects = try repository.fetchAllProjects(vaultId: vault.id)
             if let existing = projects.first(where: {
                 $0.parentProjectId == nil
-                    && DahliaProjectName.siblingKey($0.leafName) == DahliaProjectName.siblingKey(leafName)
+                    && DahliaProjectName.siblingKey($0.name) == DahliaProjectName.siblingKey(name)
             }) {
                 return (existing, false)
             }
 
-            let project = try createProjectUnlocked(leafName: leafName, parentProjectId: nil)
+            let project = try createProjectUnlocked(name: name, parentProjectId: nil)
             return (project, true)
         }
         if changed {
@@ -88,12 +92,12 @@ final class ProjectWorkspaceService {
     }
 
     private func createProjectUnlocked(
-        leafName: String,
+        name: String,
         parentProjectId: UUID?,
         projectType: ProjectType? = nil,
         description: String = ""
     ) throws -> ProjectRecord {
-        let leafName = try Self.validatedLeafName(leafName)
+        let name = try Self.validatedName(name)
         let parent = try parentProjectId.map { id in
             guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
                 throw ProjectWorkspaceError.projectNotFound
@@ -106,12 +110,12 @@ final class ProjectWorkspaceService {
         if parent != nil, projectType != nil {
             throw ProjectWorkspaceError.typeOwnedByRoot
         }
-        let name = parent.map { "\($0.name)/\(leafName)" } ?? leafName
-        try ensureProjectDoesNotExist(name: name, excludingProjectId: nil)
+        let path = parent.map { "\($0.path)/\(name)" } ?? name
+        try ensureProjectDoesNotExist(path: path, excludingProjectId: nil)
         return try repository.createProject(
             vaultId: vault.id,
             parentProjectId: parentProjectId,
-            leafName: leafName,
+            name: name,
             description: description,
             projectType: projectType
         )
@@ -119,13 +123,13 @@ final class ProjectWorkspaceService {
 
     func renameProject(
         id: UUID,
-        newLeafName: String,
+        newName: String,
         expectedRevision: Int? = nil
     ) throws -> ProjectRecord {
         try withNotifyingMutation {
             try renameProjectUnlocked(
                 id: id,
-                newLeafName: newLeafName,
+                newName: newName,
                 expectedRevision: expectedRevision
             )
         }
@@ -133,7 +137,7 @@ final class ProjectWorkspaceService {
 
     private func renameProjectUnlocked(
         id: UUID,
-        newLeafName: String,
+        newName: String,
         expectedRevision: Int?
     ) throws -> ProjectRecord {
         guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
@@ -142,21 +146,21 @@ final class ProjectWorkspaceService {
         if let expectedRevision, project.revision != expectedRevision {
             throw ProjectWorkspaceError.staleRevision(current: project.revision)
         }
-        let newLeafName = try Self.validatedLeafName(newLeafName)
-        guard newLeafName != project.leafName else { return project }
+        let newName = try Self.validatedName(newName)
+        guard newName != project.name else { return project }
 
-        let parentName = project.name.split(separator: "/").dropLast().joined(separator: "/")
-        let newName = parentName.isEmpty ? newLeafName : "\(parentName)/\(newLeafName)"
-        try ensureProjectDoesNotExist(name: newName, excludingProjectId: id)
+        let parentPath = project.path.split(separator: "/").dropLast().joined(separator: "/")
+        let newPath = parentPath.isEmpty ? newName : "\(parentPath)/\(newName)"
+        try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
 
-        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.name, newPrefix: newName)
+        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
         var renamed: ProjectRecord?
         try performSummaryRelocations(summaryPlan.relocations) {
             renamed = try repository.updateProjectLocation(
                 id: id,
                 vaultId: vault.id,
                 parentProjectId: project.parentProjectId,
-                leafName: newLeafName,
+                name: newName,
                 vaultExportUpdates: summaryPlan.vaultExportUpdates,
                 expectedRevision: expectedRevision
             )
@@ -196,7 +200,7 @@ final class ProjectWorkspaceService {
         let descendantIds = Set(
             projects.filter { candidate in
                 candidate.id != project.id
-                    && ProjectRecord.belongsToHierarchy(candidate.name, prefix: project.name)
+                    && ProjectRecord.belongsToHierarchy(candidate.path, prefix: project.path)
             }
             .map(\.id)
         )
@@ -218,16 +222,16 @@ final class ProjectWorkspaceService {
         if parent != nil, !descendantIds.isEmpty {
             throw ProjectWorkspaceError.hierarchyTooDeep
         }
-        let newName = parent.map { "\($0.name)/\(project.leafName)" } ?? project.leafName
-        try ensureProjectDoesNotExist(name: newName, excludingProjectId: id)
-        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.name, newPrefix: newName)
+        let newPath = parent.map { "\($0.path)/\(project.name)" } ?? project.name
+        try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
+        let summaryPlan = try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
         var moved: ProjectRecord?
         try performSummaryRelocations(summaryPlan.relocations) {
             moved = try repository.updateProjectLocation(
                 id: id,
                 vaultId: vault.id,
                 parentProjectId: parentProjectId,
-                leafName: project.leafName,
+                name: project.name,
                 vaultExportUpdates: summaryPlan.vaultExportUpdates,
                 expectedRevision: expectedRevision
             )
@@ -336,29 +340,30 @@ final class ProjectWorkspaceService {
         if case let .move(destinationId) = meetingDisposition {
             guard let destination = try repository.fetchProject(id: destinationId),
                   destination.vaultId == vault.id,
-                  !ProjectRecord.belongsToHierarchy(destination.name, prefix: project.name)
+                  !ProjectRecord.belongsToHierarchy(destination.path, prefix: project.path)
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
-            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: project.name, vaultId: vault.id)
+            let hierarchyMeetingIds = try repository.meetingIds(projectHierarchy: project.path, vaultId: vault.id)
             movePlan = try makeMeetingMovePlan(ids: hierarchyMeetingIds, toProjectId: destinationId)
         } else {
             movePlan = nil
         }
 
         let trashedSummaries = meetingDisposition == .deleteMeetings && deletesSummaryFiles
-            ? try trashTrackedSummaries(projectPath: project.name)
+            ? try trashTrackedSummaries(projectPath: project.path)
             : []
         let relocations = movePlan?.relocations ?? []
         let stagedAudio: [BatchAudioCleanupService.StagedFile]
         do {
             stagedAudio = try performSummaryRelocations(relocations) {
                 try repository.deleteProjectHierarchy(
-                    name: project.name,
+                    name: project.path,
                     vaultId: vault.id,
                     meetingDisposition: meetingDisposition,
                     vaultExportUpdates: movePlan?.vaultExportUpdates ?? [],
-                    managedAudioRootURL: managedAudioRootURL
+                    managedAudioRootURL: managedAudioRootURL,
+                    restoreStagedAudio: stagedAudioRestorer
                 )
             }
         } catch {
@@ -421,10 +426,10 @@ final class ProjectWorkspaceService {
         }
     }
 
-    static func validatedLeafName(_ name: String) throws -> String {
+    static func validatedName(_ name: String) throws -> String {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.utf8.count <= 255 else { throw ProjectWorkspaceError.nameTooLong }
-        guard DahliaProjectName.normalizedLeafName(name) == name else {
+        guard DahliaProjectName.normalizedName(name) == name else {
             throw ProjectWorkspaceError.invalidName
         }
         return name
@@ -450,17 +455,17 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func ensureProjectDoesNotExist(name: String, excludingProjectId: UUID?) throws {
+    private func ensureProjectDoesNotExist(path: String, excludingProjectId: UUID?) throws {
         let projects = try repository.fetchAllProjects(vaultId: vault.id)
         if projects.contains(where: {
-            $0.id != excludingProjectId && ProjectRecord.pathKey($0.name) == ProjectRecord.pathKey(name)
+            $0.id != excludingProjectId && ProjectRecord.pathKey($0.path) == ProjectRecord.pathKey(path)
         }) {
-            throw ProjectWorkspaceError.projectAlreadyExists(name)
+            throw ProjectWorkspaceError.projectAlreadyExists(path)
         }
     }
 
-    private func projectURL(name: String) -> URL {
-        vault.url.appending(path: name, directoryHint: .isDirectory)
+    private func projectURL(path: String) -> URL {
+        vault.url.appending(path: path, directoryHint: .isDirectory)
     }
 
     private func makeMeetingMovePlan(ids: Set<UUID>, toProjectId: UUID?) throws -> MeetingMovePlan {
@@ -562,7 +567,7 @@ extension ProjectWorkspaceService {
             else {
                 throw ProjectWorkspaceError.invalidMoveDestination
             }
-            destinationDirectory = projectURL(name: destination.name)
+            destinationDirectory = projectURL(path: destination.path)
         } else {
             destinationDirectory = vault.url
         }
@@ -579,7 +584,7 @@ extension ProjectWorkspaceService {
         }
         let candidates = try repository.fetchMeetingMoveCandidates(ids: meetingIds, vaultId: vault.id)
         let projects = try repository.fetchAllProjects(vaultId: vault.id)
-        let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.name) })
+        let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
         let protectedIdentities = try protectedProjectSummaryIdentities(
             candidates: candidates,
             projectPaths: projectPaths,
@@ -795,7 +800,11 @@ extension ProjectWorkspaceService {
         var completed: [SummaryRelocation] = []
         do {
             for relocation in relocations {
-                try fileManager.moveItem(at: relocation.sourceURL, to: relocation.destinationURL)
+                try DahliaVaultFileMover.moveItem(
+                    at: relocation.sourceURL,
+                    to: relocation.destinationURL,
+                    inside: vault.url
+                )
                 completed.append(relocation)
             }
             return try operation()
@@ -803,7 +812,11 @@ extension ProjectWorkspaceService {
             var rollbackError: (any Error)?
             for relocation in completed.reversed() {
                 do {
-                    try fileManager.moveItem(at: relocation.destinationURL, to: relocation.sourceURL)
+                    try DahliaVaultFileMover.moveItem(
+                        at: relocation.destinationURL,
+                        to: relocation.sourceURL,
+                        inside: vault.url
+                    )
                 } catch {
                     rollbackError = rollbackError ?? error
                 }

@@ -2,42 +2,40 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// A stable Project entity. The canonical hierarchy is parentProjectId + leafName.
+/// A stable Project entity. The canonical hierarchy is parentProjectId + name.
 struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     static let databaseTableName = "projects"
 
     var id: UUID
     var vaultId: UUID
     var parentProjectId: UUID?
-    var leafName: String {
+    var name: String {
         didSet {
-            leafNameKey = DahliaProjectName.siblingKey(leafName)
+            nameKey = DahliaProjectName.siblingKey(name)
         }
     }
 
-    var leafNameKey: String
+    var nameKey: String
     var createdAt: Date
     var description = ""
-    var legacyContextMigrated = true
     var projectType: ProjectType?
     var revision = 1
 
     /// Populated by hierarchy-aware repository reads. It is never persisted.
     var resolvedPath: String?
 
-    var name: String {
-        resolvedPath ?? leafName
+    var path: String {
+        resolvedPath ?? name
     }
 
     enum CodingKeys: String, CodingKey {
         case id
         case vaultId
         case parentProjectId
-        case leafName
-        case leafNameKey
+        case name
+        case nameKey
         case createdAt
         case description
-        case legacyContextMigrated
         case projectType
         case revision
     }
@@ -46,10 +44,9 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         id: UUID,
         vaultId: UUID,
         parentProjectId: UUID?,
-        leafName: String,
+        name: String,
         createdAt: Date,
         description: String = "",
-        legacyContextMigrated: Bool = true,
         projectType: ProjectType?,
         revision: Int = 1,
         resolvedPath: String? = nil
@@ -57,11 +54,10 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
         self.id = id
         self.vaultId = vaultId
         self.parentProjectId = parentProjectId
-        self.leafName = leafName
-        leafNameKey = DahliaProjectName.siblingKey(leafName)
+        self.name = name
+        nameKey = DahliaProjectName.siblingKey(name)
         self.createdAt = createdAt
         self.description = description
-        self.legacyContextMigrated = legacyContextMigrated
         self.projectType = projectType
         self.revision = revision
         self.resolvedPath = resolvedPath
@@ -71,7 +67,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     init(
         id: UUID,
         vaultId: UUID,
-        name: String,
+        path: String,
         createdAt: Date,
         description: String = ""
     ) {
@@ -79,11 +75,11 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
             id: id,
             vaultId: vaultId,
             parentProjectId: nil,
-            leafName: name.split(separator: "/").last.map(String.init) ?? name,
+            name: path.split(separator: "/").last.map(String.init) ?? path,
             createdAt: createdAt,
             description: description,
             projectType: .undefined,
-            resolvedPath: name
+            resolvedPath: path
         )
     }
 
@@ -101,8 +97,8 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
             records[index].resolvedPath = paths[records[index].id]
         }
         return records.sorted {
-            if $0.name == $1.name { return $0.id.uuidString < $1.id.uuidString }
-            return $0.name.utf8.lexicographicallyPrecedes($1.name.utf8)
+            if $0.path == $1.path { return $0.id.uuidString < $1.id.uuidString }
+            return $0.path.utf8.lexicographicallyPrecedes($1.path.utf8)
         }
     }
 
@@ -116,11 +112,11 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
                   let parent = recordsByID[parentProjectId],
                   !visiting.contains(parentProjectId)
             else {
-                paths[record.id] = record.leafName
-                return record.leafName
+                paths[record.id] = record.name
+                return record.name
             }
             let parentPath = resolve(parent, visiting: visiting.union([record.id]))
-            let path = "\(parentPath)/\(record.leafName)"
+            let path = "\(parentPath)/\(record.name)"
             paths[record.id] = path
             return path
         }
@@ -138,7 +134,7 @@ struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
 
     static func hierarchy(path: String, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
         let records = try fetchResolvedAll(vaultId: vaultId, in: db)
-        guard let project = records.first(where: { $0.name == path }) else { return [] }
+        guard let project = records.first(where: { $0.path == path }) else { return [] }
         return hierarchy(projectId: project.id, records: records)
     }
 

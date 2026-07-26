@@ -424,7 +424,7 @@ struct MeetingProjectPicker: View {
 
     private func createAndAssignProject(named name: String) {
         guard let project = sidebarViewModel.fetchOrCreateProject(name: name) else { return }
-        assignMeeting(to: project.record.id, projectName: project.record.name)
+        assignMeeting(to: project.record.id, projectName: project.record.path)
     }
 
     private func clearProject() {

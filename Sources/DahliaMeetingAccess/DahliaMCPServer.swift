@@ -66,7 +66,7 @@ public final class DahliaMCPServer {
             "capabilities": ["tools": ["listChanged": false]],
             "serverInfo": ["name": "dahlia", "version": "1.0.0"],
             "instructions": accessInstructions
-                + "Project hierarchy is canonical in the database by stable project_id, parent_project_id, and leaf_name. "
+                + "Project hierarchy is canonical in the database by stable project_id, parent_project_id, and name. "
                 + "It supports roots plus one subproject level only, and paths are derived from those fields. Directories are "
                 + "derived Summary export destinations and never define Project identity or hierarchy. Only roots own an "
                 + "explicit Project type; subprojects inherit it. "
@@ -169,20 +169,20 @@ public final class DahliaMCPServer {
             guard !result.projects.isEmpty else { throw MeetingAccessError.projectNotFound }
             return try toolResult(result)
         case "create_project":
-            try validate(arguments, allowedKeys: ["leaf_name", "parent_project_id", "project_type", "description"])
-            let leafName = try requiredString(arguments, key: "leaf_name")
+            try validate(arguments, allowedKeys: ["name", "parent_project_id", "project_type", "description"])
+            let name = try requiredString(arguments, key: "name")
             let parentID = try optionalUUID(arguments, key: "parent_project_id")
             let projectType = try optionalProjectType(arguments, key: "project_type")
             let description = try string(arguments, key: "description") ?? ""
             return try toolResult(store.createProject(
-                leafName: leafName,
+                name: name,
                 parentProjectID: parentID,
                 projectType: projectType,
                 description: description
             ))
         case "update_project":
             try validate(arguments, allowedKeys: [
-                "project_id", "revision", "leaf_name", "parent_project_id", "description", "project_type",
+                "project_id", "revision", "name", "parent_project_id", "description", "project_type",
             ])
             let projectID = try requiredUUID(arguments, key: "project_id")
             guard let revision = try integer(arguments, key: "revision"), revision >= 1 else {
@@ -195,14 +195,14 @@ public final class DahliaMCPServer {
             } else {
                 try .project(requiredUUID(arguments, key: "parent_project_id"))
             }
-            let mutableKeys: Set = ["leaf_name", "parent_project_id", "description", "project_type"]
+            let mutableKeys: Set = ["name", "parent_project_id", "description", "project_type"]
             guard !mutableKeys.isDisjoint(with: arguments.keys) else {
                 throw ParameterError("At least one update property is required")
             }
             return try toolResult(store.updateProject(
                 id: projectID,
                 update: ProjectUpdate(
-                    leafName: optionalNonNullString(arguments, key: "leaf_name"),
+                    name: optionalNonNullString(arguments, key: "name"),
                     parent: parent,
                     description: optionalNonNullString(arguments, key: "description"),
                     projectType: optionalProjectType(arguments, key: "project_type"),
@@ -737,7 +737,7 @@ private extension DahliaMCPServer {
         objectSchema(
             properties: [
                 "project_id": ["type": "string", "format": "uuid"],
-                "display_name": ["type": "string"],
+                "name": ["type": "string"],
                 "path": ["type": "string"],
                 "parent_project_id": ["type": ["string", "null"], "format": "uuid"],
                 "root_project_id": ["type": "string", "format": "uuid"],
@@ -751,7 +751,7 @@ private extension DahliaMCPServer {
                 "revision": ["type": "integer", "minimum": 1],
             ],
             required: [
-                "project_id", "display_name", "path", "root_project_id", "effective_type",
+                "project_id", "name", "path", "root_project_id", "effective_type",
                 "type_owner_project_id", "is_type_inherited", "direct_meeting_count",
                 "descendant_meeting_count", "description", "revision",
             ]
@@ -802,7 +802,7 @@ private extension DahliaMCPServer {
                 "name": "query_projects",
                 "title": "Query projects",
                 "description": "Inspect the configured vault's complete two-level Project workspace hierarchy. Paths are "
-                    + "derived from stable project_id, parent_project_id, and leaf names; directories are not hierarchy input. "
+                    + "derived from stable project_id, parent_project_id, and names; directories are not hierarchy input. "
                     + "explicit_type is stored only by roots; effective_type and type_owner_project_id describe inheritance. "
                     + "Meeting counts distinguish direct membership from the whole subtree.",
                 "inputSchema": [
@@ -838,18 +838,18 @@ private extension DahliaMCPServer {
         [
             "name": "create_project",
             "title": "Create project",
-            "description": "Create a database-backed Project. Supply a leaf_name and optional root parent_project_id; "
+            "description": "Create a database-backed Project. Supply a name and optional root parent_project_id; "
                 + "never supply a path. No directory is created until a Summary needs an export destination. project_type "
                 + "is allowed only for a root and defaults to undefined. A child inherits the root type.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "leaf_name": ["type": "string", "minLength": 1],
+                    "name": ["type": "string", "minLength": 1],
                     "parent_project_id": ["type": "string", "format": "uuid"],
                     "project_type": projectTypeSchema,
                     "description": ["type": "string"],
                 ],
-                "required": ["leaf_name"],
+                "required": ["name"],
                 "additionalProperties": false,
             ],
             "outputSchema": projectMutationOutputSchema,
@@ -873,7 +873,7 @@ private extension DahliaMCPServer {
                 "properties": [
                     "project_id": ["type": "string", "format": "uuid"],
                     "revision": ["type": "integer", "minimum": 1],
-                    "leaf_name": ["type": "string", "minLength": 1],
+                    "name": ["type": "string", "minLength": 1],
                     "parent_project_id": ["type": ["string", "null"], "format": "uuid"],
                     "description": ["type": "string"],
                     "project_type": projectTypeSchema,
@@ -884,7 +884,7 @@ private extension DahliaMCPServer {
             "outputSchema": projectMutationOutputSchema,
             "annotations": [
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                "destructiveHint": true,
                 "idempotentHint": false,
                 "openWorldHint": false,
             ],
@@ -922,7 +922,7 @@ private extension DahliaMCPServer {
             "outputSchema": membershipOutputSchema,
             "annotations": [
                 "readOnlyHint": false,
-                "destructiveHint": false,
+                "destructiveHint": true,
                 "idempotentHint": false,
                 "openWorldHint": false,
             ],

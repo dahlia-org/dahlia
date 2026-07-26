@@ -162,6 +162,7 @@
 "The logical Project path determines this destination. The folder is created when a Summary is exported." = "論理 Project パスから書き出し先を決定し、Summary の書き出し時にフォルダを作成します。";
 "Local Summary Folder" = "ローカルの要約フォルダ";
 "The Summary output destination must resolve inside the Vault without symlink or file path components." = "Summary の書き出し先は Vault 内に解決され、パス上にシンボリックリンクやファイルを含めることはできません。";
+"The Summary output folder has not been created yet." = "Summary の書き出しフォルダはまだ作成されていません。";
 "Project Description" = "プロジェクトの説明";
 "This description is included when summaries are generated for this project." = "このプロジェクトの要約生成時に説明を含めます。";
 "Describe this project..." = "このプロジェクトについて説明してください...";

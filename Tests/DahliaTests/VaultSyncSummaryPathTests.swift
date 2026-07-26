@@ -34,6 +34,36 @@ import GRDB
         }
 
         @Test
+        func multipleMarkdownRenamesNeverInventPathPairings() throws {
+            let context = try makeContext(projectName: "Project", summaryRelativePath: "Project/First.md")
+            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            let second = try insertMeeting(
+                project: context.project,
+                summaryRelativePath: "Project/Second.md",
+                repository: context.repository
+            )
+            let projectURL = context.vaultURL.appending(path: "Project", directoryHint: .isDirectory)
+            let firstOld = projectURL.appending(path: "First.md")
+            let secondOld = projectURL.appending(path: "Second.md")
+            let firstNew = projectURL.appending(path: "First Renamed.md")
+            let secondNew = projectURL.appending(path: "Second Renamed.md")
+            try Data("First".utf8).write(to: firstOld)
+            try Data("Second".utf8).write(to: secondOld)
+            try FileManager.default.moveItem(at: firstOld, to: firstNew)
+            try FileManager.default.moveItem(at: secondOld, to: secondNew)
+
+            let renameFlag = UInt32(kFSEventStreamEventFlagItemRenamed)
+                | UInt32(kFSEventStreamEventFlagItemIsFile)
+            context.syncService.handleEvents(
+                paths: [firstOld.path, secondOld.path, firstNew.path, secondNew.path],
+                flags: Array(repeating: renameFlag, count: 4)
+            )
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == nil)
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: second.id) == nil)
+        }
+
+        @Test
         func laterBatchProcessesAfterRetryExhaustion() throws {
             let context = try makeContext(
                 projectName: "Project",
@@ -127,9 +157,46 @@ import GRDB
             )
             let project = try #require(fetchedProject)
             #expect(project.id == context.project.id)
-            #expect(project.name == "Original")
+            #expect(project.path == "Original")
             #expect(vaultExport?.url == "vault:///Renamed/Summary.md")
             #expect(vaultExport?.vaultRelativePath == "Renamed/Summary.md")
+        }
+
+        @Test
+        func multipleDirectoryRenamesNeverInventPrefixPairings() throws {
+            let context = try makeContext(projectName: "First", summaryRelativePath: "First/Summary.md")
+            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
+            let secondProjectURL = context.vaultURL.appending(path: "Second", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: secondProjectURL, withIntermediateDirectories: false)
+            let secondProject = try context.repository.fetchOrCreateProject(
+                name: "Second",
+                vaultId: context.project.vaultId
+            )
+            let second = try insertMeeting(
+                project: secondProject,
+                summaryRelativePath: "Second/Summary.md",
+                repository: context.repository
+            )
+            let firstOld = context.vaultURL.appending(path: "First", directoryHint: .isDirectory)
+            let secondOld = secondProjectURL
+            let firstNew = context.vaultURL.appending(path: "First Renamed", directoryHint: .isDirectory)
+            let secondNew = context.vaultURL.appending(path: "Second Renamed", directoryHint: .isDirectory)
+            try Data("First".utf8).write(to: firstOld.appending(path: "Summary.md"))
+            try Data("Second".utf8).write(to: secondOld.appending(path: "Summary.md"))
+            try FileManager.default.moveItem(at: firstOld, to: firstNew)
+            try FileManager.default.moveItem(at: secondOld, to: secondNew)
+
+            let renameFlag = UInt32(kFSEventStreamEventFlagItemRenamed)
+                | UInt32(kFSEventStreamEventFlagItemIsDir)
+            context.syncService.handleEvents(
+                paths: [firstOld.path, secondOld.path, firstNew.path, secondNew.path],
+                flags: Array(repeating: renameFlag, count: 4)
+            )
+
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == nil)
+            #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: second.id) == nil)
+            #expect(try context.repository.fetchProject(id: context.project.id)?.path == "First")
+            #expect(try context.repository.fetchProject(id: secondProject.id)?.path == "Second")
         }
 
         @Test
@@ -150,26 +217,6 @@ import GRDB
 
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: context.meeting.id) == nil)
             #expect(try context.repository.fetchProject(id: context.project.id)?.name == "Project")
-        }
-
-        @Test
-        func initialSyncDoesNotGuessSummaryPathFromFrontmatter() throws {
-            let context = try makeContext(projectName: "Project", summaryRelativePath: "Project/Original.md")
-            defer { try? FileManager.default.removeItem(at: context.vaultURL) }
-
-            let originalURL = context.vaultURL.appending(path: "Project/Original.md")
-            let archiveURL = context.vaultURL.appending(path: "Archive/Moved.md")
-            try writeSummary(meetingId: context.meeting.id, to: originalURL)
-            try FileManager.default.createDirectory(at: archiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.moveItem(at: originalURL, to: archiveURL)
-
-            context.syncService.performInitialSync()
-
-            let vaultExport = try context.repository.fetchSummaryExport(
-                forMeetingId: context.meeting.id,
-                type: .vault
-            )
-            #expect(vaultExport?.vaultRelativePath == "Project/Original.md")
         }
 
         private func makeContext(
@@ -233,16 +280,35 @@ import GRDB
             )
         }
 
-        private func writeSummary(meetingId: UUID, to url: URL) throws {
-            try Data(
-                """
-                ---
-                meeting_id: "\(meetingId.uuidString)"
-                ---
-
-                Summary
-                """.utf8
-            ).write(to: url, options: .atomic)
+        private func insertMeeting(
+            project: ProjectRecord,
+            summaryRelativePath: String,
+            repository: MeetingRepository
+        ) throws -> MeetingRecord {
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: project.vaultId,
+                projectId: project.id,
+                name: "Meeting",
+                createdAt: .now,
+                updatedAt: .now
+            )
+            try repository.dbQueue.write { db in
+                try meeting.insert(db)
+            }
+            try repository.upsertSummary(
+                SummaryRecord(
+                    meetingId: meeting.id,
+                    title: "Summary",
+                    document: try SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
+                    createdAt: .now
+                )
+            )
+            try repository.updateSummaryVaultRelativePath(
+                forMeetingId: meeting.id,
+                relativePath: summaryRelativePath
+            )
+            return meeting
         }
 
         private struct TestContext {

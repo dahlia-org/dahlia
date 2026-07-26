@@ -5,7 +5,7 @@ import GRDB
 struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable {
     var projectId: UUID
     var projectName: String
-    var projectLeafName = ""
+    var projectDisplayName = ""
     var parentProjectId: UUID?
     var projectDescription = ""
     var explicitProjectType: ProjectType?

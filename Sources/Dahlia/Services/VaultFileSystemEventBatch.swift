@@ -61,7 +61,13 @@ struct VaultFileSystemEventBatch {
 
         let isDirectory = flag & UInt32(kFSEventStreamEventFlagItemIsDir) != 0
         if isDirectory {
-            return classifyDirectory(path: path, relativePath: relativePath, flag: flag, fileManager: fileManager)
+            return classifyDirectory(
+                path: path,
+                relativePath: relativePath,
+                flag: flag,
+                vaultURL: vaultURL,
+                fileManager: fileManager
+            )
         }
         return classifyFile(
             path: path,
@@ -76,16 +82,20 @@ struct VaultFileSystemEventBatch {
         path: String,
         relativePath: String,
         flag: UInt32,
+        vaultURL: URL,
         fileManager: FileManager
     ) -> Event? {
         let components = relativePath.split(separator: "/")
         guard !components.contains(where: { $0.hasPrefix(".") || $0.hasPrefix("_") }) else { return nil }
 
         let exists = fileManager.fileExists(atPath: path)
-        if exists,
-           let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isSymbolicLinkKey]),
-           values.isSymbolicLink == true {
-            return nil
+        if exists {
+            let url = URL(fileURLWithPath: path)
+            guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true,
+                  isSafeVaultPath(url, vaultURL: vaultURL) else {
+                return nil
+            }
         }
         if flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0 {
             return .directoryRename(relativePath, exists: exists)
@@ -149,41 +159,19 @@ struct VaultFileSystemEventBatch {
     private static func resolveRenames(
         _ pendingRenames: [(path: String, exists: Bool)]
     ) -> (renames: [(oldPath: String, newPath: String)], created: [String], removed: [String]) {
-        var renames: [(oldPath: String, newPath: String)] = []
-        var created: [String] = []
-        var removed: [String] = []
-        var index = 0
-
-        while index + 1 < pendingRenames.count {
-            let first = pendingRenames[index]
-            let second = pendingRenames[index + 1]
-            if first.exists != second.exists {
-                let oldPath = first.exists ? second.path : first.path
-                let newPath = first.exists ? first.path : second.path
-                renames.append((oldPath, newPath))
-                index += 2
-            } else {
-                appendUnpairedRename(first, created: &created, removed: &removed)
-                index += 1
-            }
+        guard pendingRenames.count == 2,
+              let first = pendingRenames.first,
+              let second = pendingRenames.last,
+              first.exists != second.exists else {
+            return (
+                renames: [],
+                created: pendingRenames.filter(\.exists).map(\.path),
+                removed: pendingRenames.filter { !$0.exists }.map(\.path)
+            )
         }
-
-        if index < pendingRenames.count {
-            appendUnpairedRename(pendingRenames[index], created: &created, removed: &removed)
-        }
-        return (renames, created, removed)
-    }
-
-    private static func appendUnpairedRename(
-        _ rename: (path: String, exists: Bool),
-        created: inout [String],
-        removed: inout [String]
-    ) {
-        if rename.exists {
-            created.append(rename.path)
-        } else {
-            removed.append(rename.path)
-        }
+        let oldPath = first.exists ? second.path : first.path
+        let newPath = first.exists ? first.path : second.path
+        return (renames: [(oldPath, newPath)], created: [], removed: [])
     }
 
     private enum Event {

@@ -91,11 +91,11 @@ public final class MeetingAccessStore: Sendable {
             db,
             sql: """
             WITH RECURSIVE project_paths(id, vaultId, name) AS (
-                SELECT id, vaultId, leafName
+                SELECT id, vaultId, name
                 FROM projects
                 WHERE parentProjectId IS NULL AND vaultId = ?
                 UNION ALL
-                SELECT child.id, child.vaultId, project_paths.name || '/' || child.leafName
+                SELECT child.id, child.vaultId, project_paths.name || '/' || child.name
                 FROM projects AS child
                 JOIN project_paths ON project_paths.id = child.parentProjectId
                 WHERE child.vaultId = ?
@@ -665,7 +665,7 @@ extension MeetingAccessStore {
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
-              projectColumns.isSuperset(of: ["parentProjectId", "leafName", "projectType", "revision"])
+              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"])
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -684,11 +684,11 @@ extension MeetingAccessStore {
             db,
             sql: """
             WITH RECURSIVE project_paths(id, vaultId, name) AS (
-                SELECT id, vaultId, leafName
+                SELECT id, vaultId, name
                 FROM projects
                 WHERE parentProjectId IS NULL AND vaultId = ?
                 UNION ALL
-                SELECT child.id, child.vaultId, project_paths.name || '/' || child.leafName
+                SELECT child.id, child.vaultId, project_paths.name || '/' || child.name
                 FROM projects AS child
                 JOIN project_paths ON project_paths.id = child.parentProjectId
                 WHERE child.vaultId = ?

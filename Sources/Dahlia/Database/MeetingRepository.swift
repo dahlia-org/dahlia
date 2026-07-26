@@ -99,7 +99,7 @@ final class MeetingRepository {
     private static func deleteVaultRows(id: UUID, in db: Database) throws {
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
             .sorted {
-                $0.name.split(separator: "/").count > $1.name.split(separator: "/").count
+                $0.path.split(separator: "/").count > $1.path.split(separator: "/").count
             }
         for project in projects {
             _ = try ProjectRecord.deleteOne(db, key: project.id)

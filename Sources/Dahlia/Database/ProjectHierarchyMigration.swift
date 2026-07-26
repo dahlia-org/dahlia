@@ -8,10 +8,7 @@ enum ProjectHierarchyMigration {
         let vaultId: UUID
         let path: String
         let createdAt: Date
-        let googleDriveFolderId: String?
-        let missingOnDisk: Bool
         let description: String
-        let legacyContextMigrated: Bool
         let revision: Int
     }
 
@@ -35,7 +32,6 @@ enum ProjectHierarchyMigration {
         if preservesMeetingMemberships {
             try restoreMeetingMemberships(in: db)
         }
-        try db.execute(sql: "UPDATE projects SET missingOnDisk = 0 WHERE missingOnDisk <> 0")
         try createIndexesAndTriggers(in: db)
         if try db.tableExists("vaults") {
             try createVaultTriggers(in: db)
@@ -85,27 +81,24 @@ enum ProjectHierarchyMigration {
             id BLOB NOT NULL PRIMARY KEY,
             vaultId BLOB NOT NULL\(vaultReference),
             parentProjectId BLOB,
-            leafName TEXT NOT NULL COLLATE NOCASE,
-            leafNameKey TEXT NOT NULL,
+            name TEXT NOT NULL COLLATE NOCASE,
+            nameKey TEXT NOT NULL,
             createdAt DATETIME NOT NULL,
-            googleDriveFolderId TEXT,
-            missingOnDisk BOOLEAN NOT NULL DEFAULT 0,
             description TEXT NOT NULL DEFAULT '',
-            legacyContextMigrated BOOLEAN NOT NULL DEFAULT 0,
             projectType TEXT,
             revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
             UNIQUE(id, vaultId),
             CHECK (
-                leafName = TRIM(leafName)
-                AND LENGTH(leafName) > 0
-                AND leafName NOT IN ('.', '..')
-                AND SUBSTR(leafName, 1, 1) NOT IN ('.', '_')
-                AND INSTR(leafName, '/') = 0
-                AND INSTR(leafName, ':') = 0
-                AND LENGTH(CAST(leafName AS BLOB)) <= 255
-                AND leafName NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*')
+                name = TRIM(name)
+                AND LENGTH(name) > 0
+                AND name NOT IN ('.', '..')
+                AND SUBSTR(name, 1, 1) NOT IN ('.', '_')
+                AND INSTR(name, '/') = 0
+                AND INSTR(name, ':') = 0
+                AND LENGTH(CAST(name AS BLOB)) <= 255
+                AND name NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*')
             ),
-            CHECK (LENGTH(leafNameKey) > 0),
+            CHECK (LENGTH(nameKey) > 0),
             CHECK (
                 (
                     parentProjectId IS NULL
@@ -127,28 +120,25 @@ enum ProjectHierarchyMigration {
         for project in projects.sorted(by: Self.sortByDepth) {
             let parentPath = parentPath(of: project.path)
             let parentId = parentPath.flatMap { idsByVaultAndPath[VaultPath(vaultId: project.vaultId, path: $0)] }
-            let leafName = project.path.split(separator: "/").last.map(String.init) ?? project.path
+            let name = Self.name(of: project.path)
             let projectType: String? = parentId == nil ? ProjectType.undefined.rawValue : nil
 
             try db.execute(
                 sql: """
                 INSERT INTO projects_v24 (
-                    id, vaultId, parentProjectId, leafName, leafNameKey, createdAt, googleDriveFolderId,
-                    missingOnDisk, description, legacyContextMigrated, projectType, revision
+                    id, vaultId, parentProjectId, name, nameKey, createdAt,
+                    description, projectType, revision
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     project.id,
                     project.vaultId,
                     parentId,
-                    leafName,
-                    DahliaProjectName.siblingKey(leafName),
+                    name,
+                    DahliaProjectName.siblingKey(name),
                     project.createdAt,
-                    project.googleDriveFolderId,
-                    project.missingOnDisk,
                     project.description,
-                    project.legacyContextMigrated,
                     projectType,
                     project.revision,
                 ]
@@ -161,11 +151,11 @@ enum ProjectHierarchyMigration {
         CREATE INDEX projects_on_vaultId ON projects(vaultId);
         CREATE INDEX projects_on_parentProjectId ON projects(parentProjectId);
         CREATE INDEX projects_on_projectType ON projects(projectType);
-        CREATE UNIQUE INDEX projects_unique_root_leaf
-            ON projects(vaultId, leafNameKey)
+        CREATE UNIQUE INDEX projects_unique_root_name
+            ON projects(vaultId, nameKey)
             WHERE parentProjectId IS NULL;
-        CREATE UNIQUE INDEX projects_unique_child_leaf
-            ON projects(parentProjectId, leafNameKey)
+        CREATE UNIQUE INDEX projects_unique_child_name
+            ON projects(parentProjectId, nameKey)
             WHERE parentProjectId IS NOT NULL;
 
         CREATE TRIGGER projects_validate_parent_insert
@@ -260,7 +250,7 @@ enum ProjectHierarchyMigration {
                 $0.path.split(separator: "/").count == 2
             }, by: {
                 $0.path.split(separator: "/").first.map(String.init) ?? $0.path
-            }).mapValues { Set($0.map { DahliaProjectName.siblingKey(Self.leafName(of: $0.path)) }) }
+            }).mapValues { Set($0.map { DahliaProjectName.siblingKey(Self.name(of: $0.path)) }) }
 
             let deeperProjects = vaultProjects.filter { $0.path.split(separator: "/").count > 2 }
                 .sorted {
@@ -273,24 +263,21 @@ enum ProjectHierarchyMigration {
                 guard let rootPath = project.path.split(separator: "/").first.map(String.init) else {
                     continue
                 }
-                let safeLeaf = DahliaProjectName.migrationSafeLeafName(Self.leafName(of: project.path))
-                var leafName = safeLeaf
+                let safeName = DahliaProjectName.migrationSafeName(Self.name(of: project.path))
+                var name = safeName
                 var suffix = 2
-                while siblingKeys[rootPath, default: []].contains(DahliaProjectName.siblingKey(leafName)) {
-                    leafName = DahliaProjectName.migrationSafeLeafName(safeLeaf, suffix: " (\(suffix))")
+                while siblingKeys[rootPath, default: []].contains(DahliaProjectName.siblingKey(name)) {
+                    name = DahliaProjectName.migrationSafeName(safeName, suffix: " (\(suffix))")
                     suffix += 1
                 }
-                siblingKeys[rootPath, default: []].insert(DahliaProjectName.siblingKey(leafName))
+                siblingKeys[rootPath, default: []].insert(DahliaProjectName.siblingKey(name))
                 result.append(
                     MigratedProject(
                         id: project.id,
                         vaultId: project.vaultId,
-                        path: "\(rootPath)/\(leafName)",
+                        path: "\(rootPath)/\(name)",
                         createdAt: project.createdAt,
-                        googleDriveFolderId: project.googleDriveFolderId,
-                        missingOnDisk: project.missingOnDisk,
                         description: project.description,
-                        legacyContextMigrated: project.legacyContextMigrated,
                         revision: project.revision + 1
                     )
                 )
@@ -299,12 +286,11 @@ enum ProjectHierarchyMigration {
         return result
     }
 
-    private static func leafName(of path: String) -> String {
+    private static func name(of path: String) -> String {
         path.split(separator: "/").last.map(String.init) ?? path
     }
 
     private static func projectsIncludingMissingAncestors(_ projects: [MigratedProject]) -> [MigratedProject] {
-        let legacyKeys = Set(projects.map { VaultPath(vaultId: $0.vaultId, path: $0.path) })
         var result = Dictionary(
             uniqueKeysWithValues: projects.map {
                 (VaultPath(vaultId: $0.vaultId, path: $0.path), $0)
@@ -314,32 +300,13 @@ enum ProjectHierarchyMigration {
         for project in projects {
             for path in intermediatePaths(for: project.path).dropLast() {
                 let key = VaultPath(vaultId: project.vaultId, path: path)
-                if let existing = result[key] {
-                    guard !legacyKeys.contains(key), existing.missingOnDisk, !project.missingOnDisk else {
-                        continue
-                    }
-                    result[key] = MigratedProject(
-                        id: existing.id,
-                        vaultId: existing.vaultId,
-                        path: existing.path,
-                        createdAt: existing.createdAt,
-                        googleDriveFolderId: existing.googleDriveFolderId,
-                        missingOnDisk: false,
-                        description: existing.description,
-                        legacyContextMigrated: existing.legacyContextMigrated,
-                        revision: existing.revision
-                    )
-                    continue
-                }
+                guard result[key] == nil else { continue }
                 result[key] = MigratedProject(
                     id: .v7(),
                     vaultId: project.vaultId,
                     path: path,
                     createdAt: project.createdAt,
-                    googleDriveFolderId: nil,
-                    missingOnDisk: project.missingOnDisk,
                     description: "",
-                    legacyContextMigrated: true,
                     revision: 1
                 )
             }
@@ -349,7 +316,7 @@ enum ProjectHierarchyMigration {
     }
 
     /// Legacy binary uniqueness allowed case and Unicode-equivalent siblings. Keep every UUID and
-    /// deterministically disambiguate only the canonical leaf name so v24 can always start.
+    /// deterministically disambiguate only the canonical name so v24 can always start.
     private static func disambiguateSiblingNames(_ projects: [MigratedProject]) -> [MigratedProject] {
         var adjustedPathByOriginal: [VaultPath: String] = [:]
         var siblingKeys: [VaultPath: Set<String>] = [:]
@@ -361,16 +328,16 @@ enum ProjectHierarchyMigration {
                 adjustedPathByOriginal[VaultPath(vaultId: project.vaultId, path: $0)]
             }
             let parentKey = VaultPath(vaultId: project.vaultId, path: adjustedParentPath ?? "")
-            let originalLeaf = project.path.split(separator: "/").last.map(String.init) ?? project.path
-            let safeLeaf = DahliaProjectName.migrationSafeLeafName(originalLeaf)
-            var leaf = safeLeaf
+            let originalName = name(of: project.path)
+            let safeName = DahliaProjectName.migrationSafeName(originalName)
+            var adjustedName = safeName
             var suffix = 2
-            while siblingKeys[parentKey, default: []].contains(DahliaProjectName.siblingKey(leaf)) {
-                leaf = DahliaProjectName.migrationSafeLeafName(safeLeaf, suffix: " (\(suffix))")
+            while siblingKeys[parentKey, default: []].contains(DahliaProjectName.siblingKey(adjustedName)) {
+                adjustedName = DahliaProjectName.migrationSafeName(safeName, suffix: " (\(suffix))")
                 suffix += 1
             }
-            siblingKeys[parentKey, default: []].insert(DahliaProjectName.siblingKey(leaf))
-            let adjustedPath = adjustedParentPath.map { "\($0)/\(leaf)" } ?? leaf
+            siblingKeys[parentKey, default: []].insert(DahliaProjectName.siblingKey(adjustedName))
+            let adjustedPath = adjustedParentPath.map { "\($0)/\(adjustedName)" } ?? adjustedName
             adjustedPathByOriginal[VaultPath(vaultId: project.vaultId, path: project.path)] = adjustedPath
             result.append(
                 MigratedProject(
@@ -378,10 +345,7 @@ enum ProjectHierarchyMigration {
                     vaultId: project.vaultId,
                     path: adjustedPath,
                     createdAt: project.createdAt,
-                    googleDriveFolderId: project.googleDriveFolderId,
-                    missingOnDisk: project.missingOnDisk || leaf != originalLeaf,
                     description: project.description,
-                    legacyContextMigrated: project.legacyContextMigrated,
                     revision: project.revision
                 )
             )
@@ -425,8 +389,7 @@ private extension ProjectHierarchyMigration.MigratedProject {
         try Row.fetchAll(
             db,
             sql: """
-            SELECT id, vaultId, name, createdAt, googleDriveFolderId, missingOnDisk,
-                   description, legacyContextMigrated
+            SELECT id, vaultId, name, createdAt, description
             FROM projects
             """
         ).map { row in
@@ -435,10 +398,7 @@ private extension ProjectHierarchyMigration.MigratedProject {
                 vaultId: row["vaultId"],
                 path: row["name"],
                 createdAt: row["createdAt"],
-                googleDriveFolderId: row["googleDriveFolderId"],
-                missingOnDisk: row["missingOnDisk"],
                 description: row["description"],
-                legacyContextMigrated: row["legacyContextMigrated"],
                 revision: 1
             )
         }

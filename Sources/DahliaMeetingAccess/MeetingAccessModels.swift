@@ -146,7 +146,7 @@ public struct ProjectQuery: Sendable, Equatable {
 
 public struct ProjectMetadata: Codable, Sendable, Equatable {
     public let projectID: UUID
-    public let displayName: String
+    public let name: String
     public let path: String
     public let parentProjectID: UUID?
     public let rootProjectID: UUID
@@ -172,20 +172,20 @@ public enum ProjectParentUpdate: Sendable, Equatable {
 }
 
 public struct ProjectUpdate: Sendable, Equatable {
-    public var leafName: String?
+    public var name: String?
     public var parent: ProjectParentUpdate
     public var description: String?
     public var projectType: ProjectWorkspaceType?
     public var expectedRevision: Int
 
     public init(
-        leafName: String? = nil,
+        name: String? = nil,
         parent: ProjectParentUpdate = .unchanged,
         description: String? = nil,
         projectType: ProjectWorkspaceType? = nil,
         expectedRevision: Int
     ) {
-        self.leafName = leafName
+        self.name = name
         self.parent = parent
         self.description = description
         self.projectType = projectType
@@ -303,7 +303,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case let .projectConflict(message):
             "Project update conflict: \(message)"
         case .invalidProjectName:
-            "Project leaf_name must be a non-hidden single path component."
+            "Project name must be a non-hidden single path component."
         case .projectHierarchyTooDeep:
             "Projects support one level of subprojects. The parent must be a root project."
         case let .projectAlreadyExists(name):

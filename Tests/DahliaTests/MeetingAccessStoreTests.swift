@@ -23,14 +23,14 @@ import ImageIO
             #expect(root.directMeetingCount == 2)
             #expect(throws: MeetingAccessError.projectNotFound) {
                 try store.createProject(
-                    leafName: "Cross Vault",
+                    name: "Cross Vault",
                     parentProjectID: fixture.otherVaultProjectID,
                     projectType: nil
                 )
             }
 
             let created = try store.createProject(
-                leafName: "Platform",
+                name: "Platform",
                 parentProjectID: root.projectID,
                 projectType: nil,
                 description: "Platform work"
@@ -42,13 +42,13 @@ import ImageIO
             ))
             #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
                 try store.createProject(
-                    leafName: "API",
+                    name: "API",
                     parentProjectID: created.project.projectID,
                     projectType: nil
                 )
             }
             let otherRoot = try store.createProject(
-                leafName: "Internal",
+                name: "Internal",
                 parentProjectID: nil,
                 projectType: .internal
             )
@@ -71,7 +71,7 @@ import ImageIO
             #expect(throws: MeetingAccessError.projectConflict("expected revision 999, current revision 1")) {
                 try store.updateProject(
                     id: created.project.projectID,
-                    update: ProjectUpdate(leafName: "Renamed", expectedRevision: 999)
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: 999)
                 )
             }
 
@@ -102,7 +102,7 @@ import ImageIO
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             let destination = try store.createProject(
-                leafName: "Destination",
+                name: "Destination",
                 parentProjectID: nil,
                 projectType: .internal
             )
@@ -175,7 +175,7 @@ import ImageIO
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             let destination = try store.createProject(
-                leafName: "Destination",
+                name: "Destination",
                 parentProjectID: nil,
                 projectType: .internal
             )
@@ -209,6 +209,39 @@ import ImageIO
         }
 
         @Test
+        func meetingMembershipRejectsVaultExportPathOutsideScopedVault() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///../../Outside.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+
+            #expect(throws: MeetingAccessError.projectFileConflict(
+                fixture.primaryVaultURL.appending(path: "../../Outside.md").standardizedFileURL.path
+            )) {
+                try store.setMeetingProjectMemberships(
+                    [.init(meetingID: fixture.firstMeetingID, expectedProjectID: fixture.primaryProjectID)],
+                    projectID: nil
+                )
+            }
+            #expect(try store.meeting(id: fixture.firstMeetingID).meeting.projectID == fixture.primaryProjectID)
+            let export = try fixture.manager.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    in: db
+                )
+            }
+            #expect(export?.url == "vault:///../../Outside.md")
+        }
+
+        @Test
         func projectMutationWithoutTrackedSummaryDoesNotTouchSourceSymlink() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -223,7 +256,7 @@ import ImageIO
 
             let renamed = try store.updateProject(
                 id: project.projectID,
-                update: ProjectUpdate(leafName: "Renamed", expectedRevision: project.revision)
+                update: ProjectUpdate(name: "Renamed", expectedRevision: project.revision)
             )
 
             #expect(renamed.project.path == "Renamed")
@@ -236,14 +269,14 @@ import ImageIO
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             _ = try store.createProject(
-                leafName: "Équipe",
+                name: "Équipe",
                 parentProjectID: nil,
                 projectType: .customer
             )
 
             #expect(throws: MeetingAccessError.projectAlreadyExists("e\u{301}QUIPE")) {
                 try store.createProject(
-                    leafName: "e\u{301}QUIPE",
+                    name: "e\u{301}QUIPE",
                     parentProjectID: nil,
                     projectType: .customer
                 )
@@ -258,7 +291,7 @@ import ImageIO
 
             #expect(throws: MeetingAccessError.projectAlreadyExists("acme")) {
                 try store.createProject(
-                    leafName: "acme",
+                    name: "acme",
                     parentProjectID: nil,
                     projectType: .customer
                 )
@@ -277,7 +310,7 @@ import ImageIO
             ) {
                 #expect(throws: MeetingAccessError.workspaceBusy) {
                     try store.createProject(
-                        leafName: "Blocked",
+                        name: "Blocked",
                         parentProjectID: nil,
                         projectType: .undefined
                     )
@@ -307,7 +340,7 @@ import ImageIO
                 ).insert(db)
                 try db.execute(sql: """
                 CREATE TRIGGER fail_mcp_project_update
-                BEFORE UPDATE OF leafName ON projects
+                BEFORE UPDATE OF name ON projects
                 BEGIN
                     SELECT RAISE(ABORT, 'forced MCP update failure');
                 END
@@ -317,7 +350,7 @@ import ImageIO
             #expect(throws: (any Error).self) {
                 try store.updateProject(
                     id: project.projectID,
-                    update: ProjectUpdate(leafName: "Renamed", expectedRevision: project.revision)
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: project.revision)
                 )
             }
             #expect(FileManager.default.fileExists(atPath: sourceSummary.path))
@@ -332,7 +365,7 @@ import ImageIO
                 projectID: fixture.primaryProjectID
             )).projects.first)
             let child = try store.createProject(
-                leafName: "Platform",
+                name: "Platform",
                 parentProjectID: root.projectID,
                 projectType: nil
             ).project
@@ -367,7 +400,7 @@ import ImageIO
 
             let result = try store.updateProject(
                 id: root.projectID,
-                update: ProjectUpdate(leafName: "Renamed", expectedRevision: root.revision)
+                update: ProjectUpdate(name: "Renamed", expectedRevision: root.revision)
             )
 
             #expect(Set(result.affectedProjectIDs) == [root.projectID, child.projectID])
@@ -406,7 +439,7 @@ import ImageIO
                 projectID: fixture.primaryProjectID
             )).projects.first)
             let child = try store.createProject(
-                leafName: "Child",
+                name: "Child",
                 parentProjectID: root.projectID,
                 projectType: nil
             ).project
@@ -437,7 +470,7 @@ import ImageIO
             #expect(throws: MeetingAccessError.projectFileConflict(sharedSummary.path)) {
                 try store.updateProject(
                     id: root.projectID,
-                    update: ProjectUpdate(leafName: "Renamed", expectedRevision: root.revision)
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: root.revision)
                 )
             }
 
@@ -843,7 +876,7 @@ import ImageIO
             let readOnlyDefinitions = ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_project" })
             let deniedWrite = try Self.json(readOnlyServer.handleLine(#"""
-            {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"leaf_name":"Denied"}}}
+            {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"Denied"}}}
             """#))
             #expect((deniedWrite["result"] as? [String: Any])?["isError"] as? Bool == true)
             #expect(!FileManager.default.fileExists(
@@ -860,9 +893,24 @@ import ImageIO
             #expect(writeDefinitions.suffix(3).compactMap { $0["name"] as? String } == [
                 "create_project", "update_project", "set_meeting_project_memberships",
             ])
+            let destructiveByName: [String: Bool] = Dictionary(
+                uniqueKeysWithValues: writeDefinitions.compactMap { definition -> (String, Bool)? in
+                    guard let name = definition["name"] as? String,
+                          let annotations = definition["annotations"] as? [String: Any],
+                          let destructive = annotations["destructiveHint"] as? Bool else {
+                        return nil
+                    }
+                    return (name, destructive)
+                }
+            )
+            #expect(destructiveByName["create_project"] == false)
+            #expect(destructiveByName["update_project"] == true)
+            #expect(destructiveByName["set_meeting_project_memberships"] == true)
 
             let create = try Self.json(writeServer.handleLine(#"""
-            {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"create_project","arguments":{"leaf_name":"MCP Root","project_type":"personal"}}}
+            {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
+                "name":"create_project","arguments":{"name":"MCP Root","project_type":"personal"}
+            }}
             """#))
             let created = try #require(
                 ((create["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
@@ -873,7 +921,7 @@ import ImageIO
 
             let rename = try Self.json(writeServer.handleLine("""
             {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_project","arguments":{
-                "project_id":"\(projectID)","revision":\(revision),"leaf_name":"Renamed Root"
+                "project_id":"\(projectID)","revision":\(revision),"name":"Renamed Root"
             }}}
             """))
             let renamed = try #require(
@@ -884,7 +932,7 @@ import ImageIO
 
             let childResponse = try Self.json(writeServer.handleLine("""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_project","arguments":{
-                "leaf_name":"Child","parent_project_id":"\(projectID)"
+                "name":"Child","parent_project_id":"\(projectID)"
             }}}
             """))
             let child = try #require(
@@ -918,12 +966,12 @@ import ImageIO
             #expect(promoted["parent_project_id"] == nil)
 
             let promotedRevision = try #require(promoted["revision"] as? Int)
-            let nullLeaf = try Self.json(writeServer.handleLine("""
+            let nullName = try Self.json(writeServer.handleLine("""
             {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"update_project","arguments":{
-                "project_id":"\(childID)","revision":\(promotedRevision),"leaf_name":null
+                "project_id":"\(childID)","revision":\(promotedRevision),"name":null
             }}}
             """))
-            #expect((nullLeaf["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect((nullName["error"] as? [String: Any])?["code"] as? Int == -32602)
         }
 
         @Test
@@ -985,6 +1033,43 @@ import ImageIO
             try queue.write { db in
                 try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
                 try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, vaultId BLOB NOT NULL, name TEXT NOT NULL)")
+                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+            }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
+        }
+
+        @Test
+        func projectSchemaWithoutNameKeyRequiresOpeningDahliaForMigration() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-project-schema-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vaultID = UUID.v7()
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try queue.write { db in
+                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, description TEXT NOT NULL)")
+                try db.execute(sql: """
+                CREATE TABLE summaries (
+                    meetingId BLOB PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    document TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL
+                )
+                """)
+                try db.execute(sql: """
+                CREATE TABLE projects (
+                    id BLOB PRIMARY KEY,
+                    parentProjectId BLOB,
+                    name TEXT NOT NULL,
+                    projectType TEXT,
+                    revision INTEGER NOT NULL
+                )
+                """)
                 try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
             }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
@@ -1238,11 +1323,11 @@ import ImageIO
             ] {
                 try vault.insert(db)
             }
-            try ProjectRecord(id: projectID, vaultId: primaryVaultID, name: "Acme", createdAt: createdAt).insert(db)
+            try ProjectRecord(id: projectID, vaultId: primaryVaultID, path: "Acme", createdAt: createdAt).insert(db)
             try ProjectRecord(
                 id: otherVaultProjectID,
                 vaultId: otherVaultID,
-                name: "Other vault project",
+                path: "Other vault project",
                 createdAt: createdAt
             ).insert(db)
             try insertCalendarEvents(in: db, createdAt: createdAt)

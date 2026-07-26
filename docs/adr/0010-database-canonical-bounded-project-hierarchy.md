@@ -23,8 +23,8 @@ moved. Those associations are not part of this change.
 
 ## Decision
 
-Use `projects.id` as stable identity and `parentProjectId + leafName` as the canonical hierarchy. A persisted internal
-`leafNameKey` materializes one Unicode normalization and case-folding contract for sibling uniqueness. All supported
+Use `projects.id` as stable identity and `parentProjectId + name` as the canonical hierarchy. A persisted internal
+`nameKey` materializes one Unicode normalization and case-folding contract for sibling uniqueness. All supported
 writers—the app repository, migration, and MCP—derive it with `DahliaProjectName`; direct SQL is not a supported
 mutation interface. Derive logical Vault-relative paths at read and operation-planning time instead of storing a second
 canonical path.
@@ -76,9 +76,10 @@ subproject values. It was rejected in favor of a nullable root-owned explicit va
 
 ## Consequences
 
-- Existing path rows migrate into parent/leaf records while retaining every existing Project UUID.
+- Existing path rows migrate into parent/name records while retaining every existing Project UUID.
 - Projects deeper than one subproject level flatten directly under their original root. Flattening collisions receive
-  deterministic suffixes; UUIDs, metadata, and same-Vault Meeting memberships survive.
+  deterministic suffixes; UUIDs, descriptions, creation dates, and same-Vault Meeting memberships survive.
+- Obsolete Project directory-sync and legacy-context columns are discarded. Existing `CONTEXT.md` files are ignored.
 - Existing Summary files are not moved during flattening. Their stored paths remain legacy output locations.
 - Rename and reparent update one hierarchy edge, affected revisions, and only aligned tracked Summary paths/files.
 - Missing, renamed, or newly created directories do not change Project records.

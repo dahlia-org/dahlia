@@ -11,11 +11,11 @@ The database is the sole canonical source for Project identity and hierarchy:
 - `projects.id` is the stable Project identity.
 - `projects.vaultId` fixes a Project to one Vault.
 - `projects.parentProjectId` is `NULL` for a root and otherwise identifies a parent in the same Vault.
-- `projects.leafName` is one logical path component.
-- `projects.leafNameKey` is an internal, materialized Unicode-normalized and case-folded sibling identity. Application,
+- `projects.name` is one logical path component.
+- `projects.nameKey` is an internal, materialized Unicode-normalized and case-folded sibling identity. Application,
   migration, and MCP writes compute it through the shared `DahliaProjectName` contract; raw SQL is not a supported
   mutation interface.
-- A Project path is derived by following parent IDs and joining leaf names.
+- A Project path is derived by following parent IDs and joining names.
 
 Project nesting is limited to one subproject level:
 
@@ -28,7 +28,7 @@ Vault
 A subproject can only name a root in the same Vault as its parent and cannot have children. A root with children cannot
 become a subproject. A childless root can become a subproject, and a subproject can move either to another root or to the
 Vault root. Database constraints, repository/service validation, UI choices, and MCP validation enforce the same limit.
-Sibling names, including root names, are unique by `leafNameKey`. Rename and reparent preserve Project UUIDs.
+Sibling names, including root names, are unique by `nameKey`. Rename and reparent preserve Project UUIDs.
 
 Project identity and `parentProjectId` are deliberately independent from future Organization or Person relationships.
 Those tables may later reference stable Project IDs, but neither is a Project hierarchy parent.
@@ -77,9 +77,9 @@ Meeting UUID suffix when its preferred filename is already occupied.
 ## Workspace mutations
 
 Create validates the root-or-subproject parent contract and sibling uniqueness, then inserts only the Project record.
-Rename and reparent update one canonical parent/leaf relation and increment revisions for Projects whose derived path or
-effective type changed. Project type transitions follow the rules above. Meeting membership changes move tracked Vault
-Summary files into the destination Project's derived directory and update their export records.
+Rename and reparent update one canonical parent/name relation and increment revisions for Projects whose
+derived path or effective type changed. Project type transitions follow the rules above. Meeting membership changes
+move tracked Vault Summary files into the destination Project's derived directory and update their export records.
 Summary generation resolves the Meeting's current membership and Project path again while holding the same Vault lock,
 so a concurrent rename, reparent, or membership update cannot restore an obsolete output path.
 
@@ -115,10 +115,10 @@ Write tools:
 - `set_meeting_project_memberships`
 
 Project updates require the current `revision`. Omitted JSON properties are unchanged; `parent_project_id: null` means
-move to the Vault root. Meeting membership batches require an expected current Project ID, including explicit `null`,
-for every Meeting. One stale expectation rejects the entire batch. Every MCP process can read only its fixed Vault;
-write-enabled processes can mutate only that Vault, use the same Vault mutation lock as the app, and notify the running
-app after commits.
+move to the Vault root. Project creation and rename use `name`; callers never submit a path. Meeting membership
+batches require an expected current Project ID, including explicit `null`, for every Meeting. One stale expectation
+rejects the entire batch. Every MCP process can read only its fixed Vault; write-enabled processes can mutate only that
+Vault, use the same Vault mutation lock as the app, and notify the running app after commits.
 
 Project deletion and merge are not exposed through MCP. A future design must define Meeting relocation, non-empty and
 missing output directories, Summary handling, and recovery before adding those tools. Organization/Person associations
@@ -126,12 +126,13 @@ and changes to Vault identity or setup are also outside this Project change.
 
 ## Migration
 
-The single hierarchy migration retains existing Project UUIDs, metadata, and same-Vault Meeting memberships. It converts
-legacy slash-delimited paths into stable parent/leaf records and moves every Project below the supported subproject level
-directly under its original root before installing the bounded-hierarchy constraints. If flattening creates a
-sibling-name collision, Dahlia adds a deterministic numeric suffix. Moved records increment their revisions and inherit
-their root type.
+The single hierarchy migration retains existing Project UUIDs, descriptions, creation dates, and same-Vault Meeting
+memberships. It converts legacy slash-delimited paths into stable parent/name records and moves every Project
+below the supported subproject level directly under its original root before installing the bounded-hierarchy
+constraints. If flattening creates a sibling-name collision, Dahlia adds a deterministic numeric suffix. Moved records
+increment their revisions and inherit their root type.
 
 Migration does not move existing Summary files merely to match a newly flattened logical path. Their stored
 Vault-relative locations remain valid legacy locations until a later Meeting membership operation moves them. The
-legacy `missingOnDisk` storage column is cleared and no longer participates in Project read or mutation behavior.
+legacy `googleDriveFolderId`, `missingOnDisk`, and `legacyContextMigrated` columns are omitted from the rebuilt table;
+their values are intentionally discarded. Existing `CONTEXT.md` files are not read, migrated, or removed.

@@ -162,6 +162,7 @@
 "The logical Project path determines this destination. The folder is created when a Summary is exported." = "The logical Project path determines this destination. The folder is created when a Summary is exported.";
 "Local Summary Folder" = "Local Summary Folder";
 "The Summary output destination must resolve inside the Vault without symlink or file path components." = "The Summary output destination must resolve inside the Vault without symlink or file path components.";
+"The Summary output folder has not been created yet." = "The Summary output folder has not been created yet.";
 "Project Description" = "Project Description";
 "This description is included when summaries are generated for this project." = "This description is included when summaries are generated for this project.";
 "Describe this project..." = "Describe this project...";

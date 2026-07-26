@@ -125,6 +125,22 @@ import Foundation
             ))
         }
 
+        @Test
+        func projectFolderSafetyDistinguishesMissingAndAvailableDirectories() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-project-folder-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
+            let vaultURL = rootURL.appending(path: "Vault", directoryHint: .isDirectory)
+            let availableURL = vaultURL.appending(path: "Existing", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: availableURL, withIntermediateDirectories: true)
+
+            #expect(ProjectFolderSafety.status(of: availableURL, inside: vaultURL) == .available)
+            #expect(ProjectFolderSafety.status(
+                of: vaultURL.appending(path: "Not Created", directoryHint: .isDirectory),
+                inside: vaultURL
+            ) == .missing)
+        }
+
         private func projects(named names: [String]) -> [ProjectRecord] {
             let ids = Dictionary(uniqueKeysWithValues: names.map { ($0, UUID.v7()) })
             let vaultID = UUID.v7()
@@ -135,7 +151,7 @@ import Foundation
                     id: ids[name]!,
                     vaultId: vaultID,
                     parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
-                    leafName: String(components.last!),
+                    name: String(components.last!),
                     createdAt: Date(),
                     projectType: parentPath.isEmpty ? .undefined : nil,
                     resolvedPath: name
@@ -151,7 +167,7 @@ import Foundation
                 return ProjectOverviewItem(
                     projectId: ids[name]!,
                     projectName: name,
-                    projectLeafName: String(components.last!),
+                    projectDisplayName: String(components.last!),
                     parentProjectId: parentPath.isEmpty ? nil : ids[parentPath],
                     createdAt: Date(),
                     meetingCount: meetingCount,
@@ -228,7 +244,7 @@ import Foundation
         }
 
         private func project(named name: String) -> ProjectRecord {
-            ProjectRecord(id: .v7(), vaultId: .v7(), name: name, createdAt: Date())
+            ProjectRecord(id: .v7(), vaultId: .v7(), path: name, createdAt: Date())
         }
     }
 #endif

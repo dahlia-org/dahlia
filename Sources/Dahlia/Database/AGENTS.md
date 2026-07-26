@@ -16,7 +16,7 @@ The production database is at `~/Library/Application Support/Dahlia/dahlia.sqlit
 
 - Keep one table per `<Name>Record.swift` file, conforming to `Codable`, `FetchableRecord`, and `PersistableRecord`.
 - UI database access goes through the `@MainActor`-isolated `MeetingRepository`.
-- Project identity and hierarchy are canonical in `projects.id` and `parentProjectId + leafName`. Vault directories are
+- Project identity and hierarchy are canonical in `projects.id` and `parentProjectId + name`. Vault directories are
   derived Summary output locations; filesystem events must never create or restructure Project records.
 
 ## Verification

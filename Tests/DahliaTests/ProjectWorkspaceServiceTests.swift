@@ -12,25 +12,25 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+            let parent = try context.service.createProject(name: "Parent", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
 
-            #expect(parent.name == "Parent")
-            #expect(child.name == "Parent/Child")
+            #expect(parent.path == "Parent")
+            #expect(child.path == "Parent/Child")
             #expect(throws: ProjectWorkspaceError.hierarchyTooDeep) {
-                try context.service.createProject(leafName: "Grandchild", parentProjectId: child.id)
+                try context.service.createProject(name: "Grandchild", parentProjectId: child.id)
             }
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.name).path))
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: child.name).path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.path).path))
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: child.path).path))
         }
 
         @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside", "A/../../Outside"])
-        func rejectsInvalidLeafNames(name: String) throws {
+        func rejectsInvalidNames(name: String) throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: name, parentProjectId: nil)
+                try context.service.createProject(name: name, parentProjectId: nil)
             }
             #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).isEmpty)
             #expect(!FileManager.default.fileExists(atPath: context.rootURL.appending(path: "Outside").path))
@@ -41,10 +41,10 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            _ = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            _ = try context.service.createProject(name: "Project", parentProjectId: nil)
 
             #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: "project", parentProjectId: nil)
+                try context.service.createProject(name: "project", parentProjectId: nil)
             }
             #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
         }
@@ -54,8 +54,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let original = try context.service.createProject(leafName: "Project", parentProjectId: nil)
-            let fetched = try context.service.fetchOrCreateRootProject(leafName: "project")
+            let original = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let fetched = try context.service.fetchOrCreateRootProject(name: "project")
 
             #expect(fetched.id == original.id)
             #expect(fetched.name == "Project")
@@ -67,10 +67,10 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            _ = try context.service.createProject(leafName: "Équipe", parentProjectId: nil)
+            _ = try context.service.createProject(name: "Équipe", parentProjectId: nil)
 
             #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: "e\u{301}QUIPE", parentProjectId: nil)
+                try context.service.createProject(name: "e\u{301}QUIPE", parentProjectId: nil)
             }
             #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
         }
@@ -85,11 +85,11 @@ import GRDB
                 withIntermediateDirectories: false
             )
 
-            let project = try context.service.createProject(leafName: "existing", parentProjectId: nil)
+            let project = try context.service.createProject(name: "existing", parentProjectId: nil)
             #expect(throws: ProjectWorkspaceError.self) {
-                try context.service.createProject(leafName: String(repeating: "é", count: 128), parentProjectId: nil)
+                try context.service.createProject(name: String(repeating: "é", count: 128), parentProjectId: nil)
             }
-            #expect(project.name == "existing")
+            #expect(project.path == "existing")
             #expect(try context.repository.fetchAllProjects(vaultId: context.vault.id).count == 1)
         }
 
@@ -98,11 +98,11 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+            let parent = try context.service.createProject(name: "Parent", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
 
-            #expect(child.name == "Parent/Child")
-            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.name).path))
+            #expect(child.path == "Parent/Child")
+            #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: parent.path).path))
         }
 
         @Test
@@ -115,11 +115,11 @@ import GRDB
             let parentURL = context.vaultURL.appending(path: "Parent", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: parentURL, withDestinationURL: outsideURL)
 
-            let parent = try context.service.createProject(leafName: "Parent", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+            let parent = try context.service.createProject(name: "Parent", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
 
             #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Child").path))
-            #expect(child.name == "Parent/Child")
+            #expect(child.path == "Parent/Child")
         }
 
         @Test
@@ -132,13 +132,13 @@ import GRDB
             let projectURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
             try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: outsideURL)
 
-            let project = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let renamed = try context.service.renameProject(id: project.id, newLeafName: "Renamed")
+            let project = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let renamed = try context.service.renameProject(id: project.id, newName: "Renamed")
 
             #expect(FileManager.default.fileExists(atPath: outsideURL.path))
             #expect(try FileManager.default.destinationOfSymbolicLink(atPath: projectURL.path) == outsideURL.path)
             #expect(renamed.id == project.id)
-            #expect(renamed.name == "Renamed")
+            #expect(renamed.path == "Renamed")
         }
 
         @Test
@@ -146,8 +146,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "100%", parentProjectId: nil)
-            let sibling = try context.service.createProject(leafName: "1000", parentProjectId: nil)
+            let source = try context.service.createProject(name: "100%", parentProjectId: nil)
+            let sibling = try context.service.createProject(name: "1000", parentProjectId: nil)
 
             try await context.service.deleteProjectHierarchy(id: source.id, meetingDisposition: .deleteMeetings)
 
@@ -161,8 +161,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let parent = try context.service.createProject(leafName: "Original", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: parent.id)
+            let parent = try context.service.createProject(name: "Original", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: parent.id)
             try context.repository.updateProjectDescription(
                 id: child.id,
                 vaultId: context.vault.id,
@@ -180,7 +180,7 @@ import GRDB
                 options: .atomic
             )
 
-            let renamed = try context.service.renameProject(id: parent.id, newLeafName: "Renamed")
+            let renamed = try context.service.renameProject(id: parent.id, newName: "Renamed")
 
             let fetchedChildRecord = try context.repository.fetchProject(id: child.id)
             let vaultExport = try context.repository.fetchSummaryExport(
@@ -188,8 +188,8 @@ import GRDB
                 type: .vault
             )
             let fetchedChild = try #require(fetchedChildRecord)
-            #expect(renamed.name == "Renamed")
-            #expect(fetchedChild.name == "Renamed/Child")
+            #expect(renamed.path == "Renamed")
+            #expect(fetchedChild.path == "Renamed/Child")
             #expect(fetchedChild.description == "Keep me")
             #expect(vaultExport?.url == "vault:///Renamed/Child/Summary.md")
             #expect(vaultExport?.vaultRelativePath == "Renamed/Child/Summary.md")
@@ -203,7 +203,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Original", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Original", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             try FileManager.default.createDirectory(
                 at: context.vaultURL.appending(path: "Legacy", directoryHint: .isDirectory),
@@ -216,7 +216,7 @@ import GRDB
                 writeFile: true
             )
 
-            _ = try context.service.renameProject(id: project.id, newLeafName: "Renamed")
+            _ = try context.service.renameProject(id: project.id, newName: "Renamed")
 
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id) == "Legacy/Summary.md")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Legacy/Summary.md").path))
@@ -227,8 +227,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let root = try context.service.createProject(leafName: "Acme", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: root.id)
+            let root = try context.service.createProject(name: "Acme", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: root.id)
             let rootMeeting = try insertMeeting(projectId: root.id, context: context)
             let childMeeting = try insertMeeting(projectId: child.id, context: context)
             try insertSummary(
@@ -244,7 +244,7 @@ import GRDB
             )
 
             #expect(throws: ProjectWorkspaceError.summaryFileShared("Shared.md")) {
-                try context.service.renameProject(id: root.id, newLeafName: "Renamed")
+                try context.service.renameProject(id: root.id, newName: "Renamed")
             }
 
             #expect(try context.repository.fetchProject(id: root.id)?.name == "Acme")
@@ -261,7 +261,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             _ = try context.repository.updateProjectDescription(
                 id: project.id,
                 vaultId: context.vault.id,
@@ -284,11 +284,11 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let root = try context.service.createProject(
-                leafName: "Root",
+                name: "Root",
                 parentProjectId: nil,
                 projectType: .customer
             )
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             _ = try context.repository.updateProjectDescription(
                 id: root.id,
                 vaultId: context.vault.id,
@@ -298,7 +298,7 @@ import GRDB
             #expect(throws: ProjectWorkspaceError.staleRevision(current: root.revision + 1)) {
                 try context.service.renameProject(
                     id: root.id,
-                    newLeafName: "Renamed",
+                    newName: "Renamed",
                     expectedRevision: root.revision
                 )
             }
@@ -329,13 +329,13 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let customer = try context.service.createProject(
-                leafName: "Customer",
+                name: "Customer",
                 parentProjectId: nil,
                 projectType: .customer
             )
-            let work = try context.service.createProject(leafName: "Work", parentProjectId: customer.id)
+            let work = try context.service.createProject(name: "Work", parentProjectId: customer.id)
             let internalRoot = try context.service.createProject(
-                leafName: "Internal",
+                name: "Internal",
                 parentProjectId: nil,
                 projectType: .internal
             )
@@ -352,7 +352,7 @@ import GRDB
             let effectiveType = ProjectRecord.effectiveType(for: work.id, records: projects)
 
             #expect(moved.id == work.id)
-            #expect(moved.name == "Internal/Work")
+            #expect(moved.path == "Internal/Work")
             #expect(effectiveType?.type == .internal)
             #expect(effectiveType?.ownerProjectId == internalRoot.id)
             #expect(try context.repository.fetchSummaryVaultRelativePath(forMeetingId: meeting.id)
@@ -366,9 +366,9 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            _ = try context.service.createProject(leafName: "Child", parentProjectId: source.id)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            _ = try context.service.createProject(name: "Child", parentProjectId: source.id)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
 
             #expect(throws: ProjectWorkspaceError.hierarchyTooDeep) {
                 try context.service.reparentProject(id: source.id, parentProjectId: destination.id)
@@ -382,11 +382,11 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let root = try context.service.createProject(
-                leafName: "Customer",
+                name: "Customer",
                 parentProjectId: nil,
                 projectType: .customer
             )
-            let child = try context.service.createProject(leafName: "Work", parentProjectId: root.id)
+            let child = try context.service.createProject(name: "Work", parentProjectId: root.id)
 
             let moved = try context.service.reparentProject(id: child.id, parentProjectId: nil)
             let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
@@ -403,12 +403,12 @@ import GRDB
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
             let customer = try context.service.createProject(
-                leafName: "Customer",
+                name: "Customer",
                 parentProjectId: nil,
                 projectType: .customer
             )
             let internalRoot = try context.service.createProject(
-                leafName: "Internal",
+                name: "Internal",
                 parentProjectId: nil,
                 projectType: .internal
             )
@@ -426,8 +426,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let root = try context.service.createProject(leafName: "Root", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: root.id)
+            let root = try context.service.createProject(name: "Root", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: root.id)
 
             _ = try context.service.updateRootProjectType(id: root.id, projectType: .personal)
             let projects = try context.repository.fetchAllProjects(vaultId: context.vault.id)
@@ -443,8 +443,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let root = try context.service.createProject(leafName: "Root", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: root.id)
+            let root = try context.service.createProject(name: "Root", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: root.id)
             #expect(throws: ProjectWorkspaceError.cycleDetected) {
                 try context.service.reparentProject(id: root.id, parentProjectId: child.id)
             }
@@ -463,7 +463,7 @@ import GRDB
                     id: otherProjectID,
                     vaultId: otherVaultID,
                     parentProjectId: nil,
-                    leafName: "Other",
+                    name: "Other",
                     createdAt: .now,
                     projectType: .undefined
                 ).insert(db)
@@ -484,8 +484,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
-            let renamed = try context.service.renameProject(id: project.id, newLeafName: "project")
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let renamed = try context.service.renameProject(id: project.id, newName: "project")
 
             #expect(renamed.id == project.id)
             #expect(renamed.name == "project")
@@ -497,7 +497,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Original", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Original", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -508,7 +508,7 @@ import GRDB
             try context.database.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_project_rename
-                BEFORE UPDATE OF leafName ON projects
+                BEFORE UPDATE OF name ON projects
                 BEGIN
                     SELECT RAISE(ABORT, 'forced rename failure');
                 END
@@ -516,7 +516,7 @@ import GRDB
             }
 
             #expect(throws: (any Error).self) {
-                try context.service.renameProject(id: project.id, newLeafName: "Renamed")
+                try context.service.renameProject(id: project.id, newName: "Renamed")
             }
             #expect(try context.repository.fetchProject(id: project.id)?.name == "Original")
             #expect(FileManager.default.fileExists(atPath: context.vaultURL.appending(path: "Original/Summary.md").path))
@@ -530,8 +530,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -567,7 +567,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -591,8 +591,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(meetingId: meeting.id, path: "Source/Missing.md", context: context)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
@@ -617,8 +617,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             let sourceURL = context.vaultURL.appending(path: "Source", directoryHint: .isDirectory)
             let outsideURL = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
@@ -645,8 +645,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -675,8 +675,8 @@ import GRDB
             let context = try makeContext(summaryFileResolver: { _, _ in throw InspectionFailure() })
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -699,8 +699,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let movingMeeting = try insertMeeting(projectId: source.id, context: context)
             let remainingMeeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
@@ -726,8 +726,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let firstMeeting = try insertMeeting(projectId: source.id, context: context)
             let secondMeeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
@@ -760,8 +760,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -795,9 +795,9 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let firstSource = try context.service.createProject(leafName: "First", parentProjectId: nil)
-            let secondSource = try context.service.createProject(leafName: "Second", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let firstSource = try context.service.createProject(name: "First", parentProjectId: nil)
+            let secondSource = try context.service.createProject(name: "Second", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let firstMeeting = try insertMeeting(projectId: firstSource.id, context: context)
             let secondMeeting = try insertMeeting(projectId: secondSource.id, context: context)
             try insertSummary(
@@ -830,8 +830,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -867,9 +867,9 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let child = try context.service.createProject(leafName: "Child", parentProjectId: source.id)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let child = try context.service.createProject(name: "Child", parentProjectId: source.id)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: child.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -910,8 +910,8 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try FileManager.default.createDirectory(
                 at: context.vaultURL.appending(path: "Archive", directoryHint: .isDirectory),
@@ -940,7 +940,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -973,7 +973,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -998,7 +998,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             let outsideDirectory = context.rootURL.appending(path: "Outside", directoryHint: .isDirectory)
             let outsideSummary = outsideDirectory.appending(path: "Summary.md")
@@ -1028,7 +1028,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
             let sessionId = try await context.database.dbQueue.read { db in
@@ -1076,7 +1076,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             try await context.database.dbQueue.write { db in
                 try db.execute(sql: """
                 CREATE TRIGGER fail_project_delete
@@ -1100,7 +1100,7 @@ import GRDB
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let project = try context.service.createProject(leafName: "Project", parentProjectId: nil)
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: project.id, context: context)
             let audioURL = try await insertAudio(meetingId: meeting.id, context: context)
             try await context.database.dbQueue.write { db in
@@ -1127,12 +1127,49 @@ import GRDB
         }
 
         @Test
+        func reportsAudioRollbackFailureWhenProjectDeleteFails() async throws {
+            let rollbackError = CocoaError(.fileWriteNoPermission)
+            let context = try makeContext(stagedAudioRestorer: { _ in throw rollbackError })
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let meeting = try insertMeeting(projectId: project.id, context: context)
+            _ = try await insertAudio(meetingId: meeting.id, context: context)
+            try await context.database.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_project_delete_audio_rollback
+                BEFORE DELETE ON projects
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced delete failure with rollback failure');
+                END
+                """)
+            }
+
+            do {
+                try await context.service.deleteProjectHierarchy(
+                    id: project.id,
+                    meetingDisposition: .deleteMeetings
+                )
+                Issue.record("Expected project deletion to fail")
+            } catch let ProjectWorkspaceError.rollbackFailed(operation, rollback) {
+                #expect(operation.contains("forced delete failure"))
+                #expect(rollback == rollbackError.localizedDescription)
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
+            #expect(try context.repository.fetchProject(id: project.id) != nil)
+            #expect(try await context.database.dbQueue.read { db in
+                try MeetingRecord.fetchOne(db, key: meeting.id)
+            } != nil)
+        }
+
+        @Test
         func restoresFolderAndSummaryWhenDeleteAfterMeetingMoveFails() async throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }
 
-            let source = try context.service.createProject(leafName: "Source", parentProjectId: nil)
-            let destination = try context.service.createProject(leafName: "Destination", parentProjectId: nil)
+            let source = try context.service.createProject(name: "Source", parentProjectId: nil)
+            let destination = try context.service.createProject(name: "Destination", parentProjectId: nil)
             let meeting = try insertMeeting(projectId: source.id, context: context)
             try insertSummary(
                 meetingId: meeting.id,
@@ -1170,7 +1207,10 @@ import GRDB
 
     private extension ProjectWorkspaceServiceTests {
         private func makeContext(
-            summaryFileResolver: @escaping ProjectWorkspaceService.SummaryFileResolver = ProjectWorkspaceService.resolveSummaryFile
+            summaryFileResolver: @escaping ProjectWorkspaceService.SummaryFileResolver =
+                ProjectWorkspaceService.resolveSummaryFile,
+            stagedAudioRestorer: @escaping ProjectWorkspaceService.StagedAudioRestorer =
+                BatchAudioCleanupService.restoreStagedFiles
         ) throws -> ProjectWorkspaceTestContext {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -1198,7 +1238,8 @@ import GRDB
                     try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
                     return destinationURL
                 },
-                summaryFileResolver: summaryFileResolver
+                summaryFileResolver: summaryFileResolver,
+                stagedAudioRestorer: stagedAudioRestorer
             )
             return ProjectWorkspaceTestContext(
                 rootURL: rootURL,

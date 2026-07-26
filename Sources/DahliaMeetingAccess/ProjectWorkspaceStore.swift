@@ -15,7 +15,7 @@ public extension MeetingAccessStore {
                     if let projectID = query.projectID, project.projectID != projectID { return false }
                     if let type = query.type, project.effectiveType != type { return false }
                     guard let normalizedQuery, !normalizedQuery.isEmpty else { return true }
-                    return project.displayName.localizedCaseInsensitiveContains(normalizedQuery)
+                    return project.name.localizedCaseInsensitiveContains(normalizedQuery)
                         || project.path.localizedCaseInsensitiveContains(normalizedQuery)
                         || project.description.localizedCaseInsensitiveContains(normalizedQuery)
                 }
@@ -24,13 +24,13 @@ public extension MeetingAccessStore {
     }
 
     func createProject(
-        leafName: String,
+        name: String,
         parentProjectID: UUID?,
         projectType: ProjectWorkspaceType?,
         description: String = ""
     ) throws -> ProjectMutationResult {
         try requireWriteAccess()
-        let leafName = try validatedLeafName(leafName)
+        let name = try validatedName(name)
         let vault = try database.read(workspaceVault(in:))
         var committed = false
 
@@ -47,14 +47,14 @@ public extension MeetingAccessStore {
                         }
                         guard projectType == nil else { throw MeetingAccessError.projectTypeOwnedByRoot }
                         try validateSiblingName(
-                            leafName,
+                            name,
                             parentProjectID: parent.id,
                             excluding: nil,
                             rows: rows
                         )
                         return parent.id
                     }
-                    try validateSiblingName(leafName, parentProjectID: nil, excluding: nil, rows: rows)
+                    try validateSiblingName(name, parentProjectID: nil, excluding: nil, rows: rows)
                     return nil
                 }
 
@@ -63,17 +63,17 @@ public extension MeetingAccessStore {
                     try db.execute(
                         sql: """
                         INSERT INTO projects (
-                            id, vaultId, parentProjectId, leafName, leafNameKey, createdAt,
-                            description, legacyContextMigrated, projectType, revision
+                            id, vaultId, parentProjectId, name, nameKey, createdAt,
+                            description, projectType, revision
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 1)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
                         """,
                         arguments: [
                             id,
                             vaultID,
                             parentID,
-                            leafName,
-                            DahliaProjectName.siblingKey(leafName),
+                            name,
+                            DahliaProjectName.siblingKey(name),
                             Date.now,
                             description,
                             parentID == nil ? (projectType ?? .undefined).rawValue : nil,
@@ -224,7 +224,7 @@ private extension MeetingAccessStore {
     struct WorkspaceProjectRow {
         let id: UUID
         let parentProjectID: UUID?
-        let leafName: String
+        let name: String
         let description: String
         let projectType: ProjectWorkspaceType?
         let revision: Int
@@ -237,7 +237,7 @@ private extension MeetingAccessStore {
 
     struct ProjectUpdatePlan {
         let parentProjectID: UUID?
-        let leafName: String
+        let name: String
         let description: String
         let explicitType: ProjectWorkspaceType?
         let oldPath: String
@@ -288,7 +288,7 @@ private extension MeetingAccessStore {
 
     func workspaceVault(in db: Database) throws -> WorkspaceVault {
         let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
-        guard columns.isSuperset(of: ["parentProjectId", "leafName", "leafNameKey", "projectType", "revision"]) else {
+        guard columns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]) else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
         guard let row = try Row.fetchOne(
@@ -305,7 +305,7 @@ private extension MeetingAccessStore {
         try Row.fetchAll(
             db,
             sql: """
-            SELECT id, parentProjectId, leafName, description, projectType, revision
+            SELECT id, parentProjectId, name, description, projectType, revision
             FROM projects
             WHERE vaultId = ?
             """,
@@ -315,7 +315,7 @@ private extension MeetingAccessStore {
             return WorkspaceProjectRow(
                 id: row["id"],
                 parentProjectID: row["parentProjectId"],
-                leafName: row["leafName"],
+                name: row["name"],
                 description: row["description"],
                 projectType: rawType.flatMap(ProjectWorkspaceType.init(rawValue:)),
                 revision: row["revision"]
@@ -332,10 +332,10 @@ private extension MeetingAccessStore {
             guard let parentID = row.parentProjectID,
                   let parent = byID[parentID],
                   !visiting.contains(parentID) else {
-                result[row.id] = row.leafName
-                return row.leafName
+                result[row.id] = row.name
+                return row.name
             }
-            let value = "\(path(for: parent, visiting: visiting.union([row.id])))/\(row.leafName)"
+            let value = "\(path(for: parent, visiting: visiting.union([row.id])))/\(row.name)"
             result[row.id] = value
             return value
         }
@@ -389,7 +389,7 @@ private extension MeetingAccessStore {
         let paths = resolvedProjectPaths(rows)
         let effectiveTypes = effectiveProjectTypes(rows)
         let hierarchyIDs = projectHierarchyIDs(rootID: id, rows: rows)
-        let leafName = try update.leafName.map(validatedLeafName) ?? project.leafName
+        let name = try update.name.map(validatedName) ?? project.name
         let parentProjectID: UUID? = switch update.parent {
         case .unchanged: project.parentProjectID
         case .vaultRoot: nil
@@ -415,11 +415,11 @@ private extension MeetingAccessStore {
             throw MeetingAccessError.projectTypeOwnedByRoot
         }
 
-        let oldPath = paths[id] ?? project.leafName
+        let oldPath = paths[id] ?? project.name
         let parentPath = parentProjectID.flatMap { paths[$0] }
-        let newPath = parentPath.map { "\($0)/\(leafName)" } ?? leafName
+        let newPath = parentPath.map { "\($0)/\(name)" } ?? name
         try validateSiblingName(
-            leafName,
+            name,
             parentProjectID: parentProjectID,
             excluding: id,
             rows: rows
@@ -433,7 +433,7 @@ private extension MeetingAccessStore {
         let description = update.description ?? project.description
         return ProjectUpdatePlan(
             parentProjectID: parentProjectID,
-            leafName: leafName,
+            name: name,
             description: description,
             explicitType: explicitType,
             oldPath: oldPath,
@@ -478,14 +478,14 @@ private extension MeetingAccessStore {
             try db.execute(
                 sql: """
                 UPDATE projects
-                SET parentProjectId = ?, leafName = ?, leafNameKey = ?,
+                SET parentProjectId = ?, name = ?, nameKey = ?,
                     description = ?, projectType = ?, revision = revision + 1
                 WHERE id = ? AND vaultId = ?
                 """,
                 arguments: [
                     plan.parentProjectID,
-                    plan.leafName,
-                    DahliaProjectName.siblingKey(plan.leafName),
+                    plan.name,
+                    DahliaProjectName.siblingKey(plan.name),
                     plan.description,
                     plan.explicitType?.rawValue,
                     id,
@@ -549,8 +549,8 @@ private extension MeetingAccessStore {
             )
             return ProjectMetadata(
                 projectID: row.id,
-                displayName: row.leafName,
-                path: paths[row.id] ?? row.leafName,
+                name: row.name,
+                path: paths[row.id] ?? row.name,
                 parentProjectID: row.parentProjectID,
                 rootProjectID: effective.ownerProjectID,
                 explicitType: row.projectType,
@@ -577,15 +577,15 @@ private extension MeetingAccessStore {
         }
     }
 
-    func validatedLeafName(_ value: String) throws -> String {
-        guard let value = DahliaProjectName.normalizedLeafName(value) else {
+    func validatedName(_ value: String) throws -> String {
+        guard let value = DahliaProjectName.normalizedName(value) else {
             throw MeetingAccessError.invalidProjectName
         }
         return value
     }
 
     func validateSiblingName(
-        _ leafName: String,
+        _ name: String,
         parentProjectID: UUID?,
         excluding excludedID: UUID?,
         rows: [WorkspaceProjectRow]
@@ -593,9 +593,9 @@ private extension MeetingAccessStore {
         guard !rows.contains(where: {
             $0.id != excludedID
                 && $0.parentProjectID == parentProjectID
-                && DahliaProjectName.siblingKey($0.leafName) == DahliaProjectName.siblingKey(leafName)
+                && DahliaProjectName.siblingKey($0.name) == DahliaProjectName.siblingKey(name)
         }) else {
-            throw MeetingAccessError.projectAlreadyExists(leafName)
+            throw MeetingAccessError.projectAlreadyExists(name)
         }
     }
 
@@ -719,7 +719,11 @@ private extension MeetingAccessStore {
         var completedMoves: [SummaryFileMove] = []
         do {
             for move in moves {
-                try FileManager.default.moveItem(at: move.source, to: move.destination)
+                try DahliaVaultFileMover.moveItem(
+                    at: move.source,
+                    to: move.destination,
+                    inside: vaultURL
+                )
                 completedMoves.append(move)
             }
             try operation()
@@ -727,7 +731,11 @@ private extension MeetingAccessStore {
             var rollbackFailed = false
             for move in completedMoves.reversed() {
                 do {
-                    try FileManager.default.moveItem(at: move.destination, to: move.source)
+                    try DahliaVaultFileMover.moveItem(
+                        at: move.destination,
+                        to: move.source,
+                        inside: vaultURL
+                    )
                 } catch {
                     rollbackFailed = true
                 }
@@ -780,12 +788,12 @@ private extension MeetingAccessStore {
                 continue
             }
             let source = vaultURL.appending(path: relativePath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vaultURL) else {
+                throw MeetingAccessError.projectFileConflict(source.path)
+            }
             guard FileManager.default.fileExists(atPath: source.path) else {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
-            }
-            guard isInsideVault(source, vaultURL: vaultURL) else {
-                throw MeetingAccessError.projectFileConflict(source.path)
             }
             let sourceValues = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard source.pathExtension.lowercased() == "md",
@@ -880,6 +888,9 @@ private extension MeetingAccessStore {
                 continue
             }
             let source = vault.url.appending(path: storedPath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vault.url) else {
+                throw MeetingAccessError.projectFileConflict(source.path)
+            }
             guard FileManager.default.fileExists(atPath: source.path) else { continue }
             retainedIdentities.insert(DahliaWorkspaceFileIdentity.resolve(source))
         }
@@ -912,12 +923,12 @@ private extension MeetingAccessStore {
                 continue
             }
             let source = vault.url.appending(path: storedPath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vault.url) else {
+                throw MeetingAccessError.projectFileConflict(source.path)
+            }
             guard FileManager.default.fileExists(atPath: source.path) else {
                 updates.append(SummaryExportUpdate(meetingID: meetingID, relativePath: nil))
                 continue
-            }
-            guard isInsideVault(source, vaultURL: vault.url) else {
-                throw MeetingAccessError.projectFileConflict(source.path)
             }
             let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard source.pathExtension.lowercased() == "md",
@@ -1030,6 +1041,7 @@ private extension MeetingAccessStore {
         return Set(urls.compactMap { storedURL in
             guard let relativePath = vaultRelativeSummaryPath(storedURL) else { return nil }
             let source = vaultURL.appending(path: relativePath).standardizedFileURL
+            guard isInsideVault(source, vaultURL: vaultURL) else { return nil }
             guard FileManager.default.fileExists(atPath: source.path) else { return nil }
             return DahliaWorkspaceFileIdentity.resolve(source)
         })

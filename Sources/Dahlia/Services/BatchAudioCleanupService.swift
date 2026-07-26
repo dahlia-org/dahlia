@@ -104,16 +104,43 @@ enum BatchAudioCleanupService {
                 }
             }
             return stagedFiles
-        } catch {
-            try? restoreStagedFiles(stagedFiles)
-            throw error
+        } catch let operationError {
+            do {
+                try restoreStagedFiles(stagedFiles)
+            } catch let rollbackError {
+                throw ProjectWorkspaceError.rollbackFailed(
+                    operation: operationError.localizedDescription,
+                    rollback: rollbackError.localizedDescription
+                )
+            }
+            throw operationError
         }
     }
 
     static func restoreStagedFiles(_ stagedFiles: [StagedFile]) throws {
+        try restoreStagedFiles(
+            stagedFiles,
+            fileExists: { FileManager.default.fileExists(atPath: $0.path) },
+            moveItem: { try FileManager.default.moveItem(at: $0, to: $1) }
+        )
+    }
+
+    static func restoreStagedFiles(
+        _ stagedFiles: [StagedFile],
+        fileExists: (URL) -> Bool,
+        moveItem: (URL, URL) throws -> Void
+    ) throws {
+        var firstError: (any Error)?
         for stagedFile in stagedFiles.reversed() {
-            guard FileManager.default.fileExists(atPath: stagedFile.stagedURL.path) else { continue }
-            try FileManager.default.moveItem(at: stagedFile.stagedURL, to: stagedFile.originalURL)
+            guard fileExists(stagedFile.stagedURL) else { continue }
+            do {
+                try moveItem(stagedFile.stagedURL, stagedFile.originalURL)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
         }
     }
 

@@ -318,6 +318,10 @@ enum L10n {
         localized: "The Summary output destination must resolve inside the Vault without symlink or file path components.",
         bundle: bundle
     ) }
+    static var summaryOutputFolderNotCreated: String { String(
+        localized: "The Summary output folder has not been created yet.",
+        bundle: bundle
+    ) }
     static var projectDescription: String { String(localized: "Project Description", bundle: bundle) }
     static var projectDescriptionHelp: String { String(
         localized: "This description is included when summaries are generated for this project.",
