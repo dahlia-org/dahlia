@@ -46,16 +46,12 @@ import Foundation
                 createdAt: .now,
                 lastOpenedAt: .now
             )
-            let settings = AppSettings.shared
-            let previousVault = settings.currentVault
-            let previousInstructionID = settings.selectedInstructionID
-            let sidebar = SidebarViewModel()
+            let settings = AppSettings()
+            let sidebar = SidebarViewModel(settings: settings)
             settings.currentVault = vault
             sidebar.setAppDatabase(fixture.manager)
             defer {
                 sidebar.setAppDatabase(nil)
-                settings.currentVault = previousVault
-                settings.selectedInstructionID = previousInstructionID
             }
 
             #expect(await waitUntil { sidebar.isProjectCatalogLoaded })
@@ -71,10 +67,16 @@ import Foundation
             })
         }
 
-        private func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {
-            for _ in 0 ..< 1_000 {
+        private func waitUntil(
+            timeout: Duration = .seconds(5),
+            _ predicate: @MainActor () -> Bool
+        ) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now + timeout
+
+            while clock.now < deadline, !Task.isCancelled {
                 if predicate() { return true }
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(10))
             }
             return predicate()
         }

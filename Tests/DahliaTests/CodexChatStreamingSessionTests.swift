@@ -13,13 +13,13 @@ import Foundation
 
             session.draft = "Question"
             session.sendDraft()
-            await waitUntil { session.messages.last?.text == "First" }
-            await waitUntil { session.messages.last?.text == "First second" }
+            #expect(await waitUntil { session.messages.last?.text == "First" })
+            #expect(await waitUntil { session.messages.last?.text == "First second" })
 
             #expect(session.isGenerating)
             #expect(session.messages.last?.text == "First second")
             session.stop()
-            await waitUntil { !session.isGenerating }
+            #expect(await waitUntil { !session.isGenerating })
         }
 
         @Test
@@ -28,7 +28,7 @@ import Foundation
 
             session.draft = "Question"
             session.sendDraft()
-            await waitUntil { !session.isGenerating }
+            #expect(await waitUntil { !session.isGenerating })
 
             #expect(session.messages.last?.text == "Partial answer")
             #expect(session.messages.last?.isStreaming == false)
@@ -40,7 +40,7 @@ import Foundation
 
             session.draft = "Question"
             session.sendDraft()
-            await waitUntil { !session.isGenerating }
+            #expect(await waitUntil { !session.isGenerating })
 
             #expect(session.messages.last?.text == "Partial answer")
             #expect(session.messages.last?.isStreaming == false)
@@ -53,9 +53,9 @@ import Foundation
             session.draft = "Question"
             session.sendDraft()
 
-            await waitUntil { session.activeTurnID != nil }
+            #expect(await waitUntil { session.activeTurnID != nil })
             #expect(session.isGenerating)
-            await waitUntil { !session.isGenerating }
+            #expect(await waitUntil { !session.isGenerating })
             #expect(session.messages.last?.text == String(repeating: "x", count: 2048))
         }
 
@@ -80,10 +80,20 @@ import Foundation
             )
         }
 
-        private func waitUntil(_ predicate: @MainActor () -> Bool) async {
-            while !predicate() {
-                await Task.yield()
+        private func waitUntil(
+            timeout: Duration = .seconds(30),
+            _ predicate: @MainActor () -> Bool
+        ) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now + timeout
+
+            while clock.now < deadline, !Task.isCancelled {
+                if predicate() {
+                    return true
+                }
+                try? await Task.sleep(for: .milliseconds(10))
             }
+            return predicate()
         }
     }
 #endif
