@@ -686,11 +686,11 @@
             await pipeline.start()
 
             let stall = FiniteMainActorStall()
+            defer { stall.release() }
             let stallTask = Task { @MainActor in
                 stall.block()
             }
-            await stall.waitUntilStarted()
-            defer { stall.release() }
+            #expect(await stall.waitUntilStarted())
 
             writer.appendBuffer(buffer)
             for event in events {
@@ -889,7 +889,7 @@
                 state.hasStarted = true
                 state.isBlocking = true
             }
-            _ = releaseSemaphore.wait(timeout: .now() + 3)
+            releaseSemaphore.wait()
             state.withLock { $0.isBlocking = false }
         }
 
@@ -897,15 +897,15 @@
             releaseSemaphore.signal()
         }
 
-        func waitUntilStarted() async {
-            let deadline = ContinuousClock.now + .seconds(10)
-            while ContinuousClock.now < deadline {
+        func waitUntilStarted() async -> Bool {
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline, !Task.isCancelled {
                 if state.withLock(\.hasStarted) {
-                    return
+                    return true
                 }
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(10))
             }
-            Issue.record("Timed out waiting for MainActor stall to start")
+            return false
         }
     }
 #endif

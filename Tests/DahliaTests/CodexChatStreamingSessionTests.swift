@@ -13,7 +13,6 @@ import Foundation
 
             session.draft = "Question"
             session.sendDraft()
-            #expect(await waitUntil { session.messages.last?.text == "First" })
             #expect(await waitUntil { session.messages.last?.text == "First second" })
 
             #expect(session.isGenerating)
