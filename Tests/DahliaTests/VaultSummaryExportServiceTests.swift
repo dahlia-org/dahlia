@@ -40,6 +40,26 @@ import os
             #expect(!didRunOnMainThread)
         }
 
+        @MainActor
+        @Test
+        func lockedSummaryExportWorkDoesNotRunOnMainActor() async throws {
+            let vaultURL = FileManager.default.temporaryDirectory
+                .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: vaultURL) }
+            try FileManager.default.createDirectory(at: vaultURL, withIntermediateDirectories: true)
+            let ranOnMainThread = OSAllocatedUnfairLock(initialState: false)
+
+            try await VaultSummaryExportService.withVaultMutationLock(
+                vaultURL: vaultURL,
+                vaultID: .v7()
+            ) {
+                ranOnMainThread.withLock { $0 = Thread.isMainThread }
+            }
+
+            let didRunOnMainThread = ranOnMainThread.withLock { $0 }
+            #expect(!didRunOnMainThread)
+        }
+
         @Test
         func exportSummaryBundleWritesSummaryTranscriptAndScreenshots() async throws {
             let vaultURL = FileManager.default.temporaryDirectory

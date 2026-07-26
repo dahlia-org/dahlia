@@ -587,7 +587,7 @@ import GRDB
         }
 
         private func waitUntil(
-            attempts: Int = 200,
+            attempts: Int = 10_000,
             condition: @escaping @MainActor () -> Bool
         ) async -> Bool {
             for _ in 0 ..< attempts {

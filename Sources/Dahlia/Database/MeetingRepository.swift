@@ -48,7 +48,7 @@ final class MeetingRepository {
         }
     }
 
-    private static let generatedSummaryTagColorHex = "#808080"
+    private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
     let dbQueue: DatabaseQueue
 
@@ -342,7 +342,7 @@ final class MeetingRepository {
         }
     }
 
-    func applyGeneratedSummary(
+    nonisolated func applyGeneratedSummary(
         toMeetingId meetingId: UUID,
         document: SummaryDocument,
         tags: [String]
@@ -404,7 +404,7 @@ final class MeetingRepository {
         }
     }
 
-    private static func normalizedGeneratedMetadata(_ value: String, maximumLength: Int) -> String? {
+    private nonisolated static func normalizedGeneratedMetadata(_ value: String, maximumLength: Int) -> String? {
         let oneLine = value
             .split(whereSeparator: \.isNewline)
             .joined(separator: " ")

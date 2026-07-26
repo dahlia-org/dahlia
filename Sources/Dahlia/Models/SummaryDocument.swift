@@ -1,6 +1,6 @@
 import Foundation
 
-struct SummaryDocument: Codable, Equatable {
+struct SummaryDocument: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var title: String
     var description: String
@@ -76,13 +76,13 @@ struct SummaryDocument: Codable, Equatable {
     }
 }
 
-struct SummarySection: Codable, Equatable, Identifiable {
+struct SummarySection: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var heading: String
     var blocks: [SummaryBlock]
 }
 
-struct TranscriptReference: Codable, Equatable {
+struct TranscriptReference: Codable, Equatable, Sendable {
     var time: String
 
     init(time: String) {
@@ -100,7 +100,7 @@ struct TranscriptReference: Codable, Equatable {
     }
 }
 
-struct SummaryText: Codable, Equatable {
+struct SummaryText: Codable, Equatable, Sendable {
     var text: String
     var transcriptRef: TranscriptReference?
 
@@ -115,7 +115,7 @@ struct SummaryText: Codable, Equatable {
     }
 }
 
-struct SummaryBlock: Codable, Equatable, Identifiable {
+struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var content: SummaryBlockContent
 
@@ -199,7 +199,7 @@ struct SummaryBlock: Codable, Equatable, Identifiable {
     }
 }
 
-enum SummaryBlockContent: Equatable {
+enum SummaryBlockContent: Equatable, Sendable {
     case paragraph(SummaryText)
     case bulletedList(items: [SummaryText])
     case numberedList(items: [SummaryText])
@@ -210,7 +210,7 @@ enum SummaryBlockContent: Equatable {
     case heading(level: Int, content: SummaryText)
     case table(headers: [SummaryText], rows: [[SummaryText]])
 
-    struct ChecklistItem: Codable, Equatable {
+    struct ChecklistItem: Codable, Equatable, Sendable {
         var text: SummaryText
         var checked: Bool
 

@@ -1,7 +1,24 @@
+import DahliaRuntimeSupport
 import Foundation
+import GRDB
 
 /// 要約関連ファイルを Vault に書き出すサービス。
 enum VaultSummaryExportService {
+    struct LockedSummaryExportRequest: Sendable {
+        let vaultURL: URL
+        let vaultID: UUID
+        let meetingID: UUID
+        let dbQueue: DatabaseQueue
+        let document: SummaryDocument
+        let summaryFileName: String
+        let summaryMarkdown: String
+    }
+
+    struct LockedSummaryExportResult: Sendable {
+        let fileURL: URL
+        let projectName: String
+    }
+
     typealias TranscriptExporter = @Sendable (URL, UUID, String, Date, [TranscriptSegment], [RecordingSessionTimeline]) throws -> String
     typealias ScreenshotExporter = @Sendable (URL, [MeetingScreenshotRecord]) throws -> [String]
     typealias SummaryWriter = @Sendable (URL, String) throws -> URL
@@ -145,6 +162,78 @@ enum VaultSummaryExportService {
             }
             try await group.waitForAll()
         }
+    }
+
+    static func exportSummary(
+        _ request: LockedSummaryExportRequest
+    ) async throws -> LockedSummaryExportResult? {
+        try await withVaultMutationLock(
+            vaultURL: request.vaultURL,
+            vaultID: request.vaultID
+        ) {
+            let latest = try request.dbQueue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: request.meetingID)
+                let project = try meeting?.projectId.flatMap {
+                    try ProjectRecord.fetchResolved(id: $0, in: db)
+                }
+                let storedPath = try SummaryExportRecord.fetchOne(
+                    meetingId: request.meetingID,
+                    type: .vault,
+                    in: db
+                )?.vaultRelativePath
+                return (meeting, project, storedPath)
+            }
+            guard let meeting = latest.0,
+                  meeting.vaultId == request.vaultID else {
+                return nil
+            }
+
+            let repository = MeetingRepository(dbQueue: request.dbQueue)
+            try repository.applyGeneratedSummary(
+                toMeetingId: request.meetingID,
+                document: request.document,
+                tags: request.document.tags
+            )
+            let projectName = latest.1?.path ?? ""
+            let projectURL = latest.1.map {
+                request.vaultURL.appending(path: $0.path, directoryHint: .isDirectory)
+            }
+            let fileURL = try resolveSummaryFileURL(
+                projectURL: projectURL,
+                vaultURL: request.vaultURL,
+                storedSummaryRelativePath: latest.2,
+                meetingId: request.meetingID,
+                summaryFileName: request.summaryFileName
+            )
+            _ = try writeSummaryFile(
+                fileURL: fileURL,
+                markdown: request.summaryMarkdown
+            )
+            if let relativePath = VaultSummaryFileLocator.relativePath(
+                for: fileURL,
+                vaultURL: request.vaultURL
+            ) {
+                try repository.updateSummaryVaultRelativePath(
+                    forMeetingId: request.meetingID,
+                    relativePath: relativePath
+                )
+            }
+            return LockedSummaryExportResult(fileURL: fileURL, projectName: projectName)
+        }
+    }
+
+    static func withVaultMutationLock<T: Sendable>(
+        vaultURL: URL,
+        vaultID: UUID,
+        operation: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await Task.detached(priority: .userInitiated) {
+            try DahliaVaultMutationLock.withLock(
+                vaultURL: vaultURL,
+                vaultID: vaultID,
+                operation: operation
+            )
+        }.value
     }
 
     static func resolveSummaryFileURL(
