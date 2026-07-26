@@ -39,7 +39,7 @@ import os
         func delayedStartTransactionSuspendsWithoutBlockingMainActor() async throws {
             let database = try makeDatabase()
             let databaseGate = SynchronousDatabaseGate()
-            let databaseBlocker = Task {
+            let databaseBlocker = Task.detached {
                 try await database.dbQueue.write { _ in
                     databaseGate.block()
                 }

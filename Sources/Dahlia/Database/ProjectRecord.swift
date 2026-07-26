@@ -1,79 +1,208 @@
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// プロジェクトを表す GRDB レコード。name は保管庫内の相対パス（フォルダ名）に対応する。
-struct ProjectRecord: Codable, FetchableRecord, PersistableRecord {
+/// A stable Project entity. The canonical hierarchy is parentProjectId + name.
+struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     static let databaseTableName = "projects"
 
     var id: UUID
     var vaultId: UUID
-    var name: String
+    var parentProjectId: UUID?
+    var name: String {
+        didSet {
+            nameKey = DahliaProjectName.siblingKey(name)
+        }
+    }
+
+    var nameKey: String
     var createdAt: Date
     var description = ""
-    var missingOnDisk = false
+    var projectType: ProjectType?
+    var revision = 1
 
-    // MARK: - Shared DB Helpers
+    /// Populated by hierarchy-aware repository reads. It is never persisted.
+    var resolvedPath: String?
 
-    /// 複数の name を INSERT OR IGNORE で一括挿入する（vaultId + name UNIQUE 制約を利用）。
-    static func upsertAll(names: [String], vaultId: UUID, in db: Database) throws {
-        let now = Date()
-        for name in names {
-            let record = ProjectRecord(
-                id: .v7(),
-                vaultId: vaultId,
-                name: name,
-                createdAt: now,
-                description: ""
-            )
-            try record.insert(db, onConflict: .ignore)
+    var path: String {
+        resolvedPath ?? name
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case vaultId
+        case parentProjectId
+        case name
+        case nameKey
+        case createdAt
+        case description
+        case projectType
+        case revision
+    }
+
+    init(
+        id: UUID,
+        vaultId: UUID,
+        parentProjectId: UUID?,
+        name: String,
+        createdAt: Date,
+        description: String = "",
+        projectType: ProjectType?,
+        revision: Int = 1,
+        resolvedPath: String? = nil
+    ) {
+        self.id = id
+        self.vaultId = vaultId
+        self.parentProjectId = parentProjectId
+        self.name = name
+        nameKey = DahliaProjectName.siblingKey(name)
+        self.createdAt = createdAt
+        self.description = description
+        self.projectType = projectType
+        self.revision = revision
+        self.resolvedPath = resolvedPath
+    }
+
+    /// Compatibility initializer for call sites that construct a root or an in-memory path fixture.
+    init(
+        id: UUID,
+        vaultId: UUID,
+        path: String,
+        createdAt: Date,
+        description: String = ""
+    ) {
+        self.init(
+            id: id,
+            vaultId: vaultId,
+            parentProjectId: nil,
+            name: path.split(separator: "/").last.map(String.init) ?? path,
+            createdAt: createdAt,
+            description: description,
+            projectType: .undefined,
+            resolvedPath: path
+        )
+    }
+
+    static func fetchResolved(id: UUID, in db: Database) throws -> ProjectRecord? {
+        guard let record = try fetchOne(db, key: id) else { return nil }
+        return try fetchResolvedAll(vaultId: record.vaultId, in: db).first { $0.id == id }
+    }
+
+    static func fetchResolvedAll(vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+        var records = try ProjectRecord
+            .filter(Column("vaultId") == vaultId)
+            .fetchAll(db)
+        let paths = resolvedPaths(records)
+        for index in records.indices {
+            records[index].resolvedPath = paths[records[index].id]
+        }
+        return records.sorted {
+            if $0.path == $1.path { return $0.id.uuidString < $1.id.uuidString }
+            return $0.path.utf8.lexicographicallyPrecedes($1.path.utf8)
         }
     }
 
-    /// name が指定プレフィクスで始まるレコードを一括リネームする。
-    static func renameByPrefix(oldPrefix: String, newPrefix: String, vaultId: UUID, in db: Database) throws {
-        let records = try hierarchy(prefix: oldPrefix, vaultId: vaultId, in: db)
-        for var record in records {
-            record.name = newPrefix + record.name.dropFirst(oldPrefix.count)
-            try record.update(db)
+    static func resolvedPaths(_ records: [ProjectRecord]) -> [UUID: String] {
+        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        var paths: [UUID: String] = [:]
+
+        func resolve(_ record: ProjectRecord, visiting: Set<UUID>) -> String {
+            if let path = paths[record.id] { return path }
+            guard let parentProjectId = record.parentProjectId,
+                  let parent = recordsByID[parentProjectId],
+                  !visiting.contains(parentProjectId)
+            else {
+                paths[record.id] = record.name
+                return record.name
+            }
+            let parentPath = resolve(parent, visiting: visiting.union([record.id]))
+            let path = "\(parentPath)/\(record.name)"
+            paths[record.id] = path
+            return path
         }
+
+        for record in records {
+            _ = resolve(record, visiting: [])
+        }
+        return paths
     }
 
-    /// name が指定プレフィクスに一致するレコード、または配下のレコードを一括削除する。
-    @discardableResult
-    static func deleteByPrefix(_ prefix: String, vaultId: UUID, in db: Database) throws -> Int {
-        let ids = try hierarchy(prefix: prefix, vaultId: vaultId, in: db).map(\.id)
-        guard !ids.isEmpty else { return 0 }
-        return try Self.filter(ids.contains(Column("id"))).deleteAll(db)
+    static func hierarchy(projectId: UUID, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+        let records = try fetchResolvedAll(vaultId: vaultId, in: db)
+        return hierarchy(projectId: projectId, records: records)
     }
 
-    /// 指定プレフィクスに一致するプロジェクトの missingOnDisk を更新する。
-    static func setMissingByPrefix(_ prefix: String, missing: Bool, vaultId: UUID, in db: Database) throws {
-        let ids = try hierarchy(prefix: prefix, vaultId: vaultId, in: db).map(\.id)
+    static func hierarchy(path: String, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
+        let records = try fetchResolvedAll(vaultId: vaultId, in: db)
+        guard let project = records.first(where: { $0.path == path }) else { return [] }
+        return hierarchy(projectId: project.id, records: records)
+    }
+
+    private static func hierarchy(projectId: UUID, records: [ProjectRecord]) -> [ProjectRecord] {
+        let childrenByParent = Dictionary(grouping: records, by: \.parentProjectId)
+        var result: [ProjectRecord] = []
+
+        func append(_ project: ProjectRecord) {
+            result.append(project)
+            for child in childrenByParent[project.id, default: []] {
+                append(child)
+            }
+        }
+
+        guard let root = records.first(where: { $0.id == projectId }) else { return [] }
+        append(root)
+        return result
+    }
+
+    static func effectiveType(
+        for projectId: UUID,
+        records: [ProjectRecord]
+    ) -> (type: ProjectType, ownerProjectId: UUID)? {
+        effectiveTypes(records)[projectId]
+    }
+
+    static func effectiveTypes(
+        _ records: [ProjectRecord]
+    ) -> [UUID: (type: ProjectType, ownerProjectId: UUID)] {
+        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        var result: [UUID: (type: ProjectType, ownerProjectId: UUID)] = [:]
+
+        func resolve(
+            _ project: ProjectRecord,
+            visiting: Set<UUID>
+        ) -> (type: ProjectType, ownerProjectId: UUID)? {
+            if let effectiveType = result[project.id] { return effectiveType }
+            guard !visiting.contains(project.id) else { return nil }
+            let effectiveType: (type: ProjectType, ownerProjectId: UUID)? = if let parentID = project.parentProjectId,
+                                                                               let parent = recordsByID[parentID] {
+                resolve(parent, visiting: visiting.union([project.id]))
+            } else {
+                (project.projectType ?? .undefined, project.id)
+            }
+            result[project.id] = effectiveType
+            return effectiveType
+        }
+
+        for record in records {
+            _ = resolve(record, visiting: [])
+        }
+        return result
+    }
+
+    static func incrementRevisions(_ ids: Set<UUID>, in db: Database) throws {
         guard !ids.isEmpty else { return }
         _ = try ProjectRecord
             .filter(ids.contains(Column("id")))
-            .updateAll(db, Column("missingOnDisk").set(to: missing))
+            .updateAll(db, Column("revision").set(to: Column("revision") + 1))
     }
 
-    /// 指定パス自身と、その配下のプロジェクトを返す。
-    static func hierarchy(prefix: String, vaultId: UUID, in db: Database) throws -> [ProjectRecord] {
-        try ProjectRecord
-            .filter(Column("vaultId") == vaultId)
-            .fetchAll(db)
-            .filter { belongsToHierarchy($0.name, prefix: prefix) }
-            .sorted { $0.name.count < $1.name.count }
+    static func belongsToHierarchy(_ path: String, prefix: String) -> Bool {
+        path == prefix || path.hasPrefix(prefix + "/")
     }
 
-    static func belongsToHierarchy(_ name: String, prefix: String) -> Bool {
-        name == prefix || name.hasPrefix(prefix + "/")
-    }
-
-    /// パス文字列から中間パスを含む全パスを生成する。
-    /// 例: "a/b/c" → ["a", "a/b", "a/b/c"]
-    static func allIntermediatePaths(for name: String) -> [String] {
-        let components = name.split(separator: "/")
-        return (1 ... components.count).map { i in
-            components[0 ..< i].joined(separator: "/")
-        }
+    static func pathKey(_ path: String) -> String {
+        path.split(separator: "/", omittingEmptySubsequences: false)
+            .map { DahliaProjectName.siblingKey(String($0)) }
+            .joined(separator: "/")
     }
 }

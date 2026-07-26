@@ -169,8 +169,12 @@ enum L10n {
         bundle: bundle
     ) }
     static var projectCreationFailed: String { String(localized: "Could Not Create Project", bundle: bundle) }
-    static var projectCreationFailedDescription: String { String(localized: "The project folder could not be created.", bundle: bundle) }
+    static var projectCreationFailedDescription: String {
+        String(localized: "The project could not be created.", bundle: bundle)
+    }
+
     static var newMeeting: String { String(localized: "New meeting", bundle: bundle) }
+
     static func chatMeetingDraft(_ name: String) -> String {
         String(localized: "Meeting draft: \(name)", bundle: bundle)
     }
@@ -184,9 +188,37 @@ enum L10n {
     }
 
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
+    static var parentProject: String { String(localized: "Parent Project", bundle: bundle) }
+    static var vaultRoot: String { String(localized: "Vault Root", bundle: bundle) }
+    static var projectType: String { String(localized: "Project Type", bundle: bundle) }
+    static var projectHierarchyAndType: String { String(localized: "Hierarchy and Type", bundle: bundle) }
+    static var moveProject: String { String(localized: "Move Project", bundle: bundle) }
+    static var updateProjectType: String { String(localized: "Update Project Type", bundle: bundle) }
+    static var projectHierarchyChangeHelp: String { String(
+        localized: "Moving or changing a root type also updates every descendant's path or inherited type.",
+        bundle: bundle
+    ) }
+    static var subprojectTypeInheritanceHelp: String { String(
+        localized: "This subproject inherits its Project Type from the root Project.",
+        bundle: bundle
+    ) }
+
+    static func inheritedFromProject(_ name: String) -> String {
+        String(localized: "Inherited from \(name)", bundle: bundle)
+    }
+
+    static func projectTypeName(_ type: ProjectType) -> String {
+        switch type {
+        case .customer: String(localized: "Customer", bundle: bundle)
+        case .internal: String(localized: "Internal", bundle: bundle)
+        case .personal: String(localized: "Personal", bundle: bundle)
+        case .undefined: String(localized: "Undefined", bundle: bundle)
+        }
+    }
+
     static var renameProject: String { String(localized: "Rename Project", bundle: bundle) }
     static var projectNameHelp: String { String(
-        localized: "Renaming also updates the project folder and all subprojects.",
+        localized: "Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved.",
         bundle: bundle
     ) }
     static var location: String { String(localized: "Location", bundle: bundle) }
@@ -194,8 +226,6 @@ enum L10n {
     static var openInFinder: String { String(localized: "Open in Finder", bundle: bundle) }
     static var openInObsidian: String { String(localized: "Open in Obsidian", bundle: bundle) }
     static var openInBrowser: String { String(localized: "Open in Browser", bundle: bundle) }
-    static var recreateFolder: String { String(localized: "Recreate Folder", bundle: bundle) }
-    static var folderMissing: String { String(localized: "Folder missing on disk", bundle: bundle) }
     static var homeUnderConstruction: String { String(localized: "Home is under construction.", bundle: bundle) }
     static var actionItemsComingSoon: String { String(localized: "Action items will appear here.", bundle: bundle) }
     static var selectProjectFromProjects: String { String(localized: "Select a project from Projects.", bundle: bundle) }
@@ -238,7 +268,6 @@ enum L10n {
     static var noActionItemsYet: String { String(localized: "No action items yet", bundle: bundle) }
     static var noActionItemsMatchFilter: String { String(localized: "No action items match the current filter.", bundle: bundle) }
     static var actionItemsDescription: String { String(localized: "Action items extracted from summaries will appear here.", bundle: bundle) }
-    static var missingOnDisk: String { String(localized: "Missing on Disk", bundle: bundle) }
     static func meetingCount(_ count: Int) -> String { String(localized: "\(count) meetings", bundle: bundle) }
     static func compactMeetingCount(_ count: Int) -> String { String(localized: "\(count)", bundle: bundle) }
 
@@ -289,10 +318,18 @@ enum L10n {
     static var noProject: String { String(localized: "No project", bundle: bundle) }
     static var summaryDestinations: String { String(localized: "Summary Destinations", bundle: bundle) }
     static var summaryDestinationsDescription: String { String(
-        localized: "Manage where this project's summary files are saved.",
+        localized: "The logical Project path determines this destination. The folder is created when a Summary is exported.",
         bundle: bundle
     ) }
     static var localSummaryFolder: String { String(localized: "Local Summary Folder", bundle: bundle) }
+    static var invalidSummaryOutputDestination: String { String(
+        localized: "The Summary output destination must resolve inside the Vault without symlink or file path components.",
+        bundle: bundle
+    ) }
+    static var summaryOutputFolderNotCreated: String { String(
+        localized: "The Summary output folder has not been created yet.",
+        bundle: bundle
+    ) }
     static var projectDescription: String { String(localized: "Project Description", bundle: bundle) }
     static var projectDescriptionHelp: String { String(
         localized: "This description is included when summaries are generated for this project.",
@@ -310,7 +347,7 @@ enum L10n {
     static var meetingsInHierarchy: String { String(localized: "Meetings in Hierarchy", bundle: bundle) }
     static var deleteProject: String { String(localized: "Delete Project", bundle: bundle) }
     static var deleteProjectHelp: String { String(
-        localized: "Deletes this project and all subprojects. The project folder is moved to the Trash.",
+        localized: "Deletes this Project and its subprojects from Dahlia. Export directories and unrelated files are kept.",
         bundle: bundle
     ) }
 
@@ -322,8 +359,16 @@ enum L10n {
         String(localized: "This affects \(projectCount) projects and \(meetingCount) meetings.", bundle: bundle)
     }
 
-    static var projectFoldersMoveToTrash: String { String(
-        localized: "The affected project folders will be moved to the Trash.",
+    static var projectDirectoriesAreKept: String { String(
+        localized: "Project directories and unrelated files will be kept.",
+        bundle: bundle
+    ) }
+    static var deleteExportedSummaries: String {
+        String(localized: "Move exported Summary files to the Trash", bundle: bundle)
+    }
+
+    static var deleteExportedSummariesHelp: String { String(
+        localized: "Off by default. Project directories and unrelated files are always kept.",
         bundle: bundle
     ) }
 
@@ -362,10 +407,6 @@ enum L10n {
     }
 
     static var projectNotFound: String { String(localized: "The project could not be found.", bundle: bundle) }
-    static var projectParentFolderMissing: String { String(
-        localized: "The parent project folder is missing from disk.",
-        bundle: bundle
-    ) }
     static var invalidProjectName: String { String(
         localized: "Enter a valid project name without '/', ':', control characters, or a leading '.' or '_'.",
         bundle: bundle
@@ -376,16 +417,28 @@ enum L10n {
         String(localized: "A project named \(name) already exists in this location.", bundle: bundle)
     }
 
-    static func projectFolderAlreadyExists(_ name: String) -> String {
-        String(localized: "A folder named \(name) already exists in this location.", bundle: bundle)
-    }
-
-    static var projectFolderMissingForOperation: String { String(
-        localized: "The project folder must exist before it can be renamed.",
+    static var subprojectTypeInheritanceError: String { String(
+        localized: "Subprojects inherit their Project Type from the root Project.",
         bundle: bundle
     ) }
-    static var projectTrashLocationUnavailable: String { String(
-        localized: "The project folder could not be moved to a recoverable Trash location.",
+    static func staleProjectRevision(_ revision: Int) -> String {
+        String(localized: "The Project changed before this update. Its current revision is \(revision).", bundle: bundle)
+    }
+
+    static var projectCycleError: String { String(
+        localized: "A Project cannot be moved inside itself or one of its descendants.",
+        bundle: bundle
+    ) }
+    static var projectHierarchyTooDeep: String { String(
+        localized: "Projects support one level of subprojects. Choose a root Project as the parent.",
+        bundle: bundle
+    ) }
+    static var projectVaultBusy: String { String(
+        localized: "Another Project operation is already running for this Vault.",
+        bundle: bundle
+    ) }
+    static var summaryTrashLocationUnavailable: String { String(
+        localized: "The Summary output could not be moved to a recoverable Trash location.",
         bundle: bundle
     ) }
     static var invalidProjectMoveDestination: String { String(
@@ -403,7 +456,7 @@ enum L10n {
 
     static func projectRollbackFailed(operation: String, rollback: String) -> String {
         String(
-            localized: "The project operation failed (\(operation)), and Dahlia could not restore the folder (\(rollback)).",
+            localized: "The project operation failed (\(operation)), and Dahlia could not restore the Summary output (\(rollback)).",
             bundle: bundle
         )
     }
@@ -882,13 +935,16 @@ enum L10n {
     static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
+    static var mcpReadOnly: String { String(localized: "Read-only", bundle: bundle) }
+    static var mcpWriteEnabled: String { String(localized: "Write enabled", bundle: bundle) }
     static var mcpHelperUnavailable: String { String(
         localized: "The MCP helper is not available in this app build.",
         bundle: bundle
     ) }
     static var selectVaultForMCP: String { String(localized: "Select a vault before configuring MCP.", bundle: bundle) }
     static var mcpFooter: String { String(
-        localized: "Each command registers read-only access to only the selected vault. Run it again after switching vaults.",
+        // swiftlint:disable:next line_length
+        localized: "Choose read-only access unless the agent should reorganize Projects and meeting memberships. All commands are restricted to the selected Vault. Run the selected command again after switching Vaults.",
         bundle: bundle
     ) }
     static func registrationCommand(_ name: String) -> String {

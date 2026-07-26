@@ -24,19 +24,20 @@ struct ProjectManagementRowContent: View {
                     .accessibilityHidden(true)
 
                 Spacer(minLength: 0)
-
-                if node.project.missingOnDisk {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(isSelected ? .white : .orange)
-                        .help(L10n.missingOnDisk)
-                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityLabel)
         } icon: {
-            Image(systemName: node.project.missingOnDisk ? "folder.badge.questionmark" : "folder")
+            Image(systemName: folderSystemImage)
                 .foregroundStyle(folderColor)
+        }
+    }
+
+    private var folderSystemImage: String {
+        if node.project.parentProjectId == nil {
+            "externaldrive"
+        } else {
+            "folder"
         }
     }
 
@@ -45,9 +46,7 @@ struct ProjectManagementRowContent: View {
     }
 
     private var folderColor: Color {
-        if node.project.missingOnDisk {
-            .orange
-        } else if isSelected {
+        if isSelected {
             .white
         } else {
             .secondary
@@ -55,10 +54,6 @@ struct ProjectManagementRowContent: View {
     }
 
     private var accessibilityLabel: String {
-        var label = "\(node.displayName), \(L10n.meetingCount(node.meetingCount))"
-        if node.project.missingOnDisk {
-            label += ", \(L10n.missingOnDisk)"
-        }
-        return label
+        "\(node.displayName), \(L10n.meetingCount(node.meetingCount))"
     }
 }

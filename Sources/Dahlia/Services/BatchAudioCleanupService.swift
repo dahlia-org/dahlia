@@ -8,6 +8,11 @@ enum BatchAudioCleanupService {
         let relativePath: String
     }
 
+    struct StagedFile {
+        let originalURL: URL
+        let stagedURL: URL
+    }
+
     static func deletionTargets(
         meetingIds: Set<UUID>,
         dbQueue: DatabaseQueue,
@@ -74,6 +79,85 @@ enum BatchAudioCleanupService {
                 baseURL: target.baseURL,
                 relativePaths: [target.relativePath]
             )
+        }
+    }
+
+    static func stageFiles(_ targets: [DeletionTarget]) throws -> [StagedFile] {
+        var stagedFiles: [StagedFile] = []
+        var seenPaths: Set<String> = []
+        do {
+            for target in targets {
+                guard let finalURL = BatchAudioStorage.safeURL(
+                    baseURL: target.baseURL,
+                    relativePath: target.relativePath
+                ) else {
+                    throw RecordingAudioStoreError.invalidPath
+                }
+                let partialURL = finalURL.deletingPathExtension().appendingPathExtension("partial.caf")
+                for originalURL in [finalURL, partialURL]
+                    where seenPaths.insert(originalURL.standardizedFileURL.path).inserted
+                    && FileManager.default.fileExists(atPath: originalURL.path) {
+                    let stagedURL = originalURL.deletingLastPathComponent()
+                        .appending(path: ".dahlia-delete-\(UUID().uuidString)-\(originalURL.lastPathComponent)")
+                    try FileManager.default.moveItem(at: originalURL, to: stagedURL)
+                    stagedFiles.append(StagedFile(originalURL: originalURL, stagedURL: stagedURL))
+                }
+            }
+            return stagedFiles
+        } catch let operationError {
+            do {
+                try restoreStagedFiles(stagedFiles)
+            } catch let rollbackError {
+                throw ProjectWorkspaceError.rollbackFailed(
+                    operation: operationError.localizedDescription,
+                    rollback: rollbackError.localizedDescription
+                )
+            }
+            throw operationError
+        }
+    }
+
+    static func restoreStagedFiles(_ stagedFiles: [StagedFile]) throws {
+        try restoreStagedFiles(
+            stagedFiles,
+            fileExists: { FileManager.default.fileExists(atPath: $0.path) },
+            moveItem: { try FileManager.default.moveItem(at: $0, to: $1) }
+        )
+    }
+
+    static func restoreStagedFiles(
+        _ stagedFiles: [StagedFile],
+        fileExists: (URL) -> Bool,
+        moveItem: (URL, URL) throws -> Void
+    ) throws {
+        var firstError: (any Error)?
+        for stagedFile in stagedFiles.reversed() {
+            guard fileExists(stagedFile.stagedURL) else { continue }
+            do {
+                try moveItem(stagedFile.stagedURL, stagedFile.originalURL)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
+        }
+    }
+
+    static func discardStagedFiles(
+        _ stagedFiles: [StagedFile],
+        removeItem: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
+    ) throws {
+        var firstError: (any Error)?
+        for stagedFile in stagedFiles {
+            do {
+                try removeItem(stagedFile.stagedURL)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            throw firstError
         }
     }
 }

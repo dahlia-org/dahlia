@@ -11,6 +11,477 @@ import ImageIO
     @MainActor
     struct MeetingAccessStoreTests {
         @Test
+        func projectWorkspaceReadAndWriteOperationsEnforceHierarchyTypeAndRevision() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            let initial = try store.queryProjects()
+            let root = try #require(initial.projects.first(where: { $0.projectID == fixture.primaryProjectID }))
+            #expect(root.path == "Acme")
+            #expect(root.explicitType == .undefined)
+            #expect(root.effectiveType == .undefined)
+            #expect(root.directMeetingCount == 2)
+            #expect(throws: MeetingAccessError.projectNotFound) {
+                try store.createProject(
+                    name: "Cross Vault",
+                    parentProjectID: fixture.otherVaultProjectID,
+                    projectType: nil
+                )
+            }
+
+            let created = try store.createProject(
+                name: "Platform",
+                parentProjectID: root.projectID,
+                projectType: nil,
+                description: "Platform work"
+            )
+            #expect(created.project.path == "Acme/Platform")
+            #expect(created.project.isTypeInherited)
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Acme/Platform").path
+            ))
+            #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
+                try store.createProject(
+                    name: "API",
+                    parentProjectID: created.project.projectID,
+                    projectType: nil
+                )
+            }
+            let otherRoot = try store.createProject(
+                name: "Internal",
+                parentProjectID: nil,
+                projectType: .internal
+            )
+            #expect(throws: MeetingAccessError.projectHierarchyTooDeep) {
+                try store.updateProject(
+                    id: root.projectID,
+                    update: ProjectUpdate(
+                        parent: .project(otherRoot.project.projectID),
+                        expectedRevision: root.revision
+                    )
+                )
+            }
+
+            #expect(throws: MeetingAccessError.projectTypeOwnedByRoot) {
+                try store.updateProject(
+                    id: created.project.projectID,
+                    update: ProjectUpdate(projectType: .personal, expectedRevision: created.project.revision)
+                )
+            }
+            #expect(throws: MeetingAccessError.projectConflict("expected revision 999, current revision 1")) {
+                try store.updateProject(
+                    id: created.project.projectID,
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: 999)
+                )
+            }
+
+            let reparented = try store.updateProject(
+                id: created.project.projectID,
+                update: ProjectUpdate(
+                    parent: .project(otherRoot.project.projectID),
+                    expectedRevision: created.project.revision
+                )
+            )
+            #expect(reparented.project.path == "Internal/Platform")
+            #expect(reparented.project.effectiveType == .internal)
+            #expect(reparented.project.isTypeInherited)
+            #expect(reparented.effectiveTypeChangedProjectIDs == [created.project.projectID])
+
+            let promoted = try store.updateProject(
+                id: created.project.projectID,
+                update: ProjectUpdate(parent: .vaultRoot, expectedRevision: reparented.project.revision)
+            )
+            #expect(promoted.project.projectID == created.project.projectID)
+            #expect(promoted.project.path == "Platform")
+            #expect(promoted.project.explicitType == .internal)
+            #expect(!promoted.project.isTypeInherited)
+        }
+
+        @Test
+        func meetingMembershipBatchRejectsOneConflictWithoutPartialUpdates() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let destination = try store.createProject(
+                name: "Destination",
+                parentProjectID: nil,
+                projectType: .internal
+            )
+            let outsideURL = fixture.rootURL.appending(path: "membership-external", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: outsideURL, withIntermediateDirectories: false)
+            try FileManager.default.createSymbolicLink(
+                at: fixture.primaryVaultURL.appending(path: "Destination", directoryHint: .isDirectory),
+                withDestinationURL: outsideURL
+            )
+            try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///Acme/Missing.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+
+            #expect(throws: MeetingAccessError.meetingMembershipConflict) {
+                try store.setMeetingProjectMemberships(
+                    [
+                        .init(
+                            meetingID: fixture.firstMeetingID,
+                            expectedProjectID: fixture.primaryProjectID
+                        ),
+                        .init(
+                            meetingID: fixture.recurringMeetingID,
+                            expectedProjectID: fixture.primaryProjectID
+                        ),
+                    ],
+                    projectID: destination.project.projectID
+                )
+            }
+            #expect(try store.meeting(id: fixture.firstMeetingID).meeting.projectID == fixture.primaryProjectID)
+            #expect(try store.meeting(id: fixture.recurringMeetingID).meeting.projectID == nil)
+
+            let moved = try store.setMeetingProjectMemberships(
+                [
+                    .init(meetingID: fixture.firstMeetingID, expectedProjectID: fixture.primaryProjectID),
+                    .init(meetingID: fixture.recurringMeetingID, expectedProjectID: nil),
+                ],
+                projectID: destination.project.projectID
+            )
+            #expect(moved.changed)
+            #expect(Set(moved.changedMeetingIDs) == [fixture.firstMeetingID, fixture.recurringMeetingID])
+            #expect(try store.meeting(id: fixture.firstMeetingID).meeting.projectID == destination.project.projectID)
+            #expect(try store.meeting(id: fixture.recurringMeetingID).meeting.projectID == destination.project.projectID)
+            let unchanged = try store.setMeetingProjectMemberships(
+                [
+                    .init(meetingID: fixture.firstMeetingID, expectedProjectID: destination.project.projectID),
+                    .init(meetingID: fixture.recurringMeetingID, expectedProjectID: destination.project.projectID),
+                ],
+                projectID: destination.project.projectID
+            )
+            #expect(!unchanged.changed)
+            #expect(unchanged.changedMeetingIDs.isEmpty)
+            let staleExportCount = try fixture.manager.dbQueue.read { db in
+                try SummaryExportRecord
+                    .filter(Column("meetingId") == fixture.firstMeetingID)
+                    .filter(Column("type") == SummaryExportType.vault)
+                    .fetchCount(db)
+            }
+            #expect(staleExportCount == 0)
+            #expect(!FileManager.default.fileExists(atPath: outsideURL.appending(path: "Missing.md").path))
+        }
+
+        @Test
+        func meetingMembershipNeverMovesDirectoryReferencedAsSummary() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let destination = try store.createProject(
+                name: "Destination",
+                parentProjectID: nil,
+                projectType: .internal
+            )
+            try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///Acme",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+
+            let result = try store.setMeetingProjectMemberships(
+                [.init(meetingID: fixture.firstMeetingID, expectedProjectID: fixture.primaryProjectID)],
+                projectID: destination.project.projectID
+            )
+
+            #expect(result.changed)
+            #expect(FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Acme").path))
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Destination/Acme").path
+            ))
+            let exportCount = try fixture.manager.dbQueue.read { db in
+                try SummaryExportRecord
+                    .filter(Column("meetingId") == fixture.firstMeetingID)
+                    .filter(Column("type") == SummaryExportType.vault)
+                    .fetchCount(db)
+            }
+            #expect(exportCount == 0)
+        }
+
+        @Test
+        func meetingMembershipRejectsVaultExportPathOutsideScopedVault() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///../../Outside.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+
+            #expect(throws: MeetingAccessError.projectFileConflict(
+                fixture.primaryVaultURL.appending(path: "../../Outside.md").standardizedFileURL.path
+            )) {
+                try store.setMeetingProjectMemberships(
+                    [.init(meetingID: fixture.firstMeetingID, expectedProjectID: fixture.primaryProjectID)],
+                    projectID: nil
+                )
+            }
+            #expect(try store.meeting(id: fixture.firstMeetingID).meeting.projectID == fixture.primaryProjectID)
+            let export = try fixture.manager.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    in: db
+                )
+            }
+            #expect(export?.url == "vault:///../../Outside.md")
+        }
+
+        @Test
+        func projectMutationWithoutTrackedSummaryDoesNotTouchSourceSymlink() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let project = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let external = fixture.rootURL.appending(path: "external", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: external, withIntermediateDirectories: false)
+            let projectURL = fixture.primaryVaultURL.appending(path: "Acme", directoryHint: .isDirectory)
+            try FileManager.default.removeItem(at: projectURL)
+            try FileManager.default.createSymbolicLink(at: projectURL, withDestinationURL: external)
+
+            let renamed = try store.updateProject(
+                id: project.projectID,
+                update: ProjectUpdate(name: "Renamed", expectedRevision: project.revision)
+            )
+
+            #expect(renamed.project.path == "Renamed")
+            #expect(FileManager.default.fileExists(atPath: external.path))
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: projectURL.path) == external.path)
+        }
+
+        @Test
+        func projectSiblingIdentityNormalizesUnicodeAndCase() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            _ = try store.createProject(
+                name: "Équipe",
+                parentProjectID: nil,
+                projectType: .customer
+            )
+
+            #expect(throws: MeetingAccessError.projectAlreadyExists("e\u{301}QUIPE")) {
+                try store.createProject(
+                    name: "e\u{301}QUIPE",
+                    parentProjectID: nil,
+                    projectType: .customer
+                )
+            }
+        }
+
+        @Test
+        func projectCreateRejectsDuplicateSiblingWithoutFilesystemMutation() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            try FileManager.default.removeItem(at: fixture.primaryVaultURL.appending(path: "Acme"))
+
+            #expect(throws: MeetingAccessError.projectAlreadyExists("acme")) {
+                try store.createProject(
+                    name: "acme",
+                    parentProjectID: nil,
+                    projectType: .customer
+                )
+            }
+            #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "acme").path))
+        }
+
+        @Test
+        func projectMutationReportsVaultLockConflict() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            _ = try DahliaVaultMutationLock.withLock(
+                vaultURL: fixture.primaryVaultURL,
+                vaultID: fixture.primaryVaultID
+            ) {
+                #expect(throws: MeetingAccessError.workspaceBusy) {
+                    try store.createProject(
+                        name: "Blocked",
+                        parentProjectID: nil,
+                        projectType: .undefined
+                    )
+                }
+            }
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Blocked").path
+            ))
+        }
+
+        @Test
+        func projectUpdateRollsSummaryBackWhenDatabaseCommitFails() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let project = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let sourceSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
+            try Data("Summary".utf8).write(to: sourceSummary, options: .atomic)
+            try fixture.manager.dbQueue.write { db in
+                try SummaryExportRecord(
+                    meetingId: fixture.firstMeetingID,
+                    type: .vault,
+                    url: "vault:///Acme/Summary.md",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try db.execute(sql: """
+                CREATE TRIGGER fail_mcp_project_update
+                BEFORE UPDATE OF name ON projects
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced MCP update failure');
+                END
+                """)
+            }
+
+            #expect(throws: (any Error).self) {
+                try store.updateProject(
+                    id: project.projectID,
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: project.revision)
+                )
+            }
+            #expect(FileManager.default.fileExists(atPath: sourceSummary.path))
+            #expect(!FileManager.default.fileExists(atPath: fixture.primaryVaultURL.appending(path: "Renamed").path))
+        }
+
+        @Test
+        func projectRenameMovesAlignedSummaryAndLeavesLegacyOutputUntouched() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let root = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let child = try store.createProject(
+                name: "Platform",
+                parentProjectID: root.projectID,
+                projectType: nil
+            ).project
+            let alignedSummary = fixture.primaryVaultURL.appending(path: "Acme/Summary.md")
+            let legacyDirectory = fixture.primaryVaultURL.appending(path: "Legacy", directoryHint: .isDirectory)
+            let legacySummary = legacyDirectory.appending(path: "Budget.md")
+            let unrelatedFile = fixture.primaryVaultURL.appending(path: "Acme/keep.txt")
+            try FileManager.default.createDirectory(at: legacyDirectory, withIntermediateDirectories: false)
+            try Data("Aligned".utf8).write(to: alignedSummary, options: .atomic)
+            try Data("Legacy".utf8).write(to: legacySummary, options: .atomic)
+            try Data("Keep".utf8).write(to: unrelatedFile, options: .atomic)
+            try fixture.manager.dbQueue.write { db in
+                try SummaryRecord(
+                    meetingId: fixture.secondMeetingID,
+                    title: "Budget",
+                    document: "{}",
+                    createdAt: .now
+                ).insert(db)
+                for (meetingID, path) in [
+                    (fixture.firstMeetingID, "vault:///Acme/Summary.md"),
+                    (fixture.secondMeetingID, "vault:///Legacy/Budget.md"),
+                ] {
+                    try SummaryExportRecord(
+                        meetingId: meetingID,
+                        type: .vault,
+                        url: path,
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+
+            let result = try store.updateProject(
+                id: root.projectID,
+                update: ProjectUpdate(name: "Renamed", expectedRevision: root.revision)
+            )
+
+            #expect(Set(result.affectedProjectIDs) == [root.projectID, child.projectID])
+            let updatedChild = try #require(try store.queryProjects(ProjectQuery(
+                projectID: child.projectID
+            )).projects.first)
+            #expect(updatedChild.path == "Renamed/Platform")
+            #expect(updatedChild.revision == child.revision + 1)
+            #expect(FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Summary.md").path
+            ))
+            #expect(FileManager.default.fileExists(atPath: legacySummary.path))
+            #expect(FileManager.default.fileExists(atPath: unrelatedFile.path))
+            let paths = try fixture.manager.dbQueue.read { db in
+                try [
+                    SummaryExportRecord.fetchOne(
+                        meetingId: fixture.firstMeetingID,
+                        type: .vault,
+                        in: db
+                    )?.vaultRelativePath,
+                    SummaryExportRecord.fetchOne(
+                        meetingId: fixture.secondMeetingID,
+                        type: .vault,
+                        in: db
+                    )?.vaultRelativePath,
+                ]
+            }
+            #expect(paths == ["Renamed/Summary.md", "Legacy/Budget.md"])
+        }
+
+        @Test
+        func projectRenameRejectsSummarySharedWithRetainedLegacyExport() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let root = try #require(try store.queryProjects(ProjectQuery(
+                projectID: fixture.primaryProjectID
+            )).projects.first)
+            let child = try store.createProject(
+                name: "Child",
+                parentProjectID: root.projectID,
+                projectType: nil
+            ).project
+            let sharedSummary = fixture.primaryVaultURL.appending(path: "Acme/Shared.md")
+            try Data("Shared".utf8).write(to: sharedSummary, options: .atomic)
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET projectId = ? WHERE id = ?",
+                    arguments: [child.projectID, fixture.secondMeetingID]
+                )
+                try SummaryRecord(
+                    meetingId: fixture.secondMeetingID,
+                    title: "Shared",
+                    document: "{}",
+                    createdAt: .now
+                ).insert(db)
+                for meetingID in [fixture.firstMeetingID, fixture.secondMeetingID] {
+                    try SummaryExportRecord(
+                        meetingId: meetingID,
+                        type: .vault,
+                        url: "vault:///Acme/Shared.md",
+                        createdAt: .now,
+                        updatedAt: .now
+                    ).insert(db)
+                }
+            }
+
+            #expect(throws: MeetingAccessError.projectFileConflict(sharedSummary.path)) {
+                try store.updateProject(
+                    id: root.projectID,
+                    update: ProjectUpdate(name: "Renamed", expectedRevision: root.revision)
+                )
+            }
+
+            #expect(try store.queryProjects(ProjectQuery(projectID: root.projectID)).projects.first?.path == "Acme")
+            #expect(FileManager.default.fileExists(atPath: sharedSummary.path))
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Renamed/Shared.md").path
+            ))
+        }
+
+        @Test
         func querySearchesMetadataPaginatesAndNeverCrossesVaults() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
@@ -303,6 +774,7 @@ import ImageIO
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
                 "query_meetings", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "query_projects", "get_project",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
             #expect(definitions.allSatisfy { $0["outputSchema"] != nil })
@@ -393,6 +865,116 @@ import ImageIO
         }
 
         @Test
+        func writeMCPPublishesAndExecutesProjectMutationToolsOnlyWhenEnabled() throws {
+            let fixture = try Fixture()
+            let readOnlyServer = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
+            _ = try Self.json(readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            _ = readOnlyServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let readOnlyTools = try Self.json(
+                readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
+            )
+            let readOnlyDefinitions = ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_project" })
+            let deniedWrite = try Self.json(readOnlyServer.handleLine(#"""
+            {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"Denied"}}}
+            """#))
+            #expect((deniedWrite["result"] as? [String: Any])?["isError"] as? Bool == true)
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.primaryVaultURL.appending(path: "Denied").path
+            ))
+
+            let writeServer = try DahliaMCPServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            )
+            _ = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}"#))
+            _ = writeServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let writeTools = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#))
+            let writeDefinitions = ((writeTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            #expect(writeDefinitions.suffix(3).compactMap { $0["name"] as? String } == [
+                "create_project", "update_project", "set_meeting_project_memberships",
+            ])
+            let destructiveByName: [String: Bool] = Dictionary(
+                uniqueKeysWithValues: writeDefinitions.compactMap { definition -> (String, Bool)? in
+                    guard let name = definition["name"] as? String,
+                          let annotations = definition["annotations"] as? [String: Any],
+                          let destructive = annotations["destructiveHint"] as? Bool else {
+                        return nil
+                    }
+                    return (name, destructive)
+                }
+            )
+            #expect(destructiveByName["create_project"] == false)
+            #expect(destructiveByName["update_project"] == true)
+            #expect(destructiveByName["set_meeting_project_memberships"] == true)
+
+            let create = try Self.json(writeServer.handleLine(#"""
+            {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
+                "name":"create_project","arguments":{"name":"MCP Root","project_type":"personal"}
+            }}
+            """#))
+            let created = try #require(
+                ((create["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
+                    as? [String: Any]
+            )
+            let projectID = try #require(created["project_id"] as? String)
+            let revision = try #require(created["revision"] as? Int)
+
+            let rename = try Self.json(writeServer.handleLine("""
+            {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_project","arguments":{
+                "project_id":"\(projectID)","revision":\(revision),"name":"Renamed Root"
+            }}}
+            """))
+            let renamed = try #require(
+                ((rename["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
+                    as? [String: Any]
+            )
+            #expect(renamed["path"] as? String == "Renamed Root")
+
+            let childResponse = try Self.json(writeServer.handleLine("""
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_project","arguments":{
+                "name":"Child","parent_project_id":"\(projectID)"
+            }}}
+            """))
+            let child = try #require(
+                ((childResponse["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
+                    as? [String: Any]
+            )
+            let childID = try #require(child["project_id"] as? String)
+            let childRevision = try #require(child["revision"] as? Int)
+
+            let descriptionUpdate = try Self.json(writeServer.handleLine("""
+            {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"update_project","arguments":{
+                "project_id":"\(childID)","revision":\(childRevision),"description":"Still nested"
+            }}}
+            """))
+            let describedChild = try #require(
+                ((descriptionUpdate["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
+                    as? [String: Any]
+            )
+            #expect(describedChild["parent_project_id"] as? String == projectID)
+
+            let describedRevision = try #require(describedChild["revision"] as? Int)
+            let promote = try Self.json(writeServer.handleLine("""
+            {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"update_project","arguments":{
+                "project_id":"\(childID)","revision":\(describedRevision),"parent_project_id":null
+            }}}
+            """))
+            let promoted = try #require(
+                ((promote["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["project"]
+                    as? [String: Any]
+            )
+            #expect(promoted["parent_project_id"] == nil)
+
+            let promotedRevision = try #require(promoted["revision"] as? Int)
+            let nullName = try Self.json(writeServer.handleLine("""
+            {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"update_project","arguments":{
+                "project_id":"\(childID)","revision":\(promotedRevision),"name":null
+            }}}
+            """))
+            #expect((nullName["error"] as? [String: Any])?["code"] as? Int == -32602)
+        }
+
+        @Test
         func screenshotIDSelectorRejectsPaginationArguments() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
@@ -451,6 +1033,43 @@ import ImageIO
             try queue.write { db in
                 try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
                 try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, vaultId BLOB NOT NULL, name TEXT NOT NULL)")
+                try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
+            }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
+        }
+
+        @Test
+        func projectSchemaWithoutNameKeyRequiresOpeningDahliaForMigration() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-project-schema-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vaultID = UUID.v7()
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try queue.write { db in
+                try db.execute(sql: "CREATE TABLE vaults (id BLOB PRIMARY KEY, name TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE meetings (id BLOB PRIMARY KEY, description TEXT NOT NULL)")
+                try db.execute(sql: """
+                CREATE TABLE summaries (
+                    meetingId BLOB PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    document TEXT NOT NULL,
+                    createdAt DATETIME NOT NULL
+                )
+                """)
+                try db.execute(sql: """
+                CREATE TABLE projects (
+                    id BLOB PRIMARY KEY,
+                    parentProjectId BLOB,
+                    name TEXT NOT NULL,
+                    projectType TEXT,
+                    revision INTEGER NOT NULL
+                )
+                """)
                 try db.execute(sql: "INSERT INTO vaults (id, name) VALUES (?, ?)", arguments: [vaultID, "Old"])
             }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
@@ -638,6 +1257,9 @@ import ImageIO
     @MainActor
     final class Fixture {
         let databaseURL: URL
+        let rootURL: URL
+        let primaryVaultURL: URL
+        let otherVaultURL: URL
         let manager: AppDatabaseManager
         let primaryVaultID = UUID.v7()
         let otherVaultID = UUID.v7()
@@ -661,6 +1283,14 @@ import ImageIO
         )!
 
         init() throws {
+            rootURL = URL.temporaryDirectory.appending(path: "dahlia-meeting-access-\(UUID.v7().uuidString)")
+            primaryVaultURL = rootURL.appending(path: "primary", directoryHint: .isDirectory)
+            otherVaultURL = rootURL.appending(path: "other", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(
+                at: primaryVaultURL.appending(path: "Acme", directoryHint: .isDirectory),
+                withIntermediateDirectories: true
+            )
+            try FileManager.default.createDirectory(at: otherVaultURL, withIntermediateDirectories: true)
             databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
@@ -676,16 +1306,28 @@ import ImageIO
 
         private func insertMetadata(in db: Database, createdAt: Date, projectID: UUID) throws {
             for vault in [
-                VaultRecord(id: primaryVaultID, path: "/tmp/primary", name: "Primary", createdAt: createdAt, lastOpenedAt: createdAt),
-                VaultRecord(id: otherVaultID, path: "/tmp/other", name: "Other", createdAt: createdAt, lastOpenedAt: createdAt),
+                VaultRecord(
+                    id: primaryVaultID,
+                    path: primaryVaultURL.path,
+                    name: "Primary",
+                    createdAt: createdAt,
+                    lastOpenedAt: createdAt
+                ),
+                VaultRecord(
+                    id: otherVaultID,
+                    path: otherVaultURL.path,
+                    name: "Other",
+                    createdAt: createdAt,
+                    lastOpenedAt: createdAt
+                ),
             ] {
                 try vault.insert(db)
             }
-            try ProjectRecord(id: projectID, vaultId: primaryVaultID, name: "Acme", createdAt: createdAt).insert(db)
+            try ProjectRecord(id: projectID, vaultId: primaryVaultID, path: "Acme", createdAt: createdAt).insert(db)
             try ProjectRecord(
                 id: otherVaultProjectID,
                 vaultId: otherVaultID,
-                name: "Other vault project",
+                path: "Other vault project",
                 createdAt: createdAt
             ).insert(db)
             try insertCalendarEvents(in: db, createdAt: createdAt)
@@ -902,10 +1544,15 @@ import ImageIO
 
         deinit {
             try? FileManager.default.removeItem(at: databaseURL)
+            try? FileManager.default.removeItem(at: rootURL)
         }
 
-        func store(vaultID: UUID) throws -> MeetingAccessStore {
-            try MeetingAccessStore(databaseURL: databaseURL, vaultID: vaultID)
+        func store(vaultID: UUID, allowsWrites: Bool = false) throws -> MeetingAccessStore {
+            try MeetingAccessStore(
+                databaseURL: databaseURL,
+                vaultID: vaultID,
+                allowsWrites: allowsWrites
+            )
         }
 
         func updateFirstScreenshot(data: Data) throws {
@@ -959,6 +1606,7 @@ import ImageIO
 
         func corruptPrimaryProjectAssociation() throws {
             try manager.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER IF EXISTS meetings_validate_project_vault_update")
                 try db.execute(
                     sql: "UPDATE meetings SET projectId = ? WHERE id = ?",
                     arguments: [otherVaultProjectID, firstMeetingID]

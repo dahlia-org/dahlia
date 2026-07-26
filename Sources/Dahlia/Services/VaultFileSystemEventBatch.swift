@@ -17,7 +17,13 @@ struct VaultFileSystemEventBatch {
         var removedSummaryPaths: [String] = []
 
         for (path, flag) in zip(paths, flags) {
-            guard let event = Self.classify(path: path, flag: flag, vaultPath: vaultPath, fileManager: fileManager) else { continue }
+            guard let event = Self.classify(
+                path: path,
+                flag: flag,
+                vaultURL: vaultURL,
+                vaultPath: vaultPath,
+                fileManager: fileManager
+            ) else { continue }
             switch event {
             case let .directoryRename(path, exists):
                 pendingDirectoryRenames.append((path, exists))
@@ -44,30 +50,53 @@ struct VaultFileSystemEventBatch {
     private static func classify(
         path: String,
         flag: UInt32,
+        vaultURL: URL,
         vaultPath: String,
         fileManager: FileManager
     ) -> Event? {
         guard path.hasPrefix(vaultPath) else { return nil }
+        guard flag & UInt32(kFSEventStreamEventFlagItemIsSymlink) == 0 else { return nil }
         let relativePath = String(path.dropFirst(vaultPath.count))
         guard !relativePath.isEmpty else { return nil }
 
         let isDirectory = flag & UInt32(kFSEventStreamEventFlagItemIsDir) != 0
         if isDirectory {
-            return classifyDirectory(path: path, relativePath: relativePath, flag: flag, fileManager: fileManager)
+            return classifyDirectory(
+                path: path,
+                relativePath: relativePath,
+                flag: flag,
+                vaultURL: vaultURL,
+                fileManager: fileManager
+            )
         }
-        return classifyFile(path: path, relativePath: relativePath, flag: flag, fileManager: fileManager)
+        return classifyFile(
+            path: path,
+            relativePath: relativePath,
+            flag: flag,
+            vaultURL: vaultURL,
+            fileManager: fileManager
+        )
     }
 
     private static func classifyDirectory(
         path: String,
         relativePath: String,
         flag: UInt32,
+        vaultURL: URL,
         fileManager: FileManager
     ) -> Event? {
         let components = relativePath.split(separator: "/")
         guard !components.contains(where: { $0.hasPrefix(".") || $0.hasPrefix("_") }) else { return nil }
 
         let exists = fileManager.fileExists(atPath: path)
+        if exists {
+            let url = URL(fileURLWithPath: path)
+            guard let values = try? url.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true,
+                  isSafeVaultPath(url, vaultURL: vaultURL) else {
+                return nil
+            }
+        }
         if flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0 {
             return .directoryRename(relativePath, exists: exists)
         }
@@ -84,6 +113,7 @@ struct VaultFileSystemEventBatch {
         path: String,
         relativePath: String,
         flag: UInt32,
+        vaultURL: URL,
         fileManager: FileManager
     ) -> Event? {
         let components = relativePath.split(separator: "/")
@@ -96,6 +126,9 @@ struct VaultFileSystemEventBatch {
         let isRenamed = flag & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
         let isRemoved = flag & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
         if isRenamed {
+            guard !exists || isSafeVaultPath(URL(fileURLWithPath: path), vaultURL: vaultURL) else {
+                return nil
+            }
             return .summaryRename(relativePath, exists: exists)
         }
         if !exists, isRemoved {
@@ -104,44 +137,41 @@ struct VaultFileSystemEventBatch {
         return nil
     }
 
-    private static func resolveRenames(
-        _ pendingRenames: [(path: String, exists: Bool)]
-    ) -> (renames: [(oldPath: String, newPath: String)], created: [String], removed: [String]) {
-        var renames: [(oldPath: String, newPath: String)] = []
-        var created: [String] = []
-        var removed: [String] = []
-        var index = 0
+    private static func isSafeVaultPath(_ url: URL, vaultURL: URL) -> Bool {
+        let vault = vaultURL.standardizedFileURL
+        let candidate = url.standardizedFileURL
+        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return false }
 
-        while index + 1 < pendingRenames.count {
-            let first = pendingRenames[index]
-            let second = pendingRenames[index + 1]
-            if first.exists != second.exists {
-                let oldPath = first.exists ? second.path : first.path
-                let newPath = first.exists ? first.path : second.path
-                renames.append((oldPath, newPath))
-                index += 2
-            } else {
-                appendUnpairedRename(first, created: &created, removed: &removed)
-                index += 1
+        var current = vault
+        for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
+            current.append(path: component)
+            guard let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
+                  values.isSymbolicLink != true else {
+                return false
             }
         }
 
-        if index < pendingRenames.count {
-            appendUnpairedRename(pendingRenames[index], created: &created, removed: &removed)
-        }
-        return (renames, created, removed)
+        let resolvedVaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedCandidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolvedCandidatePath.hasPrefix(resolvedVaultPath + "/")
     }
 
-    private static func appendUnpairedRename(
-        _ rename: (path: String, exists: Bool),
-        created: inout [String],
-        removed: inout [String]
-    ) {
-        if rename.exists {
-            created.append(rename.path)
-        } else {
-            removed.append(rename.path)
+    private static func resolveRenames(
+        _ pendingRenames: [(path: String, exists: Bool)]
+    ) -> (renames: [(oldPath: String, newPath: String)], created: [String], removed: [String]) {
+        guard pendingRenames.count == 2,
+              let first = pendingRenames.first,
+              let second = pendingRenames.last,
+              first.exists != second.exists else {
+            return (
+                renames: [],
+                created: pendingRenames.filter(\.exists).map(\.path),
+                removed: pendingRenames.filter { !$0.exists }.map(\.path)
+            )
         }
+        let oldPath = first.exists ? second.path : first.path
+        let newPath = first.exists ? first.path : second.path
+        return (renames: [(oldPath, newPath)], created: [], removed: [])
     }
 
     private enum Event {

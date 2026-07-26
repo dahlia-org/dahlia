@@ -54,5 +54,64 @@ import GRDB
             ))
             #expect(item.meetingDescription == "AI description")
         }
+
+        @Test
+        func resolvesNestedProjectNameAsLogicalPath() throws {
+            let manager = try AppDatabaseManager(path: ":memory:")
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/sidebar-project-path",
+                name: "Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let root = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: nil,
+                name: "Acme",
+                createdAt: .now,
+                projectType: .customer
+            )
+            let child = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: root.id,
+                name: "Platform",
+                createdAt: .now,
+                projectType: nil
+            )
+            try manager.dbQueue.write { db in
+                try vault.insert(db)
+                try root.insert(db)
+                try child.insert(db)
+            }
+            var meetings = [
+                MeetingOverviewItem(
+                    meetingId: .v7(),
+                    vaultId: vault.id,
+                    projectId: child.id,
+                    projectName: nil,
+                    meetingName: "Planning",
+                    status: .ready,
+                    duration: nil,
+                    createdAt: .now,
+                    hasSummary: false,
+                    segmentCount: 0,
+                    latestSegmentText: nil,
+                    tags: []
+                ),
+            ]
+
+            try manager.dbQueue.read { db in
+                try SidebarViewModel.resolveProjectPaths(
+                    in: &meetings,
+                    vaultId: vault.id,
+                    database: db
+                )
+            }
+
+            #expect(meetings.first?.projectName == "Acme/Platform")
+        }
     }
 #endif

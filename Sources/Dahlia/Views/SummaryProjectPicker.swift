@@ -9,7 +9,7 @@ struct SummaryProjectPicker: View {
             Text(L10n.noProject)
                 .tag(nil as UUID?)
 
-            ForEach(projects.filter { !$0.missingOnDisk || $0.id == selection }) { project in
+            ForEach(projects) { project in
                 Text(project.name)
                     .tag(project.id as UUID?)
             }

@@ -230,9 +230,9 @@ struct ContentView: View {
             viewModel.loadMeeting(
                 meetingId,
                 dbQueue: dbQueue,
-                projectURL: project.map { vault.url.appending(path: $0.name, directoryHint: .isDirectory) },
+                projectURL: project.map { vault.url.appending(path: $0.path, directoryHint: .isDirectory) },
                 projectId: project?.id,
-                projectName: project?.name,
+                projectName: project?.path,
                 vaultURL: vault.url
             )
         } catch {

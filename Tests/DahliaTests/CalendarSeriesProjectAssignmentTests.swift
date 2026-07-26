@@ -61,31 +61,28 @@ import GRDB
         }
 
         @Test
-        func newMeetingSkipsMostRecentProjectWhenItsFolderIsMissing() async throws {
+        func inheritedSubprojectUsesResolvedLogicalPath() async throws {
             let (database, vault) = try makeDatabase()
-            let availableProject = project(named: "Available project", vaultId: vault.id)
-            var unavailableProject = project(named: "Missing project", vaultId: vault.id)
-            unavailableProject.missingOnDisk = true
-            let missingProject = unavailableProject
-            let olderStart = Date(timeIntervalSince1970: 1_776_200_000)
-            let recentStart = Date(timeIntervalSince1970: 1_776_300_000)
+            let root = project(named: "Acme", vaultId: vault.id)
+            let child = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: root.id,
+                name: "Platform",
+                createdAt: .now,
+                projectType: nil
+            )
+            let previousStart = Date(timeIntervalSince1970: 1_776_300_000)
             let currentStart = Date(timeIntervalSince1970: 1_776_400_000)
 
             try await database.dbQueue.write { db in
-                try availableProject.insert(db)
-                try missingProject.insert(db)
+                try root.insert(db)
+                try child.insert(db)
                 try insertSeriesMeeting(
-                    event: seriesEvent(startDate: olderStart, recurrenceId: "20260414T090000Z"),
-                    projectId: availableProject.id,
+                    event: seriesEvent(startDate: previousStart, recurrenceId: "20260415T090000Z"),
+                    projectId: child.id,
                     vaultId: vault.id,
-                    createdAt: olderStart,
-                    in: db
-                )
-                try insertSeriesMeeting(
-                    event: seriesEvent(startDate: recentStart, recurrenceId: "20260415T090000Z"),
-                    projectId: missingProject.id,
-                    vaultId: vault.id,
-                    createdAt: recentStart,
+                    createdAt: previousStart,
                     in: db
                 )
             }
@@ -100,9 +97,8 @@ import GRDB
             )
             await service.stop()
 
-            let meeting = try fetchMeeting(id: service.meetingId, from: database.dbQueue)
-            #expect(meeting.projectId == availableProject.id)
-            #expect(service.projectId == availableProject.id)
+            #expect(service.projectId == child.id)
+            #expect(service.projectName == "Acme/Platform")
         }
 
         @Test
@@ -274,7 +270,7 @@ import GRDB
         ProjectRecord(
             id: .v7(),
             vaultId: vaultId,
-            name: name,
+            path: name,
             createdAt: .now
         )
     }

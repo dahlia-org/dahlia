@@ -16,12 +16,20 @@ struct MCPSettingsView: View {
 
                     if let commands = commands(for: vault) {
                         commandContent(
-                            title: L10n.codexCLI,
+                            title: "\(L10n.codexCLI) — \(L10n.mcpReadOnly)",
                             command: commands.codex
                         )
                         commandContent(
-                            title: L10n.claudeCode,
+                            title: "\(L10n.codexCLI) — \(L10n.mcpWriteEnabled)",
+                            command: commands.codexWrite
+                        )
+                        commandContent(
+                            title: "\(L10n.claudeCode) — \(L10n.mcpReadOnly)",
                             command: commands.claude
+                        )
+                        commandContent(
+                            title: "\(L10n.claudeCode) — \(L10n.mcpWriteEnabled)",
+                            command: commands.claudeWrite
                         )
                     } else {
                         Text(L10n.mcpHelperUnavailable)

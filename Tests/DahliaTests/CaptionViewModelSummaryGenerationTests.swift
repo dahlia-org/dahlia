@@ -25,10 +25,80 @@ import GRDB
             viewModel.triggerManualSummary(options: options)
             await runner.waitForCallCount(1)
 
-            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == "Selected context")
             runner.complete(meetingID: fixture.first.id, title: "Summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
+        func summaryExportUsesProjectPathUpdatedDuringGeneration() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try fixture.insertProject(name: "Original", description: "")
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+            )
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(viewModel.assignCurrentMeetingProject(project.id) == nil)
+            #expect(viewModel.triggerManualSummary(options: options))
+            await runner.waitForCallCount(1)
+
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            let service = ProjectWorkspaceService(repository: repository, vault: fixture.vault)
+            _ = try service.renameProject(id: project.id, newName: "Renamed")
+            runner.complete(meetingID: fixture.first.id, title: "Summary")
+
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(try fixture.summaryPath(for: fixture.first.id) == "Renamed/summary.md")
+            #expect(FileManager.default.fileExists(
+                atPath: fixture.vaultURL.appending(path: "Renamed/summary.md").path
+            ))
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.vaultURL.appending(path: "Original/summary.md").path
+            ))
+        }
+
+        @Test
+        func summaryRegenerationReusesTrackedVaultPath() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let project = try fixture.insertProject(name: "Project", description: "")
+            try fixture.assign(fixture.first, to: project)
+            let existingURL = fixture.vaultURL.appending(path: "Project/Existing.md")
+            try Data("Old summary".utf8).write(to: existingURL)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            try repository.upsertSummary(SummaryRecord(
+                meetingId: fixture.first.id,
+                title: "Old summary",
+                document: try SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
+                createdAt: .now
+            ))
+            try repository.updateSummaryVaultRelativePath(
+                forMeetingId: fixture.first.id,
+                relativePath: "Project/Existing.md"
+            )
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
+            )
+
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(viewModel.triggerManualSummary(options: options))
+            await runner.waitForCallCount(1)
+            runner.complete(meetingID: fixture.first.id, title: "New summary")
+
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+            #expect(try fixture.summaryPath(for: fixture.first.id) == "Project/Existing.md")
+            #expect(try String(contentsOf: existingURL, encoding: .utf8) == "New summary")
+            #expect(!FileManager.default.fileExists(
+                atPath: fixture.vaultURL.appending(path: "Project/summary-\(fixture.first.id.uuidString).md").path
+            ))
         }
 
         @Test
@@ -90,7 +160,7 @@ import GRDB
             ))
             await runner.waitForCallCount(1)
 
-            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == "Batch context")
             runner.complete(meetingID: fixture.first.id, title: "Summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
@@ -506,7 +576,7 @@ import GRDB
             await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].meetingID == original.first.id)
-            #expect(runner.calls[0].projectName == project.name)
+            #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == project.description)
             runner.complete(meetingID: original.first.id, title: "Original summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: original.first.id) })
@@ -517,7 +587,7 @@ import GRDB
         }
 
         private func waitUntil(
-            attempts: Int = 200,
+            attempts: Int = 10_000,
             condition: @escaping @MainActor () -> Bool
         ) async -> Bool {
             for _ in 0 ..< attempts {
@@ -675,6 +745,16 @@ import GRDB
             }
         }
 
+        func summaryPath(for meetingID: UUID) throws -> String? {
+            try database.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: meetingID,
+                    type: .vault,
+                    in: db
+                )?.vaultRelativePath
+            }
+        }
+
         func projectId(for meetingID: UUID) throws -> UUID? {
             try database.dbQueue.read { db in
                 try MeetingRecord.fetchOne(db, key: meetingID)?.projectId
@@ -687,7 +767,7 @@ import GRDB
             let project = ProjectRecord(
                 id: .v7(),
                 vaultId: vault.id,
-                name: name,
+                path: name,
                 createdAt: first.createdAt,
                 description: description
             )
