@@ -373,7 +373,7 @@ actor BackupService {
             let completed = try AppDatabaseManager.migrator.completedMigrations(db)
             let expected = Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1))
             guard completed == expected,
-                  try !AppDatabaseManager.hasUnexpectedMigrationIdentifiers(db) else {
+                  try !AppDatabaseManager.migrator.hasBeenSuperseded(db) else {
                 throw BackupServiceError.newerSchema(metadata.migrationIdentifier)
             }
         }

@@ -25,10 +25,6 @@ final class AppDatabaseManager: Sendable {
             )
         }
         dbQueue = try DatabaseQueue(path: path)
-        try LegacyDatabaseCompatibility.reconcileIfNeeded(
-            dbQueue,
-            canonicalMigrator: Self.migrator
-        )
         try Self.migrator.migrate(dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
@@ -157,13 +153,6 @@ final class AppDatabaseManager: Sendable {
         schemaVersion(from: currentMigrationIdentifier) ?? 0
     }
 
-    static func hasUnexpectedMigrationIdentifiers(_ db: Database) throws -> Bool {
-        let appliedIdentifiers = try migrator.appliedIdentifiers(db)
-        let recognizedIdentifiers = Set(migrationIdentifiers)
-            .union(LegacyDatabaseCompatibility.retiredMigrationIdentifiers)
-        return !appliedIdentifiers.isSubset(of: recognizedIdentifiers)
-    }
-
     nonisolated static func schemaVersion(from migrationIdentifier: String) -> Int? {
         guard migrationIdentifier.first == "v" else { return nil }
         let digits = migrationIdentifier.dropFirst().prefix(while: \Character.isNumber)
@@ -202,7 +191,6 @@ final class AppDatabaseManager: Sendable {
         }.filter { object in
             !excludingTableNames.contains(object.1)
                 && !excludingTableNames.contains(object.2)
-                && !LegacyDatabaseCompatibility.isArchivedTable(object.2)
         }.map { object in
             if object.0 == "table", object.1 == "transcript_segments" {
                 return try transcriptSegmentsStructureSignature(in: db)
