@@ -116,7 +116,7 @@ import os
             let factoryStartDeadline = ContinuousClock.now + .seconds(10)
             while !factoryState.withLock({ $0.started }),
                   ContinuousClock.now < factoryStartDeadline {
-                await Task.yield()
+                try await Task.sleep(for: .milliseconds(10))
             }
             let didStartFactory = factoryState.withLock(\.started)
             #expect(didStartFactory)
@@ -1198,7 +1198,7 @@ private final class SynchronousDatabaseGate: @unchecked Sendable {
 
     func block() {
         hasStarted.withLock { $0 = true }
-        _ = releaseSemaphore.wait(timeout: .now() + 10)
+        releaseSemaphore.wait()
     }
 
     func release() {
@@ -1211,7 +1211,7 @@ private final class SynchronousDatabaseGate: @unchecked Sendable {
             if hasStarted.withLock(\.self) {
                 return true
             }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
         }
         return false
     }
