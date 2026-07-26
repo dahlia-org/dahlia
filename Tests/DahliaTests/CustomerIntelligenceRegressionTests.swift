@@ -248,6 +248,61 @@ import GRDB
         }
 
         @Test
+        func resolvingExistingCalendarMeetingCanDeferParticipantsUntilRecordingStarts() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+            let event = customerIntelligenceEvent(
+                at: observedAt,
+                participants: [
+                    customerParticipant(
+                        email: "owner@acme.example",
+                        responseStatus: .accepted,
+                        source: CalendarEventPlatform.googleCalendar
+                    ),
+                ]
+            )
+            let key = try #require(event.key)
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                projectId: nil,
+                name: "Existing customer sync",
+                status: .ready,
+                duration: nil,
+                createdAt: observedAt.addingTimeInterval(-600),
+                updatedAt: observedAt.addingTimeInterval(-600),
+                calendarEventIcalUid: key.icalUid,
+                calendarEventRecurrenceId: key.recurrenceId
+            )
+            try await fixture.manager.dbQueue.write { db in
+                try CalendarEventRecord.upsert(event: event, now: observedAt, in: db)
+                try meeting.insert(db)
+            }
+
+            let resolvedMeetingID = try fixture.repository.resolveMeetingIdForCalendarEvent(
+                event,
+                vaultId: fixture.vault.id,
+                observedAt: observedAt,
+                ingestsCustomerIntelligence: false
+            )
+
+            #expect(resolvedMeetingID == meeting.id)
+            #expect(try fixture.repository.fetchContacts(vaultId: fixture.vault.id).isEmpty)
+
+            try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event,
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: observedAt,
+                dbQueue: fixture.manager.dbQueue
+            )
+            #expect(
+                try fixture.repository.fetchContacts(vaultId: fixture.vault.id).map(\.email)
+                    == ["owner@acme.example"]
+            )
+        }
+
+        @Test
         // swiftlint:disable:next function_body_length
         func reingestionPreservesKnownParticipantDataAndDeclinesAreNotInteractions() async throws {
             let fixture = try CustomerIntelligenceFixture()
