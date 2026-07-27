@@ -17,7 +17,7 @@ This file applies to the entire repository. Before editing a path covered by a m
 | `Tests/DahliaTests/` | Test implementation and verification: `Tests/DahliaTests/AGENTS.md` |
 | `scripts/` | SwiftPM build, signing, notarization, and lint scripts |
 
-`CLAUDE.md` is a compatibility symlink to the `AGENTS.md` in the same directory. Do not maintain duplicate content.
+`CLAUDE.md` imports the `AGENTS.md` in the same directory with `@AGENTS.md`. Do not maintain duplicate content.
 
 ## Documentation Router
 
