@@ -28,7 +28,11 @@ struct OrganizationWorkspaceView: View {
                     get: { model.section },
                     set: { model.selectSection($0) }
                 ),
-                unacceptedInsightCount: model.counts.unacceptedInsights
+                unacceptedInsightCount: model.counts.unacceptedInsights,
+                canGoBack: model.canGoBack,
+                canGoForward: model.canGoForward,
+                onGoBack: { Task { await model.goBack() } },
+                onGoForward: { Task { await model.goForward() } }
             )
             .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
         } detail: {

@@ -6,6 +6,12 @@ import Observation
 @MainActor
 @Observable
 final class CustomerIntelligenceWorkspaceViewModel {
+    private struct NavigationLocation: Equatable {
+        let section: CustomerIntelligenceSection
+        let scope: CustomerIntelligenceScope
+        let selection: CustomerIntelligenceSelection
+    }
+
     nonisolated static let sectionMutationSenderPrefix = "customer-intelligence-section:"
 
     var section: CustomerIntelligenceSection
@@ -15,11 +21,14 @@ final class CustomerIntelligenceWorkspaceViewModel {
     private(set) var overview = CustomerIntelligenceWorkspaceData.Overview.empty
     private(set) var reloadToken = 0
     private(set) var isLoading = false
+    private var isNavigatingHistory = false
     var errorMessage: String?
 
     private var dbQueue: DatabaseQueue?
     private var vaultID: UUID?
     private var loadGeneration = 0
+    private var backHistory: [NavigationLocation] = []
+    private var forwardHistory: [NavigationLocation] = []
     private let notificationSenderID = UUID().uuidString
     @ObservationIgnored private nonisolated(unsafe) var notificationObserver: NSObjectProtocol?
 
@@ -43,6 +52,8 @@ final class CustomerIntelligenceWorkspaceViewModel {
     }
 
     var counts: CustomerIntelligenceWorkspaceData.Counts { overview.counts }
+    var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }
+    var canGoForward: Bool { !forwardHistory.isEmpty && !isNavigatingHistory }
 
     var selectedRoot: OrganizationWorkspaceNode? {
         guard let id = scope.organizationID else { return nil }
@@ -109,6 +120,8 @@ final class CustomerIntelligenceWorkspaceViewModel {
         selection = CustomerIntelligenceSelection()
         roots = []
         overview = .empty
+        backHistory = []
+        forwardHistory = []
         reloadToken += 1
         persistNavigation()
         observeWorkspaceChanges()
@@ -116,21 +129,26 @@ final class CustomerIntelligenceWorkspaceViewModel {
     }
 
     func selectSection(_ section: CustomerIntelligenceSection) {
+        let previousLocation = currentLocation
         self.section = section
+        recordNavigation(from: previousLocation)
         persistNavigation()
     }
 
     func selectScope(_ scope: CustomerIntelligenceScope) async {
         guard self.scope != scope else { return }
+        let previousLocation = currentLocation
         self.scope = scope
         selection = CustomerIntelligenceSelection(organizationID: scope.organizationID)
         overview = .empty
         reloadToken += 1
         persistNavigation()
         await load()
+        recordNavigation(from: previousLocation)
     }
 
     func openOrganization(_ id: UUID) async {
+        let previousLocation = currentLocation
         if let dbQueue, let vaultID,
            let rootID = try? await Task.detached(priority: .userInitiated, operation: {
                try MeetingRepository(dbQueue: dbQueue)
@@ -144,39 +162,29 @@ final class CustomerIntelligenceWorkspaceViewModel {
         }
         section = .organizations
         selection.organizationID = id
+        recordNavigation(from: previousLocation)
         persistNavigation()
     }
 
     func openContact(_ id: UUID) async {
-        await ensureScopeContains(section: .contacts, resourceID: id)
-        section = .contacts
-        selection.contactID = id
-        persistNavigation()
+        await openResource(id, in: .contacts, selection: \.contactID)
     }
 
     func openProject(_ id: UUID) async {
-        await ensureScopeContains(section: .projects, resourceID: id)
-        section = .projects
-        selection.projectID = id
-        persistNavigation()
+        await openResource(id, in: .projects, selection: \.projectID)
     }
 
     func openTopic(_ id: UUID) async {
-        await ensureScopeContains(section: .topics, resourceID: id)
-        section = .topics
-        selection.topicID = id
-        persistNavigation()
+        await openResource(id, in: .topics, selection: \.topicID)
     }
 
     func openInsight(_ id: UUID) async {
-        await ensureScopeContains(section: .insights, resourceID: id)
-        section = .insights
-        selection.insightID = id
-        persistNavigation()
+        await openResource(id, in: .insights, selection: \.insightID)
     }
 
     func createRootOrganization(name: String) async -> Bool {
         guard let dbQueue, let vaultID, name.nilIfBlank != nil else { return false }
+        let previousLocation = currentLocation
         do {
             let organization = try await Task.detached(priority: .userInitiated) {
                 try MeetingRepository(dbQueue: dbQueue).createOrganization(
@@ -189,6 +197,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
             scope = .organization(organization.id)
             section = .organizations
             selection.organizationID = organization.id
+            recordNavigation(from: previousLocation)
             persistNavigation()
             await refreshAfterMutation()
             return true
@@ -198,9 +207,78 @@ final class CustomerIntelligenceWorkspaceViewModel {
         }
     }
 
+    func goBack() async {
+        guard canGoBack, let location = backHistory.popLast() else { return }
+        let previousLocation = currentLocation
+        isNavigatingHistory = true
+        defer { isNavigatingHistory = false }
+        appendToHistory(&forwardHistory, location: previousLocation)
+        await restoreNavigation(location)
+    }
+
+    func goForward() async {
+        guard canGoForward, let location = forwardHistory.popLast() else { return }
+        let previousLocation = currentLocation
+        isNavigatingHistory = true
+        defer { isNavigatingHistory = false }
+        appendToHistory(&backHistory, location: previousLocation)
+        await restoreNavigation(location)
+    }
+
     func refreshAfterMutation() async {
         guard let vaultID else { return }
         DahliaWorkspaceChangeNotification.post(vaultID: vaultID, senderID: notificationSenderID)
+        reloadToken += 1
+        await load()
+    }
+
+    private var currentLocation: NavigationLocation {
+        NavigationLocation(
+            section: section,
+            scope: scope,
+            selection: selection
+        )
+    }
+
+    private func openResource(
+        _ id: UUID,
+        in section: CustomerIntelligenceSection,
+        selection selectionKeyPath: WritableKeyPath<CustomerIntelligenceSelection, UUID?>
+    ) async {
+        let previousLocation = currentLocation
+        await ensureScopeContains(section: section, resourceID: id)
+        self.section = section
+        selection[keyPath: selectionKeyPath] = id
+        recordNavigation(from: previousLocation)
+        persistNavigation()
+    }
+
+    private func recordNavigation(from previousLocation: NavigationLocation) {
+        guard !isNavigatingHistory, previousLocation != currentLocation else { return }
+        appendToHistory(&backHistory, location: previousLocation)
+        forwardHistory = []
+    }
+
+    private func appendToHistory(
+        _ history: inout [NavigationLocation],
+        location: NavigationLocation
+    ) {
+        if history.last != location {
+            history.append(location)
+        }
+        if history.count > 50 {
+            history.removeFirst(history.count - 50)
+        }
+    }
+
+    private func restoreNavigation(_ location: NavigationLocation) async {
+        let scopeChanged = scope != location.scope
+        section = location.section
+        scope = location.scope
+        selection = location.selection
+        persistNavigation()
+        guard scopeChanged else { return }
+        overview = .empty
         reloadToken += 1
         await load()
     }

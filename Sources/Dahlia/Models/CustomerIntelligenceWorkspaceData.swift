@@ -72,7 +72,7 @@ enum CustomerIntelligenceWorkspaceData {
 
         var id: UUID { contact.id }
         var sortName: String { contact.displayName ?? contact.email ?? "" }
-        var sortProvisional: Int { contact.isProvisional ? 1 : 0 }
+        var sortEmail: String { contact.email ?? "" }
         var sortOrganizations: String { organizationNames.joined(separator: ", ") }
         var sortRoles: String { roleLabels.joined(separator: ", ") }
         var sortLastInteraction: Date { lastInteractionAt ?? .distantPast }

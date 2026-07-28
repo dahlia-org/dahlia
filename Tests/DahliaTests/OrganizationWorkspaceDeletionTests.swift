@@ -6,7 +6,7 @@
     @MainActor
     struct OrganizationWorkspaceDeletionTests {
         @Test
-        func contactAndOrganizationDeletionUseTheSharedConfirmationAlert() async throws {
+        func contactAndOrganizationDeletionUseTheirOwningViewModels() async throws {
             let fixture = try CustomerIntelligenceFixture()
             let organization = try fixture.repository.createOrganization(
                 vaultId: fixture.vault.id,
@@ -19,35 +19,31 @@
                 displayName: "Misheard",
                 organizationId: organization.id
             )
-            let model = OrganizationWorkspaceViewModel(
+            let contactModel = CustomerIntelligenceContactsViewModel(
+                dbQueue: fixture.manager.dbQueue,
+                vaultID: fixture.vault.id,
+                scope: .all
+            )
+            let organizationModel = OrganizationWorkspaceViewModel(
                 dbQueue: fixture.manager.dbQueue,
                 vaultID: fixture.vault.id
             )
 
-            await model.load()
-            await model.prepareContactDeletion(contact)
-            let contactConfirmation = try #require(model.pendingDeletion)
-            guard case let .contact(pendingContact) = contactConfirmation else {
-                Issue.record("Expected a contact deletion confirmation")
-                return
-            }
-            #expect(pendingContact.id == contact.id)
-            model.pendingDeletion = nil
-            await model.confirmDeletion(contactConfirmation)
+            await contactModel.load(selectedID: contact.id)
+            await contactModel.prepareDeletion(contact)
+            let contactConfirmation = try #require(contactModel.pendingDeletion)
+            #expect(contactConfirmation.id == contact.id)
+            _ = await contactModel.confirmDeletion(contactConfirmation)
             let deletedContact = try await fixture.manager.dbQueue.read {
                 try ContactRecord.fetchOne($0, key: contact.id)
             }
             #expect(deletedContact == nil)
 
-            await model.prepareOrganizationDeletion()
-            let organizationConfirmation = try #require(model.pendingDeletion)
-            guard case let .organization(pendingOrganization) = organizationConfirmation else {
-                Issue.record("Expected an organization deletion confirmation")
-                return
-            }
-            #expect(pendingOrganization.id == organization.id)
-            model.pendingDeletion = nil
-            await model.confirmDeletion(organizationConfirmation)
+            await organizationModel.load()
+            await organizationModel.prepareOrganizationDeletion()
+            let organizationConfirmation = try #require(organizationModel.pendingDeletion)
+            #expect(organizationConfirmation.id == organization.id)
+            await organizationModel.confirmDeletion(organizationConfirmation)
             let deletedOrganization = try await fixture.manager.dbQueue.read {
                 try OrganizationRecord.fetchOne($0, key: organization.id)
             }

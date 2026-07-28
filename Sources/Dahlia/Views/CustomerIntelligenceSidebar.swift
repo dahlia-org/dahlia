@@ -3,24 +3,49 @@ import SwiftUI
 struct CustomerIntelligenceSidebar: View {
     @Binding var selection: CustomerIntelligenceSection
     let unacceptedInsightCount: Int
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let onGoBack: () -> Void
+    let onGoForward: () -> Void
 
     var body: some View {
-        List(selection: $selection) {
-            Label(L10n.customerIntelligenceOverview, systemImage: "rectangle.grid.2x2")
-                .tag(CustomerIntelligenceSection.overview)
-            Label(L10n.organizations, systemImage: "building.2")
-                .tag(CustomerIntelligenceSection.organizations)
-            Label(L10n.people, systemImage: "person.2")
-                .tag(CustomerIntelligenceSection.contacts)
-            Label(L10n.projects, systemImage: "folder")
-                .tag(CustomerIntelligenceSection.projects)
-            Label(L10n.topics, systemImage: "text.bubble")
-                .tag(CustomerIntelligenceSection.topics)
-            insightLabel
-                .tag(CustomerIntelligenceSection.insights)
+        VStack(spacing: 0) {
+            navigationControls
+            Divider()
+            List(selection: $selection) {
+                Label(L10n.customerIntelligenceOverview, systemImage: "rectangle.grid.2x2")
+                    .tag(CustomerIntelligenceSection.overview)
+                Label(L10n.organizations, systemImage: "building.2")
+                    .tag(CustomerIntelligenceSection.organizations)
+                Label(L10n.people, systemImage: "person.2")
+                    .tag(CustomerIntelligenceSection.contacts)
+                Label(L10n.projects, systemImage: "folder")
+                    .tag(CustomerIntelligenceSection.projects)
+                Label(L10n.topics, systemImage: "text.bubble")
+                    .tag(CustomerIntelligenceSection.topics)
+                insightLabel
+                    .tag(CustomerIntelligenceSection.insights)
+            }
+            .listStyle(.sidebar)
         }
-        .listStyle(.sidebar)
         .navigationTitle(L10n.customerIntelligence)
+    }
+
+    private var navigationControls: some View {
+        HStack(spacing: 4) {
+            Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
+                .labelStyle(.iconOnly)
+                .disabled(!canGoBack)
+                .help(L10n.back)
+            Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
+                .labelStyle(.iconOnly)
+                .disabled(!canGoForward)
+                .help(L10n.forward)
+            Spacer()
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var insightLabel: some View {

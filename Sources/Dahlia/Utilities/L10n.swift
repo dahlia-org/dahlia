@@ -233,7 +233,7 @@ enum L10n {
 
     static var customerIntelligenceDeletePersonHelp: String {
         String(
-            localized: "Deletes this provisional person and detaches related references. This cannot be undone.",
+            localized: "Deletes this person and detaches related references. This cannot be undone.",
             bundle: bundle
         )
     }
@@ -319,6 +319,10 @@ enum L10n {
         String(localized: "Edit Organization", bundle: bundle)
     }
 
+    static var customerIntelligenceEditDepartment: String {
+        String(localized: "Edit Department", bundle: bundle)
+    }
+
     static var customerIntelligenceManageMemberships: String {
         String(localized: "Manage Memberships", bundle: bundle)
     }
@@ -329,6 +333,26 @@ enum L10n {
 
     static var customerIntelligenceAddMembership: String {
         String(localized: "Add Membership", bundle: bundle)
+    }
+
+    static var customerIntelligenceAddPerson: String {
+        String(localized: "Add Person", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoPeopleToAdd: String {
+        String(localized: "There are no people available to add.", bundle: bundle)
+    }
+
+    static var customerIntelligenceManagePeopleHelp: String {
+        String(localized: "Create people and edit their memberships from the People screen.", bundle: bundle)
+    }
+
+    static var customerIntelligenceEmailNotSet: String {
+        String(localized: "Email address not set", bundle: bundle)
+    }
+
+    static var customerIntelligenceDeletePerson: String {
+        String(localized: "Delete Person?", bundle: bundle)
     }
 
     static var customerIntelligenceNoMemberships: String {
@@ -435,7 +459,7 @@ enum L10n {
 
     static func customerIntelligenceMergeContactMessage(_ name: String) -> String {
         String(
-            format: String(localized: "This email belongs to “%@”. Merge this provisional contact into it?", bundle: bundle),
+            format: String(localized: "This email belongs to “%@”. Merge this person into it?", bundle: bundle),
             locale: .current,
             name
         )
@@ -464,8 +488,6 @@ enum L10n {
     static var organizationCanvas: String { String(localized: "Organization hierarchy canvas", bundle: bundle) }
     static var unassignedPeople: String { String(localized: "Unassigned People", bundle: bundle) }
     static var unnamedPerson: String { String(localized: "Unnamed Person", bundle: bundle) }
-    static var provisionalPerson: String { String(localized: "Provisional person", bundle: bundle) }
-    static var provisionalPersonName: String { String(localized: "Provisional person name", bundle: bundle) }
     static var newOrganization: String { String(localized: "New Organization", bundle: bundle) }
     static var newDepartment: String { String(localized: "New Department", bundle: bundle) }
     static var addToDepartment: String { String(localized: "Add to Department", bundle: bundle) }
@@ -475,7 +497,6 @@ enum L10n {
     static var person: String { String(localized: "Person", bundle: bundle) }
     static var role: String { String(localized: "Role", bundle: bundle) }
     static var saveTopicState: String { String(localized: "Save Topic State", bundle: bundle) }
-    static var deleteProvisionalPerson: String { String(localized: "Delete Provisional Person?", bundle: bundle) }
     static var deleteOrganization: String { String(localized: "Delete Organization?", bundle: bundle) }
     static func deleteOrganization(named name: String) -> String {
         String(

@@ -58,9 +58,9 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
         case .invalidReference:
             "The customer intelligence reference is invalid."
         case .provisionalContactRequired:
-            "Only a provisional contact can be changed this way."
+            "Only a contact without an email address can be changed this way."
         case .provisionalContactHasParticipant:
-            "This provisional contact has calendar participation data and cannot be deleted."
+            "This contact has calendar participation data and cannot be deleted."
         }
         return String(localized: String.LocalizationValue(message), bundle: .module)
     }

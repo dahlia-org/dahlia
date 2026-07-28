@@ -942,8 +942,6 @@
 "Organization hierarchy canvas" = "Organization hierarchy canvas";
 "Unassigned People" = "Unassigned People";
 "Unnamed Person" = "Unnamed Person";
-"Provisional person" = "Provisional person";
-"Provisional person name" = "Provisional person name";
 "New Organization" = "New Organization";
 "New Department" = "New Department";
 "Add to Department" = "Add to Department";
@@ -977,7 +975,6 @@
 "Past %lld days" = "Past %lld days";
 "%lld meetings · %lld departments" = "%lld meetings · %lld departments";
 "%lld references" = "%lld references";
-"Delete Provisional Person?" = "Delete Provisional Person?";
 "Delete Organization?" = "Delete Organization?";
 "Delete “%@”?" = "Delete “%@”?";
 "Delete Organization" = "Delete Organization";
@@ -998,8 +995,14 @@
 "Last Interaction" = "Last Interaction";
 "Edit Contact" = "Edit Contact";
 "Edit Organization" = "Edit Organization";
+"Edit Department" = "Edit Department";
 "Manage Memberships" = "Manage Memberships";
 "Existing Memberships" = "Existing Memberships";
+"Add Person" = "Add Person";
+"There are no people available to add." = "There are no people available to add.";
+"Create people and edit their memberships from the People screen." = "Create people and edit their memberships from the People screen.";
+"Email address not set" = "Email address not set";
+"Delete Person?" = "Delete Person?";
 "Enter a valid email address." = "Enter a valid email address.";
 "Search contacts" = "Search contacts";
 "Search topics" = "Search topics";
@@ -1021,7 +1024,7 @@
 "Show All Topics" = "Show All Topics";
 "Enter a contact name." = "Enter a contact name.";
 "%lld meetings · %lld organizations · %lld topics" = "%lld meetings · %lld organizations · %lld topics";
-"This email belongs to “%@”. Merge this provisional contact into it?" = "This email belongs to “%@”. Merge this provisional contact into it?";
+"This email belongs to “%@”. Merge this person into it?" = "This email belongs to “%@”. Merge this person into it?";
 "%lld references" = "%lld references";
 "%lld departments" = "%lld departments";
 "Edit" = "Edit";
@@ -1045,7 +1048,7 @@
 "The changes could not be saved." = "The changes could not be saved.";
 "No People" = "No People";
 "Create a person or change the customer scope." = "Create a person or change the customer scope.";
-"Deletes this provisional person and detaches related references. This cannot be undone." = "Deletes this provisional person and detaches related references. This cannot be undone.";
+"Deletes this person and detaches related references. This cannot be undone." = "Deletes this person and detaches related references. This cannot be undone.";
 "No Topics" = "No Topics";
 "Create a topic or use AI to organize recent conversations." = "Create a topic or use AI to organize recent conversations.";
 "Edit Topic" = "Edit Topic";
@@ -1099,5 +1102,5 @@
 "The conversation topic was not found." = "The conversation topic was not found.";
 "The record changed after it was read." = "The record changed after it was read.";
 "The customer intelligence reference is invalid." = "The customer intelligence reference is invalid.";
-"Only a provisional contact can be changed this way." = "Only a provisional contact can be changed this way.";
-"This provisional contact has calendar participation data and cannot be deleted." = "This provisional contact has calendar participation data and cannot be deleted.";
+"Only a contact without an email address can be changed this way." = "Only a contact without an email address can be changed this way.";
+"This contact has calendar participation data and cannot be deleted." = "This contact has calendar participation data and cannot be deleted.";

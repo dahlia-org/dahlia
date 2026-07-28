@@ -942,8 +942,6 @@
 "Organization hierarchy canvas" = "組織階層キャンバス";
 "Unassigned People" = "未所属人物";
 "Unnamed Person" = "名前のない人物";
-"Provisional person" = "暫定人物";
-"Provisional person name" = "暫定人物の名前";
 "New Organization" = "新しい組織";
 "New Department" = "新しい部門";
 "Add to Department" = "部門に追加";
@@ -977,7 +975,6 @@
 "Past %lld days" = "過去 %lld 日";
 "%lld meetings · %lld departments" = "会議 %lld 件・関係部門 %lld 件";
 "%lld references" = "参照 %lld 件";
-"Delete Provisional Person?" = "暫定人物を削除しますか？";
 "Delete Organization?" = "組織を削除しますか？";
 "Delete “%@”?" = "「%@」を削除しますか？";
 "Delete Organization" = "組織を削除";
@@ -998,8 +995,14 @@
 "Last Interaction" = "最終接点";
 "Edit Contact" = "人物を編集";
 "Edit Organization" = "組織を編集";
+"Edit Department" = "部門を編集";
 "Manage Memberships" = "所属を管理";
 "Existing Memberships" = "現在の所属";
+"Add Person" = "人物を追加";
+"There are no people available to add." = "追加できる人物がいません。";
+"Create people and edit their memberships from the People screen." = "人物の作成や所属の変更は「人物」画面で行えます。";
+"Email address not set" = "メールアドレス未設定";
+"Delete Person?" = "人物を削除しますか？";
 "Enter a valid email address." = "有効なメールアドレスを入力してください。";
 "Search contacts" = "人物を検索";
 "Search topics" = "トピックを検索";
@@ -1021,7 +1024,7 @@
 "Show All Topics" = "すべてのトピックを表示";
 "Enter a contact name." = "人物名を入力してください。";
 "%lld meetings · %lld organizations · %lld topics" = "会議 %lld 件・所属 %lld 件・トピック %lld 件";
-"This email belongs to “%@”. Merge this provisional contact into it?" = "このメールアドレスは「%@」に登録済みです。暫定人物を統合しますか？";
+"This email belongs to “%@”. Merge this person into it?" = "このメールアドレスは「%@」に登録済みです。この人物を統合しますか？";
 "%lld references" = "参照 %lld 件";
 "%lld departments" = "部門 %lld 件";
 "Edit" = "編集";
@@ -1045,7 +1048,7 @@
 "The changes could not be saved." = "変更を保存できませんでした。";
 "No People" = "人物がいません";
 "Create a person or change the customer scope." = "人物を作成するか、顧客スコープを変更してください。";
-"Deletes this provisional person and detaches related references. This cannot be undone." = "この暫定人物を削除し、関連参照を解除します。この操作は取り消せません。";
+"Deletes this person and detaches related references. This cannot be undone." = "この人物を削除し、関連参照を解除します。この操作は取り消せません。";
 "No Topics" = "トピックがありません";
 "Create a topic or use AI to organize recent conversations." = "トピックを作成するか、AIで最近の会話を整理してください。";
 "Edit Topic" = "トピックを編集";
@@ -1099,5 +1102,5 @@
 "The conversation topic was not found." = "トピックが見つかりませんでした。";
 "The record changed after it was read." = "表示後にデータが変更されました。再読み込みしてください。";
 "The customer intelligence reference is invalid." = "顧客インテリジェンスの関連先が正しくありません。";
-"Only a provisional contact can be changed this way." = "この操作は暫定人物にのみ実行できます。";
-"This provisional contact has calendar participation data and cannot be deleted." = "この暫定人物にはカレンダー参加情報があるため削除できません。";
+"Only a contact without an email address can be changed this way." = "この操作はメールアドレス未設定の人物にのみ実行できます。";
+"This contact has calendar participation data and cannot be deleted." = "この人物にはカレンダー参加情報があるため削除できません。";

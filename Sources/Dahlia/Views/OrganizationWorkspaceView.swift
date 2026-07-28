@@ -17,15 +17,8 @@ struct OrganizationHierarchyView: View {
     @State private var model: OrganizationWorkspaceViewModel
     @State private var zoom: CGFloat = 1
     @State private var canvasViewportSize: CGSize = .zero
-    @State private var showsOrganizationEditor = false
-    @State private var showsMembershipEditor = false
-    @State private var editedOrganizationName = ""
-    @State private var provisionalName = ""
-    @State private var departmentName = ""
-    @State private var selectedParentID: UUID?
-    @State private var selectedMemberID: UUID?
-    @State private var selectedUnassignedContactID: UUID?
-    @State private var memberRole = ""
+    @State private var organizationBeingEdited: OrganizationWorkspaceNode?
+    @State private var showsPersonAdditionSheet = false
 
     init(
         sidebarViewModel: SidebarViewModel,
@@ -94,11 +87,15 @@ struct OrganizationHierarchyView: View {
                     await model.revealOrganization(initialOrganizationID)
                 }
             }
-            .sheet(isPresented: $showsOrganizationEditor) {
-                organizationEditor
+            .sheet(item: $organizationBeingEdited) { node in
+                OrganizationEditorSheet(
+                    organization: node,
+                    parentCandidates: parentCandidates(excluding: node.id),
+                    onSave: model.updateSelectedOrganization
+                )
             }
-            .sheet(isPresented: $showsMembershipEditor) {
-                membershipEditor
+            .sheet(isPresented: $showsPersonAdditionSheet) {
+                OrganizationMemberAdditionSheet(model: model)
             }
             .alert(item: $model.pendingDeletion, content: deletionAlert)
             .customerIntelligenceErrorAlert(
@@ -107,23 +104,10 @@ struct OrganizationHierarchyView: View {
             )
     }
 
-    private func deletionAlert(_ pending: OrganizationWorkspaceViewModel.PendingDeletion) -> Alert {
-        let title: String
-        let message: String
-        switch pending {
-        case let .contact(contact):
-            title = L10n.deleteProvisionalPerson
-            message = L10n.contactDeletionImpact(contact.impact)
-        case let .organization(organization):
-            title = L10n.deleteOrganization(named: organization.organization.name)
-            message = L10n.organizationDeletionImpact(organization.impact)
-        case let .topic(topic):
-            title = L10n.deleteTopic
-            message = L10n.topicDeletionImpact(topic.impact)
-        }
-        return Alert(
-            title: Text(title),
-            message: Text(message),
+    private func deletionAlert(_ pending: OrganizationWorkspaceViewModel.PendingOrganizationDeletion) -> Alert {
+        Alert(
+            title: Text(L10n.deleteOrganization(named: pending.organization.name)),
+            message: Text(L10n.organizationDeletionImpact(pending.impact)),
             primaryButton: .destructive(Text(L10n.delete)) {
                 Task { await model.confirmDeletion(pending) }
             },
@@ -215,13 +199,6 @@ struct OrganizationHierarchyView: View {
 
                 OrganizationDeletionSection(onDelete: requestOrganizationDeletion)
             }
-            .task(id: "\(node.id.uuidString):\(node.organization.revision)") {
-                editedOrganizationName = node.organization.name
-                selectedParentID = node.organization.parentOrganizationId
-                selectedMemberID = nil
-                selectedUnassignedContactID = nil
-                memberRole = ""
-            }
         } else {
             ContentUnavailableView(L10n.selectOrganization, systemImage: "building.2")
         }
@@ -234,135 +211,10 @@ struct OrganizationHierarchyView: View {
                let parent = model.loadedNodes[parentID] {
                 LabeledContent(L10n.parentDepartment, value: parent.organization.name)
             }
-            Button(L10n.customerIntelligenceEditOrganization, systemImage: "pencil") {
-                showsOrganizationEditor = true
+            Button(organizationEditTitle(for: node), systemImage: "pencil") {
+                organizationBeingEdited = node
             }
         }
-    }
-
-    private var organizationEditor: some View {
-        NavigationStack {
-            Form {
-                Section(L10n.name) {
-                    TextField(L10n.name, text: $editedOrganizationName)
-                    Button(L10n.save) {
-                        Task { await model.renameSelectedOrganization(to: editedOrganizationName) }
-                    }
-                    .disabled(editedOrganizationName.nilIfBlank == nil)
-                }
-
-                if let node = model.selectedNodeID.flatMap({ model.loadedNodes[$0] }) {
-                    Section(L10n.parentDepartment) {
-                        Picker(L10n.parentDepartment, selection: $selectedParentID) {
-                            if node.organization.nodeKind == .organization {
-                                Text(L10n.vaultRoot).tag(UUID?.none)
-                            }
-                            ForEach(parentCandidates(excluding: node.id)) { candidate in
-                                Text(candidate.name).tag(Optional(candidate.id))
-                            }
-                        }
-                        Button(L10n.move) {
-                            Task { await model.moveSelectedOrganization(to: selectedParentID) }
-                        }
-                        .disabled(selectedParentID == node.organization.parentOrganizationId)
-                    }
-                }
-
-                Section(L10n.newDepartment) {
-                    TextField(L10n.newDepartment, text: $departmentName)
-                    Button(L10n.create) {
-                        let name = departmentName
-                        departmentName = ""
-                        Task { await model.createDepartment(name: name) }
-                    }
-                    .disabled(departmentName.nilIfBlank == nil)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceEditOrganization)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.done) { showsOrganizationEditor = false }
-                }
-            }
-        }
-        .frame(minWidth: 520, minHeight: 480)
-    }
-
-    private var membershipEditor: some View {
-        NavigationStack {
-            Form {
-                if let detail = model.selectedDetail, !detail.members.isEmpty {
-                    Section(L10n.customerIntelligenceExistingMemberships) {
-                        Picker(L10n.person, selection: $selectedMemberID) {
-                            Text(L10n.select).tag(UUID?.none)
-                            ForEach(detail.members) { member in
-                                Text(member.contact.displayName ?? member.contact.email ?? L10n.unnamedPerson)
-                                    .tag(Optional(member.id))
-                            }
-                        }
-                        .onChange(of: selectedMemberID) { _, id in
-                            memberRole = detail.members.first { $0.id == id }?.roleLabel ?? ""
-                        }
-                        TextField(L10n.role, text: $memberRole)
-                        HStack {
-                            Button(L10n.save) {
-                                guard let selectedMemberID else { return }
-                                Task { await model.setMemberRole(contactID: selectedMemberID, role: memberRole) }
-                            }
-                            .disabled(selectedMemberID == nil)
-                            Button(L10n.removeFromDepartment, role: .destructive) {
-                                guard let selectedMemberID else { return }
-                                Task {
-                                    await model.removeMember(selectedMemberID)
-                                    self.selectedMemberID = nil
-                                    memberRole = ""
-                                }
-                            }
-                            .disabled(selectedMemberID == nil)
-                        }
-                    }
-                }
-
-                if !model.unassignedContacts.isEmpty {
-                    Section(L10n.unassignedPeople) {
-                        Picker(L10n.person, selection: $selectedUnassignedContactID) {
-                            Text(L10n.select).tag(UUID?.none)
-                            ForEach(model.unassignedContacts) { contact in
-                                Text(contact.displayName ?? contact.email ?? L10n.unnamedPerson)
-                                    .tag(Optional(contact.id))
-                            }
-                        }
-                        Button(L10n.addToDepartment) {
-                            guard let selectedUnassignedContactID else { return }
-                            Task {
-                                await model.assignUnassignedContact(selectedUnassignedContactID)
-                                self.selectedUnassignedContactID = nil
-                            }
-                        }
-                        .disabled(selectedUnassignedContactID == nil)
-                    }
-                }
-
-                Section(L10n.provisionalPerson) {
-                    TextField(L10n.provisionalPersonName, text: $provisionalName)
-                    Button(L10n.add) {
-                        let name = provisionalName
-                        provisionalName = ""
-                        Task { await model.createProvisionalContact(name: name) }
-                    }
-                    .disabled(provisionalName.nilIfBlank == nil)
-                }
-            }
-            .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceManageMemberships)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.done) { showsMembershipEditor = false }
-                }
-            }
-        }
-        .frame(minWidth: 540, minHeight: 560)
     }
 
     private func requestOrganizationDeletion() {
@@ -374,8 +226,8 @@ struct OrganizationHierarchyView: View {
             ForEach(detail.members) { member in
                 contactRow(member)
             }
-            Button(L10n.customerIntelligenceManageMemberships, systemImage: "person.2.badge.gearshape") {
-                showsMembershipEditor = true
+            Button(L10n.customerIntelligenceAddPerson, systemImage: "person.badge.plus") {
+                showsPersonAdditionSheet = true
             }
         }
     }
@@ -391,7 +243,9 @@ struct OrganizationHierarchyView: View {
                     if let email = contact.email {
                         Text(email).font(.caption).foregroundStyle(.secondary)
                     } else {
-                        Text(L10n.provisionalPerson).font(.caption).foregroundStyle(.orange)
+                        Text(L10n.customerIntelligenceEmailNotSet)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     if let roleLabel = member.roleLabel {
                         Text(roleLabel).font(.caption).foregroundStyle(.secondary)
@@ -513,6 +367,12 @@ struct OrganizationHierarchyView: View {
             .sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+    }
+
+    private func organizationEditTitle(for node: OrganizationWorkspaceNode) -> String {
+        node.organization.nodeKind == .organization
+            ? L10n.customerIntelligenceEditOrganization
+            : L10n.customerIntelligenceEditDepartment
     }
 
     private func isDescendant(

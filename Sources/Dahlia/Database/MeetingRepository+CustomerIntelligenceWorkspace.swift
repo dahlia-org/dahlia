@@ -148,22 +148,6 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func fetchUnassignedContacts(vaultId: UUID) throws -> [ContactRecord] {
-        try dbQueue.read { db in
-            try ContactRecord
-                .filter(Column("vaultId") == vaultId)
-                .filter(sql: """
-                NOT EXISTS (
-                    SELECT 1 FROM organization_memberships
-                    WHERE organization_memberships.contactId = contacts.id
-                )
-                """)
-                .order(Column("displayName").asc, Column("email").asc, Column("id").asc)
-                .limit(500)
-                .fetchAll(db)
-        }
-    }
-
     nonisolated func searchOrganizationWorkspaceNodes(
         vaultId: UUID,
         rootOrganizationId: UUID? = nil,

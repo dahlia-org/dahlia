@@ -7,43 +7,14 @@ import Observation
 @Observable
 // swiftlint:disable:next type_body_length
 final class OrganizationWorkspaceViewModel {
-    struct PendingContactDeletion: Identifiable {
-        let contact: ContactRecord
-        let impact: ProvisionalContactDeletionImpact
-        var id: UUID { contact.id }
-    }
-
     struct PendingOrganizationDeletion: Identifiable {
         let organization: OrganizationRecord
         let impact: OrganizationDeletionImpact
         var id: UUID { organization.id }
     }
 
-    struct PendingTopicDeletion: Identifiable {
-        let topic: ConversationTopicRecord
-        let impact: TopicDeletionImpact
-        var id: UUID { topic.id }
-    }
-
-    enum PendingDeletion: Identifiable {
-        case contact(PendingContactDeletion)
-        case organization(PendingOrganizationDeletion)
-        case topic(PendingTopicDeletion)
-
-        var id: String {
-            switch self {
-            case let .contact(pending):
-                "contact:\(pending.id.uuidString)"
-            case let .organization(pending):
-                "organization:\(pending.id.uuidString)"
-            case let .topic(pending):
-                "topic:\(pending.id.uuidString)"
-            }
-        }
-    }
-
     private(set) var roots: [OrganizationWorkspaceNode] = []
-    private(set) var unassignedContacts: [ContactRecord] = []
+    private(set) var contacts: [ContactRecord] = []
     private(set) var organizationCandidates: [OrganizationRecord] = []
     private(set) var loadedNodes: [UUID: OrganizationWorkspaceNode] = [:]
     private(set) var loadedChildCounts: [UUID: Int] = [:]
@@ -61,7 +32,7 @@ final class OrganizationWorkspaceViewModel {
     var isLoading = false
     private(set) var isMutating = false
     var errorMessage: String?
-    var pendingDeletion: PendingDeletion?
+    var pendingDeletion: PendingOrganizationDeletion?
 
     private let dbQueue: DatabaseQueue?
     private var vaultID: UUID?
@@ -128,12 +99,12 @@ final class OrganizationWorkspaceViewModel {
             let result = try await performRead { repository in
                 try (
                     repository.fetchRootOrganizationWorkspaceNodes(vaultId: vaultID),
-                    repository.fetchUnassignedContacts(vaultId: vaultID)
+                    repository.fetchContacts(vaultId: vaultID)
                 )
             }
             guard generation == loadGeneration else { return }
             roots = result.0
-            unassignedContacts = result.1
+            contacts = result.1
             errorMessage = nil
             if let rootID = requestedRootID, roots.contains(where: { $0.id == rootID }) {
                 await selectRoot(rootID)
@@ -314,13 +285,16 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    func renameSelectedOrganization(to name: String) async {
-        guard let id = selectedNodeID, let node = loadedNodes[id], let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.updateOrganizationName(
+    func updateSelectedOrganization(name: String, parentID: UUID?) async -> Bool {
+        guard let id = selectedNodeID, id != parentID, let node = loadedNodes[id], let vaultID else {
+            return false
+        }
+        return await mutate(vaultID: vaultID) {
+            try $0.updateOrganization(
                 id: id,
                 vaultId: vaultID,
                 name: name,
+                parentOrganizationId: parentID,
                 expectedRevision: node.organization.revision
             )
         }
@@ -340,123 +314,15 @@ final class OrganizationWorkspaceViewModel {
         })
     }
 
-    func createDepartment(name: String) async {
-        guard let parentID = selectedNodeID, let vaultID else { return }
-        await mutate(vaultID: vaultID, operation: {
-            try $0.createOrganization(
-                vaultId: vaultID,
-                parentOrganizationId: parentID,
-                nodeKind: .unit,
-                name: name
-            )
-        }, onSuccess: { _ in
-            loadedChildCounts[parentID] = nil
-        })
-    }
-
-    func moveSelectedOrganization(to parentID: UUID?) async {
-        guard let id = selectedNodeID, id != parentID, let node = loadedNodes[id],
-              let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.moveOrganization(
-                id: id,
-                vaultId: vaultID,
-                parentOrganizationId: parentID,
-                expectedRevision: node.organization.revision
-            )
-        }
-    }
-
-    func setMemberRole(contactID: UUID, role: String?) async {
+    func addMember(contactID: UUID, role: String?) async -> Bool {
         guard let organizationID = selectedNodeID, let node = loadedNodes[organizationID],
-              let vaultID else { return }
-        await mutate(vaultID: vaultID) {
+              let vaultID else { return false }
+        return await mutate(vaultID: vaultID) {
             try $0.addOrganizationMembership(
                 organizationId: organizationID,
                 contactId: contactID,
                 roleLabel: role,
                 expectedOrganizationRevision: node.organization.revision
-            )
-        }
-    }
-
-    func assignUnassignedContact(_ contactID: UUID) async {
-        await setMemberRole(contactID: contactID, role: nil)
-    }
-
-    func removeMember(_ contactID: UUID) async {
-        guard let organizationID = selectedNodeID, let node = loadedNodes[organizationID],
-              let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.removeOrganizationMembership(
-                organizationId: organizationID,
-                contactId: contactID,
-                expectedOrganizationRevision: node.organization.revision
-            )
-        }
-    }
-
-    func renameProvisionalContact(_ contact: ContactRecord, to name: String) async {
-        guard contact.isProvisional, let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.updateContactDisplayName(
-                id: contact.id,
-                vaultId: vaultID,
-                displayName: name,
-                expectedRevision: contact.revision
-            )
-        }
-    }
-
-    func updateTopicState(_ topic: ConversationTopicRecord, currentState: String) async {
-        guard let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.updateConversationTopic(
-                id: topic.id,
-                vaultId: vaultID,
-                expectedRevision: topic.revision,
-                title: topic.title,
-                currentState: currentState
-            )
-        }
-    }
-
-    func createProvisionalContact(name: String) async {
-        guard let vaultID else { return }
-        let organizationID = selectedNodeID
-        let organizationRevision = organizationID.flatMap {
-            loadedNodes[$0]?.organization.revision
-        }
-        await mutate(vaultID: vaultID) {
-            try $0.createProvisionalContact(
-                vaultId: vaultID,
-                displayName: name,
-                organizationId: organizationID,
-                expectedOrganizationRevision: organizationRevision
-            )
-        }
-    }
-
-    func prepareContactDeletion(_ contact: ContactRecord) async {
-        guard dbQueue != nil, let vaultID else { return }
-        do {
-            let impact = try await performRead {
-                try $0.provisionalContactDeletionImpact(id: contact.id, vaultId: vaultID)
-            }
-            pendingDeletion = .contact(PendingContactDeletion(contact: contact, impact: impact))
-        } catch {
-            setError(error)
-        }
-    }
-
-    private func confirmContactDeletion(_ pending: PendingContactDeletion) async {
-        guard let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.deleteProvisionalContact(
-                id: pending.id,
-                vaultId: vaultID,
-                expectedRevision: pending.contact.revision,
-                expectedImpact: pending.impact
             )
         }
     }
@@ -472,10 +338,10 @@ final class OrganizationWorkspaceViewModel {
                   loadedNodes[id]?.organization.revision == organization.revision else {
                 return
             }
-            pendingDeletion = .organization(PendingOrganizationDeletion(
+            pendingDeletion = PendingOrganizationDeletion(
                 organization: organization,
                 impact: impact
-            ))
+            )
         } catch {
             setError(error)
         }
@@ -493,40 +359,9 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    func prepareTopicDeletion(_ topic: ConversationTopicRecord) async {
-        guard dbQueue != nil, let vaultID else { return }
-        do {
-            let impact = try await performRead {
-                try $0.topicDeletionImpact(id: topic.id, vaultId: vaultID)
-            }
-            pendingDeletion = .topic(PendingTopicDeletion(topic: topic, impact: impact))
-        } catch {
-            setError(error)
-        }
-    }
-
-    private func confirmTopicDeletion(_ pending: PendingTopicDeletion) async {
-        guard let vaultID else { return }
-        await mutate(vaultID: vaultID) {
-            try $0.deleteConversationTopic(
-                id: pending.id,
-                vaultId: vaultID,
-                expectedRevision: pending.topic.revision,
-                expectedImpact: pending.impact
-            )
-        }
-    }
-
-    func confirmDeletion(_ pending: PendingDeletion) async {
+    func confirmDeletion(_ pending: PendingOrganizationDeletion) async {
         pendingDeletion = nil
-        switch pending {
-        case let .contact(contact):
-            await confirmContactDeletion(contact)
-        case let .organization(organization):
-            await confirmOrganizationDeletion(organization)
-        case let .topic(topic):
-            await confirmTopicDeletion(topic)
-        }
+        await confirmOrganizationDeletion(pending)
     }
 
     private func expand(_ id: UUID) async {
@@ -654,23 +489,26 @@ final class OrganizationWorkspaceViewModel {
         }.value
     }
 
+    @discardableResult
     private func mutate<Value: Sendable>(
         vaultID: UUID,
         operation: @escaping @Sendable (MeetingRepository) throws -> Value,
         onSuccess: (Value) -> Void = { _ in }
-    ) async {
-        guard !isMutating, self.vaultID == vaultID else { return }
+    ) async -> Bool {
+        guard !isMutating, self.vaultID == vaultID else { return false }
         isMutating = true
         defer { isMutating = false }
         do {
             let value = try await performWrite(operation)
-            guard self.vaultID == vaultID else { return }
+            guard self.vaultID == vaultID else { return false }
             onSuccess(value)
             DahliaWorkspaceChangeNotification.post(vaultID: vaultID, senderID: notificationSenderID)
             await load()
+            return true
         } catch {
-            guard self.vaultID == vaultID else { return }
+            guard self.vaultID == vaultID else { return false }
             setError(error)
+            return false
         }
     }
 
@@ -681,7 +519,7 @@ final class OrganizationWorkspaceViewModel {
         searchGeneration += 1
         layoutGeneration += 1
         roots = []
-        unassignedContacts = []
+        contacts = []
         organizationCandidates = []
         loadedNodes = [:]
         loadedChildCounts = [:]

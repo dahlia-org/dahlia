@@ -77,7 +77,7 @@ struct CustomerIntelligenceContactsView: View {
         }
         .alert(item: $model.pendingDeletion) { pending in
             Alert(
-                title: Text(L10n.deleteProvisionalPerson),
+                title: Text(L10n.customerIntelligenceDeletePerson),
                 message: Text(L10n.contactDeletionImpact(pending.impact)),
                 primaryButton: .destructive(Text(L10n.delete)) {
                     Task {
@@ -107,17 +107,16 @@ struct CustomerIntelligenceContactsView: View {
                         .lineLimit(1)
                 }
             }
-            TableColumn(L10n.status, value: \.sortProvisional) { summary in
-                if summary.contact.isProvisional {
-                    Label(L10n.provisionalPerson, systemImage: "person.crop.circle.badge.questionmark")
-                        .foregroundStyle(.orange)
+            TableColumn(L10n.customerIntelligenceEmail, value: \.sortEmail) { summary in
+                if let email = summary.contact.email {
+                    Text(email)
                         .lineLimit(1)
                 } else {
-                    Text("—")
-                        .foregroundStyle(.tertiary)
+                    Text(L10n.customerIntelligenceEmailNotSet)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .width(min: 80, ideal: 100)
+            .width(min: 150, ideal: 220)
             TableColumn(L10n.organizations, value: \.sortOrganizations) { summary in
                 Text(summary.organizationNames.joined(separator: ", "))
                     .foregroundStyle(summary.organizationNames.isEmpty ? Color.secondary : Color.primary)
@@ -177,7 +176,9 @@ struct CustomerIntelligenceContactsView: View {
                             ?? L10n.unnamedPerson,
                         subtitle: detail.summary.contact.email,
                         systemImage: "person.crop.circle",
-                        badge: detail.summary.contact.isProvisional ? L10n.provisionalPerson : nil,
+                        badge: detail.summary.contact.email == nil
+                            ? L10n.customerIntelligenceEmailNotSet
+                            : nil,
                         onEdit: { editedContact = detail.summary.contact }
                     )
 
@@ -241,7 +242,7 @@ struct CustomerIntelligenceContactsView: View {
 
                     if detail.summary.contact.isProvisional {
                         CustomerIntelligenceDangerSection(
-                            title: L10n.deleteProvisionalPerson,
+                            title: L10n.customerIntelligenceDeletePerson,
                             message: L10n.customerIntelligenceDeletePersonHelp,
                             action: { Task { await model.prepareDeletion(detail.summary.contact) } }
                         )
@@ -361,7 +362,8 @@ private struct CustomerIntelligenceContactFilterBar: View {
         Picker(L10n.filter, selection: $filter) {
             Text(L10n.all).tag(CustomerIntelligenceContactsViewModel.Filter.all)
             Text(L10n.unassignedPeople).tag(CustomerIntelligenceContactsViewModel.Filter.unassigned)
-            Text(L10n.provisionalPerson).tag(CustomerIntelligenceContactsViewModel.Filter.provisional)
+            Text(L10n.customerIntelligenceEmailNotSet)
+                .tag(CustomerIntelligenceContactsViewModel.Filter.emailMissing)
         }
         .pickerStyle(.segmented)
         .labelsHidden()

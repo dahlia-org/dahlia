@@ -9,7 +9,7 @@ final class CustomerIntelligenceContactsViewModel {
     enum Filter: String, CaseIterable, Identifiable {
         case all
         case unassigned
-        case provisional
+        case emailMissing
 
         var id: String { rawValue }
     }
@@ -60,7 +60,7 @@ final class CustomerIntelligenceContactsViewModel {
             let matchesFilter = switch filter {
             case .all: true
             case .unassigned: $0.membershipCount == 0
-            case .provisional: $0.contact.isProvisional
+            case .emailMissing: $0.contact.email == nil
             }
             guard matchesFilter, let query = searchText.nilIfBlank else { return matchesFilter }
             return [$0.contact.displayName, $0.contact.email]
