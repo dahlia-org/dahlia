@@ -47,8 +47,8 @@ struct MeetingDateGroupingTests {
 }
 #endif
 
-private func meeting(name: String, createdAt: Date) -> MeetingOverviewItem {
-    MeetingOverviewItem(
+private func meeting(name: String, createdAt: Date) -> MeetingSidebarItem {
+    MeetingSidebarItem(
         meetingId: UUID.v7(),
         vaultId: UUID.v7(),
         projectId: nil,
@@ -57,9 +57,6 @@ private func meeting(name: String, createdAt: Date) -> MeetingOverviewItem {
         status: .ready,
         duration: nil,
         createdAt: createdAt,
-        hasSummary: false,
-        segmentCount: 0,
-        latestSegmentText: nil,
-        tags: []
+        calendarEventTitle: nil
     )
 }

@@ -38,6 +38,59 @@ import GRDB
         }
 
         @Test
+        func meetingSidebarPagingMigrationAddsIndexWithoutChangingRows() throws {
+            let databaseURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-sidebar-index-\(UUID.v7())")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+            let manager = try AppDatabaseManager(path: databaseURL.path)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: "/tmp/sidebar-index-vault",
+                name: "Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let meeting = MeetingRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                projectId: nil,
+                name: "Preserved",
+                createdAt: .now,
+                updatedAt: .now
+            )
+            try manager.dbQueue.write { db in
+                try vault.insert(db)
+                try meeting.insert(db)
+                try db.execute(sql: "DROP INDEX meetings_on_vaultId_createdAt_id")
+                try db.execute(
+                    sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
+                    arguments: ["v26_meetingSidebarPagingIndex"]
+                )
+            }
+
+            let migrated = try AppDatabaseManager(path: databaseURL.path)
+            let result = try migrated.dbQueue.read { db in
+                let columns = try String.fetchAll(
+                    db,
+                    sql: """
+                    SELECT name
+                    FROM pragma_index_info('meetings_on_vaultId_createdAt_id')
+                    ORDER BY seqno
+                    """
+                )
+                let preserved = try MeetingRecord.fetchOne(db, key: meeting.id)
+                return (columns, preserved)
+            }
+
+            #expect(result.0 == ["vaultId", "createdAt", "id"])
+            #expect(result.1?.id == meeting.id)
+            #expect(result.1?.vaultId == meeting.vaultId)
+            #expect(result.1?.name == meeting.name)
+        }
+
+        @Test
         func projectHierarchyMigrationPreservesUUIDsAndSynthesizesIntermediateProjects() throws {
             let queue = try DatabaseQueue()
             let vaultID = UUID.v7()

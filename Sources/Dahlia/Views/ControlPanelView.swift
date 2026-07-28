@@ -99,8 +99,8 @@ private struct MeetingNameHeader: View {
 
 private struct MeetingActionsMenu: View {
     @ObservedObject var viewModel: CaptionViewModel
-    var sidebarViewModel: SidebarViewModel
     let onRename: () -> Void
+    let onDelete: () -> Void
 
     private var canOpenSummary: Bool {
         viewModel.lastSummaryURL != nil || viewModel.currentSummaryGoogleFileURL != nil
@@ -124,11 +124,7 @@ private struct MeetingActionsMenu: View {
 
             Divider()
 
-            Button(role: .destructive) {
-                guard let meetingId = viewModel.currentMeetingId else { return }
-                sidebarViewModel.deleteMeeting(id: meetingId)
-                viewModel.clearCurrentMeeting()
-            } label: {
+            Button(role: .destructive, action: onDelete) {
                 Label(L10n.delete, systemImage: "trash")
             }
             .disabled(viewModel.currentMeetingId == nil)
@@ -152,6 +148,7 @@ private struct MeetingDetailHeader: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
     let onEditorTap: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -212,8 +209,8 @@ private struct MeetingDetailHeader: View {
     private var controls: some View {
         MeetingActionsMenu(
             viewModel: viewModel,
-            sidebarViewModel: sidebarViewModel,
-            onRename: onBeginEditing
+            onRename: onBeginEditing,
+            onDelete: onDelete
         )
         .controlSize(.regular)
         .fixedSize(horizontal: true, vertical: false)
@@ -258,6 +255,7 @@ struct ControlPanelView: View {
     @State private var isConfirmingScreenshotDeletion = false
     @State private var isEditingMeetingName = false
     @State private var editingMeetingName = ""
+    @State private var pendingMeetingDeletion: MeetingDeletionRequest?
     @State private var didTapInsideMeetingNameEditor = false
     @State private var didTapInsideNotesField = false
     @FocusState private var isMeetingNameFieldFocused: Bool
@@ -285,7 +283,8 @@ struct ControlPanelView: View {
                     onBeginEditing: beginMeetingRename,
                     onCommit: commitMeetingRename,
                     onCancel: cancelMeetingRename,
-                    onEditorTap: markMeetingNameEditorTap
+                    onEditorTap: markMeetingNameEditorTap,
+                    onDelete: requestCurrentMeetingDeletion
                 )
             }
 
@@ -395,6 +394,13 @@ struct ControlPanelView: View {
             Button(L10n.cancel, role: .cancel) {}
         } message: {
             Text(L10n.deleteSelectedScreenshotsConfirmation)
+        }
+        .meetingDeletionConfirmation(request: $pendingMeetingDeletion) { meetingIds in
+            sidebarViewModel.deleteMeetings(ids: meetingIds)
+            if let meetingId = viewModel.currentMeetingId,
+               meetingIds.contains(meetingId) {
+                viewModel.clearCurrentMeeting()
+            }
         }
         .overlay {
             if let presentation = expandedScreenshot {
@@ -601,9 +607,10 @@ struct ControlPanelView: View {
 
     // MARK: - Computed
 
-    private var currentMeetingItem: MeetingOverviewItem? {
+    private var currentMeetingItem: MeetingDetailItem? {
         guard let meetingId = viewModel.currentMeetingId else { return nil }
-        return sidebarViewModel.allMeetings.first(where: { $0.meetingId == meetingId })
+        guard sidebarViewModel.selectedMeetingDetail?.meetingId == meetingId else { return nil }
+        return sidebarViewModel.selectedMeetingDetail
     }
 
     private var displayedCalendarEvent: CalendarEventDisplayInfo? {
@@ -641,7 +648,7 @@ struct ControlPanelView: View {
 
     private var displayedMeetingTitle: String? {
         if let currentMeetingItem {
-            return currentMeetingItem.meeting.name
+            return currentMeetingItem.meetingName
         }
         if viewModel.currentMeetingId != nil {
             return ""
@@ -654,7 +661,7 @@ struct ControlPanelView: View {
 
     private var displayedMeetingIdentity: String? {
         if let currentMeetingItem {
-            return currentMeetingItem.meeting.id.uuidString
+            return currentMeetingItem.meetingId.uuidString
         }
         if let currentMeetingId = viewModel.currentMeetingId {
             return currentMeetingId.uuidString
@@ -721,8 +728,8 @@ struct ControlPanelView: View {
     private func commitMeetingRename() {
         guard isEditingMeetingName else { return }
         let trimmed = editingMeetingName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let meeting = currentMeetingItem?.meeting {
-            sidebarViewModel.renameMeeting(id: meeting.id, newName: trimmed)
+        if let currentMeetingItem {
+            sidebarViewModel.renameMeeting(id: currentMeetingItem.meetingId, newName: trimmed)
         } else if viewModel.hasDraftMeeting {
             viewModel.updateDraftMeetingTitle(trimmed)
             if let meetingId = viewModel.materializeDraftMeeting(
@@ -734,6 +741,14 @@ struct ControlPanelView: View {
         isEditingMeetingName = false
         isMeetingNameFieldFocused = false
         didTapInsideMeetingNameEditor = false
+    }
+
+    private func requestCurrentMeetingDeletion() {
+        guard let meetingId = viewModel.currentMeetingId else { return }
+        pendingMeetingDeletion = MeetingDeletionRequest(
+            meetingIds: [meetingId],
+            meetingName: displayedMeetingTitle?.nilIfBlank
+        )
     }
 
     private func markMeetingNameEditorTap() {

@@ -3,7 +3,7 @@ import SwiftUI
 struct CodexChatView: View {
     @Bindable var session: CodexChatSessionModel
     @Bindable var coordinator: CodexChatCoordinator
-    let meetings: [MeetingOverviewItem]
+    let meetingReferences: [CodexChatMeetingReference]
     let meetingCatalogVaultID: UUID?
     let isMeetingCatalogLoaded: Bool
     let allowsPopOut: Bool
@@ -90,7 +90,7 @@ struct CodexChatView: View {
         }
         .background(.background)
         .task(id: session.id) { await prepare() }
-        .onChange(of: meetings) {
+        .onChange(of: meetingReferences) {
             updateMeetingCatalog()
         }
         .onChange(of: meetingCatalogVaultID) {
@@ -111,7 +111,7 @@ struct CodexChatView: View {
 
     private func updateMeetingCatalog() {
         session.updateAvailableMeetings(
-            meetings,
+            meetingReferences,
             catalogVaultID: meetingCatalogVaultID,
             isCatalogLoaded: isMeetingCatalogLoaded
         )

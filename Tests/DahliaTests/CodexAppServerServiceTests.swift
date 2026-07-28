@@ -359,6 +359,7 @@ import Foundation
 
             await transport.waitUntilSent("test/first")
             let second = Task { try await service.request(method: "test/second") }
+            await transport.waitUntilSent("test/second")
 
             #expect(try await first.value == .string("first"))
             #expect(try await second.value == .string("second"))

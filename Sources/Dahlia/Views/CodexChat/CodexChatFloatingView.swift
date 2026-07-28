@@ -32,7 +32,7 @@ struct CodexChatFloatingView: View {
                 CodexChatView(
                     session: coordinator.floatingSession,
                     coordinator: coordinator,
-                    meetings: sidebarViewModel.allMeetings,
+                    meetingReferences: sidebarViewModel.meetingReferences,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     allowsPopOut: true,
@@ -62,6 +62,9 @@ struct CodexChatFloatingView: View {
             .offset(x: origin.x - restingOrigin.x)
             .onChange(of: geometry.size) {
                 layout.clamp(to: geometry.size)
+            }
+            .task(id: sidebarViewModel.currentVault?.id) {
+                sidebarViewModel.loadMeetingReferencesIfNeeded()
             }
         }
     }

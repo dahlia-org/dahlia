@@ -21,7 +21,7 @@ struct CodexChatWindowView: View {
                 CodexChatView(
                     session: session,
                     coordinator: coordinator,
-                    meetings: sidebarViewModel.allMeetings,
+                    meetingReferences: sidebarViewModel.meetingReferences,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
                     allowsPopOut: false,
@@ -36,6 +36,9 @@ struct CodexChatWindowView: View {
             }
         }
         .frame(minWidth: 420, minHeight: 360)
+        .task(id: sidebarViewModel.currentVault?.id) {
+            sidebarViewModel.loadMeetingReferencesIfNeeded()
+        }
         .onDisappear {
             coordinator.detachedWindowClosed(sessionID: sessionID)
         }

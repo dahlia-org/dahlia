@@ -1,15 +1,15 @@
 import Foundation
 
-struct MeetingDateGroup: Identifiable, Equatable {
+struct MeetingDateGroup: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let date: Date
-    let meetings: [MeetingOverviewItem]
+    let meetings: [MeetingSidebarItem]
 }
 
 enum MeetingDateGrouping {
     static func groups(
-        from meetings: [MeetingOverviewItem],
+        from meetings: [MeetingSidebarItem],
         calendar: Calendar = .current,
         now: Date = Date()
     ) -> [MeetingDateGroup] {

@@ -5,18 +5,6 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
     let name: String
     let createdAt: Date
 
-    init(id: UUID, name: String, createdAt: Date) {
-        self.id = id
-        self.name = name
-        self.createdAt = createdAt
-    }
-
-    init(meeting: MeetingOverviewItem) {
-        id = meeting.meetingId
-        name = meeting.meetingName.nilIfBlank ?? L10n.newMeeting
-        createdAt = meeting.createdAt
-    }
-
     static func suggestions(
         from references: [Self],
         excluding selectedIDs: [UUID],

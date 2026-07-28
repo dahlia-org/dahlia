@@ -11,6 +11,7 @@ struct MeetingListSidebarView: View {
     @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
+    @State private var pendingDeletion: MeetingDeletionRequest?
     @FocusState private var isRenameFieldFocused: Bool
 
     private var meetingSelection: Binding<Set<UUID>> {
@@ -23,45 +24,43 @@ struct MeetingListSidebarView: View {
         )
     }
 
-    private var filteredMeetings: [MeetingOverviewItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sidebarViewModel.allMeetings }
-
-        return sidebarViewModel.allMeetings.filter { item in
-            item.meetingName.localizedStandardContains(query)
-                || item.meetingDescription.localizedStandardContains(query)
-                || (item.projectName?.localizedStandardContains(query) ?? false)
-                || (item.calendarEvent?.title.localizedStandardContains(query) ?? false)
-                || (item.latestSegmentText?.localizedStandardContains(query) ?? false)
-                || item.tags.contains { $0.name.localizedStandardContains(query) }
-        }
-    }
-
-    private var groups: [MeetingDateGroup] {
-        MeetingDateGrouping.groups(from: filteredMeetings)
-    }
-
     var body: some View {
         List(selection: meetingSelection) {
-            ForEach(groups) { group in
+            if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
+                Section(L10n.selectedMeeting) {
+                    meetingRow(selectedMeeting)
+                }
+            }
+
+            ForEach(sidebarViewModel.displayedMeetingGroups) { group in
                 Section(group.title) {
                     ForEach(group.meetings) { item in
-                        MeetingSidebarRow(
-                            item: item,
-                            isSelected: renderedMeetingSelection.contains(item.meetingId),
-                            isActiveRecording: item.meetingId == viewModel.recordingMeetingId,
-                            isEditing: editingMeetingId == item.meetingId,
-                            editingName: $editingMeetingName,
-                            isFocused: $isRenameFieldFocused,
-                            onCommitRename: commitRename,
-                            onCancelRename: cancelRename
-                        )
-                        .tag(item.meetingId)
+                        meetingRow(item)
                     }
                 }
             }
+
+            MeetingListPaginationRow(
+                error: sidebarViewModel.displayedMeetingListLoadError,
+                hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
+                isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
+                hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
+                limitMessage: meetingListLimitMessage,
+                loadTrigger: "meeting-page-\(sidebarViewModel.meetingSearchQuery)-\(sidebarViewModel.displayedMeetingItems.count)",
+                onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
+            )
         }
         .listStyle(.sidebar)
+        .overlay {
+            MeetingListStatusOverlay(
+                isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
+                error: sidebarViewModel.displayedMeetingListLoadError,
+                isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty,
+                isSearching: sidebarViewModel.isSearchingMeetings,
+                onRetry: sidebarViewModel.retryDisplayedMeetingLoading
+            )
+        }
         .overlay(alignment: .bottom) {
             if viewModel.isListening {
                 RecordingStatusBar(
@@ -78,7 +77,7 @@ struct MeetingListSidebarView: View {
             contextMenu(for: selection)
         }
         .onDeleteCommand {
-            sidebarViewModel.deleteMeetings(ids: sidebarViewModel.selectedMeetingIds)
+            requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
@@ -86,6 +85,36 @@ struct MeetingListSidebarView: View {
         .onChange(of: sidebarViewModel.selectedMeetingIds) { _, selection in
             renderedMeetingSelection = selection
         }
+        .onChange(of: searchText) { _, query in
+            sidebarViewModel.updateMeetingSearchQuery(query)
+        }
+        .onChange(of: sidebarViewModel.currentVault?.id) {
+            searchText = ""
+        }
+        .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
+            sidebarViewModel.deleteMeetings(ids: meetingIds)
+        }
+    }
+
+    private var meetingListLimitMessage: String? {
+        guard sidebarViewModel.isDisplayedMeetingListLimited else { return nil }
+        return sidebarViewModel.isSearchingMeetings
+            ? L10n.refineMeetingSearch
+            : L10n.searchForOlderMeetings
+    }
+
+    private func meetingRow(_ item: MeetingSidebarItem) -> some View {
+        MeetingSidebarRow(
+            item: item,
+            isSelected: renderedMeetingSelection.contains(item.meetingId),
+            isActiveRecording: item.meetingId == viewModel.recordingMeetingId,
+            isEditing: editingMeetingId == item.meetingId,
+            editingName: $editingMeetingName,
+            isFocused: $isRenameFieldFocused,
+            onCommitRename: commitRename,
+            onCancelRename: cancelRename
+        )
+        .tag(item.meetingId)
     }
 
     @ViewBuilder
@@ -100,7 +129,7 @@ struct MeetingListSidebarView: View {
             Divider()
 
             Button(L10n.delete, role: .destructive) {
-                sidebarViewModel.deleteMeeting(id: meetingId)
+                requestDeletion(of: [meetingId])
             }
         } else if !selection.isEmpty {
             moveMenu(for: selection)
@@ -108,7 +137,7 @@ struct MeetingListSidebarView: View {
             Divider()
 
             Button(L10n.deleteCount(selection.count), role: .destructive) {
-                sidebarViewModel.deleteMeetings(ids: selection)
+                requestDeletion(of: selection)
             }
         }
     }
@@ -130,7 +159,7 @@ struct MeetingListSidebarView: View {
     }
 
     private func beginRename(_ meetingId: UUID) {
-        guard let item = sidebarViewModel.allMeetings.first(where: { $0.meetingId == meetingId }) else { return }
+        guard let item = sidebarViewModel.meetingSidebarItem(id: meetingId) else { return }
         editingMeetingId = meetingId
         editingMeetingName = item.meetingName
         isRenameFieldFocused = true
@@ -148,6 +177,18 @@ struct MeetingListSidebarView: View {
         editingMeetingName = ""
         isRenameFieldFocused = false
     }
+
+    private func requestDeletion(of meetingIds: Set<UUID>) {
+        guard !meetingIds.isEmpty else { return }
+        let meetingName = meetingIds.count == 1
+            ? meetingIds.first
+            .flatMap { sidebarViewModel.meetingSidebarItem(id: $0)?.meetingName.nilIfBlank }
+            : nil
+        pendingDeletion = MeetingDeletionRequest(
+            meetingIds: meetingIds,
+            meetingName: meetingName
+        )
+    }
 }
 
 private struct RecordingStatusBar: View {
@@ -156,14 +197,20 @@ private struct RecordingStatusBar: View {
     let recordingCoordinator: RecordingCoordinator
 
     @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
+    @State private var retainedRecordingMeetingItem: MeetingSidebarItem?
 
     private var recordingMeetingId: UUID? {
         viewModel.recordingMeetingId
     }
 
-    private var recordingMeetingItem: MeetingOverviewItem? {
+    private var currentRecordingMeetingItem: MeetingSidebarItem? {
         guard let recordingMeetingId else { return nil }
-        return sidebarViewModel.allMeetings.first { $0.meetingId == recordingMeetingId }
+        return sidebarViewModel.meetingSidebarItem(id: recordingMeetingId)
+    }
+
+    private var recordingMeetingItem: MeetingSidebarItem? {
+        currentRecordingMeetingItem
+            ?? retainedRecordingMeetingItem.flatMap { $0.meetingId == recordingMeetingId ? $0 : nil }
     }
 
     private var recordingTitle: String {
@@ -248,6 +295,17 @@ private struct RecordingStatusBar: View {
                 .allowsHitTesting(false)
         }
         .shadow(color: .black.opacity(0.12), radius: 16, y: 4)
+        .onAppear(perform: retainCurrentRecordingMeetingItem)
+        .onChange(of: currentRecordingMeetingItem) {
+            retainCurrentRecordingMeetingItem()
+        }
+        .onChange(of: recordingMeetingId) {
+            guard recordingMeetingId != nil else {
+                retainedRecordingMeetingItem = nil
+                return
+            }
+            retainCurrentRecordingMeetingItem()
+        }
     }
 
     private var panelContent: some View {
@@ -419,6 +477,14 @@ private struct RecordingStatusBar: View {
         viewModel.returnToRecordingMeeting()
     }
 
+    private func retainCurrentRecordingMeetingItem() {
+        if let currentRecordingMeetingItem {
+            retainedRecordingMeetingItem = currentRecordingMeetingItem
+        } else if retainedRecordingMeetingItem?.meetingId != recordingMeetingId {
+            retainedRecordingMeetingItem = nil
+        }
+    }
+
     private func formatElapsedTime(at date: Date) -> String {
         let elapsedSeconds = if let activeRecordingSession {
             activeRecordingSession.offsetSeconds + date.timeIntervalSince(activeRecordingSession.startedAt)
@@ -582,7 +648,7 @@ private struct RecordingSourceControlLabel: View {
 }
 
 private struct MeetingSidebarRow: View {
-    let item: MeetingOverviewItem
+    let item: MeetingSidebarItem
     let isSelected: Bool
     let isActiveRecording: Bool
     let isEditing: Bool
@@ -645,7 +711,7 @@ private struct MeetingSidebarRow: View {
                 .frame(width: 8, height: 8)
                 .accessibilityLabel(L10n.recordingNow)
         } else {
-            Image(systemName: item.calendarEvent == nil ? "waveform" : "calendar")
+            Image(systemName: item.calendarEventTitle == nil ? "waveform" : "calendar")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 12)
@@ -681,8 +747,8 @@ private struct MeetingSidebarRow: View {
         if isActiveRecording {
             components.append(L10n.recordingNow)
         }
-        if let calendarEvent = item.calendarEvent {
-            components.append(L10n.calendarEventOrigin(calendarEvent.resolvedTitle))
+        if let calendarEventTitle = item.calendarEventTitle {
+            components.append(L10n.calendarEventOrigin(calendarEventTitle.nilIfBlank ?? L10n.newMeeting))
         }
         return components.joined(separator: ", ")
     }

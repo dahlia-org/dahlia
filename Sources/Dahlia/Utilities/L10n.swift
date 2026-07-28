@@ -247,6 +247,17 @@ enum L10n {
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var noMeetingsMatchFilter: String { String(localized: "No meetings match the current filter.", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
+    static var selectedMeeting: String { String(localized: "Selected Meeting", bundle: bundle) }
+    static var loadingMeetings: String { String(localized: "Loading Meetings…", bundle: bundle) }
+    static var loadingMoreMeetings: String { String(localized: "Loading More…", bundle: bundle) }
+    static var retryLoadingMeetings: String { String(localized: "Retry Loading", bundle: bundle) }
+    static var meetingListLoadFailed: String { String(localized: "Could Not Load Meetings", bundle: bundle) }
+    static var searchForOlderMeetings: String { String(localized: "Search to find older meetings.", bundle: bundle) }
+    static var refineMeetingSearch: String { String(localized: "Refine your search to find older meetings.", bundle: bundle) }
+    static var createFirstMeetingDescription: String { String(
+        localized: "Create a meeting to start building your history.",
+        bundle: bundle
+    ) }
     static var searchProjects: String { String(localized: "Search projects...", bundle: bundle) }
     static var moveToProject: String { String(localized: "Move to Project", bundle: bundle) }
     static var noMeetingSelected: String { String(localized: "No meeting selected", bundle: bundle) }
@@ -283,6 +294,26 @@ enum L10n {
     static var returnToTranscribingMeeting: String { String(localized: "Return to transcribing meeting", bundle: bundle) }
     static var yesterday: String { String(localized: "Yesterday", bundle: bundle) }
     static func deleteCount(_ count: Int) -> String { String(localized: "Delete \(count) items", bundle: bundle) }
+    static func deleteMeetingConfirmation(_ name: String) -> String {
+        String(format: String(localized: "Delete %@?", bundle: bundle), name)
+    }
+
+    static func deleteMeetingsConfirmation(_ count: Int) -> String {
+        String(localized: "Delete \(count) meetings?", bundle: bundle)
+    }
+
+    static var deleteMeetingWarning: String { String(
+        localized: "Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone.",
+        bundle: bundle
+    ) }
+
+    static func deleteMeetingsWarning(_ count: Int) -> String {
+        String(
+            localized: "Delete \(count) meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone.",
+            bundle: bundle
+        )
+    }
+
     static func moveCount(_ count: Int) -> String { String(localized: "Move \(count) items", bundle: bundle) }
     static func selectedCount(_ count: Int) -> String { String(localized: "\(count) selected", bundle: bundle) }
 

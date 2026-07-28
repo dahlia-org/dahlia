@@ -121,21 +121,33 @@ final class RecordingCoordinator {
             return false
         }
 
-        let item = sidebarViewModel.allMeetings.first(where: { $0.meetingId == meetingId })
-        guard item != nil || viewModel.currentMeetingId == meetingId else {
+        let item: MeetingSidebarItem
+        do {
+            guard let fetchedItem = try dbQueue.read({ db in
+                try MeetingRepository.fetchMeetingSidebarItems(
+                    ids: [meetingId],
+                    vaultId: vault.id,
+                    in: db
+                ).first
+            }) else {
+                MainWindowOpener.shared.openMainWindow()
+                return false
+            }
+            item = fetchedItem
+        } catch {
+            viewModel.errorMessage = error.localizedDescription
+            ErrorReportingService.capture(error, context: ["source": "recordingAppendTarget"])
             MainWindowOpener.shared.openMainWindow()
             return false
         }
-        let projectName = item?.projectName ?? viewModel.currentProjectName
-        let projectId = item?.projectId ?? viewModel.currentProjectId
 
         Task {
             await viewModel.startListening(
                 dbQueue: dbQueue,
-                projectURL: projectName.map { sidebarViewModel.projectURL(for: $0) },
+                projectURL: item.projectName.map { sidebarViewModel.projectURL(for: $0) },
                 vaultId: vault.id,
-                projectId: projectId,
-                projectName: projectName,
+                projectId: item.projectId,
+                projectName: item.projectName,
                 vaultURL: vault.url,
                 appendingTo: meetingId
             )
