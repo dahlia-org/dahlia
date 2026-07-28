@@ -21,13 +21,7 @@ extension MeetingRepository {
             let meetings = try Self.scopedMeetings(vaultId: vaultId, scopeIDs: scopeIDs, limit: 8, in: db)
             let customers = try Self.customerCards(vaultId: vaultId, in: db)
             return try CustomerIntelligenceWorkspaceData.Overview(
-                counts: CustomerIntelligenceWorkspaceData.Counts(
-                    contacts: contacts.count,
-                    projects: projects.count,
-                    topics: topics.count,
-                    meetings: Self.scopedMeetingCount(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
-                    unacceptedInsights: insights.count(where: { !$0.insight.isAccepted })
-                ),
+                counts: Self.presentationCounts(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
                 customers: customers,
                 keyContacts: Array(
                     contacts
@@ -60,19 +54,7 @@ extension MeetingRepository {
     ) throws -> CustomerIntelligenceWorkspaceData.Counts {
         try dbQueue.read { db in
             let scopeIDs = try Self.presentationScopeIDs(vaultId: vaultId, scope: scope, in: db)
-            return try CustomerIntelligenceWorkspaceData.Counts(
-                contacts: Self.contactSummaries(
-                    vaultId: vaultId,
-                    contactID: nil,
-                    scopeIDs: scopeIDs,
-                    in: db
-                ).count,
-                projects: Self.projectSummaries(vaultId: vaultId, scopeIDs: scopeIDs, in: db).count,
-                topics: Self.topicOverviews(vaultId: vaultId, scopeIDs: scopeIDs, in: db).count,
-                meetings: Self.scopedMeetingCount(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
-                unacceptedInsights: Self.insightSummaries(vaultId: vaultId, scopeIDs: scopeIDs, in: db)
-                    .count(where: { !$0.insight.isAccepted })
-            )
+            return try Self.presentationCounts(vaultId: vaultId, scopeIDs: scopeIDs, in: db)
         }
     }
 
@@ -364,9 +346,9 @@ extension MeetingRepository {
             return try CustomerIntelligenceWorkspaceData.CustomerCard(
                 root: root,
                 organizationCount: scopeIDs?.organizations.count ?? 0,
-                contactCount: contacts.count,
-                projectCount: projectSummaries(vaultId: vaultId, scopeIDs: scopeIDs, in: db).count,
-                topicCount: topicOverviews(vaultId: vaultId, scopeIDs: scopeIDs, in: db).count,
+                contactCount: scopedContactCount(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
+                projectCount: scopedProjectCount(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
+                topicCount: scopedTopicCount(vaultId: vaultId, scopeIDs: scopeIDs, in: db),
                 lastInteractionAt: contacts.compactMap(\.lastInteractionAt).max()
             )
         }

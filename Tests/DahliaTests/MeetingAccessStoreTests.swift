@@ -1846,15 +1846,15 @@ import ImageIO
             let resolvedProjectReferences = try store.queryProjectResources(
                 ProjectResourceAccessQuery(projectID: project.projectID)
             ).resources.filter { $0.resourceID == identified.resourceID }
-            #expect(resolvedProjectReferences.count == 1)
-            #expect(resolvedProjectReferences.first?.relationLabel == "Confirmed owner")
+            #expect(resolvedProjectReferences.count == 2)
+            #expect(Set(resolvedProjectReferences.map(\.relationLabel)) == ["Confirmed owner", "Owner"])
             #expect(try store.conversationTopic(id: topic.resourceID).references.contains {
                 $0.resourceID == identified.resourceID
             })
             let resolvedInsightReferences = try store.insight(id: insight.resourceID).insight.references
                 .filter { $0.resourceID == identified.resourceID }
-            #expect(resolvedInsightReferences.count == 1)
-            #expect(resolvedInsightReferences.first?.referenceRole == .context)
+            #expect(resolvedInsightReferences.count == 2)
+            #expect(Set(resolvedInsightReferences.map(\.referenceRole)) == [.context, .evidence])
             let resolvedProject = try #require(store.queryProjects(
                 ProjectQuery(projectID: project.projectID)
             ).projects.first)

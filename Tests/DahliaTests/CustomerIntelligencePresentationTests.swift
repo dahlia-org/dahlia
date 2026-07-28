@@ -223,17 +223,17 @@ import GRDB
                 vaultId: fixture.vault.id
             ) == nil)
             let projectReferences = try fixture.repository.fetchProjectResourceReferences(projectId: project.id)
-            #expect(projectReferences.filter {
+            #expect(Set(projectReferences.filter {
                 $0.resourceType == .contact && $0.resourceId == existing.id
-            }.map(\.relationLabel) == ["confirmed"])
+            }.map(\.relationLabel)) == ["confirmed", "provisional"])
             let insightReferences = try fixture.manager.dbQueue.read { db in
                 try InsightReferenceRecord
                     .filter(Column("insightId") == insight.id)
                     .fetchAll(db)
             }
-            #expect(insightReferences.filter {
+            #expect(Set(insightReferences.filter {
                 $0.resourceType == .contact && $0.resourceId == existing.id
-            }.map(\.referenceRole) == [.context])
+            }.map(\.referenceRole)) == [.context, .evidence])
         }
 
         @Test
