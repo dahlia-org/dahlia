@@ -20,17 +20,28 @@ import Foundation
                 from: [previousMessage],
                 showsStandaloneThinking: true
             )
-
-            #expect(emptyConversation == [.thinking])
-            #expect(existingConversation == [.message(previousMessage), .thinking])
-        }
-
-        @Test
-        func steeredConversationDoesNotDuplicateActiveResponseThinking() {
-            let response = CodexChatMessage(
+            let emptyStreamingResponse = CodexChatMessage(
                 id: "response",
                 role: .assistant,
                 text: "",
+                isStreaming: true
+            )
+            let streamingConversation = CodexChatConversationItem.build(
+                from: [emptyStreamingResponse],
+                showsStandaloneThinking: true
+            )
+
+            #expect(emptyConversation == [.thinking])
+            #expect(existingConversation == [.message(previousMessage), .thinking])
+            #expect(streamingConversation == [.thinking])
+        }
+
+        @Test
+        func steeredConversationPlacesSingleThinkingIndicatorAfterLatestMessage() {
+            let response = CodexChatMessage(
+                id: "response",
+                role: .assistant,
+                text: "Partial",
                 isStreaming: true
             )
             let followUp = CodexChatMessage(
@@ -41,10 +52,10 @@ import Foundation
 
             let items = CodexChatConversationItem.build(
                 from: [response, followUp],
-                showsStandaloneThinking: false
+                showsStandaloneThinking: true
             )
 
-            #expect(items == [.message(response), .message(followUp)])
+            #expect(items == [.message(response), .message(followUp), .thinking])
         }
 
         @Test

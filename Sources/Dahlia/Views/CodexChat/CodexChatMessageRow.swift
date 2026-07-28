@@ -39,9 +39,7 @@ struct CodexChatMessageRow: View {
                         )
                     }
 
-                    if message.text.isEmpty, message.isStreaming {
-                        CodexChatThinkingIndicator()
-                    } else if !displayText.isEmpty {
+                    if !displayText.isEmpty {
                         CodexChatMarkdownView(
                             markdown: displayText,
                             isStreaming: message.isStreaming

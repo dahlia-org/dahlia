@@ -48,8 +48,10 @@ import Foundation
                 "Follow-up while responding",
             ])
             #expect(await service.steeredTextBlocks == [["Follow-up while responding"]])
+            #expect(session.showsStandaloneThinking)
             session.stop()
             await waitUntil { !session.isGenerating }
+            #expect(!session.showsStandaloneThinking)
         }
 
         @Test

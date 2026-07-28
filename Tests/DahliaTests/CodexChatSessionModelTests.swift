@@ -879,6 +879,10 @@ import Foundation
             blockedContinuation = nil
         }
 
+        func yieldBlockedEvent(_ event: CodexChatTurnEvent) {
+            blockedContinuation?.yield(event)
+        }
+
         func resumeDelayedSend() {
             delayedSendContinuation?.resume()
             delayedSendContinuation = nil

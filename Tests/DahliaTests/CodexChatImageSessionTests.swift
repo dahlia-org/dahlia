@@ -111,6 +111,56 @@ import Foundation
         }
 
         @Test
+        func steerCompletionDoesNotRestoreThinkingAfterOutputStarts() async {
+            let service = ImageChatService(supportsImages: true, sendBehavior: .blockSteer)
+            let session = makeSession(service: service)
+
+            session.draft = "Start"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+
+            session.draft = "Follow up"
+            session.sendDraft()
+            await waitUntilAsync { await service.isSteerWaiting }
+
+            await service.yieldBlockedEvent(.delta(itemID: "response", text: "Output while steering"))
+            await waitUntil { session.messages.last?.text == "Output while steering" }
+            #expect(!session.showsStandaloneThinking)
+
+            await service.resumeDelayedSteer()
+            await waitUntil { session.messages.filter { $0.role == .user }.count == 2 }
+            #expect(!session.showsStandaloneThinking)
+
+            await service.completeBlockedTurn()
+            await waitUntil { !session.isGenerating }
+        }
+
+        @Test
+        func staleSteerCompletionDoesNotMutateStoppedSession() async {
+            let service = ImageChatService(supportsImages: true, sendBehavior: .blockSteer)
+            let session = makeSession(service: service)
+
+            session.draft = "Start"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+
+            session.draft = "Follow up"
+            session.sendDraft()
+            await waitUntilAsync { await service.isSteerWaiting }
+
+            session.stop()
+            await waitUntil { !session.isGenerating }
+            await service.resumeDelayedSteer()
+            for _ in 0 ..< 10 {
+                await Task.yield()
+            }
+
+            #expect(session.messages.filter { $0.role == .user }.map(\.text) == ["Start"])
+            #expect(session.draft == "Follow up")
+            #expect(!session.showsStandaloneThinking)
+        }
+
+        @Test
         func incompatiblePendingImageDoesNotBlockLiveTranscript() async throws {
             let service = ImageChatService(supportsImages: true, sendBehavior: .delayFirstWithoutTurn)
             let session = makeSession(service: service)
@@ -372,6 +422,10 @@ import Foundation
         func resumeDelayedSteer() {
             delayedSteerContinuation?.resume()
             delayedSteerContinuation = nil
+        }
+
+        func yieldBlockedEvent(_ event: CodexChatTurnEvent) {
+            blockedTurnContinuation?.yield(event)
         }
 
         func completeBlockedTurn() {

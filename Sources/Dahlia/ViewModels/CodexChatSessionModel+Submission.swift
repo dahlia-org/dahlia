@@ -54,6 +54,7 @@ extension CodexChatSessionModel {
         }
         prepareFailureStateForSubmission(liveTranscript: liveTranscript)
         isGenerating = true
+        isAwaitingTurnOutput = true
         errorMessage = nil
         isActiveTurnLiveTranscript = liveTranscript != nil
         let isLiveModeSnapshot = liveTranscript != nil || isLiveModeEnabled
@@ -134,6 +135,28 @@ extension CodexChatSessionModel {
         if attachedImages == snapshot.images {
             attachedImages = []
         }
+    }
+
+    func retryManualSubmission(_ submission: CodexChatManualSubmission) {
+        let currentText = CodexChatMeetingReference.serializedText(
+            referenceIDs: selectedMeetingReferenceIDs,
+            draft: draft
+        )
+        let composerSnapshot: CodexChatComposerSnapshot? = if currentText == submission.text,
+                                                              attachedImages == submission.images {
+            CodexChatComposerSnapshot(
+                draft: draft,
+                referenceIDs: selectedMeetingReferenceIDs,
+                images: attachedImages
+            )
+        } else {
+            nil
+        }
+        submit(
+            submission.text,
+            images: submission.images,
+            composerSnapshot: composerSnapshot
+        )
     }
 
     func resolveContext(if isRequired: Bool) async throws -> CodexChatContext? {

@@ -36,7 +36,13 @@ enum CodexChatConversationItem: Identifiable, Equatable {
                 previousUserContext = message.context
                 hasPreviousUserMessage = true
             }
-            items.append(.message(message))
+            let isEmptyStreamingResponse = message.role == .assistant
+                && message.isStreaming
+                && message.text.isEmpty
+                && message.reasoning.isEmpty
+            if !showsStandaloneThinking || !isEmptyStreamingResponse {
+                items.append(.message(message))
+            }
         }
         if showsStandaloneThinking {
             items.append(.thinking)
