@@ -26,8 +26,28 @@ import Foundation
             #expect(session.showsStandaloneThinking)
 
             contextProvider.resume()
-            await waitUntil { session.activeTurnID != nil }
+            await waitUntil { session.messages.last?.text == "Partial" }
             #expect(!session.showsStandaloneThinking)
+
+            await service.yieldBlockedEvent(.completed(itemID: "item-1", text: "Partial"))
+            await waitUntil { session.showsStandaloneThinking }
+            #expect(session.messages.last?.text == "Partial")
+            #expect(session.messages.last?.isStreaming == true)
+
+            await service.yieldBlockedEvent(.reasoningDelta(
+                itemID: "reasoning-1",
+                summaryIndex: 0,
+                text: "More reasoning"
+            ))
+            await waitUntil { !session.showsStandaloneThinking }
+            #expect(session.messages.last?.reasoning == "More reasoning")
+
+            await service.yieldBlockedEvent(.reasoningCompleted(itemID: "reasoning-1", text: "More reasoning"))
+            await waitUntil { session.showsStandaloneThinking }
+
+            await service.yieldBlockedEvent(.delta(itemID: "item-2", text: "Next"))
+            await waitUntil { !session.showsStandaloneThinking }
+            #expect(session.messages.last?.text == "Partial\n\nNext")
 
             session.stop()
             await waitUntil { !session.isGenerating }

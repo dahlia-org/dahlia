@@ -25,7 +25,7 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
-    private var activeResponseID: String?
+    var isAwaitingTurnOutput = false
     var lastSubmittedText: String?
     var attachedImages: [CodexChatImageAttachment] = []
     private(set) var pendingImagePreparationCount = 0
@@ -41,9 +41,7 @@ final class CodexChatSessionModel: Identifiable {
         set { setLiveModeEnabled(newValue) }
     }
 
-    var showsStandaloneThinking: Bool {
-        isGenerating && activeResponseID == nil
-    }
+    var showsStandaloneThinking: Bool { isGenerating && isAwaitingTurnOutput }
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored let settings: AppSettings
@@ -63,6 +61,8 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var activeSteeringManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
     @ObservationIgnored var activeSubmissionID: UUID?
+    @ObservationIgnored private var activeResponseID: String?
+    @ObservationIgnored var turnOutputGeneration: UInt = 0
     @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?
@@ -438,23 +438,31 @@ extension CodexChatSessionModel {
             processPendingInputIfPossible()
         case let .delta(itemID, text):
             accumulator.appendResponseDelta(itemID: itemID, text: text)
-            updateLimiter.submit()
+            publishStreamingOutput(using: updateLimiter)
         case let .completed(itemID?, text):
             accumulator.completeResponse(itemID: itemID, text: text)
             updateLimiter.submit(force: true)
+            isAwaitingTurnOutput = true
         case .completed(itemID: nil, text: _):
             updateLimiter.submit(force: true)
+            isAwaitingTurnOutput = false
+            activeTurnID = nil
         case let .reasoningDelta(itemID, summaryIndex, text):
             accumulator.appendReasoningDelta(itemID: itemID, summaryIndex: summaryIndex, text: text)
-            updateLimiter.submit()
+            publishStreamingOutput(using: updateLimiter)
         case let .reasoningCompleted(itemID, text):
             accumulator.completeReasoning(itemID: itemID, text: text)
             updateLimiter.submit(force: true)
+            isAwaitingTurnOutput = true
         case .interrupted:
             updateLimiter.submit(force: true)
+            isAwaitingTurnOutput = false
+            activeTurnID = nil
         case let .failed(message):
             errorMessage = CodexAppServerError.turnFailed(message).localizedDescription
             updateLimiter.submit(force: true)
+            isAwaitingTurnOutput = false
+            activeTurnID = nil
         }
     }
 
@@ -536,6 +544,7 @@ extension CodexChatSessionModel {
     ) {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
+        isAwaitingTurnOutput = false
         activeTurnID = nil
         isStopRequested = false
         isActiveTurnLiveTranscript = false
@@ -591,28 +600,6 @@ extension CodexChatSessionModel {
         guard liveTranscript == nil || isLiveModeEnabled, !isStopRequested else {
             throw CancellationError()
         }
-    }
-
-    func retryManualSubmission(_ submission: CodexChatManualSubmission) {
-        let currentText = CodexChatMeetingReference.serializedText(
-            referenceIDs: selectedMeetingReferenceIDs,
-            draft: draft
-        )
-        let composerSnapshot: CodexChatComposerSnapshot? = if currentText == submission.text,
-                                                              attachedImages == submission.images {
-            CodexChatComposerSnapshot(
-                draft: draft,
-                referenceIDs: selectedMeetingReferenceIDs,
-                images: attachedImages
-            )
-        } else {
-            nil
-        }
-        submit(
-            submission.text,
-            images: submission.images,
-            composerSnapshot: composerSnapshot
-        )
     }
 
     func prepareFailureStateForSubmission(liveTranscript: String?) {
@@ -800,6 +787,7 @@ extension CodexChatSessionModel {
             let context = try await resolveContext(if: shouldResolveContext)
             guard !Task.isCancelled,
                   isGenerating,
+                  let submissionID = activeSubmissionID,
                   activeTurnID == turnID,
                   backendThreadID == threadID else {
                 requeue(input, liveModeGenerationSnapshot: liveModeGenerationSnapshot)
@@ -814,20 +802,20 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 images: images
             )
-            try await service.steer(
-                threadID: threadID,
-                turnID: turnID,
-                inputs: inputs
+            let outputGeneration = turnOutputGeneration
+            try await service.steer(threadID: threadID, turnID: turnID, inputs: inputs)
+            await completeSuccessfulSteer(
+                input,
+                context: promptContext,
+                state: CodexChatSteerCompletionState(
+                    submissionID: submissionID,
+                    threadID: threadID,
+                    turnID: turnID,
+                    includesLiveModeContext: includesLiveModeContext,
+                    liveModeGeneration: liveModeGenerationSnapshot,
+                    outputGeneration: outputGeneration
+                )
             )
-            if input.isLiveTranscript {
-                guard !Task.isCancelled,
-                      isLiveModeEnabled,
-                      liveModeGeneration == liveModeGenerationSnapshot else { return }
-            }
-            if includesLiveModeContext {
-                didSendLiveModeContext = true
-            }
-            await applySuccessfulSteer(input, context: promptContext)
         } catch is CancellationError {
             requeue(input, liveModeGenerationSnapshot: liveModeGenerationSnapshot)
         } catch {
@@ -872,7 +860,14 @@ extension CodexChatSessionModel {
         finishGeneration(submissionID: activeSubmissionID)
     }
 
-    func applySuccessfulSteer(_ input: CodexChatPendingInput, context: CodexChatContext?) async {
+    func applySuccessfulSteer(
+        _ input: CodexChatPendingInput,
+        context: CodexChatContext?,
+        awaitsOutput: Bool
+    ) async {
+        if awaitsOutput {
+            isAwaitingTurnOutput = true
+        }
         switch input {
         case let .manual(submission):
             clearComposer(ifMatching: submission.composerSnapshot)
