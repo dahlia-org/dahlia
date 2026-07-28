@@ -2,11 +2,15 @@ import SwiftUI
 
 struct CodexChatConversationView: View {
     let messages: [CodexChatMessage]
+    let showsStandaloneThinking: Bool
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
     var body: some View {
-        let items = CodexChatConversationItem.build(from: messages)
+        let items = CodexChatConversationItem.build(
+            from: messages,
+            showsStandaloneThinking: showsStandaloneThinking
+        )
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 ForEach(items) { item in
@@ -19,6 +23,8 @@ struct CodexChatConversationView: View {
                             meetingNamesByID: meetingNamesByID,
                             meetingReferencesByID: meetingReferencesByID
                         )
+                    case .thinking:
+                        CodexChatThinkingIndicator()
                     }
                 }
             }

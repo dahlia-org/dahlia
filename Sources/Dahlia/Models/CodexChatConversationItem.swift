@@ -3,6 +3,7 @@ import Foundation
 enum CodexChatConversationItem: Identifiable, Equatable {
     case contextDivider(id: String, context: CodexChatContext?)
     case message(CodexChatMessage)
+    case thinking
 
     var id: String {
         switch self {
@@ -10,10 +11,15 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             "context-\(id)"
         case let .message(message):
             "message-\(message.id)"
+        case .thinking:
+            "thinking"
         }
     }
 
-    static func build(from messages: [CodexChatMessage]) -> [Self] {
+    static func build(
+        from messages: [CodexChatMessage],
+        showsStandaloneThinking: Bool = false
+    ) -> [Self] {
         var items: [Self] = []
         var previousUserContext: CodexChatContext?
         var hasPreviousUserMessage = false
@@ -31,6 +37,9 @@ enum CodexChatConversationItem: Identifiable, Equatable {
                 hasPreviousUserMessage = true
             }
             items.append(.message(message))
+        }
+        if showsStandaloneThinking {
+            items.append(.thinking)
         }
         return items
     }

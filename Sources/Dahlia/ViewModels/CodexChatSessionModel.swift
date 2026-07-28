@@ -25,6 +25,7 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
+    private var activeResponseID: String?
     var lastSubmittedText: String?
     var attachedImages: [CodexChatImageAttachment] = []
     private(set) var pendingImagePreparationCount = 0
@@ -38,6 +39,10 @@ final class CodexChatSessionModel: Identifiable {
     var liveModeEnabled: Bool {
         get { isLiveModeEnabled }
         set { setLiveModeEnabled(newValue) }
+    }
+
+    var showsStandaloneThinking: Bool {
+        isGenerating && activeResponseID == nil
     }
 
     @ObservationIgnored private let service: any CodexChatServicing
@@ -58,7 +63,6 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var activeSteeringManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
     @ObservationIgnored var activeSubmissionID: UUID?
-    @ObservationIgnored private var activeResponseID: String?
     @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
     @ObservationIgnored private var failedSubmission: CodexChatFailedSubmission?

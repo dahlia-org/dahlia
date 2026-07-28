@@ -6,6 +6,64 @@ import Foundation
 
     struct CodexChatConversationItemTests {
         @Test
+        func addsThinkingWhileWaitingForStreamingResponse() {
+            let emptyConversation = CodexChatConversationItem.build(
+                from: [],
+                showsStandaloneThinking: true
+            )
+            let previousMessage = CodexChatMessage(
+                id: "previous",
+                role: .assistant,
+                text: "Previous answer"
+            )
+            let existingConversation = CodexChatConversationItem.build(
+                from: [previousMessage],
+                showsStandaloneThinking: true
+            )
+
+            #expect(emptyConversation == [.thinking])
+            #expect(existingConversation == [.message(previousMessage), .thinking])
+        }
+
+        @Test
+        func steeredConversationDoesNotDuplicateActiveResponseThinking() {
+            let response = CodexChatMessage(
+                id: "response",
+                role: .assistant,
+                text: "",
+                isStreaming: true
+            )
+            let followUp = CodexChatMessage(
+                id: "follow-up",
+                role: .user,
+                text: "Additional context"
+            )
+
+            let items = CodexChatConversationItem.build(
+                from: [response, followUp],
+                showsStandaloneThinking: false
+            )
+
+            #expect(items == [.message(response), .message(followUp)])
+        }
+
+        @Test
+        func completedResponseDoesNotRegainThinkingDuringReconciliation() {
+            let message = CodexChatMessage(
+                id: "answer",
+                role: .assistant,
+                text: "Answer"
+            )
+
+            let items = CodexChatConversationItem.build(
+                from: [message],
+                showsStandaloneThinking: false
+            )
+
+            #expect(items == [.message(message)])
+        }
+
+        @Test
         func insertsDividersOnlyAtContextTransitions() throws {
             let meetingA = try CodexChatContext.meeting(
                 id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),

@@ -41,7 +41,7 @@ struct CodexChatView: View {
                     onOpenThread: openHistoryThread,
                     onLoadMore: loadMoreHistory
                 )
-            } else if session.messages.isEmpty {
+            } else if session.messages.isEmpty, !session.showsStandaloneThinking {
                 CodexChatEmptyStateView(
                     recentThreads: Array(coordinator.history.prefix(3)),
                     meetingNamesByID: session.meetingNamesByID,
@@ -51,6 +51,7 @@ struct CodexChatView: View {
             } else {
                 CodexChatConversationView(
                     messages: session.messages,
+                    showsStandaloneThinking: session.showsStandaloneThinking,
                     meetingNamesByID: session.meetingNamesByID,
                     meetingReferencesByID: session.meetingReferencesByID
                 )
