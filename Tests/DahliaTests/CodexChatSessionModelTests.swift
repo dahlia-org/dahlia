@@ -700,6 +700,7 @@ import Foundation
         }
 
         let mode: Mode
+        private let delaysLoad: Bool
         private var steerErrors: [CodexAppServerError]
         private(set) var sentTextBlocks: [[String]] = []
         private(set) var steeredTextBlocks: [[String]] = []
@@ -708,6 +709,7 @@ import Foundation
         private(set) var unsubscribedThreadIDs: [String] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
+        private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
 
         var unsubscribeCount: Int {
             unsubscribedThreadIDs.count
@@ -717,9 +719,18 @@ import Foundation
             delayedSendContinuation != nil
         }
 
-        init(mode: Mode, steerErrors: [CodexAppServerError] = []) {
+        var isLoadWaiting: Bool {
+            delayedLoadContinuation != nil
+        }
+
+        init(
+            mode: Mode,
+            steerErrors: [CodexAppServerError] = [],
+            delaysLoad: Bool = false
+        ) {
             self.mode = mode
             self.steerErrors = steerErrors
+            self.delaysLoad = delaysLoad
         }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] {
@@ -731,6 +742,11 @@ import Foundation
         }
 
         func loadThread(id: String) async throws -> CodexChatThread {
+            if delaysLoad {
+                await withCheckedContinuation { continuation in
+                    delayedLoadContinuation = continuation
+                }
+            }
             let assistantMessages: [CodexChatMessage] = switch mode {
             case .complete, .block, .burstThenBlock, .bufferedBurstThenInterrupt,
                  .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
@@ -866,6 +882,11 @@ import Foundation
         func resumeDelayedSend() {
             delayedSendContinuation?.resume()
             delayedSendContinuation = nil
+        }
+
+        func resumeDelayedLoad() {
+            delayedLoadContinuation?.resume()
+            delayedLoadContinuation = nil
         }
 
         func unsubscribe(threadID: String) async {
