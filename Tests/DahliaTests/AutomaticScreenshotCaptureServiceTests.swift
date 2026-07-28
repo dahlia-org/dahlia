@@ -129,6 +129,22 @@ struct AutomaticScreenshotCaptureServiceTests {
     }
 
     @Test
+    func sourcePixelDimensionsRecoverNativeSizeFromScaledSurface() throws {
+        let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
+            contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
+            contentScale: 0.5,
+            scaleFactor: 2
+        ))
+
+        #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2_400, height: 1_600))
+        #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(
+            contentRect: .zero,
+            contentScale: 1,
+            scaleFactor: 2
+        ) == nil)
+    }
+
+    @Test
     @MainActor
     func stopBypassesBlockedStartAndInvalidatesPendingSettings() async throws {
         let capture = BlockingAutomaticScreenshotCapture()
@@ -210,7 +226,14 @@ private actor BlockingAutomaticScreenshotCapture: AutomaticScreenshotCapturing {
         observedSettingsUpdateCount += 1
     }
 
-    func updateSavedFingerprint(_: ScreenshotFingerprint?) {}
+    func fingerprintUpdateAttempt() -> AutomaticScreenshotCaptureAttempt? {
+        nil
+    }
+
+    func updateSavedFingerprint(
+        _: ScreenshotFingerprint?,
+        for _: AutomaticScreenshotCaptureAttempt
+    ) {}
 
     func stop() {
         observedStopCount += 1

@@ -5,6 +5,7 @@ import SwiftUI
 struct ScreenshotCollectionView: NSViewRepresentable {
     let meetingID: UUID?
     let screenshots: [MeetingScreenshotRecord]
+    var contentRevision: UInt64?
     let recordingSessions: [RecordingSessionTimeline]
     let fallbackTimeBase: Date
     let minimumItemWidth: Double
@@ -68,6 +69,7 @@ extension ScreenshotCollectionView {
         private var currentScreenshotIDs: [UUID] = []
         private var screenshotIndexByID: [UUID: Int] = [:]
         private var currentScreenshotMetadata: [ScreenshotMetadata] = []
+        private var currentContentRevision: UInt64?
         private var timestampByID: [UUID: String] = [:]
         private var timestampContext: TimestampContext?
         private var lastPresentationState: PresentationState?
@@ -162,6 +164,7 @@ extension ScreenshotCollectionView {
             currentScreenshotIDs.removeAll()
             screenshotIndexByID.removeAll()
             currentScreenshotMetadata.removeAll()
+            currentContentRevision = nil
             timestampByID.removeAll()
         }
 
@@ -385,10 +388,6 @@ extension ScreenshotCollectionView.Coordinator {
         case reset
     }
 
-    static func requiresSnapshotUpdate(currentIDs: [UUID], newIDs: [UUID]) -> Bool {
-        identifierUpdate(currentIDs: currentIDs, newIDs: newIDs) != .unchanged
-    }
-
     static func identifierUpdate(currentIDs: [UUID], newIDs: [UUID]) -> IdentifierUpdate {
         guard currentIDs != newIDs else { return .unchanged }
         guard newIDs.count > currentIDs.count,
@@ -401,6 +400,15 @@ extension ScreenshotCollectionView.Coordinator {
         ids: [UUID],
         identifierUpdate: IdentifierUpdate
     ) -> Bool {
+        guard Self.shouldRebuildMetadata(
+            identifierUpdate: identifierUpdate,
+            currentContentRevision: currentContentRevision,
+            newContentRevision: parent.contentRevision
+        ) else {
+            currentScreenshotIDs = ids
+            return false
+        }
+
         switch identifierUpdate {
         case let .append(appendedIDs):
             let initialIndex = currentScreenshotIDs.count
@@ -424,7 +432,18 @@ extension ScreenshotCollectionView.Coordinator {
         let changed = currentScreenshotMetadata != screenshotMetadata
         currentScreenshotIDs = ids
         currentScreenshotMetadata = screenshotMetadata
+        currentContentRevision = parent.contentRevision
         return changed
+    }
+
+    static func shouldRebuildMetadata(
+        identifierUpdate: IdentifierUpdate,
+        currentContentRevision: UInt64?,
+        newContentRevision: UInt64?
+    ) -> Bool {
+        guard identifierUpdate == .unchanged,
+              let newContentRevision else { return true }
+        return currentContentRevision != newContentRevision
     }
 
     private func updateTimestamps(

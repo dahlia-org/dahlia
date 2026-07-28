@@ -41,6 +41,7 @@ struct ScreenshotTabContentView: View {
                 ScreenshotCollectionView(
                     meetingID: meetingID,
                     screenshots: screenshotStore.records,
+                    contentRevision: screenshotStore.contentRevision,
                     recordingSessions: recordingSessions,
                     fallbackTimeBase: fallbackTimeBase,
                     minimumItemWidth: minimumItemWidth,

@@ -1971,6 +1971,7 @@ final class CaptionViewModel: ObservableObject {
         persistenceService = service
         installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
+        screenshotStore.replace(meetingID: service.meetingId, records: [])
         store.attachPagingContext(
             meetingId: service.meetingId,
             loader: TranscriptPageLoader(dbQueue: request.dbQueue)
@@ -3276,19 +3277,20 @@ final class CaptionViewModel: ObservableObject {
               let dbQueue = activeDbQueueForSessionControls,
               screenshotCaptureSource.isSelected else { return }
 
-        let shouldRefreshVisibleScreenshots = currentMeetingId == meetingId
-
         Task {
             do {
+                let fingerprintUpdateAttempt = await automaticScreenshotCaptureControl.fingerprintUpdateAttempt()
                 let cgImage = try await captureScreenshotImage()
                 try await persistScreenshot(
                     cgImage,
                     meetingId: meetingId,
                     sessionId: persistenceService?.recordingSessionId,
-                    dbQueue: dbQueue,
-                    shouldRefreshVisibleScreenshots: shouldRefreshVisibleScreenshots
+                    dbQueue: dbQueue
                 )
-                await updateAutomaticScreenshotFingerprintIfNeeded(for: cgImage)
+                await updateAutomaticScreenshotFingerprintIfNeeded(
+                    for: cgImage,
+                    attempt: fingerprintUpdateAttempt
+                )
             } catch {
                 errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
             }
@@ -3386,8 +3388,7 @@ final class CaptionViewModel: ObservableObject {
         _ cgImage: CGImage,
         meetingId: UUID,
         sessionId: UUID?,
-        dbQueue: DatabaseQueue,
-        shouldRefreshVisibleScreenshots: Bool
+        dbQueue: DatabaseQueue
     ) async throws {
         let encodedImage: (data: Data, mimeType: String) = try await Task.detached(priority: .userInitiated) {
             guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
@@ -3411,18 +3412,20 @@ final class CaptionViewModel: ObservableObject {
         try await dbQueue.write { db in
             try record.insert(db)
         }
-        if shouldRefreshVisibleScreenshots {
-            appendVisibleScreenshot(record)
-        }
+        appendVisibleScreenshot(record)
     }
 
-    private func updateAutomaticScreenshotFingerprintIfNeeded(for cgImage: CGImage) async {
+    private func updateAutomaticScreenshotFingerprintIfNeeded(
+        for cgImage: CGImage,
+        attempt: AutomaticScreenshotCaptureAttempt?
+    ) async {
         guard isListening,
               AppSettings.shared.automaticScreenshotEnabled,
               screenshotCaptureSource.isSelected,
+              let attempt,
               let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
         let task = automaticScreenshotCaptureControl.enqueue { capture in
-            await capture.updateSavedFingerprint(fingerprint)
+            await capture.updateSavedFingerprint(fingerprint, for: attempt)
         }
         await task.value
     }

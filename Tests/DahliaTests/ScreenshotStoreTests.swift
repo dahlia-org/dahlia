@@ -19,16 +19,19 @@ struct ScreenshotStoreTests {
         let otherMeeting = makeScreenshot(meetingID: UUID.v7(), capturedAt: .now)
 
         store.replace(meetingID: meetingID, records: [])
+        let replacementRevision = store.contentRevision
         store.upsert(later)
         store.upsert(earlier)
         store.upsert(otherMeeting)
 
         #expect(store.records.map(\.id) == [earlier.id, later.id])
+        #expect(store.contentRevision == replacementRevision + 2)
 
         var updated = later
         updated.mimeType = "image/jpeg"
         store.upsert(updated)
         #expect(try #require(store.records.last).mimeType == "image/jpeg")
+        #expect(store.contentRevision == replacementRevision + 3)
     }
 
     @Test

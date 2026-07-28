@@ -40,7 +40,11 @@ struct AutomaticScreenshotCaptureRequest: Sendable {
 protocol AutomaticScreenshotCapturing: Sendable {
     func start(_ request: AutomaticScreenshotCaptureRequest) async
     func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) async
-    func updateSavedFingerprint(_ fingerprint: ScreenshotFingerprint?) async
+    func fingerprintUpdateAttempt() async -> AutomaticScreenshotCaptureAttempt?
+    func updateSavedFingerprint(
+        _ fingerprint: ScreenshotFingerprint?,
+        for attempt: AutomaticScreenshotCaptureAttempt
+    ) async
     func stop() async
 }
 
@@ -85,11 +89,20 @@ final class AutomaticScreenshotCaptureControl {
         tailTask = task
         return task
     }
+
+    func fingerprintUpdateAttempt() async -> AutomaticScreenshotCaptureAttempt? {
+        await capture.fingerprintUpdateAttempt()
+    }
 }
 
 struct AutomaticScreenshotCaptureAttempt: Equatable, Sendable {
     let generation: UInt64
     let id: UInt64
+}
+
+struct AutomaticScreenshotPixelDimensions: Equatable, Sendable {
+    let width: Int
+    let height: Int
 }
 
 struct AutomaticScreenshotCaptureLifecycle {
@@ -160,6 +173,7 @@ struct CopiedScreenshotFrame: Sendable {
     let bytesPerRow: Int
     let pixels: Data
     let capturedAt: Date
+    var sourcePixelDimensions: AutomaticScreenshotPixelDimensions?
 
     func makeImage() -> CGImage? {
         guard let provider = CGDataProvider(data: pixels as CFData),
@@ -295,19 +309,25 @@ private struct EncodedScreenshotFrame: Sendable {
     let mimeType: String
 }
 
+private struct FingerprintedScreenshotFrame: Sendable {
+    let image: CGImage
+    let fingerprint: ScreenshotFingerprint
+}
+
 private actor AutomaticScreenshotFrameProcessor {
-    func fingerprint(for frame: CopiedScreenshotFrame) -> ScreenshotFingerprint? {
+    func fingerprint(for frame: CopiedScreenshotFrame) -> FingerprintedScreenshotFrame? {
         guard !Task.isCancelled, let image = frame.makeImage() else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Fingerprint")
         let fingerprint = ScreenshotChangeDetector.fingerprint(for: image)
         ScreenshotCaptureMetrics.signposter.endInterval("Fingerprint", state)
         ScreenshotCaptureMetrics.recordSlowStage(.fingerprint, startedAt: startedAt)
-        return Task.isCancelled ? nil : fingerprint
+        guard !Task.isCancelled, let fingerprint else { return nil }
+        return FingerprintedScreenshotFrame(image: image, fingerprint: fingerprint)
     }
 
-    func encode(_ frame: CopiedScreenshotFrame) -> EncodedScreenshotFrame? {
-        guard !Task.isCancelled, let image = frame.makeImage() else { return nil }
+    func encode(_ image: CGImage) -> EncodedScreenshotFrame? {
+        guard !Task.isCancelled else { return nil }
         let startedAt = ContinuousClock.now
         let state = ScreenshotCaptureMetrics.signposter.beginInterval("Encode")
         let data = ImageEncoder.encode(image, quality: 0.70)
@@ -368,7 +388,17 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         }
     }
 
-    func updateSavedFingerprint(_ fingerprint: ScreenshotFingerprint?) {
+    func fingerprintUpdateAttempt() -> AutomaticScreenshotCaptureAttempt? {
+        guard let attempt = activeCapture?.attempt,
+              lifecycle.accepts(attempt: attempt) else { return nil }
+        return attempt
+    }
+
+    func updateSavedFingerprint(
+        _ fingerprint: ScreenshotFingerprint?,
+        for attempt: AutomaticScreenshotCaptureAttempt
+    ) {
+        guard lifecycle.accepts(attempt: attempt) else { return }
         lastSavedFingerprint = fingerprint
     }
 
@@ -514,8 +544,11 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     private func receive(
         _ frame: CopiedScreenshotFrame,
         attempt: AutomaticScreenshotCaptureAttempt
-    ) {
+    ) async {
         guard lifecycle.accepts(attempt: attempt) else { return }
+        if await updateStreamDimensionsIfNeeded(for: frame, attempt: attempt) {
+            return
+        }
         if processingState.isProcessing {
             _ = processingState.queueLatest(frame, attempt: attempt)
             return
@@ -541,14 +574,17 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
     ) async {
         guard lifecycle.accepts(attempt: attempt),
               let request = desiredRequest else { return }
-        let fingerprint = await frameProcessor.fingerprint(for: frame)
-        guard let fingerprint,
+        let fingerprintedFrame = await frameProcessor.fingerprint(for: frame)
+        guard let fingerprintedFrame,
               !Task.isCancelled,
               lifecycle.accepts(attempt: attempt) else { return }
 
-        guard shouldSave(fingerprint, changeThresholdRatio: request.changeThresholdRatio) else { return }
+        guard shouldSave(
+            fingerprintedFrame.fingerprint,
+            changeThresholdRatio: request.changeThresholdRatio
+        ) else { return }
 
-        guard let encoded = await frameProcessor.encode(frame) else {
+        guard let encoded = await frameProcessor.encode(fingerprintedFrame.image) else {
             guard !Task.isCancelled,
                   lifecycle.accepts(attempt: attempt) else { return }
             await request.onFailure(ScreenshotError.encodingFailed)
@@ -556,7 +592,10 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         }
         guard !Task.isCancelled,
               lifecycle.accepts(attempt: attempt) else { return }
-        guard shouldSave(fingerprint, changeThresholdRatio: request.changeThresholdRatio) else { return }
+        guard shouldSave(
+            fingerprintedFrame.fingerprint,
+            changeThresholdRatio: request.changeThresholdRatio
+        ) else { return }
 
         let record = Self.makeRecord(
             frame: frame,
@@ -584,7 +623,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 
         guard !Task.isCancelled,
               lifecycle.accepts(attempt: attempt) else { return }
-        lastSavedFingerprint = fingerprint
+        lastSavedFingerprint = fingerprintedFrame.fingerprint
         await request.onPersisted(record)
     }
 
@@ -614,6 +653,27 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 }
 
 extension AutomaticScreenshotCaptureService {
+    private func updateStreamDimensionsIfNeeded(
+        for frame: CopiedScreenshotFrame,
+        attempt: AutomaticScreenshotCaptureAttempt
+    ) async -> Bool {
+        guard let dimensions = frame.sourcePixelDimensions,
+              let activeCapture,
+              activeCapture.attempt == attempt,
+              activeCapture.configuration.width != dimensions.width
+              || activeCapture.configuration.height != dimensions.height
+        else { return false }
+
+        activeCapture.configuration.width = dimensions.width
+        activeCapture.configuration.height = dimensions.height
+        do {
+            try await activeCapture.stream.updateConfiguration(activeCapture.configuration)
+        } catch {
+            await handleRuntimeFailure(error, attempt: attempt)
+        }
+        return true
+    }
+
     private static func normalized(_ request: AutomaticScreenshotCaptureRequest) -> AutomaticScreenshotCaptureRequest {
         var request = request
         request.intervalSeconds = max(1, request.intervalSeconds)
@@ -682,6 +742,25 @@ extension AutomaticScreenshotCaptureService {
 
     private static func frameInterval(seconds: Int) -> CMTime {
         CMTime(seconds: Double(max(1, seconds)), preferredTimescale: 600)
+    }
+
+    static func sourcePixelDimensions(
+        contentRect: CGRect,
+        contentScale: CGFloat,
+        scaleFactor: CGFloat
+    ) -> AutomaticScreenshotPixelDimensions? {
+        guard contentRect.width > 0,
+              contentRect.height > 0,
+              contentScale > 0,
+              scaleFactor > 0,
+              contentRect.width.isFinite,
+              contentRect.height.isFinite,
+              contentScale.isFinite,
+              scaleFactor.isFinite else { return nil }
+        return AutomaticScreenshotPixelDimensions(
+            width: max(1, Int((contentRect.width / contentScale * scaleFactor).rounded())),
+            height: max(1, Int((contentRect.height / contentScale * scaleFactor).rounded()))
+        )
     }
 }
 
@@ -757,7 +836,7 @@ private final class AutomaticScreenshotStreamAdapter: NSObject, SCStreamOutput, 
         ) as? [[SCStreamFrameInfo: Any]],
             let statusRawValue = attachments.first?[.status] as? Int,
             let status = SCFrameStatus(rawValue: statusRawValue) else { return false }
-        return status == .complete || status == .started
+        return status == .complete
     }
 
     private static func copyFrame(
@@ -773,12 +852,33 @@ private final class AutomaticScreenshotStreamAdapter: NSObject, SCStreamOutput, 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        let sourcePixelDimensions: AutomaticScreenshotPixelDimensions? = frameAttachments(sampleBuffer).flatMap { attachments in
+            guard let contentRect = attachments[.contentRect] as? CGRect,
+                  let contentScale = attachments[.contentScale] as? CGFloat,
+                  let scaleFactor = attachments[.scaleFactor] as? CGFloat else { return nil }
+            return AutomaticScreenshotCaptureService.sourcePixelDimensions(
+                contentRect: contentRect,
+                contentScale: contentScale,
+                scaleFactor: scaleFactor
+            )
+        }
         return CopiedScreenshotFrame(
             width: width,
             height: height,
             bytesPerRow: bytesPerRow,
             pixels: Data(bytes: baseAddress, count: bytesPerRow * height),
-            capturedAt: capturedAt
+            capturedAt: capturedAt,
+            sourcePixelDimensions: sourcePixelDimensions
         )
+    }
+
+    private static func frameAttachments(
+        _ sampleBuffer: CMSampleBuffer
+    ) -> [SCStreamFrameInfo: Any]? {
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(
+            sampleBuffer,
+            createIfNecessary: false
+        ) as? [[SCStreamFrameInfo: Any]]
+        return attachments?.first
     }
 }
