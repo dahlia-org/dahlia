@@ -1382,14 +1382,35 @@ import ImageIO
             #expect(try store.queryProjectResources(
                 ProjectResourceAccessQuery(projectID: project.projectID)
             ).resources.isEmpty)
+            let missingProjectReference = try store.removeProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: updatedProject.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID
+            )
+            #expect(!missingProjectReference.changed)
             let updatedInsight = try store.insight(id: insight.resourceID).insight
             let insightReferenceRevision = try #require(insightReference.revision)
             #expect(updatedInsight.revision == insightReferenceRevision + 1)
             #expect(updatedInsight.references.isEmpty)
+            let missingInsightReference = try store.removeInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: updatedInsight.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID
+            )
+            #expect(!missingInsightReference.changed)
             let updatedTopic = try store.conversationTopic(id: topic.resourceID)
             let topicReferenceRevision = try #require(topicReference.revision)
             #expect(updatedTopic.topic.revision == topicReferenceRevision + 1)
             #expect(updatedTopic.references.isEmpty)
+            let missingTopicReference = try store.removeConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: updatedTopic.topic.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID
+            )
+            #expect(!missingTopicReference.changed)
             #expect(try store.contact(id: contact.resourceID).contact.id == contact.resourceID)
         }
 

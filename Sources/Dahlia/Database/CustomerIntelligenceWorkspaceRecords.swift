@@ -46,6 +46,7 @@ struct OrganizationDeletionImpact: Equatable, Sendable {
     let memberships: Int
     let projects: Int
     let topics: Int
+    let insights: Int
 }
 
 struct TopicDeletionImpact: Equatable, Sendable {

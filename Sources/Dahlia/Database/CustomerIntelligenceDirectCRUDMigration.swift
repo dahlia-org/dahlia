@@ -18,6 +18,7 @@ enum CustomerIntelligenceDirectCRUDMigration {
         guard !columns.contains("isAccepted") || !columns.contains("revision") || columns.contains("reviewState") else {
             return
         }
+        let referenceCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM insight_references") ?? 0
         let acceptedValue = columns.contains("isAccepted")
             ? "isAccepted"
             : "CASE WHEN reviewState = 'accepted' THEN 1 ELSE 0 END"
@@ -25,6 +26,10 @@ enum CustomerIntelligenceDirectCRUDMigration {
 
         try db.execute(sql: """
         DROP TRIGGER IF EXISTS insights_prevent_vault_change;
+        DROP TABLE IF EXISTS insight_references_v29_backup;
+        CREATE TABLE insight_references_v29_backup AS
+        SELECT insightId, resourceType, resourceId, referenceRole, createdAt
+        FROM insight_references;
         CREATE TABLE insights_v29 (
             id BLOB PRIMARY KEY NOT NULL,
             vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
@@ -54,6 +59,18 @@ enum CustomerIntelligenceDirectCRUDMigration {
             SELECT RAISE(ABORT, 'insight vault is immutable');
         END;
         """)
+        if referenceCount > 0 {
+            try db.execute(sql: """
+            INSERT OR IGNORE INTO insight_references
+                (insightId, resourceType, resourceId, referenceRole, createdAt)
+            SELECT insightId, resourceType, resourceId, referenceRole, createdAt
+            FROM insight_references_v29_backup
+            """)
+        }
+        guard try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM insight_references") == referenceCount else {
+            throw DatabaseError(message: "insight rebuild did not preserve references")
+        }
+        try db.execute(sql: "DROP TABLE insight_references_v29_backup")
     }
 
     private static func removeRetiredSchema(in db: Database) throws {
@@ -94,8 +111,177 @@ enum CustomerIntelligenceDirectCRUDMigration {
         DROP TRIGGER IF EXISTS insight_references_validate_insert;
         DROP TRIGGER IF EXISTS insight_references_validate_update;
         """)
-        try CustomerIntelligenceMigration.createReferenceValidationTriggers(in: db)
-        try CustomerIntelligenceMigration.createReferenceCleanupTriggers(in: db)
+        try createReferenceValidationTriggers(in: db)
+        try createReferenceCleanupTriggers(in: db)
         try CustomerIntelligenceWorkspaceMigration.createWorkspaceCleanupTriggers(in: db)
+    }
+
+    // swiftlint:disable:next function_body_length
+    private static func createReferenceValidationTriggers(in db: Database) throws {
+        try db.execute(sql: """
+        CREATE TRIGGER project_resource_references_validate_insert
+        BEFORE INSERT ON project_resource_references
+        BEGIN
+            SELECT RAISE(ABORT, 'project resource does not exist in the project vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM projects
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE projects.id = NEW.projectId
+                      AND projects.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM projects
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE projects.id = NEW.projectId
+                      AND projects.vaultId = contacts.vaultId
+                )
+            );
+        END;
+
+        CREATE TRIGGER project_resource_references_validate_update
+        BEFORE UPDATE OF projectId, resourceType, resourceId ON project_resource_references
+        BEGIN
+            SELECT RAISE(ABORT, 'project resource does not exist in the project vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM projects
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE projects.id = NEW.projectId
+                      AND projects.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM projects
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE projects.id = NEW.projectId
+                      AND projects.vaultId = contacts.vaultId
+                )
+            );
+        END;
+
+        CREATE TRIGGER insight_references_validate_insert
+        BEFORE INSERT ON insight_references
+        BEGIN
+            SELECT RAISE(ABORT, 'insight resource does not exist in the insight vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = contacts.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'project'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN projects ON projects.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = projects.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'meeting'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN meetings ON meetings.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = meetings.vaultId
+                )
+            );
+        END;
+
+        CREATE TRIGGER insight_references_validate_update
+        BEFORE UPDATE OF insightId, resourceType, resourceId ON insight_references
+        BEGIN
+            SELECT RAISE(ABORT, 'insight resource does not exist in the insight vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = contacts.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'project'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN projects ON projects.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = projects.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'meeting'
+                AND NOT EXISTS (
+                    SELECT 1 FROM insights
+                    JOIN meetings ON meetings.id = NEW.resourceId
+                    WHERE insights.id = NEW.insightId AND insights.vaultId = meetings.vaultId
+                )
+            );
+        END;
+        """)
+    }
+
+    private static func createReferenceCleanupTriggers(in db: Database) throws {
+        try db.execute(sql: """
+        CREATE TRIGGER organizations_cleanup_resource_references
+        AFTER DELETE ON organizations
+        BEGIN
+            DELETE FROM project_resource_references
+            WHERE resourceType = 'organization' AND resourceId = OLD.id;
+            DELETE FROM insight_references
+            WHERE resourceType = 'organization' AND resourceId = OLD.id;
+        END;
+
+        CREATE TRIGGER contacts_cleanup_resource_references
+        AFTER DELETE ON contacts
+        BEGIN
+            DELETE FROM project_resource_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+            DELETE FROM insight_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+        END;
+        """)
+
+        if try db.tableExists("projects") {
+            try db.execute(sql: """
+            CREATE TRIGGER projects_cleanup_resource_references
+            AFTER DELETE ON projects
+            BEGIN
+                DELETE FROM insight_references
+                WHERE resourceType = 'project' AND resourceId = OLD.id;
+            END;
+            """)
+        }
+
+        if try db.tableExists("meetings") {
+            try db.execute(sql: """
+            CREATE TRIGGER meetings_cleanup_resource_references
+            AFTER DELETE ON meetings
+            BEGIN
+                DELETE FROM insight_references
+                WHERE resourceType = 'meeting' AND resourceId = OLD.id;
+            END;
+            """)
+        }
     }
 }

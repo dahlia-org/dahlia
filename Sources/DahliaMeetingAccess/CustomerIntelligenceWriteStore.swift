@@ -986,9 +986,6 @@ private extension MeetingAccessStore {
                 notFound: .projectNotFound,
                 in: db
             )
-            guard try resourceExists(resourceType, id: resourceID, in: db) else {
-                throw MeetingAccessError.invalidCustomerIntelligenceReference
-            }
             let rows = try Row.fetchAll(
                 db,
                 sql: """
@@ -1007,38 +1004,43 @@ private extension MeetingAccessStore {
                     """,
                     arguments: [projectID, resourceType.rawValue, resourceID]
                 )
-            } else if let first = rows.first {
-                let existing: String = first["relationLabel"]
-                guard rows.count > 1 || existing != label else {
-                    return (expectedProjectRevision, false)
-                }
-                let firstID: UUID = first["id"]
-                try db.execute(
-                    sql: """
-                    DELETE FROM project_resource_references
-                    WHERE projectId = ? AND resourceType = ? AND resourceId = ? AND id <> ?
-                    """,
-                    arguments: [projectID, resourceType.rawValue, resourceID, firstID]
-                )
-                try db.execute(
-                    sql: """
-                    UPDATE project_resource_references SET relationLabel = ?, updatedAt = ?
-                    WHERE id = ?
-                    """,
-                    arguments: [label, Date.now, firstID]
-                )
             } else {
-                try db.execute(
-                    sql: """
-                    INSERT INTO project_resource_references
-                        (id, projectId, resourceType, resourceId, relationLabel, createdAt, updatedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    arguments: [
-                        customerIntelligenceUUIDv7(), projectID, resourceType.rawValue, resourceID,
-                        label, Date.now, Date.now,
-                    ]
-                )
+                guard try resourceExists(resourceType, id: resourceID, in: db) else {
+                    throw MeetingAccessError.invalidCustomerIntelligenceReference
+                }
+                if let first = rows.first {
+                    let existing: String = first["relationLabel"]
+                    guard rows.count > 1 || existing != label else {
+                        return (expectedProjectRevision, false)
+                    }
+                    let firstID: UUID = first["id"]
+                    try db.execute(
+                        sql: """
+                        DELETE FROM project_resource_references
+                        WHERE projectId = ? AND resourceType = ? AND resourceId = ? AND id <> ?
+                        """,
+                        arguments: [projectID, resourceType.rawValue, resourceID, firstID]
+                    )
+                    try db.execute(
+                        sql: """
+                        UPDATE project_resource_references SET relationLabel = ?, updatedAt = ?
+                        WHERE id = ?
+                        """,
+                        arguments: [label, Date.now, firstID]
+                    )
+                } else {
+                    try db.execute(
+                        sql: """
+                        INSERT INTO project_resource_references
+                            (id, projectId, resourceType, resourceId, relationLabel, createdAt, updatedAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        arguments: [
+                            customerIntelligenceUUIDv7(), projectID, resourceType.rawValue, resourceID,
+                            label, Date.now, Date.now,
+                        ]
+                    )
+                }
             }
             try incrementRevision(table: "projects", id: projectID, in: db)
             return (expectedProjectRevision + 1, true)
@@ -1082,9 +1084,6 @@ private extension MeetingAccessStore {
                 notFound: .conversationTopicNotFound,
                 in: db
             )
-            guard try resourceExists(resourceType, id: resourceID, in: db) else {
-                throw MeetingAccessError.invalidCustomerIntelligenceReference
-            }
             let row = try Row.fetchOne(
                 db,
                 sql: """
@@ -1103,6 +1102,9 @@ private extension MeetingAccessStore {
                     arguments: [topicID, resourceType.rawValue, resourceID]
                 )
             } else {
+                guard try resourceExists(resourceType, id: resourceID, in: db) else {
+                    throw MeetingAccessError.invalidCustomerIntelligenceReference
+                }
                 let storedNote = resourceType == .meeting ? normalizedNote : nil
                 if let row, (row["note"] as String?) == storedNote {
                     return (expectedTopicRevision, false)
@@ -1151,9 +1153,6 @@ private extension MeetingAccessStore {
                 notFound: .insightNotFound,
                 in: db
             )
-            guard try resourceExists(resourceType, id: resourceID, in: db) else {
-                throw MeetingAccessError.invalidCustomerIntelligenceReference
-            }
             let roles = try String.fetchAll(
                 db,
                 sql: """
@@ -1172,6 +1171,9 @@ private extension MeetingAccessStore {
                     arguments: [insightID, resourceType.rawValue, resourceID]
                 )
             } else {
+                guard try resourceExists(resourceType, id: resourceID, in: db) else {
+                    throw MeetingAccessError.invalidCustomerIntelligenceReference
+                }
                 guard let referenceRole else {
                     throw MeetingAccessError.invalidCustomerIntelligenceReference
                 }
@@ -1328,79 +1330,8 @@ private extension MeetingAccessStore {
             arguments: [source]
         )
         try db.execute(
-            sql: """
-            INSERT OR IGNORE INTO organization_memberships (organizationId, contactId, roleLabel, createdAt)
-            SELECT organizationId, ?, roleLabel, createdAt
-            FROM organization_memberships WHERE contactId = ?;
-            DELETE FROM organization_memberships WHERE contactId = ?;
-            """,
-            arguments: [target, source, source]
-        )
-        try db.execute(
-            sql: """
-            INSERT OR IGNORE INTO meeting_participants
-                (meetingId, contactId, role, responseStatus, source, createdAt, updatedAt)
-            SELECT meetingId, ?, role, responseStatus, source, createdAt, updatedAt
-            FROM meeting_participants WHERE contactId = ?;
-            DELETE FROM meeting_participants WHERE contactId = ?;
-            """,
-            arguments: [target, source, source]
-        )
-        try db.execute(
-            sql: """
-            DELETE FROM project_resource_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND EXISTS (
-                  SELECT 1
-                  FROM project_resource_references AS targetRef
-                  WHERE targetRef.projectId = project_resource_references.projectId
-                    AND targetRef.resourceType = 'contact'
-                    AND targetRef.resourceId = ?
-              );
-            DELETE FROM project_resource_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND rowid NOT IN (
-                  SELECT MIN(rowid)
-                  FROM project_resource_references
-                  WHERE resourceType = 'contact' AND resourceId = ?
-                  GROUP BY projectId
-              );
-            UPDATE OR IGNORE project_resource_references
-            SET resourceId = ?, updatedAt = ?
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM project_resource_references
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM insight_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND EXISTS (
-                  SELECT 1
-                  FROM insight_references AS targetRef
-                  WHERE targetRef.insightId = insight_references.insightId
-                    AND targetRef.resourceType = 'contact'
-                    AND targetRef.resourceId = ?
-              );
-            DELETE FROM insight_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND rowid NOT IN (
-                  SELECT MIN(rowid)
-                  FROM insight_references
-                  WHERE resourceType = 'contact' AND resourceId = ?
-                  GROUP BY insightId
-              );
-            UPDATE OR IGNORE insight_references
-            SET resourceId = ?
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM insight_references
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            """,
-            arguments: [
-                source, target,
-                source, source,
-                target, now, source, source,
-                source, target,
-                source, source,
-                target, source, source,
-            ]
+            sql: CustomerIntelligenceContactReferenceMerge.sql,
+            arguments: ["targetID": target, "sourceID": source, "now": now]
         )
         for projectID in projectIDs {
             try incrementRevision(table: "projects", id: projectID, in: db)
@@ -1408,18 +1339,6 @@ private extension MeetingAccessStore {
         for insightID in insightIDs {
             try incrementRevision(table: "insights", id: insightID, in: db)
         }
-        try db.execute(
-            sql: """
-            INSERT OR IGNORE INTO conversation_topic_references
-                (topicId, resourceType, resourceId, note, createdAt, updatedAt)
-            SELECT topicId, resourceType, ?, note, createdAt, ?
-            FROM conversation_topic_references
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM conversation_topic_references
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            """,
-            arguments: [target, now, source, source]
-        )
     }
 
     func normalizedCustomerText(

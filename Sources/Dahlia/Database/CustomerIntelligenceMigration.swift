@@ -82,7 +82,7 @@ enum CustomerIntelligenceMigration {
             id BLOB PRIMARY KEY NOT NULL,
             vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
             content TEXT NOT NULL,
-            isAccepted BOOLEAN NOT NULL DEFAULT 0 CHECK (isAccepted IN (0, 1)),
+            reviewState TEXT NOT NULL CHECK (reviewState IN ('proposed', 'accepted', 'rejected')),
             metadataJSON TEXT NOT NULL DEFAULT '{}',
             createdAt DATETIME NOT NULL,
             updatedAt DATETIME NOT NULL,
@@ -90,6 +90,18 @@ enum CustomerIntelligenceMigration {
             CHECK (LENGTH(TRIM(metadataJSON)) > 0)
         );
 
+        CREATE TABLE glossary_terms (
+            id BLOB PRIMARY KEY NOT NULL,
+            vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+            term TEXT NOT NULL,
+            definition TEXT NOT NULL,
+            aliasesJSON TEXT NOT NULL DEFAULT '[]',
+            createdAt DATETIME NOT NULL,
+            updatedAt DATETIME NOT NULL,
+            CHECK (LENGTH(TRIM(term)) > 0),
+            CHECK (LENGTH(TRIM(definition)) > 0),
+            CHECK (LENGTH(TRIM(aliasesJSON)) > 0)
+        );
         """)
     }
 
@@ -116,10 +128,18 @@ enum CustomerIntelligenceMigration {
             PRIMARY KEY (insightId, resourceType, resourceId, referenceRole)
         );
 
+        CREATE TABLE glossary_term_references (
+            glossaryTermId BLOB NOT NULL REFERENCES glossary_terms(id) ON DELETE CASCADE,
+            resourceType TEXT NOT NULL
+                CHECK (resourceType IN ('organization', 'contact', 'project', 'meeting')),
+            resourceId BLOB NOT NULL,
+            createdAt DATETIME NOT NULL,
+            PRIMARY KEY (glossaryTermId, resourceType, resourceId)
+        );
         """)
     }
 
-    static func createIndexes(in db: Database) throws {
+    private static func createIndexes(in db: Database) throws {
         try db.execute(sql: """
         CREATE INDEX contacts_on_vaultId_sortKey_id
             ON contacts(vaultId, COALESCE(displayName, email) COLLATE NOCASE, id);
@@ -144,14 +164,18 @@ enum CustomerIntelligenceMigration {
             ON project_resource_references(projectId, resourceType, createdAt DESC, id DESC);
         CREATE INDEX insights_on_vaultId_createdAt_id
             ON insights(vaultId, createdAt DESC, id DESC);
-        CREATE INDEX insights_on_vaultId_isAccepted_createdAt_id
-            ON insights(vaultId, isAccepted, createdAt DESC, id DESC);
+        CREATE INDEX insights_on_vaultId_reviewState_createdAt_id
+            ON insights(vaultId, reviewState, createdAt DESC, id DESC);
         CREATE INDEX insight_references_on_resourceType_resourceId_insightId
             ON insight_references(resourceType, resourceId, insightId);
+        CREATE INDEX glossary_terms_on_vaultId_term
+            ON glossary_terms(vaultId, term COLLATE NOCASE, id);
+        CREATE INDEX glossary_term_references_on_resourceType_resourceId_glossaryTermId
+            ON glossary_term_references(resourceType, resourceId, glossaryTermId);
         """)
     }
 
-    static func createVaultImmutabilityTriggers(in db: Database) throws {
+    private static func createVaultImmutabilityTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER contacts_prevent_vault_change
         BEFORE UPDATE OF vaultId ON contacts
@@ -165,6 +189,13 @@ enum CustomerIntelligenceMigration {
         WHEN NEW.vaultId <> OLD.vaultId
         BEGIN
             SELECT RAISE(ABORT, 'insight vault is immutable');
+        END;
+
+        CREATE TRIGGER glossary_terms_prevent_vault_change
+        BEFORE UPDATE OF vaultId ON glossary_terms
+        WHEN NEW.vaultId <> OLD.vaultId
+        BEGIN
+            SELECT RAISE(ABORT, 'glossary term vault is immutable');
         END;
         """)
 
@@ -181,7 +212,7 @@ enum CustomerIntelligenceMigration {
     }
 
     // swiftlint:disable:next function_body_length
-    static func createOrganizationTriggers(in db: Database) throws {
+    private static func createOrganizationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organizations_validate_insert
         BEFORE INSERT ON organizations
@@ -360,7 +391,7 @@ enum CustomerIntelligenceMigration {
         """)
     }
 
-    static func createRelationshipValidationTriggers(in db: Database) throws {
+    private static func createRelationshipValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organization_memberships_validate_insert
         BEFORE INSERT ON organization_memberships
@@ -417,7 +448,7 @@ enum CustomerIntelligenceMigration {
     }
 
     // swiftlint:disable:next function_body_length
-    static func createReferenceValidationTriggers(in db: Database) throws {
+    private static func createReferenceValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER project_resource_references_validate_insert
         BEFORE INSERT ON project_resource_references
@@ -538,10 +569,88 @@ enum CustomerIntelligenceMigration {
                 )
             );
         END;
+
+        CREATE TRIGGER glossary_term_references_validate_insert
+        BEFORE INSERT ON glossary_term_references
+        BEGIN
+            SELECT RAISE(ABORT, 'glossary resource does not exist in the glossary term vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = contacts.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'project'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN projects ON projects.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = projects.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'meeting'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN meetings ON meetings.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = meetings.vaultId
+                )
+            );
+        END;
+
+        CREATE TRIGGER glossary_term_references_validate_update
+        BEFORE UPDATE OF glossaryTermId, resourceType, resourceId ON glossary_term_references
+        BEGIN
+            SELECT RAISE(ABORT, 'glossary resource does not exist in the glossary term vault')
+            WHERE (
+                NEW.resourceType = 'organization'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN organizations ON organizations.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = organizations.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'contact'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN contacts ON contacts.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = contacts.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'project'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN projects ON projects.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = projects.vaultId
+                )
+            ) OR (
+                NEW.resourceType = 'meeting'
+                AND NOT EXISTS (
+                    SELECT 1 FROM glossary_terms
+                    JOIN meetings ON meetings.id = NEW.resourceId
+                    WHERE glossary_terms.id = NEW.glossaryTermId
+                      AND glossary_terms.vaultId = meetings.vaultId
+                )
+            );
+        END;
         """)
     }
 
-    static func createReferenceCleanupTriggers(in db: Database) throws {
+    private static func createReferenceCleanupTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organizations_cleanup_resource_references
         AFTER DELETE ON organizations
@@ -549,6 +658,8 @@ enum CustomerIntelligenceMigration {
             DELETE FROM project_resource_references
             WHERE resourceType = 'organization' AND resourceId = OLD.id;
             DELETE FROM insight_references
+            WHERE resourceType = 'organization' AND resourceId = OLD.id;
+            DELETE FROM glossary_term_references
             WHERE resourceType = 'organization' AND resourceId = OLD.id;
         END;
 
@@ -558,6 +669,8 @@ enum CustomerIntelligenceMigration {
             DELETE FROM project_resource_references
             WHERE resourceType = 'contact' AND resourceId = OLD.id;
             DELETE FROM insight_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+            DELETE FROM glossary_term_references
             WHERE resourceType = 'contact' AND resourceId = OLD.id;
         END;
         """)
@@ -569,6 +682,8 @@ enum CustomerIntelligenceMigration {
             BEGIN
                 DELETE FROM insight_references
                 WHERE resourceType = 'project' AND resourceId = OLD.id;
+                DELETE FROM glossary_term_references
+                WHERE resourceType = 'project' AND resourceId = OLD.id;
             END;
             """)
         }
@@ -579,6 +694,8 @@ enum CustomerIntelligenceMigration {
             AFTER DELETE ON meetings
             BEGIN
                 DELETE FROM insight_references
+                WHERE resourceType = 'meeting' AND resourceId = OLD.id;
+                DELETE FROM glossary_term_references
                 WHERE resourceType = 'meeting' AND resourceId = OLD.id;
             END;
             """)

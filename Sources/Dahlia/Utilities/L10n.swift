@@ -560,7 +560,7 @@ enum L10n {
 
     static func organizationDeletionImpact(_ impact: OrganizationDeletionImpact) -> String {
         String(
-            localized: "This deletes \(impact.organizationCount) organization nodes and detaches \(impact.memberships) memberships, \(impact.projects) Projects, and \(impact.topics) Topics.",
+            localized: "This deletes \(impact.organizationCount) organization nodes and detaches \(impact.memberships) memberships, \(impact.projects) Projects, \(impact.topics) Topics, and \(impact.insights) insights.",
             bundle: bundle
         )
     }

@@ -18,10 +18,19 @@ import GRDB
             )
             let vault = customerIntelligenceVault(name: "pre-release")
             let insightID = UUID.v7()
+            let organizationID = UUID.v7()
             let createdAt = Date.now.addingTimeInterval(-60)
             let updatedAt = Date.now
             try queue.write { db in
                 try vault.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO organizations
+                        (id, vaultId, parentOrganizationId, nodeKind, name, revision, createdAt, updatedAt)
+                    VALUES (?, ?, NULL, 'organization', 'Acme', 1, ?, ?)
+                    """,
+                    arguments: [organizationID, vault.id, createdAt, updatedAt]
+                )
             }
             try queue.writeWithoutTransaction { db in
                 try db.execute(sql: "PRAGMA foreign_keys = OFF")
@@ -46,9 +55,18 @@ import GRDB
                     DROP TABLE insights;
                     ALTER TABLE insights_legacy RENAME TO insights;
                     CREATE TABLE customer_intelligence_proposals (id BLOB PRIMARY KEY NOT NULL);
-                    CREATE TABLE glossary_terms (id BLOB PRIMARY KEY NOT NULL);
                     """,
                     arguments: [insightID, vault.id, createdAt, updatedAt]
+                )
+            }
+            try queue.write { db in
+                try db.execute(
+                    sql: """
+                    INSERT INTO insight_references
+                        (insightId, resourceType, resourceId, referenceRole, createdAt)
+                    VALUES (?, 'organization', ?, 'evidence', ?)
+                    """,
+                    arguments: [insightID, organizationID, createdAt]
                 )
             }
 
@@ -66,6 +84,16 @@ import GRDB
                 #expect(insight.revision == 1)
                 #expect(abs(insight.createdAt.timeIntervalSince(createdAt)) < 0.001)
                 #expect(abs(insight.updatedAt.timeIntervalSince(updatedAt)) < 0.001)
+                let reference = try InsightReferenceRecord.fetchOne(
+                    db,
+                    key: [
+                        "insightId": insightID,
+                        "resourceType": CustomerResourceType.organization.rawValue,
+                        "resourceId": organizationID,
+                        "referenceRole": InsightReferenceRole.evidence.rawValue,
+                    ]
+                )
+                #expect(abs(try #require(reference?.createdAt).timeIntervalSince(createdAt)) < 0.001)
                 #expect(try !db.tableExists("customer_intelligence_proposals"))
                 #expect(try !db.tableExists("glossary_terms"))
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -80,8 +108,8 @@ import GRDB
             try queue.read { db in
                 let glossaryTermsExist = try db.tableExists("glossary_terms")
                 let glossaryReferencesExist = try db.tableExists("glossary_term_references")
-                #expect(!glossaryTermsExist)
-                #expect(!glossaryReferencesExist)
+                #expect(glossaryTermsExist)
+                #expect(glossaryReferencesExist)
             }
             let vault = customerIntelligenceVault(name: "v25")
             let otherVault = customerIntelligenceVault(name: "v25-other")
@@ -106,16 +134,7 @@ import GRDB
                 updatedAt: .now
             )
             let referenceID = UUID.v7()
-            let insight = InsightRecord(
-                id: .v7(),
-                vaultId: vault.id,
-                content: "Decision maker",
-                isAccepted: true,
-                metadataJSON: "{}",
-                revision: 1,
-                createdAt: .now,
-                updatedAt: .now
-            )
+            let insightID = UUID.v7()
             try queue.write { db in
                 try vault.insert(db)
                 try otherVault.insert(db)
@@ -124,13 +143,10 @@ import GRDB
                 try db.execute(
                     sql: """
                     INSERT INTO insights
-                        (id, vaultId, content, isAccepted, metadataJSON, createdAt, updatedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (id, vaultId, content, reviewState, metadataJSON, createdAt, updatedAt)
+                    VALUES (?, ?, 'Decision maker', 'accepted', '{}', ?, ?)
                     """,
-                    arguments: [
-                        insight.id, insight.vaultId, insight.content, insight.isAccepted,
-                        insight.metadataJSON, insight.createdAt, insight.updatedAt,
-                    ]
+                    arguments: [insightID, vault.id, Date.now, Date.now]
                 )
                 try db.execute(
                     sql: """
@@ -161,7 +177,7 @@ import GRDB
                         organizationID, contactID, Date.now,
                         meeting.id, contactID, Date.now, Date.now,
                         referenceID, project.id, contactID, Date.now, Date.now,
-                        insight.id, contactID, Date.now,
+                        insightID, contactID, Date.now,
                     ]
                 )
             }
@@ -178,6 +194,8 @@ import GRDB
                 #expect(try MeetingParticipantRecord.fetchCount(db) == 1)
                 #expect(try ProjectResourceReferenceRecord.fetchCount(db) == 1)
                 #expect(try InsightReferenceRecord.fetchCount(db) == 1)
+                let migratedInsight = try InsightRecord.fetchOne(db, key: insightID)
+                #expect(migratedInsight?.isAccepted == true)
                 #expect(try !db.tableExists("glossary_terms"))
                 #expect(try !db.tableExists("glossary_term_references"))
                 let fetchedMembership = try OrganizationMembershipRecord.fetchOne(

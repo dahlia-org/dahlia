@@ -33,6 +33,50 @@
         }
 
         @Test
+        func organizationDeletionImpactIncludesNewInsightReferences() throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let organization = try fixture.repository.createOrganization(
+                vaultId: fixture.vault.id,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Acme"
+            )
+            let firstInsight = try fixture.repository.createInsight(
+                vaultId: fixture.vault.id,
+                content: "First"
+            )
+            _ = try fixture.repository.addInsightReference(
+                insightId: firstInsight.id,
+                resourceType: .organization,
+                resourceId: organization.id,
+                role: .context
+            )
+            let initialImpact = try fixture.repository.organizationDeletionImpact(
+                id: organization.id,
+                vaultId: fixture.vault.id
+            )
+            #expect(initialImpact.insights == 1)
+
+            let secondInsight = try fixture.repository.createInsight(
+                vaultId: fixture.vault.id,
+                content: "Second"
+            )
+            _ = try fixture.repository.addInsightReference(
+                insightId: secondInsight.id,
+                resourceType: .organization,
+                resourceId: organization.id,
+                role: .context
+            )
+            #expect(throws: CustomerIntelligenceError.revisionConflict) {
+                try fixture.repository.deleteOrganization(
+                    id: organization.id,
+                    vaultId: fixture.vault.id,
+                    expectedImpact: initialImpact
+                )
+            }
+        }
+
+        @Test
         func insightMetadataValidationPreservesNumericLexemes() throws {
             let fixture = try CustomerIntelligenceFixture()
             let original = #"{"confidence":0.7,"weight":1.10}"#

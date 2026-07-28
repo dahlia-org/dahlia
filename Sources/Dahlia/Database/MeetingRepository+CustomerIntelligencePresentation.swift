@@ -546,6 +546,7 @@ extension MeetingRepository {
             LEFT JOIN meetings
               ON refs.resourceType = 'meeting'
              AND meetings.id = refs.resourceId
+             AND meetings.vaultId = topics.vaultId
             WHERE topics.vaultId = ?
             GROUP BY topics.id
             ORDER BY COALESCE(lastDiscussedAt, topics.updatedAt) DESC, topics.id DESC

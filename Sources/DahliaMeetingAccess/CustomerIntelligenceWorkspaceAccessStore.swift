@@ -48,7 +48,6 @@ public extension MeetingAccessStore {
                                 OR (sibling.name = child.name COLLATE NOCASE AND sibling.id <= child.id)
                             )
                       ) <= ?
-                    LIMIT ?
                 )
                 SELECT organizations.*, hierarchy.depth,
                        (SELECT COUNT(*) FROM organization_memberships
@@ -73,6 +72,7 @@ public extension MeetingAccessStore {
                 FROM hierarchy
                 JOIN organizations ON organizations.id = hierarchy.id
                 ORDER BY hierarchy.depth, organizations.name COLLATE NOCASE, organizations.id
+                LIMIT ?
                 """,
                 arguments: [
                     query.rootOrganizationID,

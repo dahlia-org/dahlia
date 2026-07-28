@@ -284,6 +284,7 @@ extension MeetingRepository {
                 LEFT JOIN meetings
                   ON refs.resourceType = 'meeting'
                  AND meetings.id = refs.resourceId
+                 AND meetings.vaultId = topics.vaultId
                 WHERE topics.vaultId = ?
                 GROUP BY topics.id
                 ORDER BY COALESCE(lastDiscussedAt, topics.updatedAt) DESC
@@ -699,81 +700,8 @@ extension MeetingRepository {
             in: db
         )
         try db.execute(
-            sql: """
-            INSERT OR IGNORE INTO organization_memberships (organizationId, contactId, roleLabel, createdAt)
-            SELECT organizationId, ?, roleLabel, createdAt
-            FROM organization_memberships WHERE contactId = ?;
-            DELETE FROM organization_memberships WHERE contactId = ?;
-
-            INSERT OR IGNORE INTO meeting_participants
-                (meetingId, contactId, role, responseStatus, source, createdAt, updatedAt)
-            SELECT meetingId, ?, role, responseStatus, source, createdAt, updatedAt
-            FROM meeting_participants WHERE contactId = ?;
-            DELETE FROM meeting_participants WHERE contactId = ?;
-
-            DELETE FROM project_resource_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND EXISTS (
-                  SELECT 1
-                  FROM project_resource_references AS targetRef
-                  WHERE targetRef.projectId = project_resource_references.projectId
-                    AND targetRef.resourceType = 'contact'
-                    AND targetRef.resourceId = ?
-              );
-            DELETE FROM project_resource_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND rowid NOT IN (
-                  SELECT MIN(rowid)
-                  FROM project_resource_references
-                  WHERE resourceType = 'contact' AND resourceId = ?
-                  GROUP BY projectId
-              );
-            UPDATE OR IGNORE project_resource_references
-            SET resourceId = ?, updatedAt = ?
-            WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM project_resource_references WHERE resourceType = 'contact' AND resourceId = ?;
-
-            DELETE FROM insight_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND EXISTS (
-                  SELECT 1
-                  FROM insight_references AS targetRef
-                  WHERE targetRef.insightId = insight_references.insightId
-                    AND targetRef.resourceType = 'contact'
-                    AND targetRef.resourceId = ?
-              );
-            DELETE FROM insight_references
-            WHERE resourceType = 'contact' AND resourceId = ?
-              AND rowid NOT IN (
-                  SELECT MIN(rowid)
-                  FROM insight_references
-                  WHERE resourceType = 'contact' AND resourceId = ?
-                  GROUP BY insightId
-              );
-            INSERT OR IGNORE INTO insight_references
-                (insightId, resourceType, resourceId, referenceRole, createdAt)
-            SELECT insightId, resourceType, ?, referenceRole, createdAt
-            FROM insight_references WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM insight_references WHERE resourceType = 'contact' AND resourceId = ?;
-
-            INSERT OR IGNORE INTO conversation_topic_references
-                (topicId, resourceType, resourceId, note, createdAt, updatedAt)
-            SELECT topicId, resourceType, ?, note, createdAt, ?
-            FROM conversation_topic_references WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM conversation_topic_references WHERE resourceType = 'contact' AND resourceId = ?;
-
-            """,
-            arguments: [
-                targetID, sourceID, sourceID,
-                targetID, sourceID, sourceID,
-                sourceID, targetID,
-                sourceID, sourceID,
-                targetID, now, sourceID, sourceID,
-                sourceID, targetID,
-                sourceID, sourceID,
-                targetID, sourceID, sourceID,
-                targetID, now, sourceID, sourceID,
-            ]
+            sql: CustomerIntelligenceContactReferenceMerge.sql,
+            arguments: ["targetID": targetID, "sourceID": sourceID, "now": now]
         )
         try incrementReferenceOwnerRevisions(owners, now: now, in: db)
     }
@@ -879,7 +807,10 @@ extension MeetingRepository {
                    AND resourceId IN (SELECT id FROM subtree)) AS projects,
                 (SELECT COUNT(*) FROM conversation_topic_references
                  WHERE resourceType = 'organization'
-                   AND resourceId IN (SELECT id FROM subtree)) AS topics
+                   AND resourceId IN (SELECT id FROM subtree)) AS topics,
+                (SELECT COUNT(*) FROM insight_references
+                 WHERE resourceType = 'organization'
+                   AND resourceId IN (SELECT id FROM subtree)) AS insights
             """,
             arguments: [id, vaultId, vaultId]
         )
@@ -887,7 +818,8 @@ extension MeetingRepository {
             organizationCount: row?["organizationCount"] ?? 0,
             memberships: row?["memberships"] ?? 0,
             projects: row?["projects"] ?? 0,
-            topics: row?["topics"] ?? 0
+            topics: row?["topics"] ?? 0,
+            insights: row?["insights"] ?? 0
         )
     }
 

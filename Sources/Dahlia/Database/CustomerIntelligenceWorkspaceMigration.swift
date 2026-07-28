@@ -21,11 +21,7 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         }
         try createWorkspaceTables(in: db)
         try createIndexes(in: db)
-        try CustomerIntelligenceMigration.createOrganizationTriggers(in: db)
-        try CustomerIntelligenceMigration.createVaultImmutabilityTriggers(in: db)
-        try CustomerIntelligenceMigration.createRelationshipValidationTriggers(in: db)
-        try CustomerIntelligenceMigration.createReferenceValidationTriggers(in: db)
-        try CustomerIntelligenceMigration.createReferenceCleanupTriggers(in: db)
+        try createRebuiltContactTriggers(in: db)
         try createRevisionTriggers(in: db)
         try createWorkspaceValidationTriggers(in: db)
         try createWorkspaceCleanupTriggers(in: db)
@@ -111,26 +107,11 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
     private static func dropCustomerIntelligenceTriggers(in db: Database) throws {
         let triggerNames = [
             "contacts_prevent_vault_change",
-            "insights_prevent_vault_change",
-            "meetings_prevent_vault_change",
-            "organizations_validate_insert",
-            "organizations_validate_update",
-            "organization_domains_validate_insert",
-            "organization_domains_validate_update",
-            "organization_domains_assign_first_primary",
-            "organization_domains_promote_after_primary_delete",
             "organization_memberships_validate_insert",
             "organization_memberships_validate_update",
             "meeting_participants_validate_insert",
             "meeting_participants_validate_update",
-            "project_resource_references_validate_insert",
-            "project_resource_references_validate_update",
-            "insight_references_validate_insert",
-            "insight_references_validate_update",
-            "organizations_cleanup_resource_references",
             "contacts_cleanup_resource_references",
-            "projects_cleanup_resource_references",
-            "meetings_cleanup_resource_references",
         ]
         for name in triggerNames {
             try db.execute(sql: "DROP TRIGGER IF EXISTS \(name)")
@@ -193,6 +174,80 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         ALTER TABLE contacts_v26 RENAME TO contacts;
         ALTER TABLE organization_memberships_v26 RENAME TO organization_memberships;
         ALTER TABLE meeting_participants_v26 RENAME TO meeting_participants;
+        """)
+    }
+
+    private static func createRebuiltContactTriggers(in db: Database) throws {
+        try db.execute(sql: """
+        CREATE TRIGGER contacts_prevent_vault_change
+        BEFORE UPDATE OF vaultId ON contacts
+        WHEN NEW.vaultId <> OLD.vaultId
+        BEGIN
+            SELECT RAISE(ABORT, 'contact vault is immutable');
+        END;
+
+        CREATE TRIGGER organization_memberships_validate_insert
+        BEFORE INSERT ON organization_memberships
+        BEGIN
+            SELECT RAISE(ABORT, 'organization membership must stay within one vault')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM organizations
+                JOIN contacts ON contacts.id = NEW.contactId
+                WHERE organizations.id = NEW.organizationId
+                  AND organizations.vaultId = contacts.vaultId
+            );
+        END;
+
+        CREATE TRIGGER organization_memberships_validate_update
+        BEFORE UPDATE OF organizationId, contactId ON organization_memberships
+        BEGIN
+            SELECT RAISE(ABORT, 'organization membership must stay within one vault')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM organizations
+                JOIN contacts ON contacts.id = NEW.contactId
+                WHERE organizations.id = NEW.organizationId
+                  AND organizations.vaultId = contacts.vaultId
+            );
+        END;
+
+        CREATE TRIGGER meeting_participants_validate_insert
+        BEFORE INSERT ON meeting_participants
+        BEGIN
+            SELECT RAISE(ABORT, 'meeting participant must stay within one vault')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM meetings
+                JOIN contacts ON contacts.id = NEW.contactId
+                WHERE meetings.id = NEW.meetingId
+                  AND meetings.vaultId = contacts.vaultId
+            );
+        END;
+
+        CREATE TRIGGER meeting_participants_validate_update
+        BEFORE UPDATE OF meetingId, contactId ON meeting_participants
+        BEGIN
+            SELECT RAISE(ABORT, 'meeting participant must stay within one vault')
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM meetings
+                JOIN contacts ON contacts.id = NEW.contactId
+                WHERE meetings.id = NEW.meetingId
+                  AND meetings.vaultId = contacts.vaultId
+            );
+        END;
+
+        CREATE TRIGGER contacts_cleanup_resource_references
+        AFTER DELETE ON contacts
+        BEGIN
+            DELETE FROM project_resource_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+            DELETE FROM insight_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+            DELETE FROM glossary_term_references
+            WHERE resourceType = 'contact' AND resourceId = OLD.id;
+        END;
         """)
     }
 

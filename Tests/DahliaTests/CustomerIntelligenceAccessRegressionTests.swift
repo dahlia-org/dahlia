@@ -100,6 +100,61 @@ import Foundation
         }
 
         @Test
+        func organizationChartTruncationKeepsAStableBreadthFirstPrefix() throws {
+            let fixture = try Fixture()
+            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
+            let root = try repository.createOrganization(
+                vaultId: fixture.primaryVaultID,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Acme"
+            )
+            var branchIDs: [UUID] = []
+            try fixture.manager.dbQueue.write { db in
+                for branchIndex in 0 ..< 5 {
+                    let branch = OrganizationRecord(
+                        id: .v7(),
+                        vaultId: fixture.primaryVaultID,
+                        parentOrganizationId: root.id,
+                        nodeKind: .unit,
+                        name: "Branch \(branchIndex)",
+                        revision: 1,
+                        createdAt: .now,
+                        updatedAt: .now
+                    )
+                    try branch.insert(db)
+                    branchIDs.append(branch.id)
+                    for leafIndex in 0 ..< 100 {
+                        try OrganizationRecord(
+                            id: .v7(),
+                            vaultId: fixture.primaryVaultID,
+                            parentOrganizationId: branch.id,
+                            nodeKind: .unit,
+                            name: "Leaf \(branchIndex)-\(leafIndex)",
+                            revision: 1,
+                            createdAt: .now,
+                            updatedAt: .now
+                        ).insert(db)
+                    }
+                }
+            }
+
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            let query = OrganizationChartAccessQuery(
+                rootOrganizationID: root.id,
+                maximumDepth: 2,
+                childrenPerNode: 100
+            )
+            let first = try store.queryOrganizationChart(query)
+            let second = try store.queryOrganizationChart(query)
+
+            #expect(first.nodes.count == 500)
+            #expect(first.nodesTruncated)
+            #expect(Set(branchIDs).isSubset(of: Set(first.nodes.map(\.id))))
+            #expect(first.nodes.map(\.id) == second.nodes.map(\.id))
+        }
+
+        @Test
         func customerIntelligenceDetailsCannotCrossVaults() throws {
             let fixture = try Fixture()
             let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
