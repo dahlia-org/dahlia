@@ -35,6 +35,7 @@ final class OrganizationWorkspaceViewModel {
     private(set) var loadingChildNodeIDs: Set<UUID> = []
     var searchText = ""
     var isLoading = false
+    private(set) var isPreparingDeletion = false
     private(set) var isMutating = false
     var errorMessage: String?
     var pendingDeletion: PendingOrganizationDeletion?
@@ -48,6 +49,7 @@ final class OrganizationWorkspaceViewModel {
     private var topicGeneration = 0
     private var searchGeneration = 0
     private var layoutGeneration = 0
+    private var needsReload = false
     private let notificationSenderID = UUID().uuidString
 
     init(dbQueue: DatabaseQueue?, vaultID: UUID?) {
@@ -95,7 +97,18 @@ final class OrganizationWorkspaceViewModel {
     }
 
     func load(selectingRootID requestedRootID: UUID? = nil) async {
-        guard dbQueue != nil, let vaultID else { return }
+        while true {
+            let iterationIsCurrent = await loadWorkspaceIteration(preferredRootID: requestedRootID)
+            if iterationIsCurrent {
+                isLoading = false
+            }
+            guard needsReload else { return }
+            needsReload = false
+        }
+    }
+
+    private func loadWorkspaceIteration(preferredRootID: UUID?) async -> Bool {
+        guard dbQueue != nil, let vaultID else { return true }
         let previouslySelectedNodeID = selectedNodeID
         loadGeneration += 1
         detailGeneration += 1
@@ -103,37 +116,52 @@ final class OrganizationWorkspaceViewModel {
         searchGeneration += 1
         let generation = loadGeneration
         isLoading = true
-        defer { if generation == loadGeneration { isLoading = false } }
         do {
             let result = try await performRead { repository in
                 try (
-                    repository.fetchRootOrganizationWorkspaceNodes(vaultId: vaultID),
-                    repository.fetchContacts(vaultId: vaultID)
+                    roots: repository.fetchRootOrganizationWorkspaceNodes(vaultId: vaultID),
+                    contacts: repository.fetchContacts(vaultId: vaultID)
                 )
             }
-            guard generation == loadGeneration else { return }
-            roots = result.0
-            contacts = result.1
-            errorMessage = nil
-            if let rootID = requestedRootID, roots.contains(where: { $0.id == rootID }) {
-                await selectRoot(rootID)
-            } else if let rootID = selectedRootID, roots.contains(where: { $0.id == rootID }) {
-                await selectRoot(rootID)
-                if let previouslySelectedNodeID, previouslySelectedNodeID != rootID {
-                    await revealOrganization(previouslySelectedNodeID)
-                }
-            } else if let first = roots.first {
-                await selectRoot(first.id)
-            } else {
-                selectedRootID = nil
-                selectedNodeID = nil
-                selectedDetail = nil
-                loadedNodes = [:]
-                canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
-            }
+            guard generation == loadGeneration else { return false }
+            await applyLoadedWorkspace(
+                result,
+                preferredRootID: preferredRootID,
+                previouslySelectedNodeID: previouslySelectedNodeID,
+                generation: generation
+            )
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return false }
             setError(error)
+        }
+        return generation == loadGeneration
+    }
+
+    private func applyLoadedWorkspace(
+        _ result: (roots: [OrganizationWorkspaceNode], contacts: [ContactRecord]),
+        preferredRootID: UUID?,
+        previouslySelectedNodeID: UUID?,
+        generation: Int
+    ) async {
+        roots = result.roots
+        contacts = result.contacts
+        errorMessage = nil
+        if let rootID = preferredRootID, roots.contains(where: { $0.id == rootID }) {
+            await selectRoot(rootID, expectedLoadGeneration: generation)
+        } else if let rootID = selectedRootID, roots.contains(where: { $0.id == rootID }) {
+            await selectRoot(rootID, expectedLoadGeneration: generation)
+            guard generation == loadGeneration else { return }
+            if let previouslySelectedNodeID, previouslySelectedNodeID != rootID {
+                await revealOrganization(previouslySelectedNodeID)
+            }
+        } else if let first = roots.first {
+            await selectRoot(first.id, expectedLoadGeneration: generation)
+        } else {
+            selectedRootID = nil
+            selectedNodeID = nil
+            selectedDetail = nil
+            loadedNodes = [:]
+            canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
         }
     }
 
@@ -150,6 +178,11 @@ final class OrganizationWorkspaceViewModel {
     }
 
     func selectRoot(_ id: UUID) async {
+        await selectRoot(id, expectedLoadGeneration: nil)
+    }
+
+    private func selectRoot(_ id: UUID, expectedLoadGeneration: Int?) async {
+        guard expectedLoadGeneration == nil || expectedLoadGeneration == loadGeneration else { return }
         guard let root = roots.first(where: { $0.id == id }) else { return }
         selectedRootID = id
         selectedNodeID = id
@@ -163,8 +196,11 @@ final class OrganizationWorkspaceViewModel {
         loadedChildCounts = [:]
         expandedNodeIDs = []
         await loadOrganizationCandidates(for: id)
+        guard expectedLoadGeneration == nil || expectedLoadGeneration == loadGeneration else { return }
         await loadTopics(for: id)
-        await expand(id)
+        guard expectedLoadGeneration == nil || expectedLoadGeneration == loadGeneration else { return }
+        await expand(id, expectedLoadGeneration: expectedLoadGeneration)
+        guard expectedLoadGeneration == nil || expectedLoadGeneration == loadGeneration else { return }
         await loadDetail()
     }
 
@@ -401,21 +437,33 @@ final class OrganizationWorkspaceViewModel {
     }
 
     func prepareOrganizationDeletion() async {
-        guard let id = selectedNodeID, let organization = loadedNodes[id]?.organization,
-              dbQueue != nil, let vaultID else { return }
+        guard let id = selectedNodeID, loadedNodes[id] != nil,
+              dbQueue != nil, let vaultID, !isPreparingDeletion else { return }
+        isPreparingDeletion = true
+        let result: Result<(organization: OrganizationRecord, impact: OrganizationDeletionImpact), Error>
         do {
-            let impact = try await performRead {
-                try $0.organizationDeletionImpact(id: id, vaultId: vaultID)
+            let preview = try await performRead { repository in
+                try repository.organizationDeletionPreview(id: id, vaultId: vaultID)
             }
-            guard selectedNodeID == id,
-                  loadedNodes[id]?.organization.revision == organization.revision else {
-                return
-            }
-            pendingDeletion = PendingOrganizationDeletion(
-                organization: organization,
-                impact: impact
-            )
+            result = .success(preview)
         } catch {
+            result = .failure(error)
+        }
+        isPreparingDeletion = false
+        if needsReload {
+            await reloadIfNeeded()
+            guard selectedNodeID == id else { return }
+            await prepareOrganizationDeletion()
+            return
+        }
+        switch result {
+        case let .success(preview):
+            guard self.vaultID == vaultID, selectedNodeID == id else { return }
+            pendingDeletion = PendingOrganizationDeletion(
+                organization: preview.organization,
+                impact: preview.impact
+            )
+        case let .failure(error):
             setError(error)
         }
     }
@@ -437,10 +485,11 @@ final class OrganizationWorkspaceViewModel {
         await confirmOrganizationDeletion(pending)
     }
 
-    private func expand(_ id: UUID) async {
+    private func expand(_ id: UUID, expectedLoadGeneration: Int? = nil) async {
         if loadedChildCounts[id] == nil {
             await loadChildren(of: id, offset: 0)
         }
+        guard expectedLoadGeneration == nil || expectedLoadGeneration == loadGeneration else { return }
         expandedNodeIDs.insert(id)
         await updateLayout()
     }
@@ -518,19 +567,24 @@ final class OrganizationWorkspaceViewModel {
 
     func revealOrganization(_ id: UUID) async {
         guard dbQueue != nil, let vaultID else { return }
+        let generation = loadGeneration
         do {
             let path = try await performRead {
                 try $0.fetchOrganizationWorkspacePath(id: id, vaultId: vaultID)
             }
-            guard path.first?.id == selectedRootID, let selected = path.last else { return }
+            guard generation == loadGeneration,
+                  path.first?.id == selectedRootID,
+                  let selected = path.last else { return }
             for node in path {
                 loadedNodes[node.id] = node
             }
             expandedNodeIDs.formUnion(path.dropLast().map(\.id))
             selectedNodeID = selected.id
             await updateLayout()
+            guard generation == loadGeneration, selectedNodeID == selected.id else { return }
             await loadDetail()
         } catch {
+            guard generation == loadGeneration, self.vaultID == vaultID else { return }
             setError(error)
         }
     }
@@ -608,8 +662,31 @@ final class OrganizationWorkspaceViewModel {
         canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
         pendingDeletion = nil
         pendingMerge = nil
+        needsReload = false
         errorMessage = nil
         isLoading = false
+        isPreparingDeletion = false
+    }
+
+    private func reloadIfNeeded() async {
+        guard needsReload, !isLoading, !isPreparingDeletion else { return }
+        needsReload = false
+        await load()
+    }
+
+    @discardableResult
+    func handleWorkspaceChange() async -> Bool {
+        loadGeneration += 1
+        detailGeneration += 1
+        topicGeneration += 1
+        searchGeneration += 1
+        layoutGeneration += 1
+        if isLoading || isPreparingDeletion {
+            needsReload = true
+            return true
+        }
+        await load()
+        return false
     }
 
     private func observeWorkspaceChanges() {
@@ -621,7 +698,7 @@ final class OrganizationWorkspaceViewModel {
         ) { [weak self, notificationSenderID] notification in
             guard notification.object as? String != notificationSenderID else { return }
             Task { @MainActor [weak self] in
-                await self?.load()
+                await self?.handleWorkspaceChange()
             }
         }
     }

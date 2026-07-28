@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct OrganizationDeletionSection: View {
-    let onDelete: () -> Void
+    let onRequestDeletion: () -> Void
 
     var body: some View {
         Section {
@@ -9,7 +9,7 @@ struct OrganizationDeletionSection: View {
                 L10n.deleteOrganizationAction,
                 systemImage: "trash",
                 role: .destructive,
-                action: onDelete
+                action: onRequestDeletion
             )
         } header: {
             Text(L10n.dangerZone)
