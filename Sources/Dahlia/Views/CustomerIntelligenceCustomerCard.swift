@@ -11,6 +11,13 @@ struct CustomerIntelligenceCustomerCard: View {
                     .font(.headline)
                     .lineLimit(2)
 
+                if let description = customer.root.organization.description.nilIfBlank {
+                    Text(description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
                 HStack(spacing: 16) {
                     count(customer.organizationCount, title: L10n.organizations, systemImage: "rectangle.3.group")
                     count(customer.contactCount, title: L10n.people, systemImage: "person.2")

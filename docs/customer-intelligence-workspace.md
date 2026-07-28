@@ -25,6 +25,7 @@ Dahlia の「顧客インテリジェンス」画面は、選択中の Vault に
   ドメイン、人物、部署、Project、Topic、Insight の参照を選択中の Organization へ一括統合します。
   統合先の名称と主ドメインを維持し、重複する所属や参照では統合先の情報を優先して、元の Organization
   を削除します。統合先に主ドメインがない場合は、元の Organization の主ドメインを引き継ぎます。
+- Organization と部門には説明を保存でき、作成・編集・詳細表示と組織検索で利用できます。
 - Organization、暫定人物、Topic の削除はインスペクタ最下部の Danger Zone にだけ表示します。
 - ズームは50〜200%です。ツールバー操作に加えてトラックパッドのピンチで連続的に変更できます。
   座標は保存せず、親子関係から毎回派生します。
@@ -72,7 +73,8 @@ Insight の参照がすべて解除されている場合だけ削除できます
 
 読み取りセッションでは Organization、Contact、Topic、Insight、Project、Meeting を `query_*`／`get_*`
 で取得できます。`query_organization_chart` は一つのルートを最大500ノードまで返し、
-`nodes_truncated` が絞り込みの必要性を示します。
+`nodes_truncated` が絞り込みの必要性を示します。Organization の読み取り応答は `description` を含み、
+`query_organizations` は名称、説明、ドメインを検索します。
 
 `--write` セッションだけが以下を追加公開します。
 
@@ -94,4 +96,5 @@ Topic と Insight の削除は所有する参照だけを削除し、参照先�
 
 開発途中の旧スキーマを適用済みの QA データベースは、Dahlia 起動時の
 `v29_customerIntelligenceDirectCRUD` で現在の Insight 列と cleanup trigger へ前方修復されます。
-MCP は v29 完了前のデータベースを開かず、Dahlia を一度起動してアップグレードするよう案内します。
+続く `v30_organizationDescription` は既存 Organization を保持したまま説明列を追加します。MCP は v30
+完了前のデータベースを開かず、Dahlia を一度起動してアップグレードするよう案内します。

@@ -48,6 +48,7 @@ public struct OrganizationAccessMetadata: Codable, Sendable, Equatable {
     public let parentOrganizationID: UUID?
     public let nodeKind: OrganizationAccessNodeKind
     public let name: String
+    public let description: String
     public let primaryDomain: String?
     public let domainCount: Int
     public let memberCount: Int

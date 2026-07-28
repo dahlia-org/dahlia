@@ -30,7 +30,8 @@
                 vaultId: fixture.vault.id,
                 parentOrganizationId: firstParent.id,
                 nodeKind: .unit,
-                name: "Old Name"
+                name: "Old Name",
+                description: "Old description"
             )
 
             let updated = try fixture.repository.updateOrganization(
@@ -38,21 +39,39 @@
                 vaultId: fixture.vault.id,
                 name: "New Name",
                 parentOrganizationId: secondParent.id,
+                description: "Owns the platform roadmap",
                 expectedRevision: department.revision
             )
 
             #expect(updated.name == "New Name")
             #expect(updated.parentOrganizationId == secondParent.id)
+            #expect(updated.description == "Owns the platform roadmap")
             #expect(updated.revision == department.revision + 1)
+            let renamed = try fixture.repository.updateOrganization(
+                id: department.id,
+                vaultId: fixture.vault.id,
+                name: "Newest Name",
+                parentOrganizationId: secondParent.id,
+                expectedRevision: updated.revision
+            )
+            #expect(renamed.description == "Owns the platform roadmap")
             #expect(throws: CustomerIntelligenceError.revisionConflict) {
                 try fixture.repository.updateOrganization(
                     id: department.id,
                     vaultId: fixture.vault.id,
                     name: "Stale",
                     parentOrganizationId: firstParent.id,
+                    description: "Stale description",
                     expectedRevision: department.revision
                 )
             }
+
+            let matches = try fixture.repository.searchOrganizationWorkspaceNodes(
+                vaultId: fixture.vault.id,
+                rootOrganizationId: root.id,
+                query: "platform roadmap"
+            )
+            #expect(matches.map(\.id) == [department.id])
         }
 
         @Test

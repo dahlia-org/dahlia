@@ -764,7 +764,8 @@ import ImageIO
                 vaultId: fixture.primaryVaultID,
                 parentOrganizationId: nil,
                 nodeKind: .organization,
-                name: "Acme"
+                name: "Acme",
+                description: "Strategic customer"
             )
             let unit = try repository.createOrganization(
                 vaultId: fixture.primaryVaultID,
@@ -853,8 +854,13 @@ import ImageIO
                 unit.id,
             ])
             let organizationDetail = try store.organization(id: organization.id)
+            #expect(organizationDetail.organization.description == "Strategic customer")
             #expect(organizationDetail.domains.map(\.domainName) == ["acme.example"])
             #expect(organizationDetail.projectResources.map(\.relationLabel) == ["customer"])
+            #expect(
+                try store.queryOrganizations(.init(query: "Strategic customer")).organizations.map(\.id)
+                    == [organization.id]
+            )
 
             let contacts = try store.queryContacts()
             #expect(contacts.contacts.map(\.id) == [contact.id])
@@ -1561,7 +1567,21 @@ import ImageIO
             let root = try store.createOrganization(
                 name: "Acme Customer",
                 nodeKind: .organization,
-                parentOrganizationID: nil
+                parentOrganizationID: nil,
+                description: "Enterprise account"
+            )
+            #expect(try store.organization(id: root.resourceID).organization.description == "Enterprise account")
+            let updatedRoot = try store.updateOrganization(
+                id: root.resourceID,
+                expectedRevision: root.revision,
+                name: nil,
+                description: "Strategic enterprise account",
+                parent: .unchanged
+            )
+            #expect(updatedRoot.changed)
+            #expect(
+                try store.organization(id: root.resourceID).organization.description
+                    == "Strategic enterprise account"
             )
             let unit = try store.createOrganization(
                 name: "Data",
@@ -2085,6 +2105,54 @@ import ImageIO
             }
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.queryConversationTopics()
+            }
+        }
+
+        @Test
+        func v29DatabaseRejectsOrganizationWritesWithUpgradeError() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v29-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v30")
+            let organizationID = UUID.v7()
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v29_customerIntelligenceDirectCRUD")
+            try queue.write { db in
+                try vault.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO organizations (
+                        id, vaultId, parentOrganizationId, nodeKind, name, revision, createdAt, updatedAt
+                    )
+                    VALUES (?, ?, NULL, 'organization', 'Acme', 1, ?, ?)
+                    """,
+                    arguments: [organizationID, vault.id, Date.now, Date.now]
+                )
+            }
+            let store = try MeetingAccessStore(
+                databaseURL: databaseURL,
+                vaultID: vault.id,
+                allowsWrites: true
+            )
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.createOrganization(
+                    name: "New",
+                    nodeKind: .organization,
+                    parentOrganizationID: nil
+                )
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.updateOrganization(
+                    id: organizationID,
+                    expectedRevision: 1,
+                    name: "Updated",
+                    parent: .unchanged
+                )
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.deleteOrganization(id: organizationID, expectedRevision: 1)
             }
         }
 

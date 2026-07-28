@@ -267,6 +267,7 @@ enum L10n {
     }
 
     static var customerIntelligenceNoDescription: String { String(localized: "No description", bundle: bundle) }
+    static var organizationDescription: String { String(localized: "Organization Description", bundle: bundle) }
     static var customerIntelligenceManageInProjects: String {
         String(localized: "Manage in Projects", bundle: bundle)
     }

@@ -127,6 +127,7 @@ extension MeetingRepository {
         parentOrganizationId: UUID?,
         nodeKind: OrganizationNodeKind,
         name: String,
+        description: String = "",
         now: Date = .now
     ) throws -> OrganizationRecord {
         try dbQueue.write { db in
@@ -142,6 +143,7 @@ extension MeetingRepository {
                 parentOrganizationId: parentOrganizationId,
                 nodeKind: nodeKind,
                 name: name,
+                description: description,
                 revision: 1,
                 createdAt: now,
                 updatedAt: now
@@ -188,6 +190,7 @@ extension MeetingRepository {
         vaultId: UUID,
         name: String,
         parentOrganizationId: UUID?,
+        description: String? = nil,
         expectedRevision: Int,
         now: Date = .now
     ) throws -> OrganizationRecord {
@@ -206,6 +209,9 @@ extension MeetingRepository {
             }
             organization.name = name
             organization.parentOrganizationId = parentOrganizationId
+            if let description {
+                organization.description = description
+            }
             organization.revision += 1
             organization.updatedAt = now
             do {

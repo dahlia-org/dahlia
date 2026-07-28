@@ -6,6 +6,7 @@ import GRDB
 enum CustomerIntelligenceWriteLimits {
     static let email = 320
     static let shortText = 256
+    static let description = 4000
     static let topicState = 4000
     static let topicNote = 2000
     static let insightContent = 10000
@@ -16,24 +17,35 @@ public extension MeetingAccessStore {
     func createOrganization(
         name: String,
         nodeKind: OrganizationAccessNodeKind,
-        parentOrganizationID: UUID?
+        parentOrganizationID: UUID?,
+        description: String = ""
     ) throws -> CustomerIntelligenceRecordMutationResult {
         try requireCustomerIntelligenceWriteAccess()
         guard let name = normalizedCustomerText(name),
+              let description = normalizedCustomerDescription(description),
               parentOrganizationID != nil || nodeKind == .organization
         else {
             throw MeetingAccessError.invalidCustomerIntelligenceMutation
         }
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         let id = customerIntelligenceUUIDv7()
         try database.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO organizations
-                    (id, vaultId, parentOrganizationId, nodeKind, name, revision, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                    (id, vaultId, parentOrganizationId, nodeKind, name, description, revision, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                arguments: [id, vaultID, parentOrganizationID, nodeKind.rawValue, name, Date.now, Date.now]
+                arguments: [
+                    id,
+                    vaultID,
+                    parentOrganizationID,
+                    nodeKind.rawValue,
+                    name,
+                    description,
+                    Date.now,
+                    Date.now,
+                ]
             )
         }
         postCustomerIntelligenceChange()
@@ -50,6 +62,7 @@ public extension MeetingAccessStore {
         id: UUID,
         expectedRevision: Int,
         name: String?,
+        description: String? = nil,
         parent: OrganizationParentMutation
     ) throws -> CustomerIntelligenceRecordMutationResult {
         try requireCustomerIntelligenceWriteAccess()
@@ -59,15 +72,21 @@ public extension MeetingAccessStore {
             }
             return value
         }
-        guard normalizedName != nil || parent != .unchanged else {
+        let normalizedDescription = try description.map {
+            guard let value = normalizedCustomerDescription($0) else {
+                throw MeetingAccessError.invalidCustomerIntelligenceMutation
+            }
+            return value
+        }
+        guard normalizedName != nil || normalizedDescription != nil || parent != .unchanged else {
             throw MeetingAccessError.invalidCustomerIntelligenceMutation
         }
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         let result = try database.write { db -> (Int, Bool) in
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT name, parentOrganizationId, revision
+                SELECT name, description, parentOrganizationId, revision
                 FROM organizations WHERE id = ? AND vaultId = ?
                 """,
                 arguments: [id, vaultID]
@@ -78,23 +97,29 @@ public extension MeetingAccessStore {
             guard revision == expectedRevision else {
                 throw MeetingAccessError.customerIntelligenceRevisionConflict
             }
+            let currentName: String = row["name"]
+            let currentDescription: String = row["description"]
             let currentParent: UUID? = row["parentOrganizationId"]
             let nextParent: UUID? = switch parent {
             case .unchanged: currentParent
             case .root: nil
             case let .organization(parentID): parentID
             }
-            let nextName = normalizedName ?? (row["name"] as String)
-            guard nextName != (row["name"] as String) || nextParent != currentParent else {
+            let nextName = normalizedName ?? currentName
+            let nextDescription = normalizedDescription ?? currentDescription
+            guard nextName != currentName
+                || nextDescription != currentDescription
+                || nextParent != currentParent
+            else {
                 return (revision, false)
             }
             try db.execute(
                 sql: """
                 UPDATE organizations
-                SET name = ?, parentOrganizationId = ?, revision = revision + 1, updatedAt = ?
+                SET name = ?, description = ?, parentOrganizationId = ?, revision = revision + 1, updatedAt = ?
                 WHERE id = ? AND vaultId = ? AND revision = ?
                 """,
-                arguments: [nextName, nextParent, Date.now, id, vaultID, expectedRevision]
+                arguments: [nextName, nextDescription, nextParent, Date.now, id, vaultID, expectedRevision]
             )
             guard db.changesCount == 1 else {
                 throw MeetingAccessError.customerIntelligenceRevisionConflict
@@ -509,7 +534,7 @@ public extension MeetingAccessStore {
         expectedRevision: Int
     ) throws -> CustomerIntelligenceRecordDeletionResult {
         try requireCustomerIntelligenceWriteAccess()
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         try database.write { db in
             _ = try requiredRevision(
                 table: "organizations",
@@ -1348,6 +1373,11 @@ private extension MeetingAccessStore {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.count > maximumLength ? nil : trimmed
+    }
+
+    func normalizedCustomerDescription(_ value: String) -> String? {
+        guard value.count <= CustomerIntelligenceWriteLimits.description else { return nil }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func normalizedCustomerMetadata(_ value: String?) -> String? {

@@ -162,6 +162,10 @@ final class AppDatabaseManager: Sendable {
             try CustomerIntelligenceDirectCRUDMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v30_organizationDescription") { db in
+            try OrganizationDescriptionMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

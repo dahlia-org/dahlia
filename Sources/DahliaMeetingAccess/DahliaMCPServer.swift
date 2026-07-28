@@ -302,16 +302,17 @@ public final class DahliaMCPServer {
                 description: description
             ))
         case "create_organization":
-            try validate(arguments, allowedKeys: ["name", "node_kind", "parent_organization_id"])
+            try validate(arguments, allowedKeys: ["name", "node_kind", "parent_organization_id", "description"])
             let nodeKind = try requiredOrganizationNodeKind(arguments)
             return try toolResult(store.createOrganization(
                 name: requiredString(arguments, key: "name"),
                 nodeKind: nodeKind,
-                parentOrganizationID: optionalUUID(arguments, key: "parent_organization_id")
+                parentOrganizationID: optionalUUID(arguments, key: "parent_organization_id"),
+                description: string(arguments, key: "description") ?? ""
             ))
         case "update_organization":
             try validate(arguments, allowedKeys: [
-                "organization_id", "revision", "name", "parent_organization_id",
+                "organization_id", "revision", "name", "parent_organization_id", "description",
             ])
             let parent: OrganizationParentMutation = if !arguments.keys.contains("parent_organization_id") {
                 .unchanged
@@ -324,6 +325,7 @@ public final class DahliaMCPServer {
                 id: requiredUUID(arguments, key: "organization_id"),
                 expectedRevision: requiredRevision(arguments),
                 name: optionalNonNullString(arguments, key: "name"),
+                description: optionalNonNullString(arguments, key: "description"),
                 parent: parent
             ))
         case "delete_organization":
@@ -1117,6 +1119,7 @@ private extension DahliaMCPServer {
                 "parent_organization_id": ["type": "string", "format": "uuid"],
                 "node_kind": organizationNodeKindSchema,
                 "name": ["type": "string"],
+                "description": ["type": "string"],
                 "primary_domain": ["type": "string"],
                 "domain_count": ["type": "integer", "minimum": 0],
                 "member_count": ["type": "integer", "minimum": 0],
@@ -1126,7 +1129,7 @@ private extension DahliaMCPServer {
                 "updated_at": ["type": "string", "format": "date-time"],
             ],
             required: [
-                "id", "node_kind", "name", "domain_count", "member_count", "child_count", "revision",
+                "id", "node_kind", "name", "description", "domain_count", "member_count", "child_count", "revision",
                 "created_at", "updated_at",
             ]
         )
@@ -1241,6 +1244,7 @@ private extension DahliaMCPServer {
                 "parent_organization_id": ["type": "string", "format": "uuid"],
                 "node_kind": organizationNodeKindSchema,
                 "name": ["type": "string"],
+                "description": ["type": "string"],
                 "depth": ["type": "integer", "minimum": 0],
                 "revision": ["type": "integer", "minimum": 1],
                 "member_count": ["type": "integer", "minimum": 0],
@@ -1252,7 +1256,7 @@ private extension DahliaMCPServer {
                 "children_truncated": ["type": "boolean"],
             ],
             required: [
-                "id", "node_kind", "name", "depth", "revision", "member_count",
+                "id", "node_kind", "name", "description", "depth", "revision", "member_count",
                 "project_count", "topic_count", "meeting_count", "child_count", "children_truncated",
             ]
         )
@@ -1848,23 +1852,26 @@ private extension DahliaMCPServer {
             customerWriteTool(
                 "create_organization",
                 "Create organization",
-                "Create one Organization or unit. A unit requires parent_organization_id.",
+                "Create one Organization or unit with an optional description. A unit requires parent_organization_id.",
                 [
                     "name": shortText,
                     "node_kind": organizationNodeKindSchema,
                     "parent_organization_id": uuid,
+                    "description": ["type": "string", "maxLength": CustomerIntelligenceWriteLimits.description],
                 ],
                 required: ["name", "node_kind"]
             ),
             customerWriteTool(
                 "update_organization",
                 "Update organization",
-                "Update one Organization. Omitted fields stay unchanged; parent_organization_id:null moves it to the root.",
+                "Update one Organization's name, description, or parent. Omitted fields stay unchanged; "
+                    + "parent_organization_id:null moves it to the root.",
                 [
                     "organization_id": uuid,
                     "revision": revision,
                     "name": shortText,
                     "parent_organization_id": nullableUUID,
+                    "description": ["type": "string", "maxLength": CustomerIntelligenceWriteLimits.description],
                 ],
                 required: ["organization_id", "revision"],
                 destructive: true

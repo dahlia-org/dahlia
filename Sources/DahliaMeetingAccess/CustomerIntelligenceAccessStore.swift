@@ -36,6 +36,7 @@ public extension MeetingAccessStore {
                 predicates.append("""
                 (
                     organizations.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                    OR organizations.description LIKE ? ESCAPE '\\' COLLATE NOCASE
                     OR EXISTS (
                         SELECT 1
                         FROM organization_domains
@@ -44,7 +45,7 @@ public extension MeetingAccessStore {
                     )
                 )
                 """)
-                arguments += [pattern, pattern]
+                arguments += [pattern, pattern, pattern]
             }
             if let cursor {
                 predicates.append("""
@@ -457,7 +458,7 @@ extension MeetingAccessStore {
         guard try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
-            arguments: ["v29_customerIntelligenceDirectCRUD"]
+            arguments: ["v30_organizationDescription"]
         ) == true else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -540,6 +541,7 @@ extension MeetingAccessStore {
             parentOrganizationID: row["parentOrganizationId"],
             nodeKind: nodeKind,
             name: row["name"],
+            description: row["description"],
             primaryDomain: row["primaryDomain"],
             domainCount: row["domainCount"],
             memberCount: row["memberCount"],

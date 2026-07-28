@@ -7,7 +7,7 @@ struct CustomerIntelligenceCreationSheet: View {
     let roots: [OrganizationWorkspaceNode]
     let scope: CustomerIntelligenceScope
     let sidebarViewModel: SidebarViewModel
-    let onCreateOrganization: (String, UUID?) async -> Bool
+    let onCreateOrganization: (String, UUID?, String) async -> Bool
     let onCreateContact: (String, String, UUID?) async -> Bool
     let onCreateProject: (String, UUID?, ProjectType, String, UUID) async -> Bool
     let onCreateTopic: (String, String, UUID) async -> Bool
@@ -61,6 +61,8 @@ struct CustomerIntelligenceCreationSheet: View {
         case let .organization(parentID):
             Section {
                 TextField(L10n.name, text: $name)
+                TextField(L10n.organizationDescription, text: $details, axis: .vertical)
+                    .lineLimit(4 ... 8)
                 if parentID != nil {
                     organizationPicker(title: L10n.parentDepartment)
                         .disabled(true)
@@ -199,7 +201,7 @@ struct CustomerIntelligenceCreationSheet: View {
 
     private var sheetHeight: Double {
         switch request {
-        case .organization: 300
+        case .organization: 400
         case .contact: 400
         case .project: 560
         case .topic: 440
@@ -212,7 +214,7 @@ struct CustomerIntelligenceCreationSheet: View {
         let didCreate: Bool
         switch request {
         case let .organization(parentID):
-            didCreate = await onCreateOrganization(name, parentID)
+            didCreate = await onCreateOrganization(name, parentID, details)
         case .contact:
             didCreate = await onCreateContact(name, email, selectedOrganizationID)
         case .project:

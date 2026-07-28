@@ -95,6 +95,7 @@ public extension MeetingAccessStore {
                     parentOrganizationID: row["parentOrganizationId"],
                     nodeKind: kind,
                     name: row["name"],
+                    description: row["description"],
                     depth: row["depth"],
                     revision: row["revision"],
                     memberCount: row["memberCount"],

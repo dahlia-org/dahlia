@@ -232,7 +232,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
         updateSelection(id, at: \.insightID)
     }
 
-    func createRootOrganization(name: String) async -> Bool {
+    func createRootOrganization(name: String, description: String = "") async -> Bool {
         guard let dbQueue, let vaultID, name.nilIfBlank != nil else { return false }
         let previousLocation = currentLocation
         do {
@@ -241,7 +241,8 @@ final class CustomerIntelligenceWorkspaceViewModel {
                     vaultId: vaultID,
                     parentOrganizationId: nil,
                     nodeKind: .organization,
-                    name: name
+                    name: name,
+                    description: description
                 )
             }.value
             scope = .organization(organization.id)

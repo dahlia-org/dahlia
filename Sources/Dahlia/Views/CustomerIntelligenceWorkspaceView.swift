@@ -222,9 +222,9 @@ private extension OrganizationWorkspaceView {
         MainWindowOpener.shared.openMainWindow()
     }
 
-    private func createOrganization(name: String, parentID: UUID?) async -> Bool {
+    private func createOrganization(name: String, parentID: UUID?, description: String) async -> Bool {
         guard let parentID else {
-            return await model.createRootOrganization(name: name)
+            return await model.createRootOrganization(name: name, description: description)
         }
         guard let dbQueue = sidebarViewModel.dbQueue, let vaultID = sidebarViewModel.currentVault?.id else {
             return false
@@ -235,7 +235,8 @@ private extension OrganizationWorkspaceView {
                     vaultId: vaultID,
                     parentOrganizationId: parentID,
                     nodeKind: .unit,
-                    name: name
+                    name: name,
+                    description: description
                 )
             }.value
             model.selection.organizationID = organization.id

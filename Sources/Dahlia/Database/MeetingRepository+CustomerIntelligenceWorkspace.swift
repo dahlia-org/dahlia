@@ -172,7 +172,10 @@ extension MeetingRepository {
                     SELECT organizations.*
                     FROM organizations
                     JOIN subtree ON subtree.id = organizations.id
-                    WHERE organizations.name LIKE ?
+                    WHERE (
+                        organizations.name LIKE ?
+                        OR organizations.description LIKE ?
+                    )
                     ORDER BY organizations.name COLLATE NOCASE, organizations.id
                     LIMIT ?
                     """,
@@ -181,13 +184,17 @@ extension MeetingRepository {
                         vaultId,
                         vaultId,
                         "%\(query)%",
+                        "%\(query)%",
                         min(max(limit, 1), 100),
                     ]
                 )
             }
             return try OrganizationRecord
                 .filter(Column("vaultId") == vaultId)
-                .filter(Column("name").like("%\(query)%"))
+                .filter(
+                    Column("name").like("%\(query)%")
+                        || Column("description").like("%\(query)%")
+                )
                 .order(Column("name").asc, Column("id").asc)
                 .limit(min(max(limit, 1), 100))
                 .fetchAll(db)
