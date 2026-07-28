@@ -2109,6 +2109,54 @@ import ImageIO
         }
 
         @Test
+        func v29DatabaseRejectsOrganizationWritesWithUpgradeError() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v29-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v30")
+            let organizationID = UUID.v7()
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v29_customerIntelligenceDirectCRUD")
+            try queue.write { db in
+                try vault.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO organizations (
+                        id, vaultId, parentOrganizationId, nodeKind, name, revision, createdAt, updatedAt
+                    )
+                    VALUES (?, ?, NULL, 'organization', 'Acme', 1, ?, ?)
+                    """,
+                    arguments: [organizationID, vault.id, Date.now, Date.now]
+                )
+            }
+            let store = try MeetingAccessStore(
+                databaseURL: databaseURL,
+                vaultID: vault.id,
+                allowsWrites: true
+            )
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.createOrganization(
+                    name: "New",
+                    nodeKind: .organization,
+                    parentOrganizationID: nil
+                )
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.updateOrganization(
+                    id: organizationID,
+                    expectedRevision: 1,
+                    name: "Updated",
+                    parent: .unchanged
+                )
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.deleteOrganization(id: organizationID, expectedRevision: 1)
+            }
+        }
+
+        @Test
         func projectSchemaWithoutNameKeyRequiresOpeningDahliaForMigration() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-project-schema-\(UUID.v7().uuidString)")

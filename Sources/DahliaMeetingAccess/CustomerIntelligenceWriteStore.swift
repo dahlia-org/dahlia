@@ -27,7 +27,7 @@ public extension MeetingAccessStore {
         else {
             throw MeetingAccessError.invalidCustomerIntelligenceMutation
         }
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         let id = customerIntelligenceUUIDv7()
         try database.write { db in
             try db.execute(
@@ -81,7 +81,7 @@ public extension MeetingAccessStore {
         guard normalizedName != nil || normalizedDescription != nil || parent != .unchanged else {
             throw MeetingAccessError.invalidCustomerIntelligenceMutation
         }
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         let result = try database.write { db -> (Int, Bool) in
             guard let row = try Row.fetchOne(
                 db,
@@ -534,7 +534,7 @@ public extension MeetingAccessStore {
         expectedRevision: Int
     ) throws -> CustomerIntelligenceRecordDeletionResult {
         try requireCustomerIntelligenceWriteAccess()
-        let vault = try scopedVault()
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
         try database.write { db in
             _ = try requiredRevision(
                 table: "organizations",
