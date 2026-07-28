@@ -29,20 +29,27 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
         context _: Context
     ) -> CGSize? {
         guard let width = proposal.width,
-              let textContainer = textView.textContainer,
-              let layoutManager = textView.layoutManager
+              let measuredHeight = textView.measuredHeight(constrainedTo: width)
         else { return nil }
 
-        textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: textContainer)
-        let height = ceil(layoutManager.usedRect(for: textContainer).height)
-        return CGSize(width: width, height: max(height, NSFont.preferredFont(forTextStyle: .body).pointSize))
+        return CGSize(
+            width: width,
+            height: max(measuredHeight, NSFont.preferredFont(forTextStyle: .body).pointSize)
+        )
     }
 }
 
 final class CodexChatSelectableTextView: NSTextView {
+    private static let layoutBatchCharacterCount = 4096
+
     private var renderedBlocks: [CodexChatMarkdownRenderedBlock] = []
     private var blockOffsets: [Int] = []
+    private var measuredDocumentHeight: CGFloat = 0
+    private var measuredWidth: CGFloat?
+    private var nextLayoutCharacterIndex = 0
+    private var needsImmediateLayout = true
+    private var layoutGeneration = 0
+    private var layoutTask: Task<Void, Never>?
 
     func setBlocks(_ blocks: [CodexChatMarkdownRenderedBlock]) {
         let reusableBlockCount = zip(renderedBlocks, blocks)
@@ -67,10 +74,26 @@ final class CodexChatSelectableTextView: NSTextView {
             location: replacementLocation,
             length: previousDocumentLength - replacementLocation
         )
-        textStorage?.replaceCharacters(in: replacementRange, with: fragment.attributedString)
+        let reusableCharacterCount = CodexChatMarkdownTextDocument.reusablePrefixLength(
+            in: attributedString(),
+            startingAt: replacementRange.location,
+            and: fragment.attributedString
+        )
+        let incrementalReplacementLocation = replacementLocation + reusableCharacterCount
+        textStorage?.replaceCharacters(
+            in: NSRange(
+                location: incrementalReplacementLocation,
+                length: previousDocumentLength - incrementalReplacementLocation
+            ),
+            with: fragment.attributedString.attributedSubstring(from: NSRange(
+                location: reusableCharacterCount,
+                length: fragment.attributedString.length - reusableCharacterCount
+            ))
+        )
         blockOffsets = Array(blockOffsets.prefix(reusableBlockCount))
             + fragment.blockOffsets.map { replacementLocation + $0 }
         renderedBlocks = blocks
+        resetLayout(from: incrementalReplacementLocation)
 
         let documentLength = attributedString().length
         let clippedRanges = previousSelectedRanges.compactMap { range -> NSValue? in
@@ -88,6 +111,22 @@ final class CodexChatSelectableTextView: NSTextView {
         invalidateIntrinsicContentSize()
     }
 
+    func measuredHeight(constrainedTo width: CGFloat) -> CGFloat? {
+        guard let textContainer, layoutManager != nil else { return nil }
+
+        if measuredWidth != width {
+            measuredWidth = width
+            textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+            resetLayout(from: 0)
+        }
+        if needsImmediateLayout {
+            needsImmediateLayout = false
+            layoutNextBatch()
+        }
+        scheduleRemainingLayout()
+        return measuredDocumentHeight
+    }
+
     override func copy(_ sender: Any?) {
         let ranges = selectedRanges
             .map(\.rangeValue)
@@ -103,6 +142,77 @@ final class CodexChatSelectableTextView: NSTextView {
         )
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(copiedText, forType: .string)
+    }
+
+    private func resetLayout(from characterIndex: Int) {
+        layoutGeneration += 1
+        layoutTask?.cancel()
+        layoutTask = nil
+        nextLayoutCharacterIndex = min(nextLayoutCharacterIndex, characterIndex)
+        needsImmediateLayout = true
+    }
+
+    private func layoutNextBatch() {
+        guard let layoutManager, let textContainer else { return }
+        let documentLength = attributedString().length
+        guard nextLayoutCharacterIndex < documentLength else {
+            measuredDocumentHeight = documentLength == 0
+                ? 0
+                : ceil(layoutManager.usedRect(for: textContainer).height)
+            return
+        }
+
+        let batchEnd = min(
+            nextLayoutCharacterIndex + Self.layoutBatchCharacterCount,
+            documentLength
+        )
+        layoutManager.ensureLayout(forCharacterRange: NSRange(
+            location: nextLayoutCharacterIndex,
+            length: batchEnd - nextLayoutCharacterIndex
+        ))
+        nextLayoutCharacterIndex = batchEnd
+
+        if batchEnd == documentLength {
+            measuredDocumentHeight = ceil(layoutManager.usedRect(for: textContainer).height)
+        } else {
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: NSRange(location: 0, length: batchEnd),
+                actualCharacterRange: nil
+            )
+            measuredDocumentHeight = ceil(
+                layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer).maxY
+            )
+        }
+    }
+
+    private func scheduleRemainingLayout() {
+        guard nextLayoutCharacterIndex < attributedString().length,
+              layoutTask == nil
+        else { return }
+
+        let generation = layoutGeneration
+        layoutTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled, layoutGeneration == generation {
+                do {
+                    try await Task.sleep(for: .milliseconds(1))
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled, layoutGeneration == generation else { break }
+
+                layoutNextBatch()
+                invalidateIntrinsicContentSize()
+                if nextLayoutCharacterIndex >= attributedString().length {
+                    break
+                }
+            }
+
+            if layoutGeneration == generation {
+                layoutTask = nil
+            }
+        }
     }
 }
 

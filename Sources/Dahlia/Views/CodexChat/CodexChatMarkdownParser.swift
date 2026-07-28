@@ -85,7 +85,7 @@ enum CodexChatMarkdownParser {
         guard index + 1 < lines.count else { return nil }
         let header = tableCells(in: lines[index])
         let delimiterCells = tableCells(in: lines[index + 1])
-        guard header.count >= 2,
+        guard !header.isEmpty,
               delimiterCells.count == header.count,
               let alignments = tableAlignments(in: delimiterCells)
         else { return nil }
@@ -95,7 +95,7 @@ enum CodexChatMarkdownParser {
         while index < lines.count {
             try Task.checkCancellation()
             let cells = tableCells(in: lines[index])
-            guard cells.count >= 2 else { break }
+            guard !cells.isEmpty else { break }
             rows.append(normalizedTableRow(cells, columnCount: header.count))
             index += 1
         }
@@ -114,12 +114,15 @@ enum CodexChatMarkdownParser {
         var cells: [String] = []
         var cell = ""
         var isEscaped = false
+        var endsWithDelimiter = false
         for character in trimmed {
             if character == "|", !isEscaped {
                 cells.append(cell.trimmingCharacters(in: .whitespaces))
                 cell = ""
+                endsWithDelimiter = true
             } else {
                 cell.append(character)
+                endsWithDelimiter = false
             }
             isEscaped = character == "\\" && !isEscaped
         }
@@ -128,7 +131,7 @@ enum CodexChatMarkdownParser {
         if trimmed.hasPrefix("|") {
             cells.removeFirst()
         }
-        if trimmed.hasSuffix("|") {
+        if endsWithDelimiter {
             cells.removeLast()
         }
         return cells

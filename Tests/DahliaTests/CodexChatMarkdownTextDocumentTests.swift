@@ -187,5 +187,48 @@
                 ]
             ) == "Alpha\nOmega")
         }
+
+        @Test func boundsInitialLayoutForLargeDocument() {
+            let textView = CodexChatSelectableTextView()
+            let largeText = String(repeating: "Streaming Markdown line\n", count: 1000)
+            textView.setBlocks([.paragraph(AttributedString(largeText))])
+
+            let height = textView.measuredHeight(constrainedTo: 320)
+
+            #expect(height != nil)
+            let firstUnlaidGlyphIndex = textView.layoutManager?.firstUnlaidGlyphIndex() ?? 0
+            let glyphCount = textView.layoutManager?.numberOfGlyphs ?? 0
+            #expect(firstUnlaidGlyphIndex < glyphCount)
+        }
+
+        @Test func continuesBoundedLayoutFromReusableStreamingPrefix() {
+            let textView = CodexChatSelectableTextView()
+            let largeText = String(repeating: "Streaming Markdown line\n", count: 1000)
+            textView.setBlocks([.paragraph(AttributedString(largeText))])
+            _ = textView.measuredHeight(constrainedTo: 320)
+            let firstLayoutEnd = textView.layoutManager?.firstUnlaidGlyphIndex() ?? 0
+
+            textView.setBlocks([.paragraph(AttributedString("\(largeText)Appended"))])
+            _ = textView.measuredHeight(constrainedTo: 320)
+            let secondLayoutEnd = textView.layoutManager?.firstUnlaidGlyphIndex() ?? 0
+            let glyphCount = textView.layoutManager?.numberOfGlyphs ?? 0
+
+            #expect(secondLayoutEnd > firstLayoutEnd)
+            #expect(secondLayoutEnd < glyphCount)
+        }
+
+        @Test func updatesMeasuredHeightWhenDocumentShrinksAtEnd() {
+            let textView = CodexChatSelectableTextView()
+            textView.setBlocks([
+                .paragraph(AttributedString("First")),
+                .paragraph(AttributedString(String(repeating: "Second\n", count: 20))),
+            ])
+            let expandedHeight = textView.measuredHeight(constrainedTo: 320) ?? 0
+
+            textView.setBlocks([.paragraph(AttributedString("First"))])
+            let collapsedHeight = textView.measuredHeight(constrainedTo: 320) ?? 0
+
+            #expect(collapsedHeight < expandedHeight)
+        }
     }
 #endif

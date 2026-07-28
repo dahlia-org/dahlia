@@ -105,6 +105,38 @@
             ])
         }
 
+        @Test func parsesSingleColumnTable() throws {
+            let markdown = [
+                "| Status |",
+                "| --- |",
+                "| Ready |",
+            ].joined(separator: "\n")
+
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
+                .table(CodexChatMarkdownTable(
+                    header: ["Status"],
+                    rows: [["Ready"]],
+                    alignments: [.left]
+                )),
+            ])
+        }
+
+        @Test func preservesEscapedPipeAtEndOfTableRow() throws {
+            let markdown = [
+                "First | Second",
+                "--- | ---",
+                "one | two \\|",
+            ].joined(separator: "\n")
+
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
+                .table(CodexChatMarkdownTable(
+                    header: ["First", "Second"],
+                    rows: [["one", "two \\|"]],
+                    alignments: [.left, .left]
+                )),
+            ])
+        }
+
         @Test func parsesLargeStreamingList() throws {
             let markdown = (0 ..< 2000)
                 .map { "- item \($0)" }
