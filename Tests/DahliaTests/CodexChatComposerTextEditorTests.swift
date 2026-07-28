@@ -49,6 +49,16 @@ import SwiftUI
             #expect(harness.state.submissionCount == 1)
             #expect(harness.state.text == "Draft")
         }
+
+        @Test
+        func shiftReturnInsertsNewlineWithoutSubmitting() throws {
+            let harness = ComposerTextEditorHarness(text: "Draft")
+            harness.textView.setSelectedRange(NSRange(location: harness.textView.string.utf16.count, length: 0))
+            try harness.sendKeyDown(characters: "\r", modifierFlags: .shift, keyCode: 36)
+
+            #expect(harness.state.submissionCount == 0)
+            #expect(harness.state.text == "Draft\n")
+        }
     }
 
     @MainActor
@@ -83,12 +93,16 @@ import SwiftUI
             self.textView = textView
         }
 
-        func sendKeyDown(characters: String, keyCode: UInt16) throws {
+        func sendKeyDown(
+            characters: String,
+            modifierFlags: NSEvent.ModifierFlags = [],
+            keyCode: UInt16
+        ) throws {
             #expect(window.makeFirstResponder(textView))
             let event = try #require(NSEvent.keyEvent(
                 with: .keyDown,
                 location: .zero,
-                modifierFlags: [],
+                modifierFlags: modifierFlags,
                 timestamp: 0,
                 windowNumber: window.windowNumber,
                 context: nil,

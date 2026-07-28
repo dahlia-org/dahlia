@@ -134,7 +134,10 @@ struct CodexChatComposerTextEditor: View {
             }
     }
 
-    private func handleReturnKey(_: KeyPress) -> KeyPress.Result {
+    private func handleReturnKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        if keyPress.modifiers.contains(.shift) {
+            return .ignored
+        }
         if activeTextView?.hasMarkedText() == true {
             return .ignored
         }
