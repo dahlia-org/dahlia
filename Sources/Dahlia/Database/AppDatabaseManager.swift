@@ -138,6 +138,10 @@ final class AppDatabaseManager: Sendable {
             try CustomerIntelligenceMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v26_meetingSidebarPagingIndex") { db in
+            try addMeetingSidebarPagingIndexIfNeeded(in: db)
+        }
+
         return migrator
     }()
 
@@ -235,6 +239,18 @@ final class AppDatabaseManager: Sendable {
             sql: """
             CREATE INDEX IF NOT EXISTS transcript_segments_on_meetingId_isConfirmed_startTime_id
             ON transcript_segments(meetingId, isConfirmed, startTime, id)
+            """
+        )
+    }
+
+    private static func addMeetingSidebarPagingIndexIfNeeded(in db: Database) throws {
+        guard try db.tableExists("meetings") else { return }
+        let columns = try Set(db.columns(in: "meetings").map(\.name))
+        guard columns.isSuperset(of: ["vaultId", "createdAt", "id"]) else { return }
+        try db.execute(
+            sql: """
+            CREATE INDEX IF NOT EXISTS meetings_on_vaultId_createdAt_id
+            ON meetings(vaultId, createdAt, id)
             """
         )
     }

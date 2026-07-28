@@ -4,22 +4,45 @@ import GRDB
 import Observation
 import OSLog
 
-private let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
+let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
 
 /// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
 @MainActor
 final class SidebarViewModel {
+    nonisolated static let meetingPageSize = 50
+    nonisolated static let maximumVisibleMeetings = 500
 
     // MARK: - Observed State
 
     /// 現在の vault に属する全 project のフラット一覧。
     var flatProjects: [FlatProjectRow] = []
     /// SwiftUI の `List(selection:)` と直結するミーティング選択。
-    var selectedMeetingIds: Set<UUID> = []
-    /// 現在の vault に属する全 meeting の一覧。
-    var allMeetings: [MeetingOverviewItem] = []
-    private(set) var isMeetingCatalogLoaded = false
+    var selectedMeetingIds: Set<UUID> = [] {
+        didSet {
+            guard oldValue != selectedMeetingIds else { return }
+            startSelectedMeetingObservationIfNeeded()
+        }
+    }
+
+    var meetingSidebarItems: [MeetingSidebarItem] = []
+    var meetingSidebarGroups: [MeetingDateGroup] = []
+    var isMeetingListLoaded = false
+    var isMeetingListLoadingMore = false
+    var meetingListLoadError: String?
+    var hasMoreMeetings = false
+    var meetingSearchQuery = ""
+    var meetingSearchItems: [MeetingSidebarItem] = []
+    var meetingSearchGroups: [MeetingDateGroup] = []
+    var isMeetingSearchLoaded = true
+    var isMeetingSearchLoadingMore = false
+    var meetingSearchLoadError: String?
+    var hasMoreMeetingSearchResults = false
+    var isMeetingListLimited = false
+    var isMeetingSearchLimited = false
+    var selectedMeetingDetail: MeetingDetailItem?
+    var meetingReferences: [CodexChatMeetingReference] = []
+    var isMeetingCatalogLoaded = false
     /// 現在の vault に属する全 project の集約一覧。
     var allProjectItems: [ProjectOverviewItem] = []
     private(set) var isProjectCatalogLoaded = false
@@ -43,10 +66,12 @@ final class SidebarViewModel {
     var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
 
-    @ObservationIgnored private var meetingRepository: MeetingRepository?
-    @ObservationIgnored private var projectWorkspaceService: ProjectWorkspaceService?
+    @ObservationIgnored var meetingRepository: MeetingRepository?
+    @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?
     @ObservationIgnored private var fileWatcher: TranscriptFileWatcher?
-    @ObservationIgnored private var allMeetingsObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var meetingListObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var selectedMeetingObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var meetingReferencesObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allProjectsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectCatalogObservationTracker = ProjectCatalogObservationTracker()
@@ -56,6 +81,17 @@ final class SidebarViewModel {
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var projectDescriptionDrafts: [UUID: String] = [:]
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
+    @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
+    @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
+    @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
+    @ObservationIgnored var meetingSearchCursor: MeetingSidebarCursor?
+    @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
+    @ObservationIgnored var isMeetingCatalogRequested = false
+    @ObservationIgnored var meetingListObservationGeneration = 0
+    @ObservationIgnored var meetingSearchObservationGeneration = 0
+    @ObservationIgnored var meetingPageLoadGeneration = 0
+    @ObservationIgnored var selectedMeetingObservationGeneration = 0
+    @ObservationIgnored var meetingReferencesObservationGeneration = 0
 
     init(settings: AppSettings = .shared) {
         self.settings = settings
@@ -81,7 +117,11 @@ final class SidebarViewModel {
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
         vaultObservation?.cancel()
-        allMeetingsObservation?.cancel()
+        meetingListObservation?.cancel()
+        selectedMeetingObservation?.cancel()
+        meetingReferencesObservation?.cancel()
+        meetingSearchTask?.cancel()
+        meetingPageLoadTask?.cancel()
         allTagsObservation?.cancel()
         allProjectsObservation?.cancel()
         projectCatalogObservationTracker.invalidate()
@@ -95,8 +135,33 @@ final class SidebarViewModel {
         vaultSyncService = nil
         fileWatcher = nil
         flatProjects.removeAll()
-        allMeetings.removeAll()
+        meetingSidebarItems.removeAll()
+        meetingSidebarGroups.removeAll()
+        isMeetingListLoaded = false
+        isMeetingListLoadingMore = false
+        meetingListLoadError = nil
+        hasMoreMeetings = false
+        meetingSearchQuery = ""
+        meetingSearchItems.removeAll()
+        meetingSearchGroups.removeAll()
+        isMeetingSearchLoaded = true
+        isMeetingSearchLoadingMore = false
+        meetingSearchLoadError = nil
+        hasMoreMeetingSearchResults = false
+        isMeetingListLimited = false
+        isMeetingSearchLimited = false
+        selectedMeetingDetail = nil
+        meetingReferences.removeAll()
         isMeetingCatalogLoaded = false
+        meetingListCursor = nil
+        meetingSearchCursor = nil
+        meetingInitialPageIDs.removeAll()
+        isMeetingCatalogRequested = false
+        meetingListObservationGeneration &+= 1
+        meetingSearchObservationGeneration &+= 1
+        meetingPageLoadGeneration &+= 1
+        selectedMeetingObservationGeneration &+= 1
+        meetingReferencesObservationGeneration &+= 1
         allProjectItems.removeAll()
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
@@ -135,7 +200,7 @@ final class SidebarViewModel {
         fileWatcher = watcher
 
         startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
-        startAllMeetingsObservation(dbQueue: dbQueue, vaultId: vaultId)
+        startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
         startTagsObservation(dbQueue: dbQueue)
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
         startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
@@ -149,7 +214,13 @@ final class SidebarViewModel {
                       self.currentVault?.id == vaultId,
                       let dbQueue = self.dbQueue else { return }
                 self.startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
-                self.startAllMeetingsObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.resetMeetingListPagination()
+                self.startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+                if self.isMeetingCatalogRequested {
+                    self.startMeetingReferencesObservation(dbQueue: dbQueue, vaultId: vaultId)
+                }
+                self.restartMeetingSearchIfNeeded(dbQueue: dbQueue, vaultId: vaultId)
+                self.startSelectedMeetingObservationIfNeeded()
                 self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
             }
         }
@@ -187,87 +258,6 @@ final class SidebarViewModel {
                 }
             }
         )
-    }
-
-    private func startAllMeetingsObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
-        let observation = ValueObservation.tracking { db in
-            var meetings = try MeetingOverviewItem.fetchAll(
-                db,
-                sql: """
-                SELECT
-                    meetings.id AS meetingId,
-                    meetings.vaultId AS vaultId,
-                    meetings.projectId AS projectId,
-                    NULL AS projectName,
-                    meetings.name AS meetingName,
-                    meetings.description AS meetingDescription,
-                    meetings.status AS status,
-                    meetings.duration AS duration,
-                    meetings.createdAt AS createdAt,
-                    calendar_events.title AS calendarEventTitle,
-                    calendar_events.description AS calendarEventDescription,
-                    calendar_events.start AS calendarEventStart,
-                    calendar_events.end AS calendarEventEnd,
-                    calendar_events.is_all_day AS calendarEventIsAllDay,
-                    EXISTS(SELECT 1 FROM summaries WHERE summaries.meetingId = meetings.id) AS hasSummary,
-                    COUNT(segments.id) AS segmentCount,
-                    (
-                        SELECT preview.text
-                        FROM transcript_segments AS preview
-                        WHERE preview.meetingId = meetings.id
-                        ORDER BY preview.startTime DESC
-                        LIMIT 1
-                    ) AS latestSegmentText,
-                    (SELECT GROUP_CONCAT(t.name || char(30) || t.colorHex, char(31))
-                     FROM meeting_tags mt
-                     INNER JOIN tags t ON t.id = mt.tagId
-                     WHERE mt.meetingId = meetings.id) AS tags
-                FROM meetings
-                LEFT JOIN calendar_events
-                  ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
-                 AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
-                LEFT JOIN transcript_segments AS segments ON segments.meetingId = meetings.id
-                WHERE meetings.vaultId = ?
-                GROUP BY meetings.id
-                ORDER BY meetings.createdAt DESC, meetings.id DESC
-                """,
-                arguments: [vaultId]
-            )
-            try Self.resolveProjectPaths(in: &meetings, vaultId: vaultId, database: db)
-            return meetings
-        }
-        allMeetingsObservation = observation.start(
-            in: dbQueue,
-            onError: { _ in },
-            onChange: { [weak self] meetings in
-                Task { @MainActor in
-                    guard let self, self.currentVault?.id == vaultId else { return }
-                    // 挿入前に計算された古いスナップショットが選択直後に届くことがあるため、
-                    // 「スナップショットに無い ID」ではなく「前回から消えた ID」だけを選択から外す。
-                    let removedIds = Set(self.allMeetings.map(\.meetingId))
-                        .subtracting(meetings.map(\.meetingId))
-                    self.allMeetings = meetings
-                    self.isMeetingCatalogLoaded = true
-                    if !removedIds.isEmpty {
-                        self.selectedMeetingIds.subtract(removedIds)
-                    }
-                }
-            }
-        )
-    }
-
-    nonisolated static func resolveProjectPaths(
-        in meetings: inout [MeetingOverviewItem],
-        vaultId: UUID,
-        database: Database
-    ) throws {
-        let projectPaths = try Dictionary(
-            uniqueKeysWithValues: ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: database)
-                .map { ($0.id, $0.path) }
-        )
-        for index in meetings.indices {
-            meetings[index].projectName = meetings[index].projectId.flatMap { projectPaths[$0] }
-        }
     }
 
     private func startTagsObservation(dbQueue: DatabaseQueue) {
@@ -595,79 +585,6 @@ final class SidebarViewModel {
         }
     }
 
-    // MARK: - Meeting Management
-
-    func renameMeeting(id: UUID, newName: String) {
-        try? meetingRepository?.renameMeeting(id: id, newName: newName)
-    }
-
-    private static let tagColorPalette = [
-        "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4",
-        "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F",
-        "#BB8FCE", "#85C1E9",
-    ]
-
-    func addTagToMeeting(id: UUID, tag: String) {
-        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let colorHex = Self.tagColorPalette.randomElement() ?? "#808080"
-        try? meetingRepository?.addTag(name: trimmed, toMeetingId: id, colorHex: colorHex)
-    }
-
-    func removeTagFromMeeting(id: UUID, tag: String) {
-        try? meetingRepository?.removeTag(name: tag, fromMeetingId: id)
-    }
-
-    func deleteMeeting(id: UUID) {
-        guard let meetingRepository else { return }
-        Task {
-            do {
-                try await meetingRepository.deleteMeetingSafely(id: id)
-                selectedMeetingIds.remove(id)
-            } catch {
-                lastError = error.localizedDescription
-            }
-        }
-    }
-
-    func deleteMeetings(ids: Set<UUID>) {
-        guard !ids.isEmpty else { return }
-        guard let meetingRepository else { return }
-        Task {
-            do {
-                try await meetingRepository.deleteMeetingsSafely(ids: ids)
-                selectedMeetingIds.subtract(ids)
-            } catch {
-                lastError = error.localizedDescription
-            }
-        }
-    }
-
-    @discardableResult
-    func moveMeeting(id: UUID, toProjectId: UUID?) -> Bool {
-        guard let projectWorkspaceService else { return false }
-        do {
-            try projectWorkspaceService.moveMeeting(id: id, toProjectId: toProjectId)
-            lastError = nil
-            return true
-        } catch {
-            lastError = error.localizedDescription
-            return false
-        }
-    }
-
-    @discardableResult
-    func moveMeetings(ids: Set<UUID>, toProjectId: UUID?) -> Bool {
-        guard let projectWorkspaceService, !ids.isEmpty else { return false }
-        do {
-            try projectWorkspaceService.moveMeetings(ids: ids, toProjectId: toProjectId)
-            lastError = nil
-            return true
-        } catch {
-            lastError = error.localizedDescription
-            return false
-        }
-    }
 }
 
 extension SidebarViewModel {

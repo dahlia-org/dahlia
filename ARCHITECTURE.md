@@ -181,6 +181,11 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
+ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
+最大 500 件に制限し、それ以前は全履歴のメタデータ検索で到達可能にする。検索は小さな DB chunk ごとに接続を解放し、
+新しい検索語で古い処理をキャンセルする。選択詳細とチャット候補は一覧とは別の projection とし、チャット候補は
+チャット UI が必要とするまで読み込まない。
+
 ここでいう上限は、必ずしもユーザーが閲覧する一つの完全な文書を切り詰めることではない。チャット本文のように raw content
 自体を完全に残す必要がある場合は、同時に保持する解析世代、待機要求、cache cost、実際に materialize する layout を有界にし、
 入力サイズ依存の parse を MainActor 外へ置く。完全な raw content の保持と、再生成可能な projection の負荷制御を混同しない。

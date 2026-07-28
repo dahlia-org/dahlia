@@ -949,14 +949,11 @@ extension CodexChatSessionModel {
 
 extension CodexChatSessionModel {
     func updateAvailableMeetings(
-        _ meetings: [MeetingOverviewItem],
+        _ references: [CodexChatMeetingReference],
         catalogVaultID: UUID?,
         isCatalogLoaded: Bool = true
     ) {
         guard let vaultID, catalogVaultID == vaultID else { return }
-        let references = meetings
-            .filter { $0.vaultId == vaultID }
-            .map(CodexChatMeetingReference.init)
         availableMeetingReferences = references
         for reference in references {
             meetingNamesByID[reference.id] = reference.name

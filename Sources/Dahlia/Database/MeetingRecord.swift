@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// ミーティングの状態。
-enum MeetingStatus: String, Codable, DatabaseValueConvertible {
+enum MeetingStatus: String, Codable, DatabaseValueConvertible, Sendable {
     case transcriptNotFound = "TRANSCRIPT_NOT_FOUND"
     case processingTranscript = "PROCESSING_TRANSCRIPT"
     case ready = "READY"

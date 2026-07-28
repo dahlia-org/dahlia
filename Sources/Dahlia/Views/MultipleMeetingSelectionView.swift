@@ -4,6 +4,7 @@ struct MultipleMeetingSelectionView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     @State private var isSummaryConfirmationPresented = false
+    @State private var pendingMeetingDeletion: MeetingDeletionRequest?
 
     var body: some View {
         VStack(spacing: 18) {
@@ -43,7 +44,10 @@ struct MultipleMeetingSelectionView: View {
                 }
 
                 Button(role: .destructive) {
-                    sidebarViewModel.deleteMeetings(ids: sidebarViewModel.selectedMeetingIds)
+                    pendingMeetingDeletion = MeetingDeletionRequest(
+                        meetingIds: sidebarViewModel.selectedMeetingIds,
+                        meetingName: nil
+                    )
                 } label: {
                     Label(L10n.deleteCount(sidebarViewModel.selectedMeetingIds.count), systemImage: "trash")
                 }
@@ -63,6 +67,9 @@ struct MultipleMeetingSelectionView: View {
                 actionTitle: L10n.regenerateSummaries,
                 onGenerate: regenerateSummaries
             )
+        }
+        .meetingDeletionConfirmation(request: $pendingMeetingDeletion) { meetingIds in
+            sidebarViewModel.deleteMeetings(ids: meetingIds)
         }
     }
 

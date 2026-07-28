@@ -8,7 +8,8 @@ struct MeetingMetadataBar: View {
 
     private var tags: [TagInfo] {
         guard let meetingId = viewModel.currentMeetingId,
-              let item = sidebarViewModel.allMeetings.first(where: { $0.meetingId == meetingId }) else { return [] }
+              let item = sidebarViewModel.selectedMeetingDetail,
+              item.meetingId == meetingId else { return [] }
         return item.tags
     }
 

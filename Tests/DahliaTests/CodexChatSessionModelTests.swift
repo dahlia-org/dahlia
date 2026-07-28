@@ -91,19 +91,19 @@ import Foundation
                 service: service,
                 settings: settings
             )
-            let first = Self.meetingReference(vaultID: vault.id, name: "First", offset: -60)
-            let second = Self.meetingReference(vaultID: vault.id, name: "Second", offset: 0)
+            let first = Self.meetingReference(name: "First", offset: -60)
+            let second = Self.meetingReference(name: "Second", offset: 0)
             session.updateAvailableMeetings([first, second], catalogVaultID: vault.id)
-            session.addMeetingReference(CodexChatMeetingReference(meeting: first))
-            session.addMeetingReference(CodexChatMeetingReference(meeting: second))
-            session.addMeetingReference(CodexChatMeetingReference(meeting: first))
+            session.addMeetingReference(first)
+            session.addMeetingReference(second)
+            session.addMeetingReference(first)
             session.draft = "Compare them"
 
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            let expected = "meeting:\(first.meetingId.uuidString.lowercased()) "
-                + "meeting:\(second.meetingId.uuidString.lowercased()) Compare them"
+            let expected = "meeting:\(first.id.uuidString.lowercased()) "
+                + "meeting:\(second.id.uuidString.lowercased()) Compare them"
             #expect(await service.sentTextBlocks == [[expected]])
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
             #expect(session.draft.isEmpty)
@@ -126,15 +126,15 @@ import Foundation
                 service: service,
                 settings: settings
             )
-            let meeting = Self.meetingReference(vaultID: vault.id, name: "Reference Only", offset: 0)
+            let meeting = Self.meetingReference(name: "Reference Only", offset: 0)
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
-            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+            session.addMeetingReference(meeting)
 
             #expect(session.canSend)
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
-            #expect(await service.sentTextBlocks == [["meeting:\(meeting.meetingId.uuidString.lowercased())"]])
+            #expect(await service.sentTextBlocks == [["meeting:\(meeting.id.uuidString.lowercased())"]])
         }
 
         @Test
@@ -146,16 +146,16 @@ import Foundation
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            var meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            let meeting = Self.meetingReference(name: "Original", offset: 0)
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
-            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
-            meeting.meetingName = "Renamed"
-            session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
+            session.addMeetingReference(meeting)
+            let renamed = CodexChatMeetingReference(id: meeting.id, name: "Renamed", createdAt: meeting.createdAt)
+            session.updateAvailableMeetings([renamed], catalogVaultID: vault.id)
 
-            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Renamed")
+            #expect(session.meetingDisplayName(for: meeting.id) == "Renamed")
             session.updateAvailableMeetings([], catalogVaultID: vault.id)
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
-            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Renamed")
+            #expect(session.meetingDisplayName(for: meeting.id) == "Renamed")
         }
 
         @Test
@@ -168,15 +168,15 @@ import Foundation
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            let meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            let meeting = Self.meetingReference(name: "Original", offset: 0)
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
-            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+            session.addMeetingReference(meeting)
 
             let otherVault = Self.testVault()
             session.updateAvailableMeetings([], catalogVaultID: otherVault.id)
 
-            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
-            #expect(session.meetingDisplayName(for: meeting.meetingId) == "Original")
+            #expect(session.selectedMeetingReferenceIDs == [meeting.id])
+            #expect(session.meetingDisplayName(for: meeting.id) == "Original")
 
             session.updateAvailableMeetings([], catalogVaultID: vault.id)
             #expect(session.selectedMeetingReferenceIDs.isEmpty)
@@ -192,19 +192,19 @@ import Foundation
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            let meeting = Self.meetingReference(vaultID: vault.id, name: "Original", offset: 0)
+            let meeting = Self.meetingReference(name: "Original", offset: 0)
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
-            session.addMeetingReference(CodexChatMeetingReference(meeting: meeting))
+            session.addMeetingReference(meeting)
 
             session.updateAvailableMeetings(
                 [],
                 catalogVaultID: vault.id,
                 isCatalogLoaded: false
             )
-            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
+            #expect(session.selectedMeetingReferenceIDs == [meeting.id])
 
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
-            #expect(session.selectedMeetingReferenceIDs == [meeting.meetingId])
+            #expect(session.selectedMeetingReferenceIDs == [meeting.id])
         }
 
         @Test
@@ -228,8 +228,8 @@ import Foundation
             let settings = AppSettings()
             let vault = Self.testVault()
             settings.currentVault = vault
-            let meeting = Self.meetingReference(vaultID: vault.id, name: "Weekly Sync", offset: 0)
-            let token = "meeting:\(meeting.meetingId.uuidString)"
+            let meeting = Self.meetingReference(name: "Weekly Sync", offset: 0)
+            let token = "meeting:\(meeting.id.uuidString)"
             let session = CodexChatSessionModel(
                 vaultID: vault.id,
                 title: "\(token) Review",
@@ -516,20 +516,11 @@ import Foundation
             )
         }
 
-        private static func meetingReference(vaultID: UUID, name: String, offset: TimeInterval) -> MeetingOverviewItem {
-            MeetingOverviewItem(
-                meetingId: .v7(),
-                vaultId: vaultID,
-                projectId: nil,
-                projectName: nil,
-                meetingName: name,
-                status: .ready,
-                duration: nil,
-                createdAt: .now.addingTimeInterval(offset),
-                hasSummary: false,
-                segmentCount: 0,
-                latestSegmentText: nil,
-                tags: []
+        private static func meetingReference(name: String, offset: TimeInterval) -> CodexChatMeetingReference {
+            CodexChatMeetingReference(
+                id: .v7(),
+                name: name,
+                createdAt: .now.addingTimeInterval(offset)
             )
         }
 

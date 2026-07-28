@@ -121,7 +121,7 @@ final class RecordingCoordinator {
             return false
         }
 
-        let item = sidebarViewModel.allMeetings.first(where: { $0.meetingId == meetingId })
+        let item = sidebarViewModel.meetingSidebarItem(id: meetingId)
         guard item != nil || viewModel.currentMeetingId == meetingId else {
             MainWindowOpener.shared.openMainWindow()
             return false

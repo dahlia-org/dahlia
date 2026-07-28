@@ -214,6 +214,17 @@
 "%lld" = "%lld";
 "%lld subprojects included" = "%lld subprojects included";
 "Search meetings..." = "Search meetings...";
+"Selected Meeting" = "Selected Meeting";
+"Loading Meetings…" = "Loading Meetings…";
+"Loading More…" = "Loading More…";
+"Retry Loading" = "Retry Loading";
+"Could Not Load Meetings" = "Could Not Load Meetings";
+"Search to find older meetings." = "Search to find older meetings.";
+"Refine your search to find older meetings." = "Refine your search to find older meetings.";
+"Create a meeting to start building your history." = "Create a meeting to start building your history.";
+"Delete %lld meetings?" = "Delete %lld meetings?";
+"Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone." = "Delete this meeting and all its data permanently, including its transcript and Dahlia-managed audio. This cannot be undone.";
+"Delete %lld meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone." = "Delete %lld meetings and all their data permanently, including transcripts and Dahlia-managed audio. This cannot be undone.";
 "Search projects..." = "Search projects...";
 "Move to Project" = "Move to Project";
 "No meeting selected" = "No meeting selected";
