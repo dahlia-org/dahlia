@@ -126,6 +126,7 @@ struct CodexChatComposerTextEditor: View {
                             .padding(.leading, 8)
                             .padding(.top, 6)
                             .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                 }
                 .contentShape(.rect)
