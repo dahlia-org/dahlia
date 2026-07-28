@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct OrganizationDomainRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+struct OrganizationDomainRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
     static let databaseTableName = "organization_domains"
 
     var vaultId: UUID

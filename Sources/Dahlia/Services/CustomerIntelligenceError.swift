@@ -14,6 +14,7 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
     case organizationCycle
     case organizationHierarchyTooDeep
     case domainAlreadyAssigned
+    case invalidOrganizationMerge
     case unsupportedProjectResource
     case topicNotFound
     case revisionConflict
@@ -49,6 +50,8 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
             "The organization hierarchy exceeds the maximum depth."
         case .domainAlreadyAssigned:
             "The domain is already assigned to another organization."
+        case .invalidOrganizationMerge:
+            "Only two different root organizations can be merged."
         case .unsupportedProjectResource:
             "Projects can reference only organizations and contacts."
         case .topicNotFound:

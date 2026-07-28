@@ -22,3 +22,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0011](0011-vault-scoped-customer-intelligence.md) | Customer intelligence | Vault単位の型付き正準データとAI示唆を分離する | Accepted; amends 0005, builds on 0010 |
 | [0012](0012-reviewable-customer-intelligence-workspace.md) | Customer intelligence / UI | 単一顧客の組織ビューと単数 CRUD による逐次AI更新を採用する | Accepted; amends 0011 |
 | [0013](0013-expand-codex-stdout-burst-buffer.md) | AI runtime | Codex stdout の burst buffer を拡張し、消費済み payload を即時解放する | Accepted; amends 0003 |
+| [0014](0014-domain-driven-organization-merge.md) | Customer intelligence / Identity | メールドメイン追加を入口にルート組織を完全統合する | Accepted; amends 0011 and 0012 |

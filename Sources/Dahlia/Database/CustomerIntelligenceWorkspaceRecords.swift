@@ -49,6 +49,28 @@ struct OrganizationDeletionImpact: Equatable, Sendable {
     let insights: Int
 }
 
+struct OrganizationMergeImpact: Equatable, Sendable {
+    let domains: Int
+    let memberships: Int
+    let descendantOrganizations: Int
+    let projects: Int
+    let topics: Int
+    let insights: Int
+}
+
+struct OrganizationMergePreview: Equatable, Sendable {
+    let domainName: String
+    let source: OrganizationRecord
+    let target: OrganizationRecord
+    let impact: OrganizationMergeImpact
+}
+
+enum OrganizationDomainAssignmentPlan: Equatable, Sendable {
+    case unassigned
+    case alreadyAssigned
+    case merge(OrganizationMergePreview)
+}
+
 struct TopicDeletionImpact: Equatable, Sendable {
     let meetings: Int
     let relatedResources: Int
@@ -76,6 +98,7 @@ struct OrganizationWorkspaceMember: Equatable, Identifiable, Sendable {
 }
 
 struct OrganizationWorkspaceDetail: Equatable, Sendable {
+    let domains: [OrganizationDomainRecord]
     let members: [OrganizationWorkspaceMember]
     let projects: [ProjectRecord]
     let topics: [ConversationTopicOverview]

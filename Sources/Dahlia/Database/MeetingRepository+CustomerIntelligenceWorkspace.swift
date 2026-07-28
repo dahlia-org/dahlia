@@ -234,6 +234,10 @@ extension MeetingRepository {
         vaultId: UUID
     ) throws -> OrganizationWorkspaceDetail {
         try dbQueue.read { db in
+            let domains = try OrganizationDomainRecord
+                .filter(Column("organizationId") == organizationId && Column("vaultId") == vaultId)
+                .order(Column("isPrimary").desc, Column("domainName").asc)
+                .fetchAll(db)
             let memberRows = try Row.fetchAll(
                 db,
                 sql: """
@@ -309,6 +313,7 @@ extension MeetingRepository {
                 arguments: [organizationId, vaultId]
             )
             return try OrganizationWorkspaceDetail(
+                domains: domains,
                 members: members,
                 projects: projects,
                 topics: topicRows.map(Self.topicOverview(from:)),

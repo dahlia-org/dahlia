@@ -298,7 +298,7 @@ extension MeetingRepository {
         }
     }
 
-    func fetchOrganizationDomains(organizationId: UUID, vaultId: UUID) throws -> [OrganizationDomainRecord] {
+    nonisolated func fetchOrganizationDomains(organizationId: UUID, vaultId: UUID) throws -> [OrganizationDomainRecord] {
         try dbQueue.read { db in
             try OrganizationDomainRecord
                 .filter(Column("organizationId") == organizationId && Column("vaultId") == vaultId)
@@ -307,10 +307,60 @@ extension MeetingRepository {
         }
     }
 
-    func addOrganizationDomain(
+    nonisolated func organizationDomainAssignmentPlan(
+        targetOrganizationId: UUID,
+        vaultId: UUID,
+        domainName rawDomainName: String,
+        expectedTargetRevision: Int
+    ) throws -> OrganizationDomainAssignmentPlan {
+        guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
+            throw CustomerIntelligenceError.invalidDomain
+        }
+        return try dbQueue.read { db in
+            guard let target = try OrganizationRecord
+                .filter(Column("id") == targetOrganizationId && Column("vaultId") == vaultId)
+                .fetchOne(db)
+            else {
+                throw CustomerIntelligenceError.organizationNotFound
+            }
+            guard target.revision == expectedTargetRevision else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+            guard target.isRootOrganization else {
+                throw CustomerIntelligenceError.invalidOrganizationMerge
+            }
+            guard let domain = try OrganizationDomainRecord
+                .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
+                .fetchOne(db)
+            else {
+                return .unassigned
+            }
+            guard domain.organizationId != targetOrganizationId else {
+                return .alreadyAssigned
+            }
+            guard let source = try OrganizationRecord
+                .filter(Column("id") == domain.organizationId && Column("vaultId") == vaultId)
+                .fetchOne(db)
+            else {
+                throw CustomerIntelligenceError.organizationNotFound
+            }
+            guard source.isRootOrganization else {
+                throw CustomerIntelligenceError.invalidOrganizationMerge
+            }
+            return try .merge(OrganizationMergePreview(
+                domainName: domainName,
+                source: source,
+                target: target,
+                impact: Self.organizationMergeImpact(sourceOrganizationId: source.id, in: db)
+            ))
+        }
+    }
+
+    nonisolated func addOrganizationDomain(
         organizationId: UUID,
         vaultId: UUID,
         domainName rawDomainName: String,
+        expectedOrganizationRevision: Int? = nil,
         observedAt: Date = .now
     ) throws -> OrganizationDomainRecord {
         try dbQueue.write { db in
@@ -323,6 +373,9 @@ extension MeetingRepository {
                 organization.nodeKind == .organization
             else {
                 throw CustomerIntelligenceError.organizationNotFound
+            }
+            if let expectedOrganizationRevision, organization.revision != expectedOrganizationRevision {
+                throw CustomerIntelligenceError.revisionConflict
             }
             if var existing = try OrganizationDomainRecord
                 .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
@@ -355,7 +408,7 @@ extension MeetingRepository {
         }
     }
 
-    func setPrimaryOrganizationDomain(
+    nonisolated func setPrimaryOrganizationDomain(
         organizationId: UUID,
         vaultId: UUID,
         domainName rawDomainName: String
@@ -385,7 +438,7 @@ extension MeetingRepository {
         }
     }
 
-    func removeOrganizationDomain(vaultId: UUID, domainName rawDomainName: String) throws {
+    nonisolated func removeOrganizationDomain(vaultId: UUID, domainName rawDomainName: String) throws {
         guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
             throw CustomerIntelligenceError.invalidDomain
         }
@@ -394,6 +447,217 @@ extension MeetingRepository {
                 .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
                 .deleteAll(db)
         }
+    }
+
+    // swiftlint:disable:next function_body_length
+    nonisolated func mergeOrganization(
+        sourceOrganizationId: UUID,
+        targetOrganizationId: UUID,
+        vaultId: UUID,
+        expectedSourceDomainName rawExpectedSourceDomainName: String,
+        expectedSourceRevision: Int,
+        expectedTargetRevision: Int,
+        expectedImpact: OrganizationMergeImpact,
+        now: Date = .now
+    ) throws -> OrganizationRecord {
+        guard let expectedSourceDomainName = CustomerIdentityNormalizer.domainName(rawExpectedSourceDomainName) else {
+            throw CustomerIntelligenceError.invalidDomain
+        }
+        return try dbQueue.write { db in
+            let organizations = try Self.validatedMergeOrganizations(
+                sourceOrganizationId: sourceOrganizationId,
+                targetOrganizationId: targetOrganizationId,
+                vaultId: vaultId,
+                in: db
+            )
+            guard organizations.source.revision == expectedSourceRevision,
+                  organizations.target.revision == expectedTargetRevision,
+                  try Self.organizationMergeImpact(sourceOrganizationId: sourceOrganizationId, in: db) == expectedImpact
+            else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+            guard try OrganizationDomainRecord
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("domainName") == expectedSourceDomainName
+                        && Column("organizationId") == sourceOrganizationId
+                )
+                .fetchOne(db) != nil
+            else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+
+            let referenceOwners = try Self.referenceOwnerIDs(
+                resourceType: .organization,
+                resourceIDs: [sourceOrganizationId],
+                in: db
+            )
+            let sourceDomains = try OrganizationDomainRecord
+                .filter(Column("organizationId") == sourceOrganizationId)
+                .order(Column("firstObservedAt").asc, Column("domainName").asc)
+                .fetchAll(db)
+            let targetHasPrimaryDomain = try OrganizationDomainRecord
+                .filter(Column("organizationId") == targetOrganizationId && Column("isPrimary") == true)
+                .fetchOne(db) != nil
+            let domainsToMove: [OrganizationDomainRecord] = if targetHasPrimaryDomain {
+                sourceDomains
+            } else if let sourcePrimaryDomain = sourceDomains.first(where: \.isPrimary) {
+                [sourcePrimaryDomain] + sourceDomains.filter { !$0.isPrimary }
+            } else {
+                sourceDomains
+            }
+
+            try db.execute(
+                sql: """
+                UPDATE organizations
+                SET parentOrganizationId = ?, revision = revision + 1, updatedAt = ?
+                WHERE parentOrganizationId = ? AND vaultId = ?
+                """,
+                arguments: [targetOrganizationId, now, sourceOrganizationId, vaultId]
+            )
+
+            try db.execute(
+                sql: """
+                INSERT OR IGNORE INTO organization_memberships
+                    (organizationId, contactId, roleLabel, createdAt)
+                SELECT ?, contactId, roleLabel, createdAt
+                FROM organization_memberships
+                WHERE organizationId = ?;
+                DELETE FROM organization_memberships WHERE organizationId = ?;
+                """,
+                arguments: [targetOrganizationId, sourceOrganizationId, sourceOrganizationId]
+            )
+
+            _ = try OrganizationDomainRecord
+                .filter(Column("organizationId") == sourceOrganizationId)
+                .deleteAll(db)
+            for domain in domainsToMove {
+                try OrganizationDomainRecord(
+                    vaultId: domain.vaultId,
+                    domainName: domain.domainName,
+                    organizationId: targetOrganizationId,
+                    isPrimary: !targetHasPrimaryDomain && domain.isPrimary,
+                    firstObservedAt: domain.firstObservedAt,
+                    lastObservedAt: domain.lastObservedAt
+                ).insert(db)
+            }
+
+            try db.execute(
+                sql: """
+                UPDATE OR IGNORE project_resource_references
+                SET resourceId = :targetID, updatedAt = :now
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+                DELETE FROM project_resource_references
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+
+                INSERT OR IGNORE INTO insight_references
+                    (insightId, resourceType, resourceId, referenceRole, createdAt)
+                SELECT insightId, resourceType, :targetID, referenceRole, createdAt
+                FROM insight_references
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+                DELETE FROM insight_references
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+
+                INSERT OR IGNORE INTO conversation_topic_references
+                    (topicId, resourceType, resourceId, note, createdAt, updatedAt)
+                SELECT topicId, resourceType, :targetID, note, createdAt, :now
+                FROM conversation_topic_references
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+                DELETE FROM conversation_topic_references
+                WHERE resourceType = 'organization' AND resourceId = :sourceID;
+                """,
+                arguments: [
+                    "targetID": targetOrganizationId,
+                    "sourceID": sourceOrganizationId,
+                    "now": now,
+                ]
+            )
+            try Self.incrementReferenceOwnerRevisions(referenceOwners, now: now, in: db)
+
+            try db.execute(
+                sql: """
+                UPDATE organizations
+                SET revision = revision + 1, updatedAt = ?
+                WHERE id = ? AND vaultId = ?
+                """,
+                arguments: [now, targetOrganizationId, vaultId]
+            )
+            _ = try OrganizationRecord.deleteOne(db, key: sourceOrganizationId)
+            guard let target = try OrganizationRecord.fetchOne(db, key: targetOrganizationId) else {
+                throw CustomerIntelligenceError.organizationNotFound
+            }
+            return target
+        }
+    }
+
+    private nonisolated static func validatedMergeOrganizations(
+        sourceOrganizationId: UUID,
+        targetOrganizationId: UUID,
+        vaultId: UUID,
+        in db: Database
+    ) throws -> (source: OrganizationRecord, target: OrganizationRecord) {
+        guard sourceOrganizationId != targetOrganizationId else {
+            throw CustomerIntelligenceError.invalidOrganizationMerge
+        }
+        guard let source = try OrganizationRecord
+            .filter(Column("id") == sourceOrganizationId && Column("vaultId") == vaultId)
+            .fetchOne(db),
+            let target = try OrganizationRecord
+            .filter(Column("id") == targetOrganizationId && Column("vaultId") == vaultId)
+            .fetchOne(db)
+        else {
+            throw CustomerIntelligenceError.organizationNotFound
+        }
+        guard source.isRootOrganization, target.isRootOrganization else {
+            throw CustomerIntelligenceError.invalidOrganizationMerge
+        }
+        return (source, target)
+    }
+
+    private nonisolated static func organizationMergeImpact(
+        sourceOrganizationId: UUID,
+        in db: Database
+    ) throws -> OrganizationMergeImpact {
+        let row = try Row.fetchOne(
+            db,
+            sql: """
+            WITH RECURSIVE descendants(id) AS (
+                SELECT id FROM organizations WHERE parentOrganizationId = ?
+                UNION ALL
+                SELECT child.id
+                FROM organizations AS child
+                JOIN descendants ON child.parentOrganizationId = descendants.id
+            )
+            SELECT
+                (SELECT COUNT(*) FROM organization_domains
+                 WHERE organizationId = ?) AS domains,
+                (SELECT COUNT(*) FROM organization_memberships
+                 WHERE organizationId = ?) AS memberships,
+                (SELECT COUNT(*) FROM descendants) AS descendantOrganizations,
+                (SELECT COUNT(DISTINCT projectId) FROM project_resource_references
+                 WHERE resourceType = 'organization' AND resourceId = ?) AS projects,
+                (SELECT COUNT(DISTINCT topicId) FROM conversation_topic_references
+                 WHERE resourceType = 'organization' AND resourceId = ?) AS topics,
+                (SELECT COUNT(DISTINCT insightId) FROM insight_references
+                 WHERE resourceType = 'organization' AND resourceId = ?) AS insights
+            """,
+            arguments: [
+                sourceOrganizationId,
+                sourceOrganizationId,
+                sourceOrganizationId,
+                sourceOrganizationId,
+                sourceOrganizationId,
+                sourceOrganizationId,
+            ]
+        )
+        return OrganizationMergeImpact(
+            domains: row?["domains"] ?? 0,
+            memberships: row?["memberships"] ?? 0,
+            descendantOrganizations: row?["descendantOrganizations"] ?? 0,
+            projects: row?["projects"] ?? 0,
+            topics: row?["topics"] ?? 0,
+            insights: row?["insights"] ?? 0
+        )
     }
 
     nonisolated func addOrganizationMembership(

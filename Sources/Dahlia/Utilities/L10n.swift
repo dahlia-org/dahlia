@@ -512,6 +512,72 @@ enum L10n {
         bundle: bundle
     ) }
     static var deleteTopic: String { String(localized: "Delete Topic?", bundle: bundle) }
+    static var organizationDomains: String { String(localized: "Email Domains", bundle: bundle) }
+    static var organizationDomain: String { String(localized: "Email Domain", bundle: bundle) }
+    static var addOrganizationDomain: String { String(localized: "Add Email Domain", bundle: bundle) }
+    static var organizationDomainHelp: String {
+        String(
+            localized: "If this domain belongs to another organization, you can review a complete merge before anything changes.",
+            bundle: bundle
+        )
+    }
+
+    static var primary: String { String(localized: "Primary", bundle: bundle) }
+    static var merge: String { String(localized: "Merge", bundle: bundle) }
+
+    static func mergeOrganization(named name: String) -> String {
+        String(
+            format: String(localized: "Merge “%@”?", bundle: bundle),
+            locale: .current,
+            name
+        )
+    }
+
+    static func organizationMergeImpact(
+        domainName: String,
+        targetName: String,
+        impact: OrganizationMergeImpact
+    ) -> String {
+        let domains = localizedCount(impact.domains, singular: "%lld domain", plural: "%lld domains")
+        let memberships = localizedCount(impact.memberships, singular: "%lld membership", plural: "%lld memberships")
+        let departments = localizedCount(
+            impact.descendantOrganizations,
+            singular: "%lld department",
+            plural: "%lld departments"
+        )
+        let projects = localizedCount(impact.projects, singular: "%lld Project", plural: "%lld Projects")
+        let topics = localizedCount(impact.topics, singular: "%lld Topic", plural: "%lld Topics")
+        let insights = localizedCount(impact.insights, singular: "%lld insight", plural: "%lld insights")
+        return String(
+            format: String(
+                // swiftlint:disable:next line_length
+                localized: "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.",
+                bundle: bundle
+            ),
+            locale: .current,
+            domainName,
+            domains,
+            memberships,
+            departments,
+            projects,
+            topics,
+            insights,
+            targetName
+        )
+    }
+
+    private static func localizedCount(
+        _ count: Int,
+        singular: String.LocalizationValue,
+        plural: String.LocalizationValue
+    ) -> String {
+        String(
+            format: String(localized: count == 1 ? singular : plural, bundle: bundle),
+            locale: .current,
+            count
+        )
+    }
+
     static var searchOrganizations: String { String(localized: "Search organizations", bundle: bundle) }
     static var noOrganizations: String { String(localized: "No Organizations", bundle: bundle) }
     static var noOrganizationsDescription: String {
