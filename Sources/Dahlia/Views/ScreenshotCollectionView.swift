@@ -5,6 +5,7 @@ import SwiftUI
 struct ScreenshotCollectionView: NSViewRepresentable {
     let meetingID: UUID?
     let screenshots: [MeetingScreenshotRecord]
+    var contentRevision: UInt64?
     let recordingSessions: [RecordingSessionTimeline]
     let fallbackTimeBase: Date
     let minimumItemWidth: Double
@@ -68,6 +69,7 @@ extension ScreenshotCollectionView {
         private var currentScreenshotIDs: [UUID] = []
         private var screenshotIndexByID: [UUID: Int] = [:]
         private var currentScreenshotMetadata: [ScreenshotMetadata] = []
+        private var currentContentRevision: UInt64?
         private var timestampByID: [UUID: String] = [:]
         private var timestampContext: TimestampContext?
         private var lastPresentationState: PresentationState?
@@ -111,36 +113,28 @@ extension ScreenshotCollectionView {
 
             let screenshots = parent.screenshots
             let ids = screenshots.map(\.id)
-            let screenshotMetadata = screenshots.map(ScreenshotMetadata.init)
             let meetingChanged = currentMeetingID != parent.meetingID
-            let identifiersChanged = Self.requiresSnapshotUpdate(
+            let identifierUpdate = Self.identifierUpdate(
                 currentIDs: currentScreenshotIDs,
                 newIDs: ids
             )
-            if identifiersChanged {
-                screenshotIndexByID = Dictionary(
-                    uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) }
-                )
-            }
-            let metadataChanged = currentScreenshotMetadata != screenshotMetadata
-            currentMeetingID = parent.meetingID
-            currentScreenshotIDs = ids
-            currentScreenshotMetadata = screenshotMetadata
-
-            let currentTimestampContext = TimestampContext(
-                recordingSessions: parent.recordingSessions,
-                fallbackTimeBase: parent.fallbackTimeBase
+            let metadataChanged = updateProjection(
+                screenshots: screenshots,
+                ids: ids,
+                identifierUpdate: identifierUpdate
             )
-            if meetingChanged || metadataChanged || timestampContext != currentTimestampContext {
-                timestampByID = Dictionary(uniqueKeysWithValues: screenshots.map { ($0.id, timestamp(for: $0)) })
-                timestampContext = currentTimestampContext
-                timestampCacheGeneration &+= 1
-            }
+            currentMeetingID = parent.meetingID
+            updateTimestamps(
+                screenshots: screenshots,
+                meetingChanged: meetingChanged,
+                metadataChanged: metadataChanged,
+                identifierUpdate: identifierUpdate
+            )
 
             applySnapshotIfNeeded(
                 ids: ids,
                 collectionView: collectionView,
-                identifiersChanged: identifiersChanged,
+                identifierUpdate: identifierUpdate,
                 resetsScrollPosition: meetingChanged
             )
 
@@ -170,6 +164,7 @@ extension ScreenshotCollectionView {
             currentScreenshotIDs.removeAll()
             screenshotIndexByID.removeAll()
             currentScreenshotMetadata.removeAll()
+            currentContentRevision = nil
             timestampByID.removeAll()
         }
 
@@ -194,15 +189,27 @@ extension ScreenshotCollectionView {
         private func applySnapshotIfNeeded(
             ids: [UUID],
             collectionView: NSCollectionView,
-            identifiersChanged: Bool,
+            identifierUpdate: IdentifierUpdate,
             resetsScrollPosition: Bool
         ) {
             guard let dataSource else { return }
-            guard identifiersChanged else {
+            switch identifierUpdate {
+            case .unchanged:
                 if resetsScrollPosition {
                     Self.scrollToTop(collectionView)
                 }
                 return
+            case let .append(appendedIDs):
+                snapshotGeneration &+= 1
+                var snapshot = dataSource.snapshot()
+                if snapshot.sectionIdentifiers.isEmpty {
+                    snapshot.appendSections([0])
+                }
+                snapshot.appendItems(appendedIDs, toSection: 0)
+                dataSource.apply(snapshot, animatingDifferences: false)
+                return
+            case .reset:
+                break
             }
 
             let preservedOrigin = collectionView.enclosingScrollView?.contentView.bounds.origin
@@ -333,10 +340,6 @@ extension ScreenshotCollectionView {
             Int((width / 10).rounded()) * 10
         }
 
-        static func requiresSnapshotUpdate(currentIDs: [UUID], newIDs: [UUID]) -> Bool {
-            currentIDs != newIDs
-        }
-
         static func requiresVisibleItemUpdate(
             previous: PresentationState?,
             current: PresentationState
@@ -374,6 +377,95 @@ extension ScreenshotCollectionView {
         private struct BreadcrumbState: Equatable {
             let countBucket: Int
             let minimumWidthBucket: Int
+        }
+    }
+}
+
+extension ScreenshotCollectionView.Coordinator {
+    enum IdentifierUpdate: Equatable {
+        case unchanged
+        case append([UUID])
+        case reset
+    }
+
+    static func identifierUpdate(currentIDs: [UUID], newIDs: [UUID]) -> IdentifierUpdate {
+        guard currentIDs != newIDs else { return .unchanged }
+        guard newIDs.count > currentIDs.count,
+              newIDs.starts(with: currentIDs) else { return .reset }
+        return .append(Array(newIDs.dropFirst(currentIDs.count)))
+    }
+
+    private func updateProjection(
+        screenshots: [MeetingScreenshotRecord],
+        ids: [UUID],
+        identifierUpdate: IdentifierUpdate
+    ) -> Bool {
+        guard Self.shouldRebuildMetadata(
+            identifierUpdate: identifierUpdate,
+            currentContentRevision: currentContentRevision,
+            newContentRevision: parent.contentRevision
+        ) else {
+            currentScreenshotIDs = ids
+            return false
+        }
+
+        switch identifierUpdate {
+        case let .append(appendedIDs):
+            let initialIndex = currentScreenshotIDs.count
+            for (offset, id) in appendedIDs.enumerated() {
+                screenshotIndexByID[id] = initialIndex + offset
+            }
+        case .reset:
+            screenshotIndexByID = Dictionary(
+                uniqueKeysWithValues: ids.enumerated().map { ($0.element, $0.offset) }
+            )
+        case .unchanged:
+            break
+        }
+
+        let screenshotMetadata = if case let .append(appendedIDs) = identifierUpdate {
+            currentScreenshotMetadata
+                + screenshots.suffix(appendedIDs.count).map(ScreenshotMetadata.init)
+        } else {
+            screenshots.map(ScreenshotMetadata.init)
+        }
+        let changed = currentScreenshotMetadata != screenshotMetadata
+        currentScreenshotIDs = ids
+        currentScreenshotMetadata = screenshotMetadata
+        currentContentRevision = parent.contentRevision
+        return changed
+    }
+
+    static func shouldRebuildMetadata(
+        identifierUpdate: IdentifierUpdate,
+        currentContentRevision: UInt64?,
+        newContentRevision: UInt64?
+    ) -> Bool {
+        guard identifierUpdate == .unchanged,
+              let newContentRevision else { return true }
+        return currentContentRevision != newContentRevision
+    }
+
+    private func updateTimestamps(
+        screenshots: [MeetingScreenshotRecord],
+        meetingChanged: Bool,
+        metadataChanged: Bool,
+        identifierUpdate: IdentifierUpdate
+    ) {
+        let currentContext = TimestampContext(
+            recordingSessions: parent.recordingSessions,
+            fallbackTimeBase: parent.fallbackTimeBase
+        )
+        if case let .append(appendedIDs) = identifierUpdate,
+           !meetingChanged,
+           timestampContext == currentContext {
+            for screenshot in screenshots.suffix(appendedIDs.count) {
+                timestampByID[screenshot.id] = timestamp(for: screenshot)
+            }
+        } else if meetingChanged || metadataChanged || timestampContext != currentContext {
+            timestampByID = Dictionary(uniqueKeysWithValues: screenshots.map { ($0.id, timestamp(for: $0)) })
+            timestampContext = currentContext
+            timestampCacheGeneration &+= 1
         }
     }
 }

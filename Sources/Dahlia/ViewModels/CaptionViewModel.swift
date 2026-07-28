@@ -28,26 +28,6 @@ struct SummaryGenerationRunnerInput {
 typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
 
-private enum ScreenshotError: LocalizedError {
-    case encodingFailed
-    case displayUnavailable
-    case imageUnavailable
-    case sourceUnavailable
-
-    var errorDescription: String? {
-        switch self {
-        case .encodingFailed:
-            L10n.screenshotEncodingFailed
-        case .displayUnavailable:
-            L10n.screenshotDisplayUnavailable
-        case .imageUnavailable:
-            L10n.screenshotImageUnavailable
-        case .sourceUnavailable:
-            L10n.screenshotSourceUnavailable
-        }
-    }
-}
-
 /// 録音中のナビゲーション時に保持する録音コンテキスト。
 private struct RecordingContext {
     let meetingId: UUID?
@@ -81,6 +61,7 @@ private struct RecordingStartRollbackState {
 
 private struct RecordingStopContext {
     let configurationTasks: [Task<Void, Never>]
+    let automaticScreenshotStopTask: Task<Void, Never>
     let store: TranscriptStore
     let meetingId: UUID?
     let projectName: String?
@@ -227,7 +208,8 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Screenshot State
 
-    @Published var screenshots: [MeetingScreenshotRecord] = []
+    let screenshotStore = ScreenshotStore()
+
     @Published private(set) var isDeletingScreenshots = false {
         didSet {
             guard oldValue, !isDeletingScreenshots else { return }
@@ -241,8 +223,7 @@ final class CaptionViewModel: ObservableObject {
     @Published var screenshotCaptureSource: ScreenshotCaptureSource = .none {
         didSet {
             guard screenshotCaptureSource != oldValue else { return }
-            lastSavedAutomaticScreenshotFingerprint = nil
-            handleScreenshotCaptureSourceChange()
+            syncAutomaticScreenshotCaptureState()
         }
     }
 
@@ -281,7 +262,7 @@ final class CaptionViewModel: ObservableObject {
             document: currentSummaryDocument,
             actionItemsHeading: L10n.actionItems,
             for: destination,
-            screenshots: screenshots
+            screenshots: screenshotStore.records
         )
         guard content.markdown.nilIfBlank != nil else { return }
         SummaryPasteboardWriter.write(content)
@@ -301,7 +282,7 @@ final class CaptionViewModel: ObservableObject {
         let context = SummaryRenderContext(
             meetingId: meetingId,
             createdAt: store.timeBase,
-            screenshots: screenshots
+            screenshots: screenshotStore.records
         )
         let fileName = lastSummaryURL?.lastPathComponent
             ?? "\(document.title.nilIfBlank ?? L10n.summary).rtf"
@@ -484,13 +465,12 @@ final class CaptionViewModel: ObservableObject {
     private var transcriptionLocaleCancellable: AnyCancellable?
     private var liveSubtitleSettingsCancellable: AnyCancellable?
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
-    private var automaticScreenshotTask: Task<Void, Never>?
-    private var lastSavedAutomaticScreenshotFingerprint: ScreenshotFingerprint?
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     private var isSynchronizingSelectedLocale = false
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
+    private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
     private let summaryGenerationRunner: SummaryGenerationRunner
     private let summaryJobSleeper: SummaryJobSleeper
 
@@ -508,6 +488,7 @@ final class CaptionViewModel: ObservableObject {
 
     init(
         audioHardwareQueryService: AudioHardwareQueryService = .shared,
+        automaticScreenshotCapture: any AutomaticScreenshotCapturing = AutomaticScreenshotCaptureService(),
         summaryGenerationRunner: @escaping SummaryGenerationRunner = { input in
             try await SummaryService.generateSummary(
                 promptContext: input.promptContext,
@@ -522,6 +503,9 @@ final class CaptionViewModel: ObservableObject {
         summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) }
     ) {
         self.audioHardwareQueryService = audioHardwareQueryService
+        automaticScreenshotCaptureControl = AutomaticScreenshotCaptureControl(
+            capture: automaticScreenshotCapture
+        )
         self.summaryGenerationRunner = summaryGenerationRunner
         self.summaryJobSleeper = summaryJobSleeper
         bindStoreSegments()
@@ -562,7 +546,7 @@ final class CaptionViewModel: ObservableObject {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.handleAutomaticScreenshotSettingsChange()
+                self?.syncAutomaticScreenshotCaptureState()
             }
             .store(in: &automaticScreenshotSettingsCancellables)
 
@@ -571,7 +555,16 @@ final class CaptionViewModel: ObservableObject {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.handleAutomaticScreenshotIntervalChange()
+                self?.updateAutomaticScreenshotProcessingSettings()
+            }
+            .store(in: &automaticScreenshotSettingsCancellables)
+
+        UserDefaults.standard
+            .publisher(for: \.automaticScreenshotChangeThresholdPercent)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateAutomaticScreenshotProcessingSettings()
             }
             .store(in: &automaticScreenshotSettingsCancellables)
     }
@@ -1493,7 +1486,7 @@ final class CaptionViewModel: ObservableObject {
         if isListening {
             saveRecordingContextIfNeeded()
             store = TranscriptStore()
-            screenshots = []
+            screenshotStore.clear()
             resetNoteState()
             resetSummaryState()
         } else {
@@ -1524,6 +1517,7 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = ctx.projectName
         currentVaultURL = ctx.vaultURL
         currentDbQueue = ctx.dbQueue
+        replaceVisibleScreenshots(meetingID: ctx.meetingId, records: [])
         batchTranscriptionState = ctx.batchTranscriptionState
         retranscribableBatchSessionIds = []
         draftMeeting = nil
@@ -1566,7 +1560,7 @@ final class CaptionViewModel: ObservableObject {
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
     private func applyLoadedDetail(_ loaded: LoadedMeetingData) {
         currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
-        screenshots = loaded.screenshots
+        replaceVisibleScreenshots(meetingID: currentMeetingId, records: loaded.screenshots)
         currentSummaryDocument = loaded.summaryDocument
         currentSummaryGoogleFileId = loaded.googleFileId
         lastSummaryURL = loaded.lastSummaryURL
@@ -1593,6 +1587,17 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Private Helpers
 
+    private func replaceVisibleScreenshots(
+        meetingID: UUID?,
+        records: [MeetingScreenshotRecord]
+    ) {
+        guard let meetingID else {
+            screenshotStore.clear()
+            return
+        }
+        screenshotStore.replace(meetingID: meetingID, records: records)
+    }
+
     /// 録音コンテキストをバックアップする（初回ナビゲーション時のみ）。
     private func saveRecordingContextIfNeeded() {
         guard recordingContext == nil else { return }
@@ -1614,7 +1619,7 @@ final class CaptionViewModel: ObservableObject {
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         store.clear()
-        screenshots = []
+        screenshotStore.clear()
         resetNoteState()
         resetSummaryState()
         draftMeeting = nil
@@ -1644,6 +1649,7 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = projectName
         currentVaultURL = vaultURL
         currentDbQueue = dbQueue
+        screenshotStore.replace(meetingID: id, records: [])
         draftMeeting = nil
         resetSummaryState()
         setupNoteAutoSave()
@@ -1965,6 +1971,7 @@ final class CaptionViewModel: ObservableObject {
         persistenceService = service
         installTranscriptionEventPipeline(persistenceService: service)
         currentMeetingId = service.meetingId
+        screenshotStore.replace(meetingID: service.meetingId, records: [])
         store.attachPagingContext(
             meetingId: service.meetingId,
             loader: TranscriptPageLoader(dbQueue: request.dbQueue)
@@ -2252,7 +2259,7 @@ final class CaptionViewModel: ObservableObject {
 
         recordingLifecycle = .stopping(activeSessionId)
         isFinalizingRecording = true
-        stopAutomaticScreenshotCapture()
+        let automaticScreenshotStopTask = stopAutomaticScreenshotCapture()
         let configurationTasks = Array(recordingConfigurationTasks.values)
         configurationTasks.forEach { $0.cancel() }
         recordingConfigurationTasks.removeAll()
@@ -2263,6 +2270,7 @@ final class CaptionViewModel: ObservableObject {
         let activeStore = ctx?.store ?? store
         let stopContext = RecordingStopContext(
             configurationTasks: configurationTasks,
+            automaticScreenshotStopTask: automaticScreenshotStopTask,
             store: activeStore,
             meetingId: ctx?.meetingId ?? currentMeetingId,
             projectName: ctx?.projectName ?? selectedProjectName,
@@ -2316,6 +2324,7 @@ final class CaptionViewModel: ObservableObject {
         if persistenceResult.succeeded {
             await stoppingPipeline?.notifyPersistenceRecoveredAfterFinish()
         }
+        await context.automaticScreenshotStopTask.value
         failedPersistenceService = persistenceResult.succeeded ? nil : stoppingPersistenceService
         failedTranscriptionEventPipeline = persistenceResult.succeeded ? nil : stoppingPipeline
         persistenceService = nil
@@ -3268,48 +3277,38 @@ final class CaptionViewModel: ObservableObject {
               let dbQueue = activeDbQueueForSessionControls,
               screenshotCaptureSource.isSelected else { return }
 
-        let shouldRefreshVisibleScreenshots = currentMeetingId == meetingId
-
         Task {
             do {
+                let fingerprintUpdateAttempt = await automaticScreenshotCaptureControl.fingerprintUpdateAttempt()
                 let cgImage = try await captureScreenshotImage()
                 try await persistScreenshot(
                     cgImage,
                     meetingId: meetingId,
                     sessionId: persistenceService?.recordingSessionId,
-                    dbQueue: dbQueue,
-                    shouldRefreshVisibleScreenshots: shouldRefreshVisibleScreenshots
+                    dbQueue: dbQueue
                 )
-                await updateAutomaticScreenshotFingerprintIfNeeded(for: cgImage)
+                await updateAutomaticScreenshotFingerprintIfNeeded(
+                    for: cgImage,
+                    attempt: fingerprintUpdateAttempt
+                )
             } catch {
                 errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
             }
         }
     }
 
-    private func handleAutomaticScreenshotSettingsChange() {
-        syncAutomaticScreenshotCaptureState()
-    }
-
-    private func handleAutomaticScreenshotIntervalChange() {
-        guard automaticScreenshotTask != nil else { return }
-        automaticScreenshotTask?.cancel()
-        automaticScreenshotTask = nil
-        if isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected {
-            startAutomaticScreenshotCapture(resetFingerprint: false)
-        } else {
-            lastSavedAutomaticScreenshotFingerprint = nil
+    private func updateAutomaticScreenshotProcessingSettings() {
+        guard isListening,
+              AppSettings.shared.automaticScreenshotEnabled,
+              screenshotCaptureSource.isSelected else { return }
+        let intervalSeconds = AppSettings.shared.automaticScreenshotIntervalSeconds
+        let changeThresholdRatio = AppSettings.shared.automaticScreenshotChangeThresholdRatio
+        automaticScreenshotCaptureControl.enqueue { capture in
+            await capture.updateSettings(
+                intervalSeconds: intervalSeconds,
+                changeThresholdRatio: changeThresholdRatio
+            )
         }
-    }
-
-    private func handleScreenshotCaptureSourceChange() {
-        guard isListening, AppSettings.shared.automaticScreenshotEnabled, screenshotCaptureSource.isSelected else {
-            stopAutomaticScreenshotCapture()
-            return
-        }
-        automaticScreenshotTask?.cancel()
-        automaticScreenshotTask = nil
-        startAutomaticScreenshotCapture()
     }
 
     private func syncAutomaticScreenshotCaptureState() {
@@ -3320,87 +3319,36 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func startAutomaticScreenshotCapture(resetFingerprint: Bool = true) {
-        guard automaticScreenshotTask == nil else { return }
-        if resetFingerprint {
-            lastSavedAutomaticScreenshotFingerprint = nil
-        }
-        automaticScreenshotTask = Task { [weak self] in
-            await self?.runAutomaticScreenshotLoop()
-        }
-    }
-
-    private func stopAutomaticScreenshotCapture() {
-        automaticScreenshotTask?.cancel()
-        automaticScreenshotTask = nil
-        lastSavedAutomaticScreenshotFingerprint = nil
-    }
-
-    private func runAutomaticScreenshotLoop() async {
-        while !Task.isCancelled {
-            await captureAutomaticScreenshotIfNeeded()
-
-            let intervalSeconds = max(1, AppSettings.shared.automaticScreenshotIntervalSeconds)
-            do {
-                try await Task.sleep(nanoseconds: UInt64(intervalSeconds) * 1_000_000_000)
-            } catch {
-                break
-            }
-        }
-    }
-
-    private func captureAutomaticScreenshotIfNeeded() async {
+    private func startAutomaticScreenshotCapture() {
         guard isListening,
               AppSettings.shared.automaticScreenshotEnabled,
               screenshotCaptureSource.isSelected,
               let meetingId = activeMeetingIdForSessionControls,
               let dbQueue = activeDbQueueForSessionControls
-        else {
-            return
+        else { return }
+        let request = AutomaticScreenshotCaptureRequest(
+            source: screenshotCaptureSource,
+            intervalSeconds: AppSettings.shared.automaticScreenshotIntervalSeconds,
+            changeThresholdRatio: AppSettings.shared.automaticScreenshotChangeThresholdRatio,
+            meetingID: meetingId,
+            sessionID: persistenceService?.recordingSessionId,
+            dbQueue: dbQueue,
+            onPersisted: { [weak self] record in
+                self?.screenshotStore.upsert(record)
+            },
+            onFailure: { [weak self] error in
+                guard let self, self.isListening else { return }
+                self.errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
+            }
+        )
+        automaticScreenshotCaptureControl.enqueue { capture in
+            await capture.start(request)
         }
+    }
 
-        let shouldRefreshVisibleScreenshots = currentMeetingId == meetingId
-
-        do {
-            let cgImage = try await captureScreenshotImage()
-            guard !Task.isCancelled,
-                  isListening,
-                  AppSettings.shared.automaticScreenshotEnabled,
-                  screenshotCaptureSource.isSelected
-            else { return }
-            guard let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
-            let changeThresholdRatio = AppSettings.shared.automaticScreenshotChangeThresholdRatio
-
-            let shouldSave = lastSavedAutomaticScreenshotFingerprint.map {
-                ScreenshotChangeDetector.isSignificantlyDifferent(
-                    $0,
-                    fingerprint,
-                    changedPixelRatioThreshold: changeThresholdRatio
-                )
-            } ?? true
-
-            guard shouldSave,
-                  !Task.isCancelled,
-                  isListening,
-                  AppSettings.shared.automaticScreenshotEnabled,
-                  screenshotCaptureSource.isSelected
-            else { return }
-
-            try await persistScreenshot(
-                cgImage,
-                meetingId: meetingId,
-                sessionId: persistenceService?.recordingSessionId,
-                dbQueue: dbQueue,
-                shouldRefreshVisibleScreenshots: shouldRefreshVisibleScreenshots
-            )
-            lastSavedAutomaticScreenshotFingerprint = fingerprint
-        } catch is CancellationError {
-            return
-        } catch {
-            // ウィンドウの一時クローズや画面ロックなど一過性の失敗でループ全体を
-            // 止めない。次の周期で再試行する。
-            errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
-        }
+    @discardableResult
+    private func stopAutomaticScreenshotCapture() -> Task<Void, Never> {
+        automaticScreenshotCaptureControl.stop()
     }
 
     private func captureScreenshotImage() async throws -> CGImage {
@@ -3440,8 +3388,7 @@ final class CaptionViewModel: ObservableObject {
         _ cgImage: CGImage,
         meetingId: UUID,
         sessionId: UUID?,
-        dbQueue: DatabaseQueue,
-        shouldRefreshVisibleScreenshots: Bool
+        dbQueue: DatabaseQueue
     ) async throws {
         let encodedImage: (data: Data, mimeType: String) = try await Task.detached(priority: .userInitiated) {
             guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
@@ -3465,15 +3412,22 @@ final class CaptionViewModel: ObservableObject {
         try await dbQueue.write { db in
             try record.insert(db)
         }
-        if shouldRefreshVisibleScreenshots {
-            appendVisibleScreenshot(record)
-        }
+        appendVisibleScreenshot(record)
     }
 
-    private func updateAutomaticScreenshotFingerprintIfNeeded(for cgImage: CGImage) async {
-        guard automaticScreenshotTask != nil,
+    private func updateAutomaticScreenshotFingerprintIfNeeded(
+        for cgImage: CGImage,
+        attempt: AutomaticScreenshotCaptureAttempt?
+    ) async {
+        guard isListening,
+              AppSettings.shared.automaticScreenshotEnabled,
+              screenshotCaptureSource.isSelected,
+              let attempt,
               let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
-        lastSavedAutomaticScreenshotFingerprint = fingerprint
+        let task = automaticScreenshotCaptureControl.enqueue { capture in
+            await capture.updateSavedFingerprint(fingerprint, for: attempt)
+        }
+        await task.value
     }
 
     private func screenshotFingerprint(for cgImage: CGImage) async -> ScreenshotFingerprint? {
@@ -3534,13 +3488,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func appendVisibleScreenshot(_ screenshot: MeetingScreenshotRecord) {
-        guard currentMeetingId == screenshot.meetingId else { return }
-        if let index = screenshots.firstIndex(where: { $0.id == screenshot.id }) {
-            screenshots[index] = screenshot
-        } else {
-            let insertIndex = screenshots.firstIndex { $0.capturedAt > screenshot.capturedAt } ?? screenshots.endIndex
-            screenshots.insert(screenshot, at: insertIndex)
-        }
+        screenshotStore.upsert(screenshot)
     }
 
     func deleteScreenshot(_ screenshot: MeetingScreenshotRecord) {
@@ -3584,7 +3532,7 @@ final class CaptionViewModel: ObservableObject {
                 }
                 guard let self, self.currentMeetingId == meetingId else { return }
                 let deletedIds = Set(deletedScreenshots.map(\.id))
-                self.screenshots.removeAll { deletedIds.contains($0.id) }
+                self.screenshotStore.remove(ids: deletedIds, meetingID: meetingId)
             } catch {
                 captionViewModelLogger.error("Failed to delete screenshots: \(error)")
                 ErrorReportingService.capture(error, context: ["source": "deleteScreenshots"])

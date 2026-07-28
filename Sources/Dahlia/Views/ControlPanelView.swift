@@ -450,32 +450,15 @@ struct ControlPanelView: View {
 
     // MARK: - Tab Contents
 
-    @ViewBuilder
     private var summaryTabContent: some View {
-        if let document = viewModel.currentSummaryDocument,
-           viewModel.hasCurrentMeetingSummary {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    SummaryDocumentView(
-                        document: document,
-                        imageDataProvider: { screenshotRecord(withID: $0)?.imageData },
-                        onOpenImage: openSummaryScreenshot,
-                        transcriptTextProvider: summaryTranscriptText,
-                        allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } else {
-            ContentUnavailableView {
-                Label(L10n.summary, systemImage: "list.bullet.clipboard")
-            } description: {
-                Text(L10n.noSummaryYet)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        SummaryTabContentView(
+            screenshotStore: viewModel.screenshotStore,
+            document: viewModel.currentSummaryDocument,
+            hasSummary: viewModel.hasCurrentMeetingSummary,
+            allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
+            openScreenshot: openSummaryScreenshot,
+            transcriptText: summaryTranscriptText
+        )
     }
 
     private var notesTabContent: some View {
@@ -522,46 +505,22 @@ struct ControlPanelView: View {
         return min(max(minimumHeight, preferredHeight), maximumHeight)
     }
 
-    @ViewBuilder
     private var screenshotsTabContent: some View {
-        if viewModel.screenshots.isEmpty {
-            ContentUnavailableView {
-                Label(L10n.screenshots, systemImage: "photo.on.rectangle.angled")
-            } description: {
-                Text(L10n.noScreenshotsYet)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            VStack(spacing: 0) {
-                ScreenshotManagementToolbar(
-                    minimumWidth: $screenshotMinimumWidth,
-                    isSelecting: $isSelectingScreenshots,
-                    selectedCount: selectedScreenshotIds.count,
-                    canSelectAll: selectedScreenshotIds.count < deletableScreenshotIds.count,
-                    isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
-                    selectAll: selectAllScreenshots,
-                    deleteSelected: deleteSelectedScreenshots
-                )
-                .padding(12)
-
-                Divider()
-
-                ScreenshotCollectionView(
-                    meetingID: viewModel.currentMeetingId,
-                    screenshots: viewModel.screenshots,
-                    recordingSessions: viewModel.store.recordingSessions,
-                    fallbackTimeBase: screenshotTimeBase,
-                    minimumItemWidth: screenshotMinimumWidth,
-                    isSelecting: isSelectingScreenshots,
-                    referencedScreenshotIDs: referencedScreenshotIds,
-                    isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
-                    selectedScreenshotIDs: $selectedScreenshotIds,
-                    open: openScreenshot,
-                    download: viewModel.downloadScreenshot,
-                    delete: viewModel.deleteScreenshot
-                )
-            }
-        }
+        ScreenshotTabContentView(
+            screenshotStore: viewModel.screenshotStore,
+            meetingID: viewModel.currentMeetingId,
+            recordingSessions: viewModel.store.recordingSessions,
+            fallbackTimeBase: screenshotTimeBase,
+            minimumItemWidth: $screenshotMinimumWidth,
+            isSelecting: $isSelectingScreenshots,
+            selectedScreenshotIDs: $selectedScreenshotIds,
+            referencedScreenshotIDs: referencedScreenshotIds,
+            isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
+            open: openScreenshot,
+            download: viewModel.downloadScreenshot,
+            delete: viewModel.deleteScreenshot,
+            deleteSelected: deleteSelectedScreenshots
+        )
     }
 
     private func openScreenshot(_ screenshot: MeetingScreenshotRecord, previewImage: CGImage?) {
@@ -581,7 +540,7 @@ struct ControlPanelView: View {
     }
 
     private func screenshotRecord(withID id: UUID) -> MeetingScreenshotRecord? {
-        viewModel.screenshots.first { $0.id == id }
+        viewModel.screenshotStore.records.first { $0.id == id }
     }
 
     private func dismissExpandedScreenshot() {
@@ -589,10 +548,6 @@ struct ControlPanelView: View {
         withAnimation(.easeOut(duration: 0.15)) {
             expandedScreenshot = nil
         }
-    }
-
-    private func selectAllScreenshots() {
-        selectedScreenshotIds = deletableScreenshotIds
     }
 
     private func deleteSelectedScreenshots() {
@@ -624,10 +579,6 @@ struct ControlPanelView: View {
 
     private var referencedScreenshotIds: Set<UUID> {
         viewModel.currentSummaryDocument?.referencedScreenshotIds ?? []
-    }
-
-    private var deletableScreenshotIds: Set<UUID> {
-        Set(viewModel.screenshots.map(\.id)).subtracting(referencedScreenshotIds)
     }
 
     private func summaryTranscriptText(for reference: TranscriptReference) -> String? {

@@ -67,7 +67,11 @@ extension ScreenshotCollectionViewTests {
     func coordinatorSkipsTimestampRebuildForUnrelatedAndSelectionUpdates() {
         let meetingID = UUID.v7()
         let screenshots = makeScreenshots(count: 20, meetingID: meetingID)
-        let initialInput = makeCollectionInput(meetingID: meetingID, screenshots: screenshots)
+        let initialInput = makeCollectionInput(
+            meetingID: meetingID,
+            screenshots: screenshots,
+            contentRevision: 1
+        )
         let harness = ScreenshotCollectionHarness(parent: initialInput)
         let initialGeneration = harness.coordinator.timestampCacheGeneration
 
@@ -77,6 +81,7 @@ extension ScreenshotCollectionViewTests {
         harness.update(parent: makeCollectionInput(
             meetingID: meetingID,
             screenshots: screenshots,
+            contentRevision: 1,
             selectedScreenshotIDs: [screenshots[0].id]
         ))
         #expect(harness.coordinator.timestampCacheGeneration == initialGeneration)
@@ -90,6 +95,7 @@ extension ScreenshotCollectionViewTests {
         harness.update(parent: makeCollectionInput(
             meetingID: meetingID,
             screenshots: screenshots,
+            contentRevision: 1,
             recordingSessions: [session]
         ))
         #expect(harness.coordinator.timestampCacheGeneration == initialGeneration + 1)
@@ -103,6 +109,7 @@ extension ScreenshotCollectionViewTests {
         let harness = ScreenshotCollectionHarness(parent: makeCollectionInput(
             meetingID: meetingID,
             screenshots: [original],
+            contentRevision: 1,
             actionRecorder: actionRecorder
         ))
         let initialGeneration = harness.coordinator.timestampCacheGeneration
@@ -113,6 +120,7 @@ extension ScreenshotCollectionViewTests {
         harness.update(parent: makeCollectionInput(
             meetingID: meetingID,
             screenshots: [updated],
+            contentRevision: 2,
             actionRecorder: actionRecorder
         ))
 
@@ -169,6 +177,7 @@ extension ScreenshotCollectionViewTests {
     private func makeCollectionInput(
         meetingID: UUID,
         screenshots: [MeetingScreenshotRecord],
+        contentRevision: UInt64? = nil,
         recordingSessions: [RecordingSessionTimeline] = [],
         selectedScreenshotIDs: Set<UUID> = [],
         actionRecorder: CollectionActionRecorder? = nil
@@ -177,6 +186,7 @@ extension ScreenshotCollectionViewTests {
         return ScreenshotCollectionView(
             meetingID: meetingID,
             screenshots: screenshots,
+            contentRevision: contentRevision,
             recordingSessions: recordingSessions,
             fallbackTimeBase: Date(timeIntervalSince1970: 0),
             minimumItemWidth: ScreenshotGridSizing.defaultMinimumWidth,

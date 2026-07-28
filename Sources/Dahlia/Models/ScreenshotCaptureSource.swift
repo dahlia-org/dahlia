@@ -1,6 +1,6 @@
 import CoreGraphics
 
-enum ScreenshotCaptureSource: Hashable {
+enum ScreenshotCaptureSource: Hashable, Sendable {
     case none
     case entireDesktop
     case window(CGWindowID)

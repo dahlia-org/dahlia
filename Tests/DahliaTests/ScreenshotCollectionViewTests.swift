@@ -30,19 +30,6 @@ struct ScreenshotCollectionViewTests {
     }
 
     @Test
-    func snapshotUpdatesOnlyWhenIdentifiersChange() {
-        let first = UUID.v7()
-        let second = UUID.v7()
-        let otherMeeting = UUID.v7()
-
-        #expect(ScreenshotCollectionView.Coordinator.requiresSnapshotUpdate(currentIDs: [], newIDs: [first]))
-        #expect(!ScreenshotCollectionView.Coordinator.requiresSnapshotUpdate(currentIDs: [first], newIDs: [first]))
-        #expect(ScreenshotCollectionView.Coordinator.requiresSnapshotUpdate(currentIDs: [first], newIDs: [first, second]))
-        #expect(ScreenshotCollectionView.Coordinator.requiresSnapshotUpdate(currentIDs: [first, second], newIDs: [second]))
-        #expect(ScreenshotCollectionView.Coordinator.requiresSnapshotUpdate(currentIDs: [first, second], newIDs: [otherMeeting]))
-    }
-
-    @Test
     func sameIdentifierStateChangesOnlyReconfigureVisibleItems() {
         let screenshotID = UUID.v7()
         let unchanged = ScreenshotCollectionView.Coordinator.PresentationState(

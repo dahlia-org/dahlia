@@ -11,6 +11,12 @@ enum ErrorReportingService {
         case customerIntelligenceIngestion = "customer_intelligence_ingestion_error"
     }
 
+    enum AutomaticScreenshotStage: String {
+        case fingerprint
+        case encoding
+        case persistence
+    }
+
     struct ReleaseMetadata: Equatable {
         let name: String
         let distribution: String
@@ -83,6 +89,38 @@ enum ErrorReportingService {
             "minimum_width_bucket": String(minimumWidthBucket),
         ]
         SentrySDK.addBreadcrumb(breadcrumb)
+    }
+
+    static func recordSlowAutomaticScreenshotStage(
+        _ stage: AutomaticScreenshotStage,
+        durationMilliseconds: Int
+    ) {
+        guard isEnabled, durationMilliseconds >= 500 else { return }
+        let breadcrumb = Breadcrumb(level: .warning, category: "runtime.automatic_screenshot")
+        breadcrumb.type = "state"
+        breadcrumb.data = [
+            "event": "slow_stage",
+            "stage": stage.rawValue,
+            "duration_bucket_ms": String(automaticScreenshotDurationBucket(durationMilliseconds)),
+        ]
+        SentrySDK.addBreadcrumb(breadcrumb)
+    }
+
+    static func recordAutomaticScreenshotStreamRestart() {
+        guard isEnabled else { return }
+        let breadcrumb = Breadcrumb(level: .warning, category: "runtime.automatic_screenshot")
+        breadcrumb.type = "state"
+        breadcrumb.data = ["event": "stream_restart"]
+        SentrySDK.addBreadcrumb(breadcrumb)
+    }
+
+    static func automaticScreenshotDurationBucket(_ milliseconds: Int) -> Int {
+        switch milliseconds {
+        case ..<1000: 500
+        case ..<2000: 1000
+        case ..<5000: 2000
+        default: 5000
+        }
     }
 
     static func resolveDSN(infoDictionary: [String: Any], isDebugBuild: Bool) -> String? {
