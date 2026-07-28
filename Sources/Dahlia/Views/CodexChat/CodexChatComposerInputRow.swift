@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CodexChatComposerInputRow: View {
@@ -44,22 +45,14 @@ struct CodexChatComposerInputRow: View {
                 .onExitCommand(perform: onExitCommand)
                 .zIndex(showsAddPanel ? 1 : 0)
 
-            TextField(L10n.messageCodex, text: $session.draft, axis: .vertical)
-                .font(.body)
-                .textFieldStyle(.plain)
-                .lineLimit(1 ... 5)
-                .padding(.leading, 8)
-                .padding(.vertical, 6)
-                .contentShape(.rect)
-                .onContinuousHover(perform: onHover)
-                .accessibilityLabel(L10n.messageCodex)
-                .onSubmit(onSubmit)
-                .onMoveCommand(perform: onMoveCommand)
-                .onExitCommand(perform: onExitCommand)
-                .onKeyPress("v", phases: .down) { keyPress in
-                    guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
-                    return .handled
-                }
+            CodexChatComposerTextEditor(
+                text: $session.draft,
+                onSubmit: onSubmit,
+                onMoveCommand: onMoveCommand,
+                onExitCommand: onExitCommand,
+                onPasteImages: onPasteImages,
+                onHover: onHover
+            )
 
             if session.isLoading, session.models.isEmpty {
                 ProgressView()
@@ -86,5 +79,92 @@ struct CodexChatComposerInputRow: View {
                 )
             }
         }
+    }
+}
+
+struct CodexChatComposerTextEditor: View {
+    @Binding var text: String
+    let onSubmit: () -> Void
+    let onMoveCommand: (MoveCommandDirection) -> Void
+    let onExitCommand: () -> Void
+    let onPasteImages: () -> Bool
+    let onHover: (HoverPhase) -> Void
+
+    private static let maximumLineCount = 5
+
+    var body: some View {
+        // The capped Text supplies intrinsic height while TextEditor owns native scrolling.
+        Text(text.isEmpty ? " " : text)
+            .font(.body)
+            .lineLimit(Self.maximumLineCount)
+            .padding(.leading, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityHidden(true)
+            .hidden()
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $text)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        .padding(.leading, 3)
+                        .padding(.vertical, 6)
+                        .accessibilityLabel(L10n.messageCodex)
+                        .onMoveCommand(perform: onMoveCommand)
+                        .onExitCommand(perform: onExitCommand)
+                        .onKeyPress(.return, phases: .down, action: handleReturnKey)
+                        .onKeyPress(.tab, phases: .down, action: handleTabKey)
+                        .onKeyPress("v", phases: .down) { keyPress in
+                            guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
+                            return .handled
+                        }
+
+                    if text.isEmpty {
+                        Text(L10n.messageCodex)
+                            .font(.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 8)
+                            .padding(.top, 6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .contentShape(.rect)
+                .onContinuousHover(perform: onHover)
+            }
+    }
+
+    private func handleReturnKey(_: KeyPress) -> KeyPress.Result {
+        if activeTextView?.hasMarkedText() == true {
+            return .ignored
+        }
+        onSubmit()
+        return .handled
+    }
+
+    private func handleTabKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        guard !keyPress.modifiers.contains(.option),
+              !keyPress.modifiers.contains(.command),
+              !keyPress.modifiers.contains(.control)
+        else {
+            return .ignored
+        }
+
+        let textView = activeTextView
+        if textView?.hasMarkedText() == true {
+            return .ignored
+        }
+        if let textView, let window = textView.window {
+            if keyPress.modifiers.contains(.shift) {
+                window.selectPreviousKeyView(textView)
+            } else {
+                window.selectNextKeyView(textView)
+            }
+        }
+        return .handled
+    }
+
+    private var activeTextView: NSTextView? {
+        let window = NSApp.currentEvent?.window ?? NSApp.keyWindow
+        return window?.firstResponder as? NSTextView
     }
 }
