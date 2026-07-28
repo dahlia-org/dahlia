@@ -19,6 +19,7 @@
                 .aiSummary,
                 .mcp,
                 .instructions,
+                .betaFeatures,
                 .developer,
                 .audioDiagnostics,
             ])
@@ -57,6 +58,8 @@
             #expect(SettingsCategory.mcp.systemImage == "network")
             #expect(SettingsCategory.audioDiagnostics.rawValue == "audioDiagnostics")
             #expect(SettingsCategory.audioDiagnostics.label == L10n.diagnostics)
+            #expect(SettingsCategory.betaFeatures.label == L10n.betaFeatures)
+            #expect(SettingsCategory.betaFeatures.systemImage == "testtube.2")
         }
 
         @Test
@@ -64,7 +67,8 @@
             #expect(SettingsGroup.allCases.last == .advanced)
             #expect(SettingsGroup.app.categories == [.general, .permissions, .backups])
             #expect(SettingsGroup.recording.categories == [.transcription, .liveSubtitles, .screenshots])
-            #expect(SettingsGroup.advanced.categories == [.developer, .audioDiagnostics])
+            #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
+            #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
         }
 
         @Test

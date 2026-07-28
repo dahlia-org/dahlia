@@ -4,6 +4,9 @@ public struct MeetingQuery: Sendable, Equatable {
     public var query: String?
     public var project: String?
     public var projectID: UUID?
+    public var organizationID: UUID?
+    public var includeOrganizationDescendants: Bool
+    public var topicID: UUID?
     public var icalUID: String?
     public var createdFrom: Date?
     public var createdBefore: Date?
@@ -14,6 +17,9 @@ public struct MeetingQuery: Sendable, Equatable {
         query: String? = nil,
         project: String? = nil,
         projectID: UUID? = nil,
+        organizationID: UUID? = nil,
+        includeOrganizationDescendants: Bool = false,
+        topicID: UUID? = nil,
         icalUID: String? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
@@ -23,6 +29,9 @@ public struct MeetingQuery: Sendable, Equatable {
         self.query = query
         self.project = project
         self.projectID = projectID
+        self.organizationID = organizationID
+        self.includeOrganizationDescendants = includeOrganizationDescendants
+        self.topicID = topicID
         self.icalUID = icalUID
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
@@ -275,11 +284,17 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case meetingMembershipConflict
     case organizationNotFound
     case contactNotFound
-    case glossaryTermNotFound
+    case conversationTopicNotFound
+    case insightNotFound
     case invalidResourceFilter
     case invalidCustomerIntelligenceData
     case workspaceBusy
     case workspaceRollbackFailed
+    case invalidCustomerIntelligenceMutation
+    case invalidCustomerIntelligenceReference
+    case customerIntelligenceRevisionConflict
+    case customerIntelligenceResourceInUse(String)
+    case duplicateContactEmail
 
     public var errorDescription: String? {
         switch self {
@@ -323,8 +338,10 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The organization was not found in the configured vault."
         case .contactNotFound:
             "The contact was not found in the configured vault."
-        case .glossaryTermNotFound:
-            "The glossary term was not found in the configured vault."
+        case .conversationTopicNotFound:
+            "The conversation topic was not found in the configured vault."
+        case .insightNotFound:
+            "The insight was not found in the configured vault."
         case .invalidResourceFilter:
             "resource_type and resource_id must be supplied together, using a supported resource type."
         case .invalidCustomerIntelligenceData:
@@ -333,6 +350,37 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "Another Dahlia process is updating this vault. Refresh the project state and try again."
         case .workspaceRollbackFailed:
             "The workspace update failed and its filesystem rollback also failed."
+        case .invalidCustomerIntelligenceMutation:
+            "The customer intelligence change is invalid."
+        case .invalidCustomerIntelligenceReference:
+            "The related resource does not exist in the configured vault or is not supported."
+        case .customerIntelligenceRevisionConflict:
+            "The record changed after it was read. Query it again before retrying."
+        case let .customerIntelligenceResourceInUse(message):
+            message
+        case .duplicateContactEmail:
+            "Another Contact already uses this email. Use resolve_contact when merging a provisional Contact."
+        }
+    }
+
+    public var reasonCode: String {
+        switch self {
+        case .vaultNotFound, .meetingNotFound, .projectNotFound, .organizationNotFound,
+             .contactNotFound, .conversationTopicNotFound, .insightNotFound,
+             .screenshotNotFound:
+            "not_found"
+        case .projectConflict, .meetingMembershipConflict, .customerIntelligenceRevisionConflict:
+            "revision_conflict"
+        case .customerIntelligenceResourceInUse:
+            "resource_in_use"
+        case .duplicateContactEmail:
+            "duplicate_email"
+        case .invalidResourceFilter, .invalidCustomerIntelligenceReference:
+            "invalid_reference"
+        case .workspaceBusy:
+            "database_busy"
+        default:
+            "invalid_input"
         }
     }
 }

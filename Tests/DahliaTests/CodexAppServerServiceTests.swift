@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 @testable import Dahlia
 
@@ -495,6 +496,35 @@ import Foundation
             ).objectValue)
 
             #expect(config["model_reasoning_effort"] == .string("high"))
+        }
+
+        @Test
+        func developmentChatConfigRoutesMCPToTheDevelopmentDatabaseProfile() throws {
+            let configReadResult = JSONValue.object([
+                "config": .object([:]),
+            ])
+            let vaultID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
+            let executableURL = URL(fileURLWithPath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp")
+
+            let config = try #require(CodexAppServerService.chatThreadConfig(
+                from: configReadResult,
+                helperURL: executableURL,
+                vaultID: vaultID,
+                runtimeProfile: .development
+            ).objectValue)
+            let server = try #require(config["mcp_servers"]?.objectValue?["dahlia"])
+
+            #expect(server == .object([
+                "args": .array([
+                    .string("DAHLIA_RUNTIME_PROFILE=development"),
+                    .string(executableURL.path),
+                    .string("--vault-id"),
+                    .string(vaultID.uuidString),
+                    .string("--write"),
+                ]),
+                "command": .string("/usr/bin/env"),
+                "enabled": .bool(true),
+            ]))
         }
 
         @Test

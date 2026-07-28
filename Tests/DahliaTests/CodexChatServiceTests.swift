@@ -56,6 +56,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(turnParams["outputSchema"] == nil)
+            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
             #expect(turnParams["effort"] == .string("high"))
             #expect(turnParams["summary"] == .string("auto"))
             #expect(turnParams["input"] == .array([

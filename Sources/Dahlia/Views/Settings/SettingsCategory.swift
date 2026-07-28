@@ -14,6 +14,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case aiSummary
     case mcp
     case instructions
+    case betaFeatures
     case developer
     case audioDiagnostics
 
@@ -33,6 +34,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .aiSummary: L10n.aiSummary
         case .mcp: L10n.mcp
         case .instructions: L10n.instructions
+        case .betaFeatures: L10n.betaFeatures
         case .developer: L10n.developerSettings
         case .audioDiagnostics: L10n.diagnostics
         }
@@ -52,6 +54,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .aiSummary: "sparkles"
         case .mcp: "network"
         case .instructions: "list.bullet.clipboard"
+        case .betaFeatures: "testtube.2"
         case .developer: "wrench.and.screwdriver"
         case .audioDiagnostics: "stethoscope"
         }

@@ -34,12 +34,15 @@ enum L10n {
     // MARK: - Common
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }
+    static var remove: String { String(localized: "Remove", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
     static var retry: String { String(localized: "Retry", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }
     static var auto: String { String(localized: "Auto", bundle: bundle) }
     static var apply: String { String(localized: "Apply", bundle: bundle) }
     static var clear: String { String(localized: "Clear", bundle: bundle) }
+    static var edit: String { String(localized: "Edit", bundle: bundle) }
+    static var reload: String { String(localized: "Reload", bundle: bundle) }
     static var close: String { String(localized: "Close", bundle: bundle) }
     static var done: String { String(localized: "Done", bundle: bundle) }
     static var select: String { String(localized: "Select", bundle: bundle) }
@@ -65,6 +68,10 @@ enum L10n {
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var actions: String { String(localized: "Actions", bundle: bundle) }
     static var status: String { String(localized: "Status", bundle: bundle) }
+    static var customerIntelligenceContactNameRequired: String {
+        String(localized: "Enter a contact name.", bundle: bundle)
+    }
+
     static var dahlia: String { String(localized: "Dahlia", bundle: bundle) }
     static var anotherDahliaInstanceTitle: String { String(localized: "Dahlia Is Already Running", bundle: bundle) }
     static var anotherDahliaInstanceMessage: String { String(
@@ -151,6 +158,420 @@ enum L10n {
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
+    static var organizations: String { String(localized: "Organizations", bundle: bundle) }
+    static var department: String { String(localized: "Department", bundle: bundle) }
+    static var people: String { String(localized: "People", bundle: bundle) }
+    static var topics: String { String(localized: "Topics", bundle: bundle) }
+    static var topicMeetingEvidence: String { String(localized: "Topic Meeting Evidence", bundle: bundle) }
+    static func organizationAIPrompt(
+        organizationID: UUID,
+        projectID: UUID?,
+        start: String,
+        end: String
+    ) -> String {
+        String(
+            format: String(localized: "Organization AI Prompt", bundle: bundle),
+            locale: .current,
+            organizationID.uuidString,
+            projectID?.uuidString ?? String(localized: "Not specified", bundle: bundle),
+            start,
+            end
+        )
+    }
+
+    static var topic: String { String(localized: "Topic", bundle: bundle) }
+    static var customerIntelligence: String { String(localized: "Customer Intelligence", bundle: bundle) }
+    static var customerIntelligenceWorkspace: String {
+        String(localized: "Customer Intelligence Workspace", bundle: bundle)
+    }
+
+    static var customerIntelligenceContacts: String { String(localized: "Contacts", bundle: bundle) }
+    static var customerIntelligenceInsights: String { String(localized: "Insights", bundle: bundle) }
+    static var customerIntelligenceOverview: String { String(localized: "Overview", bundle: bundle) }
+    static var customerIntelligenceAllCustomers: String { String(localized: "All Customers", bundle: bundle) }
+    static var customerIntelligenceCustomer: String { String(localized: "Customer", bundle: bundle) }
+    static var customerIntelligenceCustomerScope: String { String(localized: "Customer Scope", bundle: bundle) }
+    static var customerIntelligenceSearchCustomers: String {
+        String(localized: "Search customers", bundle: bundle)
+    }
+
+    static var customerIntelligenceOverviewAllDescription: String {
+        String(localized: "Review activity and relationships across every customer.", bundle: bundle)
+    }
+
+    static var customerIntelligenceOverviewCustomerDescription: String {
+        String(localized: "Review this customer's people, work, topics, and recent conversations.", bundle: bundle)
+    }
+
+    static var customerIntelligenceKeyPeople: String { String(localized: "Key People", bundle: bundle) }
+    static var customerIntelligenceRecentProjects: String { String(localized: "Recent Projects", bundle: bundle) }
+    static var customerIntelligenceRecentTopics: String { String(localized: "Recently Discussed Topics", bundle: bundle) }
+    static var customerIntelligenceRecentMeetings: String { String(localized: "Recent Meetings", bundle: bundle) }
+    static var customerIntelligenceNoRecentInteraction: String {
+        String(localized: "No recent interaction", bundle: bundle)
+    }
+
+    static var customerIntelligenceOpenOrganizationHint: String {
+        String(localized: "Selects this customer and opens its organization chart.", bundle: bundle)
+    }
+
+    static var customerIntelligencePersonDetails: String { String(localized: "Person Details", bundle: bundle) }
+    static var customerIntelligencePersonCreationHelp: String {
+        String(localized: "An initial organization is optional and can be changed later.", bundle: bundle)
+    }
+
+    static var customerIntelligenceNewPerson: String { String(localized: "New Person", bundle: bundle) }
+    static var customerIntelligenceNewTopic: String { String(localized: "New Topic", bundle: bundle) }
+    static var customerIntelligenceSaveFailed: String {
+        String(localized: "The changes could not be saved.", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoPeople: String { String(localized: "No People", bundle: bundle) }
+    static var customerIntelligenceNoPeopleDescription: String {
+        String(localized: "Create a person or change the customer scope.", bundle: bundle)
+    }
+
+    static var customerIntelligenceDeletePersonHelp: String {
+        String(
+            localized: "Deletes this person and detaches related references. This cannot be undone.",
+            bundle: bundle
+        )
+    }
+
+    static var customerIntelligenceNoTopics: String { String(localized: "No Topics", bundle: bundle) }
+    static var customerIntelligenceNoTopicsDescription: String {
+        String(localized: "Create a topic or use AI to organize recent conversations.", bundle: bundle)
+    }
+
+    static var customerIntelligenceEditTopic: String { String(localized: "Edit Topic", bundle: bundle) }
+    static var customerIntelligenceLastDiscussed: String { String(localized: "Last Discussed", bundle: bundle) }
+    static var customerIntelligenceDeleteTopicHelp: String {
+        String(
+            localized: "Deletes this topic and its references. Meetings and related records are preserved.",
+            bundle: bundle
+        )
+    }
+
+    static var customerIntelligenceViewOptions: String { String(localized: "View Options", bundle: bundle) }
+    static var customerIntelligenceTableDensity: String { String(localized: "Table Density", bundle: bundle) }
+    static var customerIntelligenceStandardDensity: String { String(localized: "Standard", bundle: bundle) }
+    static var customerIntelligenceCompactDensity: String { String(localized: "Compact", bundle: bundle) }
+    static var customerIntelligenceShowInspector: String { String(localized: "Show Inspector", bundle: bundle) }
+    static var customerIntelligenceHideInspector: String { String(localized: "Hide Inspector", bundle: bundle) }
+    static var customerIntelligenceSearchProjects: String { String(localized: "Search Projects", bundle: bundle) }
+    static var customerIntelligenceProjectPath: String { String(localized: "Project Path", bundle: bundle) }
+    static var customerIntelligenceRecentActivity: String { String(localized: "Recent Activity", bundle: bundle) }
+    static var customerIntelligenceNoProjects: String { String(localized: "No Projects", bundle: bundle) }
+    static var customerIntelligenceNoProjectsDescription: String {
+        String(localized: "Create a Project or explicitly relate one to this customer.", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoDescription: String { String(localized: "No description", bundle: bundle) }
+    static var customerIntelligenceManageInProjects: String {
+        String(localized: "Manage in Projects", bundle: bundle)
+    }
+
+    static var customerIntelligenceSelectProject: String {
+        String(localized: "Select a Project", bundle: bundle)
+    }
+
+    static var customerIntelligenceProjectDetails: String { String(localized: "Project Details", bundle: bundle) }
+    static var customerIntelligenceEditProject: String { String(localized: "Edit Project", bundle: bundle) }
+    static var customerIntelligenceRevisionConflict: String {
+        String(localized: "This record changed. Reload it before saving again.", bundle: bundle)
+    }
+
+    static var customerIntelligenceInsightSummary: String { String(localized: "Summary", bundle: bundle) }
+    static var customerIntelligenceInsightContent: String { String(localized: "Insight", bundle: bundle) }
+    static var customerIntelligenceUpdatedAt: String { String(localized: "Updated", bundle: bundle) }
+    static var customerIntelligenceMarkNeedsReview: String {
+        String(localized: "Mark as Needs Review", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoInsights: String { String(localized: "No Insights", bundle: bundle) }
+    static var customerIntelligenceNoInsightsDescription: String {
+        String(localized: "Insights created by AI will appear here for review.", bundle: bundle)
+    }
+
+    static var projectTypeCustomer: String { String(localized: "Customer", bundle: bundle) }
+    static var projectTypeInternal: String { String(localized: "Internal", bundle: bundle) }
+    static var projectTypePersonal: String { String(localized: "Personal", bundle: bundle) }
+    static var projectTypeUndefined: String { String(localized: "Undefined", bundle: bundle) }
+
+    static func customerIntelligenceNeedsReviewCount(_ count: Int) -> String {
+        String(
+            format: String(localized: "%lld needs review", bundle: bundle),
+            locale: .current,
+            count
+        )
+    }
+
+    static var customerIntelligenceEmail: String { String(localized: "Email Address", bundle: bundle) }
+    static var customerIntelligenceLastInteraction: String {
+        String(localized: "Last Interaction", bundle: bundle)
+    }
+
+    static var customerIntelligenceEditContact: String {
+        String(localized: "Edit Contact", bundle: bundle)
+    }
+
+    static var customerIntelligenceEditOrganization: String {
+        String(localized: "Edit Organization", bundle: bundle)
+    }
+
+    static var customerIntelligenceEditDepartment: String {
+        String(localized: "Edit Department", bundle: bundle)
+    }
+
+    static var customerIntelligenceManageMemberships: String {
+        String(localized: "Manage Memberships", bundle: bundle)
+    }
+
+    static var customerIntelligenceExistingMemberships: String {
+        String(localized: "Existing Memberships", bundle: bundle)
+    }
+
+    static var customerIntelligenceAddMembership: String {
+        String(localized: "Add Membership", bundle: bundle)
+    }
+
+    static var customerIntelligenceAddPerson: String {
+        String(localized: "Add Person", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoPeopleToAdd: String {
+        String(localized: "There are no people available to add.", bundle: bundle)
+    }
+
+    static var customerIntelligenceManagePeopleHelp: String {
+        String(localized: "Create people and edit their memberships from the People screen.", bundle: bundle)
+    }
+
+    static var customerIntelligenceEmailNotSet: String {
+        String(localized: "Email address not set", bundle: bundle)
+    }
+
+    static var customerIntelligenceDeletePerson: String {
+        String(localized: "Delete Person?", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoMemberships: String {
+        String(localized: "No organization memberships", bundle: bundle)
+    }
+
+    static var customerIntelligenceInvalidEmail: String {
+        String(localized: "Enter a valid email address.", bundle: bundle)
+    }
+
+    static var customerIntelligenceSearchContacts: String {
+        String(localized: "Search contacts", bundle: bundle)
+    }
+
+    static var customerIntelligenceSearchTopics: String {
+        String(localized: "Search topics", bundle: bundle)
+    }
+
+    static var customerIntelligenceSearchInsights: String {
+        String(localized: "Search insights", bundle: bundle)
+    }
+
+    static var customerIntelligenceSelectContact: String {
+        String(localized: "Select a Contact", bundle: bundle)
+    }
+
+    static var customerIntelligenceSelectTopic: String {
+        String(localized: "Select a Topic", bundle: bundle)
+    }
+
+    static var customerIntelligenceSelectInsight: String {
+        String(localized: "Select an Insight", bundle: bundle)
+    }
+
+    static var customerIntelligenceCurrentState: String {
+        String(localized: "Current State", bundle: bundle)
+    }
+
+    static var customerIntelligenceTopicTitle: String {
+        String(localized: "Topic Title", bundle: bundle)
+    }
+
+    static var customerIntelligenceRelatedResources: String {
+        String(localized: "Related Resources", bundle: bundle)
+    }
+
+    static var customerIntelligenceDangerZone: String {
+        String(localized: "Danger Zone", bundle: bundle)
+    }
+
+    static var customerIntelligenceMerge: String { String(localized: "Merge", bundle: bundle) }
+    static var customerIntelligenceMergeContactTitle: String {
+        String(localized: "Merge with Existing Contact?", bundle: bundle)
+    }
+
+    static var customerIntelligenceAccept: String { String(localized: "Accept", bundle: bundle) }
+    static var customerIntelligenceAccepted: String { String(localized: "Accepted", bundle: bundle) }
+    static var customerIntelligenceNeedsReview: String { String(localized: "Needs Review", bundle: bundle) }
+    static var customerIntelligenceRejected: String { String(localized: "Rejected", bundle: bundle) }
+    static var customerIntelligenceApplied: String { String(localized: "Applied", bundle: bundle) }
+    static var customerIntelligenceStale: String { String(localized: "Stale", bundle: bundle) }
+
+    static var customerIntelligenceAllStatuses: String {
+        String(localized: "All Statuses", bundle: bundle)
+    }
+
+    static var customerIntelligenceNoVault: String {
+        String(localized: "Open a Vault to view customer intelligence.", bundle: bundle)
+    }
+
+    static var customerIntelligenceUpdateError: String {
+        String(localized: "Could Not Update Customer Intelligence", bundle: bundle)
+    }
+
+    static var customerIntelligencePeopleError: String {
+        String(localized: "Could Not Update People", bundle: bundle)
+    }
+
+    static var customerIntelligenceProjectsError: String {
+        String(localized: "Could Not Update Projects", bundle: bundle)
+    }
+
+    static var customerIntelligenceTopicsError: String {
+        String(localized: "Could Not Update Topics", bundle: bundle)
+    }
+
+    static var customerIntelligenceInsightsError: String {
+        String(localized: "Could Not Update Insights", bundle: bundle)
+    }
+
+    static var customerIntelligenceShowAllTopics: String {
+        String(localized: "Show All Topics", bundle: bundle)
+    }
+
+    static func customerIntelligenceContactSummary(meetings: Int, memberships: Int, topics: Int) -> String {
+        String(
+            format: String(localized: "%lld meetings · %lld organizations · %lld topics", bundle: bundle),
+            locale: .current,
+            meetings,
+            memberships,
+            topics
+        )
+    }
+
+    static func customerIntelligenceMergeContactMessage(_ name: String) -> String {
+        String(
+            format: String(localized: "This email belongs to “%@”. Merge this person into it?", bundle: bundle),
+            locale: .current,
+            name
+        )
+    }
+
+    static func customerIntelligenceReferenceCount(_ count: Int) -> String {
+        String(
+            format: String(localized: "%lld references", bundle: bundle),
+            locale: .current,
+            count
+        )
+    }
+
+    static func customerIntelligenceDepartmentCount(_ count: Int) -> String {
+        String(
+            format: String(localized: "%lld departments", bundle: bundle),
+            locale: .current,
+            count
+        )
+    }
+
+    static var openOrganizationWorkspace: String {
+        String(localized: "Open Customer Intelligence", bundle: bundle)
+    }
+
+    static var organizationCanvas: String { String(localized: "Organization hierarchy canvas", bundle: bundle) }
+    static var unassignedPeople: String { String(localized: "Unassigned People", bundle: bundle) }
+    static var unnamedPerson: String { String(localized: "Unnamed Person", bundle: bundle) }
+    static var newOrganization: String { String(localized: "New Organization", bundle: bundle) }
+    static var newDepartment: String { String(localized: "New Department", bundle: bundle) }
+    static var addToDepartment: String { String(localized: "Add to Department", bundle: bundle) }
+    static var removeFromDepartment: String { String(localized: "Remove from Department", bundle: bundle) }
+    static var parentDepartment: String { String(localized: "Parent Department", bundle: bundle) }
+    static var move: String { String(localized: "Move", bundle: bundle) }
+    static var person: String { String(localized: "Person", bundle: bundle) }
+    static var role: String { String(localized: "Role", bundle: bundle) }
+    static var saveTopicState: String { String(localized: "Save Topic State", bundle: bundle) }
+    static var deleteOrganization: String { String(localized: "Delete Organization?", bundle: bundle) }
+    static func deleteOrganization(named name: String) -> String {
+        String(
+            format: String(localized: "Delete “%@”?", bundle: bundle),
+            locale: .current,
+            name
+        )
+    }
+
+    static var deleteOrganizationAction: String { String(localized: "Delete Organization", bundle: bundle) }
+    static var deleteOrganizationHelp: String { String(
+        localized: "Deletes this organization and all departments below it. Memberships and related references are detached. This cannot be undone.",
+        bundle: bundle
+    ) }
+    static var deleteTopic: String { String(localized: "Delete Topic?", bundle: bundle) }
+    static var searchOrganizations: String { String(localized: "Search organizations", bundle: bundle) }
+    static var noOrganizations: String { String(localized: "No Organizations", bundle: bundle) }
+    static var noOrganizationsDescription: String {
+        String(localized: "Calendar participants or direct edits can create the first organization.", bundle: bundle)
+    }
+
+    static var selectOrganization: String { String(localized: "Select an Organization", bundle: bundle) }
+    static var allTopics: String { String(localized: "All Topics", bundle: bundle) }
+    static var allProjects: String { String(localized: "All Projects", bundle: bundle) }
+    static var organizationWorkspaceError: String {
+        String(localized: "Could Not Update Organization Workspace", bundle: bundle)
+    }
+
+    static var organizationWorkspaceBusy: String {
+        String(localized: "Dahlia data is busy. No changes were applied. Please retry.", bundle: bundle)
+    }
+
+    static var zoomIn: String { String(localized: "Zoom In", bundle: bundle) }
+    static var zoomOut: String { String(localized: "Zoom Out", bundle: bundle) }
+    static var fitToView: String { String(localized: "Fit to View", bundle: bundle) }
+    static var organizeWithAI: String { String(localized: "Organize with AI", bundle: bundle) }
+    static var analysisScope: String { String(localized: "Analysis Scope", bundle: bundle) }
+    static var aiScopeDoesNotSend: String {
+        String(localized: "This prepares an exact prompt in Chat. It does not send it automatically.", bundle: bundle)
+    }
+
+    static var prepareChat: String { String(localized: "Prepare Chat", bundle: bundle) }
+    static var add: String { String(localized: "Add", bundle: bundle) }
+    static var save: String { String(localized: "Save", bundle: bundle) }
+    static var name: String { String(localized: "Name", bundle: bundle) }
+
+    static func pastDays(_ count: Int) -> String {
+        String(localized: "Past \(count) days", bundle: bundle)
+    }
+
+    static func topicDerivedSummary(meetings: Int, organizations: Int) -> String {
+        String(localized: "\(meetings) meetings · \(organizations) departments", bundle: bundle)
+    }
+
+    static func contactDeletionImpact(_ impact: ProvisionalContactDeletionImpact) -> String {
+        String(
+            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, and \(impact.topics) Topics will be detached.",
+            bundle: bundle
+        )
+    }
+
+    static func organizationDeletionImpact(_ impact: OrganizationDeletionImpact) -> String {
+        String(
+            localized: "This deletes \(impact.organizationCount) organization nodes and detaches \(impact.memberships) memberships, \(impact.projects) Projects, \(impact.topics) Topics, and \(impact.insights) insights.",
+            bundle: bundle
+        )
+    }
+
+    static func topicDeletionImpact(_ impact: TopicDeletionImpact) -> String {
+        String(
+            localized: "This removes \(impact.meetings) Meeting references and \(impact.relatedResources) related resources. The source records are preserved.",
+            bundle: bundle
+        )
+    }
+
     static var instructions: String { String(localized: "Instructions", bundle: bundle) }
     static var context: String { String(localized: "Context", bundle: bundle) }
     static var actionItems: String { String(localized: "Action Items", bundle: bundle) }
@@ -783,6 +1204,11 @@ enum L10n {
     // MARK: - Settings
 
     static var general: String { String(localized: "General", bundle: bundle) }
+    static var betaFeatures: String { String(localized: "Beta Features", bundle: bundle) }
+    static var betaFeaturesDescription: String { String(
+        localized: "Turn on a beta feature to show its entry points in the Dahlia toolbar and menus. Beta features may change without notice.",
+        bundle: bundle
+    ) }
     static var permissions: String { String(localized: "Permissions", bundle: bundle) }
     static var permissionGuideDescription: String { String(
         localized: "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time.",

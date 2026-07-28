@@ -6,13 +6,13 @@ import GRDB
 
 extension MeetingRepository {
     /// 指定保管庫のプロジェクトを論理パス順で取得する。
-    func fetchAllProjects(vaultId: UUID) throws -> [ProjectRecord] {
+    nonisolated func fetchAllProjects(vaultId: UUID) throws -> [ProjectRecord] {
         try dbQueue.read { db in
             try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         }
     }
 
-    func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
+    nonisolated func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
         try dbQueue.read { db in
             let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
             guard !projectIds.isEmpty else { return [] }
@@ -24,7 +24,7 @@ extension MeetingRepository {
         }
     }
 
-    func fetchProject(id: UUID) throws -> ProjectRecord? {
+    nonisolated func fetchProject(id: UUID) throws -> ProjectRecord? {
         try dbQueue.read { db in
             try ProjectRecord.fetchResolved(id: id, in: db)
         }
@@ -64,6 +64,140 @@ extension MeetingRepository {
             )
             try record.insert(db)
             return try ProjectRecord.fetchResolved(id: record.id, in: db) ?? record
+        }
+    }
+
+    nonisolated func createCustomerIntelligenceProject(
+        vaultId: UUID,
+        parentProjectId: UUID?,
+        name: String,
+        description: String,
+        projectType: ProjectType?,
+        organizationId: UUID,
+        now: Date = .now
+    ) throws -> ProjectRecord {
+        try dbQueue.write { db in
+            guard DahliaProjectName.normalizedName(name) == name else {
+                throw ProjectWorkspaceError.invalidName
+            }
+            guard let organization = try OrganizationRecord.fetchOne(db, key: organizationId),
+                  organization.vaultId == vaultId else {
+                throw CustomerIntelligenceError.invalidReference
+            }
+            if let parentProjectId {
+                guard let parent = try ProjectRecord.fetchOne(db, key: parentProjectId),
+                      parent.vaultId == vaultId else {
+                    throw ProjectWorkspaceError.projectNotFound
+                }
+                guard parent.parentProjectId == nil else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+                guard projectType == nil else {
+                    throw ProjectWorkspaceError.typeOwnedByRoot
+                }
+            }
+            guard try ProjectRecord
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("parentProjectId") == parentProjectId
+                        && Column("nameKey") == DahliaProjectName.siblingKey(name)
+                )
+                .fetchOne(db) == nil else {
+                throw ProjectWorkspaceError.projectAlreadyExists(name)
+            }
+
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vaultId,
+                parentProjectId: parentProjectId,
+                name: name,
+                createdAt: now,
+                description: description,
+                projectType: parentProjectId == nil ? (projectType ?? .undefined) : nil
+            )
+            try project.insert(db)
+            try ProjectResourceReferenceRecord(
+                id: .v7(),
+                projectId: project.id,
+                resourceType: .organization,
+                resourceId: organizationId,
+                relationLabel: "",
+                createdAt: now,
+                updatedAt: now
+            ).insert(db)
+            return try ProjectRecord.fetchResolved(id: project.id, in: db) ?? project
+        }
+    }
+
+    nonisolated func updateCustomerIntelligenceProject(
+        id: UUID,
+        vaultId: UUID,
+        parentProjectId: UUID?,
+        name: String,
+        description: String,
+        projectType: ProjectType,
+        vaultExportUpdates: [MeetingVaultExportUpdate],
+        expectedRevision: Int
+    ) throws -> ProjectRecord {
+        try dbQueue.write { db in
+            let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+            guard var project = records.first(where: { $0.id == id }) else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            guard project.revision == expectedRevision else {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
+            }
+            guard DahliaProjectName.normalizedName(name) == name else {
+                throw ProjectWorkspaceError.invalidName
+            }
+            let descendants = records.filter {
+                $0.id != id && ProjectRecord.belongsToHierarchy($0.path, prefix: project.path)
+            }
+            let descendantIDs = Set(descendants.map(\.id))
+            guard parentProjectId != id,
+                  parentProjectId.map({ !descendantIDs.contains($0) }) ?? true else {
+                throw ProjectWorkspaceError.cycleDetected
+            }
+            if let parentProjectId {
+                guard let parent = records.first(where: { $0.id == parentProjectId }) else {
+                    throw ProjectWorkspaceError.projectNotFound
+                }
+                guard parent.parentProjectId == nil, descendants.isEmpty else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+            }
+            guard !records.contains(where: {
+                $0.id != id
+                    && $0.parentProjectId == parentProjectId
+                    && $0.nameKey == DahliaProjectName.siblingKey(name)
+            }) else {
+                throw ProjectWorkspaceError.projectAlreadyExists(name)
+            }
+
+            let locationChanged = project.parentProjectId != parentProjectId || project.name != name
+            let typeChanged = parentProjectId == nil && project.projectType != projectType
+            let changed = locationChanged || typeChanged || project.description != description
+            guard changed else { return project }
+
+            project.parentProjectId = parentProjectId
+            project.name = name
+            project.description = description
+            project.projectType = parentProjectId == nil ? projectType : nil
+            project.revision += 1
+            try project.update(db)
+            if locationChanged || typeChanged {
+                try ProjectRecord.incrementRevisions(descendantIDs, in: db)
+            }
+            let meetingIds = Set(vaultExportUpdates.map(\.meetingId))
+            try Self.updateVaultExports(
+                vaultExportUpdates,
+                forMeetingIds: meetingIds,
+                in: db
+            )
+            guard let resolved = try ProjectRecord.fetchResolved(id: id, in: db) else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            return resolved
         }
     }
 

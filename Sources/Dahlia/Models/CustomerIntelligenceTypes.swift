@@ -11,12 +11,14 @@ enum CustomerResourceType: String, Codable, CaseIterable, DatabaseValueConvertib
     case contact
     case project
     case meeting
+    case topic
 }
 
-enum InsightReviewState: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {
-    case proposed
-    case accepted
-    case rejected
+enum ConversationTopicResourceType: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {
+    case organization
+    case contact
+    case project
+    case meeting
 }
 
 enum InsightReferenceRole: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {

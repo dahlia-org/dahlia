@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 final class ProjectWorkspaceService {
     typealias TrashHandler = @MainActor (URL) throws -> URL
-    typealias SummaryFileResolver = @MainActor (String?, URL) throws -> URL?
+    typealias SummaryFileResolver = @Sendable (String?, URL) throws -> URL?
     typealias StagedAudioRestorer = @MainActor ([BatchAudioCleanupService.StagedFile]) throws -> Void
 
     private struct SummaryRelocation {
@@ -29,12 +29,12 @@ final class ProjectWorkspaceService {
         let vaultExportUpdates: [MeetingRepository.MeetingVaultExportUpdate]
     }
 
-    private let repository: MeetingRepository
-    private let vault: VaultRecord
+    private nonisolated let repository: MeetingRepository
+    private nonisolated let vault: VaultRecord
     private let managedAudioRootURL: URL
     private let fileManager: FileManager
     private let trashHandler: TrashHandler
-    private let summaryFileResolver: SummaryFileResolver
+    private nonisolated let summaryFileResolver: SummaryFileResolver
     private let stagedAudioRestorer: StagedAudioRestorer
 
     init(
@@ -258,6 +258,62 @@ final class ProjectWorkspaceService {
         }
     }
 
+    nonisolated func updateProject(
+        id: UUID,
+        name: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        description: String,
+        expectedRevision: Int
+    ) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            guard project.revision == expectedRevision else {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
+            }
+            let name = try Self.validatedName(name)
+            let projects = try repository.fetchAllProjects(vaultId: vault.id)
+            let descendants = projects.filter {
+                $0.id != id && ProjectRecord.belongsToHierarchy($0.path, prefix: project.path)
+            }
+            let descendantIDs = Set(descendants.map(\.id))
+            guard parentProjectId != id,
+                  parentProjectId.map({ !descendantIDs.contains($0) }) ?? true else {
+                throw ProjectWorkspaceError.cycleDetected
+            }
+            let parent = try parentProjectId.map { parentID in
+                guard let parent = projects.first(where: { $0.id == parentID }) else {
+                    throw ProjectWorkspaceError.projectNotFound
+                }
+                guard parent.parentProjectId == nil, descendants.isEmpty else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+                return parent
+            }
+            let newPath = parent.map { "\($0.path)/\(name)" } ?? name
+            try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
+            let summaryPlan = if project.path == newPath {
+                ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
+            } else {
+                try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
+            }
+            return try performSummaryRelocations(summaryPlan.relocations) {
+                try repository.updateCustomerIntelligenceProject(
+                    id: id,
+                    vaultId: vault.id,
+                    parentProjectId: parentProjectId,
+                    name: name,
+                    description: description,
+                    projectType: projectType,
+                    vaultExportUpdates: summaryPlan.vaultExportUpdates,
+                    expectedRevision: expectedRevision
+                )
+            }
+        }
+    }
+
     func updateProjectDescription(
         id: UUID,
         description: String,
@@ -426,7 +482,7 @@ final class ProjectWorkspaceService {
         }
     }
 
-    static func validatedName(_ name: String) throws -> String {
+    nonisolated static func validatedName(_ name: String) throws -> String {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name.utf8.count <= 255 else { throw ProjectWorkspaceError.nameTooLong }
         guard DahliaProjectName.normalizedName(name) == name else {
@@ -437,13 +493,13 @@ final class ProjectWorkspaceService {
 }
 
 extension ProjectWorkspaceService {
-    private func withNotifyingMutation<T>(_ operation: () throws -> T) throws -> T {
+    private nonisolated func withNotifyingMutation<T>(_ operation: () throws -> T) throws -> T {
         let result = try withMutationLock(operation)
         DahliaWorkspaceChangeNotification.post(vaultID: vault.id)
         return result
     }
 
-    private func withMutationLock<T>(_ operation: () throws -> T) throws -> T {
+    private nonisolated func withMutationLock<T>(_ operation: () throws -> T) throws -> T {
         do {
             return try DahliaVaultMutationLock.withLock(
                 vaultURL: vault.url,
@@ -455,7 +511,7 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func ensureProjectDoesNotExist(path: String, excludingProjectId: UUID?) throws {
+    private nonisolated func ensureProjectDoesNotExist(path: String, excludingProjectId: UUID?) throws {
         let projects = try repository.fetchAllProjects(vaultId: vault.id)
         if projects.contains(where: {
             $0.id != excludingProjectId && ProjectRecord.pathKey($0.path) == ProjectRecord.pathKey(path)
@@ -574,10 +630,11 @@ extension ProjectWorkspaceService {
         return destinationDirectory
     }
 
-    private func projectSummaryMovePlan(
+    private nonisolated func projectSummaryMovePlan(
         oldPrefix: String,
         newPrefix: String
     ) throws -> ProjectSummaryMovePlan {
+        let fileManager = FileManager.default
         let meetingIds = try repository.meetingIds(projectHierarchy: oldPrefix, vaultId: vault.id)
         guard !meetingIds.isEmpty else {
             return ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
@@ -667,11 +724,12 @@ extension ProjectWorkspaceService {
         )
     }
 
-    private func protectedProjectSummaryIdentities(
+    private nonisolated func protectedProjectSummaryIdentities(
         candidates: [MeetingRepository.MeetingMoveCandidate],
         projectPaths: [UUID: String],
         meetingIds: Set<UUID>
     ) throws -> Set<DahliaWorkspaceFileIdentity> {
+        let fileManager = FileManager.default
         let externalPaths = try repository.externalVaultSummaryPaths(
             movingMeetingIds: meetingIds,
             vaultId: vault.id
@@ -696,7 +754,8 @@ extension ProjectWorkspaceService {
         return externalIdentities.union(retainedIdentities)
     }
 
-    private func validateOutputDirectory(_ directory: URL) throws {
+    private nonisolated func validateOutputDirectory(_ directory: URL) throws {
+        let fileManager = FileManager.default
         let root = vault.url.standardizedFileURL
         let candidate = directory.standardizedFileURL
         let rootComponents = root.pathComponents
@@ -725,10 +784,11 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func destinationConflicts(
+    private nonisolated func destinationConflicts(
         _ destination: URL,
         sourceIdentity: DahliaWorkspaceFileIdentity
     ) throws -> Bool {
+        let fileManager = FileManager.default
         let directory = destination.deletingLastPathComponent()
         guard fileManager.fileExists(atPath: directory.path) else { return false }
         let destinationKey = DahliaProjectName.siblingKey(destination.lastPathComponent)
@@ -744,20 +804,20 @@ extension ProjectWorkspaceService {
         return false
     }
 
-    private func isDirectoryInsideVault(_ url: URL) -> Bool {
+    private nonisolated func isDirectoryInsideVault(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             && isInsideVaultAfterResolvingSymlinks(url)
             && pathContainsNoSymlinks(url)
     }
 
-    private func isInsideVaultAfterResolvingSymlinks(_ url: URL) -> Bool {
+    private nonisolated func isInsideVaultAfterResolvingSymlinks(_ url: URL) -> Bool {
         let vaultPath = vault.url.resolvingSymlinksInPath().standardizedFileURL.path
         let candidatePath = url.resolvingSymlinksInPath().standardizedFileURL.path
         let prefix = vaultPath.hasSuffix("/") ? vaultPath : vaultPath + "/"
         return candidatePath == vaultPath || candidatePath.hasPrefix(prefix)
     }
 
-    private func pathContainsNoSymlinks(_ url: URL) -> Bool {
+    private nonisolated func pathContainsNoSymlinks(_ url: URL) -> Bool {
         let root = vault.url.standardizedFileURL
         let candidate = url.standardizedFileURL
         let rootComponents = root.pathComponents
@@ -775,7 +835,7 @@ extension ProjectWorkspaceService {
         return true
     }
 
-    static func resolveSummaryFile(storedRelativePath: String?, vaultURL: URL) throws -> URL? {
+    nonisolated static func resolveSummaryFile(storedRelativePath: String?, vaultURL: URL) throws -> URL? {
         guard let storedRelativePath,
               let fileURL = VaultSummaryFileLocator.fileURL(for: storedRelativePath, vaultURL: vaultURL),
               fileURL.pathExtension.lowercased() == "md"
@@ -792,7 +852,7 @@ extension ProjectWorkspaceService {
     }
 
     /// File system and SQLite operations cannot share a transaction. Runtime failures are compensated here.
-    private func performSummaryRelocations<Result>(
+    private nonisolated func performSummaryRelocations<Result>(
         _ relocations: [SummaryRelocation],
         operation: () throws -> Result
     ) throws -> Result {
@@ -838,7 +898,8 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func createOutputDirectories(for relocations: [SummaryRelocation]) throws -> [URL] {
+    private nonisolated func createOutputDirectories(for relocations: [SummaryRelocation]) throws -> [URL] {
+        let fileManager = FileManager.default
         let directories = Set(relocations.map { $0.destinationURL.deletingLastPathComponent().standardizedFileURL })
             .sorted { $0.pathComponents.count < $1.pathComponents.count }
         var created: [URL] = []
@@ -874,7 +935,7 @@ extension ProjectWorkspaceService {
         }
     }
 
-    private func removeNewEmptyDirectory(_ url: URL) throws {
+    private nonisolated func removeNewEmptyDirectory(_ url: URL) throws {
         let result: Int32 = url.withUnsafeFileSystemRepresentation { path in
             guard let path else { return -1 }
             return Darwin.rmdir(path)

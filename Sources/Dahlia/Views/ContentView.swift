@@ -11,6 +11,8 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
     private var permissionGuidePresentationVersion = 0
+    @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
+    private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
 
     var body: some View {
         NavigationSplitView {
@@ -45,6 +47,16 @@ struct ContentView: View {
                 }
                 .labelStyle(.iconOnly)
                 .help(L10n.manageProjects)
+
+                if isCustomerIntelligenceBetaEnabled {
+                    Button {
+                        openWindow(id: WindowID.organizationWorkspace)
+                    } label: {
+                        Label(L10n.customerIntelligence, systemImage: "building.2")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help(L10n.openOrganizationWorkspace)
+                }
 
                 SettingsLink {
                     Label(L10n.settingsMenuItem, systemImage: "gearshape")

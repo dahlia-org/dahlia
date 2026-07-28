@@ -60,11 +60,6 @@ import GRDB
                 vaultId: fixture.vault.id,
                 content: "Owner is the sponsor"
             )
-            let glossary = try fixture.repository.createGlossaryTerm(
-                vaultId: fixture.vault.id,
-                term: "DRI",
-                definition: "Directly responsible individual"
-            )
             _ = try fixture.repository.addProjectResourceReference(
                 projectId: project.id,
                 resourceType: .organization,
@@ -76,17 +71,10 @@ import GRDB
                 resourceId: contact.id,
                 role: .evidence
             )
-            _ = try fixture.repository.addGlossaryTermReference(
-                glossaryTermId: glossary.id,
-                resourceType: .meeting,
-                resourceId: meeting.id
-            )
-
             for (table, id) in [
                 (ContactRecord.databaseTableName, contact.id),
                 (MeetingRecord.databaseTableName, meeting.id),
                 (InsightRecord.databaseTableName, insight.id),
-                (GlossaryTermRecord.databaseTableName, glossary.id),
             ] {
                 #expect(throws: DatabaseError.self) {
                     try fixture.manager.dbQueue.write { db in
@@ -112,8 +100,6 @@ import GRDB
                     projectReferences: ProjectResourceReferenceRecord.fetchCount(db),
                     insights: InsightRecord.filter(Column("vaultId") == fixture.vault.id).fetchCount(db),
                     insightReferences: InsightReferenceRecord.fetchCount(db),
-                    glossaryTerms: GlossaryTermRecord.filter(Column("vaultId") == fixture.vault.id).fetchCount(db),
-                    glossaryReferences: GlossaryTermReferenceRecord.fetchCount(db),
                     foreignKeyFailures: Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
                 )
             }
@@ -128,13 +114,11 @@ import GRDB
             #expect(counts.projectReferences == 0)
             #expect(counts.insights == 0)
             #expect(counts.insightReferences == 0)
-            #expect(counts.glossaryTerms == 0)
-            #expect(counts.glossaryReferences == 0)
             #expect(counts.foreignKeyFailures.isEmpty)
         }
 
         @Test
-        func duplicateReferenceAPIsReturnPersistedRowsAndDefinitionsMustBeNonblank() throws {
+        func duplicateInsightReferenceReturnsPersistedRow() throws {
             let fixture = try CustomerIntelligenceFixture()
             let contact = try fixture.repository.upsertContact(
                 vaultId: fixture.vault.id,
@@ -144,11 +128,6 @@ import GRDB
             let insight = try fixture.repository.createInsight(
                 vaultId: fixture.vault.id,
                 content: "Owner is the sponsor"
-            )
-            let glossary = try fixture.repository.createGlossaryTerm(
-                vaultId: fixture.vault.id,
-                term: "DRI",
-                definition: "Directly responsible individual"
             )
             let firstDate = Date(timeIntervalSince1970: 1_800_000_000)
             let laterDate = firstDate.addingTimeInterval(60)
@@ -167,28 +146,7 @@ import GRDB
                 role: .evidence,
                 createdAt: laterDate
             )
-            let firstGlossaryReference = try fixture.repository.addGlossaryTermReference(
-                glossaryTermId: glossary.id,
-                resourceType: .contact,
-                resourceId: contact.id,
-                createdAt: firstDate
-            )
-            let duplicateGlossaryReference = try fixture.repository.addGlossaryTermReference(
-                glossaryTermId: glossary.id,
-                resourceType: .contact,
-                resourceId: contact.id,
-                createdAt: laterDate
-            )
-
             #expect(duplicateInsightReference == firstInsightReference)
-            #expect(duplicateGlossaryReference == firstGlossaryReference)
-            #expect(throws: CustomerIntelligenceError.invalidDefinition) {
-                try fixture.repository.createGlossaryTerm(
-                    vaultId: fixture.vault.id,
-                    term: "Empty",
-                    definition: " \n "
-                )
-            }
         }
     }
 

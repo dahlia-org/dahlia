@@ -19,6 +19,7 @@ public final class MeetingAccessStore: Sendable {
     ) throws {
         var configuration = Configuration()
         configuration.readonly = !allowsWrites
+        configuration.busyMode = .timeout(5)
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
         self.allowsWrites = allowsWrites
@@ -32,7 +33,10 @@ public final class MeetingAccessStore: Sendable {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
-        let cursor = try query.cursor.map { try MeetingCursor.decode($0, vaultID: vaultID) }
+        let cursorScope = meetingCursorScope(query)
+        let cursor = try query.cursor.map {
+            try MeetingCursor.decode($0, vaultID: vaultID, scope: cursorScope)
+        }
         let queryComponents = meetingQueryComponents(query, cursor: cursor)
 
         return try database.read { db in
@@ -42,7 +46,12 @@ public final class MeetingAccessStore: Sendable {
             let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
             let meetings = pageRows.map(Self.metadata(from:))
             let nextCursor = hasMore ? meetings.last.map {
-                MeetingCursor(vaultID: vaultID, createdAt: $0.createdAt, meetingID: $0.id).encoded()
+                MeetingCursor(
+                    vaultID: vaultID,
+                    scope: cursorScope,
+                    createdAt: $0.createdAt,
+                    meetingID: $0.id
+                ).encoded()
             } : nil
             return MeetingQueryPage(vault: vault, meetings: meetings, nextCursor: nextCursor)
         }
@@ -63,6 +72,57 @@ public final class MeetingAccessStore: Sendable {
             components.predicates.append("projects.id = ?")
             components.arguments += [projectID]
         }
+        if let organizationID = query.organizationID {
+            if query.includeOrganizationDescendants {
+                components.predicates.append("""
+                EXISTS (
+                    SELECT 1
+                    FROM meeting_participants AS organization_participants
+                    JOIN organization_memberships AS organization_memberships
+                      ON organization_memberships.contactId = organization_participants.contactId
+                    WHERE organization_participants.meetingId = meetings.id
+                      AND organization_memberships.organizationId IN (
+                          WITH RECURSIVE subtree(id, depth) AS (
+                              SELECT id, 0 FROM organizations WHERE id = ? AND vaultId = ?
+                              UNION ALL
+                              SELECT child.id, subtree.depth + 1
+                              FROM organizations AS child
+                              JOIN subtree ON child.parentOrganizationId = subtree.id
+                              WHERE child.vaultId = ? AND subtree.depth < 32
+                          )
+                          SELECT id FROM subtree
+                      )
+                )
+                """)
+                components.arguments += [organizationID, vaultID, vaultID]
+            } else {
+                components.predicates.append("""
+                EXISTS (
+                    SELECT 1
+                    FROM meeting_participants AS organization_participants
+                    JOIN organization_memberships AS organization_memberships
+                      ON organization_memberships.contactId = organization_participants.contactId
+                    WHERE organization_participants.meetingId = meetings.id
+                      AND organization_memberships.organizationId = ?
+                )
+                """)
+                components.arguments += [organizationID]
+            }
+        }
+        if let topicID = query.topicID {
+            components.predicates.append("""
+            EXISTS (
+                SELECT 1 FROM conversation_topic_references
+                JOIN conversation_topics
+                  ON conversation_topics.id = conversation_topic_references.topicId
+                WHERE conversation_topic_references.resourceType = 'meeting'
+                  AND conversation_topic_references.resourceId = meetings.id
+                  AND conversation_topics.id = ?
+                  AND conversation_topics.vaultId = meetings.vaultId
+            )
+            """)
+            components.arguments += [topicID]
+        }
         let trimmedIcalUID = query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedIcalUID, !trimmedIcalUID.isEmpty {
             components.predicates.append("meetings.calendar_event_ical_uid = ?")
@@ -82,6 +142,24 @@ public final class MeetingAccessStore: Sendable {
         }
         components.arguments += [query.limit + 1]
         return components
+    }
+
+    private func meetingCursorScope(_ query: MeetingQuery) -> String {
+        let components = MeetingCursorFilterScope(
+            query: query.query?.trimmingCharacters(in: .whitespacesAndNewlines),
+            project: query.project?.trimmingCharacters(in: .whitespacesAndNewlines),
+            projectID: query.projectID,
+            organizationID: query.organizationID,
+            includesOrganizationDescendants: query.includeOrganizationDescendants,
+            topicID: query.topicID,
+            icalUID: query.icalUID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdFrom: query.createdFrom,
+            createdBefore: query.createdBefore
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(components) else { return "meetings" }
+        return data.base64EncodedString()
     }
 
     private func meetingRows(in db: Database, components: QueryComponents) throws -> [Row] {
@@ -390,6 +468,18 @@ public final class MeetingAccessStore: Sendable {
             throw MeetingAccessError.invalidTimeRange
         }
     }
+}
+
+private struct MeetingCursorFilterScope: Codable {
+    let query: String?
+    let project: String?
+    let projectID: UUID?
+    let organizationID: UUID?
+    let includesOrganizationDescendants: Bool
+    let topicID: UUID?
+    let icalUID: String?
+    let createdFrom: Date?
+    let createdBefore: Date?
 }
 
 extension MeetingAccessStore {
@@ -792,6 +882,7 @@ private struct QueryComponents {
 
 private struct MeetingCursor: Codable {
     let vaultID: UUID
+    let scope: String
     let createdAt: Date
     let meetingID: UUID
 
@@ -799,9 +890,9 @@ private struct MeetingCursor: Codable {
         AccessCursorCodec.encode(self)
     }
 
-    static func decode(_ value: String, vaultID: UUID) throws -> Self {
+    static func decode(_ value: String, vaultID: UUID, scope: String) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.vaultID == vaultID
+            cursor.vaultID == vaultID && cursor.scope == scope
         }
     }
 }

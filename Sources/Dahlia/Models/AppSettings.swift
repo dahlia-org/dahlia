@@ -98,6 +98,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
+    nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
+    nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
+    nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
+    nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
+    nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let summaryPreviousMeetingCountOptions = [0, 1, 2, 3, 4, 5]
     nonisolated static let defaultSummaryPreviousMeetingCount = 3
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
@@ -107,6 +112,20 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
     }
+
+    // MARK: - ベータ機能
+
+    @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
+    var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
+
+    @AppStorage(AppSettings.customerIntelligenceSectionUserDefaultsKey)
+    var customerIntelligenceSectionRawValue = CustomerIntelligenceSection.overview.rawValue
+
+    @AppStorage(AppSettings.customerIntelligenceScopeUserDefaultsKey)
+    var customerIntelligenceScopeRawValue = ""
+
+    @AppStorage(AppSettings.customerIntelligenceTableDensityUserDefaultsKey)
+    var customerIntelligenceTableDensityRawValue = CustomerIntelligenceTableDensity.standard.rawValue
 
     // MARK: - 表示言語
 

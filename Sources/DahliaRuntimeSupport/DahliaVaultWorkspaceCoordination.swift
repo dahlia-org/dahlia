@@ -44,10 +44,10 @@ public enum DahliaWorkspaceChangeNotification {
         Notification.Name(prefix + vaultID.uuidString.lowercased())
     }
 
-    public static func post(vaultID: UUID) {
+    public static func post(vaultID: UUID, senderID: String? = nil) {
         DistributedNotificationCenter.default().postNotificationName(
             name(vaultID: vaultID),
-            object: nil,
+            object: senderID,
             userInfo: nil,
             deliverImmediately: true
         )

@@ -19,7 +19,7 @@ final class MeetingRepository {
         let relativePath: String?
     }
 
-    static func updateVaultExports(
+    nonisolated static func updateVaultExports(
         _ updates: [MeetingVaultExportUpdate],
         forMeetingIds meetingIds: Set<UUID>,
         in db: Database
@@ -50,7 +50,7 @@ final class MeetingRepository {
 
     private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
-    let dbQueue: DatabaseQueue
+    nonisolated let dbQueue: DatabaseQueue
 
     nonisolated init(dbQueue: DatabaseQueue) {
         self.dbQueue = dbQueue
@@ -267,7 +267,7 @@ final class MeetingRepository {
         try deleteMeetings(ids: ids)
     }
 
-    func fetchMeetingMoveCandidates(ids: Set<UUID>, vaultId: UUID) throws -> [MeetingMoveCandidate] {
+    nonisolated func fetchMeetingMoveCandidates(ids: Set<UUID>, vaultId: UUID) throws -> [MeetingMoveCandidate] {
         guard !ids.isEmpty else { return [] }
         return try dbQueue.read { db in
             let meetings = try MeetingRecord
@@ -292,7 +292,7 @@ final class MeetingRepository {
         }
     }
 
-    func externalVaultSummaryPaths(
+    nonisolated func externalVaultSummaryPaths(
         movingMeetingIds: Set<UUID>,
         vaultId: UUID
     ) throws -> [String] {

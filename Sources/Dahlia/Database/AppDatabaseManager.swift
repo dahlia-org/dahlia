@@ -24,7 +24,9 @@ final class AppDatabaseManager: Sendable {
                 withIntermediateDirectories: true
             )
         }
-        dbQueue = try DatabaseQueue(path: path)
+        var configuration = Configuration()
+        configuration.busyMode = .timeout(5)
+        dbQueue = try DatabaseQueue(path: path, configuration: configuration)
         try Self.migrator.migrate(dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
@@ -140,6 +142,24 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v26_meetingSidebarPagingIndex") { db in
             try addMeetingSidebarPagingIndexIfNeeded(in: db)
+        }
+
+        migrator.registerMigration(
+            "v27_customerIntelligenceWorkspace",
+            foreignKeyChecks: .deferred
+        ) { db in
+            try CustomerIntelligenceWorkspaceMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v28_customerIntelligenceTopicReferenceTimestamp") { db in
+            try CustomerIntelligenceTopicReferenceTimestampMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration(
+            "v29_customerIntelligenceDirectCRUD",
+            foreignKeyChecks: .deferred
+        ) { db in
+            try CustomerIntelligenceDirectCRUDMigration.migrate(in: db)
         }
 
         return migrator

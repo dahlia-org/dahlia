@@ -59,6 +59,7 @@ enum CustomerIntelligencePersistence {
             .fetchOne(db) {
             if existing.displayName == nil, let displayName {
                 existing.displayName = displayName
+                existing.revision += 1
                 existing.updatedAt = max(existing.updatedAt, now)
                 try existing.update(db)
             }
@@ -70,6 +71,7 @@ enum CustomerIntelligencePersistence {
             vaultId: vaultId,
             email: email,
             displayName: displayName,
+            revision: 1,
             createdAt: now,
             updatedAt: now
         )
@@ -107,6 +109,7 @@ enum CustomerIntelligencePersistence {
             parentOrganizationId: nil,
             nodeKind: .organization,
             name: domainName,
+            revision: 1,
             createdAt: observedAt,
             updatedAt: observedAt
         )
@@ -161,7 +164,7 @@ enum CustomerIntelligencePersistence {
             let contact = try upsertCanonicalContact(
                 vaultId: vaultId,
                 email: email,
-                displayName: participant.displayName,
+                displayName: contactName(fromCanonicalEmail: email),
                 now: observedAt,
                 in: db
             )
@@ -193,6 +196,10 @@ enum CustomerIntelligencePersistence {
             )
         }
         return selection.metrics(ingestedContactCount: selection.participants.count)
+    }
+
+    private static func contactName(fromCanonicalEmail email: String) -> String {
+        String(email.prefix { $0 != "@" })
     }
 
     private static func canonicalParticipants(

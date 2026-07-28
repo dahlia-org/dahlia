@@ -90,8 +90,8 @@ Project deletion stages managed audio before its database transaction and restor
 Project output directories and unrelated files; the UI can optionally move tracked Summary files to the Trash when it
 also deletes the Meetings. A rollback failure is reported explicitly.
 
-Meeting–Project is an exclusive membership: a Meeting has zero or one `projectId`. It is intentionally named
-“membership” in MCP and must not be confused with a possible future many-to-many link.
+Meeting–Project is an exclusive assignment: a Meeting has zero or one `projectId`. MCP therefore names this relation
+`set_meeting_project_assignment` / `remove_meeting_project_assignment`.
 
 ## MCP contract
 
@@ -112,13 +112,14 @@ Write tools:
 
 - `create_project`
 - `update_project`
-- `set_meeting_project_memberships`
+- `set_meeting_project_assignment`
+- `remove_meeting_project_assignment`
 
 Project updates require the current `revision`. Omitted JSON properties are unchanged; `parent_project_id: null` means
-move to the Vault root. Project creation and rename use `name`; callers never submit a path. Meeting membership
-batches require an expected current Project ID, including explicit `null`, for every Meeting. One stale expectation
-rejects the entire batch. Every MCP process can read only its fixed Vault; write-enabled processes can mutate only that
-Vault, use the same Vault mutation lock as the app, and notify the running app after commits.
+move to the Vault root. Project creation and rename use `name`; callers never submit a path. A Meeting assignment call
+requires its expected current Project ID, including explicit `null`, and changes one Meeting. Every MCP process can read
+only its fixed Vault; write-enabled processes can mutate only that Vault, use the same Vault mutation lock as the app,
+and notify the running app after commits.
 
 Project deletion and merge are not exposed through MCP. A future design must define Meeting relocation, non-empty and
 missing output directories, Summary handling, and recovery before adding those tools. Organization/Person associations

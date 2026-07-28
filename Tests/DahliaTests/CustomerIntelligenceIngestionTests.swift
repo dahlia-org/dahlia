@@ -128,10 +128,10 @@ import GRDB
                 return (contacts, organizations, domains, memberships, participants)
             }
 
-            #expect(result.0.map { $0.email } == ["alice@acme.com", "personal@gmail.com"])
-            #expect(result.0.first?.displayName == "Alice")
-            #expect(result.1.map { $0.name } == ["acme.com"])
-            #expect(result.2.map { $0.domainName } == ["acme.com"])
+            #expect(result.0.map(\.email) == ["alice@acme.com", "personal@gmail.com"])
+            #expect(result.0.map(\.displayName) == ["alice", "personal"])
+            #expect(result.1.map(\.name) == ["acme.com"])
+            #expect(result.2.map(\.domainName) == ["acme.com"])
             #expect(result.2.first?.isPrimary == true)
             #expect(result.3.count == 1)
             #expect(result.4.count == 2)
@@ -178,6 +178,78 @@ import GRDB
                 .map(\.name)
                 .sorted()
             #expect(names == ["example.co.jp", "mail.example.co.jp"])
+        }
+
+        @Test
+        func calendarFreshnessAndParticipantUpdatesIncreaseEntityRevisions() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let meeting = try fixture.insertMeeting()
+            let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+            func event(displayName: String?, role: MeetingParticipantRole) -> CalendarEvent {
+                CalendarEvent(
+                    id: "revision-event",
+                    calendarID: "calendar",
+                    calendarName: "Work",
+                    calendarColorHex: nil,
+                    platformId: "revision-event",
+                    title: "Revision",
+                    description: "",
+                    icalUid: "revision@example.com",
+                    startDate: observedAt,
+                    endDate: observedAt.addingTimeInterval(1800),
+                    isAllDay: false,
+                    participants: [
+                        CalendarParticipant(
+                            email: "person@acme.example",
+                            displayName: displayName,
+                            role: role,
+                            responseStatus: .accepted,
+                            kind: .person,
+                            isCurrentUser: false,
+                            source: "google"
+                        ),
+                    ],
+                    conferenceURI: nil
+                )
+            }
+
+            try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(displayName: nil, role: .unknown),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: observedAt,
+                dbQueue: fixture.manager.dbQueue
+            )
+            let first = try await fixture.manager.dbQueue.read { db in
+                let contact = try ContactRecord
+                    .filter(Column("vaultId") == fixture.vault.id)
+                    .fetchOne(db)
+                let organization = try OrganizationRecord
+                    .filter(Column("vaultId") == fixture.vault.id)
+                    .fetchOne(db)
+                return (contact, organization)
+            }
+            let firstContact = try #require(first.0)
+            let firstOrganization = try #require(first.1)
+            #expect(firstContact.displayName == "person")
+
+            try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(displayName: "Person", role: .required),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: observedAt.addingTimeInterval(60),
+                dbQueue: fixture.manager.dbQueue
+            )
+            let second = try await fixture.manager.dbQueue.read { db in
+                let contact = try ContactRecord.fetchOne(db, key: firstContact.id)
+                let organization = try OrganizationRecord.fetchOne(db, key: firstOrganization.id)
+                return (contact, organization)
+            }
+            let secondContact = try #require(second.0)
+            let secondOrganization = try #require(second.1)
+            #expect(secondContact.displayName == "person")
+            #expect(secondContact.revision == firstContact.revision + 1)
+            #expect(secondOrganization.revision == firstOrganization.revision + 1)
         }
 
         private func participant(email: String) -> CalendarParticipant {

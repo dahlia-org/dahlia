@@ -20,3 +20,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0009](0009-execution-context-and-degradation-order.md) | Concurrency / UI responsiveness | 実行コンテキストの判断基準と負荷時の縮退順序を定める | Accepted; partially supersedes 0002 |
 | [0010](0010-database-canonical-bounded-project-hierarchy.md) | Project workspace | DB 正本の2段階 Project 階層と派生 Summary 出力先を採用する | Accepted; amends 0005 |
 | [0011](0011-vault-scoped-customer-intelligence.md) | Customer intelligence | Vault単位の型付き正準データとAI示唆を分離する | Accepted; amends 0005, builds on 0010 |
+| [0012](0012-reviewable-customer-intelligence-workspace.md) | Customer intelligence / UI | 単一顧客の組織ビューと単数 CRUD による逐次AI更新を採用する | Accepted; amends 0011 |

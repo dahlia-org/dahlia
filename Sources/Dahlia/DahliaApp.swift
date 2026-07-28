@@ -6,6 +6,7 @@ enum WindowID {
     static let main = "main"
     static let vaultManager = "vault-manager"
     static let projectManager = "project-manager"
+    static let organizationWorkspace = "organization-workspace"
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
     static let codexChat = "codex-chat"
@@ -109,6 +110,7 @@ struct DahliaApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
+            OrganizationWorkspaceCommands()
         }
 
         WindowGroup(L10n.chat, id: WindowID.codexChat, for: CodexChatSessionID.self) { $sessionID in
@@ -139,6 +141,16 @@ struct DahliaApp: App {
         Window(L10n.projectManagement, id: WindowID.projectManager) {
             ProjectManagementView(sidebarViewModel: sidebarViewModel)
         }
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
+
+        Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
+            OrganizationWorkspaceView(
+                sidebarViewModel: sidebarViewModel,
+                chatCoordinator: chatCoordinator
+            )
+        }
+        .defaultSize(width: 1380, height: 820)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
 

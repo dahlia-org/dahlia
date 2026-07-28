@@ -493,6 +493,29 @@ import GRDB
         }
 
         @Test
+        func updatesProjectFromAWorkerExecutor() async throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+
+            let project = try context.service.createProject(name: "Original", parentProjectId: nil)
+            let service = context.service
+            let updated = try await Task.detached(priority: .userInitiated) {
+                try service.updateProject(
+                    id: project.id,
+                    name: "Updated",
+                    parentProjectId: nil,
+                    projectType: .customer,
+                    description: "Edited away from MainActor",
+                    expectedRevision: project.revision
+                )
+            }.value
+
+            #expect(updated.name == "Updated")
+            #expect(updated.description == "Edited away from MainActor")
+            #expect(updated.projectType == .customer)
+        }
+
+        @Test
         func restoresSummaryAndRemovesNewOutputDirectoryWhenRenameDatabaseUpdateFails() throws {
             let context = try makeContext()
             defer { try? FileManager.default.removeItem(at: context.rootURL) }

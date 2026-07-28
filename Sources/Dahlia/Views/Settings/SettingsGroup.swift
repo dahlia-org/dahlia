@@ -26,7 +26,7 @@ enum SettingsGroup: CaseIterable, Identifiable {
         case .recording: [.transcription, .liveSubtitles, .screenshots]
         case .integrations: [.calendar, .cloudStorage]
         case .ai: [.modelProvider, .aiSummary, .mcp]
-        case .advanced: [.developer, .audioDiagnostics]
+        case .advanced: [.betaFeatures, .developer, .audioDiagnostics]
         }
     }
 }

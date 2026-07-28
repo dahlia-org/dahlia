@@ -16,6 +16,10 @@ actor CodexChatService: CodexChatServicing {
     When neither a meeting:<UUID> word nor a Type: Meeting context is present, start with query_meetings.
     Then use get_meeting for a selected meeting's summary.
     Call get_meeting_transcript only when the original wording or detail is needed.
+    Before changing customer intelligence, query or get the current record. Use the specific create, update, delete, set,
+    remove, or resolve tool for exactly one record or relationship per call. Delete Organizations from the leaves upward
+    after removing Contact memberships. Delete a Contact only after removing all supported references. Continue independent
+    later changes when one call fails; re-fetch and retry only the failed record. Do not invent or change Meeting participants.
     Do not execute commands, access files, use external services other than web search, or request permissions.
     """
 
@@ -158,6 +162,7 @@ actor CodexChatService: CodexChatServicing {
         effort: String
     ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
         var params: [String: JSONValue] = [
+            "approvalsReviewer": .string("auto_review"),
             "effort": .string(effort),
             "input": .array(inputs.map(Self.jsonInput)),
             "summary": .string("auto"),
