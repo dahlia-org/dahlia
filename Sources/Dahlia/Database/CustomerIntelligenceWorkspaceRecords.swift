@@ -1,4 +1,3 @@
-import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
@@ -25,38 +24,6 @@ struct ConversationTopicReferenceRecord: Codable, FetchableRecord, PersistableRe
     var updatedAt: Date
 }
 
-struct CustomerIntelligenceProposalRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
-    static let databaseTableName = "customer_intelligence_proposals"
-
-    var id: UUID
-    var vaultId: UUID
-    var operationType: String
-    var payloadJSON: String
-    var status: CustomerIntelligenceProposalStatus
-    var staleReason: String?
-    var revision: Int
-    var createdAt: Date
-    var updatedAt: Date
-}
-
-struct CustomerIntelligenceProposalEvidenceRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
-    static let databaseTableName = "customer_intelligence_proposal_evidence"
-
-    var proposalId: UUID
-    var resourceType: String
-    var resourceId: UUID
-    var note: String?
-    var createdAt: Date
-}
-
-struct CustomerIntelligenceProposalDependencyRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
-    static let databaseTableName = "customer_intelligence_proposal_dependencies"
-
-    var proposalId: UUID
-    var requiredProposalId: UUID
-    var createdAt: Date
-}
-
 struct ConversationTopicOverview: Equatable, Identifiable, Sendable {
     let topic: ConversationTopicRecord
     let lastDiscussedAt: Date?
@@ -66,19 +33,10 @@ struct ConversationTopicOverview: Equatable, Identifiable, Sendable {
     var id: UUID { topic.id }
 }
 
-struct CustomerIntelligenceProposalOverview: Equatable, Identifiable, Sendable {
-    let proposal: CustomerIntelligenceProposalRecord
-    let evidence: [CustomerIntelligenceProposalEvidenceRecord]
-    let dependencies: [UUID]
-
-    var id: UUID { proposal.id }
-}
-
 struct ProvisionalContactDeletionImpact: Equatable, Sendable {
     let memberships: Int
     let projects: Int
     let insights: Int
-    let glossaryTerms: Int
     let topics: Int
     let meetingParticipants: Int
 }

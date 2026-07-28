@@ -144,7 +144,7 @@ struct DahliaApp: App {
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
 
-        Window(L10n.organizations, id: WindowID.organizationWorkspace) {
+        Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
             OrganizationWorkspaceView(
                 sidebarViewModel: sidebarViewModel,
                 chatCoordinator: chatCoordinator

@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted; amends ADR 0005 and builds on ADR 0010
+Accepted; amends ADR 0005 and builds on ADR 0010. The Glossary portion was superseded by
+[ADR 0012](0012-reviewable-customer-intelligence-workspace.md) and removed from the unreleased v25/v26 schema before
+release.
+
+The Glossary references below describe the original design exploration and are retained as decision history; they were
+never part of a released product, database, or MCP contract.
 
 ## Context
 
@@ -34,7 +39,7 @@ Keep stable concepts in typed SQLite tables:
 - `project_resource_references` relates a Project to an Organization, unit, or Contact without making one organization
   foreign key canonical for every Project.
 - `glossary_terms` stores stable terms and definitions.
-- `insights` stores assertions and review state. Rank, confidence, model, prompt, provenance, review timestamps, and
+- `insights` stores assertions and a Boolean acceptance flag. Rank, confidence, model, prompt, provenance, review timestamps, and
   other evolving attributes stay in `metadataJSON` until their semantics are stable.
 
 Only Contacts, Organizations, domains, memberships, and Meeting participants have an automatic production writer in
@@ -73,7 +78,7 @@ triggers remove references. Readers tolerate a missing resolved display name as 
 but never resolve it from another Vault. `relationLabel` uses an empty string for an unlabeled relation so its composite
 unique constraint also deduplicates unlabeled links; SQLite `NULL` would not.
 
-Accepting or rejecting an Insight changes only its review state and optional metadata. It never mutates an Organization,
+Changing an Insight's acceptance flag changes only the Insight and optional metadata. It never mutates an Organization,
 Contact, membership, Project relation, Meeting, or Glossary term. A future write-back must be a separate explicit
 operation with its own validation.
 

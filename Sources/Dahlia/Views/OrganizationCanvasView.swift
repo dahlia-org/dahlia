@@ -1,53 +1,80 @@
 import SwiftUI
 
 struct OrganizationCanvasView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var model: OrganizationWorkspaceViewModel
     @Binding var zoom: CGFloat
+    @GestureState private var gestureMagnification: CGFloat = 1
+    @State private var scrollPosition = ScrollPosition()
 
     var body: some View {
         let nodes = model.visibleNodes
-        ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                ZStack(alignment: .topLeading) {
-                    relationshipLines(nodes)
-                    ForEach(nodes) { node in
-                        if let position = model.canvasLayout.positions[node.id] {
-                            nodeCard(node)
-                                .frame(
-                                    width: OrganizationCanvasLayout.nodeSize.width,
-                                    height: OrganizationCanvasLayout.nodeSize.height
-                                )
-                                .position(
-                                    x: position.x + OrganizationCanvasLayout.nodeSize.width / 2,
-                                    y: position.y + OrganizationCanvasLayout.nodeSize.height / 2
-                                )
-                                .id(node.id)
-                        }
+        let renderedZoom = OrganizationCanvasZoom.applying(
+            magnification: gestureMagnification,
+            to: zoom
+        )
+        ScrollView([.horizontal, .vertical]) {
+            ZStack(alignment: .topLeading) {
+                relationshipLines(nodes)
+                ForEach(nodes) { node in
+                    if let position = model.canvasLayout.positions[node.id] {
+                        nodeCard(node)
+                            .frame(
+                                width: OrganizationCanvasLayout.nodeSize.width,
+                                height: OrganizationCanvasLayout.nodeSize.height
+                            )
+                            .position(
+                                x: position.x + OrganizationCanvasLayout.nodeSize.width / 2,
+                                y: position.y + OrganizationCanvasLayout.nodeSize.height / 2
+                            )
+                            .id(node.id)
                     }
                 }
-                .frame(
-                    width: max(model.canvasLayout.size.width, 320),
-                    height: max(model.canvasLayout.size.height, 320),
-                    alignment: .topLeading
-                )
-                .scaleEffect(zoom, anchor: .topLeading)
-                .frame(
-                    width: max(model.canvasLayout.size.width * zoom, 320),
-                    height: max(model.canvasLayout.size.height * zoom, 320),
-                    alignment: .topLeading
-                )
             }
-            .onChange(of: model.selectedNodeID) { _, id in
-                guard let id else { return }
-                withAnimation { proxy.scrollTo(id, anchor: .center) }
-            }
-            .onChange(of: model.canvasLayout) { _, _ in
-                guard let id = model.selectedNodeID else { return }
-                withAnimation { proxy.scrollTo(id, anchor: .center) }
-            }
+            .frame(
+                width: max(model.canvasLayout.size.width, 320),
+                height: max(model.canvasLayout.size.height, 320),
+                alignment: .topLeading
+            )
+            .scaleEffect(renderedZoom, anchor: .topLeading)
+            .frame(
+                width: max(model.canvasLayout.size.width * renderedZoom, 320),
+                height: max(model.canvasLayout.size.height * renderedZoom, 320),
+                alignment: .topLeading
+            )
+        }
+        .scrollPosition($scrollPosition)
+        .onChange(of: model.selectedNodeID) { _, id in
+            guard let id else { return }
+            scrollToNode(id)
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .simultaneousGesture(magnifyGesture)
         .accessibilityLabel(L10n.organizationCanvas)
+    }
+
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0)
+            .updating($gestureMagnification) { value, magnification, _ in
+                magnification = value.magnification
+            }
+            .onEnded { value in
+                zoom = OrganizationCanvasZoom.applying(
+                    magnification: value.magnification,
+                    to: zoom
+                )
+            }
+    }
+
+    private func scrollToNode(_ id: UUID) {
+        if reduceMotion {
+            scrollPosition.scrollTo(id: id, anchor: .center)
+        } else {
+            withAnimation {
+                scrollPosition.scrollTo(id: id, anchor: .center)
+            }
+        }
     }
 
     private func relationshipLines(_ nodes: [OrganizationWorkspaceNode]) -> some View {
@@ -84,49 +111,10 @@ struct OrganizationCanvasView: View {
         let isTopicRelated = model.selectedTopicID == nil
             || model.highlightedOrganizationIDs.isEmpty
             || model.highlightedOrganizationIDs.contains(node.id)
-        return VStack(alignment: .leading, spacing: 8) {
-            Button {
-                Task { await model.selectNode(node.id) }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: node.organization.nodeKind == .organization ? "building.2" : "rectangle.3.group")
-                        .foregroundStyle(.tint)
-                    Text(node.organization.name)
-                        .font(.headline)
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                }
-            }
-            .buttonStyle(.plain)
-
-            HStack(spacing: 8) {
-                Label("\(node.childCount)", systemImage: "arrow.triangle.branch")
-                if node.childCount > 0 {
-                    Button {
-                        Task { await model.toggleExpansion(node.id) }
-                    } label: {
-                        Image(systemName: model.expandedNodeIDs.contains(node.id)
-                            ? "chevron.down.circle" : "chevron.right.circle")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        model.expandedNodeIDs.contains(node.id) ? L10n.collapse : L10n.expand
-                    )
-                }
-                if model.expandedNodeIDs.contains(node.id),
-                   (model.loadedChildCounts[node.id] ?? 0) < node.childCount {
-                    Button(L10n.loadMore) {
-                        Task { await model.loadMoreChildren(of: node.id) }
-                    }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                    .disabled(model.loadingChildNodeIDs.contains(node.id))
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        return ZStack(alignment: .topLeading) {
+            nodeSelectionButton(node, isSelected: isSelected)
+            nodeCardContent(node)
         }
-        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(nsColor: .windowBackgroundColor))
@@ -138,6 +126,68 @@ struct OrganizationCanvasView: View {
         .contentShape(.rect)
         .opacity(isTopicRelated ? 1 : 0.28)
         .accessibilityElement(children: .contain)
+    }
+
+    private func nodeSelectionButton(
+        _ node: OrganizationWorkspaceNode,
+        isSelected: Bool
+    ) -> some View {
+        Button {
+            Task { await model.selectNode(node.id) }
+        } label: {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(node.organization.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func nodeCardContent(_ node: OrganizationWorkspaceNode) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: node.organization.nodeKind == .organization ? "building.2" : "rectangle.3.group")
+                    .foregroundStyle(.tint)
+                Text(node.organization.name)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .allowsHitTesting(false)
+
+            nodeControls(node)
+        }
+        .padding(12)
+    }
+
+    private func nodeControls(_ node: OrganizationWorkspaceNode) -> some View {
+        HStack(spacing: 8) {
+            Label("\(node.childCount)", systemImage: "arrow.triangle.branch")
+                .allowsHitTesting(false)
+            if node.childCount > 0 {
+                Button {
+                    Task { await model.toggleExpansion(node.id) }
+                } label: {
+                    Image(systemName: model.expandedNodeIDs.contains(node.id)
+                        ? "chevron.down.circle" : "chevron.right.circle")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    model.expandedNodeIDs.contains(node.id) ? L10n.collapse : L10n.expand
+                )
+            }
+            if model.expandedNodeIDs.contains(node.id),
+               (model.loadedChildCounts[node.id] ?? 0) < node.childCount {
+                Button(L10n.loadMore) {
+                    Task { await model.loadMoreChildren(of: node.id) }
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .disabled(model.loadingChildNodeIDs.contains(node.id))
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }

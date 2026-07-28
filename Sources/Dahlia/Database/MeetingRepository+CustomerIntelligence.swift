@@ -57,7 +57,7 @@ extension MeetingRepository {
         }
     }
 
-    func upsertContact(
+    nonisolated func upsertContact(
         vaultId: UUID,
         email: String,
         displayName: String?,
@@ -89,7 +89,7 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.contactNotFound
             }
             if let expectedRevision, contact.revision != expectedRevision {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             contact.displayName = CustomerIdentityNormalizer.displayName(displayName)
             contact.revision += 1
@@ -170,7 +170,7 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.organizationNotFound
             }
             if let expectedRevision, organization.revision != expectedRevision {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             guard let name = CustomerIdentityNormalizer.organizationName(name) else {
                 throw CustomerIntelligenceError.invalidName
@@ -198,7 +198,7 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.organizationNotFound
             }
             if let expectedRevision, organization.revision != expectedRevision {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             organization.parentOrganizationId = parentOrganizationId
             organization.revision += 1
@@ -227,11 +227,11 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.organizationNotFound
             }
             guard expectedRevision.map({ $0 == organization.revision }) ?? true else {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             if let expectedImpact,
                try Self.organizationDeletionImpact(id: id, vaultId: vaultId, in: db) != expectedImpact {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             let subtreeIDs = try UUID.fetchAll(
                 db,
@@ -252,16 +252,15 @@ extension MeetingRepository {
                 """,
                 arguments: [id, vaultId, vaultId, CustomerIntelligenceMigration.maximumOrganizationDepth]
             )
-            try Self.markProposalsStale(
-                vaultId: vaultId,
-                referencing: Set(subtreeIDs),
-                reason: "organizationDeleted",
-                now: now,
+            let owners = try Self.referenceOwnerIDs(
+                resourceType: .organization,
+                resourceIDs: subtreeIDs,
                 in: db
             )
             for subtreeID in subtreeIDs {
                 _ = try OrganizationRecord.deleteOne(db, key: subtreeID)
             }
+            try Self.incrementReferenceOwnerRevisions(owners, now: now, in: db)
         }
     }
 
@@ -377,7 +376,7 @@ extension MeetingRepository {
                     sql: "SELECT revision FROM organizations WHERE id = ?",
                     arguments: [organizationId]
                 ) == expectedOrganizationRevision else {
-                    throw CustomerIntelligenceError.proposalConflict
+                    throw CustomerIntelligenceError.revisionConflict
                 }
             }
             let normalizedRole = CustomerIdentityNormalizer.displayName(roleLabel)
@@ -413,7 +412,7 @@ extension MeetingRepository {
                     sql: "SELECT revision FROM organizations WHERE id = ?",
                     arguments: [organizationId]
                 ) == expectedOrganizationRevision else {
-                    throw CustomerIntelligenceError.proposalConflict
+                    throw CustomerIntelligenceError.revisionConflict
                 }
             }
             _ = try OrganizationMembershipRecord
@@ -465,13 +464,26 @@ extension MeetingRepository {
                 updatedAt: now
             )
             try reference.insert(db)
+            try db.execute(
+                sql: "UPDATE projects SET revision = revision + 1 WHERE id = ?",
+                arguments: [projectId]
+            )
             return reference
         }
     }
 
     func deleteProjectResourceReference(id: UUID) throws {
         try dbQueue.write { db in
-            _ = try ProjectResourceReferenceRecord.deleteOne(db, key: id)
+            guard let reference = try ProjectResourceReferenceRecord.fetchOne(db, key: id) else {
+                return
+            }
+            guard try ProjectResourceReferenceRecord.deleteOne(db, key: id) else {
+                return
+            }
+            try db.execute(
+                sql: "UPDATE projects SET revision = revision + 1 WHERE id = ?",
+                arguments: [reference.projectId]
+            )
         }
     }
 
@@ -480,7 +492,7 @@ extension MeetingRepository {
     func createInsight(
         vaultId: UUID,
         content: String,
-        reviewState: InsightReviewState = .proposed,
+        isAccepted: Bool = false,
         metadataJSON: String = "{}",
         now: Date = .now
     ) throws -> InsightRecord {
@@ -493,8 +505,9 @@ extension MeetingRepository {
                 id: .v7(),
                 vaultId: vaultId,
                 content: content,
-                reviewState: reviewState,
+                isAccepted: isAccepted,
                 metadataJSON: metadataJSON,
+                revision: 1,
                 createdAt: now,
                 updatedAt: now
             )
@@ -503,10 +516,11 @@ extension MeetingRepository {
         }
     }
 
-    func setInsightReviewState(
+    nonisolated func setInsightAccepted(
         id: UUID,
         vaultId: UUID,
-        reviewState: InsightReviewState,
+        expectedRevision: Int,
+        isAccepted: Bool,
         metadataJSON: String? = nil,
         now: Date = .now
     ) throws -> InsightRecord {
@@ -517,10 +531,14 @@ extension MeetingRepository {
             else {
                 throw CustomerIntelligenceError.insightNotFound
             }
-            insight.reviewState = reviewState
+            guard insight.revision == expectedRevision else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+            insight.isAccepted = isAccepted
             if let metadataJSON {
                 insight.metadataJSON = try Self.validatedJSONObject(metadataJSON)
             }
+            insight.revision += 1
             insight.updatedAt = now
             try insight.update(db)
             return insight
@@ -553,68 +571,10 @@ extension MeetingRepository {
                 createdAt: createdAt
             )
             try reference.insert(db)
-            return reference
-        }
-    }
-
-    // MARK: - Glossary
-
-    func createGlossaryTerm(
-        vaultId: UUID,
-        term: String,
-        definition: String,
-        aliases: [String] = [],
-        now: Date = .now
-    ) throws -> GlossaryTermRecord {
-        try dbQueue.write { db in
-            guard let term = CustomerIdentityNormalizer.organizationName(term) else {
-                throw CustomerIntelligenceError.invalidName
-            }
-            guard let definition = CustomerIdentityNormalizer.organizationName(definition) else {
-                throw CustomerIntelligenceError.invalidDefinition
-            }
-            let aliases = aliases.compactMap(CustomerIdentityNormalizer.organizationName)
-            let aliasesData = try JSONEncoder().encode(aliases)
-            guard let aliasesJSON = String(bytes: aliasesData, encoding: .utf8) else {
-                throw CustomerIntelligenceError.invalidJSON
-            }
-            let glossaryTerm = GlossaryTermRecord(
-                id: .v7(),
-                vaultId: vaultId,
-                term: term,
-                definition: definition,
-                aliasesJSON: aliasesJSON,
-                createdAt: now,
-                updatedAt: now
+            try db.execute(
+                sql: "UPDATE insights SET revision = revision + 1, updatedAt = ? WHERE id = ?",
+                arguments: [createdAt, insightId]
             )
-            try glossaryTerm.insert(db)
-            return glossaryTerm
-        }
-    }
-
-    func addGlossaryTermReference(
-        glossaryTermId: UUID,
-        resourceType: CustomerResourceType,
-        resourceId: UUID,
-        createdAt: Date = .now
-    ) throws -> GlossaryTermReferenceRecord {
-        try dbQueue.write { db in
-            if let existing = try GlossaryTermReferenceRecord
-                .filter(
-                    Column("glossaryTermId") == glossaryTermId
-                        && Column("resourceType") == resourceType
-                        && Column("resourceId") == resourceId
-                )
-                .fetchOne(db) {
-                return existing
-            }
-            let reference = GlossaryTermReferenceRecord(
-                glossaryTermId: glossaryTermId,
-                resourceType: resourceType,
-                resourceId: resourceId,
-                createdAt: createdAt
-            )
-            try reference.insert(db)
             return reference
         }
     }
@@ -635,7 +595,7 @@ extension MeetingRepository {
         }
     }
 
-    private static func validatedJSONObject(_ value: String) throws -> String {
+    private nonisolated static func validatedJSONObject(_ value: String) throws -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = trimmed.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),

@@ -66,6 +66,88 @@ extension MeetingRepository {
         }
     }
 
+    nonisolated func fetchConversationTopicRelatedOrganizationPaths(
+        id: UUID,
+        vaultId: UUID,
+        limit: Int = 100
+    ) throws -> (paths: [[OrganizationWorkspaceNode]], isTruncated: Bool) {
+        try dbQueue.read { db in
+            let boundedLimit = min(max(limit, 1), 100)
+            let relatedIDs = try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT resourceId
+                FROM (
+                    SELECT refs.resourceId
+                    FROM conversation_topic_references AS refs
+                    JOIN organizations ON organizations.id = refs.resourceId
+                    WHERE refs.topicId = ?
+                      AND refs.resourceType = 'organization'
+                      AND organizations.vaultId = ?
+                    UNION
+                    SELECT memberships.organizationId
+                    FROM conversation_topic_references AS refs
+                    JOIN contacts ON contacts.id = refs.resourceId
+                    JOIN organization_memberships AS memberships ON memberships.contactId = contacts.id
+                    JOIN organizations ON organizations.id = memberships.organizationId
+                    WHERE refs.topicId = ?
+                      AND refs.resourceType = 'contact'
+                      AND contacts.vaultId = ?
+                      AND organizations.vaultId = ?
+                )
+                ORDER BY resourceId
+                LIMIT ?
+                """,
+                arguments: [id, vaultId, id, vaultId, vaultId, boundedLimit + 1]
+            )
+            let isTruncated = relatedIDs.count > boundedLimit
+            let targetIDs = Array(relatedIDs.prefix(boundedLimit))
+            guard !targetIDs.isEmpty else { return ([], isTruncated) }
+
+            let placeholders = targetIDs.map { _ in "?" }.joined(separator: ",")
+            var arguments: StatementArguments = [vaultId]
+            arguments += StatementArguments(targetIDs)
+            arguments += [vaultId]
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                WITH RECURSIVE ancestors(targetId, id, parentOrganizationId, depth) AS (
+                    SELECT id, id, parentOrganizationId, 0
+                    FROM organizations
+                    WHERE vaultId = ? AND id IN (\(placeholders))
+                    UNION ALL
+                    SELECT ancestors.targetId, parent.id, parent.parentOrganizationId, ancestors.depth + 1
+                    FROM organizations AS parent
+                    JOIN ancestors ON ancestors.parentOrganizationId = parent.id
+                    WHERE parent.vaultId = ? AND ancestors.depth < 32
+                )
+                SELECT ancestors.targetId,
+                       organizations.*,
+                       (SELECT COUNT(*) FROM organizations AS child
+                        WHERE child.parentOrganizationId = organizations.id) AS childCount,
+                       ancestors.depth
+                FROM ancestors
+                JOIN organizations ON organizations.id = ancestors.id
+                ORDER BY ancestors.targetId, ancestors.depth DESC
+                """,
+                arguments: arguments
+            )
+            let grouped = Dictionary(grouping: rows) { row -> UUID in
+                row["targetId"]
+            }
+            let paths: [[OrganizationWorkspaceNode]] = try targetIDs.compactMap { targetID in
+                guard let pathRows = grouped[targetID] else { return nil }
+                return try pathRows.map {
+                    try OrganizationWorkspaceNode(
+                        organization: OrganizationRecord(row: $0),
+                        childCount: $0["childCount"]
+                    )
+                }
+            }
+            return (paths, isTruncated)
+        }
+    }
+
     nonisolated func fetchUnassignedContacts(vaultId: UUID) throws -> [ContactRecord] {
         try dbQueue.read { db in
             try ContactRecord
@@ -84,16 +166,82 @@ extension MeetingRepository {
 
     nonisolated func searchOrganizationWorkspaceNodes(
         vaultId: UUID,
+        rootOrganizationId: UUID? = nil,
         query: String,
         limit: Int = 50
     ) throws -> [OrganizationRecord] {
         try dbQueue.read { db in
-            try OrganizationRecord
+            if let rootOrganizationId {
+                return try OrganizationRecord.fetchAll(
+                    db,
+                    sql: """
+                    WITH RECURSIVE subtree(id) AS (
+                        SELECT id
+                        FROM organizations
+                        WHERE id = ? AND vaultId = ?
+                        UNION ALL
+                        SELECT child.id
+                        FROM organizations AS child
+                        JOIN subtree ON child.parentOrganizationId = subtree.id
+                        WHERE child.vaultId = ?
+                    )
+                    SELECT organizations.*
+                    FROM organizations
+                    JOIN subtree ON subtree.id = organizations.id
+                    WHERE organizations.name LIKE ?
+                    ORDER BY organizations.name COLLATE NOCASE, organizations.id
+                    LIMIT ?
+                    """,
+                    arguments: [
+                        rootOrganizationId,
+                        vaultId,
+                        vaultId,
+                        "%\(query)%",
+                        min(max(limit, 1), 100),
+                    ]
+                )
+            }
+            return try OrganizationRecord
                 .filter(Column("vaultId") == vaultId)
                 .filter(Column("name").like("%\(query)%"))
                 .order(Column("name").asc, Column("id").asc)
                 .limit(min(max(limit, 1), 100))
                 .fetchAll(db)
+        }
+    }
+
+    nonisolated func fetchOrganizationWorkspaceSubtree(
+        rootOrganizationId: UUID,
+        vaultId: UUID,
+        limit: Int = 1000
+    ) throws -> [OrganizationRecord] {
+        try dbQueue.read { db in
+            try OrganizationRecord.fetchAll(
+                db,
+                sql: """
+                WITH RECURSIVE subtree(id) AS (
+                    SELECT id
+                    FROM organizations
+                    WHERE id = ? AND vaultId = ?
+                    UNION ALL
+                    SELECT child.id
+                    FROM organizations AS child
+                    JOIN subtree ON child.parentOrganizationId = subtree.id
+                    WHERE child.vaultId = ?
+                )
+                SELECT organizations.*
+                FROM organizations
+                JOIN subtree ON subtree.id = organizations.id
+                ORDER BY organizations.name COLLATE NOCASE, organizations.id
+                LIMIT ?
+                """,
+                arguments: [
+                    rootOrganizationId,
+                    vaultId,
+                    vaultId,
+                    min(max(limit, 1), 1000),
+                ]
+            )
         }
     }
 
@@ -279,38 +427,7 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func fetchConversationTopicRelatedOrganizationIDs(
-        id: UUID,
-        vaultId: UUID
-    ) throws -> [UUID] {
-        try dbQueue.read { db in
-            try UUID.fetchAll(
-                db,
-                sql: """
-                SELECT refs.resourceId
-                FROM conversation_topic_references AS refs
-                JOIN organizations ON organizations.id = refs.resourceId
-                WHERE refs.topicId = ?
-                  AND refs.resourceType = 'organization'
-                  AND organizations.vaultId = ?
-                UNION
-                SELECT memberships.organizationId
-                FROM conversation_topic_references AS refs
-                JOIN contacts ON contacts.id = refs.resourceId
-                JOIN organization_memberships AS memberships ON memberships.contactId = contacts.id
-                JOIN organizations ON organizations.id = memberships.organizationId
-                WHERE refs.topicId = ?
-                  AND refs.resourceType = 'contact'
-                  AND contacts.vaultId = ?
-                  AND organizations.vaultId = ?
-                ORDER BY 1
-                """,
-                arguments: [id, vaultId, id, vaultId, vaultId]
-            )
-        }
-    }
-
-    func createConversationTopic(
+    nonisolated func createConversationTopic(
         vaultId: UUID,
         title: String,
         currentState: String,
@@ -346,7 +463,7 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.topicNotFound
             }
             guard topic.revision == expectedRevision else {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             guard let title = Self.normalizedText(title),
                   let currentState = Self.normalizedText(currentState)
@@ -377,7 +494,7 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.topicNotFound
             }
             guard topic.revision == expectedRevision else {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             try Self.replaceTopicReferences(topicId: topicId, references: references, now: now, in: db)
         }
@@ -394,7 +511,7 @@ extension MeetingRepository {
         vaultId: UUID,
         expectedRevision: Int? = nil,
         expectedImpact: TopicDeletionImpact? = nil,
-        now: Date = .now
+        now _: Date = .now
     ) throws {
         try dbQueue.write { db in
             guard let topic = try ConversationTopicRecord
@@ -404,19 +521,12 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.topicNotFound
             }
             guard expectedRevision.map({ $0 == topic.revision }) ?? true else {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             if let expectedImpact,
                try Self.topicDeletionImpact(id: id, vaultId: vaultId, in: db) != expectedImpact {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
-            try Self.markProposalsStale(
-                vaultId: vaultId,
-                referencing: [id],
-                reason: "topicDeleted",
-                now: now,
-                in: db
-            )
             _ = try ConversationTopicRecord.deleteOne(db, key: id)
         }
     }
@@ -444,7 +554,7 @@ extension MeetingRepository {
                     .fetchOne(db),
                     expectedOrganizationRevision.map({ $0 == organization.revision }) ?? true
                 else {
-                    throw CustomerIntelligenceError.proposalConflict
+                    throw CustomerIntelligenceError.revisionConflict
                 }
                 try OrganizationMembershipRecord(
                     organizationId: organizationId,
@@ -490,628 +600,74 @@ extension MeetingRepository {
             guard expectedRevision.map({ $0 == contact.revision }) ?? true,
                   expectedImpact.map({ $0 == impact }) ?? true
             else {
-                throw CustomerIntelligenceError.proposalConflict
+                throw CustomerIntelligenceError.revisionConflict
             }
             guard impact.meetingParticipants == 0 else {
                 throw CustomerIntelligenceError.provisionalContactHasParticipant
             }
-            try Self.markProposalsStale(
-                vaultId: vaultId,
-                referencing: [id],
-                reason: "contactDeleted",
-                now: now,
+            let owners = try Self.referenceOwnerIDs(
+                resourceType: .contact,
+                resourceIDs: [id],
                 in: db
             )
             _ = try ContactRecord.deleteOne(db, key: id)
-        }
-    }
-
-    // MARK: - Proposals
-
-    nonisolated func fetchCustomerIntelligenceProposals(
-        vaultId: UUID,
-        status: CustomerIntelligenceProposalStatus? = nil
-    ) throws -> [CustomerIntelligenceProposalOverview] {
-        try dbQueue.read { db in
-            var request = CustomerIntelligenceProposalRecord.filter(Column("vaultId") == vaultId)
-            if let status {
-                request = request.filter(Column("status") == status)
-            }
-            let proposals = try request
-                .order(Column("createdAt").desc, Column("id").desc)
-                .limit(500)
-                .fetchAll(db)
-            guard !proposals.isEmpty else { return [] }
-            let proposalIDs = Set(proposals.map(\.id))
-            let evidenceByProposal = try Dictionary(
-                grouping: CustomerIntelligenceProposalEvidenceRecord
-                    .filter(proposalIDs.contains(Column("proposalId")))
-                    .order(Column("createdAt").asc)
-                    .fetchAll(db),
-                by: \.proposalId
-            )
-            let dependenciesByProposal = try Dictionary(
-                grouping: CustomerIntelligenceProposalDependencyRecord
-                    .filter(proposalIDs.contains(Column("proposalId")))
-                    .order(Column("createdAt").asc, Column("requiredProposalId").asc)
-                    .fetchAll(db),
-                by: \.proposalId
-            )
-            return proposals.map { proposal in
-                CustomerIntelligenceProposalOverview(
-                    proposal: proposal,
-                    evidence: evidenceByProposal[proposal.id, default: []],
-                    dependencies: dependenciesByProposal[proposal.id, default: []].map(\.requiredProposalId)
-                )
-            }
-        }
-    }
-
-    @discardableResult
-    func proposeCustomerIntelligenceChanges(
-        vaultId: UUID,
-        inputs: [CustomerIntelligenceProposalInput],
-        now: Date = .now
-    ) throws -> [String: UUID] {
-        let prepared = try Self.prepareProposalBatch(inputs)
-        return try dbQueue.write { db in
-            guard try VaultRecord.fetchOne(db, key: vaultId) != nil else {
-                throw CustomerIntelligenceError.vaultNotFound
-            }
-            var proposalIDs: [String: UUID] = [:]
-            var entityIDs: [String: UUID] = [:]
-            for input in prepared {
-                proposalIDs[input.localKey] = .v7()
-                if Self.createsEntity(input.operationType) {
-                    entityIDs[input.localKey] = .v7()
-                }
-            }
-            let newEntityKinds: [UUID: CustomerIntelligenceResourceKind] = Dictionary(
-                uniqueKeysWithValues: prepared.compactMap { input -> (UUID, CustomerIntelligenceResourceKind)? in
-                    guard let id = entityIDs[input.localKey],
-                          let kind = Self.createdResourceKind(input.operationType) else { return nil }
-                    return (id, kind)
-                }
-            )
-            for input in prepared {
-                guard let proposalID = proposalIDs[input.localKey] else {
-                    throw CustomerIntelligenceError.invalidProposal
-                }
-                var payload = input.payload
-                if let entityID = entityIDs[input.localKey] {
-                    payload.targetID = entityID
-                }
-                try Self.resolveLocalReferences(in: &payload, entityIDs: entityIDs)
-                guard payload.references.map(CustomerIntelligenceProposalLimits.containsTopicReferences) ?? true
-                else {
-                    throw CustomerIntelligenceError.invalidProposal
-                }
-                try Self.validateProposalResources(
-                    operation: input.operationType,
-                    payload: payload,
-                    vaultId: vaultId,
-                    newEntityKinds: newEntityKinds,
-                    in: db
-                )
-                for evidence in input.evidence {
-                    guard try Self.resource(
-                        evidence.resourceType,
-                        id: evidence.resourceID,
-                        existsIn: vaultId,
-                        in: db
-                    ) else {
-                        throw CustomerIntelligenceError.invalidProposal
-                    }
-                }
-                let payloadJSON = try Self.encodePayload(payload)
-                try CustomerIntelligenceProposalRecord(
-                    id: proposalID,
-                    vaultId: vaultId,
-                    operationType: input.operationType.rawValue,
-                    payloadJSON: payloadJSON,
-                    status: .proposed,
-                    staleReason: nil,
-                    revision: 1,
-                    createdAt: now,
-                    updatedAt: now
-                ).insert(db)
-                for evidence in input.evidence {
-                    try CustomerIntelligenceProposalEvidenceRecord(
-                        proposalId: proposalID,
-                        resourceType: evidence.resourceType.rawValue,
-                        resourceId: evidence.resourceID,
-                        note: Self.normalizedText(evidence.note),
-                        createdAt: now
-                    ).insert(db)
-                }
-                for dependencyKey in input.dependsOn {
-                    guard let requiredID = proposalIDs[dependencyKey] else {
-                        throw CustomerIntelligenceError.proposalDependency
-                    }
-                    try CustomerIntelligenceProposalDependencyRecord(
-                        proposalId: proposalID,
-                        requiredProposalId: requiredID,
-                        createdAt: now
-                    ).insert(db)
-                }
-            }
-            return proposalIDs
-        }
-    }
-
-    nonisolated func applyCustomerIntelligenceProposals(
-        vaultId: UUID,
-        revisions: [UUID: Int],
-        now: Date = .now
-    ) throws {
-        guard (1 ... 100).contains(revisions.count) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        let proposalIDs = Set(revisions.keys)
-        let prepared = try dbQueue.read { db in
-            try Dictionary(
-                uniqueKeysWithValues: proposalIDs.map { id in
-                    guard let proposal = try CustomerIntelligenceProposalRecord
-                        .filter(Column("id") == id && Column("vaultId") == vaultId)
-                        .fetchOne(db),
-                        let operation = CustomerIntelligenceProposalOperationType(
-                            rawValue: proposal.operationType
-                        )
-                    else {
-                        throw CustomerIntelligenceError.proposalNotFound
-                    }
-                    let payload = try Self.decodePayload(proposal.payloadJSON)
-                    try Self.validatePayload(payload, for: operation)
-                    return (
-                        id,
-                        (
-                            operationType: proposal.operationType,
-                            payloadJSON: proposal.payloadJSON,
-                            payload: payload
-                        )
-                    )
-                }
-            )
-        }
-        try dbQueue.write { db in
-            let proposals = try proposalIDs.map { id -> CustomerIntelligenceProposalRecord in
-                guard let proposal = try CustomerIntelligenceProposalRecord
-                    .filter(Column("id") == id && Column("vaultId") == vaultId)
-                    .fetchOne(db),
-                    let decoded = prepared[id],
-                    proposal.operationType == decoded.operationType,
-                    proposal.payloadJSON == decoded.payloadJSON
-                else {
-                    throw CustomerIntelligenceError.proposalConflict
-                }
-                guard proposal.status == .proposed, proposal.revision == revisions[id] else {
-                    throw CustomerIntelligenceError.proposalConflict
-                }
-                return proposal
-            }
-            let order = try Self.proposalApplyOrder(proposals: proposals, selected: proposalIDs, in: db)
-            try Self.rejectContactResolutionCollisions(order, payloads: prepared)
-            for proposal in order {
-                guard let payload = prepared[proposal.id]?.payload else {
-                    throw CustomerIntelligenceError.proposalConflict
-                }
-                try Self.validateExpectations(
-                    operationType: proposal.operationType,
-                    payload: payload,
-                    vaultId: vaultId,
-                    in: db
-                )
-                try Self.apply(
-                    proposalID: proposal.id,
-                    operationType: proposal.operationType,
-                    payload: payload,
-                    vaultId: vaultId,
-                    now: now,
-                    in: db
-                )
-                var applied = proposal
-                applied.status = .applied
-                applied.revision += 1
-                applied.updatedAt = now
-                try applied.update(db)
-            }
-        }
-    }
-
-    nonisolated func rejectCustomerIntelligenceProposals(
-        vaultId: UUID,
-        revisions: [UUID: Int],
-        now: Date = .now
-    ) throws {
-        guard (1 ... 100).contains(revisions.count) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        try dbQueue.write { db in
-            for (id, revision) in revisions {
-                guard var proposal = try CustomerIntelligenceProposalRecord
-                    .filter(Column("id") == id && Column("vaultId") == vaultId)
-                    .fetchOne(db)
-                else {
-                    throw CustomerIntelligenceError.proposalNotFound
-                }
-                guard proposal.status == .proposed || proposal.status == .stale,
-                      proposal.revision == revision else {
-                    throw CustomerIntelligenceError.proposalConflict
-                }
-                proposal.status = .rejected
-                proposal.staleReason = nil
-                proposal.revision += 1
-                proposal.updatedAt = now
-                try proposal.update(db)
-            }
-        }
-    }
-
-    // MARK: - Proposal validation and application
-
-    private nonisolated static func prepareProposalBatch(
-        _ inputs: [CustomerIntelligenceProposalInput]
-    ) throws -> [CustomerIntelligenceProposalInput] {
-        guard CustomerIntelligenceProposalLimits.containsBatch(inputs) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        let keys = inputs.map(\.localKey)
-        let allKeys = Set(keys)
-        guard allKeys.count == keys.count,
-              keys.allSatisfy({ normalizedText($0) != nil }),
-              inputs.allSatisfy({
-                  let dependencies = Set($0.dependsOn)
-                  return dependencies.isSubset(of: allKeys)
-                      && $0.payload.referencedLocalKeys.isSubset(of: dependencies)
-              })
-        else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        let inputsByKey = Dictionary(uniqueKeysWithValues: inputs.map { ($0.localKey, $0) })
-        var remaining = Dictionary(uniqueKeysWithValues: inputs.map { ($0.localKey, Set($0.dependsOn)) })
-        var ordered: [CustomerIntelligenceProposalInput] = []
-        while !remaining.isEmpty {
-            let ready = remaining.filter(\.value.isEmpty).map(\.key).sorted()
-            guard !ready.isEmpty else { throw CustomerIntelligenceError.proposalCycle }
-            for key in ready {
-                guard let input = inputsByKey[key] else {
-                    throw CustomerIntelligenceError.invalidProposal
-                }
-                ordered.append(input)
-                remaining.removeValue(forKey: key)
-                for dependencyKey in remaining.keys {
-                    remaining[dependencyKey]?.remove(key)
-                }
-            }
-        }
-        for input in ordered {
-            try validatePayload(input.payload, for: input.operationType)
-        }
-        return ordered
-    }
-
-    private nonisolated static func validatePayload(
-        _ payload: CustomerIntelligenceProposalPayload,
-        for operation: CustomerIntelligenceProposalOperationType
-    ) throws {
-        guard CustomerIntelligenceProposalLimits.contains(CustomerIntelligenceProposalInput(
-            localKey: "stored",
-            operationType: operation,
-            payload: payload
-        )) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        let expectationFields = payload.expectations.map(\.field)
-        let expectationFieldSet = Set(expectationFields)
-        guard expectationFieldSet.count == expectationFields.count,
-              expectationFieldSet.isSubset(of: operation.allowedExpectationFields),
-              expectationFieldSet.isSuperset(of: operation.requiredExpectationFields(for: payload))
-        else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        let valid: Bool = switch operation {
-        case .createOrganization:
-            normalizedText(payload.name) != nil
-                && (payload.nodeKind == "organization" || payload.nodeKind == "unit")
-                && (payload.nodeKind != "unit"
-                    || payload.parentOrganizationID != nil
-                    || payload.parentOrganizationLocalKey != nil)
-        case .renameOrganization:
-            payload.targetID != nil && normalizedText(payload.name) != nil
-        case .moveOrganization:
-            payload.targetID != nil
-        case .createProvisionalContact:
-            normalizedText(payload.name) != nil
-        case .renameProvisionalContact:
-            payload.targetID != nil && normalizedText(payload.name) != nil
-        case .resolveProvisionalContact:
-            payload.targetID != nil && CustomerIdentityNormalizer.email(payload.email ?? "") != nil
-        case .setMembership, .removeMembership:
-            (payload.organizationID != nil || payload.organizationLocalKey != nil)
-                && (payload.contactID != nil || payload.contactLocalKey != nil)
-        case .createTopic:
-            normalizedText(payload.title) != nil && normalizedText(payload.currentState) != nil
-        case .updateTopic:
-            payload.targetID != nil
-                && (normalizedText(payload.title) != nil || normalizedText(payload.currentState) != nil)
-        case .setTopicReferences:
-            payload.targetID != nil && payload.references != nil
-        }
-        guard valid else { throw CustomerIntelligenceError.invalidProposal }
-    }
-
-    private nonisolated static func proposalApplyOrder(
-        proposals: [CustomerIntelligenceProposalRecord],
-        selected: Set<UUID>,
-        in db: Database
-    ) throws -> [CustomerIntelligenceProposalRecord] {
-        var dependencies: [UUID: Set<UUID>] = [:]
-        for proposal in proposals {
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT dependencies.requiredProposalId, required.status
-                FROM customer_intelligence_proposal_dependencies AS dependencies
-                JOIN customer_intelligence_proposals AS required
-                  ON required.id = dependencies.requiredProposalId
-                WHERE dependencies.proposalId = ?
-                """,
-                arguments: [proposal.id]
-            )
-            var selectedDependencies = Set<UUID>()
-            for row in rows {
-                let requiredID: UUID = row["requiredProposalId"]
-                let status: String = row["status"]
-                guard status == CustomerIntelligenceProposalStatus.applied.rawValue || selected.contains(requiredID) else {
-                    throw CustomerIntelligenceError.proposalDependency
-                }
-                if selected.contains(requiredID) {
-                    selectedDependencies.insert(requiredID)
-                }
-            }
-            dependencies[proposal.id] = selectedDependencies
-        }
-        let proposalsByID = Dictionary(uniqueKeysWithValues: proposals.map { ($0.id, $0) })
-        var remaining = dependencies
-        var order: [CustomerIntelligenceProposalRecord] = []
-        while !remaining.isEmpty {
-            let ready = remaining.filter(\.value.isEmpty).map(\.key).sorted { $0.uuidString < $1.uuidString }
-            guard !ready.isEmpty else { throw CustomerIntelligenceError.proposalCycle }
-            for id in ready {
-                guard let proposal = proposalsByID[id] else {
-                    throw CustomerIntelligenceError.proposalNotFound
-                }
-                order.append(proposal)
-                remaining.removeValue(forKey: id)
-                for key in remaining.keys {
-                    remaining[key]?.remove(id)
-                }
-            }
-        }
-        return order
-    }
-
-    private nonisolated static func rejectContactResolutionCollisions(
-        _ proposals: [CustomerIntelligenceProposalRecord],
-        payloads: [UUID: (operationType: String, payloadJSON: String, payload: CustomerIntelligenceProposalPayload)]
-    ) throws {
-        let decoded = try proposals.map { proposal in
-            guard let prepared = payloads[proposal.id] else {
-                throw CustomerIntelligenceError.proposalConflict
-            }
-            return (prepared.operationType, prepared.payload)
-        }
-        let resolved = Set(decoded.compactMap { type, payload in
-            type == CustomerIntelligenceProposalOperationType.resolveProvisionalContact.rawValue ? payload.targetID : nil
-        })
-        guard decoded.allSatisfy({ type, payload in
-            type == CustomerIntelligenceProposalOperationType.resolveProvisionalContact.rawValue
-                || resolved.isDisjoint(with: payload.referencedIDs)
-        }) else {
-            throw CustomerIntelligenceError.proposalConflict
-        }
-    }
-
-    private nonisolated static func validateExpectations(
-        operationType: String,
-        payload: CustomerIntelligenceProposalPayload,
-        vaultId: UUID,
-        in db: Database
-    ) throws {
-        guard let operation = CustomerIntelligenceProposalOperationType(rawValue: operationType) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        switch operation {
-        case .createOrganization, .createProvisionalContact, .createTopic:
-            if let targetID = payload.targetID,
-               try resourceExists(targetID, in: db) {
-                throw CustomerIntelligenceError.proposalConflict
-            }
-        case .renameOrganization, .moveOrganization:
-            guard let id = payload.targetID,
-                  let organization = try OrganizationRecord
-                  .filter(Column("id") == id && Column("vaultId") == vaultId)
-                  .fetchOne(db)
-            else { throw CustomerIntelligenceError.organizationNotFound }
-            try match(payload, field: "name", actual: organization.name)
-            try match(payload, field: "parent_organization_id", actual: organization.parentOrganizationId?.uuidString)
-        case .renameProvisionalContact, .resolveProvisionalContact:
-            guard let id = payload.targetID,
-                  let contact = try ContactRecord
-                  .filter(Column("id") == id && Column("vaultId") == vaultId)
-                  .fetchOne(db),
-                  contact.isProvisional
-            else { throw CustomerIntelligenceError.provisionalContactRequired }
-            try match(payload, field: "display_name", actual: contact.displayName)
-            try match(payload, field: "email", actual: contact.email)
-        case .setMembership, .removeMembership:
-            guard let organizationID = payload.organizationID, let contactID = payload.contactID,
-                  try OrganizationRecord
-                  .filter(Column("id") == organizationID && Column("vaultId") == vaultId)
-                  .fetchOne(db) != nil,
-                  try ContactRecord
-                  .filter(Column("id") == contactID && Column("vaultId") == vaultId)
-                  .fetchOne(db) != nil
-            else { throw CustomerIntelligenceError.proposalConflict }
-            let role = try String.fetchOne(
-                db,
-                sql: """
-                SELECT roleLabel FROM organization_memberships
-                WHERE organizationId = ? AND contactId = ?
-                """,
-                arguments: [organizationID, contactID]
-            )
-            try match(payload, field: "role_label", actual: role)
-        case .updateTopic, .setTopicReferences:
-            guard let id = payload.targetID,
-                  let topic = try ConversationTopicRecord
-                  .filter(Column("id") == id && Column("vaultId") == vaultId)
-                  .fetchOne(db)
-            else { throw CustomerIntelligenceError.topicNotFound }
-            try match(payload, field: "title", actual: topic.title)
-            try match(payload, field: "current_state", actual: topic.currentState)
-            if payload.expectation(for: "references") != nil {
-                try match(payload, field: "references", actual: topicReferenceSignature(id, in: db))
-            }
-        }
-    }
-
-    private nonisolated static func match(
-        _ payload: CustomerIntelligenceProposalPayload,
-        field: String,
-        actual: String?
-    ) throws {
-        guard let expectation = payload.expectation(for: field) else { return }
-        guard expectation.value == actual else { throw CustomerIntelligenceError.proposalConflict }
-    }
-
-    // swiftlint:disable:next cyclomatic_complexity function_body_length
-    private nonisolated static func apply(
-        proposalID: UUID,
-        operationType: String,
-        payload: CustomerIntelligenceProposalPayload,
-        vaultId: UUID,
-        now: Date,
-        in db: Database
-    ) throws {
-        guard let operation = CustomerIntelligenceProposalOperationType(rawValue: operationType) else {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-        switch operation {
-        case .createOrganization:
-            guard let id = payload.targetID,
-                  let kind = payload.nodeKind.flatMap(OrganizationNodeKind.init(rawValue:)),
-                  let name = normalizedText(payload.name)
-            else { throw CustomerIntelligenceError.invalidProposal }
-            try OrganizationRecord(
-                id: id,
-                vaultId: vaultId,
-                parentOrganizationId: payload.parentOrganizationID,
-                nodeKind: kind,
-                name: name,
-                revision: 1,
-                createdAt: now,
-                updatedAt: now
-            ).insert(db)
-        case .renameOrganization:
-            guard let id = payload.targetID, let name = normalizedText(payload.name),
-                  var organization = try OrganizationRecord.fetchOne(db, key: id)
-            else { throw CustomerIntelligenceError.invalidProposal }
-            organization.name = name
-            organization.revision += 1
-            organization.updatedAt = now
-            try organization.update(db)
-        case .moveOrganization:
-            guard let id = payload.targetID,
-                  var organization = try OrganizationRecord.fetchOne(db, key: id)
-            else { throw CustomerIntelligenceError.invalidProposal }
-            organization.parentOrganizationId = payload.parentOrganizationID
-            organization.revision += 1
-            organization.updatedAt = now
-            try organization.update(db)
-        case .createProvisionalContact:
-            guard let id = payload.targetID, let name = payload.name else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            _ = try createProvisionalContact(id: id, vaultId: vaultId, displayName: name, now: now, in: db)
-        case .renameProvisionalContact:
-            guard let id = payload.targetID, let name = normalizedText(payload.name),
-                  var contact = try ContactRecord.fetchOne(db, key: id), contact.isProvisional
-            else { throw CustomerIntelligenceError.provisionalContactRequired }
-            contact.displayName = name
-            contact.revision += 1
-            contact.updatedAt = now
-            try contact.update(db)
-        case .resolveProvisionalContact:
-            guard let id = payload.targetID, let email = payload.email else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            _ = try resolveProvisionalContact(
-                id: id,
-                vaultId: vaultId,
-                email: email,
-                currentProposalID: proposalID,
-                now: now,
-                in: db
-            )
-        case .setMembership:
-            guard let organizationID = payload.organizationID, let contactID = payload.contactID else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            try db.execute(
-                sql: """
-                INSERT INTO organization_memberships (organizationId, contactId, roleLabel, createdAt)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (organizationId, contactId)
-                DO UPDATE SET roleLabel = excluded.roleLabel
-                """,
-                arguments: [organizationID, contactID, normalizedText(payload.roleLabel), now]
-            )
-        case .removeMembership:
-            try db.execute(
-                sql: """
-                DELETE FROM organization_memberships
-                WHERE organizationId = ? AND contactId = ?
-                """,
-                arguments: [payload.organizationID, payload.contactID]
-            )
-        case .createTopic:
-            guard let id = payload.targetID, let title = payload.title, let state = payload.currentState else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            _ = try createTopic(
-                id: id,
-                vaultId: vaultId,
-                title: title,
-                currentState: state,
-                references: payload.references ?? [],
-                now: now,
-                in: db
-            )
-        case .updateTopic:
-            guard let id = payload.targetID,
-                  var topic = try ConversationTopicRecord.fetchOne(db, key: id)
-            else { throw CustomerIntelligenceError.topicNotFound }
-            if let title = normalizedText(payload.title) { topic.title = title }
-            if let state = normalizedText(payload.currentState) { topic.currentState = state }
-            topic.revision += 1
-            topic.updatedAt = now
-            try topic.update(db)
-        case .setTopicReferences:
-            guard let id = payload.targetID, let references = payload.references else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            try replaceTopicReferences(topicId: id, references: references, now: now, in: db)
+            try Self.incrementReferenceOwnerRevisions(owners, now: now, in: db)
         }
     }
 
     // MARK: - Contact correction and deletion
 
+    nonisolated func resolveProvisionalContact(
+        id: UUID,
+        vaultId: UUID,
+        email rawEmail: String,
+        displayName rawDisplayName: String?,
+        expectedRevision: Int,
+        expectedExistingContactID: UUID?,
+        expectedExistingRevision: Int?,
+        now: Date = .now
+    ) throws -> ContactRecord {
+        try dbQueue.write { db in
+            guard let email = CustomerIdentityNormalizer.email(rawEmail),
+                  var provisional = try ContactRecord
+                  .filter(Column("id") == id && Column("vaultId") == vaultId)
+                  .fetchOne(db),
+                  provisional.isProvisional
+            else {
+                throw CustomerIntelligenceError.provisionalContactRequired
+            }
+            guard provisional.revision == expectedRevision else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+            let existing = try ContactRecord
+                .filter(Column("vaultId") == vaultId && Column("email") == email)
+                .fetchOne(db)
+            guard existing?.id == expectedExistingContactID,
+                  expectedExistingContactID == nil || existing?.revision == expectedExistingRevision
+            else {
+                throw CustomerIntelligenceError.revisionConflict
+            }
+            let displayName = CustomerIdentityNormalizer.displayName(rawDisplayName)
+            if displayName != provisional.displayName {
+                provisional.displayName = displayName
+                provisional.revision += 1
+                provisional.updatedAt = now
+                try provisional.update(db)
+            }
+            return try Self.resolveProvisionalContact(
+                id: id,
+                vaultId: vaultId,
+                email: email,
+                now: now,
+                in: db
+            )
+        }
+    }
+
     private nonisolated static func resolveProvisionalContact(
         id: UUID,
         vaultId: UUID,
         email rawEmail: String,
-        currentProposalID: UUID,
         now: Date,
         in db: Database
     ) throws -> ContactRecord {
@@ -1131,14 +687,6 @@ extension MeetingRepository {
             provisional.revision += 1
             provisional.updatedAt = now
             try provisional.update(db)
-            try markProposalsStale(
-                vaultId: vaultId,
-                referencing: [id],
-                reason: "contactResolved",
-                now: now,
-                excludingProposalID: currentProposalID,
-                in: db
-            )
             return provisional
         }
         if existing.displayName == nil, let provisionalName = provisional.displayName {
@@ -1148,16 +696,11 @@ extension MeetingRepository {
             try existing.update(db)
         }
         try moveContactReferences(from: id, to: existing.id, now: now, in: db)
-        try markProposalsStale(
-            vaultId: vaultId,
-            referencing: [id],
-            reason: "contactResolved",
-            now: now,
-            excludingProposalID: currentProposalID,
-            in: db
-        )
         _ = try ContactRecord.deleteOne(db, key: id)
-        return existing
+        guard let resolved = try ContactRecord.fetchOne(db, key: existing.id) else {
+            throw CustomerIntelligenceError.contactNotFound
+        }
+        return resolved
     }
 
     private nonisolated static func moveContactReferences(
@@ -1166,6 +709,11 @@ extension MeetingRepository {
         now: Date,
         in db: Database
     ) throws {
+        let owners = try referenceOwnerIDs(
+            resourceType: .contact,
+            resourceIDs: [sourceID],
+            in: db
+        )
         try db.execute(
             sql: """
             INSERT OR IGNORE INTO organization_memberships (organizationId, contactId, roleLabel, createdAt)
@@ -1179,22 +727,50 @@ extension MeetingRepository {
             FROM meeting_participants WHERE contactId = ?;
             DELETE FROM meeting_participants WHERE contactId = ?;
 
+            DELETE FROM project_resource_references
+            WHERE resourceType = 'contact' AND resourceId = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM project_resource_references AS targetRef
+                  WHERE targetRef.projectId = project_resource_references.projectId
+                    AND targetRef.resourceType = 'contact'
+                    AND targetRef.resourceId = ?
+              );
+            DELETE FROM project_resource_references
+            WHERE resourceType = 'contact' AND resourceId = ?
+              AND rowid NOT IN (
+                  SELECT MIN(rowid)
+                  FROM project_resource_references
+                  WHERE resourceType = 'contact' AND resourceId = ?
+                  GROUP BY projectId
+              );
             UPDATE OR IGNORE project_resource_references
             SET resourceId = ?, updatedAt = ?
             WHERE resourceType = 'contact' AND resourceId = ?;
             DELETE FROM project_resource_references WHERE resourceType = 'contact' AND resourceId = ?;
 
+            DELETE FROM insight_references
+            WHERE resourceType = 'contact' AND resourceId = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM insight_references AS targetRef
+                  WHERE targetRef.insightId = insight_references.insightId
+                    AND targetRef.resourceType = 'contact'
+                    AND targetRef.resourceId = ?
+              );
+            DELETE FROM insight_references
+            WHERE resourceType = 'contact' AND resourceId = ?
+              AND rowid NOT IN (
+                  SELECT MIN(rowid)
+                  FROM insight_references
+                  WHERE resourceType = 'contact' AND resourceId = ?
+                  GROUP BY insightId
+              );
             INSERT OR IGNORE INTO insight_references
                 (insightId, resourceType, resourceId, referenceRole, createdAt)
             SELECT insightId, resourceType, ?, referenceRole, createdAt
             FROM insight_references WHERE resourceType = 'contact' AND resourceId = ?;
             DELETE FROM insight_references WHERE resourceType = 'contact' AND resourceId = ?;
-
-            INSERT OR IGNORE INTO glossary_term_references
-                (glossaryTermId, resourceType, resourceId, createdAt)
-            SELECT glossaryTermId, resourceType, ?, createdAt
-            FROM glossary_term_references WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM glossary_term_references WHERE resourceType = 'contact' AND resourceId = ?;
 
             INSERT OR IGNORE INTO conversation_topic_references
                 (topicId, resourceType, resourceId, note, createdAt, updatedAt)
@@ -1202,23 +778,68 @@ extension MeetingRepository {
             FROM conversation_topic_references WHERE resourceType = 'contact' AND resourceId = ?;
             DELETE FROM conversation_topic_references WHERE resourceType = 'contact' AND resourceId = ?;
 
-            INSERT OR IGNORE INTO customer_intelligence_proposal_evidence
-                (proposalId, resourceType, resourceId, note, createdAt)
-            SELECT proposalId, resourceType, ?, note, createdAt
-            FROM customer_intelligence_proposal_evidence WHERE resourceType = 'contact' AND resourceId = ?;
-            DELETE FROM customer_intelligence_proposal_evidence
-            WHERE resourceType = 'contact' AND resourceId = ?;
             """,
             arguments: [
                 targetID, sourceID, sourceID,
                 targetID, sourceID, sourceID,
+                sourceID, targetID,
+                sourceID, sourceID,
                 targetID, now, sourceID, sourceID,
-                targetID, sourceID, sourceID,
+                sourceID, targetID,
+                sourceID, sourceID,
                 targetID, sourceID, sourceID,
                 targetID, now, sourceID, sourceID,
-                targetID, sourceID, sourceID,
             ]
         )
+        try incrementReferenceOwnerRevisions(owners, now: now, in: db)
+    }
+
+    nonisolated static func referenceOwnerIDs(
+        resourceType: CustomerResourceType,
+        resourceIDs: [UUID],
+        in db: Database
+    ) throws -> (projects: [UUID], insights: [UUID]) {
+        guard !resourceIDs.isEmpty else { return ([], []) }
+        let placeholders = Self.placeholders(resourceIDs.count)
+        return try (
+            projects: UUID.fetchAll(
+                db,
+                sql: """
+                SELECT DISTINCT projectId
+                FROM project_resource_references
+                WHERE resourceType = ? AND resourceId IN (\(placeholders))
+                """,
+                arguments: StatementArguments([resourceType.rawValue]) + StatementArguments(resourceIDs)
+            ),
+            insights: UUID.fetchAll(
+                db,
+                sql: """
+                SELECT DISTINCT insightId
+                FROM insight_references
+                WHERE resourceType = ? AND resourceId IN (\(placeholders))
+                """,
+                arguments: StatementArguments([resourceType.rawValue]) + StatementArguments(resourceIDs)
+            )
+        )
+    }
+
+    nonisolated static func incrementReferenceOwnerRevisions(
+        _ owners: (projects: [UUID], insights: [UUID]),
+        now: Date,
+        in db: Database
+    ) throws {
+        for projectID in owners.projects {
+            try db.execute(
+                sql: "UPDATE projects SET revision = revision + 1 WHERE id = ?",
+                arguments: [projectID]
+            )
+        }
+        for insightID in owners.insights {
+            try db.execute(
+                sql: "UPDATE insights SET revision = revision + 1, updatedAt = ? WHERE id = ?",
+                arguments: [now, insightID]
+            )
+        }
     }
 
     private nonisolated static func provisionalContactDeletionImpact(
@@ -1235,10 +856,6 @@ extension MeetingRepository {
                 where: "resourceType = 'contact' AND resourceId = ?"
             ),
             insights: count("insight_references", where: "resourceType = 'contact' AND resourceId = ?"),
-            glossaryTerms: count(
-                "glossary_term_references",
-                where: "resourceType = 'contact' AND resourceId = ?"
-            ),
             topics: count(
                 "conversation_topic_references",
                 where: "resourceType = 'contact' AND resourceId = ?"
@@ -1378,27 +995,26 @@ extension MeetingRepository {
         now: Date,
         in db: Database
     ) throws {
-        guard CustomerIntelligenceProposalLimits.containsTopicReferences(references) else {
-            throw CustomerIntelligenceError.invalidProposal
+        guard references.count <= 100,
+              Set(references.map { "\($0.resourceType.rawValue):\($0.resourceID)" }).count == references.count
+        else {
+            throw CustomerIntelligenceError.invalidName
         }
         _ = try ConversationTopicReferenceRecord
             .filter(Column("topicId") == topicId)
             .deleteAll(db)
         for reference in references {
             guard let type = ConversationTopicResourceType(rawValue: reference.resourceType.rawValue) else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            guard let resourceID = reference.resourceID else {
-                throw CustomerIntelligenceError.invalidProposal
+                throw CustomerIntelligenceError.invalidReference
             }
             let note = normalizedText(reference.note)
             guard type != .meeting || note != nil else {
-                throw CustomerIntelligenceError.invalidProposal
+                throw CustomerIntelligenceError.invalidName
             }
             try ConversationTopicReferenceRecord(
                 topicId: topicId,
                 resourceType: type,
-                resourceId: resourceID,
+                resourceId: reference.resourceID,
                 note: type == .meeting ? note : nil,
                 createdAt: now,
                 updatedAt: now
@@ -1441,199 +1057,6 @@ extension MeetingRepository {
                 organization: OrganizationRecord(row: $0),
                 childCount: $0["childCount"]
             )
-        }
-    }
-
-    nonisolated static func markProposalsStale(
-        vaultId: UUID,
-        referencing ids: Set<UUID>,
-        reason: String,
-        now: Date,
-        excludingProposalID: UUID? = nil,
-        in db: Database
-    ) throws {
-        let proposals = try CustomerIntelligenceProposalRecord
-            .filter(Column("vaultId") == vaultId && Column("status") == CustomerIntelligenceProposalStatus.proposed)
-            .fetchAll(db)
-        for var proposal in proposals {
-            if proposal.id == excludingProposalID { continue }
-            let payload = try decodePayload(proposal.payloadJSON)
-            guard !ids.isDisjoint(with: payload.referencedIDs) else { continue }
-            proposal.status = .stale
-            proposal.staleReason = reason
-            proposal.revision += 1
-            proposal.updatedAt = now
-            try proposal.update(db)
-        }
-    }
-
-    private nonisolated static func topicReferenceSignature(_ topicID: UUID, in db: Database) throws -> String {
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT resourceType, resourceId, note
-            FROM conversation_topic_references
-            WHERE topicId = ?
-            ORDER BY resourceType, resourceId
-            """,
-            arguments: [topicID]
-        )
-        return try CustomerIntelligenceTopicReferenceExpectation.encode(rows.map {
-            CustomerIntelligenceTopicReferenceExpectation.Item(
-                resourceType: $0["resourceType"],
-                resourceID: $0["resourceId"],
-                note: $0["note"]
-            )
-        })
-    }
-
-    private nonisolated static func resourceExists(_ id: UUID, in db: Database) throws -> Bool {
-        let tables = ["organizations", "contacts", "conversation_topics"]
-        for table in tables where try Int.fetchOne(
-            db,
-            sql: "SELECT 1 FROM \(table) WHERE id = ? LIMIT 1",
-            arguments: [id]
-        ) != nil {
-            return true
-        }
-        return false
-    }
-
-    private nonisolated static func encodePayload(_ payload: CustomerIntelligenceProposalPayload) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return try String(decoding: encoder.encode(payload), as: UTF8.self)
-    }
-
-    private nonisolated static func decodePayload(_ value: String) throws -> CustomerIntelligenceProposalPayload {
-        do {
-            return try JSONDecoder().decode(
-                CustomerIntelligenceProposalPayload.self,
-                from: Data(value.utf8)
-            )
-        } catch {
-            throw CustomerIntelligenceError.invalidProposal
-        }
-    }
-
-    private nonisolated static func createsEntity(_ operation: CustomerIntelligenceProposalOperationType) -> Bool {
-        switch operation {
-        case .createOrganization, .createProvisionalContact, .createTopic:
-            true
-        default:
-            false
-        }
-    }
-
-    private nonisolated static func createdResourceKind(
-        _ operation: CustomerIntelligenceProposalOperationType
-    ) -> CustomerIntelligenceResourceKind? {
-        switch operation {
-        case .createOrganization: .organization
-        case .createProvisionalContact: .contact
-        case .createTopic: .topic
-        default: nil
-        }
-    }
-
-    private nonisolated static func validateProposalResources(
-        operation: CustomerIntelligenceProposalOperationType,
-        payload: CustomerIntelligenceProposalPayload,
-        vaultId: UUID,
-        newEntityKinds: [UUID: CustomerIntelligenceResourceKind],
-        in db: Database
-    ) throws {
-        var resources: [(CustomerIntelligenceResourceKind, UUID)] = []
-        func append(_ kind: CustomerIntelligenceResourceKind, _ id: UUID?) {
-            if let id { resources.append((kind, id)) }
-        }
-
-        switch operation {
-        case .createOrganization:
-            append(.organization, payload.parentOrganizationID)
-        case .renameOrganization:
-            append(.organization, payload.targetID)
-        case .moveOrganization:
-            append(.organization, payload.targetID)
-            append(.organization, payload.parentOrganizationID)
-        case .createProvisionalContact:
-            break
-        case .renameProvisionalContact, .resolveProvisionalContact:
-            append(.contact, payload.targetID)
-        case .setMembership, .removeMembership:
-            append(.organization, payload.organizationID)
-            append(.contact, payload.contactID)
-        case .createTopic:
-            break
-        case .updateTopic, .setTopicReferences:
-            append(.topic, payload.targetID)
-        }
-
-        for reference in payload.references ?? [] {
-            guard reference.resourceType != .topic else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-            append(reference.resourceType, reference.resourceID)
-        }
-        for (kind, id) in resources {
-            if let newKind = newEntityKinds[id] {
-                guard newKind == kind else { throw CustomerIntelligenceError.invalidProposal }
-                continue
-            }
-            guard try resource(kind, id: id, existsIn: vaultId, in: db) else {
-                throw CustomerIntelligenceError.invalidProposal
-            }
-        }
-    }
-
-    private nonisolated static func resource(
-        _ kind: CustomerIntelligenceResourceKind,
-        id: UUID,
-        existsIn vaultId: UUID,
-        in db: Database
-    ) throws -> Bool {
-        let table = switch kind {
-        case .organization: "organizations"
-        case .contact: "contacts"
-        case .project: "projects"
-        case .meeting: "meetings"
-        case .topic: "conversation_topics"
-        }
-        return try Int.fetchOne(
-            db,
-            sql: "SELECT 1 FROM \(table) WHERE id = ? AND vaultId = ? LIMIT 1",
-            arguments: [id, vaultId]
-        ) != nil
-    }
-
-    private nonisolated static func resolveLocalReferences(
-        in payload: inout CustomerIntelligenceProposalPayload,
-        entityIDs: [String: UUID]
-    ) throws {
-        if let key = payload.parentOrganizationLocalKey {
-            guard let id = entityIDs[key] else { throw CustomerIntelligenceError.invalidProposal }
-            payload.parentOrganizationID = id
-            payload.parentOrganizationLocalKey = nil
-        }
-        if let key = payload.organizationLocalKey {
-            guard let id = entityIDs[key] else { throw CustomerIntelligenceError.invalidProposal }
-            payload.organizationID = id
-            payload.organizationLocalKey = nil
-        }
-        if let key = payload.contactLocalKey {
-            guard let id = entityIDs[key] else { throw CustomerIntelligenceError.invalidProposal }
-            payload.contactID = id
-            payload.contactLocalKey = nil
-        }
-        if var references = payload.references {
-            for index in references.indices {
-                if let key = references[index].resourceLocalKey {
-                    guard let id = entityIDs[key] else { throw CustomerIntelligenceError.invalidProposal }
-                    references[index].resourceID = id
-                    references[index].resourceLocalKey = nil
-                }
-            }
-            payload.references = references
         }
     }
 

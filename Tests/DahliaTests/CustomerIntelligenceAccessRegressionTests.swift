@@ -8,7 +8,6 @@ import Foundation
     @MainActor
     struct CustomerIntelligenceAccessRegressionTests {
         @Test
-        // swiftlint:disable:next function_body_length
         func cursorsAreBoundToVaultAndNormalizedFilters() throws {
             let fixture = try Fixture()
             let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
@@ -30,14 +29,6 @@ import Foundation
             for content in ["First observation", "Second observation"] {
                 _ = try repository.createInsight(vaultId: fixture.primaryVaultID, content: content)
             }
-            for term in ["DRI", "SLA"] {
-                _ = try repository.createGlossaryTerm(
-                    vaultId: fixture.primaryVaultID,
-                    term: term,
-                    definition: "\(term) definition"
-                )
-            }
-
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
             let organizationCursor = try #require(
                 store.queryOrganizations(OrganizationAccessQuery(limit: 1)).nextCursor
@@ -47,9 +38,6 @@ import Foundation
             )
             let insightCursor = try #require(
                 store.queryInsights(InsightAccessQuery(limit: 1)).nextCursor
-            )
-            let glossaryCursor = try #require(
-                store.queryGlossaryTerms(GlossaryAccessQuery(limit: 1)).nextCursor
             )
 
             #expect(throws: MeetingAccessError.invalidCursor) {
@@ -68,19 +56,11 @@ import Foundation
             }
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try store.queryInsights(InsightAccessQuery(
-                    reviewState: .accepted,
+                    isAccepted: true,
                     limit: 1,
                     cursor: insightCursor
                 ))
             }
-            #expect(throws: MeetingAccessError.invalidCursor) {
-                try store.queryGlossaryTerms(GlossaryAccessQuery(
-                    query: "DRI",
-                    limit: 1,
-                    cursor: glossaryCursor
-                ))
-            }
-
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try otherStore.queryOrganizations(OrganizationAccessQuery(
@@ -98,12 +78,6 @@ import Foundation
                 vaultId: fixture.primaryVaultID,
                 content: "High-cardinality evidence"
             )
-            let glossary = try repository.createGlossaryTerm(
-                vaultId: fixture.primaryVaultID,
-                term: "Stakeholder",
-                definition: "A participant in the project"
-            )
-
             for index in 0 ... 100 {
                 let contact = try repository.upsertContact(
                     vaultId: fixture.primaryVaultID,
@@ -116,11 +90,6 @@ import Foundation
                     resourceId: contact.id,
                     role: .evidence
                 )
-                _ = try repository.addGlossaryTermReference(
-                    glossaryTermId: glossary.id,
-                    resourceType: .contact,
-                    resourceId: contact.id
-                )
             }
 
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
@@ -128,13 +97,6 @@ import Foundation
             #expect(insightResult.references.count == 100)
             #expect(insightResult.referencesTruncated)
             #expect(insightResult.references.allSatisfy { $0.resourceName != nil })
-
-            let glossaryResult = try #require(
-                store.queryGlossaryTerms(GlossaryAccessQuery(query: "Stakeholder")).terms.first
-            )
-            #expect(glossaryResult.references.count == 100)
-            #expect(glossaryResult.referencesTruncated)
-            #expect(glossaryResult.references.allSatisfy { $0.resourceName != nil })
         }
 
         @Test
@@ -152,21 +114,12 @@ import Foundation
                 email: "owner@example.com",
                 displayName: "Owner"
             )
-            let glossary = try repository.createGlossaryTerm(
-                vaultId: fixture.primaryVaultID,
-                term: "Owner",
-                definition: "The accountable contact"
-            )
-
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
             #expect(throws: MeetingAccessError.organizationNotFound) {
                 try otherStore.organization(id: organization.id)
             }
             #expect(throws: MeetingAccessError.contactNotFound) {
                 try otherStore.contact(id: contact.id)
-            }
-            #expect(throws: MeetingAccessError.glossaryTermNotFound) {
-                try otherStore.glossaryTerm(id: glossary.id)
             }
         }
 
@@ -213,25 +166,10 @@ import Foundation
                 vaultId: fixture.primaryVaultID,
                 content: "Valid metadata"
             )
-            let malformedGlossary = try repository.createGlossaryTerm(
-                vaultId: fixture.primaryVaultID,
-                term: "Malformed aliases",
-                definition: "Malformed aliases fixture"
-            )
-            let validGlossary = try repository.createGlossaryTerm(
-                vaultId: fixture.primaryVaultID,
-                term: "Valid aliases",
-                definition: "Valid aliases fixture",
-                aliases: ["Valid"]
-            )
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE insights SET metadataJSON = '5' WHERE id = ?",
                     arguments: [malformedInsight.id]
-                )
-                try db.execute(
-                    sql: "UPDATE glossary_terms SET aliasesJSON = '{}' WHERE id = ?",
-                    arguments: [malformedGlossary.id]
                 )
             }
 
@@ -239,9 +177,6 @@ import Foundation
             let insights = try store.queryInsights().insights
             #expect(Set(insights.map(\.id)) == [malformedInsight.id, validInsight.id])
             #expect(insights.first(where: { $0.id == malformedInsight.id })?.metadata == .object([:]))
-            let terms = try store.queryGlossaryTerms().terms
-            #expect(Set(terms.map(\.id)) == [malformedGlossary.id, validGlossary.id])
-            #expect(terms.first(where: { $0.id == malformedGlossary.id })?.aliases == [])
         }
     }
 #endif

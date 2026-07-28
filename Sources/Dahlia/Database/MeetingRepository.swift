@@ -19,7 +19,7 @@ final class MeetingRepository {
         let relativePath: String?
     }
 
-    static func updateVaultExports(
+    nonisolated static func updateVaultExports(
         _ updates: [MeetingVaultExportUpdate],
         forMeetingIds meetingIds: Set<UUID>,
         in db: Database

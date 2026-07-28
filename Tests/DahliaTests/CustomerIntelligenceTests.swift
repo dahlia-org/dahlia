@@ -349,13 +349,6 @@ import GRDB
                 content: "Decision makers changed",
                 metadataJSON: #"{"rank":3,"reviewed_at":"2026-07-26T00:00:00Z"}"#
             )
-            let glossary = try fixture.repository.createGlossaryTerm(
-                vaultId: fixture.vault.id,
-                term: "DRI",
-                definition: "Directly responsible individual",
-                aliases: ["Owner"]
-            )
-
             for (type, id) in [
                 (CustomerResourceType.organization, organization.id),
                 (.contact, contact.id),
@@ -367,11 +360,6 @@ import GRDB
                     resourceType: type,
                     resourceId: id,
                     role: .evidence
-                )
-                _ = try fixture.repository.addGlossaryTermReference(
-                    glossaryTermId: glossary.id,
-                    resourceType: type,
-                    resourceId: id
                 )
             }
             let organizationReference = try fixture.repository.addProjectResourceReference(
@@ -443,19 +431,13 @@ import GRDB
             let counts = try fixture.manager.dbQueue.read { db in
                 try (
                     InsightReferenceRecord.filter(Column("insightId") == insight.id).fetchCount(db),
-                    GlossaryTermReferenceRecord
-                        .filter(Column("glossaryTermId") == glossary.id)
-                        .fetchCount(db),
                     ProjectResourceReferenceRecord.fetchCount(db),
-                    InsightRecord.filter(key: insight.id).fetchCount(db),
-                    GlossaryTermRecord.filter(key: glossary.id).fetchCount(db)
+                    InsightRecord.filter(key: insight.id).fetchCount(db)
                 )
             }
             #expect(counts.0 == 0)
             #expect(counts.1 == 0)
-            #expect(counts.2 == 0)
-            #expect(counts.3 == 1)
-            #expect(counts.4 == 1)
+            #expect(counts.2 == 1)
         }
     }
 #endif

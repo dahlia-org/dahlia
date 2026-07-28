@@ -88,64 +88,58 @@ public struct ConversationTopicAccessDetail: Codable, Sendable, Equatable {
     public let vault: ScopedVault
     public let topic: ConversationTopicAccessMetadata
     public let references: [ConversationTopicReferenceAccessMetadata]
+    public let referencesTruncated: Bool
     public let referencesExpectation: String
 }
 
-public enum CustomerIntelligenceProposalAccessStatus: String, Codable, Sendable {
-    case proposed
-    case applied
-    case rejected
-    case stale
+public enum OrganizationParentMutation: Sendable, Equatable {
+    case unchanged
+    case root
+    case organization(UUID)
 }
 
-public struct CustomerIntelligenceProposalAccessQuery: Sendable, Equatable {
-    public var status: CustomerIntelligenceProposalAccessStatus?
-    public var limit: Int
-    public var cursor: String?
-
-    public init(
-        status: CustomerIntelligenceProposalAccessStatus? = nil,
-        limit: Int = 25,
-        cursor: String? = nil
-    ) {
-        self.status = status
-        self.limit = limit
-        self.cursor = cursor
-    }
+public enum CustomerIntelligenceRecordKind: String, Codable, Sendable, Equatable {
+    case organization
+    case contact
+    case conversationTopic = "conversation_topic"
+    case insight
 }
 
-public struct CustomerIntelligenceProposalEvidenceAccessMetadata: Codable, Sendable, Equatable {
-    public let resourceType: CustomerIntelligenceResourceKind
+public struct CustomerIntelligenceRecordMutationResult: Codable, Sendable, Equatable {
+    public let vault: ScopedVault
+    public let resourceType: CustomerIntelligenceRecordKind
     public let resourceID: UUID
-    public let note: String?
-}
-
-public struct CustomerIntelligenceProposalAccessMetadata: Codable, Sendable, Equatable {
-    public let id: UUID
-    public let operationType: CustomerIntelligenceProposalOperationType
-    public let payload: CustomerIntelligenceProposalPayload
-    public let status: CustomerIntelligenceProposalAccessStatus
-    public let staleReason: String?
     public let revision: Int
-    public let evidence: [CustomerIntelligenceProposalEvidenceAccessMetadata]
-    public let dependencies: [UUID]
-    public let createdAt: Date
-    public let updatedAt: Date
+    public let changed: Bool
 }
 
-public struct CustomerIntelligenceProposalAccessPage: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
-    public let proposals: [CustomerIntelligenceProposalAccessMetadata]
-    public let nextCursor: String?
+public enum CustomerIntelligenceDeletionResourceKind: String, Codable, Sendable, Equatable {
+    case organization
+    case contact
+    case conversationTopic = "conversation_topic"
+    case insight
 }
 
-public struct CustomerIntelligenceProposalCreationResult: Codable, Sendable, Equatable {
+public struct CustomerIntelligenceRecordDeletionResult: Codable, Sendable, Equatable {
     public let vault: ScopedVault
-    public let proposalIDsByLocalKey: [String: UUID]
-    public let entityIDsByLocalKey: [String: UUID]
+    public let resourceType: CustomerIntelligenceDeletionResourceKind
+    public let resourceID: UUID
+    public let changed: Bool
 }
 
-public struct CustomerIntelligenceProposalMutationResult: Codable, Sendable, Equatable {
+public enum CustomerIntelligenceRelationshipKind: String, Codable, Sendable, Equatable {
+    case contactOrganizationMembership = "contact_organization_membership"
+    case projectResourceReference = "project_resource_reference"
+    case conversationTopicResourceReference = "conversation_topic_resource_reference"
+    case insightResourceReference = "insight_resource_reference"
+    case meetingProjectAssignment = "meeting_project_assignment"
+}
+
+public struct CustomerIntelligenceRelationshipMutationResult: Codable, Sendable, Equatable {
     public let vault: ScopedVault
-    public let proposalIDs: [UUID]
+    public let relationship: CustomerIntelligenceRelationshipKind
+    public let sourceID: UUID
+    public let targetID: UUID?
+    public let revision: Int?
+    public let changed: Bool
 }

@@ -356,7 +356,7 @@ public extension MeetingAccessStore {
         try validateCustomerLimit(query.limit)
         try validateResourcePair(type: query.resourceType, id: query.resourceID)
         let scope = customerCursorScope("insights", components: [
-            query.reviewState?.rawValue,
+            query.isAccepted.map(String.init),
             query.resourceType?.rawValue,
             query.resourceID?.uuidString,
         ])
@@ -368,9 +368,9 @@ public extension MeetingAccessStore {
             let vault = try fetchCustomerIntelligenceVault(in: db)
             var predicates = ["insights.vaultId = ?"]
             var arguments: StatementArguments = [vaultID]
-            if let reviewState = query.reviewState {
-                predicates.append("insights.reviewState = ?")
-                arguments += [reviewState.rawValue]
+            if let isAccepted = query.isAccepted {
+                predicates.append("insights.isAccepted = ?")
+                arguments += [isAccepted]
             }
             if let resourceType = query.resourceType, let resourceID = query.resourceID {
                 predicates.append("""
@@ -430,115 +430,24 @@ public extension MeetingAccessStore {
         }
     }
 
-    func queryGlossaryTerms(_ query: GlossaryAccessQuery = GlossaryAccessQuery()) throws -> GlossaryAccessPage {
-        try validateCustomerLimit(query.limit)
-        try validateResourcePair(type: query.resourceType, id: query.resourceID)
-        let searchValue = customerSearchValue(query.query)
-        let scope = customerCursorScope("glossary", components: [
-            searchValue,
-            query.resourceType?.rawValue,
-            query.resourceID?.uuidString,
-        ])
-        let cursor = try query.cursor.map {
-            try CustomerTextCursor.decode($0, vaultID: vaultID, scope: scope)
-        }
-
-        return try database.read { db in
-            let vault = try fetchCustomerIntelligenceVault(in: db)
-            var predicates = ["glossary_terms.vaultId = ?"]
-            var arguments: StatementArguments = [vaultID]
-            if let value = searchValue {
-                let pattern = "%\(escapedLikePattern(value))%"
-                predicates.append("""
-                (
-                    glossary_terms.term LIKE ? ESCAPE '\\' COLLATE NOCASE
-                    OR glossary_terms.definition LIKE ? ESCAPE '\\' COLLATE NOCASE
-                    OR glossary_terms.aliasesJSON LIKE ? ESCAPE '\\' COLLATE NOCASE
-                )
-                """)
-                arguments += [pattern, pattern, pattern]
-            }
-            if let resourceType = query.resourceType, let resourceID = query.resourceID {
-                predicates.append("""
-                EXISTS (
-                    SELECT 1
-                    FROM glossary_term_references
-                    WHERE glossary_term_references.glossaryTermId = glossary_terms.id
-                      AND glossary_term_references.resourceType = ?
-                      AND glossary_term_references.resourceId = ?
-                )
-                """)
-                arguments += [resourceType.rawValue, resourceID]
-            }
-            if let cursor {
-                predicates.append("""
-                (
-                    glossary_terms.term COLLATE NOCASE > ? COLLATE NOCASE
-                    OR (
-                        glossary_terms.term = ? COLLATE NOCASE
-                        AND glossary_terms.id > ?
-                    )
-                )
-                """)
-                arguments += [cursor.sortKey, cursor.sortKey, cursor.id]
-            }
-            arguments += [query.limit + 1]
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT *
-                FROM glossary_terms
-                WHERE \(predicates.joined(separator: " AND "))
-                ORDER BY term COLLATE NOCASE ASC, id ASC
-                LIMIT ?
-                """,
-                arguments: arguments
-            )
-            let hasMore = rows.count > query.limit
-            let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
-            let referenceRows = try glossaryReferenceRows(
-                glossaryTermIDs: pageRows.map { $0["id"] },
-                in: db
-            )
-            let terms = try pageRows.map { row in
-                let id: UUID = row["id"]
-                return try glossaryTermMetadata(
-                    from: row,
-                    referenceRows: referenceRows[id, default: []]
-                )
-            }
-            let nextCursor = hasMore ? terms.last.map {
-                CustomerTextCursor(
-                    vaultID: vaultID,
-                    scope: scope,
-                    sortKey: $0.term,
-                    id: $0.id
-                ).encoded()
-            } : nil
-            return GlossaryAccessPage(vault: vault, terms: terms, nextCursor: nextCursor)
-        }
-    }
-
-    func glossaryTerm(id: UUID) throws -> GlossaryTermAccessDetail {
+    func insight(id: UUID) throws -> InsightAccessDetail {
         try database.read { db in
             let vault = try fetchCustomerIntelligenceVault(in: db)
             guard let row = try Row.fetchOne(
                 db,
-                sql: "SELECT * FROM glossary_terms WHERE id = ? AND vaultId = ?",
+                sql: "SELECT * FROM insights WHERE id = ? AND vaultId = ?",
                 arguments: [id, vaultID]
             ) else {
-                throw MeetingAccessError.glossaryTermNotFound
+                throw MeetingAccessError.insightNotFound
             }
-            let referenceRows = try glossaryReferenceRows(glossaryTermIDs: [id], in: db)
-            return try GlossaryTermAccessDetail(
+            let references = try insightReferenceRows(insightIDs: [id], in: db)
+            return try InsightAccessDetail(
                 vault: vault,
-                term: glossaryTermMetadata(
-                    from: row,
-                    referenceRows: referenceRows[id, default: []]
-                )
+                insight: insightMetadata(from: row, referenceRows: references[id, default: []])
             )
         }
     }
+
 }
 
 extension MeetingAccessStore {
@@ -548,7 +457,7 @@ extension MeetingAccessStore {
         guard try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
-            arguments: ["v27_customerIntelligenceTopicReferenceTimestamp"]
+            arguments: ["v29_customerIntelligenceDirectCRUD"]
         ) == true else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -776,9 +685,6 @@ extension MeetingAccessStore {
     }
 
     func insightMetadata(from row: Row, referenceRows: [Row]) throws -> InsightAccessMetadata {
-        guard let reviewState = InsightAccessReviewState(rawValue: row["reviewState"]) else {
-            throw MeetingAccessError.invalidCustomerIntelligenceData
-        }
         let decodedMetadata = decodeJSONValue(row["metadataJSON"])
         let metadata: JSONValue = if let decodedMetadata, case .object = decodedMetadata {
             decodedMetadata
@@ -801,45 +707,43 @@ extension MeetingAccessStore {
                 createdAt: referenceRow["createdAt"]
             )
         }
-        return InsightAccessMetadata(
+        return try InsightAccessMetadata(
             id: id,
             content: row["content"],
-            reviewState: reviewState,
+            isAccepted: row["isAccepted"],
             metadata: metadata,
+            revision: row["revision"],
             references: references,
             referencesTruncated: referenceRows.count > Self.customerNestedLimit,
+            referencesExpectation: Self.insightReferencesExpectation(referenceRows),
             createdAt: row["createdAt"],
             updatedAt: row["updatedAt"]
         )
     }
 
-    func glossaryTermMetadata(from row: Row, referenceRows: [Row]) throws -> GlossaryTermAccessMetadata {
-        let aliasesJSON: String = row["aliasesJSON"]
-        let aliases = aliasesJSON.data(using: .utf8)
-            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
-        let id: UUID = row["id"]
-        let references = try referenceRows.prefix(Self.customerNestedLimit).map { referenceRow in
-            guard let resourceType = CustomerResourceAccessType(rawValue: referenceRow["resourceType"]) else {
-                throw MeetingAccessError.invalidCustomerIntelligenceData
-            }
-            let resourceID: UUID = referenceRow["resourceId"]
-            return GlossaryReferenceAccessMetadata(
-                resourceType: resourceType,
-                resourceID: resourceID,
-                resourceName: referenceRow["resourceName"],
-                createdAt: referenceRow["createdAt"]
+    static func insightReferencesExpectation(_ rows: [Row]) throws -> String {
+        let ordered = rows.sorted {
+            let lhs = (
+                $0["resourceType"] as String,
+                ($0["resourceId"] as UUID).uuidString,
+                $0["referenceRole"] as String
             )
+            let rhs = (
+                $1["resourceType"] as String,
+                ($1["resourceId"] as UUID).uuidString,
+                $1["referenceRole"] as String
+            )
+            return lhs < rhs
         }
-        return GlossaryTermAccessMetadata(
-            id: id,
-            term: row["term"],
-            definition: row["definition"],
-            aliases: aliases,
-            references: references,
-            referencesTruncated: referenceRows.count > Self.customerNestedLimit,
-            createdAt: row["createdAt"],
-            updatedAt: row["updatedAt"]
-        )
+        let items = ordered.map { row in
+            [
+                "resource_type": row["resourceType"] as String,
+                "resource_id": (row["resourceId"] as UUID).uuidString.lowercased(),
+                "reference_role": row["referenceRole"] as String,
+            ]
+        }
+        let data = try JSONSerialization.data(withJSONObject: items, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 
     func insightReferenceRows(
@@ -906,71 +810,6 @@ extension MeetingAccessStore {
             arguments: arguments
         )
         return Dictionary(grouping: rows) { row -> UUID in row["insightId"] }
-    }
-
-    func glossaryReferenceRows(
-        glossaryTermIDs: [UUID],
-        in db: Database
-    ) throws -> [UUID: [Row]] {
-        guard !glossaryTermIDs.isEmpty else { return [:] }
-        var arguments: StatementArguments = [vaultID]
-        for id in glossaryTermIDs {
-            arguments += [id]
-        }
-        arguments += [Self.customerNestedLimit + 1]
-        let placeholders = Array(repeating: "?", count: glossaryTermIDs.count).joined(separator: ", ")
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            WITH ranked_references AS (
-                SELECT
-                    reference.glossaryTermId,
-                    reference.resourceType,
-                    reference.resourceId,
-                    reference.createdAt,
-                    CASE reference.resourceType
-                        WHEN 'organization' THEN (
-                            SELECT name
-                            FROM organizations
-                            WHERE organizations.id = reference.resourceId
-                              AND organizations.vaultId = glossary_terms.vaultId
-                        )
-                        WHEN 'contact' THEN (
-                            SELECT COALESCE(displayName, email)
-                            FROM contacts
-                            WHERE contacts.id = reference.resourceId
-                              AND contacts.vaultId = glossary_terms.vaultId
-                        )
-                        WHEN 'project' THEN (
-                            SELECT name
-                            FROM projects
-                            WHERE projects.id = reference.resourceId
-                              AND projects.vaultId = glossary_terms.vaultId
-                        )
-                        WHEN 'meeting' THEN (
-                            SELECT name
-                            FROM meetings
-                            WHERE meetings.id = reference.resourceId
-                              AND meetings.vaultId = glossary_terms.vaultId
-                        )
-                    END AS resourceName,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY reference.glossaryTermId
-                        ORDER BY reference.resourceType, reference.resourceId
-                    ) AS position
-                FROM glossary_term_references AS reference
-                JOIN glossary_terms ON glossary_terms.id = reference.glossaryTermId
-                WHERE glossary_terms.vaultId = ?
-                  AND reference.glossaryTermId IN (\(placeholders))
-            )
-            SELECT *
-            FROM ranked_references
-            WHERE position <= ?
-            ORDER BY glossaryTermId, position
-            """,
-            arguments: arguments
-        )
-        return Dictionary(grouping: rows) { row -> UUID in row["glossaryTermId"] }
     }
 
     func decodeJSONValue(_ value: String) -> JSONValue? {

@@ -25,15 +25,32 @@ final class OrganizationWorkspaceViewModel {
         var id: UUID { topic.id }
     }
 
+    enum PendingDeletion: Identifiable {
+        case contact(PendingContactDeletion)
+        case organization(PendingOrganizationDeletion)
+        case topic(PendingTopicDeletion)
+
+        var id: String {
+            switch self {
+            case let .contact(pending):
+                "contact:\(pending.id.uuidString)"
+            case let .organization(pending):
+                "organization:\(pending.id.uuidString)"
+            case let .topic(pending):
+                "topic:\(pending.id.uuidString)"
+            }
+        }
+    }
+
     private(set) var roots: [OrganizationWorkspaceNode] = []
     private(set) var unassignedContacts: [ContactRecord] = []
+    private(set) var organizationCandidates: [OrganizationRecord] = []
     private(set) var loadedNodes: [UUID: OrganizationWorkspaceNode] = [:]
     private(set) var loadedChildCounts: [UUID: Int] = [:]
     private(set) var expandedNodeIDs: Set<UUID> = []
     private(set) var selectedRootID: UUID?
     var selectedNodeID: UUID?
     private(set) var selectedDetail: OrganizationWorkspaceDetail?
-    private(set) var proposals: [CustomerIntelligenceProposalOverview] = []
     private(set) var allTopics: [ConversationTopicOverview] = []
     var selectedTopicID: UUID?
     private(set) var highlightedOrganizationIDs: Set<UUID> = []
@@ -44,9 +61,7 @@ final class OrganizationWorkspaceViewModel {
     var isLoading = false
     private(set) var isMutating = false
     var errorMessage: String?
-    var pendingContactDeletion: PendingContactDeletion?
-    var pendingOrganizationDeletion: PendingOrganizationDeletion?
-    var pendingTopicDeletion: PendingTopicDeletion?
+    var pendingDeletion: PendingDeletion?
 
     private let dbQueue: DatabaseQueue?
     private var vaultID: UUID?
@@ -99,7 +114,7 @@ final class OrganizationWorkspaceViewModel {
         return roots.filter { $0.organization.name.localizedCaseInsensitiveContains(query) }
     }
 
-    func load() async {
+    func load(selectingRootID requestedRootID: UUID? = nil) async {
         guard dbQueue != nil, let vaultID else { return }
         let previouslySelectedNodeID = selectedNodeID
         loadGeneration += 1
@@ -113,24 +128,16 @@ final class OrganizationWorkspaceViewModel {
             let result = try await performRead { repository in
                 try (
                     repository.fetchRootOrganizationWorkspaceNodes(vaultId: vaultID),
-                    repository.fetchUnassignedContacts(vaultId: vaultID),
-                    repository.fetchConversationTopics(vaultId: vaultID),
-                    repository.fetchCustomerIntelligenceProposals(vaultId: vaultID)
+                    repository.fetchUnassignedContacts(vaultId: vaultID)
                 )
             }
             guard generation == loadGeneration else { return }
             roots = result.0
             unassignedContacts = result.1
-            allTopics = result.2
-            proposals = result.3.filter {
-                $0.proposal.status == .proposed || $0.proposal.status == .stale
-            }
-            if !allTopics.contains(where: { $0.id == selectedTopicID }) {
-                selectedTopicID = nil
-                highlightedOrganizationIDs = []
-            }
             errorMessage = nil
-            if let rootID = selectedRootID, roots.contains(where: { $0.id == rootID }) {
+            if let rootID = requestedRootID, roots.contains(where: { $0.id == rootID }) {
+                await selectRoot(rootID)
+            } else if let rootID = selectedRootID, roots.contains(where: { $0.id == rootID }) {
                 await selectRoot(rootID)
                 if let previouslySelectedNodeID, previouslySelectedNodeID != rootID {
                     await revealOrganization(previouslySelectedNodeID)
@@ -143,9 +150,6 @@ final class OrganizationWorkspaceViewModel {
                 selectedDetail = nil
                 loadedNodes = [:]
                 canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
-            }
-            if let selectedTopicID {
-                await selectTopic(selectedTopicID)
             }
         } catch {
             guard generation == loadGeneration else { return }
@@ -170,9 +174,16 @@ final class OrganizationWorkspaceViewModel {
         selectedRootID = id
         selectedNodeID = id
         selectedDetail = nil
+        selectedTopicID = nil
+        allTopics = []
+        highlightedOrganizationIDs = []
+        selectedTopicEvidence = []
         loadedNodes = [id: root]
+        organizationCandidates = []
         loadedChildCounts = [:]
         expandedNodeIDs = []
+        await loadOrganizationCandidates(for: id)
+        await loadTopics(for: id)
         await expand(id)
         await loadDetail()
     }
@@ -204,17 +215,18 @@ final class OrganizationWorkspaceViewModel {
         highlightedOrganizationIDs = []
         selectedTopicEvidence = []
         guard let id, dbQueue != nil, let vaultID else { return }
+        guard allTopics.contains(where: { $0.id == id }) else {
+            selectedTopicID = nil
+            return
+        }
         do {
             let result = try await performRead { repository in
-                let relatedIDs = try repository.fetchConversationTopicRelatedOrganizationIDs(
+                let relatedPaths = try repository.fetchConversationTopicRelatedOrganizationPaths(
                     id: id,
                     vaultId: vaultID
                 )
-                let paths = try relatedIDs.map {
-                    try repository.fetchOrganizationWorkspacePath(id: $0, vaultId: vaultID)
-                }
                 let evidence = try repository.fetchConversationTopicMeetingEvidence(id: id, vaultId: vaultID)
-                return (paths, evidence)
+                return (relatedPaths.paths, evidence)
             }
             guard generation == topicGeneration, selectedTopicID == id else { return }
             selectedTopicEvidence = result.1
@@ -233,15 +245,56 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    func searchAndRevealFirstMatch() async {
+    private func loadTopics(for rootID: UUID) async {
         guard dbQueue != nil, let vaultID else { return }
+        topicGeneration += 1
+        let generation = topicGeneration
+        do {
+            let topics = try await performRead {
+                try $0.fetchConversationTopics(
+                    vaultId: vaultID,
+                    scope: .organization(rootID)
+                )
+            }
+            guard generation == topicGeneration, selectedRootID == rootID else { return }
+            allTopics = topics
+        } catch {
+            guard generation == topicGeneration, selectedRootID == rootID else { return }
+            setError(error)
+        }
+    }
+
+    private func loadOrganizationCandidates(for rootID: UUID) async {
+        guard dbQueue != nil, let vaultID else { return }
+        let generation = loadGeneration
+        do {
+            let organizations = try await performRead {
+                try $0.fetchOrganizationWorkspaceSubtree(
+                    rootOrganizationId: rootID,
+                    vaultId: vaultID
+                )
+            }
+            guard generation == loadGeneration, selectedRootID == rootID else { return }
+            organizationCandidates = organizations
+        } catch {
+            guard generation == loadGeneration, selectedRootID == rootID else { return }
+            setError(error)
+        }
+    }
+
+    func searchAndRevealFirstMatch() async {
+        guard dbQueue != nil, let vaultID, let selectedRootID else { return }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         searchGeneration += 1
         let generation = searchGeneration
         do {
             let organizations = try await performRead {
-                try $0.searchOrganizationWorkspaceNodes(vaultId: vaultID, query: query)
+                try $0.searchOrganizationWorkspaceNodes(
+                    vaultId: vaultID,
+                    rootOrganizationId: selectedRootID,
+                    query: query
+                )
             }
             guard generation == searchGeneration, searchText.nilIfBlank == query else { return }
             guard let match = organizations.first else { return }
@@ -249,8 +302,7 @@ final class OrganizationWorkspaceViewModel {
                 try $0.fetchOrganizationWorkspacePath(id: match.id, vaultId: vaultID)
             }
             guard generation == searchGeneration, searchText.nilIfBlank == query else { return }
-            guard let root = path.first else { return }
-            selectedRootID = root.id
+            guard path.first?.id == selectedRootID else { return }
             loadedNodes = Dictionary(uniqueKeysWithValues: path.map { ($0.id, $0) })
             expandedNodeIDs = Set(path.dropLast().map(\.id))
             selectedNodeID = match.id
@@ -391,15 +443,14 @@ final class OrganizationWorkspaceViewModel {
             let impact = try await performRead {
                 try $0.provisionalContactDeletionImpact(id: contact.id, vaultId: vaultID)
             }
-            pendingContactDeletion = PendingContactDeletion(contact: contact, impact: impact)
+            pendingDeletion = .contact(PendingContactDeletion(contact: contact, impact: impact))
         } catch {
             setError(error)
         }
     }
 
-    func confirmContactDeletion() async {
-        guard let pending = pendingContactDeletion, let vaultID else { return }
-        pendingContactDeletion = nil
+    private func confirmContactDeletion(_ pending: PendingContactDeletion) async {
+        guard let vaultID else { return }
         await mutate(vaultID: vaultID) {
             try $0.deleteProvisionalContact(
                 id: pending.id,
@@ -417,18 +468,21 @@ final class OrganizationWorkspaceViewModel {
             let impact = try await performRead {
                 try $0.organizationDeletionImpact(id: id, vaultId: vaultID)
             }
-            pendingOrganizationDeletion = PendingOrganizationDeletion(
+            guard selectedNodeID == id,
+                  loadedNodes[id]?.organization.revision == organization.revision else {
+                return
+            }
+            pendingDeletion = .organization(PendingOrganizationDeletion(
                 organization: organization,
                 impact: impact
-            )
+            ))
         } catch {
             setError(error)
         }
     }
 
-    func confirmOrganizationDeletion() async {
-        guard let pending = pendingOrganizationDeletion, let vaultID else { return }
-        pendingOrganizationDeletion = nil
+    private func confirmOrganizationDeletion(_ pending: PendingOrganizationDeletion) async {
+        guard let vaultID else { return }
         await mutate(vaultID: vaultID) {
             try $0.deleteOrganization(
                 id: pending.id,
@@ -445,15 +499,14 @@ final class OrganizationWorkspaceViewModel {
             let impact = try await performRead {
                 try $0.topicDeletionImpact(id: topic.id, vaultId: vaultID)
             }
-            pendingTopicDeletion = PendingTopicDeletion(topic: topic, impact: impact)
+            pendingDeletion = .topic(PendingTopicDeletion(topic: topic, impact: impact))
         } catch {
             setError(error)
         }
     }
 
-    func confirmTopicDeletion() async {
-        guard let pending = pendingTopicDeletion, let vaultID else { return }
-        pendingTopicDeletion = nil
+    private func confirmTopicDeletion(_ pending: PendingTopicDeletion) async {
+        guard let vaultID else { return }
         await mutate(vaultID: vaultID) {
             try $0.deleteConversationTopic(
                 id: pending.id,
@@ -464,29 +517,15 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    func applyProposals(_ proposals: [CustomerIntelligenceProposalOverview]) async {
-        guard let vaultID else { return }
-        let revisions = Dictionary(uniqueKeysWithValues: proposals.map {
-            ($0.id, $0.proposal.revision)
-        })
-        await mutate(vaultID: vaultID) {
-            try $0.applyCustomerIntelligenceProposals(
-                vaultId: vaultID,
-                revisions: revisions
-            )
-        }
-    }
-
-    func rejectProposals(_ proposals: [CustomerIntelligenceProposalOverview]) async {
-        guard let vaultID else { return }
-        let revisions = Dictionary(uniqueKeysWithValues: proposals.map {
-            ($0.id, $0.proposal.revision)
-        })
-        await mutate(vaultID: vaultID) {
-            try $0.rejectCustomerIntelligenceProposals(
-                vaultId: vaultID,
-                revisions: revisions
-            )
+    func confirmDeletion(_ pending: PendingDeletion) async {
+        pendingDeletion = nil
+        switch pending {
+        case let .contact(contact):
+            await confirmContactDeletion(contact)
+        case let .organization(organization):
+            await confirmOrganizationDeletion(organization)
+        case let .topic(topic):
+            await confirmTopicDeletion(topic)
         }
     }
 
@@ -569,7 +608,7 @@ final class OrganizationWorkspaceViewModel {
         canvasLayout = layout
     }
 
-    private func revealOrganization(_ id: UUID) async {
+    func revealOrganization(_ id: UUID) async {
         guard dbQueue != nil, let vaultID else { return }
         do {
             let path = try await performRead {
@@ -643,22 +682,20 @@ final class OrganizationWorkspaceViewModel {
         layoutGeneration += 1
         roots = []
         unassignedContacts = []
+        organizationCandidates = []
         loadedNodes = [:]
         loadedChildCounts = [:]
         expandedNodeIDs = []
         selectedRootID = nil
         selectedNodeID = nil
         selectedDetail = nil
-        proposals = []
         allTopics = []
         selectedTopicID = nil
         highlightedOrganizationIDs = []
         selectedTopicEvidence = []
         loadingChildNodeIDs = []
         canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
-        pendingContactDeletion = nil
-        pendingOrganizationDeletion = nil
-        pendingTopicDeletion = nil
+        pendingDeletion = nil
         errorMessage = nil
         isLoading = false
     }

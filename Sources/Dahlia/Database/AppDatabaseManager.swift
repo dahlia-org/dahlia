@@ -155,6 +155,13 @@ final class AppDatabaseManager: Sendable {
             try CustomerIntelligenceTopicReferenceTimestampMigration.migrate(in: db)
         }
 
+        migrator.registerMigration(
+            "v29_customerIntelligenceDirectCRUD",
+            foreignKeyChecks: .deferred
+        ) { db in
+            try CustomerIntelligenceDirectCRUDMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

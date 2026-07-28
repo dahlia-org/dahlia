@@ -10,10 +10,79 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct CustomerIntelligenceWorkspaceTests {
         @Test
+        func directCRUDMigrationRepairsPreviouslyOpenedPreReleaseDatabase() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(
+                queue,
+                upTo: "v28_customerIntelligenceTopicReferenceTimestamp"
+            )
+            let vault = customerIntelligenceVault(name: "pre-release")
+            let insightID = UUID.v7()
+            let createdAt = Date.now.addingTimeInterval(-60)
+            let updatedAt = Date.now
+            try queue.write { db in
+                try vault.insert(db)
+            }
+            try queue.writeWithoutTransaction { db in
+                try db.execute(sql: "PRAGMA foreign_keys = OFF")
+                defer {
+                    try? db.execute(sql: "PRAGMA foreign_keys = ON")
+                }
+                try db.execute(
+                    sql: """
+                    DROP TRIGGER IF EXISTS insights_prevent_vault_change;
+                    CREATE TABLE insights_legacy (
+                        id BLOB PRIMARY KEY NOT NULL,
+                        vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+                        content TEXT NOT NULL,
+                        reviewState TEXT NOT NULL,
+                        metadataJSON TEXT NOT NULL DEFAULT '{}',
+                        createdAt DATETIME NOT NULL,
+                        updatedAt DATETIME NOT NULL
+                    );
+                    INSERT INTO insights_legacy
+                        (id, vaultId, content, reviewState, metadataJSON, createdAt, updatedAt)
+                    VALUES (?, ?, 'Accepted before upgrade', 'accepted', '{}', ?, ?);
+                    DROP TABLE insights;
+                    ALTER TABLE insights_legacy RENAME TO insights;
+                    CREATE TABLE customer_intelligence_proposals (id BLOB PRIMARY KEY NOT NULL);
+                    CREATE TABLE glossary_terms (id BLOB PRIMARY KEY NOT NULL);
+                    """,
+                    arguments: [insightID, vault.id, createdAt, updatedAt]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db in
+                let columns = try Set(db.columns(in: "insights").map(\.name))
+                #expect(columns.contains("isAccepted"))
+                #expect(columns.contains("revision"))
+                #expect(!columns.contains("reviewState"))
+                let fetchedInsight = try InsightRecord.fetchOne(db, key: insightID)
+                let insight = try #require(fetchedInsight)
+                #expect(insight.content == "Accepted before upgrade")
+                #expect(insight.isAccepted)
+                #expect(insight.revision == 1)
+                #expect(abs(insight.createdAt.timeIntervalSince(createdAt)) < 0.001)
+                #expect(abs(insight.updatedAt.timeIntervalSince(updatedAt)) < 0.001)
+                #expect(try !db.tableExists("customer_intelligence_proposals"))
+                #expect(try !db.tableExists("glossary_terms"))
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test
         // swiftlint:disable:next function_body_length
-        func v26RebuildPreservesContactRelationshipsAndRecreatesTriggers() throws {
+        func workspaceMigrationsPreserveContactRelationshipsWithoutGlossarySchema() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v25_customerIntelligence")
+            try queue.read { db in
+                let glossaryTermsExist = try db.tableExists("glossary_terms")
+                let glossaryReferencesExist = try db.tableExists("glossary_term_references")
+                #expect(!glossaryTermsExist)
+                #expect(!glossaryReferencesExist)
+            }
             let vault = customerIntelligenceVault(name: "v25")
             let otherVault = customerIntelligenceVault(name: "v25-other")
             let contactID = UUID.v7()
@@ -41,17 +110,9 @@ import GRDB
                 id: .v7(),
                 vaultId: vault.id,
                 content: "Decision maker",
-                reviewState: .accepted,
+                isAccepted: true,
                 metadataJSON: "{}",
-                createdAt: .now,
-                updatedAt: .now
-            )
-            let glossary = GlossaryTermRecord(
-                id: .v7(),
-                vaultId: vault.id,
-                term: "Dahlia",
-                definition: "Product",
-                aliasesJSON: "[]",
+                revision: 1,
                 createdAt: .now,
                 updatedAt: .now
             )
@@ -60,8 +121,17 @@ import GRDB
                 try otherVault.insert(db)
                 try project.insert(db)
                 try meeting.insert(db)
-                try insight.insert(db)
-                try glossary.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO insights
+                        (id, vaultId, content, isAccepted, metadataJSON, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        insight.id, insight.vaultId, insight.content, insight.isAccepted,
+                        insight.metadataJSON, insight.createdAt, insight.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO contacts (id, vaultId, email, displayName, createdAt, updatedAt)
@@ -83,9 +153,6 @@ import GRDB
                     INSERT INTO insight_references
                         (insightId, resourceType, resourceId, referenceRole, createdAt)
                     VALUES (?, 'contact', ?, 'evidence', ?);
-                    INSERT INTO glossary_term_references
-                        (glossaryTermId, resourceType, resourceId, createdAt)
-                    VALUES (?, 'contact', ?, ?);
                     """,
                     arguments: [
                         contactID, vault.id, Date.now, Date.now,
@@ -95,7 +162,6 @@ import GRDB
                         meeting.id, contactID, Date.now, Date.now,
                         referenceID, project.id, contactID, Date.now, Date.now,
                         insight.id, contactID, Date.now,
-                        glossary.id, contactID, Date.now,
                     ]
                 )
             }
@@ -112,7 +178,8 @@ import GRDB
                 #expect(try MeetingParticipantRecord.fetchCount(db) == 1)
                 #expect(try ProjectResourceReferenceRecord.fetchCount(db) == 1)
                 #expect(try InsightReferenceRecord.fetchCount(db) == 1)
-                #expect(try GlossaryTermReferenceRecord.fetchCount(db) == 1)
+                #expect(try !db.tableExists("glossary_terms"))
+                #expect(try !db.tableExists("glossary_term_references"))
                 let fetchedMembership = try OrganizationMembershipRecord.fetchOne(
                     db,
                     key: ["organizationId": organizationID, "contactId": contactID]
@@ -139,6 +206,16 @@ import GRDB
                 ))
                 #expect(indexes.contains("contacts_on_vaultId_sortKey_id"))
                 #expect(indexes.contains("meeting_participants_on_contactId_meetingId"))
+                for table in [
+                    "customer_intelligence_proposals",
+                    "customer_intelligence_proposal_evidence",
+                    "customer_intelligence_proposal_dependencies",
+                    "customer_intelligence_direct_mutations",
+                    "customer_intelligence_mutation_imports",
+                    "customer_intelligence_mutation_import_chunks",
+                ] {
+                    #expect(try !db.tableExists(table))
+                }
             }
 
             #expect(throws: DatabaseError.self) {
@@ -215,7 +292,6 @@ import GRDB
                 _ = try ContactRecord.deleteOne(db, key: contactID)
                 #expect(try ProjectResourceReferenceRecord.fetchCount(db) == 0)
                 #expect(try InsightReferenceRecord.fetchCount(db) == 0)
-                #expect(try GlossaryTermReferenceRecord.fetchCount(db) == 0)
             }
         }
 
@@ -258,236 +334,6 @@ import GRDB
             #expect(try abs(#require(detail.0.lastDiscussedAt).timeIntervalSince(meeting.createdAt)) < 0.001)
             #expect(detail.0.topic.revision > topic.revision)
             #expect(detail.1.first(where: { $0.resourceType == .meeting })?.note == "Owner assigned")
-        }
-
-        @Test
-        func proposalEvidenceResourceCanOnlyBeRewrittenForContactResolution() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let first = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "First"
-            )
-            let second = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Second"
-            )
-            let proposalIDs = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "rename",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: first.id,
-                            name: "Renamed",
-                            expectations: [.init(field: "name", value: "First")]
-                        ),
-                        evidence: [.init(resourceType: .organization, resourceID: first.id)]
-                    ),
-                ]
-            )
-            let proposalID = try #require(proposalIDs["rename"])
-
-            #expect(throws: DatabaseError.self) {
-                try fixture.manager.dbQueue.write { db in
-                    try db.execute(
-                        sql: """
-                        UPDATE customer_intelligence_proposal_evidence
-                        SET resourceId = ?
-                        WHERE proposalId = ? AND resourceType = 'organization'
-                        """,
-                        arguments: [second.id, proposalID]
-                    )
-                }
-            }
-        }
-
-        @Test
-        func proposalsRequireExpectationsForEveryChangedCanonicalField() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let organization = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Acme"
-            )
-
-            #expect(throws: CustomerIntelligenceError.invalidProposal) {
-                try fixture.repository.proposeCustomerIntelligenceChanges(
-                    vaultId: fixture.vault.id,
-                    inputs: [
-                        .init(
-                            localKey: "rename",
-                            operationType: .renameOrganization,
-                            payload: .init(targetID: organization.id, name: "Acme Corp")
-                        ),
-                    ]
-                )
-            }
-        }
-
-        @Test
-        func proposalFieldConflictRollsBackEntireBatch() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let organization = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Acme"
-            )
-            let contact = try fixture.repository.createProvisionalContact(
-                vaultId: fixture.vault.id,
-                displayName: "Alex"
-            )
-            let ids = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "rename",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: organization.id,
-                            name: "Acme Corp",
-                            expectations: [.init(field: "name", value: "Acme")]
-                        )
-                    ),
-                    .init(
-                        localKey: "person",
-                        operationType: .renameProvisionalContact,
-                        payload: .init(
-                            targetID: contact.id,
-                            name: "Alex Kim",
-                            expectations: [.init(field: "display_name", value: "Someone Else")]
-                        )
-                    ),
-                ]
-            )
-            let proposals = try fixture.repository.fetchCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id,
-                status: .proposed
-            )
-            let revisions = Dictionary(uniqueKeysWithValues: proposals.map { ($0.id, $0.proposal.revision) })
-
-            #expect(throws: CustomerIntelligenceError.proposalConflict) {
-                try fixture.repository.applyCustomerIntelligenceProposals(
-                    vaultId: fixture.vault.id,
-                    revisions: revisions
-                )
-            }
-            #expect(try fixture.repository.fetchOrganization(
-                id: organization.id,
-                vaultId: fixture.vault.id
-            )?.name == "Acme")
-            #expect(Set(ids.values) == Set(revisions.keys))
-        }
-
-        @Test
-        func resolvingContactMovesEvidenceAndStalesPayloadReferences() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let provisional = try fixture.repository.createProvisionalContact(
-                vaultId: fixture.vault.id,
-                displayName: "Taylor"
-            )
-            let identified = try fixture.repository.upsertContact(
-                vaultId: fixture.vault.id,
-                email: "taylor@example.com",
-                displayName: "Taylor Identified"
-            )
-            _ = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "dependent",
-                        operationType: .renameProvisionalContact,
-                        payload: .init(
-                            targetID: provisional.id,
-                            name: "Taylor R.",
-                            expectations: [.init(field: "display_name", value: "Taylor")]
-                        )
-                    ),
-                    .init(
-                        localKey: "resolve",
-                        operationType: .resolveProvisionalContact,
-                        payload: .init(
-                            targetID: provisional.id,
-                            email: "taylor@example.com",
-                            expectations: [.init(field: "email", value: nil)]
-                        ),
-                        evidence: [.init(resourceType: .contact, resourceID: provisional.id)]
-                    ),
-                ]
-            )
-            let proposals = try fixture.repository.fetchCustomerIntelligenceProposals(vaultId: fixture.vault.id)
-            let resolve = try #require(proposals.first {
-                $0.proposal.operationType == CustomerIntelligenceProposalOperationType.resolveProvisionalContact.rawValue
-            })
-            try fixture.repository.applyCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id,
-                revisions: [resolve.id: resolve.proposal.revision]
-            )
-
-            let after = try fixture.repository.fetchCustomerIntelligenceProposals(vaultId: fixture.vault.id)
-            #expect(after.first {
-                $0.proposal.operationType == CustomerIntelligenceProposalOperationType.renameProvisionalContact.rawValue
-            }?.proposal.staleReason == "contactResolved")
-            #expect(after.first { $0.id == resolve.id }?.evidence.first?.resourceId == identified.id)
-            #expect(try fixture.repository.fetchContact(id: provisional.id, vaultId: fixture.vault.id) == nil)
-        }
-
-        @Test
-        func resolvingWithUnusedEmailKeepsContactIdentityAndStalesProvisionalOperations() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let provisional = try fixture.repository.createProvisionalContact(
-                vaultId: fixture.vault.id,
-                displayName: "Robin"
-            )
-            _ = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "rename",
-                        operationType: .renameProvisionalContact,
-                        payload: .init(
-                            targetID: provisional.id,
-                            name: "Robin Lee",
-                            expectations: [.init(field: "display_name", value: "Robin")]
-                        )
-                    ),
-                    .init(
-                        localKey: "resolve",
-                        operationType: .resolveProvisionalContact,
-                        payload: .init(
-                            targetID: provisional.id,
-                            email: "robin@example.com",
-                            expectations: [.init(field: "email", value: nil)]
-                        )
-                    ),
-                ]
-            )
-            let proposals = try fixture.repository.fetchCustomerIntelligenceProposals(vaultId: fixture.vault.id)
-            let resolve = try #require(proposals.first {
-                $0.proposal.operationType == CustomerIntelligenceProposalOperationType.resolveProvisionalContact.rawValue
-            })
-
-            try fixture.repository.applyCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id,
-                revisions: [resolve.id: resolve.proposal.revision]
-            )
-
-            let fetchedResolved = try fixture.repository.fetchContact(
-                id: provisional.id,
-                vaultId: fixture.vault.id
-            )
-            let resolved = try #require(fetchedResolved)
-            #expect(resolved.email == "robin@example.com")
-            let after = try fixture.repository.fetchCustomerIntelligenceProposals(vaultId: fixture.vault.id)
-            #expect(after.first {
-                $0.proposal.operationType == CustomerIntelligenceProposalOperationType.renameProvisionalContact.rawValue
-            }?.proposal.staleReason == "contactResolved")
         }
 
         @Test
@@ -549,208 +395,6 @@ import GRDB
         }
 
         @Test
-        func unrelatedOrganizationFreshnessDoesNotInvalidateFieldExpectation() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let organization = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Acme"
-            )
-            let ids = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "rename",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: organization.id,
-                            name: "Acme Corporation",
-                            expectations: [.init(field: "name", value: "Acme")]
-                        )
-                    ),
-                ]
-            )
-            _ = try fixture.repository.addOrganizationDomain(
-                organizationId: organization.id,
-                vaultId: fixture.vault.id,
-                domainName: "acme.example"
-            )
-            let fetchedChanged = try fixture.repository.fetchOrganization(
-                id: organization.id,
-                vaultId: fixture.vault.id
-            )
-            let changed = try #require(fetchedChanged)
-            #expect(changed.revision > organization.revision)
-            let fetchedProposals = try fixture.repository.fetchCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id
-            )
-            let proposal = try #require(fetchedProposals.first { $0.id == ids["rename"] })
-
-            try fixture.repository.applyCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id,
-                revisions: [proposal.id: proposal.proposal.revision]
-            )
-            #expect(try fixture.repository.fetchOrganization(
-                id: organization.id,
-                vaultId: fixture.vault.id
-            )?.name == "Acme Corporation")
-        }
-
-        @Test
-        // swiftlint:disable:next function_body_length
-        func canonicalDeletionsStaleProposalsAndPreserveRemainingEvidence() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let meeting = try fixture.insertMeeting()
-            let root = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Acme"
-            )
-            let unit = try fixture.repository.createOrganization(
-                vaultId: fixture.vault.id,
-                parentOrganizationId: root.id,
-                nodeKind: .unit,
-                name: "Security"
-            )
-            let contact = try fixture.repository.upsertContact(
-                vaultId: fixture.vault.id,
-                email: "security@example.com",
-                displayName: "Security Owner"
-            )
-            let project = ProjectRecord(
-                id: .v7(),
-                vaultId: fixture.vault.id,
-                parentProjectId: nil,
-                name: "Customer",
-                createdAt: .now,
-                projectType: .customer
-            )
-            try fixture.manager.dbQueue.write { db in try project.insert(db) }
-            let topic = try fixture.repository.createConversationTopic(
-                vaultId: fixture.vault.id,
-                title: "Security review",
-                currentState: "Questionnaire open",
-                references: [
-                    .init(resourceType: .organization, resourceID: unit.id),
-                    .init(resourceType: .contact, resourceID: contact.id),
-                    .init(resourceType: .project, resourceID: project.id),
-                    .init(resourceType: .meeting, resourceID: meeting.id, note: "Questionnaire assigned"),
-                ]
-            )
-            let ids = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "organization",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: unit.id,
-                            name: "Risk",
-                            expectations: [.init(field: "name", value: "Security")]
-                        ),
-                        evidence: [
-                            .init(resourceType: .organization, resourceID: unit.id),
-                            .init(resourceType: .meeting, resourceID: meeting.id),
-                        ]
-                    ),
-                    .init(
-                        localKey: "topic",
-                        operationType: .updateTopic,
-                        payload: .init(
-                            targetID: topic.id,
-                            currentState: "Owner confirmed",
-                            expectations: [.init(field: "current_state", value: "Questionnaire open")]
-                        ),
-                        evidence: [
-                            .init(resourceType: .topic, resourceID: topic.id),
-                            .init(resourceType: .meeting, resourceID: meeting.id),
-                        ]
-                    ),
-                ]
-            )
-
-            try fixture.repository.deleteOrganization(id: root.id, vaultId: fixture.vault.id)
-            let afterOrganization = try fixture.repository.fetchCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id
-            )
-            let organizationProposal = try #require(afterOrganization.first { $0.id == ids["organization"] })
-            #expect(organizationProposal.proposal.staleReason == "organizationDeleted")
-            #expect(organizationProposal.evidence.map(\.resourceType) == ["meeting"])
-
-            try fixture.repository.deleteConversationTopic(id: topic.id, vaultId: fixture.vault.id)
-            let afterTopic = try fixture.repository.fetchCustomerIntelligenceProposals(vaultId: fixture.vault.id)
-            let topicProposal = try #require(afterTopic.first { $0.id == ids["topic"] })
-            #expect(topicProposal.proposal.staleReason == "topicDeleted")
-            #expect(topicProposal.evidence.map(\.resourceType) == ["meeting"])
-            try fixture.manager.dbQueue.read { db in
-                let remainingMeeting = try MeetingRecord.fetchOne(db, key: meeting.id)
-                let remainingContact = try ContactRecord.fetchOne(db, key: contact.id)
-                let remainingProject = try ProjectRecord.fetchOne(db, key: project.id)
-                #expect(remainingMeeting != nil)
-                #expect(remainingContact != nil)
-                #expect(remainingProject != nil)
-            }
-        }
-
-        @Test
-        func provisionalDeletionRejectsCalendarParticipationAndStalesReferences() throws {
-            let fixture = try CustomerIntelligenceFixture()
-            let meeting = try fixture.insertMeeting()
-            let contact = try fixture.repository.createProvisionalContact(
-                vaultId: fixture.vault.id,
-                displayName: "Misheard"
-            )
-            try fixture.manager.dbQueue.write { db in
-                try MeetingParticipantRecord(
-                    meetingId: meeting.id,
-                    contactId: contact.id,
-                    role: .unknown,
-                    responseStatus: .unknown,
-                    source: "inconsistent-test-data",
-                    createdAt: .now,
-                    updatedAt: .now
-                ).insert(db)
-            }
-            #expect(throws: CustomerIntelligenceError.provisionalContactHasParticipant) {
-                try fixture.repository.deleteProvisionalContact(id: contact.id, vaultId: fixture.vault.id)
-            }
-            try fixture.manager.dbQueue.write { db in
-                _ = try MeetingParticipantRecord
-                    .filter(Column("meetingId") == meeting.id && Column("contactId") == contact.id)
-                    .deleteAll(db)
-            }
-            let ids = try fixture.repository.proposeCustomerIntelligenceChanges(
-                vaultId: fixture.vault.id,
-                inputs: [
-                    .init(
-                        localKey: "rename",
-                        operationType: .renameProvisionalContact,
-                        payload: .init(
-                            targetID: contact.id,
-                            name: "Still wrong",
-                            expectations: [.init(field: "display_name", value: "Misheard")]
-                        )
-                    ),
-                ]
-            )
-            try fixture.repository.deleteProvisionalContact(id: contact.id, vaultId: fixture.vault.id)
-            let fetchedProposals = try fixture.repository.fetchCustomerIntelligenceProposals(
-                vaultId: fixture.vault.id
-            )
-            let proposal = try #require(fetchedProposals.first { $0.id == ids["rename"] })
-            #expect(proposal.proposal.staleReason == "contactDeleted")
-        }
-
-        @Test
-        func proposalContractHasNoMeetingParticipantMutation() {
-            #expect(!CustomerIntelligenceProposalOperationType.allCases.contains {
-                $0.rawValue.contains("participant")
-            })
-        }
-
-        @Test
         func organizationSearchExpandsAncestorsAndTopicFocusHighlightsRelatedNodes() async throws {
             let fixture = try CustomerIntelligenceFixture()
             let root = try fixture.repository.createOrganization(
@@ -781,8 +425,16 @@ import GRDB
                 dbQueue: fixture.manager.dbQueue,
                 vaultID: fixture.vault.id
             )
+            let relatedPaths = try fixture.repository.fetchConversationTopicRelatedOrganizationPaths(
+                id: topic.id,
+                vaultId: fixture.vault.id
+            )
+            #expect(!relatedPaths.isTruncated)
+            #expect(relatedPaths.paths.map { $0.map(\.id) } == [[root.id, child.id, grandchild.id]])
 
             await model.load()
+            #expect(model.loadedNodes[grandchild.id] == nil)
+            #expect(model.organizationCandidates.contains { $0.id == grandchild.id })
             model.searchText = "Security"
             await model.searchAndRevealFirstMatch()
             #expect(model.selectedNodeID == grandchild.id)

@@ -1,50 +1,92 @@
 # Customer intelligence workspace
 
-Dahlia の「組織」画面は、選択中の Vault にある一社の組織階層と、その各部門で進む会話を俯瞰するための
-bounded workspace です。メインツールバー、メニューバー、または `⇧⌘O` から開きます。
+Dahlia の「顧客インテリジェンス」画面は、選択中の Vault にある顧客の組織、人物、会話の流れ、AI の
+分析結果を一か所で確認する bounded workspace です。設定の「詳細」→「ベータ機能」で
+「顧客インテリジェンス」をオンにすると、メインツールバー、メニューバー、`⇧⌘O` の入口が表示されます。
+この設定は入口の表示だけを切り替え、データ処理や MCP を無効化しません。
 
 ## 画面
 
-- 左ペインはルート組織を検索し、未所属人物を表示します。
-- 中央は選択した一つのルートだけを自動配置します。子部門は展開時に50件ずつ読み込みます。
-- 右ペインは人物、Project、継続トピック、Meeting 履歴、AI提案を表示します。
-- ズームは50〜200%です。座標は保存せず、親子関係から毎回派生します。
+- 左ペインは「概要」「組織」「人物」「Projects」「トピック」「インサイト」の機能別ナビゲーションです。
+  顧客企業はサイドバーに並べず、共通ツールバーの顧客スコープで「すべての顧客」または一つのルート組織を
+  選びます。最後に選択した機能、顧客スコープ、Table の密度は次回も復元されます。
+- 「概要」は、Vault 全体では顧客別カード、個別顧客では人物、Projects、トピック、Meeting、未確認
+  インサイトの360°サマリーを表示します。
+- 「すべての顧客」の組織画面は顧客カードのグリッドです。カード全面を選択すると顧客スコープを変更し、
+  一つのルートだけを自動配置した組織図を開きます。子部門は展開時に50件ずつ読み込みます。
+- 人物、Projects、トピック、インサイトは macOS の Table で検索、選択できます。右インスペクタは
+  閲覧と関連先への移動に限定し、人物・所属・Project・Topic の変更は明示的な専用シートで行います。
+- トピックの根拠 Meeting はクリックするとメインウインドウで開きます。インサイトは「未確認」を優先した
+  確認受信箱で、確認済みへの変更を明示的に行います。
+- Project の名称、親、種別、説明はこの画面で編集できます。Meeting の移動、Project 階層の削除、
+  要約ファイル処理は「Projectsで管理」から従来の管理ウインドウを開きます。
+- Organization、暫定人物、Topic の削除はインスペクタ最下部の Danger Zone にだけ表示します。
+- ズームは50〜200%です。ツールバー操作に加えてトラックパッドのピンチで連続的に変更できます。
+  座標は保存せず、親子関係から毎回派生します。
 - Topic を選ぶと直接参照された組織・部門と、参照人物の所属部門を表示して祖先を展開し、それ以外を弱く
   表示します。根拠 Meeting の日時と note は右ペインで確認できます。
 
-人物はキャンバスのノードではありません。所属と役割を右ペインで管理します。Topic の Meeting
+人物はキャンバスのノードではありません。所属と役割は Organization の文脈で管理します。Topic の Meeting
 参照には、その会議で進んだ内容を短い note として必ず保存します。最終議論日時、Meeting 数、関係部門数は
 参照履歴から計算され、固定進捗率や sentiment は持ちません。
+
+## 顧客スコープ
+
+個別顧客スコープは、選択したルート Organization と全子孫を含みます。人物はその範囲への Membership を
+持つ Contact だけです。Project、Topic、Insight は、範囲内 Organization または Contact への明示的な
+参照を持つものだけを含みます。Project や Meeting を経由した推測的な関連付けは行いません。一覧、検索、
+件数、概要はすべて同じ規則を使います。
 
 ## AI で整理
 
 「AIで整理」は既定90日の期間、組織 UUID、任意の Project UUID を含む依頼をチャット入力欄に準備します。
-自動送信しません。AI は保存済み要約を先に読み、必要な場合だけ transcript を確認します。通常の分析は
-`propose_customer_intelligence_changes` までで止まり、正準データは変わりません。
+自動送信しません。AI は保存済み要約を先に読み、必要な場合だけ transcript を確認します。
 
-提案には差分、field expectation、根拠、依存関係、revision があります。複数選択の apply は依存順の
-単一 transaction で実行され、一件でも stale・対象消失・期待値不一致なら全件をロールバックします。
-`meeting_participants` を変更する proposal operation は存在しません。
-既存データを変更する proposal では、変更対象フィールドすべての expectation が必須です。Topic の参照を
-置き換える場合は `get_conversation_topic` の `references_expectation` をそのまま使用します。
-提案バッチ、文字列、依存関係、根拠、Topic 参照には上限があり、重複参照や Meeting note の欠落は review
-queue に保存する前に拒否されます。
+AI は書き込み前に `query_*` または `get_*` で現在値と revision を取得し、次の単純なツールを順番に呼びます。
 
-暫定人物はメールがない Contact です。メールが判明した時は同じ Contact を特定済みにするか、既存の
-特定済み Contact へ参照を統合します。統合前の UUID を payload から参照する未適用提案は
-`contactResolved` で stale になります。Contact、Organization、Topic の削除は UI／Repository の明示操作
-だけに限定され、MCP proposal からは実行できません。
+- 正準レコード: `create_*`、`update_*`、`delete_*`
+- 関係: `set_*`、`remove_*`
+- Contact 統合: `resolve_contact`
+
+一回の呼び出しが変更するのは一つのレコードまたは一つの関係だけです。一件が失敗しても、それまでの成功分は
+維持され、独立した後続処理を続けられます。失敗した対象だけを再取得し、最新 revision で再試行します。
+proposal、import、batch、永続 idempotency staging は使いません。Codex の `auto_review` が各 MCP
+書き込みの危険度を判定します。
+
+暫定人物はメールがない Contact です。メールだけで Contact を作る場合、表示名にはメールの `@` より前を
+使用します。未使用メールが判明した場合は `update_contact`、既存 Contact と同一人物だと判明した場合は
+`resolve_contact` を使用します。Organization、Contact、Topic、Insight の削除は MCP
+に公開しますが、Meeting participant の変更は引き続き公開しません。
+
+削除も事前に現在の revision を取得してから1件ずつ実行します。Organization は子 Organization と所属
+Contact がない葉だけを削除できます。Contact は Membership、Meeting participant、Project、Topic、
+Insight の参照がすべて解除されている場合だけ削除できます。条件を満たさない場合は
+`resource_in_use` と参照種別・件数が返るため、解除可能な関係を個別に外してから再取得します。
 
 ## MCP
 
-読み取りセッションでは次を利用できます。
+読み取りセッションでは Organization、Contact、Topic、Insight、Project、Meeting を `query_*`／`get_*`
+で取得できます。`query_organization_chart` は一つのルートを最大500ノードまで返し、
+`nodes_truncated` が絞り込みの必要性を示します。
 
-- `query_organization_chart`
-- `query_conversation_topics`
-- `get_conversation_topic`
-- `query_customer_intelligence_proposals`
-- Organization／Topic filter を持つ `query_meetings`
+`--write` セッションだけが以下を追加公開します。
 
-`--write` セッションだけが proposal の作成、適用、却下を公開します。Meeting 限定セッションは従来どおり
-`get_meeting` だけです。Contact 応答の `email` は常にキーを持ち、暫定人物では `null` です。
-組織図の一回の応答は最大500ノードで、`nodes_truncated` が depth や子件数を絞る必要があるかを示します。
+- `create_organization` / `update_organization` / `delete_organization`
+- `create_contact` / `update_contact` / `delete_contact` / `resolve_contact`
+- `create_conversation_topic` / `update_conversation_topic` / `delete_conversation_topic`
+- `create_insight` / `update_insight` / `delete_insight`
+- `set_contact_organization_membership` / `remove_contact_organization_membership`
+- `set_project_resource_reference` / `remove_project_resource_reference`
+- `set_conversation_topic_resource_reference` / `remove_conversation_topic_resource_reference`
+- `set_insight_resource_reference` / `remove_insight_resource_reference`
+- `set_meeting_project_assignment` / `remove_meeting_project_assignment`
+
+`set` は作成または metadata 更新、`remove` は関係だけの削除です。同じ値の再設定や削除済み関係の再削除は
+成功し、`changed: false` を返します。Meeting 限定セッションは従来どおり `get_meeting` だけです。
+Contact 応答の `email` は常にキーを持ち、暫定人物では `null` です。
+Topic と Insight の削除は所有する参照だけを削除し、参照先の Meeting、Organization、Contact、Project
+は残します。
+
+開発途中の旧スキーマを適用済みの QA データベースは、Dahlia 起動時の
+`v29_customerIntelligenceDirectCRUD` で現在の Insight 列と cleanup trigger へ前方修復されます。
+MCP は v29 完了前のデータベースを開かず、Dahlia を一度起動してアップグレードするよう案内します。

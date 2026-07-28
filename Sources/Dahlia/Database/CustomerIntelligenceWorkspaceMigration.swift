@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// Adds the bounded organization workspace and its reviewable AI proposal queue.
+/// Adds the bounded organization workspace and conversation topics.
 ///
 /// The contact-related tables are rebuilt together because `contacts.email` changes
 /// from required to nullable. This migration is registered with deferred foreign-key
@@ -16,7 +16,9 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         try db.alter(table: "organizations") {
             $0.add(column: "revision", .integer).notNull().defaults(to: 1)
         }
-
+        try db.alter(table: "insights") {
+            $0.add(column: "revision", .integer).notNull().defaults(to: 1)
+        }
         try createWorkspaceTables(in: db)
         try createIndexes(in: db)
         try CustomerIntelligenceMigration.createOrganizationTriggers(in: db)
@@ -38,7 +40,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         let participantKeys: [String]
         let projectReferences: Int
         let insightReferences: Int
-        let glossaryReferences: Int
 
         static func capture(in db: Database) throws -> Self {
             try Self(
@@ -68,10 +69,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
                 insightReferences: Int.fetchOne(
                     db,
                     sql: "SELECT COUNT(*) FROM insight_references WHERE resourceType = 'contact'"
-                ) ?? 0,
-                glossaryReferences: Int.fetchOne(
-                    db,
-                    sql: "SELECT COUNT(*) FROM glossary_term_references WHERE resourceType = 'contact'"
                 ) ?? 0
             )
         }
@@ -104,11 +101,7 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
                   try Int.fetchOne(
                       db,
                       sql: "SELECT COUNT(*) FROM insight_references WHERE resourceType = 'contact'"
-                  ) == insightReferences,
-                  try Int.fetchOne(
-                      db,
-                      sql: "SELECT COUNT(*) FROM glossary_term_references WHERE resourceType = 'contact'"
-                  ) == glossaryReferences
+                  ) == insightReferences
             else {
                 throw DatabaseError(message: "customer intelligence rebuild did not preserve references")
             }
@@ -119,7 +112,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         let triggerNames = [
             "contacts_prevent_vault_change",
             "insights_prevent_vault_change",
-            "glossary_terms_prevent_vault_change",
             "meetings_prevent_vault_change",
             "organizations_validate_insert",
             "organizations_validate_update",
@@ -135,8 +127,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
             "project_resource_references_validate_update",
             "insight_references_validate_insert",
             "insight_references_validate_update",
-            "glossary_term_references_validate_insert",
-            "glossary_term_references_validate_update",
             "organizations_cleanup_resource_references",
             "contacts_cleanup_resource_references",
             "projects_cleanup_resource_references",
@@ -235,42 +225,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
             )
         );
 
-        CREATE TABLE customer_intelligence_proposals (
-            id BLOB PRIMARY KEY NOT NULL,
-            vaultId BLOB NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
-            operationType TEXT NOT NULL,
-            payloadJSON TEXT NOT NULL,
-            status TEXT NOT NULL CHECK (status IN ('proposed', 'applied', 'rejected', 'stale')),
-            staleReason TEXT,
-            revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
-            createdAt DATETIME NOT NULL,
-            updatedAt DATETIME NOT NULL,
-            CHECK (LENGTH(TRIM(operationType)) > 0),
-            CHECK (LENGTH(TRIM(payloadJSON)) > 0),
-            CHECK (
-                (status = 'stale' AND staleReason IS NOT NULL AND LENGTH(TRIM(staleReason)) > 0)
-                OR (status <> 'stale' AND staleReason IS NULL)
-            )
-        );
-
-        CREATE TABLE customer_intelligence_proposal_evidence (
-            proposalId BLOB NOT NULL REFERENCES customer_intelligence_proposals(id) ON DELETE CASCADE,
-            resourceType TEXT NOT NULL
-                CHECK (resourceType IN ('organization', 'contact', 'project', 'meeting', 'topic')),
-            resourceId BLOB NOT NULL,
-            note TEXT,
-            createdAt DATETIME NOT NULL,
-            PRIMARY KEY (proposalId, resourceType, resourceId),
-            CHECK (note IS NULL OR LENGTH(TRIM(note)) > 0)
-        );
-
-        CREATE TABLE customer_intelligence_proposal_dependencies (
-            proposalId BLOB NOT NULL REFERENCES customer_intelligence_proposals(id) ON DELETE CASCADE,
-            requiredProposalId BLOB NOT NULL REFERENCES customer_intelligence_proposals(id) ON DELETE CASCADE,
-            createdAt DATETIME NOT NULL,
-            PRIMARY KEY (proposalId, requiredProposalId),
-            CHECK (proposalId <> requiredProposalId)
-        );
         """)
     }
 
@@ -286,15 +240,10 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
             ON conversation_topics(vaultId, updatedAt DESC, id DESC);
         CREATE INDEX conversation_topic_references_on_resource
             ON conversation_topic_references(resourceType, resourceId, topicId);
-        CREATE INDEX customer_intelligence_proposals_on_vault_status_createdAt
-            ON customer_intelligence_proposals(vaultId, status, createdAt DESC, id DESC);
-        CREATE INDEX customer_intelligence_proposal_evidence_on_resource
-            ON customer_intelligence_proposal_evidence(resourceType, resourceId, proposalId);
-        CREATE INDEX customer_intelligence_proposal_dependencies_on_required
-            ON customer_intelligence_proposal_dependencies(requiredProposalId, proposalId);
         """)
     }
 
+    // swiftlint:disable:next function_body_length
     private static func createRevisionTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER organization_domains_revision_insert
@@ -348,7 +297,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         BEGIN
             UPDATE contacts SET revision = revision + 1 WHERE id = OLD.contactId;
         END;
-
         CREATE TRIGGER conversation_topic_references_revision_insert
         AFTER INSERT ON conversation_topic_references
         BEGIN
@@ -370,7 +318,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         """)
     }
 
-    // swiftlint:disable:next function_body_length
     private static func createWorkspaceValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         CREATE TRIGGER conversation_topics_prevent_vault_change
@@ -378,13 +325,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
         WHEN NEW.vaultId <> OLD.vaultId
         BEGIN
             SELECT RAISE(ABORT, 'conversation topic vault is immutable');
-        END;
-
-        CREATE TRIGGER customer_intelligence_proposals_prevent_vault_change
-        BEFORE UPDATE OF vaultId ON customer_intelligence_proposals
-        WHEN NEW.vaultId <> OLD.vaultId
-        BEGIN
-            SELECT RAISE(ABORT, 'customer intelligence proposal vault is immutable');
         END;
 
         CREATE TRIGGER conversation_topic_references_validate_insert
@@ -428,90 +368,10 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
                OR NEW.resourceId <> OLD.resourceId;
         END;
 
-        CREATE TRIGGER customer_intelligence_proposal_evidence_validate_insert
-        BEFORE INSERT ON customer_intelligence_proposal_evidence
-        BEGIN
-            SELECT RAISE(ABORT, 'proposal evidence does not exist in the proposal vault')
-            WHERE NOT (
-                (NEW.resourceType = 'organization' AND EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN organizations ON organizations.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = organizations.vaultId
-                ))
-                OR (NEW.resourceType = 'contact' AND EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN contacts ON contacts.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = contacts.vaultId
-                ))
-                OR (NEW.resourceType = 'project' AND EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN projects ON projects.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = projects.vaultId
-                ))
-                OR (NEW.resourceType = 'meeting' AND EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN meetings ON meetings.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = meetings.vaultId
-                ))
-                OR (NEW.resourceType = 'topic' AND EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN conversation_topics ON conversation_topics.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = conversation_topics.vaultId
-                ))
-            );
-        END;
-
-        CREATE TRIGGER customer_intelligence_proposal_evidence_validate_update
-        BEFORE UPDATE OF proposalId, resourceType, resourceId ON customer_intelligence_proposal_evidence
-        BEGIN
-            SELECT RAISE(ABORT, 'proposal evidence identity is immutable')
-            WHERE NEW.proposalId <> OLD.proposalId
-               OR NEW.resourceType <> OLD.resourceType
-               OR (NEW.resourceType <> 'contact' AND NEW.resourceId <> OLD.resourceId);
-
-            SELECT RAISE(ABORT, 'proposal evidence does not exist in the proposal vault')
-            WHERE (
-                NEW.resourceType = 'contact'
-                AND NOT EXISTS (
-                    SELECT 1 FROM customer_intelligence_proposals
-                    JOIN contacts ON contacts.id = NEW.resourceId
-                    WHERE customer_intelligence_proposals.id = NEW.proposalId
-                      AND customer_intelligence_proposals.vaultId = contacts.vaultId
-                )
-            );
-        END;
-
-        CREATE TRIGGER customer_intelligence_proposal_dependencies_validate_insert
-        BEFORE INSERT ON customer_intelligence_proposal_dependencies
-        BEGIN
-            SELECT RAISE(ABORT, 'proposal dependency must stay within one vault')
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM customer_intelligence_proposals AS proposal
-                JOIN customer_intelligence_proposals AS required
-                  ON required.id = NEW.requiredProposalId
-                WHERE proposal.id = NEW.proposalId
-                  AND proposal.vaultId = required.vaultId
-            );
-        END;
         """)
     }
 
-    private static func createWorkspaceCleanupTriggers(in db: Database) throws {
-        try db.execute(sql: """
-        CREATE TRIGGER conversation_topics_cleanup_proposal_evidence
-        AFTER DELETE ON conversation_topics
-        BEGIN
-            DELETE FROM customer_intelligence_proposal_evidence
-            WHERE resourceType = 'topic' AND resourceId = OLD.id;
-        END;
-        """)
-
+    static func createWorkspaceCleanupTriggers(in db: Database) throws {
         let resources = [
             ("organizations", "organization"),
             ("contacts", "contact"),
@@ -525,8 +385,6 @@ enum CustomerIntelligenceWorkspaceMigration { // swiftlint:disable:this type_bod
             AFTER DELETE ON \(table)
             BEGIN
                 DELETE FROM conversation_topic_references
-                WHERE resourceType = '\(resourceType)' AND resourceId = OLD.id;
-                DELETE FROM customer_intelligence_proposal_evidence
                 WHERE resourceType = '\(resourceType)' AND resourceId = OLD.id;
             END;
             """)

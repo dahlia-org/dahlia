@@ -2,12 +2,13 @@
 
 > Implementation note (2026-07-27): 「組織」画面は一社のルートに限定した bounded hierarchy viewer として
 > 実装した。巨大な graph canvas、graph DB、自由座標は導入せず、人物は inspector に置く。AI の判断は
-> 正準データから分離した reviewable proposal とする。詳細は
-> [ADR 0012](../adr/0012-reviewable-customer-intelligence-workspace.md) を参照。
+> Insight として正準レコードから分離し、明示された更新は単純な単数 CRUD／関係ツールで逐次反映する。詳細は
+> [ADR 0012](../adr/0012-reviewable-customer-intelligence-workspace.md) を参照。Glossary は単独では文字起こしや
+> AI context を改善しないため、リリース前に v25/v26 schema から除外し、実用途が生じた場合に再検討する。
 
 - 調査日: 2026-07-26
 - 状態: v1 の設計判断に反映
-- 対象: Dahlia の議事録・Calendar attendee から構築する組織、人物、プロジェクト、用語、AI示唆のローカルデータ基盤
+- 対象: Dahlia の議事録・Calendar attendee から構築する組織、人物、プロジェクト、AI示唆のローカルデータ基盤
 
 ## 結論
 
@@ -21,7 +22,7 @@ Dahlia の v1 では、汎用の `ontology_entities` テーブルやグラフDB�
 4. 出典、確度、rank、review状態を持つ、再計算可能または人の確認を要する知識
 5. AIまたは人が実際の正準データを変更するための、示唆とは分離された明示的な操作
 
-したがって、Dahlia では Organizations、Contacts、Projects、Meetings、Glossary terms を正準テーブルとし、確定関係を専用の関連テーブル、まだ仕様が固まっていないAI示唆を `insights` と汎用参照テーブルへ分離する。
+したがって、Dahlia では Organizations、Contacts、Projects、Meetings を正準テーブルとし、確定関係を専用の関連テーブル、まだ仕様が固まっていないAI示唆を `insights` と汎用参照テーブルへ分離する。
 
 Insight の承認は正準テーブルへの書き戻しを意味しない。Organization、Membership、Project referenceの変更は、将来も別の明示的操作として扱う。これにより、AIの出力形式やrank方式を変更しても、顧客データの主キーや安定カラムを移行せずに済む。
 
@@ -193,10 +194,10 @@ Dahliaへの示唆:
 | Organization | company hierarchy、team/role、people map | Organization/Unitを同一階層、Contactとは多対多 |
 | Interaction | email、calendar、callをpeople/accountへ接続 | calendar-linked MeetingのparticipantだけをContactへ接続 |
 | Relationship signal | recency、frequency、engagement、sentiment | meeting countとlast interactionのみ履歴から計算 |
-| Knowledge | snippet、business rule、metric、authoritative source | Glossary termとInsightを分離 |
+| Knowledge | snippet、business rule、metric、authoritative source | v1はInsightのみ。専用Glossaryは実用途が生じるまで保留 |
 | Rank/freshness | source、usage、freshness、重みで派生 | `metadataJSON`。安定カラムにしない |
 | Provenance | citation、source link、permission | typed referenceで対象を示し、詳細はmetadata |
-| Review/write-back | proposalとactionを権限付きで分離 | accepted Insightは正準データを変更しない |
+| Review/write-back | insightとactionを権限付きで分離 | Insightは正準データを暗黙変更せず、更新は型付き単数ツールで実行 |
 | 360 UI | entity詳細にhierarchy、people、timeline、insightを集約 | v1はDB/MCP基盤。UIは後続 |
 
 ## v1 の設計判断
@@ -210,9 +211,8 @@ Dahliaへの示唆:
 - public mailboxの判定は依存関係や通信を増やさないcurated listによるbest effortとし、未知のproviderを完全には分類しない。
 - Contactの所属は多対多とし、兼務を表現できるようにする。
 - ProjectはOrganization/Unit/Contactを汎用resource referenceで参照し、専用の `organizationId` を持たない。
-- Glossary termは安定した用語・定義、Insightは未確定のAIまたは人の示唆として分離する。
-- Insight/Glossary/Projectの汎用参照は、INSERT/UPDATE時の存在・Vault検証と、参照先DELETE時のtrigger cleanupを持つ。
-- read-only MCPからOrganization、Contact、Project resource、Insight、GlossaryをVaultスコープで取得できるようにする。
+- Insight/Projectの汎用参照は、INSERT/UPDATE時の存在・Vault検証と、参照先DELETE時のtrigger cleanupを持つ。
+- read-only MCPからOrganization、Contact、Project resource、InsightをVaultスコープで取得できるようにする。
 - MCPのcursorはVaultとfilter条件に束縛し、nested referenceは上限とtruncation表示を持たせる。
 
 ### v1では採用しない
@@ -223,6 +223,7 @@ Dahliaへの示唆:
 - AIによるOrganization、Membership、Project relationの自動確定
 - Contactの複数email、merge、split
 - relationship health、sentiment、engagement score
+- 文字起こし補正やAI contextへ接続されない独立Glossary
 - Calendar全件または既存Meetingのbackfill
 - AIによる定期・自動生成
 
@@ -236,7 +237,6 @@ Dahliaへの示唆:
 - `organization_memberships.contactId`
 - `project_resource_references` のContact参照
 - `insight_references` のContact参照
-- `glossary_term_references` のContact参照
 
 ローカルのContact UUIDはVault内の安定IDであり、クラウド全体の人物IDとしてそのまま採用しない。クラウドは独自のUUIDを発行し、source Vault/local UUID/emailをidentity evidenceとして保持できる。
 
@@ -261,6 +261,5 @@ Dahliaへの示唆:
 - 関連Projectとrelation label
 - Meeting timelineとlast interaction
 - accepted Insight
-- Glossary term
 
 これにより、C360型の俯瞰と、個別関係の根拠確認を両立できる。

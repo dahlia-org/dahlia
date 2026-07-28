@@ -5,10 +5,12 @@ import ImageIO
 @testable import DahliaMeetingAccess
 @testable import DahliaRuntimeSupport
 
+// swiftlint:disable file_length
 #if canImport(Testing)
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
         @Test
         func projectWorkspaceReadAndWriteOperationsEnforceHierarchyTypeAndRevision() throws {
@@ -826,17 +828,6 @@ import ImageIO
                 resourceId: contact.id,
                 role: .evidence
             )
-            let glossary = try repository.createGlossaryTerm(
-                vaultId: fixture.primaryVaultID,
-                term: "DRI",
-                definition: "Directly responsible individual",
-                aliases: ["Owner"]
-            )
-            _ = try repository.addGlossaryTermReference(
-                glossaryTermId: glossary.id,
-                resourceType: .organization,
-                resourceId: organization.id
-            )
             let topic = try repository.createConversationTopic(
                 vaultId: fixture.primaryVaultID,
                 title: "Platform rollout",
@@ -880,9 +871,6 @@ import ImageIO
             ))
             #expect(insights.insights.map(\.id) == [insight.id])
             #expect(insights.insights.first?.references.first?.resourceName == "Owner")
-            let terms = try store.queryGlossaryTerms(GlossaryAccessQuery(query: "Owner"))
-            #expect(terms.terms.map(\.id) == [glossary.id])
-            #expect(try store.glossaryTerm(id: glossary.id).term.references.first?.resourceName == "Acme")
             let topicPage = try store.queryConversationTopics(.init(organizationID: unit.id))
             #expect(topicPage.topics.map(\.id) == [topic.id])
             let topicDetail = try store.conversationTopic(id: topic.id)
@@ -936,6 +924,7 @@ import ImageIO
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
         func mcpProtocolRequiresInitializationAndReportsScopedVaultErrors() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
@@ -961,8 +950,7 @@ import ImageIO
                 "query_organizations", "get_organization", "query_organization_chart",
                 "query_contacts", "get_contact",
                 "query_conversation_topics", "get_conversation_topic",
-                "query_customer_intelligence_proposals",
-                "query_project_resources", "query_insights", "query_glossary_terms", "get_glossary_term",
+                "query_project_resources", "query_insights", "get_insight",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
             #expect(definitions.allSatisfy { $0["outputSchema"] != nil })
@@ -1053,7 +1041,8 @@ import ImageIO
         }
 
         @Test
-        func writeMCPPublishesAndExecutesProjectMutationToolsOnlyWhenEnabled() throws {
+        // swiftlint:disable:next function_body_length
+        func writeMCPPublishesSimpleCrudToolsOnlyWhenEnabled() throws {
             let fixture = try Fixture()
             let readOnlyServer = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
             _ = try Self.json(readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
@@ -1063,9 +1052,8 @@ import ImageIO
             )
             let readOnlyDefinitions = ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_project" })
-            #expect(!readOnlyDefinitions.contains {
-                $0["name"] as? String == "propose_customer_intelligence_changes"
-            })
+            #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "create_organization" })
+            #expect(!readOnlyDefinitions.contains { ($0["name"] as? String)?.hasPrefix("delete_") == true })
             let deniedWrite = try Self.json(readOnlyServer.handleLine(#"""
             {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"create_project","arguments":{"name":"Denied"}}}
             """#))
@@ -1081,18 +1069,40 @@ import ImageIO
             _ = writeServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let writeTools = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#))
             let writeDefinitions = ((writeTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
-            #expect(writeDefinitions.suffix(3).compactMap { $0["name"] as? String } == [
-                "create_project", "update_project", "set_meeting_project_memberships",
-            ])
-            #expect(writeDefinitions.contains {
-                $0["name"] as? String == "propose_customer_intelligence_changes"
-            })
-            #expect(writeDefinitions.contains {
-                $0["name"] as? String == "apply_customer_intelligence_proposals"
-            })
-            #expect(writeDefinitions.contains {
-                $0["name"] as? String == "reject_customer_intelligence_proposals"
-            })
+            let names = Set(writeDefinitions.compactMap { $0["name"] as? String })
+            let customerWriteNames: Set<String> = [
+                "create_organization", "update_organization", "delete_organization",
+                "create_contact", "update_contact", "delete_contact", "resolve_contact",
+                "create_conversation_topic", "update_conversation_topic", "delete_conversation_topic",
+                "create_insight", "update_insight", "delete_insight",
+                "set_contact_organization_membership", "remove_contact_organization_membership",
+                "set_project_resource_reference", "remove_project_resource_reference",
+                "set_conversation_topic_resource_reference",
+                "remove_conversation_topic_resource_reference",
+                "set_insight_resource_reference", "remove_insight_resource_reference",
+                "set_meeting_project_assignment", "remove_meeting_project_assignment",
+            ]
+            #expect(customerWriteNames.isSubset(of: names))
+            for definition in writeDefinitions where customerWriteNames.contains(definition["name"] as? String ?? "") {
+                let inputSchema = try #require(definition["inputSchema"] as? [String: Any])
+                let properties = try #require(inputSchema["properties"] as? [String: Any])
+                #expect(inputSchema["type"] as? String == "object")
+                #expect(properties["operations"] == nil)
+                #expect(properties["records"] == nil)
+            }
+            for removedName in [
+                "mutate_customer_intelligence",
+                "begin_customer_intelligence_import",
+                "append_customer_intelligence_import",
+                "get_customer_intelligence_import",
+                "commit_customer_intelligence_import",
+                "apply_customer_intelligence_proposals",
+                "reject_customer_intelligence_proposals",
+                "set_meeting_project_memberships",
+            ] {
+                #expect(!names.contains(removedName))
+            }
+            #expect(!names.contains { $0.contains("participant") })
             let destructiveByName: [String: Bool] = Dictionary(
                 uniqueKeysWithValues: writeDefinitions.compactMap { definition -> (String, Bool)? in
                     guard let name = definition["name"] as? String,
@@ -1105,7 +1115,52 @@ import ImageIO
             )
             #expect(destructiveByName["create_project"] == false)
             #expect(destructiveByName["update_project"] == true)
-            #expect(destructiveByName["set_meeting_project_memberships"] == true)
+            #expect(destructiveByName["create_organization"] == false)
+            #expect(destructiveByName["update_organization"] == true)
+            #expect(destructiveByName["delete_organization"] == true)
+            #expect(destructiveByName["delete_contact"] == true)
+            #expect(destructiveByName["delete_conversation_topic"] == true)
+            #expect(destructiveByName["delete_insight"] == true)
+            #expect(destructiveByName["remove_contact_organization_membership"] == true)
+            for name in customerWriteNames where name.hasPrefix("set_") {
+                #expect(destructiveByName[name] == true)
+            }
+            let createContactDefinition = try #require(writeDefinitions.first {
+                $0["name"] as? String == "create_contact"
+            })
+            let createContactSchema = try #require(createContactDefinition["inputSchema"] as? [String: Any])
+            let createContactProperties = try #require(createContactSchema["properties"] as? [String: Any])
+            let emailSchema = try #require(createContactProperties["email"] as? [String: Any])
+            let displayNameSchema = try #require(createContactProperties["display_name"] as? [String: Any])
+            #expect(emailSchema["maxLength"] as? Int == CustomerIntelligenceWriteLimits.email)
+            #expect(displayNameSchema["maxLength"] as? Int == CustomerIntelligenceWriteLimits.shortText)
+            let projectReferenceDefinition = try #require(writeDefinitions.first {
+                $0["name"] as? String == "set_project_resource_reference"
+            })
+            let projectReferenceSchema = try #require(
+                projectReferenceDefinition["inputSchema"] as? [String: Any]
+            )
+            let projectReferenceProperties = try #require(
+                projectReferenceSchema["properties"] as? [String: Any]
+            )
+            let projectResourceTypeSchema = try #require(
+                projectReferenceProperties["resource_type"] as? [String: Any]
+            )
+            #expect(projectResourceTypeSchema["enum"] as? [String] == ["organization", "contact"])
+            let deleteNames: Set<String> = [
+                "delete_organization", "delete_contact", "delete_conversation_topic",
+                "delete_insight",
+            ]
+            for definition in writeDefinitions where deleteNames.contains(definition["name"] as? String ?? "") {
+                let inputSchema = try #require(definition["inputSchema"] as? [String: Any])
+                let inputProperties = try #require(inputSchema["properties"] as? [String: Any])
+                let outputSchema = try #require(definition["outputSchema"] as? [String: Any])
+                let outputProperties = try #require(outputSchema["properties"] as? [String: Any])
+                let annotations = try #require(definition["annotations"] as? [String: Any])
+                #expect(inputProperties["revision"] != nil)
+                #expect(outputProperties["revision"] == nil)
+                #expect(annotations["idempotentHint"] as? Bool == false)
+            }
 
             let create = try Self.json(writeServer.handleLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
@@ -1175,222 +1230,699 @@ import ImageIO
         }
 
         @Test
-        func customerIntelligenceWriteStoreCreatesAndAppliesDependentProposals() throws {
+        func customerIntelligenceMCPReturnsStableWriteErrorCodes() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            let callerSuppliedID = UUID.v7()
-            let creation = try store.proposeCustomerIntelligenceChanges([
-                .init(
-                    localKey: "organization",
-                    operationType: .createOrganization,
-                    payload: .init(
-                        targetID: callerSuppliedID,
-                        nodeKind: "organization",
-                        name: "Enterprise Customer"
-                    )
-                ),
-                .init(
-                    localKey: "person",
-                    operationType: .createProvisionalContact,
-                    payload: .init(name: "Customer Owner")
-                ),
-                .init(
-                    localKey: "membership",
-                    operationType: .setMembership,
-                    payload: .init(
-                        organizationLocalKey: "organization",
-                        contactLocalKey: "person",
-                        roleLabel: "Sponsor",
-                        expectations: [.init(field: "role_label", value: nil)]
-                    ),
-                    dependsOn: ["organization", "person"]
-                ),
-            ])
-            let organizationID = try #require(creation.entityIDsByLocalKey["organization"])
-            let contactID = try #require(creation.entityIDsByLocalKey["person"])
-            #expect(organizationID != callerSuppliedID)
-
-            let proposed = try store.queryCustomerIntelligenceProposals(.init(status: .proposed, limit: 10))
-            #expect(proposed.proposals.count == 3)
-            let revisions = Dictionary(uniqueKeysWithValues: proposed.proposals.map { ($0.id, $0.revision) })
-            _ = try store.applyCustomerIntelligenceProposals(revisions)
-
-            let chart = try store.queryOrganizationChart(.init(rootOrganizationID: organizationID))
-            #expect(chart.nodes.map(\.id) == [organizationID])
-            #expect(chart.nodes.first?.memberCount == 1)
-            let contact = try store.contact(id: contactID)
-            #expect(contact.contact.email == nil)
-            #expect(contact.contact.isProvisional)
-            #expect(contact.memberships.first?.roleLabel == "Sponsor")
-
-            let server = DahliaMCPServer(store: store)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-            let contactResponse = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
-                "name":"get_contact","arguments":{"contact_id":"\#(contactID.uuidString)"}
-            }}
-            """#))
-            let encodedContact = try #require(
-                ((contactResponse["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["contact"]
-                    as? [String: Any]
-            )
-            #expect(encodedContact.keys.contains("email"))
-            #expect(encodedContact["email"] is NSNull)
-
-            let otherOrganization = try MeetingRepository(dbQueue: fixture.manager.dbQueue).createOrganization(
-                vaultId: fixture.otherVaultID,
-                parentOrganizationId: nil,
+            let contact = try store.createContact(email: "alice@example.com", displayName: "Alice")
+            let organization = try store.createOrganization(
+                name: "Acme",
                 nodeKind: .organization,
-                name: "Other"
+                parentOrganizationID: nil
             )
-            #expect(throws: MeetingAccessError.invalidProposal) {
-                try store.proposeCustomerIntelligenceChanges([
-                    .init(
-                        localKey: "cross-vault",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: otherOrganization.id,
-                            name: "Forbidden",
-                            expectations: [.init(field: "name", value: "Other")]
-                        )
-                    ),
-                ])
+            let membership = try store.setContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: organization.resourceID,
+                expectedOrganizationRevision: organization.revision,
+                roleLabel: nil
+            )
+            let project = try #require(store.queryProjects(
+                ProjectQuery(projectID: fixture.primaryProjectID)
+            ).projects.first)
+            let server = DahliaMCPServer(store: store)
+            _ = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+            func errorCode(for request: String) throws -> String {
+                let response = try Self.json(server.handleLine(request))
+                let result = try #require(response["result"] as? [String: Any])
+                let content = try #require(result["structuredContent"] as? [String: Any])
+                let error = try #require(content["error"] as? [String: Any])
+                return try #require(error["code"] as? String)
+            }
+
+            let duplicateCode = try errorCode(for: #"""
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_contact","arguments":{
+                "email":"ALICE@example.com","display_name":"Duplicate"
+            }}}
+            """#)
+            #expect(duplicateCode == "duplicate_email")
+
+            let revisionCode = try errorCode(for: """
+            {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"update_organization","arguments":{
+                "organization_id":"\(organization.resourceID.uuidString)","revision":999,"name":"Stale"
+            }}}
+            """)
+            #expect(revisionCode == "revision_conflict")
+
+            let referenceCode = try errorCode(for: """
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{
+                "name":"set_project_resource_reference","arguments":{
+                    "project_id":"\(project.projectID.uuidString)","project_revision":\(project.revision),
+                    "resource_type":"contact","resource_id":"\(UUID.v7().uuidString)"
+                }
+            }}
+            """)
+            #expect(referenceCode == "invalid_reference")
+
+            let membershipRevision = try #require(membership.revision)
+            let resourceInUseCode = try errorCode(for: """
+            {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"delete_organization","arguments":{
+                "organization_id":"\(organization.resourceID.uuidString)","revision":\(membershipRevision)
+            }}}
+            """)
+            #expect(resourceInUseCode == "resource_in_use")
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func organizationDeletionRequiresAnEmptyLeafAndCleansTypedReferences() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let root = try store.createOrganization(
+                name: "Acme",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+            let child = try store.createOrganization(
+                name: "Platform",
+                nodeKind: .unit,
+                parentOrganizationID: root.resourceID
+            )
+
+            #expect(throws: MeetingAccessError.customerIntelligenceResourceInUse(
+                "Organization cannot be deleted while it is in use: child_organizations=1."
+            )) {
+                try store.deleteOrganization(id: root.resourceID, expectedRevision: root.revision)
+            }
+            let deletedChild = try store.deleteOrganization(
+                id: child.resourceID,
+                expectedRevision: child.revision
+            )
+            #expect(deletedChild.resourceType == .organization)
+            #expect(deletedChild.changed)
+
+            let contact = try store.createContact(email: "owner@example.com", displayName: "Owner")
+            let membership = try store.setContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: root.resourceID,
+                expectedOrganizationRevision: root.revision,
+                roleLabel: "Owner"
+            )
+            let membershipRevision = try #require(membership.revision)
+            #expect(throws: MeetingAccessError.customerIntelligenceResourceInUse(
+                "Organization cannot be deleted while it is in use: contact_memberships=1."
+            )) {
+                try store.deleteOrganization(id: root.resourceID, expectedRevision: membershipRevision)
+            }
+            let removedMembership = try store.removeContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: root.resourceID,
+                expectedOrganizationRevision: membershipRevision
+            )
+
+            let project = try #require(store.queryProjects(
+                ProjectQuery(projectID: fixture.primaryProjectID)
+            ).projects.first)
+            let projectReference = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: project.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID,
+                relationLabel: "Customer"
+            )
+            let insight = try store.createInsight(content: "Account", isAccepted: true, metadataJSON: nil)
+            let insightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: insight.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID,
+                referenceRole: .context
+            )
+            let topic = try store.createConversationTopic(title: "Rollout", currentState: "Planning")
+            let topicReference = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: topic.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID,
+                note: nil
+            )
+            let deletedRoot = try store.deleteOrganization(
+                id: root.resourceID,
+                expectedRevision: try #require(removedMembership.revision)
+            )
+            #expect(deletedRoot.changed)
+            #expect(throws: MeetingAccessError.organizationNotFound) {
+                try store.organization(id: root.resourceID)
+            }
+            let updatedProject = try #require(store.queryProjects(
+                ProjectQuery(projectID: project.projectID)
+            ).projects.first)
+            let projectReferenceRevision = try #require(projectReference.revision)
+            #expect(updatedProject.revision == projectReferenceRevision + 1)
+            #expect(try store.queryProjectResources(
+                ProjectResourceAccessQuery(projectID: project.projectID)
+            ).resources.isEmpty)
+            let updatedInsight = try store.insight(id: insight.resourceID).insight
+            let insightReferenceRevision = try #require(insightReference.revision)
+            #expect(updatedInsight.revision == insightReferenceRevision + 1)
+            #expect(updatedInsight.references.isEmpty)
+            let updatedTopic = try store.conversationTopic(id: topic.resourceID)
+            let topicReferenceRevision = try #require(topicReference.revision)
+            #expect(updatedTopic.topic.revision == topicReferenceRevision + 1)
+            #expect(updatedTopic.references.isEmpty)
+            #expect(try store.contact(id: contact.resourceID).contact.id == contact.resourceID)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func contactDeletionRequiresEverySupportedReferenceToBeRemoved() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let organization = try store.createOrganization(
+                name: "Acme",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+            let membershipContact = try store.createContact(email: "membership@example.com", displayName: nil)
+            _ = try store.setContactOrganizationMembership(
+                contactID: membershipContact.resourceID,
+                organizationID: organization.resourceID,
+                expectedOrganizationRevision: organization.revision,
+                roleLabel: nil
+            )
+
+            let participantContact = try store.createContact(email: "participant@example.com", displayName: nil)
+            try fixture.manager.dbQueue.write { db in
+                try MeetingParticipantRecord(
+                    meetingId: fixture.firstMeetingID,
+                    contactId: participantContact.resourceID,
+                    role: .required,
+                    responseStatus: .accepted,
+                    source: "calendar",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+
+            let projectContact = try store.createContact(email: "project@example.com", displayName: nil)
+            let project = try #require(store.queryProjects(
+                ProjectQuery(projectID: fixture.primaryProjectID)
+            ).projects.first)
+            _ = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: project.revision,
+                resourceType: .contact,
+                resourceID: projectContact.resourceID,
+                relationLabel: nil
+            )
+
+            let topicContact = try store.createContact(email: "topic@example.com", displayName: nil)
+            let topic = try store.createConversationTopic(title: "Topic", currentState: "Open")
+            _ = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: topic.revision,
+                resourceType: .contact,
+                resourceID: topicContact.resourceID,
+                note: nil
+            )
+
+            let insightContact = try store.createContact(email: "insight@example.com", displayName: nil)
+            let insight = try store.createInsight(content: "Insight", isAccepted: false, metadataJSON: nil)
+            _ = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: insight.revision,
+                resourceType: .contact,
+                resourceID: insightContact.resourceID,
+                referenceRole: .mentioned
+            )
+
+            for (contactID, blocker) in [
+                (membershipContact.resourceID, "organization_memberships"),
+                (participantContact.resourceID, "meeting_participants"),
+                (projectContact.resourceID, "project_references"),
+                (topicContact.resourceID, "topic_references"),
+                (insightContact.resourceID, "insight_references"),
+            ] {
+                let revision = try store.contact(id: contactID).contact.revision
+                do {
+                    _ = try store.deleteContact(id: contactID, expectedRevision: revision)
+                    Issue.record("Expected \(blocker) to prevent Contact deletion")
+                } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
+                    #expect(message.contains("\(blocker)=1"))
+                }
+                #expect(try store.contact(id: contactID).contact.id == contactID)
+            }
+
+            for contact in [
+                try store.createContact(email: "unused@example.com", displayName: nil),
+                try store.createContact(email: nil, displayName: "Provisional"),
+            ] {
+                let result = try store.deleteContact(
+                    id: contact.resourceID,
+                    expectedRevision: contact.revision
+                )
+                #expect(result.resourceType == .contact)
+                #expect(throws: MeetingAccessError.contactNotFound) {
+                    try store.deleteContact(id: contact.resourceID, expectedRevision: contact.revision)
+                }
             }
         }
 
         @Test
-        func customerIntelligenceWriteStoreValidatesInputsAndSameFieldBatchConflicts() throws {
+        func topicAndInsightDeletionKeepsReferencedRecords() throws {
             let fixture = try Fixture()
-            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
-            let organization = try repository.createOrganization(
-                vaultId: fixture.primaryVaultID,
-                parentOrganizationId: nil,
-                nodeKind: .organization,
-                name: "Acme"
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let contact = try store.createContact(email: "owner@example.com", displayName: "Owner")
+            let topic = try store.createConversationTopic(title: "Security", currentState: "Review")
+            let topicReference = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: topic.revision,
+                resourceType: .meeting,
+                resourceID: fixture.firstMeetingID,
+                note: "Reviewed"
             )
-            let provisional = try repository.createProvisionalContact(
-                vaultId: fixture.primaryVaultID,
-                displayName: "Owner"
+            let insight = try store.createInsight(content: "Owner", isAccepted: true, metadataJSON: nil)
+            let insightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: insight.revision,
+                resourceType: .contact,
+                resourceID: contact.resourceID,
+                referenceRole: .evidence
             )
+            #expect(throws: MeetingAccessError.customerIntelligenceRevisionConflict) {
+                try store.deleteConversationTopic(id: topic.resourceID, expectedRevision: topic.revision)
+            }
+            let deletedTopic = try store.deleteConversationTopic(
+                id: topic.resourceID,
+                expectedRevision: try #require(topicReference.revision)
+            )
+            let deletedInsight = try store.deleteInsight(
+                id: insight.resourceID,
+                expectedRevision: try #require(insightReference.revision)
+            )
+            #expect(deletedTopic.resourceType == .conversationTopic)
+            #expect(deletedInsight.resourceType == .insight)
+            #expect(throws: MeetingAccessError.conversationTopicNotFound) {
+                try store.conversationTopic(id: topic.resourceID)
+            }
+            #expect(throws: MeetingAccessError.insightNotFound) {
+                try store.insight(id: insight.resourceID)
+            }
+            #expect(try store.meeting(id: fixture.firstMeetingID).meeting.id == fixture.firstMeetingID)
+            #expect(try store.contact(id: contact.resourceID).contact.id == contact.resourceID)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func customerIntelligenceCrudChangesOneRecordOrRelationshipPerCall() throws {
+            let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
 
-            #expect(throws: MeetingAccessError.invalidProposal) {
-                try store.proposeCustomerIntelligenceChanges([
-                    .init(
-                        localKey: "invalid-email",
-                        operationType: .resolveProvisionalContact,
-                        payload: .init(
-                            targetID: provisional.id,
-                            email: "owner@invalid",
-                            expectations: [.init(field: "email", value: nil)]
-                        )
-                    ),
-                ])
-            }
-            #expect(throws: MeetingAccessError.invalidProposal) {
-                try store.proposeCustomerIntelligenceChanges([
-                    .init(
-                        localKey: "duplicate-evidence",
-                        operationType: .renameOrganization,
-                        payload: .init(
-                            targetID: organization.id,
-                            name: "Renamed",
-                            expectations: [.init(field: "name", value: "Acme")]
-                        ),
-                        evidence: [
-                            .init(resourceType: .meeting, resourceID: fixture.firstMeetingID),
-                            .init(resourceType: .meeting, resourceID: fixture.firstMeetingID),
-                        ]
-                    ),
-                ])
-            }
+            let root = try store.createOrganization(
+                name: "Acme Customer",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+            let unit = try store.createOrganization(
+                name: "Data",
+                nodeKind: .unit,
+                parentOrganizationID: root.resourceID
+            )
+            let contact = try store.createContact(email: "alice@example.com", displayName: nil)
+            let fetchedContact = try store.contact(id: contact.resourceID)
+            #expect(fetchedContact.contact.displayName == "alice")
 
-            _ = try store.proposeCustomerIntelligenceChanges([
-                .init(
-                    localKey: "first",
-                    operationType: .renameOrganization,
-                    payload: .init(
-                        targetID: organization.id,
-                        name: "First",
-                        expectations: [.init(field: "name", value: "Acme")]
-                    )
-                ),
-                .init(
-                    localKey: "second",
-                    operationType: .renameOrganization,
-                    payload: .init(
-                        targetID: organization.id,
-                        name: "Second",
-                        expectations: [.init(field: "name", value: "Acme")]
-                    )
-                ),
-            ])
-            let proposals = try store.queryCustomerIntelligenceProposals(.init(status: .proposed))
-            #expect(throws: MeetingAccessError.proposalConflict) {
-                try store.applyCustomerIntelligenceProposals(
-                    Dictionary(uniqueKeysWithValues: proposals.proposals.map { ($0.id, $0.revision) })
+            let membership = try store.setContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: unit.resourceID,
+                expectedOrganizationRevision: unit.revision,
+                roleLabel: "Lead"
+            )
+            #expect(membership.changed)
+            let sameMembership = try store.setContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: unit.resourceID,
+                expectedOrganizationRevision: try #require(membership.revision),
+                roleLabel: "Lead"
+            )
+            #expect(!sameMembership.changed)
+            let removedMembership = try store.removeContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: unit.resourceID,
+                expectedOrganizationRevision: try #require(sameMembership.revision)
+            )
+            #expect(removedMembership.changed)
+            let missingMembership = try store.removeContactOrganizationMembership(
+                contactID: contact.resourceID,
+                organizationID: unit.resourceID,
+                expectedOrganizationRevision: try #require(removedMembership.revision)
+            )
+            #expect(!missingMembership.changed)
+
+            let topic = try store.createConversationTopic(title: "Security", currentState: "Review")
+            let topicReference = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: topic.revision,
+                resourceType: .organization,
+                resourceID: root.resourceID,
+                note: nil
+            )
+            #expect(topicReference.changed)
+            let sameTopicReference = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: try #require(topicReference.revision),
+                resourceType: .organization,
+                resourceID: root.resourceID,
+                note: nil
+            )
+            #expect(!sameTopicReference.changed)
+            let removedTopicReference = try store.removeConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: try #require(sameTopicReference.revision),
+                resourceType: .organization,
+                resourceID: root.resourceID
+            )
+            #expect(removedTopicReference.changed)
+            let missingTopicReference = try store.removeConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: try #require(removedTopicReference.revision),
+                resourceType: .organization,
+                resourceID: root.resourceID
+            )
+            #expect(!missingTopicReference.changed)
+
+            let insight = try store.createInsight(
+                content: "Alice owns the review",
+                isAccepted: false,
+                metadataJSON: nil
+            )
+            let insightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: insight.revision,
+                resourceType: .contact,
+                resourceID: contact.resourceID,
+                referenceRole: .evidence
+            )
+            #expect(insightReference.changed)
+            let sameInsightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: try #require(insightReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID,
+                referenceRole: .evidence
+            )
+            #expect(!sameInsightReference.changed)
+            let removedInsightReference = try store.removeInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: try #require(sameInsightReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID
+            )
+            #expect(removedInsightReference.changed)
+            let missingInsightReference = try store.removeInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: try #require(removedInsightReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID
+            )
+            #expect(!missingInsightReference.changed)
+
+            let project = try #require(store.queryProjects(
+                ProjectQuery(projectID: fixture.primaryProjectID)
+            ).projects.first)
+            let projectReference = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: project.revision,
+                resourceType: .contact,
+                resourceID: contact.resourceID,
+                relationLabel: "Owner"
+            )
+            #expect(projectReference.changed)
+            let sameProjectReference = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: try #require(projectReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID,
+                relationLabel: "Owner"
+            )
+            #expect(!sameProjectReference.changed)
+            let removedProjectReference = try store.removeProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: try #require(sameProjectReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID
+            )
+            #expect(removedProjectReference.changed)
+            let missingProjectReference = try store.removeProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: try #require(removedProjectReference.revision),
+                resourceType: .contact,
+                resourceID: contact.resourceID
+            )
+            #expect(!missingProjectReference.changed)
+
+            let sameAssignment = try store.setMeetingProjectAssignment(
+                meetingID: fixture.firstMeetingID,
+                expectedProjectID: fixture.primaryProjectID,
+                projectID: fixture.primaryProjectID
+            )
+            #expect(!sameAssignment.changed)
+            let removedAssignment = try store.removeMeetingProjectAssignment(
+                meetingID: fixture.firstMeetingID,
+                expectedProjectID: fixture.primaryProjectID
+            )
+            #expect(removedAssignment.changed)
+            let missingAssignment = try store.removeMeetingProjectAssignment(
+                meetingID: fixture.firstMeetingID,
+                expectedProjectID: nil
+            )
+            #expect(!missingAssignment.changed)
+
+            #expect(throws: MeetingAccessError.customerIntelligenceRevisionConflict) {
+                try store.updateOrganization(
+                    id: root.resourceID,
+                    expectedRevision: 999,
+                    name: "Stale",
+                    parent: .unchanged
                 )
             }
-            #expect(try repository.fetchOrganization(
-                id: organization.id,
-                vaultId: fixture.primaryVaultID
-            )?.name == "Acme")
+            let laterContact = try store.createContact(email: nil, displayName: "Later")
+            #expect(try store.contact(id: laterContact.resourceID).contact.displayName == "Later")
+            #expect(throws: MeetingAccessError.duplicateContactEmail) {
+                try store.createContact(email: "ALICE@example.com", displayName: "Duplicate")
+            }
         }
 
         @Test
-        func mcpContactResolutionMovesTopicReferenceAndCanRejectStaleProposal() throws {
+        func customerIntelligenceWriteStoreEnforcesTextLimits() throws {
             let fixture = try Fixture()
-            let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
-            let provisional = try repository.createProvisionalContact(
-                vaultId: fixture.primaryVaultID,
-                displayName: "Owner"
-            )
-            let identified = try repository.upsertContact(
-                vaultId: fixture.primaryVaultID,
-                email: "owner@example.com",
-                displayName: "Known Owner"
-            )
-            let topic = try repository.createConversationTopic(
-                vaultId: fixture.primaryVaultID,
-                title: "Security",
-                currentState: "Open",
-                references: [.init(resourceType: .contact, resourceID: provisional.id)]
-            )
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            _ = try store.proposeCustomerIntelligenceChanges([
-                .init(
-                    localKey: "stale",
-                    operationType: .renameProvisionalContact,
-                    payload: .init(
-                        targetID: provisional.id,
-                        name: "Corrected",
-                        expectations: [.init(field: "display_name", value: "Owner")]
-                    )
-                ),
-                .init(
-                    localKey: "resolve",
-                    operationType: .resolveProvisionalContact,
-                    payload: .init(
-                        targetID: provisional.id,
-                        email: "owner@example.com",
-                        expectations: [.init(field: "email", value: nil)]
-                    )
-                ),
-            ])
-            let proposed = try store.queryCustomerIntelligenceProposals(.init(status: .proposed))
-            let resolve = try #require(proposed.proposals.first { $0.operationType == .resolveProvisionalContact })
-            _ = try store.applyCustomerIntelligenceProposals([resolve.id: resolve.revision])
+            let oversizedShortText = String(
+                repeating: "x",
+                count: CustomerIntelligenceWriteLimits.shortText + 1
+            )
 
-            #expect(try store.conversationTopic(id: topic.id).references.first?.resourceID == identified.id)
-            let stale = try #require(
-                store.queryCustomerIntelligenceProposals(.init(status: .stale)).proposals.first
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.createOrganization(
+                    name: oversizedShortText,
+                    nodeKind: .organization,
+                    parentOrganizationID: nil
+                )
+            }
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.createContact(
+                    email: "owner@example.com",
+                    displayName: oversizedShortText
+                )
+            }
+            let organization = try store.createOrganization(
+                name: "Acme",
+                nodeKind: .organization,
+                parentOrganizationID: nil
             )
-            _ = try store.rejectCustomerIntelligenceProposals([stale.id: stale.revision])
-            let rejected = try #require(
-                store.queryCustomerIntelligenceProposals(.init(status: .rejected)).proposals.first
+            let contact = try store.createContact(email: nil, displayName: "Owner")
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.setContactOrganizationMembership(
+                    contactID: contact.resourceID,
+                    organizationID: organization.resourceID,
+                    expectedOrganizationRevision: organization.revision,
+                    roleLabel: oversizedShortText
+                )
+            }
+            #expect(try store.queryOrganizations().organizations.map(\.name) == ["Acme"])
+            #expect(try store.queryContacts().contacts.map(\.displayName) == ["Owner"])
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func resolveContactMovesReferencesAndIncrementsTheirOwners() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let organization = try store.createOrganization(
+                name: "Acme Customer",
+                nodeKind: .organization,
+                parentOrganizationID: nil
             )
-            #expect(rejected.staleReason == nil)
+            let provisional = try store.createContact(email: nil, displayName: "Alice")
+            let identified = try store.createContact(email: "alice@example.com", displayName: "Alice Smith")
+            let membership = try store.setContactOrganizationMembership(
+                contactID: provisional.resourceID,
+                organizationID: organization.resourceID,
+                expectedOrganizationRevision: organization.revision,
+                roleLabel: "Lead"
+            )
+            let project = try #require(store.queryProjects(
+                ProjectQuery(projectID: fixture.primaryProjectID)
+            ).projects.first)
+            let identifiedProjectReference = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: project.revision,
+                resourceType: .contact,
+                resourceID: identified.resourceID,
+                relationLabel: "Confirmed owner"
+            )
+            let projectReference = try store.setProjectResourceReference(
+                projectID: project.projectID,
+                expectedProjectRevision: try #require(identifiedProjectReference.revision),
+                resourceType: .contact,
+                resourceID: provisional.resourceID,
+                relationLabel: "Owner"
+            )
+            let insight = try store.createInsight(content: "Owner", isAccepted: true, metadataJSON: nil)
+            let identifiedInsightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: insight.revision,
+                resourceType: .contact,
+                resourceID: identified.resourceID,
+                referenceRole: .context
+            )
+            let insightReference = try store.setInsightResourceReference(
+                insightID: insight.resourceID,
+                expectedInsightRevision: try #require(identifiedInsightReference.revision),
+                resourceType: .contact,
+                resourceID: provisional.resourceID,
+                referenceRole: .evidence
+            )
+            let topic = try store.createConversationTopic(title: "Ownership", currentState: "Assigned")
+            _ = try store.setConversationTopicResourceReference(
+                topicID: topic.resourceID,
+                expectedTopicRevision: topic.revision,
+                resourceType: .contact,
+                resourceID: provisional.resourceID,
+                note: nil
+            )
+            let resolved = try store.resolveContact(
+                provisionalContactID: provisional.resourceID,
+                provisionalRevision: provisional.revision,
+                identifiedContactID: identified.resourceID,
+                identifiedRevision: identified.revision
+            )
+            #expect(resolved.resourceID == identified.resourceID)
+            #expect(throws: MeetingAccessError.contactNotFound) {
+                try store.contact(id: provisional.resourceID)
+            }
+            let target = try store.contact(id: identified.resourceID)
+            #expect(target.memberships.contains { $0.organizationID == organization.resourceID })
+            let resolvedProjectReferences = try store.queryProjectResources(
+                ProjectResourceAccessQuery(projectID: project.projectID)
+            ).resources.filter { $0.resourceID == identified.resourceID }
+            #expect(resolvedProjectReferences.count == 1)
+            #expect(resolvedProjectReferences.first?.relationLabel == "Confirmed owner")
+            #expect(try store.conversationTopic(id: topic.resourceID).references.contains {
+                $0.resourceID == identified.resourceID
+            })
+            let resolvedInsightReferences = try store.insight(id: insight.resourceID).insight.references
+                .filter { $0.resourceID == identified.resourceID }
+            #expect(resolvedInsightReferences.count == 1)
+            #expect(resolvedInsightReferences.first?.referenceRole == .context)
+            let resolvedProject = try #require(store.queryProjects(
+                ProjectQuery(projectID: project.projectID)
+            ).projects.first)
+            let projectReferenceRevision = try #require(projectReference.revision)
+            let resolvedInsight = try store.insight(id: insight.resourceID).insight
+            let insightReferenceRevision = try #require(insightReference.revision)
+            let resolvedOrganization = try store.organization(id: organization.resourceID).organization
+            let membershipRevision = try #require(membership.revision)
+            #expect(resolvedProject.revision == projectReferenceRevision + 1)
+            #expect(resolvedInsight.revision == insightReferenceRevision + 1)
+            #expect(resolvedOrganization.revision >= membershipRevision)
+        }
+
+        @Test
+        func resolveContactAccountsForParticipantRevisionTriggers() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let provisional = try store.createContact(email: nil, displayName: "Alice")
+            let identified = try store.createContact(email: "alice@example.com", displayName: "Alice Smith")
+            try fixture.manager.dbQueue.write { db in
+                try MeetingParticipantRecord(
+                    meetingId: fixture.firstMeetingID,
+                    contactId: provisional.resourceID,
+                    role: .required,
+                    responseStatus: .accepted,
+                    source: "calendar",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+            let provisionalRevision = try store.contact(id: provisional.resourceID).contact.revision
+
+            let resolved = try store.resolveContact(
+                provisionalContactID: provisional.resourceID,
+                provisionalRevision: provisionalRevision,
+                identifiedContactID: identified.resourceID,
+                identifiedRevision: identified.revision
+            )
+
+            let contact = try store.contact(id: identified.resourceID).contact
+            #expect(resolved.revision == contact.revision)
+            let participantContactID = try fixture.manager.dbQueue.read { db in
+                try UUID.fetchOne(
+                    db,
+                    sql: "SELECT contactId FROM meeting_participants WHERE meetingId = ?",
+                    arguments: [fixture.firstMeetingID]
+                )
+            }
+            #expect(participantContactID == identified.resourceID)
+            #expect(throws: MeetingAccessError.contactNotFound) {
+                try store.contact(id: provisional.resourceID)
+            }
+        }
+
+        @Test
+        func conversationTopicReturnsABoundedReferenceListWithTruncationMetadata() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let topic = try store.createConversationTopic(title: "Large topic", currentState: "Active")
+            try fixture.manager.dbQueue.write { db in
+                for index in 0...100 {
+                    let organizationID = UUID.v7()
+                    let now = Date.now.addingTimeInterval(TimeInterval(index))
+                    try OrganizationRecord(
+                        id: organizationID,
+                        vaultId: fixture.primaryVaultID,
+                        parentOrganizationId: nil,
+                        nodeKind: .organization,
+                        name: "Organization \(index)",
+                        revision: 1,
+                        createdAt: now,
+                        updatedAt: now
+                    ).insert(db)
+                    try ConversationTopicReferenceRecord(
+                        topicId: topic.resourceID,
+                        resourceType: .organization,
+                        resourceId: organizationID,
+                        note: nil,
+                        createdAt: now,
+                        updatedAt: now
+                    ).insert(db)
+                }
+            }
+
+            let detail = try store.conversationTopic(id: topic.resourceID)
+            #expect(detail.references.count == 100)
+            #expect(detail.referencesTruncated)
+            #expect(!detail.referencesExpectation.isEmpty)
         }
 
         @Test
@@ -1427,57 +1959,6 @@ import ImageIO
                     cursor: dateCursor
                 ))
             }
-        }
-
-        @Test
-        func customerIntelligenceApplyReportsBusyWithoutPartialChanges() throws {
-            let fixture = try Fixture()
-            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            let creation = try store.proposeCustomerIntelligenceChanges([
-                .init(
-                    localKey: "organization",
-                    operationType: .createOrganization,
-                    payload: .init(nodeKind: "organization", name: "Blocked Customer")
-                ),
-            ])
-            let proposalID = try #require(creation.proposalIDsByLocalKey["organization"])
-            let entityID = try #require(creation.entityIDsByLocalKey["organization"])
-            let proposal = try #require(
-                store.queryCustomerIntelligenceProposals(.init(status: .proposed))
-                    .proposals.first { $0.id == proposalID }
-            )
-            let server = DahliaMCPServer(store: store)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
-            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-
-            let blocker = try DatabaseQueue(path: fixture.databaseURL.path)
-            try blocker.write { db in
-                try db.execute(
-                    sql: "UPDATE vaults SET lastOpenedAt = lastOpenedAt WHERE id = ?",
-                    arguments: [fixture.primaryVaultID]
-                )
-                let response = try Self.json(server.handleLine("""
-                {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
-                    "name":"apply_customer_intelligence_proposals","arguments":{"proposals":[{
-                        "proposal_id":"\(proposalID.uuidString)","revision":\(proposal.revision)
-                    }]}
-                }}
-                """))
-                let result = try #require(response["result"] as? [String: Any])
-                #expect(result["isError"] as? Bool == true)
-                let content = try #require(result["content"] as? [[String: Any]])
-                #expect((content.first?["text"] as? String)?.contains("refresh and retry") == true)
-            }
-
-            let after = try #require(
-                store.queryCustomerIntelligenceProposals(.init())
-                    .proposals.first { $0.id == proposalID }
-            )
-            #expect(after.status == .proposed)
-            #expect(try MeetingRepository(dbQueue: fixture.manager.dbQueue).fetchOrganization(
-                id: entityID,
-                vaultId: fixture.primaryVaultID
-            ) == nil)
         }
 
         @Test
@@ -1708,9 +2189,7 @@ import ImageIO
             #expect(definitions.contains { $0["name"] as? String == "query_organization_chart" })
             #expect(definitions.contains { $0["name"] as? String == "query_conversation_topics" })
             #expect(definitions.contains { $0["name"] as? String == "get_conversation_topic" })
-            #expect(definitions.contains {
-                $0["name"] as? String == "query_customer_intelligence_proposals"
-            })
+            #expect(!definitions.contains { $0["name"] as? String == "query_customer_intelligence_proposals" })
             let outputSchema = try #require(queryDefinition["outputSchema"] as? [String: Any])
             let outputProperties = try #require(outputSchema["properties"] as? [String: Any])
             let meetingsSchema = try #require(outputProperties["meetings"] as? [String: Any])

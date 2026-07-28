@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 /// A stable Project entity. The canonical hierarchy is parentProjectId + name.
-struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Sendable {
+struct ProjectRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
     static let databaseTableName = "projects"
 
     var id: UUID

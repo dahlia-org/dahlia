@@ -205,7 +205,7 @@ public extension MeetingAccessStore {
                 limit: 1,
                 in: db
             ).first else {
-                throw MeetingAccessError.invalidCustomerIntelligenceData
+                throw MeetingAccessError.conversationTopicNotFound
             }
             let referenceRows = try Row.fetchAll(
                 db,
@@ -225,10 +225,9 @@ public extension MeetingAccessStore {
                 """,
                 arguments: [id, Self.customerNestedLimit + 1]
             )
-            guard referenceRows.count <= Self.customerNestedLimit else {
-                throw MeetingAccessError.invalidCustomerIntelligenceData
-            }
-            let references = try referenceRows.map { referenceRow -> ConversationTopicReferenceAccessMetadata in
+            let referencesTruncated = referenceRows.count > Self.customerNestedLimit
+            let references = try referenceRows.prefix(Self.customerNestedLimit).map {
+                referenceRow -> ConversationTopicReferenceAccessMetadata in
                 guard let type = CustomerIntelligenceResourceKind(rawValue: referenceRow["resourceType"]) else {
                     throw MeetingAccessError.invalidCustomerIntelligenceData
                 }
@@ -244,85 +243,12 @@ public extension MeetingAccessStore {
                 vault: vault,
                 topic: Self.topicMetadata(from: row),
                 references: references,
+                referencesTruncated: referencesTruncated,
                 referencesExpectation: Self.topicReferenceExpectation(topicID: id, in: db)
             )
         }
     }
 
-    func queryCustomerIntelligenceProposals(
-        _ query: CustomerIntelligenceProposalAccessQuery = CustomerIntelligenceProposalAccessQuery()
-    ) throws -> CustomerIntelligenceProposalAccessPage {
-        try validateCustomerLimit(query.limit)
-        let scope = customerCursorScope("customer_intelligence_proposals", components: [query.status?.rawValue])
-        let cursor = try query.cursor.map {
-            try CustomerDateCursor.decode($0, vaultID: vaultID, scope: scope)
-        }
-        return try database.read { db in
-            let vault = try fetchCustomerIntelligenceVault(in: db)
-            var predicates = ["vaultId = ?"]
-            var arguments: StatementArguments = [vaultID]
-            if let status = query.status {
-                predicates.append("status = ?")
-                arguments += [status.rawValue]
-            }
-            if let cursor {
-                predicates.append("(createdAt < ? OR (createdAt = ? AND id < ?))")
-                arguments += [cursor.date, cursor.date, cursor.id]
-            }
-            arguments += [query.limit + 1]
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT * FROM customer_intelligence_proposals
-                WHERE \(predicates.joined(separator: " AND "))
-                ORDER BY createdAt DESC, id DESC LIMIT ?
-                """,
-                arguments: arguments
-            )
-            let hasMore = rows.count > query.limit
-            let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
-            let proposalIDs: [UUID] = pageRows.map { $0["id"] }
-            let placeholders = Array(repeating: "?", count: proposalIDs.count).joined(separator: ",")
-            let evidenceRows = proposalIDs.isEmpty ? [] : try Row.fetchAll(
-                db,
-                sql: """
-                SELECT proposalId, resourceType, resourceId, note
-                FROM customer_intelligence_proposal_evidence
-                WHERE proposalId IN (\(placeholders))
-                ORDER BY createdAt, resourceType, resourceId
-                """,
-                arguments: StatementArguments(proposalIDs)
-            )
-            let dependencyRows = proposalIDs.isEmpty ? [] : try Row.fetchAll(
-                db,
-                sql: """
-                SELECT proposalId, requiredProposalId
-                FROM customer_intelligence_proposal_dependencies
-                WHERE proposalId IN (\(placeholders))
-                ORDER BY createdAt, requiredProposalId
-                """,
-                arguments: StatementArguments(proposalIDs)
-            )
-            let evidenceByProposal = Dictionary(grouping: evidenceRows) { row -> UUID in row["proposalId"] }
-            let dependenciesByProposal = Dictionary(grouping: dependencyRows) { row -> UUID in row["proposalId"] }
-            let proposals = try pageRows.map {
-                let id: UUID = $0["id"]
-                return try proposalMetadata(
-                    from: $0,
-                    evidenceRows: evidenceByProposal[id, default: []],
-                    dependencyRows: dependenciesByProposal[id, default: []]
-                )
-            }
-            let nextCursor = hasMore ? proposals.last.map {
-                CustomerDateCursor(vaultID: vaultID, scope: scope, date: $0.createdAt, id: $0.id).encoded()
-            } : nil
-            return CustomerIntelligenceProposalAccessPage(
-                vault: vault,
-                proposals: proposals,
-                nextCursor: nextCursor
-            )
-        }
-    }
 }
 
 private extension MeetingAccessStore {
@@ -382,52 +308,18 @@ private extension MeetingAccessStore {
             """,
             arguments: [topicID]
         )
-        return try CustomerIntelligenceTopicReferenceExpectation.encode(rows.map {
-            CustomerIntelligenceTopicReferenceExpectation.Item(
-                resourceType: $0["resourceType"],
-                resourceID: $0["resourceId"],
-                note: $0["note"]
-            )
-        })
-    }
-
-    func proposalMetadata(
-        from row: Row,
-        evidenceRows: [Row],
-        dependencyRows: [Row]
-    ) throws -> CustomerIntelligenceProposalAccessMetadata {
-        let payloadJSON: String = row["payloadJSON"]
-        guard let operation = CustomerIntelligenceProposalOperationType(rawValue: row["operationType"]),
-              let status = CustomerIntelligenceProposalAccessStatus(rawValue: row["status"]),
-              let payload = try? JSONDecoder().decode(
-                  CustomerIntelligenceProposalPayload.self,
-                  from: Data(payloadJSON.utf8)
-              )
-        else {
-            throw MeetingAccessError.invalidCustomerIntelligenceData
-        }
-        let proposalID: UUID = row["id"]
-        let evidence = try evidenceRows.map { evidenceRow -> CustomerIntelligenceProposalEvidenceAccessMetadata in
-            guard let type = CustomerIntelligenceResourceKind(rawValue: evidenceRow["resourceType"]) else {
-                throw MeetingAccessError.invalidCustomerIntelligenceData
+        let values: [[String: Any]] = rows.map {
+            let resourceID: UUID = $0["resourceId"]
+            var value: [String: Any] = [
+                "resource_type": $0["resourceType"] as String,
+                "resource_id": resourceID.uuidString.lowercased(),
+            ]
+            if let note: String = $0["note"] {
+                value["note"] = note
             }
-            return CustomerIntelligenceProposalEvidenceAccessMetadata(
-                resourceType: type,
-                resourceID: evidenceRow["resourceId"],
-                note: evidenceRow["note"]
-            )
+            return value
         }
-        return CustomerIntelligenceProposalAccessMetadata(
-            id: proposalID,
-            operationType: operation,
-            payload: payload,
-            status: status,
-            staleReason: row["staleReason"],
-            revision: row["revision"],
-            evidence: evidence,
-            dependencies: dependencyRows.map { $0["requiredProposalId"] },
-            createdAt: row["createdAt"],
-            updatedAt: row["updatedAt"]
-        )
+        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
     }
 }

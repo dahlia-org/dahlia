@@ -37,6 +37,8 @@ struct SettingsDetailView: View {
                 MCPSettingsView()
             case .instructions:
                 InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
+            case .betaFeatures:
+                BetaFeaturesSettingsView()
             case .developer:
                 DeveloperSettingsView()
             case .audioDiagnostics:

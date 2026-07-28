@@ -553,6 +553,32 @@ final class SidebarViewModel {
         }
     }
 
+    func updateProject(
+        id: UUID,
+        name: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        description: String,
+        expectedRevision: Int
+    ) -> ProjectRecord? {
+        guard let projectWorkspaceService else { return nil }
+        do {
+            let project = try projectWorkspaceService.updateProject(
+                id: id,
+                name: name,
+                parentProjectId: parentProjectId,
+                projectType: projectType,
+                description: description,
+                expectedRevision: expectedRevision
+            )
+            lastError = nil
+            return project
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
     @discardableResult
     func deleteProjectHierarchy(
         id: UUID,

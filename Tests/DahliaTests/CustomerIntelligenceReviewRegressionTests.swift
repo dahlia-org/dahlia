@@ -44,19 +44,29 @@
             #expect(insight.metadataJSON == original)
 
             let updatedJSON = #"{"confidence":0.70,"weight":1.100}"#
-            let updated = try fixture.repository.setInsightReviewState(
+            let updated = try fixture.repository.setInsightAccepted(
                 id: insight.id,
                 vaultId: fixture.vault.id,
-                reviewState: .accepted,
+                expectedRevision: insight.revision,
+                isAccepted: true,
                 metadataJSON: updatedJSON
             )
             #expect(updated.metadataJSON == updatedJSON)
             #expect(throws: CustomerIntelligenceError.invalidJSON) {
-                try fixture.repository.setInsightReviewState(
+                try fixture.repository.setInsightAccepted(
                     id: insight.id,
                     vaultId: fixture.vault.id,
-                    reviewState: .rejected,
+                    expectedRevision: updated.revision,
+                    isAccepted: false,
                     metadataJSON: "[]"
+                )
+            }
+            #expect(throws: CustomerIntelligenceError.revisionConflict) {
+                try fixture.repository.setInsightAccepted(
+                    id: insight.id,
+                    vaultId: fixture.vault.id,
+                    expectedRevision: insight.revision,
+                    isAccepted: false
                 )
             }
         }

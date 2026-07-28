@@ -21,19 +21,6 @@ enum ConversationTopicResourceType: String, Codable, CaseIterable, DatabaseValue
     case meeting
 }
 
-enum CustomerIntelligenceProposalStatus: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {
-    case proposed
-    case applied
-    case rejected
-    case stale
-}
-
-enum InsightReviewState: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {
-    case proposed
-    case accepted
-    case rejected
-}
-
 enum InsightReferenceRole: String, Codable, CaseIterable, DatabaseValueConvertible, Sendable {
     case context
     case evidence

@@ -12,12 +12,6 @@ public enum CustomerResourceAccessType: String, Codable, Sendable {
     case meeting
 }
 
-public enum InsightAccessReviewState: String, Codable, Sendable {
-    case proposed
-    case accepted
-    case rejected
-}
-
 public enum InsightAccessReferenceRole: String, Codable, Sendable {
     case context
     case evidence
@@ -244,20 +238,20 @@ public struct ProjectResourceAccessPage: Codable, Sendable, Equatable {
 }
 
 public struct InsightAccessQuery: Sendable, Equatable {
-    public var reviewState: InsightAccessReviewState?
+    public var isAccepted: Bool?
     public var resourceType: CustomerResourceAccessType?
     public var resourceID: UUID?
     public var limit: Int
     public var cursor: String?
 
     public init(
-        reviewState: InsightAccessReviewState? = nil,
+        isAccepted: Bool? = nil,
         resourceType: CustomerResourceAccessType? = nil,
         resourceID: UUID? = nil,
         limit: Int = 25,
         cursor: String? = nil
     ) {
-        self.reviewState = reviewState
+        self.isAccepted = isAccepted
         self.resourceType = resourceType
         self.resourceID = resourceID
         self.limit = limit
@@ -276,10 +270,12 @@ public struct InsightReferenceAccessMetadata: Codable, Sendable, Equatable {
 public struct InsightAccessMetadata: Codable, Sendable, Equatable {
     public let id: UUID
     public let content: String
-    public let reviewState: InsightAccessReviewState
+    public let isAccepted: Bool
     public let metadata: JSONValue
+    public let revision: Int
     public let references: [InsightReferenceAccessMetadata]
     public let referencesTruncated: Bool
+    public let referencesExpectation: String
     public let createdAt: Date
     public let updatedAt: Date
 }
@@ -290,53 +286,7 @@ public struct InsightAccessPage: Codable, Sendable, Equatable {
     public let nextCursor: String?
 }
 
-public struct GlossaryAccessQuery: Sendable, Equatable {
-    public var query: String?
-    public var resourceType: CustomerResourceAccessType?
-    public var resourceID: UUID?
-    public var limit: Int
-    public var cursor: String?
-
-    public init(
-        query: String? = nil,
-        resourceType: CustomerResourceAccessType? = nil,
-        resourceID: UUID? = nil,
-        limit: Int = 25,
-        cursor: String? = nil
-    ) {
-        self.query = query
-        self.resourceType = resourceType
-        self.resourceID = resourceID
-        self.limit = limit
-        self.cursor = cursor
-    }
-}
-
-public struct GlossaryReferenceAccessMetadata: Codable, Sendable, Equatable {
-    public let resourceType: CustomerResourceAccessType
-    public let resourceID: UUID
-    public let resourceName: String?
-    public let createdAt: Date
-}
-
-public struct GlossaryTermAccessMetadata: Codable, Sendable, Equatable {
-    public let id: UUID
-    public let term: String
-    public let definition: String
-    public let aliases: [String]
-    public let references: [GlossaryReferenceAccessMetadata]
-    public let referencesTruncated: Bool
-    public let createdAt: Date
-    public let updatedAt: Date
-}
-
-public struct GlossaryAccessPage: Codable, Sendable, Equatable {
+public struct InsightAccessDetail: Codable, Sendable, Equatable {
     public let vault: ScopedVault
-    public let terms: [GlossaryTermAccessMetadata]
-    public let nextCursor: String?
-}
-
-public struct GlossaryTermAccessDetail: Codable, Sendable, Equatable {
-    public let vault: ScopedVault
-    public let term: GlossaryTermAccessMetadata
+    public let insight: InsightAccessMetadata
 }

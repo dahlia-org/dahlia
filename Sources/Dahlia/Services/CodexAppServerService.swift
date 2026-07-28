@@ -1,6 +1,7 @@
 // JSON-RPC lifecycle and protocol handlers remain colocated behind one actor boundary.
 // swiftlint:disable file_length
 
+import DahliaRuntimeSupport
 import Foundation
 import OSLog
 
@@ -371,7 +372,8 @@ actor CodexAppServerService {
     nonisolated static func summaryThreadConfig(
         from configReadResult: JSONValue,
         reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
-        dahliaMCP: CodexAppServerDahliaMCPConfiguration? = nil
+        dahliaMCP: CodexAppServerDahliaMCPConfiguration? = nil,
+        runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
     ) throws -> JSONValue {
         guard case var .object(config) = try restrictedThreadConfig(
             from: configReadResult,
@@ -387,7 +389,8 @@ actor CodexAppServerService {
             servers["dahlia"] = dahliaMCPServer(
                 executableURL: dahliaMCP.executableURL,
                 vaultID: dahliaMCP.vaultID,
-                allowedMeetingIDs: dahliaMCP.allowedMeetingIDs
+                allowedMeetingIDs: dahliaMCP.allowedMeetingIDs,
+                runtimeProfile: runtimeProfile
             )
             config["mcp_servers"] = .object(servers)
         }
@@ -398,7 +401,8 @@ actor CodexAppServerService {
         from configReadResult: JSONValue,
         reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
         helperURL: URL,
-        vaultID: UUID
+        vaultID: UUID,
+        runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
     ) throws -> JSONValue {
         guard case var .object(config) = try restrictedThreadConfig(
             from: configReadResult,
@@ -410,7 +414,8 @@ actor CodexAppServerService {
         servers["dahlia"] = dahliaMCPServer(
             executableURL: helperURL,
             vaultID: vaultID,
-            allowsWrites: true
+            allowsWrites: true,
+            runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
         config["web_search"] = .string("live")
@@ -421,18 +426,32 @@ actor CodexAppServerService {
         executableURL: URL,
         vaultID: UUID,
         allowedMeetingIDs: [UUID] = [],
-        allowsWrites: Bool = false
+        allowsWrites: Bool = false,
+        runtimeProfile: DahliaRuntimeProfile
     ) -> JSONValue {
+        let command: String
+        let invocationArguments: [JSONValue]
+        switch runtimeProfile {
+        case .production:
+            command = executableURL.path
+            invocationArguments = []
+        case .development:
+            command = "/usr/bin/env"
+            invocationArguments = [
+                .string("\(DahliaApplicationSupport.profileEnvironmentKey)=\(runtimeProfile.rawValue)"),
+                .string(executableURL.path),
+            ]
+        }
         let meetingArguments = allowedMeetingIDs.flatMap { meetingID in
             [JSONValue.string("--meeting-id"), .string(meetingID.uuidString)]
         }
         let writeArguments: [JSONValue] = allowsWrites ? [.string("--write")] : []
         return .object([
-            "args": .array([
+            "args": .array(invocationArguments + [
                 .string("--vault-id"),
                 .string(vaultID.uuidString),
             ] + meetingArguments + writeArguments),
-            "command": .string(executableURL.path),
+            "command": .string(command),
             "enabled": .bool(true),
         ])
     }

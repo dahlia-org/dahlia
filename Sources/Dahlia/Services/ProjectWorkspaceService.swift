@@ -258,6 +258,62 @@ final class ProjectWorkspaceService {
         }
     }
 
+    func updateProject(
+        id: UUID,
+        name: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        description: String,
+        expectedRevision: Int
+    ) throws -> ProjectRecord {
+        try withNotifyingMutation {
+            guard let project = try repository.fetchProject(id: id), project.vaultId == vault.id else {
+                throw ProjectWorkspaceError.projectNotFound
+            }
+            guard project.revision == expectedRevision else {
+                throw ProjectWorkspaceError.staleRevision(current: project.revision)
+            }
+            let name = try Self.validatedName(name)
+            let projects = try repository.fetchAllProjects(vaultId: vault.id)
+            let descendants = projects.filter {
+                $0.id != id && ProjectRecord.belongsToHierarchy($0.path, prefix: project.path)
+            }
+            let descendantIDs = Set(descendants.map(\.id))
+            guard parentProjectId != id,
+                  parentProjectId.map({ !descendantIDs.contains($0) }) ?? true else {
+                throw ProjectWorkspaceError.cycleDetected
+            }
+            let parent = try parentProjectId.map { parentID in
+                guard let parent = projects.first(where: { $0.id == parentID }) else {
+                    throw ProjectWorkspaceError.projectNotFound
+                }
+                guard parent.parentProjectId == nil, descendants.isEmpty else {
+                    throw ProjectWorkspaceError.hierarchyTooDeep
+                }
+                return parent
+            }
+            let newPath = parent.map { "\($0.path)/\(name)" } ?? name
+            try ensureProjectDoesNotExist(path: newPath, excludingProjectId: id)
+            let summaryPlan = if project.path == newPath {
+                ProjectSummaryMovePlan(relocations: [], vaultExportUpdates: [])
+            } else {
+                try projectSummaryMovePlan(oldPrefix: project.path, newPrefix: newPath)
+            }
+            return try performSummaryRelocations(summaryPlan.relocations) {
+                try repository.updateCustomerIntelligenceProject(
+                    id: id,
+                    vaultId: vault.id,
+                    parentProjectId: parentProjectId,
+                    name: name,
+                    description: description,
+                    projectType: projectType,
+                    vaultExportUpdates: summaryPlan.vaultExportUpdates,
+                    expectedRevision: expectedRevision
+                )
+            }
+        }
+    }
+
     func updateProjectDescription(
         id: UUID,
         description: String,
