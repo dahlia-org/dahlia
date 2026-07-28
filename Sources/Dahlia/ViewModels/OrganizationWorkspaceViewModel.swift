@@ -97,8 +97,12 @@ final class OrganizationWorkspaceViewModel {
     }
 
     func load(selectingRootID requestedRootID: UUID? = nil) async {
+        let previouslySelectedNodeID = selectedNodeID
         while true {
-            let iterationIsCurrent = await loadWorkspaceIteration(preferredRootID: requestedRootID)
+            let iterationIsCurrent = await loadWorkspaceIteration(
+                preferredRootID: requestedRootID,
+                previouslySelectedNodeID: previouslySelectedNodeID
+            )
             if iterationIsCurrent {
                 isLoading = false
             }
@@ -107,9 +111,11 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    private func loadWorkspaceIteration(preferredRootID: UUID?) async -> Bool {
+    private func loadWorkspaceIteration(
+        preferredRootID: UUID?,
+        previouslySelectedNodeID: UUID?
+    ) async -> Bool {
         guard dbQueue != nil, let vaultID else { return true }
-        let previouslySelectedNodeID = selectedNodeID
         loadGeneration += 1
         detailGeneration += 1
         topicGeneration += 1
