@@ -32,7 +32,9 @@
 - 変更範囲と無関係な既存問題
 - テストがないという事実だけの指摘。現実的な回帰が検証されていない場合は、その回帰と影響を finding として説明する
 
-finding がない場合はその旨を明記し、実行できなかった検証や手動確認などの residual risk を分けて報告する。
+finding がない場合は review surface の native contract で表す。fixed findings payload を要求する managed review では空の
+findings list を返し、prose や追加 field を要求しない。文章を許すローカルまたは Claude review では finding がない旨を明記し、
+実行できなかった検証や手動確認などの residual risk を分けて報告する。
 
 ## Dahlia 固有のチェック
 
