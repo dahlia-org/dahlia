@@ -29,6 +29,7 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
 | UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
+| Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
 | Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
 
@@ -43,6 +44,12 @@ ADRs preserve decision history; and `AGENTS.md` contains actionable instructions
 - Use Swift Package Manager only. Do not generate an Xcode project.
 - The app has exactly four SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
 - Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
+
+## Code Review Rules
+
+- Before reporting findings, read [`docs/code-review.md`](docs/code-review.md) and the architecture sections routed by the closest applicable `AGENTS.md`.
+- Report only actionable defects introduced or exposed by the change. Each finding must identify a reachable trigger, the concrete impact, and the violated Dahlia contract or missing validation. Do not report style, formatting, or other deterministic checks enforced by CI.
+- Prioritize recording and transcription integrity, released-user data, correctness, security, and sustained responsiveness. Do not trade durable or recording-critical data for UI performance; bound, coalesce, cancel, or rebuild only projection work whose source of truth is preserved.
 
 ## Release Versioning
 
@@ -84,5 +91,5 @@ CI=true ./scripts/lint.sh              # Check SwiftFormat and SwiftLint without
 - Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
 - Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation.
-- Review the final diff for unintended changes and regressions.
+- Review the final diff against the applicable Code Review Rules for unintended changes and regressions.
 - If a check cannot run, report the exact command, reason, and next verification step. Do not describe an unverified check as passing.

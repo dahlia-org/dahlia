@@ -40,6 +40,20 @@ This file applies under `Sources/Dahlia/`. Changes under `Database/` must also f
 Before adding a responsibility that does not fit the documented ownership boundaries, inspect similar components and avoid creating a duplicate coordinator,
 store, repository, or global worker.
 
+## Code Review Rules
+
+### Runtime Isolation and Durability
+
+- Flag any changed path that lets MainActor, UI rendering, observers, previews, or caches gate audio acceptance, immutable segment writing, finalized transcript or translation persistence, or the documented stop drain. The safe path keeps recording-critical and durable work in owned lanes that progress independently of UI stalls and surface overload or failure explicitly.
+
+### MainActor and UI Workload
+
+- Flag database, disk, network, synchronous OS queries, or input-sized decode and parsing on MainActor, along with high-frequency changes that create unbounded tasks, reparsing, layout materialization, or state publication. The safe path moves input-sized non-UI work to an owned worker and exposes a bounded, cancelable, replaceable projection that rejects stale results by identity or generation.
+
+### Update-Rate Controls
+
+- Do not prescribe debouncing by default. Use debounce only when a quiet period has semantic meaning, throttle or coalescing when a continuous stream must make periodic progress, and latest-wins when only replaceable current state matters. None may drop audio frames or delay or drop the durable ingress of finalized data. Apply them only to rebuildable projection work whose source of truth is preserved, and require explicit bounds and relevant coverage for bursts, cancellation, stale completions, and MainActor stalls when these paths change.
+
 ## Implementation Conventions
 
 - Use time-sortable `UUID.v7()` values for new table-row and domain-entity IDs.
