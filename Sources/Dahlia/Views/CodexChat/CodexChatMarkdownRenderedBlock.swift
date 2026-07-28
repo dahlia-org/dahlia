@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexChatMarkdownRenderedBlock: Sendable {
+enum CodexChatMarkdownRenderedBlock: Equatable, Sendable {
     case paragraph(AttributedString)
     case heading(level: Int, text: AttributedString)
     case unorderedList([AttributedString])

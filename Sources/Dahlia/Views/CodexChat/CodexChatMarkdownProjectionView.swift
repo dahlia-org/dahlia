@@ -18,26 +18,35 @@ struct CodexChatMarkdownProjectionView: View {
     var body: some View {
         if usesLazyLayout {
             LazyVStack(alignment: .leading, spacing: 10) {
-                blockViews
+                groupViews
             }
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                blockViews
+                groupViews
             }
         }
     }
 
-    private var blockViews: some View {
-        ForEach(blocks.indices, id: \.self) { index in
-            CodexChatMarkdownBlockView(block: block(at: index))
+    private var groupViews: some View {
+        let groups = CodexChatMarkdownRenderedGroup.build(from: displayedBlocks)
+        return ForEach(groups.indices, id: \.self) { index in
+            switch groups[index] {
+            case let .text(blocks):
+                CodexChatMarkdownTextView(blocks: blocks)
+            case let .code(language, text):
+                CodexChatMarkdownCodeBlockView(language: language, text: text)
+            }
         }
     }
 
-    private func block(at index: Int) -> CodexChatMarkdownRenderedBlock {
-        guard index == blocks.indices.last,
-              let pendingSuffix
-        else { return blocks[index] }
+    private var displayedBlocks: [CodexChatMarkdownRenderedBlock] {
+        guard let lastIndex = blocks.indices.last,
+              let pendingSuffix,
+              let lastBlock = blocks[lastIndex].appendingPendingSuffix(pendingSuffix)
+        else { return blocks }
 
-        return blocks[index].appendingPendingSuffix(pendingSuffix) ?? blocks[index]
+        var displayedBlocks = blocks
+        displayedBlocks[lastIndex] = lastBlock
+        return displayedBlocks
     }
 }

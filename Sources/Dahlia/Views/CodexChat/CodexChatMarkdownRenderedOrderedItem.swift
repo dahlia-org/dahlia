@@ -1,6 +1,6 @@
 import Foundation
 
-struct CodexChatMarkdownRenderedOrderedItem: Sendable {
+struct CodexChatMarkdownRenderedOrderedItem: Equatable, Sendable {
     let marker: String
     let text: AttributedString
 }
