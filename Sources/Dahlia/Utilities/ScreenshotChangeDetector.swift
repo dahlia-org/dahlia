@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-struct ScreenshotFingerprint: Equatable {
+struct ScreenshotFingerprint: Equatable, Sendable {
     let width: Int
     let height: Int
     let pixels: [UInt8]
