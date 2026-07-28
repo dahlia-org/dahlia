@@ -45,6 +45,60 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func refreshesMeetingRowsLoadedAfterInitialPage() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer {
+                fixture.stop()
+            }
+            let olderMeetingID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            try await fixture.manager.dbQueue.write { db in
+                try MeetingRecord(
+                    id: olderMeetingID,
+                    vaultId: fixture.vault.id,
+                    projectId: nil,
+                    name: "Older meeting",
+                    createdAt: start,
+                    updatedAt: start
+                ).insert(db)
+                for index in 1 ... 50 {
+                    try insertMeeting(
+                        vaultId: fixture.vault.id,
+                        name: "Meeting \(index)",
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        in: db
+                    )
+                }
+            }
+            let viewModel = fixture.makeViewModel()
+            defer {
+                viewModel.setAppDatabase(nil)
+            }
+            #expect(await waitUntil { viewModel.meetingSidebarItems.count == 50 })
+
+            viewModel.loadMoreDisplayedMeetings()
+            #expect(await waitUntil {
+                viewModel.meetingSidebarItems.count == 51 && !viewModel.isMeetingListLoadingMore
+            })
+
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE meetings
+                    SET status = ?, duration = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [MeetingStatus.ready, 42.0, olderMeetingID]
+                )
+            }
+
+            #expect(await waitUntil {
+                let item = viewModel.meetingSidebarItems.first { $0.id == olderMeetingID }
+                return item?.status == .ready && item?.duration == 42
+            })
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func debouncesSearchAndKeepsTranscriptTextOutOfResults() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {

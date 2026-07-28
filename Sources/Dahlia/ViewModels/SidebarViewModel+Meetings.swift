@@ -221,6 +221,8 @@ extension SidebarViewModel {
     func resetMeetingListPagination() {
         meetingPageLoadTask?.cancel()
         meetingPageLoadGeneration &+= 1
+        additionalMeetingRowsObservation?.cancel()
+        additionalMeetingRowsObservationGeneration &+= 1
         meetingSidebarItems.removeAll()
         meetingSidebarGroups.removeAll()
         meetingInitialPageIDs.removeAll()
@@ -251,6 +253,7 @@ extension SidebarViewModel {
         meetingSearchItems.removeAll { ids.contains($0.id) }
         meetingSidebarGroups = MeetingDateGrouping.groups(from: meetingSidebarItems)
         meetingSearchGroups = MeetingDateGrouping.groups(from: meetingSearchItems)
+        startAdditionalMeetingRowsObservationIfNeeded()
     }
 
     func restartCurrentMeetingSearch() {
@@ -374,6 +377,7 @@ extension SidebarViewModel {
         isMeetingListLoaded = true
         isMeetingListLoadingMore = false
         meetingListLoadError = nil
+        startAdditionalMeetingRowsObservationIfNeeded()
     }
 
     private func loadNextMeetingPage(dbQueue: DatabaseQueue, vaultId: UUID) {
@@ -414,6 +418,7 @@ extension SidebarViewModel {
                 self.updateMeetingListBoundary(hasMore: page.hasMore)
                 self.isMeetingListLoadingMore = false
                 self.meetingListLoadError = nil
+                self.startAdditionalMeetingRowsObservationIfNeeded()
             } catch is CancellationError {
                 return
             } catch {
@@ -436,6 +441,54 @@ extension SidebarViewModel {
         isMeetingSearchLoaded = true
         isMeetingSearchLoadingMore = false
         meetingSearchLoadError = nil
+    }
+
+    private func startAdditionalMeetingRowsObservationIfNeeded() {
+        additionalMeetingRowsObservation?.cancel()
+        additionalMeetingRowsObservationGeneration &+= 1
+
+        let ids = Array(meetingSidebarItems.dropFirst(meetingInitialPageIDs.count).map(\.id))
+        guard !ids.isEmpty,
+              let dbQueue,
+              let vaultId = currentVault?.id else { return }
+
+        let generation = additionalMeetingRowsObservationGeneration
+        let observedIDs = Set(ids)
+        let observation = ValueObservation.tracking { db in
+            try MeetingRepository.fetchMeetingSidebarItems(
+                ids: ids,
+                vaultId: vaultId,
+                in: db
+            )
+        }
+        .removeDuplicates()
+        additionalMeetingRowsObservation = observation.start(
+            in: dbQueue,
+            onError: { error in
+                sidebarViewModelLogger.error(
+                    "Failed to refresh additional meeting rows: \(error, privacy: .public)"
+                )
+                ErrorReportingService.capture(
+                    error,
+                    context: ["source": "additionalMeetingRowsObservation"]
+                )
+            },
+            onChange: { [weak self] items in
+                guard let self,
+                      self.currentVault?.id == vaultId,
+                      self.additionalMeetingRowsObservationGeneration == generation else { return }
+
+                let itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+                self.meetingSidebarItems.removeAll {
+                    observedIDs.contains($0.id) && itemsByID[$0.id] == nil
+                }
+                for index in self.meetingSidebarItems.indices {
+                    guard let item = itemsByID[self.meetingSidebarItems[index].id] else { continue }
+                    self.meetingSidebarItems[index] = item
+                }
+                self.meetingSidebarGroups = MeetingDateGrouping.groups(from: self.meetingSidebarItems)
+            }
+        )
     }
 
     private func updateMeetingListBoundary(hasMore: Bool) {

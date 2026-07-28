@@ -2,6 +2,48 @@ import Foundation
 import GRDB
 
 extension MeetingRepository {
+    nonisolated static func fetchMeetingSidebarItems(
+        ids: [UUID],
+        vaultId: UUID,
+        in db: Database
+    ) throws -> [MeetingSidebarItem] {
+        guard !ids.isEmpty else { return [] }
+
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
+        var arguments: StatementArguments = [vaultId]
+        arguments += StatementArguments(ids)
+
+        var items = try MeetingSidebarItem.fetchAll(
+            db,
+            sql: """
+            SELECT
+                meetings.id AS meetingId,
+                meetings.vaultId AS vaultId,
+                meetings.projectId AS projectId,
+                NULL AS projectName,
+                meetings.name AS meetingName,
+                meetings.status AS status,
+                meetings.duration AS duration,
+                meetings.createdAt AS createdAt,
+                calendar_events.title AS calendarEventTitle
+            FROM meetings
+            LEFT JOIN calendar_events
+              ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
+             AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
+            WHERE meetings.vaultId = ?
+              AND meetings.id IN (\(placeholders))
+            ORDER BY meetings.createdAt DESC, meetings.id DESC
+            """,
+            arguments: arguments
+        )
+        for index in items.indices {
+            items[index].projectName = items[index].projectId.flatMap { projectPaths[$0] }
+        }
+        return items
+    }
+
     nonisolated static func fetchMeetingSidebarPage(
         vaultId: UUID,
         after cursor: MeetingSidebarCursor? = nil,

@@ -84,6 +84,25 @@ import GRDB
         }
 
         @Test
+        func fetchesRequestedSidebarItemOutsideMaterializedPages() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let meetingID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(name: "Uncached meeting", in: db)
+            }
+
+            let items = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingSidebarItems(
+                    ids: [meetingID],
+                    vaultId: fixture.vault.id,
+                    in: db
+                )
+            }
+
+            #expect(items.map(\.id) == [meetingID])
+            #expect(items.first?.meetingName == "Uncached meeting")
+        }
+
+        @Test
         func fetchesLightweightMeetingReferencesForOneVault() throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let start = Date(timeIntervalSince1970: 1_800_000_000)

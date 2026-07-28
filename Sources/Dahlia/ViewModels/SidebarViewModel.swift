@@ -70,6 +70,7 @@ final class SidebarViewModel {
     @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?
     @ObservationIgnored private var fileWatcher: TranscriptFileWatcher?
     @ObservationIgnored var meetingListObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var additionalMeetingRowsObservation: AnyDatabaseCancellable?
     @ObservationIgnored var selectedMeetingObservation: AnyDatabaseCancellable?
     @ObservationIgnored var meetingReferencesObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
@@ -88,6 +89,7 @@ final class SidebarViewModel {
     @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
     @ObservationIgnored var isMeetingCatalogRequested = false
     @ObservationIgnored var meetingListObservationGeneration = 0
+    @ObservationIgnored var additionalMeetingRowsObservationGeneration = 0
     @ObservationIgnored var meetingSearchObservationGeneration = 0
     @ObservationIgnored var meetingPageLoadGeneration = 0
     @ObservationIgnored var selectedMeetingObservationGeneration = 0
@@ -118,6 +120,7 @@ final class SidebarViewModel {
         projectObservation?.cancel()
         vaultObservation?.cancel()
         meetingListObservation?.cancel()
+        additionalMeetingRowsObservation?.cancel()
         selectedMeetingObservation?.cancel()
         meetingReferencesObservation?.cancel()
         meetingSearchTask?.cancel()
@@ -158,6 +161,7 @@ final class SidebarViewModel {
         meetingInitialPageIDs.removeAll()
         isMeetingCatalogRequested = false
         meetingListObservationGeneration &+= 1
+        additionalMeetingRowsObservationGeneration &+= 1
         meetingSearchObservationGeneration &+= 1
         meetingPageLoadGeneration &+= 1
         selectedMeetingObservationGeneration &+= 1
