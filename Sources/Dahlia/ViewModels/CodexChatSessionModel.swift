@@ -62,6 +62,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var activeTurnSupportsImages: Bool?
     @ObservationIgnored var activeSubmissionID: UUID?
     @ObservationIgnored private var activeResponseID: String?
+    @ObservationIgnored var activeOutputItemIDs: Set<String> = []
     @ObservationIgnored var turnOutputGeneration: UInt = 0
     @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
@@ -438,29 +439,30 @@ extension CodexChatSessionModel {
             processPendingInputIfPossible()
         case let .delta(itemID, text):
             accumulator.appendResponseDelta(itemID: itemID, text: text)
-            publishStreamingOutput(using: updateLimiter)
+            publishStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .completed(itemID?, text):
             accumulator.completeResponse(itemID: itemID, text: text)
-            updateLimiter.submit(force: true)
-            isAwaitingTurnOutput = true
+            completeStreamingOutput(itemID: itemID, using: updateLimiter)
         case .completed(itemID: nil, text: _):
             updateLimiter.submit(force: true)
+            activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
             activeTurnID = nil
         case let .reasoningDelta(itemID, summaryIndex, text):
             accumulator.appendReasoningDelta(itemID: itemID, summaryIndex: summaryIndex, text: text)
-            publishStreamingOutput(using: updateLimiter)
+            publishStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .reasoningCompleted(itemID, text):
             accumulator.completeReasoning(itemID: itemID, text: text)
-            updateLimiter.submit(force: true)
-            isAwaitingTurnOutput = true
+            completeStreamingOutput(itemID: itemID, using: updateLimiter)
         case .interrupted:
             updateLimiter.submit(force: true)
+            activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
             activeTurnID = nil
         case let .failed(message):
             errorMessage = CodexAppServerError.turnFailed(message).localizedDescription
             updateLimiter.submit(force: true)
+            activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
             activeTurnID = nil
         }
@@ -544,6 +546,7 @@ extension CodexChatSessionModel {
     ) {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
+        activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false
         activeTurnID = nil
         isStopRequested = false
