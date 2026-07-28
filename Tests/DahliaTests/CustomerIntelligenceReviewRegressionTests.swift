@@ -141,15 +141,22 @@ import GRDB
                 vaultId: fixture.vault.id,
                 scope: scope
             )
+            let projects = try fixture.repository.fetchCustomerIntelligenceProjects(
+                vaultId: fixture.vault.id,
+                scope: scope
+            )
             let card = try #require(
                 fixture.repository.fetchCustomerIntelligenceCustomerCards(vaultId: fixture.vault.id).first
             )
 
             #expect(counts.contacts == 501)
+            #expect(counts.projects == 501)
             #expect(counts.topics == 501)
             #expect(counts.unacceptedInsights == 501)
             #expect(overview.counts == counts)
+            #expect(projects.count == 500)
             #expect(card.contactCount == 501)
+            #expect(card.projectCount == 501)
             #expect(card.topicCount == 501)
         }
 
@@ -176,6 +183,25 @@ import GRDB
                         contactId: contact.id,
                         roleLabel: nil,
                         createdAt: now
+                    ).insert(db)
+
+                    let project = ProjectRecord(
+                        id: .v7(),
+                        vaultId: fixture.vault.id,
+                        parentProjectId: nil,
+                        name: "Project \(index)",
+                        createdAt: now,
+                        projectType: .customer
+                    )
+                    try project.insert(db)
+                    try ProjectResourceReferenceRecord(
+                        id: .v7(),
+                        projectId: project.id,
+                        resourceType: .organization,
+                        resourceId: organizationID,
+                        relationLabel: "context",
+                        createdAt: now,
+                        updatedAt: now
                     ).insert(db)
 
                     let topic = ConversationTopicRecord(

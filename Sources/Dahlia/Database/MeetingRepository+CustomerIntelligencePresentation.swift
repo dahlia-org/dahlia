@@ -224,8 +224,12 @@ extension MeetingRepository {
         vaultId: UUID
     ) throws -> CustomerIntelligenceWorkspaceData.ProjectDetail? {
         try dbQueue.read { db in
-            guard let summary = try Self.projectSummaries(vaultId: vaultId, scopeIDs: nil, in: db)
-                .first(where: { $0.id == id })
+            guard let summary = try Self.projectSummaries(
+                vaultId: vaultId,
+                scopeIDs: nil,
+                projectID: id,
+                in: db
+            ).first
             else {
                 return nil
             }
@@ -745,32 +749,69 @@ extension MeetingRepository {
     nonisolated static func projectSummaries(
         vaultId: UUID,
         scopeIDs: PresentationScopeIDs?,
+        projectID: UUID? = nil,
         in db: Database
     ) throws -> [CustomerIntelligenceWorkspaceData.ProjectSummary] {
-        let allProjects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-        let scopedProjectIDs: Set<UUID>
+        var arguments: StatementArguments = [vaultId, vaultId]
+        var projectFilter = ""
+        if let projectID {
+            projectFilter = "AND hierarchy.id = ?"
+            arguments += [projectID]
+        }
         if let scopeIDs {
-            var arguments = StatementArguments()
             let filters = resourceReferenceFilters(
-                table: "project_resource_references",
+                table: "scopeRef",
                 organizationIDs: scopeIDs.organizations,
                 contactIDs: scopeIDs.contacts,
                 arguments: &arguments
             )
             guard !filters.isEmpty else { return [] }
-            scopedProjectIDs = try UUID.fetchSet(
-                db,
-                sql: """
-                SELECT DISTINCT projectId
-                FROM project_resource_references
-                WHERE \(filters.joined(separator: " OR "))
-                """,
-                arguments: arguments
-            )
-        } else {
-            scopedProjectIDs = Set(allProjects.map(\.id))
+            projectFilter += """
+             AND EXISTS (
+                 SELECT 1
+                 FROM project_resource_references AS scopeRef
+                 WHERE scopeRef.projectId = hierarchy.id
+                   AND (\(filters.joined(separator: " OR ")))
+             )
+            """
         }
-        let projects = allProjects.filter { scopedProjectIDs.contains($0.id) }
+        arguments += [500]
+        let projectRows = try Row.fetchAll(
+            db,
+            sql: """
+            WITH RECURSIVE hierarchy AS (
+                SELECT projects.*,
+                       projects.name AS resolvedPath,
+                       COALESCE(projects.projectType, 'undefined') AS effectiveProjectType
+                FROM projects
+                WHERE projects.vaultId = ?
+                  AND projects.parentProjectId IS NULL
+
+                UNION ALL
+
+                SELECT children.*,
+                       hierarchy.resolvedPath || '/' || children.name,
+                       hierarchy.effectiveProjectType
+                FROM projects AS children
+                JOIN hierarchy ON hierarchy.id = children.parentProjectId
+                WHERE children.vaultId = ?
+            )
+            SELECT hierarchy.*
+            FROM hierarchy
+            WHERE 1 = 1
+              \(projectFilter)
+            ORDER BY hierarchy.createdAt DESC, hierarchy.id DESC
+            LIMIT ?
+            """,
+            arguments: arguments
+        )
+        let projectsWithTypes = try projectRows.map { row -> (ProjectRecord, ProjectType) in
+            var project = try ProjectRecord(row: row)
+            project.resolvedPath = row["resolvedPath"]
+            let effectiveType = ProjectType(rawValue: row["effectiveProjectType"]) ?? .undefined
+            return (project, effectiveType)
+        }
+        let projects = projectsWithTypes.map(\.0)
         guard !projects.isEmpty else { return [] }
         let projectIDs = projects.map(\.id)
         var aggregateArguments: StatementArguments = [vaultId]
@@ -800,7 +841,7 @@ extension MeetingRepository {
         let resourceIDs = Set(referenceRows.map { row -> UUID in row["resourceId"] })
         let labels = try resourceLabels(vaultId: vaultId, ids: resourceIDs, in: db)
         let references = Dictionary(grouping: referenceRows) { row -> UUID in row["projectId"] }
-        let effectiveTypes = ProjectRecord.effectiveTypes(allProjects)
+        let effectiveTypes = Dictionary(uniqueKeysWithValues: projectsWithTypes.map { ($0.0.id, $0.1) })
         return projects.map { project in
             let rows = references[project.id, default: []]
             let organizationNames = rows.compactMap { row -> String? in
@@ -815,12 +856,17 @@ extension MeetingRepository {
             }
             return CustomerIntelligenceWorkspaceData.ProjectSummary(
                 project: project,
-                effectiveType: effectiveTypes[project.id]?.type ?? .undefined,
+                effectiveType: effectiveTypes[project.id] ?? .undefined,
                 organizationNames: organizationNames,
                 contactNames: contactNames,
                 meetingCount: aggregates[project.id]?.0 ?? 0,
                 latestMeetingDate: aggregates[project.id]?.1
             )
+        }.sorted {
+            if $0.project.path == $1.project.path {
+                return $0.id.uuidString < $1.id.uuidString
+            }
+            return $0.project.path.utf8.lexicographicallyPrecedes($1.project.path.utf8)
         }
     }
 
