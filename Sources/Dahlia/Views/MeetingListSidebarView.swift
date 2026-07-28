@@ -62,12 +62,8 @@ struct MeetingListSidebarView: View {
                     onRetry: sidebarViewModel.retryDisplayedMeetingLoading
                 )
             }
-            .searchable(text: $searchText, placement: .sidebar, prompt: L10n.searchMeetings)
             .contextMenu(forSelectionType: UUID.self) { selection in
                 contextMenu(for: selection)
-            }
-            .onDeleteCommand {
-                requestDeletion(of: sidebarViewModel.selectedMeetingIds)
             }
 
             if viewModel.isListening {
@@ -78,6 +74,10 @@ struct MeetingListSidebarView: View {
                 )
                 .padding(8)
             }
+        }
+        .searchable(text: $searchText, placement: .sidebar, prompt: L10n.searchMeetings)
+        .onDeleteCommand {
+            requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
