@@ -14,12 +14,13 @@ extension CodexChatMarkdownTextDocument {
 
         for (rowIndex, row) in rows.enumerated() {
             for columnIndex in 0 ..< columnCount {
+                let isHeaderRow = rowIndex == 0
+                let isLastColumn = columnIndex == columnCount - 1
                 let location = document.length
                 document.append(NSAttributedString(row[columnIndex]))
-                let isLastCell = rowIndex == rows.count - 1
-                    && columnIndex == columnCount - 1
+                let isLastCell = rowIndex == rows.count - 1 && isLastColumn
                 if !isLastCell {
-                    let separator = columnIndex == columnCount - 1 ? "\n" : "\t"
+                    let separator = isLastColumn ? "\n" : "\t"
                     document.append(NSAttributedString(
                         string: "\n",
                         attributes: [copyReplacementAttribute: separator]
@@ -37,7 +38,7 @@ extension CodexChatMarkdownTextDocument {
                 cell.setWidth(1, type: .absoluteValueType, for: .border)
                 cell.setBorderColor(.separatorColor)
                 cell.setWidth(6, type: .absoluteValueType, for: .padding)
-                if rowIndex == 0 {
+                if isHeaderRow {
                     cell.backgroundColor = .controlBackgroundColor
                 }
 
@@ -46,7 +47,7 @@ extension CodexChatMarkdownTextDocument {
                 style.alignment = textAlignment(renderedTable.alignments[columnIndex])
                 document.addAttribute(.paragraphStyle, value: style, range: range)
                 applyBodyFont(to: document, range: range)
-                if rowIndex == 0 {
+                if isHeaderRow {
                     let font = NSFont.preferredFont(forTextStyle: .body)
                     document.addAttribute(
                         .font,

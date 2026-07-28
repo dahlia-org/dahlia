@@ -42,12 +42,11 @@ struct CodexChatConversationView: View {
                 isAtBottom: visibleBottom >= geometry.contentSize.height - 24
             )
         } action: { oldMetrics, newMetrics in
-            let shouldFollow = isFollowingLatest
-                && oldMetrics.contentHeight != newMetrics.contentHeight
-            isFollowingLatest = newMetrics.isAtBottom
-            if shouldFollow {
-                isFollowingLatest = true
+            let contentHeightChanged = oldMetrics.contentHeight != newMetrics.contentHeight
+            if isFollowingLatest, contentHeightChanged {
                 scrollToLatest()
+            } else {
+                isFollowingLatest = newMetrics.isAtBottom
             }
         }
         .onAppear(perform: scrollToLatest)
