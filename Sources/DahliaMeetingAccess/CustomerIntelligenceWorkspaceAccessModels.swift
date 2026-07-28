@@ -18,6 +18,7 @@ public struct OrganizationChartAccessNode: Codable, Sendable, Equatable {
     public let parentOrganizationID: UUID?
     public let nodeKind: OrganizationAccessNodeKind
     public let name: String
+    public let description: String
     public let depth: Int
     public let revision: Int
     public let memberCount: Int

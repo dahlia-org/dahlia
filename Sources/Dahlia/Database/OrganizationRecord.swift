@@ -9,6 +9,7 @@ struct OrganizationRecord: Codable, FetchableRecord, PersistableRecord, Identifi
     var parentOrganizationId: UUID?
     var nodeKind: OrganizationNodeKind
     var name: String
+    var description = ""
     var revision: Int
     var createdAt: Date
     var updatedAt: Date

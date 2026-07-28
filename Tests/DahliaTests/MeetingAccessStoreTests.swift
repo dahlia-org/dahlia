@@ -764,7 +764,8 @@ import ImageIO
                 vaultId: fixture.primaryVaultID,
                 parentOrganizationId: nil,
                 nodeKind: .organization,
-                name: "Acme"
+                name: "Acme",
+                description: "Strategic customer"
             )
             let unit = try repository.createOrganization(
                 vaultId: fixture.primaryVaultID,
@@ -853,8 +854,13 @@ import ImageIO
                 unit.id,
             ])
             let organizationDetail = try store.organization(id: organization.id)
+            #expect(organizationDetail.organization.description == "Strategic customer")
             #expect(organizationDetail.domains.map(\.domainName) == ["acme.example"])
             #expect(organizationDetail.projectResources.map(\.relationLabel) == ["customer"])
+            #expect(
+                try store.queryOrganizations(.init(query: "Strategic customer")).organizations.map(\.id)
+                    == [organization.id]
+            )
 
             let contacts = try store.queryContacts()
             #expect(contacts.contacts.map(\.id) == [contact.id])
@@ -1561,7 +1567,21 @@ import ImageIO
             let root = try store.createOrganization(
                 name: "Acme Customer",
                 nodeKind: .organization,
-                parentOrganizationID: nil
+                parentOrganizationID: nil,
+                description: "Enterprise account"
+            )
+            #expect(try store.organization(id: root.resourceID).organization.description == "Enterprise account")
+            let updatedRoot = try store.updateOrganization(
+                id: root.resourceID,
+                expectedRevision: root.revision,
+                name: nil,
+                description: "Strategic enterprise account",
+                parent: .unchanged
+            )
+            #expect(updatedRoot.changed)
+            #expect(
+                try store.organization(id: root.resourceID).organization.description
+                    == "Strategic enterprise account"
             )
             let unit = try store.createOrganization(
                 name: "Data",

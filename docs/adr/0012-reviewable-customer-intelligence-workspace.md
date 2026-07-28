@@ -60,8 +60,9 @@ create Glossary, proposal, import, or development-only idempotency tables. The a
 `v28_customerIntelligenceTopicReferenceTimestamp` migration makes reference cleanup update the Topic timestamp as well
 as its revision. `v29_customerIntelligenceDirectCRUD` reconciles QA databases opened against an earlier pre-release
 schema: it maps string Insight review state to Boolean acceptance, supplies revision values, removes retired staging
-tables, and restores the current validation and cleanup triggers. The MCP contract requires v29 so it never treats a
-partially upgraded QA database as current.
+tables, and restores the validation and cleanup triggers current at the time of this decision. The MCP contract
+required v29 at that point so it never treated a partially upgraded QA database as current. The
+[workspace documentation](../customer-intelligence-workspace.md#mcp) records the current schema requirement.
 
 App and MCP database queues wait up to five seconds for a writer. A single failed call never partially commits.
 Calendar facts retain a stronger provenance boundary than AI-derived organization knowledge.

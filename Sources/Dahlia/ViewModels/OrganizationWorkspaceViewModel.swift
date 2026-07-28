@@ -88,7 +88,10 @@ final class OrganizationWorkspaceViewModel {
     var filteredRoots: [OrganizationWorkspaceNode] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return roots }
-        return roots.filter { $0.organization.name.localizedCaseInsensitiveContains(query) }
+        return roots.filter {
+            $0.organization.name.localizedCaseInsensitiveContains(query)
+                || $0.organization.description.localizedCaseInsensitiveContains(query)
+        }
     }
 
     func load(selectingRootID requestedRootID: UUID? = nil) async {
@@ -291,7 +294,7 @@ final class OrganizationWorkspaceViewModel {
         }
     }
 
-    func updateSelectedOrganization(name: String, parentID: UUID?) async -> Bool {
+    func updateSelectedOrganization(name: String, parentID: UUID?, description: String) async -> Bool {
         guard let id = selectedNodeID, id != parentID, let node = loadedNodes[id], let vaultID else {
             return false
         }
@@ -301,19 +304,21 @@ final class OrganizationWorkspaceViewModel {
                 vaultId: vaultID,
                 name: name,
                 parentOrganizationId: parentID,
+                description: description,
                 expectedRevision: node.organization.revision
             )
         }
     }
 
-    func createRootOrganization(name: String) async {
+    func createRootOrganization(name: String, description: String = "") async {
         guard let vaultID else { return }
         await mutate(vaultID: vaultID, operation: {
             try $0.createOrganization(
                 vaultId: vaultID,
                 parentOrganizationId: nil,
                 nodeKind: .organization,
-                name: name
+                name: name,
+                description: description
             )
         }, onSuccess: { organization in
             selectedRootID = organization.id

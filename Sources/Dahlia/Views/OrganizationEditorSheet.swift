@@ -5,22 +5,24 @@ struct OrganizationEditorSheet: View {
 
     let organization: OrganizationWorkspaceNode
     let parentCandidates: [OrganizationRecord]
-    let onSave: (String, UUID?) async -> Bool
+    let onSave: (String, UUID?, String) async -> Bool
 
     @State private var name: String
     @State private var parentID: UUID?
+    @State private var description: String
     @State private var isSaving = false
 
     init(
         organization: OrganizationWorkspaceNode,
         parentCandidates: [OrganizationRecord],
-        onSave: @escaping (String, UUID?) async -> Bool
+        onSave: @escaping (String, UUID?, String) async -> Bool
     ) {
         self.organization = organization
         self.parentCandidates = parentCandidates
         self.onSave = onSave
         _name = State(initialValue: organization.organization.name)
         _parentID = State(initialValue: organization.organization.parentOrganizationId)
+        _description = State(initialValue: organization.organization.description)
     }
 
     var body: some View {
@@ -36,6 +38,8 @@ struct OrganizationEditorSheet: View {
                             Text(candidate.name).tag(Optional(candidate.id))
                         }
                     }
+                    TextField(L10n.organizationDescription, text: $description, axis: .vertical)
+                        .lineLimit(4 ... 8)
                 }
             }
             .formStyle(.grouped)
@@ -64,12 +68,13 @@ struct OrganizationEditorSheet: View {
     private var hasChanges: Bool {
         name != organization.organization.name
             || parentID != organization.organization.parentOrganizationId
+            || description != organization.organization.description
     }
 
     private func save() async {
         isSaving = true
         defer { isSaving = false }
-        if await onSave(name, parentID) {
+        if await onSave(name, parentID, description) {
             dismiss()
         }
     }

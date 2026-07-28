@@ -76,7 +76,10 @@ private struct CustomerIntelligenceScopePopover: View {
 
     private var filteredRoots: [OrganizationWorkspaceNode] {
         guard let query = searchText.nilIfBlank else { return roots }
-        return roots.filter { $0.organization.name.localizedStandardContains(query) }
+        return roots.filter {
+            $0.organization.name.localizedStandardContains(query)
+                || $0.organization.description.localizedStandardContains(query)
+        }
     }
 
     private func scopeButton(

@@ -232,6 +232,13 @@ struct OrganizationHierarchyView: View {
     private func organizationSection(_ node: OrganizationWorkspaceNode) -> some View {
         Section(L10n.department) {
             LabeledContent(L10n.name, value: node.organization.name)
+            if let description = node.organization.description.nilIfBlank {
+                LabeledContent(L10n.organizationDescription) {
+                    Text(description)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
+            }
             if let parentID = node.organization.parentOrganizationId,
                let parent = model.loadedNodes[parentID] {
                 LabeledContent(L10n.parentDepartment, value: parent.organization.name)

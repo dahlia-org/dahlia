@@ -164,6 +164,7 @@
 "The Summary output destination must resolve inside the Vault without symlink or file path components." = "The Summary output destination must resolve inside the Vault without symlink or file path components.";
 "The Summary output folder has not been created yet." = "The Summary output folder has not been created yet.";
 "Project Description" = "Project Description";
+"Organization Description" = "Organization Description";
 "This description is included when summaries are generated for this project." = "This description is included when summaries are generated for this project.";
 "Describe this project..." = "Describe this project...";
 "Could not save the project description." = "Could not save the project description.";
