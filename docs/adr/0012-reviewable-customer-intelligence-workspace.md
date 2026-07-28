@@ -32,7 +32,8 @@ Dahlia exposes small, composable MCP tools. Canonical records use `query/get/cre
   the failed record.
 - Proposal queues, mutation DSLs, imports, batches, caller-local dependency keys, and persisted idempotency staging are
   not part of the contract.
-- Codex app-server `auto_review` evaluates each write tool. Dahlia adds no separate permission-mode switch.
+- Codex app-server uses interactive `on-request` approvals so `auto_review` can evaluate each write tool. Dahlia adds no separate
+  permission-mode switch.
 - `meeting_participants` has no mutation tool, structurally preventing AI-generated calendar participation.
 - Project and Meeting participant deletion are not exposed by customer-intelligence MCP tools.
 - Insight acceptance is a Bool (`isAccepted`); AI-created Insights default to false.

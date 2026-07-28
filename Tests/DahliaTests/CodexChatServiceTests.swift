@@ -45,7 +45,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "thread/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(threadParams["ephemeral"] == .bool(false))
-            #expect(threadParams["approvalPolicy"] == .string("never"))
+            #expect(threadParams["approvalPolicy"] == .string("on-request"))
             #expect(threadParams["sandbox"] == .string("read-only"))
             #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
@@ -239,6 +239,10 @@ import Foundation
             #expect(listParams["sourceKinds"] == .array([.string("vscode")]))
             #expect(listParams["sortKey"] == .string("recency_at"))
             #expect(listParams["sortDirection"] == .string("desc"))
+            let resumeParams = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "thread/resume"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(resumeParams["approvalPolicy"] == .string("on-request"))
             await appServer.shutdown()
         }
 

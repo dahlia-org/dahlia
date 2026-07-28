@@ -94,7 +94,7 @@ actor CodexChatService: CodexChatServicing {
         let result = try await appServer.request(
             method: "thread/resume",
             params: .object([
-                "approvalPolicy": .string("never"),
+                "approvalPolicy": .string("on-request"),
                 "config": config,
                 "cwd": .string(workspaceURL.path),
                 "developerInstructions": .string(Self.developerInstructions),
@@ -134,7 +134,7 @@ actor CodexChatService: CodexChatServicing {
         let result = try await appServer.request(
             method: "thread/start",
             params: .object([
-                "approvalPolicy": .string("never"),
+                "approvalPolicy": .string("on-request"),
                 "config": config,
                 "cwd": .string(workspaceURL.path),
                 "developerInstructions": .string(Self.developerInstructions),
