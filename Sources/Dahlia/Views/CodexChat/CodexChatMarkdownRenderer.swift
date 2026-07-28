@@ -72,6 +72,21 @@ actor CodexChatMarkdownRenderer: CodexChatMarkdownRendering {
             })
         case let .blockquote(text):
             .blockquote(attributedMarkdown(text))
+        case let .table(table):
+            try .table(CodexChatMarkdownRenderedTable(
+                header: table.header.map { value in
+                    try Task.checkCancellation()
+                    return attributedMarkdown(value)
+                },
+                rows: table.rows.map { row in
+                    try Task.checkCancellation()
+                    return try row.map { value in
+                        try Task.checkCancellation()
+                        return attributedMarkdown(value)
+                    }
+                },
+                alignments: table.alignments
+            ))
         case let .code(language, text):
             .code(language: language, text: text)
         case .divider:

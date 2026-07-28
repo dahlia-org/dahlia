@@ -21,6 +21,8 @@ enum CodexChatMarkdownParser {
 
             if let block = try parseFence(lines, index: &index) {
                 blocks.append(block)
+            } else if let block = try parseTable(lines, index: &index) {
+                blocks.append(block)
             } else if let block = parseHeading(lines[index]) {
                 blocks.append(block)
                 index += 1
@@ -74,6 +76,94 @@ enum CodexChatMarkdownParser {
             language: language.isEmpty ? nil : language,
             text: codeLines.joined(separator: "\n")
         )
+    }
+
+    private static func parseTable(
+        _ lines: [String],
+        index: inout Int
+    ) throws -> CodexChatMarkdownBlock? {
+        guard index + 1 < lines.count else { return nil }
+        let header = tableCells(in: lines[index])
+        let delimiterCells = tableCells(in: lines[index + 1])
+        guard !header.isEmpty,
+              delimiterCells.count == header.count,
+              let alignments = tableAlignments(in: delimiterCells)
+        else { return nil }
+
+        index += 2
+        var rows: [[String]] = []
+        while index < lines.count {
+            try Task.checkCancellation()
+            let cells = tableCells(in: lines[index])
+            guard !cells.isEmpty else { break }
+            rows.append(normalizedTableRow(cells, columnCount: header.count))
+            index += 1
+        }
+
+        return .table(CodexChatMarkdownTable(
+            header: header,
+            rows: rows,
+            alignments: alignments
+        ))
+    }
+
+    private static func tableCells(in line: String) -> [String] {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.contains("|") else { return [] }
+
+        var cells: [String] = []
+        var cell = ""
+        var isEscaped = false
+        var endsWithDelimiter = false
+        for character in trimmed {
+            if character == "|", !isEscaped {
+                cells.append(cell.trimmingCharacters(in: .whitespaces))
+                cell = ""
+                endsWithDelimiter = true
+            } else {
+                cell.append(character)
+                endsWithDelimiter = false
+            }
+            isEscaped = character == "\\" && !isEscaped
+        }
+        cells.append(cell.trimmingCharacters(in: .whitespaces))
+
+        if trimmed.hasPrefix("|") {
+            cells.removeFirst()
+        }
+        if endsWithDelimiter {
+            cells.removeLast()
+        }
+        return cells
+    }
+
+    private static func tableAlignments(
+        in delimiterCells: [String]
+    ) -> [CodexChatMarkdownTableAlignment]? {
+        var alignments: [CodexChatMarkdownTableAlignment] = []
+        for cell in delimiterCells {
+            let trimmed = cell.trimmingCharacters(in: .whitespaces)
+            let hasLeadingColon = trimmed.hasPrefix(":")
+            let hasTrailingColon = trimmed.hasSuffix(":")
+            let rule = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            guard rule.count >= 3, rule.allSatisfy({ $0 == "-" }) else { return nil }
+            let alignment: CodexChatMarkdownTableAlignment = if hasLeadingColon, hasTrailingColon {
+                .center
+            } else if hasTrailingColon {
+                .right
+            } else {
+                .left
+            }
+            alignments.append(alignment)
+        }
+        return alignments
+    }
+
+    private static func normalizedTableRow(
+        _ cells: [String],
+        columnCount: Int
+    ) -> [String] {
+        Array((cells + Array(repeating: "", count: columnCount)).prefix(columnCount))
     }
 
     private static func parseHeading(_ line: String) -> CodexChatMarkdownBlock? {
