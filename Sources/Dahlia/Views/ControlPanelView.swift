@@ -376,8 +376,8 @@ struct ControlPanelView: View {
                 selectedScreenshotIds.removeAll()
             }
         }
-        .onChange(of: displayedMeetingIdentity) { _, newIdentity in
-            if newIdentity != nil {
+        .onChange(of: displayedMeetingIdentity) { oldIdentity, newIdentity in
+            if oldIdentity == nil, newIdentity != nil {
                 selectedTab = initialTabSelection
             }
             viewModel.requestShowSummaryTab = false
