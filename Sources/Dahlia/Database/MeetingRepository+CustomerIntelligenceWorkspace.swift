@@ -335,6 +335,24 @@ extension MeetingRepository {
         }
     }
 
+    nonisolated func organizationDeletionPreview(
+        id: UUID,
+        vaultId: UUID
+    ) throws -> (organization: OrganizationRecord, impact: OrganizationDeletionImpact) {
+        try dbQueue.read { db in
+            guard let organization = try OrganizationRecord
+                .filter(Column("id") == id && Column("vaultId") == vaultId)
+                .fetchOne(db)
+            else {
+                throw CustomerIntelligenceError.organizationNotFound
+            }
+            return try (
+                organization: organization,
+                impact: Self.organizationDeletionImpact(id: id, vaultId: vaultId, in: db)
+            )
+        }
+    }
+
     // MARK: - Conversation topics
 
     nonisolated func fetchConversationTopics(vaultId: UUID) throws -> [ConversationTopicOverview] {

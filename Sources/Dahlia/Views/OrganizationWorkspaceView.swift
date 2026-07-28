@@ -53,8 +53,11 @@ struct OrganizationHierarchyView: View {
         canvasColumn
             .frame(minWidth: 460, idealWidth: 760)
             .inspector(isPresented: $showsInspector) {
-                inspector
-                    .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
+                VStack(spacing: 0) {
+                    inspector
+                }
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
+                .alert(item: $model.pendingDeletion, content: deletionAlert)
             }
             .navigationTitle(L10n.organizations)
             .disabled(model.isMutating)
@@ -103,7 +106,6 @@ struct OrganizationHierarchyView: View {
                     await model.addDomain($0, to: target)
                 }
             }
-            .alert(item: $model.pendingDeletion, content: deletionAlert)
             .alert(item: $model.pendingMerge, content: mergeAlert)
             .customerIntelligenceErrorAlert(
                 title: L10n.organizationWorkspaceError,
@@ -222,7 +224,10 @@ struct OrganizationHierarchyView: View {
                     topicEvidenceSection
                 }
 
-                OrganizationDeletionSection(onDelete: requestOrganizationDeletion)
+                OrganizationDeletionSection(
+                    onRequestDeletion: requestOrganizationDeletion
+                )
+                .disabled(model.isLoading || model.isPreparingDeletion)
             }
         } else {
             ContentUnavailableView(L10n.selectOrganization, systemImage: "building.2")
