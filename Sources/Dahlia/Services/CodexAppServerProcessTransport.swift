@@ -13,13 +13,15 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var isErrorDrainStarted = false
     private var isErrorDrainFinished = false
     private var outputLines: [Data] = []
+    private var outputLineReadIndex = 0
     private var outputWaiter: (id: UUID, continuation: CheckedContinuation<Data?, any Error>)?
     private var outputError: (any Error)?
     private var didReachOutputEOF = false
     private var pendingWrites: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var isClosed = false
     private var stderrTail = Data()
-    private let maximumBufferedOutputLines = 256
+    private let maximumBufferedOutputLines = 1024
+    private let minimumConsumedOutputLinesBeforeCompaction = 256
     #if DEBUG
         private var outputBufferOverflowWaiters: [CheckedContinuation<Void, Never>] = []
     #endif
@@ -109,8 +111,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
 
     func receiveLine() async throws -> Data? {
         startDrainsIfNeeded()
-        if !outputLines.isEmpty {
-            return outputLines.removeFirst()
+        if let line = dequeueOutputLine() {
+            return line
         }
         if let outputError { throw outputError }
         if isClosed || didReachOutputEOF { return nil }
@@ -171,6 +173,19 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             await withCheckedContinuation { continuation in
                 outputBufferOverflowWaiters.append(continuation)
             }
+        }
+
+        func enqueueOutputLinesForTesting(_ lines: [Data]) {
+            for line in lines {
+                enqueueOutputLine(line)
+            }
+        }
+
+        func outputBufferStateForTesting() -> (unreadLineCount: Int, retainedByteCount: Int) {
+            (
+                outputLines.count - outputLineReadIndex,
+                outputLines.reduce(into: 0) { $0 += $1.count }
+            )
         }
     #endif
 
@@ -236,8 +251,9 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             waiter.continuation.resume(returning: line)
         } else {
             guard outputError == nil else { return }
-            if outputLines.count >= maximumBufferedOutputLines {
+            if outputLines.count - outputLineReadIndex >= maximumBufferedOutputLines {
                 outputLines.removeAll(keepingCapacity: false)
+                outputLineReadIndex = 0
                 outputError = CodexAppServerError.outputBufferOverflow
                 #if DEBUG
                     let waiters = outputBufferOverflowWaiters
@@ -248,6 +264,23 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             }
             outputLines.append(line)
         }
+    }
+
+    private func dequeueOutputLine() -> Data? {
+        guard outputLineReadIndex < outputLines.count else { return nil }
+        let line = outputLines[outputLineReadIndex]
+        // Release the payload now; the empty prefix is compacted less frequently.
+        outputLines[outputLineReadIndex] = Data()
+        outputLineReadIndex += 1
+        if outputLineReadIndex == outputLines.count {
+            outputLines.removeAll(keepingCapacity: true)
+            outputLineReadIndex = 0
+        } else if outputLineReadIndex >= minimumConsumedOutputLinesBeforeCompaction,
+                  outputLineReadIndex * 2 >= outputLines.count {
+            outputLines.removeFirst(outputLineReadIndex)
+            outputLineReadIndex = 0
+        }
+        return line
     }
 
     private func finishOutput(throwing error: (any Error)? = nil) async {
