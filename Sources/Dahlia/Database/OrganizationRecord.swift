@@ -12,4 +12,8 @@ struct OrganizationRecord: Codable, FetchableRecord, PersistableRecord, Identifi
     var revision: Int
     var createdAt: Date
     var updatedAt: Date
+
+    var isRootOrganization: Bool {
+        nodeKind == .organization && parentOrganizationId == nil
+    }
 }

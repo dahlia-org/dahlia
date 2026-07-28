@@ -13,6 +13,11 @@ final class OrganizationWorkspaceViewModel {
         var id: UUID { organization.id }
     }
 
+    struct PendingOrganizationMerge: Identifiable {
+        let preview: OrganizationMergePreview
+        var id: UUID { preview.source.id }
+    }
+
     private(set) var roots: [OrganizationWorkspaceNode] = []
     private(set) var contacts: [ContactRecord] = []
     private(set) var organizationCandidates: [OrganizationRecord] = []
@@ -33,6 +38,7 @@ final class OrganizationWorkspaceViewModel {
     private(set) var isMutating = false
     var errorMessage: String?
     var pendingDeletion: PendingOrganizationDeletion?
+    var pendingMerge: PendingOrganizationMerge?
 
     private let dbQueue: DatabaseQueue?
     private var vaultID: UUID?
@@ -314,6 +320,68 @@ final class OrganizationWorkspaceViewModel {
         })
     }
 
+    func addDomain(_ rawDomainName: String, to target: OrganizationRecord) async -> Bool {
+        guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
+            setError(CustomerIntelligenceError.invalidDomain)
+            return false
+        }
+        guard target.isRootOrganization,
+              vaultID == target.vaultId,
+              dbQueue != nil,
+              let vaultID
+        else {
+            setError(CustomerIntelligenceError.revisionConflict)
+            return false
+        }
+        do {
+            let plan = try await performRead {
+                try $0.organizationDomainAssignmentPlan(
+                    targetOrganizationId: target.id,
+                    vaultId: vaultID,
+                    domainName: domainName,
+                    expectedTargetRevision: target.revision
+                )
+            }
+            guard self.vaultID == vaultID else { return false }
+            switch plan {
+            case .unassigned:
+                return await mutate(vaultID: vaultID) {
+                    try $0.addOrganizationDomain(
+                        organizationId: target.id,
+                        vaultId: vaultID,
+                        domainName: domainName,
+                        expectedOrganizationRevision: target.revision
+                    )
+                }
+            case .alreadyAssigned:
+                return true
+            case let .merge(preview):
+                pendingMerge = PendingOrganizationMerge(preview: preview)
+                return true
+            }
+        } catch {
+            setError(error)
+            return false
+        }
+    }
+
+    func confirmMerge(_ pending: PendingOrganizationMerge) async {
+        pendingMerge = nil
+        let preview = pending.preview
+        guard let vaultID else { return }
+        await mutate(vaultID: vaultID) {
+            try $0.mergeOrganization(
+                sourceOrganizationId: preview.source.id,
+                targetOrganizationId: preview.target.id,
+                vaultId: vaultID,
+                expectedSourceDomainName: preview.domainName,
+                expectedSourceRevision: preview.source.revision,
+                expectedTargetRevision: preview.target.revision,
+                expectedImpact: preview.impact
+            )
+        }
+    }
+
     func addMember(contactID: UUID, role: String?) async -> Bool {
         guard let organizationID = selectedNodeID, let node = loadedNodes[organizationID],
               let vaultID else { return false }
@@ -534,6 +602,7 @@ final class OrganizationWorkspaceViewModel {
         loadingChildNodeIDs = []
         canvasLayout = OrganizationCanvasLayoutResult(positions: [:], size: .zero)
         pendingDeletion = nil
+        pendingMerge = nil
         errorMessage = nil
         isLoading = false
     }

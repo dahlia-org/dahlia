@@ -19,6 +19,7 @@ struct OrganizationHierarchyView: View {
     @State private var canvasViewportSize: CGSize = .zero
     @State private var organizationBeingEdited: OrganizationWorkspaceNode?
     @State private var showsPersonAdditionSheet = false
+    @State private var domainAdditionTarget: OrganizationRecord?
 
     init(
         sidebarViewModel: SidebarViewModel,
@@ -97,7 +98,13 @@ struct OrganizationHierarchyView: View {
             .sheet(isPresented: $showsPersonAdditionSheet) {
                 OrganizationMemberAdditionSheet(model: model)
             }
+            .sheet(item: $domainAdditionTarget) { target in
+                OrganizationDomainAdditionSheet(organizationName: target.name) {
+                    await model.addDomain($0, to: target)
+                }
+            }
             .alert(item: $model.pendingDeletion, content: deletionAlert)
+            .alert(item: $model.pendingMerge, content: mergeAlert)
             .customerIntelligenceErrorAlert(
                 title: L10n.organizationWorkspaceError,
                 message: $model.errorMessage
@@ -110,6 +117,21 @@ struct OrganizationHierarchyView: View {
             message: Text(L10n.organizationDeletionImpact(pending.impact)),
             primaryButton: .destructive(Text(L10n.delete)) {
                 Task { await model.confirmDeletion(pending) }
+            },
+            secondaryButton: .cancel()
+        )
+    }
+
+    private func mergeAlert(_ pending: OrganizationWorkspaceViewModel.PendingOrganizationMerge) -> Alert {
+        Alert(
+            title: Text(L10n.mergeOrganization(named: pending.preview.source.name)),
+            message: Text(L10n.organizationMergeImpact(
+                domainName: pending.preview.domainName,
+                targetName: pending.preview.target.name,
+                impact: pending.preview.impact
+            )),
+            primaryButton: .destructive(Text(L10n.merge)) {
+                Task { await model.confirmMerge(pending) }
             },
             secondaryButton: .cancel()
         )
@@ -182,6 +204,9 @@ struct OrganizationHierarchyView: View {
                 organizationSection(node)
 
                 if let detail = model.selectedDetail {
+                    if node.organization.isRootOrganization {
+                        domainsSection(detail, organization: node.organization)
+                    }
                     peopleSection(detail)
                     if !detail.projects.isEmpty {
                         projectsSection(detail)
@@ -213,6 +238,27 @@ struct OrganizationHierarchyView: View {
             }
             Button(organizationEditTitle(for: node), systemImage: "pencil") {
                 organizationBeingEdited = node
+            }
+        }
+    }
+
+    private func domainsSection(
+        _ detail: OrganizationWorkspaceDetail,
+        organization: OrganizationRecord
+    ) -> some View {
+        Section(L10n.organizationDomains) {
+            ForEach(detail.domains, id: \.domainName) { domain in
+                HStack {
+                    Text(domain.domainName)
+                    Spacer()
+                    if domain.isPrimary {
+                        Text(L10n.primary)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Button(L10n.addOrganizationDomain, systemImage: "plus") {
+                domainAdditionTarget = organization
             }
         }
     }
