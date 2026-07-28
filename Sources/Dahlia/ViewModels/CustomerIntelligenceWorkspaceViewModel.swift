@@ -6,6 +6,14 @@ import Observation
 @MainActor
 @Observable
 final class CustomerIntelligenceWorkspaceViewModel {
+    typealias ScopeContainsLoader = @Sendable (
+        DatabaseQueue,
+        UUID,
+        CustomerIntelligenceSection,
+        UUID,
+        CustomerIntelligenceScope
+    ) async throws -> Bool
+
     private struct NavigationLocation: Equatable {
         let section: CustomerIntelligenceSection
         let scope: CustomerIntelligenceScope
@@ -27,12 +35,27 @@ final class CustomerIntelligenceWorkspaceViewModel {
     private var dbQueue: DatabaseQueue?
     private var vaultID: UUID?
     private var loadGeneration = 0
+    private var navigationGeneration = 0
     private var backHistory: [NavigationLocation] = []
     private var forwardHistory: [NavigationLocation] = []
+    private let scopeContainsLoader: ScopeContainsLoader
     private let notificationSenderID = UUID().uuidString
     @ObservationIgnored private nonisolated(unsafe) var notificationObserver: NSObjectProtocol?
 
-    init(dbQueue: DatabaseQueue?, vaultID: UUID?) {
+    init(
+        dbQueue: DatabaseQueue?,
+        vaultID: UUID?,
+        scopeContainsLoader: @escaping ScopeContainsLoader = { dbQueue, vaultID, section, resourceID, scope in
+            try await Task.detached(priority: .userInitiated) {
+                try MeetingRepository(dbQueue: dbQueue).customerIntelligenceScopeContains(
+                    section: section,
+                    resourceID: resourceID,
+                    vaultId: vaultID,
+                    scope: scope
+                )
+            }.value
+        }
+    ) {
         let settings = AppSettings.shared
         section = CustomerIntelligenceSection(rawValue: settings.customerIntelligenceSectionRawValue) ?? .overview
         if let id = UUID(uuidString: settings.customerIntelligenceScopeRawValue) {
@@ -42,6 +65,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
         }
         self.dbQueue = dbQueue
         self.vaultID = vaultID
+        self.scopeContainsLoader = scopeContainsLoader
         observeWorkspaceChanges()
     }
 
@@ -110,6 +134,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     func changeVault(to vaultID: UUID?, dbQueue: DatabaseQueue?) async {
         guard self.vaultID != vaultID || self.dbQueue !== dbQueue else { return }
+        beginNavigationIntent()
         if let notificationObserver {
             DistributedNotificationCenter.default().removeObserver(notificationObserver)
             self.notificationObserver = nil
@@ -129,6 +154,8 @@ final class CustomerIntelligenceWorkspaceViewModel {
     }
 
     func selectSection(_ section: CustomerIntelligenceSection) {
+        guard self.section != section else { return }
+        beginNavigationIntent()
         let previousLocation = currentLocation
         self.section = section
         recordNavigation(from: previousLocation)
@@ -137,6 +164,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     func selectScope(_ scope: CustomerIntelligenceScope) async {
         guard self.scope != scope else { return }
+        let navigation = beginNavigationIntent()
         let previousLocation = currentLocation
         self.scope = scope
         selection = CustomerIntelligenceSelection(organizationID: scope.organizationID)
@@ -144,22 +172,28 @@ final class CustomerIntelligenceWorkspaceViewModel {
         reloadToken += 1
         persistNavigation()
         await load()
+        guard navigation == navigationGeneration else { return }
         recordNavigation(from: previousLocation)
     }
 
     func openOrganization(_ id: UUID) async {
+        let navigation = beginNavigationIntent()
         let previousLocation = currentLocation
         if let dbQueue, let vaultID,
            let rootID = try? await Task.detached(priority: .userInitiated, operation: {
                try MeetingRepository(dbQueue: dbQueue)
                    .fetchOrganizationWorkspacePath(id: id, vaultId: vaultID)
                    .first?.id
-           }).value,
-           scope.organizationID != rootID {
-            scope = .organization(rootID)
-            reloadToken += 1
-            await load()
+           }).value {
+            guard navigation == navigationGeneration else { return }
+            if scope.organizationID != rootID {
+                scope = .organization(rootID)
+                reloadToken += 1
+                await load()
+                guard navigation == navigationGeneration else { return }
+            }
         }
+        guard navigation == navigationGeneration else { return }
         section = .organizations
         selection.organizationID = id
         recordNavigation(from: previousLocation)
@@ -180,6 +214,22 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     func openInsight(_ id: UUID) async {
         await openResource(id, in: .insights, selection: \.insightID)
+    }
+
+    func updateContactSelection(_ id: UUID?) {
+        updateSelection(id, at: \.contactID)
+    }
+
+    func updateProjectSelection(_ id: UUID?) {
+        updateSelection(id, at: \.projectID)
+    }
+
+    func updateTopicSelection(_ id: UUID?) {
+        updateSelection(id, at: \.topicID)
+    }
+
+    func updateInsightSelection(_ id: UUID?) {
+        updateSelection(id, at: \.insightID)
     }
 
     func createRootOrganization(name: String) async -> Bool {
@@ -209,6 +259,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     func goBack() async {
         guard canGoBack, let location = backHistory.popLast() else { return }
+        beginNavigationIntent()
         let previousLocation = currentLocation
         isNavigatingHistory = true
         defer { isNavigatingHistory = false }
@@ -218,6 +269,7 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     func goForward() async {
         guard canGoForward, let location = forwardHistory.popLast() else { return }
+        beginNavigationIntent()
         let previousLocation = currentLocation
         isNavigatingHistory = true
         defer { isNavigatingHistory = false }
@@ -245,12 +297,35 @@ final class CustomerIntelligenceWorkspaceViewModel {
         in section: CustomerIntelligenceSection,
         selection selectionKeyPath: WritableKeyPath<CustomerIntelligenceSelection, UUID?>
     ) async {
+        let navigation = beginNavigationIntent()
         let previousLocation = currentLocation
-        await ensureScopeContains(section: section, resourceID: id)
+        guard await ensureScopeContains(
+            section: section,
+            resourceID: id,
+            navigation: navigation
+        ) else {
+            return
+        }
+        guard navigation == navigationGeneration else { return }
         self.section = section
         selection[keyPath: selectionKeyPath] = id
         recordNavigation(from: previousLocation)
         persistNavigation()
+    }
+
+    private func updateSelection(
+        _ id: UUID?,
+        at keyPath: WritableKeyPath<CustomerIntelligenceSelection, UUID?>
+    ) {
+        guard selection[keyPath: keyPath] != id else { return }
+        beginNavigationIntent()
+        selection[keyPath: keyPath] = id
+    }
+
+    @discardableResult
+    private func beginNavigationIntent() -> Int {
+        navigationGeneration += 1
+        return navigationGeneration
     }
 
     private func recordNavigation(from previousLocation: NavigationLocation) {
@@ -294,28 +369,34 @@ final class CustomerIntelligenceWorkspaceViewModel {
 
     private func ensureScopeContains(
         section: CustomerIntelligenceSection,
-        resourceID: UUID
-    ) async {
-        guard scope.organizationID != nil, let dbQueue, let vaultID else { return }
+        resourceID: UUID,
+        navigation: Int
+    ) async -> Bool {
+        guard scope.organizationID != nil, let dbQueue, let vaultID else {
+            return navigation == navigationGeneration
+        }
         let currentScope = scope
         do {
-            let isVisible = try await Task.detached(priority: .userInitiated) {
-                try MeetingRepository(dbQueue: dbQueue).customerIntelligenceScopeContains(
-                    section: section,
-                    resourceID: resourceID,
-                    vaultId: vaultID,
-                    scope: currentScope
-                )
-            }.value
-            guard scope == currentScope, !isVisible else { return }
+            let isVisible = try await scopeContainsLoader(
+                dbQueue,
+                vaultID,
+                section,
+                resourceID,
+                currentScope
+            )
+            guard navigation == navigationGeneration, scope == currentScope else { return false }
+            guard !isVisible else { return true }
             scope = .all
             selection = CustomerIntelligenceSelection()
             overview = .empty
             reloadToken += 1
             persistNavigation()
             await load()
+            return navigation == navigationGeneration
         } catch {
+            guard navigation == navigationGeneration else { return false }
             setError(error)
+            return false
         }
     }
 

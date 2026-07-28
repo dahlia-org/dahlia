@@ -6,6 +6,7 @@ struct CustomerIntelligenceTopicsView: View {
     let initialTopicID: UUID?
     let reloadToken: Int
     @Binding var showsInspector: Bool
+    let onSelectTopic: (UUID?) -> Void
     let onOpenResource: (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void
     let onOpenMeeting: (UUID) -> Void
 
@@ -24,12 +25,14 @@ struct CustomerIntelligenceTopicsView: View {
         initialTopicID: UUID?,
         reloadToken: Int,
         showsInspector: Binding<Bool>,
+        onSelectTopic: @escaping (UUID?) -> Void,
         onOpenResource: @escaping (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void,
         onOpenMeeting: @escaping (UUID) -> Void
     ) {
         self.initialTopicID = initialTopicID
         self.reloadToken = reloadToken
         _showsInspector = showsInspector
+        self.onSelectTopic = onSelectTopic
         self.onOpenResource = onOpenResource
         self.onOpenMeeting = onOpenMeeting
         _model = State(initialValue: CustomerIntelligenceTopicsViewModel(
@@ -57,6 +60,7 @@ struct CustomerIntelligenceTopicsView: View {
                 selectedTopicID = id
             }
             .onChange(of: selectedTopicID) { _, id in
+                onSelectTopic(id)
                 Task { await model.select(id) }
             }
             .sheet(item: $editedTopic) { topic in

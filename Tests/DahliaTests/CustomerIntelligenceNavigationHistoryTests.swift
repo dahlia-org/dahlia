@@ -65,5 +65,28 @@ import Foundation
             #expect(!model.canGoForward)
             #expect(model.section == .topics)
         }
+
+        @Test
+        func returningToASectionRestoresItsLatestTableSelection() async {
+            let settings = AppSettings.shared
+            let previousSection = settings.customerIntelligenceSectionRawValue
+            let previousScope = settings.customerIntelligenceScopeRawValue
+            defer {
+                settings.customerIntelligenceSectionRawValue = previousSection
+                settings.customerIntelligenceScopeRawValue = previousScope
+            }
+            settings.customerIntelligenceSectionRawValue = CustomerIntelligenceSection.overview.rawValue
+            settings.customerIntelligenceScopeRawValue = ""
+            let model = CustomerIntelligenceWorkspaceViewModel(dbQueue: nil, vaultID: nil)
+            let contactID = UUID.v7()
+
+            model.selectSection(.contacts)
+            model.updateContactSelection(contactID)
+            model.selectSection(.projects)
+            await model.goBack()
+
+            #expect(model.section == .contacts)
+            #expect(model.selection.contactID == contactID)
+        }
     }
 #endif

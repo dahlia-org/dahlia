@@ -267,7 +267,7 @@ final class MeetingRepository {
         try deleteMeetings(ids: ids)
     }
 
-    func fetchMeetingMoveCandidates(ids: Set<UUID>, vaultId: UUID) throws -> [MeetingMoveCandidate] {
+    nonisolated func fetchMeetingMoveCandidates(ids: Set<UUID>, vaultId: UUID) throws -> [MeetingMoveCandidate] {
         guard !ids.isEmpty else { return [] }
         return try dbQueue.read { db in
             let meetings = try MeetingRecord
@@ -292,7 +292,7 @@ final class MeetingRepository {
         }
     }
 
-    func externalVaultSummaryPaths(
+    nonisolated func externalVaultSummaryPaths(
         movingMeetingIds: Set<UUID>,
         vaultId: UUID
     ) throws -> [String] {

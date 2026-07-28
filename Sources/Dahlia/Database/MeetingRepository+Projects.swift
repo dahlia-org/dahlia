@@ -6,13 +6,13 @@ import GRDB
 
 extension MeetingRepository {
     /// 指定保管庫のプロジェクトを論理パス順で取得する。
-    func fetchAllProjects(vaultId: UUID) throws -> [ProjectRecord] {
+    nonisolated func fetchAllProjects(vaultId: UUID) throws -> [ProjectRecord] {
         try dbQueue.read { db in
             try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         }
     }
 
-    func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
+    nonisolated func meetingIds(projectHierarchy name: String, vaultId: UUID) throws -> Set<UUID> {
         try dbQueue.read { db in
             let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
             guard !projectIds.isEmpty else { return [] }
@@ -24,7 +24,7 @@ extension MeetingRepository {
         }
     }
 
-    func fetchProject(id: UUID) throws -> ProjectRecord? {
+    nonisolated func fetchProject(id: UUID) throws -> ProjectRecord? {
         try dbQueue.read { db in
             try ProjectRecord.fetchResolved(id: id, in: db)
         }

@@ -1318,9 +1318,8 @@ private extension DahliaMCPServer {
                 "topic": conversationTopicMetadataSchema,
                 "references": ["type": "array", "items": reference],
                 "references_truncated": ["type": "boolean"],
-                "references_expectation": ["type": "string"],
             ],
-            required: ["vault", "topic", "references", "references_truncated", "references_expectation"]
+            required: ["vault", "topic", "references", "references_truncated"]
         )
     }
 

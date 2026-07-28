@@ -7,6 +7,7 @@ struct CustomerIntelligenceProjectsView: View {
     let reloadToken: Int
     @Binding var showsInspector: Bool
     let sidebarViewModel: SidebarViewModel
+    let onSelectProject: (UUID?) -> Void
     let onOpenResource: (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void
     let onOpenMeeting: (UUID) -> Void
     let onOpenProjectManager: () -> Void
@@ -27,6 +28,7 @@ struct CustomerIntelligenceProjectsView: View {
         reloadToken: Int,
         showsInspector: Binding<Bool>,
         sidebarViewModel: SidebarViewModel,
+        onSelectProject: @escaping (UUID?) -> Void,
         onOpenResource: @escaping (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void,
         onOpenMeeting: @escaping (UUID) -> Void,
         onOpenProjectManager: @escaping () -> Void
@@ -35,6 +37,7 @@ struct CustomerIntelligenceProjectsView: View {
         self.reloadToken = reloadToken
         _showsInspector = showsInspector
         self.sidebarViewModel = sidebarViewModel
+        self.onSelectProject = onSelectProject
         self.onOpenResource = onOpenResource
         self.onOpenMeeting = onOpenMeeting
         self.onOpenProjectManager = onOpenProjectManager
@@ -63,6 +66,7 @@ struct CustomerIntelligenceProjectsView: View {
                 selectedProjectID = id
             }
             .onChange(of: selectedProjectID) { _, id in
+                onSelectProject(id)
                 Task { await model.select(id) }
             }
             .sheet(item: $editedProject) { project in
@@ -317,7 +321,8 @@ private struct CustomerIntelligenceProjectEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.save) {
-                        save()
+                        model.setSaving(true)
+                        Task { await save() }
                     }
                     .disabled(name.nilIfBlank == nil || model.isSaving)
                 }
@@ -327,17 +332,13 @@ private struct CustomerIntelligenceProjectEditorSheet: View {
     }
 
     private var parentCandidates: [FlatProjectRow] {
-        let descendantPrefix = "\(project.path)/"
-        return projects.filter {
-            $0.id != project.id && !$0.name.hasPrefix(descendantPrefix)
-        }
+        FlatProjectRow.validParentCandidates(for: project, in: projects)
     }
 
-    private func save() {
-        model.setSaving(true)
+    private func save() async {
         defer { model.setSaving(false) }
 
-        guard let current = sidebarViewModel.updateProject(
+        guard let current = await sidebarViewModel.updateProject(
             id: project.id,
             name: name,
             parentProjectId: parentProjectID,
@@ -349,10 +350,8 @@ private struct CustomerIntelligenceProjectEditorSheet: View {
             return
         }
 
-        Task {
-            await model.didMutate(selecting: current.id)
-            dismiss()
-        }
+        await model.didMutate(selecting: current.id)
+        dismiss()
     }
 
     private func projectTypeTitle(_ type: ProjectType) -> String {

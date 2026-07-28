@@ -875,7 +875,6 @@ import ImageIO
             #expect(topicPage.topics.map(\.id) == [topic.id])
             let topicDetail = try store.conversationTopic(id: topic.id)
             #expect(topicDetail.references.count == 2)
-            #expect(!topicDetail.referencesExpectation.isEmpty)
             let meetingsByTopic = try store.queryMeetings(.init(topicID: topic.id))
             #expect(meetingsByTopic.meetings.map(\.id) == [fixture.firstMeetingID])
             let meetingsByRoot = try store.queryMeetings(.init(
@@ -1943,7 +1942,6 @@ import ImageIO
             let detail = try store.conversationTopic(id: topic.resourceID)
             #expect(detail.references.count == 100)
             #expect(detail.referencesTruncated)
-            #expect(!detail.referencesExpectation.isEmpty)
         }
 
         @Test

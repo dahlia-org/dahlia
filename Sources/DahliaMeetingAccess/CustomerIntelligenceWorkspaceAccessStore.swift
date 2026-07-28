@@ -239,12 +239,11 @@ public extension MeetingAccessStore {
                     createdAt: referenceRow["createdAt"]
                 )
             }
-            return try ConversationTopicAccessDetail(
+            return ConversationTopicAccessDetail(
                 vault: vault,
                 topic: Self.topicMetadata(from: row),
                 references: references,
-                referencesTruncated: referencesTruncated,
-                referencesExpectation: Self.topicReferenceExpectation(topicID: id, in: db)
+                referencesTruncated: referencesTruncated
             )
         }
     }
@@ -297,29 +296,4 @@ private extension MeetingAccessStore {
         )
     }
 
-    static func topicReferenceExpectation(topicID: UUID, in db: Database) throws -> String {
-        let rows = try Row.fetchAll(
-            db,
-            sql: """
-            SELECT resourceType, resourceId, note
-            FROM conversation_topic_references
-            WHERE topicId = ?
-            ORDER BY resourceType, resourceId
-            """,
-            arguments: [topicID]
-        )
-        let values: [[String: Any]] = rows.map {
-            let resourceID: UUID = $0["resourceId"]
-            var value: [String: Any] = [
-                "resource_type": $0["resourceType"] as String,
-                "resource_id": resourceID.uuidString.lowercased(),
-            ]
-            if let note: String = $0["note"] {
-                value["note"] = note
-            }
-            return value
-        }
-        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
-    }
 }

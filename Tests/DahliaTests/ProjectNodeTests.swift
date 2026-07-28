@@ -51,6 +51,26 @@ import Foundation
         }
 
         @Test
+        func projectParentCandidatesContainOnlyOtherRoots() throws {
+            let records = projects(named: ["alpha", "alpha/work", "beta", "beta/work"])
+            let rows = FlatProjectRow.buildRows(fromRecords: records)
+            let child = try #require(records.first(where: { $0.path == "alpha/work" }))
+
+            let candidates = FlatProjectRow.validParentCandidates(for: child, in: rows)
+
+            #expect(candidates.map(\.name) == ["alpha", "beta"])
+        }
+
+        @Test
+        func projectWithChildrenCannotSelectANewParent() throws {
+            let records = projects(named: ["alpha", "alpha/work", "beta"])
+            let rows = FlatProjectRow.buildRows(fromRecords: records)
+            let root = try #require(records.first(where: { $0.path == "alpha" }))
+
+            #expect(FlatProjectRow.validParentCandidates(for: root, in: rows).isEmpty)
+        }
+
+        @Test
         func buildsOneLevelProjectTreeWithAggregateMeetingCounts() {
             let nodes = ProjectTreeNode.buildNodes(
                 from: projectOverviews(named: [

@@ -560,17 +560,19 @@ final class SidebarViewModel {
         projectType: ProjectType,
         description: String,
         expectedRevision: Int
-    ) -> ProjectRecord? {
+    ) async -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
-            let project = try projectWorkspaceService.updateProject(
-                id: id,
-                name: name,
-                parentProjectId: parentProjectId,
-                projectType: projectType,
-                description: description,
-                expectedRevision: expectedRevision
-            )
+            let project = try await Task.detached(priority: .userInitiated) {
+                try projectWorkspaceService.updateProject(
+                    id: id,
+                    name: name,
+                    parentProjectId: parentProjectId,
+                    projectType: projectType,
+                    description: description,
+                    expectedRevision: expectedRevision
+                )
+            }.value
             lastError = nil
             return project
         } catch {

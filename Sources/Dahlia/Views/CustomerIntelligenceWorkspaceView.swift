@@ -114,6 +114,7 @@ struct OrganizationWorkspaceView: View {
                     initialContactID: model.selection.contactID,
                     reloadToken: model.reloadToken,
                     showsInspector: $showsInspector,
+                    onSelectContact: model.updateContactSelection,
                     onOpenTopic: { id in Task { await model.openTopic(id) } },
                     onOpenProject: { id in Task { await model.openProject(id) } },
                     onOpenOrganization: { id in Task { await model.openOrganization(id) } },
@@ -129,6 +130,7 @@ struct OrganizationWorkspaceView: View {
                     reloadToken: model.reloadToken,
                     showsInspector: $showsInspector,
                     sidebarViewModel: sidebarViewModel,
+                    onSelectProject: model.updateProjectSelection,
                     onOpenResource: { openResource($0) },
                     onOpenMeeting: { openMeeting($0) },
                     onOpenProjectManager: {
@@ -144,6 +146,7 @@ struct OrganizationWorkspaceView: View {
                     initialTopicID: model.selection.topicID,
                     reloadToken: model.reloadToken,
                     showsInspector: $showsInspector,
+                    onSelectTopic: model.updateTopicSelection,
                     onOpenResource: { openResource($0) },
                     onOpenMeeting: { openMeeting($0) }
                 )
@@ -156,6 +159,7 @@ struct OrganizationWorkspaceView: View {
                     initialInsightID: model.selection.insightID,
                     reloadToken: model.reloadToken,
                     showsInspector: $showsInspector,
+                    onSelectInsight: model.updateInsightSelection,
                     onOpenResource: { openResource($0) }
                 )
                 .id("insights:\(vaultID):\(model.scope)")

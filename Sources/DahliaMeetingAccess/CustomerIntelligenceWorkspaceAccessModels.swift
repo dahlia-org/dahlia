@@ -89,7 +89,6 @@ public struct ConversationTopicAccessDetail: Codable, Sendable, Equatable {
     public let topic: ConversationTopicAccessMetadata
     public let references: [ConversationTopicReferenceAccessMetadata]
     public let referencesTruncated: Bool
-    public let referencesExpectation: String
 }
 
 public enum OrganizationParentMutation: Sendable, Equatable {

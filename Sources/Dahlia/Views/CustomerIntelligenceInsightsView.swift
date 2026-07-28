@@ -6,6 +6,7 @@ struct CustomerIntelligenceInsightsView: View {
     let initialInsightID: UUID?
     let reloadToken: Int
     @Binding var showsInspector: Bool
+    let onSelectInsight: (UUID?) -> Void
     let onOpenResource: (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void
 
     @State private var model: CustomerIntelligenceInsightsViewModel
@@ -22,11 +23,13 @@ struct CustomerIntelligenceInsightsView: View {
         initialInsightID: UUID?,
         reloadToken: Int,
         showsInspector: Binding<Bool>,
+        onSelectInsight: @escaping (UUID?) -> Void,
         onOpenResource: @escaping (CustomerIntelligenceWorkspaceData.ResourceLink) -> Void
     ) {
         self.initialInsightID = initialInsightID
         self.reloadToken = reloadToken
         _showsInspector = showsInspector
+        self.onSelectInsight = onSelectInsight
         self.onOpenResource = onOpenResource
         _model = State(initialValue: CustomerIntelligenceInsightsViewModel(
             dbQueue: dbQueue,
@@ -57,6 +60,7 @@ struct CustomerIntelligenceInsightsView: View {
             selectedInsightID = id
         }
         .onChange(of: selectedInsightID) { _, id in
+            onSelectInsight(id)
             Task { await model.select(id) }
         }
         .customerIntelligenceErrorAlert(

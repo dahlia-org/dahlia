@@ -36,6 +36,16 @@ struct FlatProjectRow: Identifiable, Equatable {
         return rows
     }
 
+    static func validParentCandidates(
+        for project: ProjectRecord,
+        in rows: [FlatProjectRow]
+    ) -> [FlatProjectRow] {
+        guard rows.first(where: { $0.id == project.id })?.hasChildren != true else {
+            return []
+        }
+        return rows.filter { $0.id != project.id && $0.depth == 0 }
+    }
+
     /// この行の全祖先パスを返す。例: "a/b/c" → ["a", "a/b"]
     func parentPaths() -> [String] {
         let components = name.split(separator: "/")

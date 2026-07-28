@@ -5,6 +5,7 @@ struct CustomerIntelligenceContactsView: View {
     let initialContactID: UUID?
     let reloadToken: Int
     @Binding var showsInspector: Bool
+    let onSelectContact: (UUID?) -> Void
     let onOpenTopic: (UUID) -> Void
     let onOpenProject: (UUID) -> Void
     let onOpenOrganization: (UUID) -> Void
@@ -26,6 +27,7 @@ struct CustomerIntelligenceContactsView: View {
         initialContactID: UUID?,
         reloadToken: Int,
         showsInspector: Binding<Bool>,
+        onSelectContact: @escaping (UUID?) -> Void,
         onOpenTopic: @escaping (UUID) -> Void,
         onOpenProject: @escaping (UUID) -> Void,
         onOpenOrganization: @escaping (UUID) -> Void,
@@ -34,6 +36,7 @@ struct CustomerIntelligenceContactsView: View {
         self.initialContactID = initialContactID
         self.reloadToken = reloadToken
         _showsInspector = showsInspector
+        self.onSelectContact = onSelectContact
         self.onOpenTopic = onOpenTopic
         self.onOpenProject = onOpenProject
         self.onOpenOrganization = onOpenOrganization
@@ -67,6 +70,7 @@ struct CustomerIntelligenceContactsView: View {
             selectedContactID = id
         }
         .onChange(of: selectedContactID) { _, id in
+            onSelectContact(id)
             Task { await model.select(id) }
         }
         .sheet(item: $editedContact) { contact in

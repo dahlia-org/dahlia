@@ -6,10 +6,19 @@ import Observation
 @MainActor
 @Observable
 final class CustomerIntelligenceInsightsViewModel {
+    typealias AcceptanceUpdater = @Sendable (
+        DatabaseQueue,
+        UUID,
+        UUID,
+        Int,
+        Bool
+    ) async throws -> InsightRecord
+
     var searchText = ""
     var isAccepted: Bool? = false
     private(set) var insights: [CustomerIntelligenceWorkspaceData.InsightSummary] = []
     private(set) var detail: CustomerIntelligenceWorkspaceData.InsightDetail?
+    private(set) var selectedID: UUID?
     private(set) var isLoading = false
     private(set) var isSaving = false
     var errorMessage: String?
@@ -17,15 +26,31 @@ final class CustomerIntelligenceInsightsViewModel {
     private let dbQueue: DatabaseQueue
     private let vaultID: UUID
     private let scope: CustomerIntelligenceScope
+    private let acceptanceUpdater: AcceptanceUpdater
     private var loadGeneration = 0
     private var detailGeneration = 0
     private let notificationSenderID =
         CustomerIntelligenceWorkspaceViewModel.sectionMutationSenderPrefix + UUID().uuidString
 
-    init(dbQueue: DatabaseQueue, vaultID: UUID, scope: CustomerIntelligenceScope) {
+    init(
+        dbQueue: DatabaseQueue,
+        vaultID: UUID,
+        scope: CustomerIntelligenceScope,
+        acceptanceUpdater: @escaping AcceptanceUpdater = { dbQueue, id, vaultID, revision, isAccepted in
+            try await Task.detached(priority: .userInitiated) {
+                try MeetingRepository(dbQueue: dbQueue).setInsightAccepted(
+                    id: id,
+                    vaultId: vaultID,
+                    expectedRevision: revision,
+                    isAccepted: isAccepted
+                )
+            }.value
+        }
+    ) {
         self.dbQueue = dbQueue
         self.vaultID = vaultID
         self.scope = scope
+        self.acceptanceUpdater = acceptanceUpdater
     }
 
     var filteredInsights: [CustomerIntelligenceWorkspaceData.InsightSummary] {
@@ -37,6 +62,7 @@ final class CustomerIntelligenceInsightsViewModel {
     }
 
     func load(selectedID: UUID? = nil) async {
+        self.selectedID = selectedID
         loadGeneration += 1
         detailGeneration += 1
         let generation = loadGeneration
@@ -73,6 +99,7 @@ final class CustomerIntelligenceInsightsViewModel {
     }
 
     func select(_ id: UUID?) async {
+        selectedID = id
         detailGeneration += 1
         let generation = detailGeneration
         detail = nil
@@ -97,16 +124,32 @@ final class CustomerIntelligenceInsightsViewModel {
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await Task.detached(priority: .userInitiated) {
-                try MeetingRepository(dbQueue: self.dbQueue).setInsightAccepted(
-                    id: insight.id,
-                    vaultId: self.vaultID,
-                    expectedRevision: insight.revision,
-                    isAccepted: isAccepted
-                )
-            }.value
+            let updated = try await acceptanceUpdater(
+                dbQueue,
+                insight.id,
+                vaultID,
+                insight.revision,
+                isAccepted
+            )
             DahliaWorkspaceChangeNotification.post(vaultID: vaultID, senderID: notificationSenderID)
-            await load(selectedID: insight.id)
+            if let index = insights.firstIndex(where: { $0.id == updated.id }) {
+                let existing = insights[index]
+                insights[index] = CustomerIntelligenceWorkspaceData.InsightSummary(
+                    insight: updated,
+                    referenceCount: existing.referenceCount,
+                    relatedTitles: existing.relatedTitles
+                )
+            }
+            if let currentDetail = detail, currentDetail.summary.id == updated.id {
+                detail = CustomerIntelligenceWorkspaceData.InsightDetail(
+                    summary: CustomerIntelligenceWorkspaceData.InsightSummary(
+                        insight: updated,
+                        referenceCount: currentDetail.summary.referenceCount,
+                        relatedTitles: currentDetail.summary.relatedTitles
+                    ),
+                    references: currentDetail.references
+                )
+            }
         } catch {
             setError(error)
         }
