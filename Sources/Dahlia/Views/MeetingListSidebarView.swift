@@ -25,59 +25,59 @@ struct MeetingListSidebarView: View {
     }
 
     var body: some View {
-        List(selection: meetingSelection) {
-            if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
-                Section(L10n.selectedMeeting) {
-                    meetingRow(selectedMeeting)
-                }
-            }
-
-            ForEach(sidebarViewModel.displayedMeetingGroups) { group in
-                Section(group.title) {
-                    ForEach(group.meetings) { item in
-                        meetingRow(item)
+        VStack(spacing: 0) {
+            List(selection: meetingSelection) {
+                if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
+                    Section(L10n.selectedMeeting) {
+                        meetingRow(selectedMeeting)
                     }
                 }
+
+                ForEach(sidebarViewModel.displayedMeetingGroups) { group in
+                    Section(group.title) {
+                        ForEach(group.meetings) { item in
+                            meetingRow(item)
+                        }
+                    }
+                }
+
+                MeetingListPaginationRow(
+                    error: sidebarViewModel.displayedMeetingListLoadError,
+                    hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
+                    isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
+                    hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
+                    limitMessage: meetingListLimitMessage,
+                    loadTrigger: "meeting-page-\(sidebarViewModel.meetingSearchQuery)-\(sidebarViewModel.displayedMeetingItems.count)",
+                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                    onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
+                )
+            }
+            .listStyle(.sidebar)
+            .overlay {
+                MeetingListStatusOverlay(
+                    isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
+                    error: sidebarViewModel.displayedMeetingListLoadError,
+                    isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty,
+                    isSearching: sidebarViewModel.isSearchingMeetings,
+                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading
+                )
+            }
+            .searchable(text: $searchText, placement: .sidebar, prompt: L10n.searchMeetings)
+            .contextMenu(forSelectionType: UUID.self) { selection in
+                contextMenu(for: selection)
+            }
+            .onDeleteCommand {
+                requestDeletion(of: sidebarViewModel.selectedMeetingIds)
             }
 
-            MeetingListPaginationRow(
-                error: sidebarViewModel.displayedMeetingListLoadError,
-                hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
-                isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
-                hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
-                limitMessage: meetingListLimitMessage,
-                loadTrigger: "meeting-page-\(sidebarViewModel.meetingSearchQuery)-\(sidebarViewModel.displayedMeetingItems.count)",
-                onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
-                onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
-            )
-        }
-        .listStyle(.sidebar)
-        .overlay {
-            MeetingListStatusOverlay(
-                isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
-                error: sidebarViewModel.displayedMeetingListLoadError,
-                isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty,
-                isSearching: sidebarViewModel.isSearchingMeetings,
-                onRetry: sidebarViewModel.retryDisplayedMeetingLoading
-            )
-        }
-        .overlay(alignment: .bottom) {
             if viewModel.isListening {
                 RecordingStatusBar(
                     viewModel: viewModel,
                     sidebarViewModel: sidebarViewModel,
                     recordingCoordinator: recordingCoordinator
                 )
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(8)
             }
-        }
-        .searchable(text: $searchText, placement: .sidebar, prompt: L10n.searchMeetings)
-        .contextMenu(forSelectionType: UUID.self) { selection in
-            contextMenu(for: selection)
-        }
-        .onDeleteCommand {
-            requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
@@ -288,13 +288,15 @@ private struct RecordingStatusBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(.quaternary, lineWidth: 1)
                 .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 4)
         .onAppear(perform: retainCurrentRecordingMeetingItem)
         .onChange(of: currentRecordingMeetingItem) {
             retainCurrentRecordingMeetingItem()
