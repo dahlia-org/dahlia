@@ -85,8 +85,28 @@
             ])
         }
 
+        @Test func parsesTableColumnsRowsAndAlignment() throws {
+            let markdown = [
+                "| Item | Status | Value |",
+                "|:---|:---:|---:|",
+                "| Markdown | Supported | 100 |",
+                "| Table | In progress | 42 |",
+            ].joined(separator: "\n")
+
+            #expect(try CodexChatMarkdownParser.parse(markdown) == [
+                .table(CodexChatMarkdownTable(
+                    header: ["Item", "Status", "Value"],
+                    rows: [
+                        ["Markdown", "Supported", "100"],
+                        ["Table", "In progress", "42"],
+                    ],
+                    alignments: [.left, .center, .right]
+                )),
+            ])
+        }
+
         @Test func parsesLargeStreamingList() throws {
-            let markdown = (0 ..< 2_000)
+            let markdown = (0 ..< 2000)
                 .map { "- item \($0)" }
                 .joined(separator: "\n")
 
@@ -97,7 +117,7 @@
                 return
             }
             #expect(blocks.count == 1)
-            #expect(items.count == 2_000)
+            #expect(items.count == 2000)
         }
     }
 #endif

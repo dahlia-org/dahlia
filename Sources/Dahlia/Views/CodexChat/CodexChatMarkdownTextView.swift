@@ -15,7 +15,7 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
+        textView.isVerticallyResizable = false
         return textView
     }
 
@@ -112,6 +112,9 @@ enum CodexChatMarkdownTextDocument {
     private static let dividerAttribute = NSAttributedString.Key(
         "com.kazukimasuda.Dahlia.markdownDivider"
     )
+    static let copyReplacementAttribute = NSAttributedString.Key(
+        "com.kazukimasuda.Dahlia.markdownCopyReplacement"
+    )
 
     static func attributedString(
         for blocks: [CodexChatMarkdownRenderedBlock]
@@ -146,12 +149,17 @@ enum CodexChatMarkdownTextDocument {
         range: NSRange
     ) -> String {
         var result = ""
-        attributedString.enumerateAttribute(
-            dividerAttribute,
+        attributedString.enumerateAttributes(
             in: range
-        ) { value, effectiveRange, _ in
-            guard value == nil else { return }
-            result += attributedString.attributedSubstring(from: effectiveRange).string
+        ) { attributes, effectiveRange, _ in
+            if attributes[dividerAttribute] != nil {
+                return
+            }
+            if let replacement = attributes[copyReplacementAttribute] as? String {
+                result += replacement
+            } else {
+                result += attributedString.attributedSubstring(from: effectiveRange).string
+            }
         }
         return result
     }
@@ -181,6 +189,8 @@ enum CodexChatMarkdownTextDocument {
             appendOrderedList(items, to: document)
         case let .blockquote(text):
             appendBlockquote(text, to: document)
+        case let .table(table):
+            appendTable(table, to: document)
         case .divider:
             appendDivider(to: document)
         case .code:
@@ -327,7 +337,7 @@ enum CodexChatMarkdownTextDocument {
         )
     }
 
-    private static func applyBodyFont(
+    static func applyBodyFont(
         to document: NSMutableAttributedString,
         range: NSRange
     ) {

@@ -88,6 +88,38 @@
             #expect(quoteStyle?.textBlocks.count == 1)
         }
 
+        @Test func rendersTableCellsAndCopiesRowsWithTabs() {
+            let document = CodexChatMarkdownTextDocument.attributedString(for: [
+                .table(CodexChatMarkdownRenderedTable(
+                    header: [
+                        AttributedString("Item"),
+                        AttributedString("Value"),
+                    ],
+                    rows: [
+                        [
+                            AttributedString("Markdown"),
+                            AttributedString("100"),
+                        ],
+                    ],
+                    alignments: [.left, .right]
+                )),
+            ])
+
+            #expect(CodexChatMarkdownTextDocument.plainText(
+                from: document,
+                range: NSRange(location: 0, length: document.length)
+            ) == "Item\tValue\nMarkdown\t100")
+
+            let source = document.string as NSString
+            let tableCellRange = source.range(of: "Markdown")
+            let tableCellStyle = document.attribute(
+                .paragraphStyle,
+                at: tableCellRange.location,
+                effectiveRange: nil
+            ) as? NSParagraphStyle
+            #expect(tableCellStyle?.textBlocks.first is NSTextTableBlock)
+        }
+
         @Test func preservesAndClipsSelectionWhenStreamingDocumentChanges() {
             let textView = CodexChatSelectableTextView()
             textView.setBlocks([.paragraph(AttributedString("Hello"))])

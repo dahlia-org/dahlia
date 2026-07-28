@@ -6,6 +6,7 @@ enum CodexChatMarkdownRenderedBlock: Equatable, Sendable {
     case unorderedList([AttributedString])
     case orderedList([CodexChatMarkdownRenderedOrderedItem])
     case blockquote(AttributedString)
+    case table(CodexChatMarkdownRenderedTable)
     case code(language: String?, text: String)
     case divider
 
@@ -15,7 +16,7 @@ enum CodexChatMarkdownRenderedBlock: Equatable, Sendable {
             !items.isEmpty
         case let .orderedList(items):
             !items.isEmpty
-        case .divider:
+        case .divider, .table:
             false
         default:
             true
@@ -46,10 +47,18 @@ enum CodexChatMarkdownRenderedBlock: Equatable, Sendable {
         case var .blockquote(text):
             text.append(attributedSuffix)
             return .blockquote(text)
+        case .table:
+            return nil
         case let .code(language, text):
             return .code(language: language, text: text + suffix)
         case .divider:
             return nil
         }
     }
+}
+
+struct CodexChatMarkdownRenderedTable: Equatable, Sendable {
+    let header: [AttributedString]
+    let rows: [[AttributedString]]
+    let alignments: [CodexChatMarkdownTableAlignment]
 }

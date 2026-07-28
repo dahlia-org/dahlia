@@ -3,18 +3,15 @@ import SwiftUI
 struct CodexChatMarkdownView: View {
     let markdown: String
     let isStreaming: Bool
-    let usesLazyLayout: Bool
 
     @State private var projectionModel: CodexChatMarkdownProjectionModel
 
     init(
         markdown: String,
-        isStreaming: Bool = false,
-        usesLazyLayout: Bool = true
+        isStreaming: Bool = false
     ) {
         self.markdown = markdown
         self.isStreaming = isStreaming
-        self.usesLazyLayout = usesLazyLayout
         _projectionModel = State(initialValue: CodexChatMarkdownProjectionModel())
     }
 
@@ -41,8 +38,7 @@ struct CodexChatMarkdownView: View {
             if let projection {
                 CodexChatMarkdownProjectionView(
                     blocks: projection.blocks,
-                    pendingSuffix: pendingSuffix,
-                    usesLazyLayout: usesLazyLayout
+                    pendingSuffix: pendingSuffix
                 )
                 .opacity(showsProjection ? 1 : 0)
                 .frame(height: showsProjection ? nil : 0, alignment: .top)
