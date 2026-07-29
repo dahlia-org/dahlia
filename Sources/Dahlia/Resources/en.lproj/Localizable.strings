@@ -267,9 +267,7 @@
 "Source" = "Source";
 "Not Selected" = "Not Selected";
 "Entire Desktop" = "Entire Desktop";
-"Take Screenshot" = "Take Screenshot";
 "Display not found" = "Display not found";
-"Screenshot image was unavailable" = "Screenshot image was unavailable";
 "Screenshot download failed: %@" = "Screenshot download failed: %@";
 "Screenshot encoding failed" = "Screenshot encoding failed";
 "Screenshot source is not selected or is unavailable" = "Screenshot source is not selected or is unavailable";

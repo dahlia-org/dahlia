@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 @testable import Dahlia
+@preconcurrency import ScreenCaptureKit
 
 #if canImport(Testing)
 import Testing
@@ -145,6 +146,100 @@ struct AutomaticScreenshotCaptureServiceTests {
     }
 
     @Test
+    func sourcePixelDimensionsDecodeDictionaryContentRect() throws {
+        let contentRect = CGRect(x: 0, y: 0, width: 600, height: 400)
+        let attachments: [SCStreamFrameInfo: Any] = [
+            .contentRect: contentRect.dictionaryRepresentation,
+            .contentScale: CGFloat(0.5),
+            .scaleFactor: CGFloat(2),
+        ]
+
+        let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
+            from: attachments
+        ))
+
+        #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2_400, height: 1_600))
+    }
+
+    @Test
+    func sourcePixelDimensionsDecodeDirectContentRectAndRejectInvalidMetadata() throws {
+        let directAttachments: [SCStreamFrameInfo: Any] = [
+            .contentRect: CGRect(x: 0, y: 0, width: 1_358, height: 1_219),
+            .contentScale: CGFloat(1),
+            .scaleFactor: CGFloat(1),
+        ]
+        let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
+            from: directAttachments
+        ))
+
+        #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 1_358, height: 1_219))
+        #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
+            .contentRect: "invalid",
+            .contentScale: CGFloat(1),
+            .scaleFactor: CGFloat(1),
+        ]) == nil)
+        #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
+            .contentRect: CGRect(x: 0, y: 0, width: 1_358, height: 1_219).dictionaryRepresentation,
+            .contentScale: CGFloat(0),
+            .scaleFactor: CGFloat(1),
+        ]) == nil)
+    }
+
+    @Test
+    func resolutionActionUpdatesThenDiscardsStaleSurfaceBeforeProcessingNativeFrame() {
+        let staleDimensions = AutomaticScreenshotPixelDimensions(width: 1_104, height: 932)
+        let nativeDimensions = AutomaticScreenshotPixelDimensions(width: 1_358, height: 1_219)
+
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: staleDimensions,
+            sourcePixelDimensions: nativeDimensions,
+            configuredDimensions: staleDimensions
+        ) == .updateConfiguration(nativeDimensions))
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: staleDimensions,
+            sourcePixelDimensions: nativeDimensions,
+            configuredDimensions: nativeDimensions
+        ) == .discard)
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: staleDimensions,
+            sourcePixelDimensions: staleDimensions,
+            configuredDimensions: nativeDimensions
+        ) == .discard)
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: nativeDimensions,
+            sourcePixelDimensions: nativeDimensions,
+            configuredDimensions: nativeDimensions
+        ) == .process)
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: staleDimensions,
+            sourcePixelDimensions: nil,
+            configuredDimensions: nativeDimensions
+        ) == .discard)
+        #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
+            frameDimensions: nativeDimensions,
+            sourcePixelDimensions: nil,
+            configuredDimensions: nativeDimensions
+        ) == .process)
+    }
+
+    @Test
+    func resolutionUpdateDiscardsPendingFrameWithoutRemovingActiveOperation() {
+        var state = AutomaticScreenshotProcessingState()
+        let attempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
+        state.begin(attempt: attempt) { _ in Task {} }
+        let didQueuePendingFrame = state.queueLatest(
+            makeFrame(byte: 1, capturedAt: Date(timeIntervalSince1970: 100)),
+            attempt: attempt
+        )
+        #expect(didQueuePendingFrame)
+
+        state.discardPendingFrame(matching: attempt)
+
+        #expect(state.operation?.attempt == attempt)
+        #expect(state.pendingFrame == nil)
+    }
+
+    @Test
     @MainActor
     func stopBypassesBlockedStartAndInvalidatesPendingSettings() async throws {
         let capture = BlockingAutomaticScreenshotCapture()
@@ -225,15 +320,6 @@ private actor BlockingAutomaticScreenshotCapture: AutomaticScreenshotCapturing {
     func updateSettings(intervalSeconds _: Int, changeThresholdRatio _: Double) {
         observedSettingsUpdateCount += 1
     }
-
-    func fingerprintUpdateAttempt() -> AutomaticScreenshotCaptureAttempt? {
-        nil
-    }
-
-    func updateSavedFingerprint(
-        _: ScreenshotFingerprint?,
-        for _: AutomaticScreenshotCaptureAttempt
-    ) {}
 
     func stop() {
         observedStopCount += 1
