@@ -23,9 +23,7 @@ struct ProjectManagementView: View {
     @State private var descriptionSaveFailed = false
     @State private var lastSavedProjectDescription = ""
     @State private var lastLoadedProjectRevision: Int?
-    @State private var descriptionSaveTask: Task<Void, Never>?
-    @State private var isRevertingSelectionAfterSaveFailure = false
-    @State private var projectDescriptionChangeTracker = ProjectDescriptionChangeTracker()
+    @State private var projectDescriptionExpectedRevision: Int?
     @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
 
     private let sidebarWidth: CGFloat = 300
@@ -47,25 +45,14 @@ struct ProjectManagementView: View {
             refreshSelectedProjectAfterExternalChange(from: previousProjects, to: projects)
         }
         .onChange(of: selectedProjectId) { oldProjectId, newProjectId in
-            if isRevertingSelectionAfterSaveFailure {
-                isRevertingSelectionAfterSaveFailure = false
-                return
-            }
-            descriptionSaveTask?.cancel()
-            if !persistProjectDescriptionIfNeeded(for: oldProjectId) {
-                isRevertingSelectionAfterSaveFailure = true
-                selectedProjectId = oldProjectId
-                return
-            }
+            stageProjectDescriptionDraft(for: oldProjectId)
             loadProjectDetails(for: newProjectId)
         }
-        .onChange(of: projectDescription) { _, newDescription in
-            guard projectDescriptionChangeTracker.shouldSaveChange(to: newDescription) else { return }
-            scheduleProjectDescriptionSave()
+        .onChange(of: projectDescription) {
+            stageProjectDescriptionDraft(for: selectedProjectId)
         }
         .onDisappear {
-            descriptionSaveTask?.cancel()
-            persistProjectDescriptionIfNeeded(for: selectedProjectId)
+            stageProjectDescriptionDraft(for: selectedProjectId)
         }
         .sheet(item: $projectPendingDeletion) { project in
             let hierarchy = projectHierarchy(for: project)
@@ -367,20 +354,19 @@ private extension ProjectManagementView {
             .lineLimit(6 ... 12)
             .accessibilityLabel(L10n.projectDescription)
 
-            if let descriptionStatusMessage {
-                HStack {
+            HStack {
+                if let descriptionStatusMessage {
                     SettingsStatusMessage(
                         text: descriptionStatusMessage,
                         systemImage: descriptionStatusImage,
                         tint: descriptionSaveFailed ? .orange : .secondary
                     )
-
-                    if descriptionSaveFailed {
-                        Button(L10n.retry) {
-                            persistProjectDescriptionIfNeeded(for: selectedProjectId)
-                        }
-                    }
                 }
+
+                Spacer()
+
+                Button(L10n.save, action: saveProjectDescription)
+                    .disabled(projectDescription == lastSavedProjectDescription)
             }
         } header: {
             Text(L10n.projectDescription)
@@ -499,8 +485,6 @@ private extension ProjectManagementView {
             || projectParentId != previous.parentProjectId
             || projectType != previous.effectiveProjectType
             || projectDescription != lastSavedProjectDescription
-        descriptionSaveTask?.cancel()
-        descriptionSaveTask = nil
         loadProjectDetails(for: selectedProjectId)
         requestExpansion(toReveal: current.projectName)
         if hadUnsavedFields {
@@ -539,63 +523,57 @@ private extension ProjectManagementView {
     }
 
     private func loadProjectDetails(for projectId: UUID?) {
-        let editingState = ProjectDescriptionEditingState(
-            persistedText: projectId.flatMap { sidebarViewModel.projectDescription(id: $0) },
-            draftText: projectId.flatMap { sidebarViewModel.projectDescriptionDraft(id: $0) }
-        )
-        projectDescriptionChangeTracker.prepareForProgrammaticChange(
-            from: projectDescription,
-            to: editingState.text
-        )
-        projectDescription = editingState.text
-        lastSavedProjectDescription = editingState.persistedText
-        descriptionStatusMessage = editingState.hasUnsavedChanges ? L10n.projectDescriptionSaveFailed : nil
-        descriptionSaveFailed = editingState.hasUnsavedChanges
-        projectName = projectId
-            .flatMap { id in sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) }
-            .map { displayName(for: $0.projectName) }
-            ?? ""
         let project = projectId.flatMap { id in
             sidebarViewModel.allProjectItems.first(where: { $0.projectId == id })
         }
+        let editingState = ProjectDescriptionEditingState(
+            persistedText: projectId.flatMap { sidebarViewModel.projectDescription(id: $0) },
+            draftText: projectId.flatMap { sidebarViewModel.projectDescriptionDraft(id: $0) },
+            persistedRevision: project?.revision,
+            draftRevision: projectId.flatMap { sidebarViewModel.projectDescriptionDraftBaseRevision(id: $0) }
+        )
+        projectDescription = editingState.text
+        lastSavedProjectDescription = editingState.persistedText
+        projectDescriptionExpectedRevision = editingState.expectedRevision
+        descriptionStatusMessage = nil
+        descriptionSaveFailed = false
+        projectName = project.map { displayName(for: $0.projectName) } ?? ""
         lastLoadedProjectRevision = project?.revision
         projectParentId = project?.parentProjectId
         projectType = project?.effectiveProjectType ?? .undefined
     }
 
-    private func scheduleProjectDescriptionSave() {
-        guard let selectedProjectId,
-              projectDescription != lastSavedProjectDescription else { return }
-        sidebarViewModel.stageProjectDescriptionDraft(id: selectedProjectId, description: projectDescription)
-        descriptionStatusMessage = L10n.saving
-        descriptionSaveFailed = false
-        descriptionSaveTask?.cancel()
-        descriptionSaveTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .milliseconds(450))
-            } catch {
-                return
-            }
-            persistProjectDescriptionIfNeeded(for: selectedProjectId)
+    private func stageProjectDescriptionDraft(for projectId: UUID?) {
+        guard let projectId else { return }
+        if projectDescription == lastSavedProjectDescription {
+            sidebarViewModel.clearProjectDescriptionDraft(id: projectId)
+        } else {
+            sidebarViewModel.stageProjectDescriptionDraft(
+                id: projectId,
+                description: projectDescription,
+                baseRevision: projectDescriptionExpectedRevision
+            )
         }
+        descriptionStatusMessage = nil
+        descriptionSaveFailed = false
     }
 
-    @discardableResult
-    private func persistProjectDescriptionIfNeeded(for projectId: UUID?) -> Bool {
-        guard let projectId,
-              projectDescription != lastSavedProjectDescription else { return true }
+    private func saveProjectDescription() {
+        guard let selectedProjectId,
+              projectDescription != lastSavedProjectDescription else { return }
 
         switch sidebarViewModel.updateProjectDescription(
-            id: projectId,
+            id: selectedProjectId,
             description: projectDescription,
-            expectedRevision: lastLoadedProjectRevision
+            expectedRevision: projectDescriptionExpectedRevision
         ) {
         case .saved:
+            let previousRevision = lastLoadedProjectRevision
             lastSavedProjectDescription = projectDescription
             if let committedRevision = lastLoadedProjectRevision.map({ $0 + 1 }) {
-                lastLoadedProjectRevision = committedRevision
-                projectRevisionObservationTracker.record(
-                    projectId: projectId,
+                recordLocalProjectRevision(
+                    projectId: selectedProjectId,
+                    previousRevision: previousRevision,
                     revision: committedRevision
                 )
             }
@@ -606,15 +584,18 @@ private extension ProjectManagementView {
             descriptionSaveFailed = false
         case let .staleRevision(current):
             lastLoadedProjectRevision = current
+            projectDescriptionExpectedRevision = current
+            sidebarViewModel.stageProjectDescriptionDraft(
+                id: selectedProjectId,
+                description: projectDescription,
+                baseRevision: current
+            )
             descriptionStatusMessage = L10n.staleProjectRevision(current)
             descriptionSaveFailed = true
-            return false
         case .failed:
             descriptionStatusMessage = L10n.projectDescriptionSaveFailed
             descriptionSaveFailed = true
-            return false
         }
-        return true
     }
 
     private var projectCreationParent: ProjectOverviewItem? {
@@ -625,8 +606,6 @@ private extension ProjectManagementView {
     private var descriptionStatusImage: String {
         if descriptionSaveFailed {
             "exclamationmark.triangle"
-        } else if descriptionStatusMessage == L10n.saving {
-            "arrow.triangle.2.circlepath"
         } else {
             "checkmark.circle"
         }
@@ -640,12 +619,7 @@ private extension ProjectManagementView {
 
     private func renameSelectedProject() {
         guard let selectedProject else { return }
-        descriptionSaveTask?.cancel()
-        descriptionSaveTask = nil
-        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
-            showProjectOperationError()
-            return
-        }
+        let previousRevision = lastLoadedProjectRevision
         guard let renamed = sidebarViewModel.renameProject(
             id: selectedProject.projectId,
             newName: projectName,
@@ -655,9 +629,9 @@ private extension ProjectManagementView {
             return
         }
         projectName = displayName(for: renamed.path)
-        lastLoadedProjectRevision = renamed.revision
-        projectRevisionObservationTracker.record(
+        recordLocalProjectRevision(
             projectId: selectedProject.projectId,
+            previousRevision: previousRevision,
             revision: renamed.revision
         )
         projectSearchText = ""
@@ -674,7 +648,6 @@ private extension ProjectManagementView {
         meetingDisposition: ProjectMeetingDisposition,
         deletesSummaryFiles: Bool
     ) async -> String? {
-        descriptionSaveTask?.cancel()
         guard await sidebarViewModel.deleteProjectHierarchy(
             id: project.projectId,
             meetingDisposition: meetingDisposition,
@@ -719,12 +692,7 @@ private extension ProjectManagementView {
 
     private func applyParentChange() {
         guard let selectedProject else { return }
-        descriptionSaveTask?.cancel()
-        descriptionSaveTask = nil
-        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
-            showProjectOperationError()
-            return
-        }
+        let previousRevision = lastLoadedProjectRevision
         guard let moved = sidebarViewModel.reparentProject(
             id: selectedProject.projectId,
             parentProjectId: projectParentId,
@@ -734,9 +702,9 @@ private extension ProjectManagementView {
             loadProjectDetails(for: selectedProject.projectId)
             return
         }
-        lastLoadedProjectRevision = moved.revision
-        projectRevisionObservationTracker.record(
+        recordLocalProjectRevision(
             projectId: selectedProject.projectId,
+            previousRevision: previousRevision,
             revision: moved.revision
         )
         requestExpansion(toReveal: moved.path)
@@ -744,12 +712,7 @@ private extension ProjectManagementView {
 
     private func applyTypeChange() {
         guard let selectedProject else { return }
-        descriptionSaveTask?.cancel()
-        descriptionSaveTask = nil
-        guard persistProjectDescriptionIfNeeded(for: selectedProject.projectId) else {
-            showProjectOperationError()
-            return
-        }
+        let previousRevision = lastLoadedProjectRevision
         guard let updated = sidebarViewModel.updateRootProjectType(
             id: selectedProject.projectId,
             projectType: projectType,
@@ -759,11 +722,30 @@ private extension ProjectManagementView {
             loadProjectDetails(for: selectedProjectId)
             return
         }
-        lastLoadedProjectRevision = updated.revision
-        projectRevisionObservationTracker.record(
+        recordLocalProjectRevision(
             projectId: selectedProject.projectId,
+            previousRevision: previousRevision,
             revision: updated.revision
         )
+    }
+
+    private func recordLocalProjectRevision(
+        projectId: UUID,
+        previousRevision: Int?,
+        revision: Int
+    ) {
+        lastLoadedProjectRevision = revision
+        if projectDescriptionExpectedRevision == previousRevision {
+            projectDescriptionExpectedRevision = revision
+            if projectDescription != lastSavedProjectDescription {
+                sidebarViewModel.stageProjectDescriptionDraft(
+                    id: projectId,
+                    description: projectDescription,
+                    baseRevision: revision
+                )
+            }
+        }
+        projectRevisionObservationTracker.record(projectId: projectId, revision: revision)
     }
 
     private func projectName(id: UUID) -> String? {

@@ -7,37 +7,72 @@ import Testing
 @MainActor
 struct ProjectDescriptionEditingStateTests {
     @Test
-    func restoredDraftKeepsPersistedDescriptionAsSaveBaseline() {
+    func restoredDraftKeepsPersistedDescriptionAndBaseRevision() {
         let state = ProjectDescriptionEditingState(
             persistedText: "Saved description",
-            draftText: "Unsaved description"
+            draftText: "Unsaved description",
+            persistedRevision: 2,
+            draftRevision: 1
         )
 
         #expect(state.text == "Unsaved description")
         #expect(state.persistedText == "Saved description")
-        #expect(state.hasUnsavedChanges)
+        #expect(state.expectedRevision == 1)
     }
 
     @Test
-    func programmaticDraftRestorationDoesNotRequestSave() {
-        var tracker = ProjectDescriptionChangeTracker()
+    func restoredDraftKeepsItsBaseRevisionAfterExternalUpdate() {
+        let viewModel = SidebarViewModel()
+        let projectId = UUID.v7()
+        viewModel.stageProjectDescriptionDraft(
+            id: projectId,
+            description: "Unsaved description",
+            baseRevision: 1
+        )
 
-        tracker.prepareForProgrammaticChange(from: "", to: "Unsaved description")
-        let shouldSaveRestoredDraft = tracker.shouldSaveChange(to: "Unsaved description")
-        let shouldSaveUserEdit = tracker.shouldSaveChange(to: "Edited description")
+        let state = ProjectDescriptionEditingState(
+            persistedText: "Externally updated description",
+            draftText: viewModel.projectDescriptionDraft(id: projectId),
+            persistedRevision: 2,
+            draftRevision: viewModel.projectDescriptionDraftBaseRevision(id: projectId)
+        )
 
-        #expect(!shouldSaveRestoredDraft)
-        #expect(shouldSaveUserEdit)
+        #expect(state.text == "Unsaved description")
+        #expect(state.persistedText == "Externally updated description")
+        #expect(state.expectedRevision == 1)
     }
 
     @Test
-    func unchangedProgrammaticValueDoesNotSuppressLaterUserEdit() {
-        var tracker = ProjectDescriptionChangeTracker()
+    func stagingDescriptionDraftDoesNotPersistIt() throws {
+        let database = try AppDatabaseManager(path: ":memory:")
+        let repository = MeetingRepository(dbQueue: database.dbQueue)
+        let vault = VaultRecord(
+            id: .v7(),
+            path: "/tmp/test-vault",
+            name: "Test Vault",
+            createdAt: Date(),
+            lastOpenedAt: Date()
+        )
+        try repository.insertVault(vault)
+        let project = try repository.fetchOrCreateProject(name: "Project A", vaultId: vault.id)
+        let viewModel = SidebarViewModel()
+        viewModel.setAppDatabase(database)
 
-        tracker.prepareForProgrammaticChange(from: "", to: "")
-        let shouldSaveUserEdit = tracker.shouldSaveChange(to: "User description")
+        viewModel.stageProjectDescriptionDraft(id: project.id, description: "Unsaved description")
 
-        #expect(shouldSaveUserEdit)
+        #expect(viewModel.projectDescriptionDraft(id: project.id) == "Unsaved description")
+        #expect(viewModel.projectDescription(id: project.id)?.isEmpty == true)
+    }
+
+    @Test
+    func clearingDescriptionDraftRemovesStagedDraft() {
+        let viewModel = SidebarViewModel()
+        let projectId = UUID.v7()
+        viewModel.stageProjectDescriptionDraft(id: projectId, description: "Unsaved description")
+
+        viewModel.clearProjectDescriptionDraft(id: projectId)
+
+        #expect(viewModel.projectDescriptionDraft(id: projectId) == nil)
     }
 
     @Test
