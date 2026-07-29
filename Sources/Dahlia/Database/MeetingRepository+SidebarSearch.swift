@@ -268,7 +268,7 @@ extension MeetingRepository {
     }
 
     private nonisolated static func sqlPlaceholders(count: Int) -> String {
-        Array(repeating: "?", count: count).joined(separator: ", ")
+        Array(repeating: "?", count: count).joined(separator: ",")
     }
 }
 

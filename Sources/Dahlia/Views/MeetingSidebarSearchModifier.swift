@@ -58,6 +58,7 @@ struct MeetingSidebarSearchModifier: ViewModifier {
             .onChange(of: searchTokens) { _, newTokens in
                 if newTokens.isEmpty, searchText.isEmpty {
                     isSearchInputTruncated = false
+                    showsCustomDatePopover = false
                 }
                 updateSearch()
             }

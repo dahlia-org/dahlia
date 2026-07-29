@@ -26,13 +26,16 @@ struct MeetingSearchCriteria: Equatable, Hashable, Sendable {
     }
 
     var identity: String {
-        [
+        let components = [
             text,
             projectIDs.map(\.uuidString).sorted().joined(separator: ","),
             tagIDs.sorted().map(String.init).joined(separator: ","),
             startDate.map { String($0.timeIntervalSince1970) } ?? "",
             endDate.map { String($0.timeIntervalSince1970) } ?? "",
-        ].joined(separator: "|")
+        ]
+        return components
+            .map { "\($0.utf8.count):\($0)" }
+            .joined()
     }
 }
 
@@ -262,6 +265,7 @@ enum MeetingSearchQueryParser {
         _ ranges: [Range<String.Index>],
         from input: String
     ) -> String {
+        guard !ranges.isEmpty else { return input }
         var remainingInput = input
         for range in ranges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
             remainingInput.replaceSubrange(range, with: "")
@@ -304,17 +308,31 @@ enum MeetingSearchQueryParser {
         case .identifier:
             Int64(value.text).flatMap { id in tags.first { $0.id == id } }
         case .name:
-            tags.first { $0.name.caseInsensitiveCompare(value.text) == .orderedSame }
+            uniquelyNamedTag(value.text, tags: tags)
         case .automatic:
             if let id = Int64(value.text),
                let identifiedTag = tags.first(where: { $0.id == id }) {
                 identifiedTag
             } else {
-                tags.first { $0.name.caseInsensitiveCompare(value.text) == .orderedSame }
+                uniquelyNamedTag(value.text, tags: tags)
             }
         }
         guard let tag, let id = tag.id else { return nil }
         return MeetingSearchToken(value: .tag(id: id, name: tag.name, colorHex: tag.colorHex))
+    }
+
+    private static func uniquelyNamedTag(
+        _ name: String,
+        tags: [TagRecord]
+    ) -> TagRecord? {
+        if let exactMatch = tags.first(where: { $0.name == name }) {
+            return exactMatch
+        }
+        let insensitiveMatches = tags.filter {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }
+        guard insensitiveMatches.count == 1 else { return nil }
+        return insensitiveMatches[0]
     }
 
     private static func date(_ value: String, calendar: Calendar) -> Date? {

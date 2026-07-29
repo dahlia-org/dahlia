@@ -167,6 +167,62 @@ import Foundation
         }
 
         @Test
+        func preservesWhitespaceWhenNoQualifierIsConsumed() {
+            let ordinaryInput = "quarterly "
+            let incompleteQuotedInput = #"tag:"Important "#
+
+            let ordinaryResult = MeetingSearchQueryParser.parse(
+                ordinaryInput,
+                projects: [],
+                tags: [],
+                allowsTerminalUnquotedValue: false
+            )
+            let quotedResult = MeetingSearchQueryParser.parse(
+                incompleteQuotedInput,
+                projects: [],
+                tags: [],
+                allowsTerminalUnquotedValue: false
+            )
+
+            #expect(ordinaryResult.text == ordinaryInput)
+            #expect(quotedResult.text == incompleteQuotedInput)
+        }
+
+        @Test
+        func resolvesExactTagNamesBeforeUniqueInsensitiveNames() {
+            let tags = [
+                TagRecord(id: 1, name: "Planning", colorHex: "#111111", createdAt: .now),
+                TagRecord(id: 2, name: "planning", colorHex: "#222222", createdAt: .now),
+            ]
+
+            let exactResult = MeetingSearchQueryParser.parse(
+                "tag:planning",
+                projects: [],
+                tags: tags,
+                allowsTerminalUnquotedValue: true
+            )
+            let ambiguousResult = MeetingSearchQueryParser.parse(
+                "tag:PLANNING",
+                projects: [],
+                tags: tags,
+                allowsTerminalUnquotedValue: true
+            )
+
+            #expect(exactResult.tokens.map(\.id) == ["tag:2"])
+            #expect(ambiguousResult.tokens.isEmpty)
+            #expect(ambiguousResult.text == "tag:PLANNING")
+        }
+
+        @Test
+        func criteriaIdentitySeparatesTextFromStructuredComponents() {
+            let projectID = UUID.v7()
+            let textOnly = MeetingSearchCriteria(text: "roadmap|\(projectID.uuidString)")
+            let structured = MeetingSearchCriteria(text: "roadmap", projectIDs: [projectID])
+
+            #expect(textOnly.identity != structured.identity)
+        }
+
+        @Test
         func inclusiveUIEndDateBecomesExclusiveNextDay() throws {
             let calendar = utcCalendar()
             let startDate = try #require(calendar.date(from: DateComponents(
