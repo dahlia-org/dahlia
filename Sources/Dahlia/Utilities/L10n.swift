@@ -1012,9 +1012,7 @@ enum L10n {
     static var source: String { String(localized: "Source", bundle: bundle) }
     static var notSelected: String { String(localized: "Not Selected", bundle: bundle) }
     static var entireDesktop: String { String(localized: "Entire Desktop", bundle: bundle) }
-    static var takeScreenshot: String { String(localized: "Take Screenshot", bundle: bundle) }
     static var screenshotDisplayUnavailable: String { String(localized: "Display not found", bundle: bundle) }
-    static var screenshotImageUnavailable: String { String(localized: "Screenshot image was unavailable", bundle: bundle) }
     static var screenshotEncodingFailed: String { String(localized: "Screenshot encoding failed", bundle: bundle) }
     static var screenshotSourceUnavailable: String { String(localized: "Screenshot source is not selected or is unavailable", bundle: bundle) }
     static func screenshotCaptureFailed(_ reason: String) -> String { String(localized: "Screenshot capture failed: \(reason)", bundle: bundle) }

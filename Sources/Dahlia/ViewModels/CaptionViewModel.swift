@@ -427,12 +427,6 @@ final class CaptionViewModel: ObservableObject {
         recordingContext?.store ?? store
     }
 
-    var canTakeScreenshot: Bool {
-        activeMeetingIdForSessionControls != nil
-            && activeDbQueueForSessionControls != nil
-            && screenshotCaptureSource.isSelected
-    }
-
     // MARK: - Private
 
     private var currentDbQueue: DatabaseQueue?
@@ -3272,31 +3266,6 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    func takeScreenshot() {
-        guard let meetingId = activeMeetingIdForSessionControls,
-              let dbQueue = activeDbQueueForSessionControls,
-              screenshotCaptureSource.isSelected else { return }
-
-        Task {
-            do {
-                let fingerprintUpdateAttempt = await automaticScreenshotCaptureControl.fingerprintUpdateAttempt()
-                let cgImage = try await captureScreenshotImage()
-                try await persistScreenshot(
-                    cgImage,
-                    meetingId: meetingId,
-                    sessionId: persistenceService?.recordingSessionId,
-                    dbQueue: dbQueue
-                )
-                await updateAutomaticScreenshotFingerprintIfNeeded(
-                    for: cgImage,
-                    attempt: fingerprintUpdateAttempt
-                )
-            } catch {
-                errorMessage = L10n.screenshotCaptureFailed(error.localizedDescription)
-            }
-        }
-    }
-
     private func updateAutomaticScreenshotProcessingSettings() {
         guard isListening,
               AppSettings.shared.automaticScreenshotEnabled,
@@ -3349,91 +3318,6 @@ final class CaptionViewModel: ObservableObject {
     @discardableResult
     private func stopAutomaticScreenshotCapture() -> Task<Void, Never> {
         automaticScreenshotCaptureControl.stop()
-    }
-
-    private func captureScreenshotImage() async throws -> CGImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        let filter = try screenshotContentFilter(from: content)
-        let config = SCScreenshotConfiguration()
-        config.showsCursor = false
-        config.dynamicRange = .sdr
-
-        // 対象の実サイズに合わせて ScreenCaptureKit に出力サイズを決めさせる。
-        // `window.frame * 2` のような固定スケールは、非 Retina の拡張モニタで余白を生む。
-        let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config)
-        guard let cgImage = output.sdrImage else {
-            throw ScreenshotError.imageUnavailable
-        }
-        return cgImage
-    }
-
-    private func screenshotContentFilter(from content: SCShareableContent) throws -> SCContentFilter {
-        switch screenshotCaptureSource {
-        case .none:
-            throw ScreenshotError.sourceUnavailable
-        case .entireDesktop:
-            guard let display = content.displays.first else {
-                throw ScreenshotError.displayUnavailable
-            }
-            return SCContentFilter(display: display, excludingWindows: [])
-        case let .window(windowID):
-            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
-                throw ScreenshotError.sourceUnavailable
-            }
-            return SCContentFilter(desktopIndependentWindow: window)
-        }
-    }
-
-    private func persistScreenshot(
-        _ cgImage: CGImage,
-        meetingId: UUID,
-        sessionId: UUID?,
-        dbQueue: DatabaseQueue
-    ) async throws {
-        let encodedImage: (data: Data, mimeType: String) = try await Task.detached(priority: .userInitiated) {
-            guard let encoded = ImageEncoder.encode(cgImage, quality: 0.70) else {
-                throw ScreenshotError.encodingFailed
-            }
-            guard let mimeType = ImageEncoder.mimeType(for: encoded) else {
-                throw ScreenshotError.encodingFailed
-            }
-            return (encoded, mimeType)
-        }.value
-
-        let record = MeetingScreenshotRecord(
-            id: UUID.v7(),
-            meetingId: meetingId,
-            sessionId: sessionId,
-            capturedAt: Date(),
-            imageData: encodedImage.data,
-            mimeType: encodedImage.mimeType
-        )
-
-        try await dbQueue.write { db in
-            try record.insert(db)
-        }
-        appendVisibleScreenshot(record)
-    }
-
-    private func updateAutomaticScreenshotFingerprintIfNeeded(
-        for cgImage: CGImage,
-        attempt: AutomaticScreenshotCaptureAttempt?
-    ) async {
-        guard isListening,
-              AppSettings.shared.automaticScreenshotEnabled,
-              screenshotCaptureSource.isSelected,
-              let attempt,
-              let fingerprint = await screenshotFingerprint(for: cgImage) else { return }
-        let task = automaticScreenshotCaptureControl.enqueue { capture in
-            await capture.updateSavedFingerprint(fingerprint, for: attempt)
-        }
-        await task.value
-    }
-
-    private func screenshotFingerprint(for cgImage: CGImage) async -> ScreenshotFingerprint? {
-        await Task.detached(priority: .utility) {
-            ScreenshotChangeDetector.fingerprint(for: cgImage)
-        }.value
     }
 
     // MARK: - Note Auto-Save

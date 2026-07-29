@@ -9,7 +9,6 @@ import os
 enum ScreenshotError: LocalizedError {
     case encodingFailed
     case displayUnavailable
-    case imageUnavailable
     case sourceUnavailable
 
     var errorDescription: String? {
@@ -18,8 +17,6 @@ enum ScreenshotError: LocalizedError {
             L10n.screenshotEncodingFailed
         case .displayUnavailable:
             L10n.screenshotDisplayUnavailable
-        case .imageUnavailable:
-            L10n.screenshotImageUnavailable
         case .sourceUnavailable:
             L10n.screenshotSourceUnavailable
         }
@@ -40,11 +37,6 @@ struct AutomaticScreenshotCaptureRequest: Sendable {
 protocol AutomaticScreenshotCapturing: Sendable {
     func start(_ request: AutomaticScreenshotCaptureRequest) async
     func updateSettings(intervalSeconds: Int, changeThresholdRatio: Double) async
-    func fingerprintUpdateAttempt() async -> AutomaticScreenshotCaptureAttempt?
-    func updateSavedFingerprint(
-        _ fingerprint: ScreenshotFingerprint?,
-        for attempt: AutomaticScreenshotCaptureAttempt
-    ) async
     func stop() async
 }
 
@@ -89,10 +81,6 @@ final class AutomaticScreenshotCaptureControl {
         tailTask = task
         return task
     }
-
-    func fingerprintUpdateAttempt() async -> AutomaticScreenshotCaptureAttempt? {
-        await capture.fingerprintUpdateAttempt()
-    }
 }
 
 struct AutomaticScreenshotCaptureAttempt: Equatable, Sendable {
@@ -103,6 +91,12 @@ struct AutomaticScreenshotCaptureAttempt: Equatable, Sendable {
 struct AutomaticScreenshotPixelDimensions: Equatable, Sendable {
     let width: Int
     let height: Int
+}
+
+enum AutomaticScreenshotFrameResolutionAction: Equatable, Sendable {
+    case process
+    case discard
+    case updateConfiguration(AutomaticScreenshotPixelDimensions)
 }
 
 struct AutomaticScreenshotCaptureLifecycle {
@@ -174,6 +168,10 @@ struct CopiedScreenshotFrame: Sendable {
     let pixels: Data
     let capturedAt: Date
     var sourcePixelDimensions: AutomaticScreenshotPixelDimensions?
+
+    var pixelDimensions: AutomaticScreenshotPixelDimensions {
+        AutomaticScreenshotPixelDimensions(width: width, height: height)
+    }
 
     func makeImage() -> CGImage? {
         guard let provider = CGDataProvider(data: pixels as CFData),
@@ -259,6 +257,11 @@ struct AutomaticScreenshotProcessingState {
         guard operation?.attempt == attempt else { return false }
         pendingFrame = PendingFrame(attempt: attempt, frame: frame)
         return true
+    }
+
+    mutating func discardPendingFrame(matching attempt: AutomaticScreenshotCaptureAttempt) {
+        guard pendingFrame?.attempt == attempt else { return }
+        pendingFrame = nil
     }
 
     mutating func complete(
@@ -386,20 +389,6 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         } catch {
             await handleRuntimeFailure(error, attempt: activeCapture.attempt)
         }
-    }
-
-    func fingerprintUpdateAttempt() -> AutomaticScreenshotCaptureAttempt? {
-        guard let attempt = activeCapture?.attempt,
-              lifecycle.accepts(attempt: attempt) else { return nil }
-        return attempt
-    }
-
-    func updateSavedFingerprint(
-        _ fingerprint: ScreenshotFingerprint?,
-        for attempt: AutomaticScreenshotCaptureAttempt
-    ) {
-        guard lifecycle.accepts(attempt: attempt) else { return }
-        lastSavedFingerprint = fingerprint
     }
 
     func stop() async {
@@ -546,7 +535,7 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
         attempt: AutomaticScreenshotCaptureAttempt
     ) async {
         guard lifecycle.accepts(attempt: attempt) else { return }
-        if await updateStreamDimensionsIfNeeded(for: frame, attempt: attempt) {
+        if await shouldDiscardFrameForResolution(for: frame, attempt: attempt) {
             return
         }
         if processingState.isProcessing {
@@ -653,25 +642,38 @@ actor AutomaticScreenshotCaptureService: AutomaticScreenshotCapturing {
 }
 
 extension AutomaticScreenshotCaptureService {
-    private func updateStreamDimensionsIfNeeded(
+    private func shouldDiscardFrameForResolution(
         for frame: CopiedScreenshotFrame,
         attempt: AutomaticScreenshotCaptureAttempt
     ) async -> Bool {
-        guard let dimensions = frame.sourcePixelDimensions,
-              let activeCapture,
-              activeCapture.attempt == attempt,
-              activeCapture.configuration.width != dimensions.width
-              || activeCapture.configuration.height != dimensions.height
-        else { return false }
-
-        activeCapture.configuration.width = dimensions.width
-        activeCapture.configuration.height = dimensions.height
-        do {
-            try await activeCapture.stream.updateConfiguration(activeCapture.configuration)
-        } catch {
-            await handleRuntimeFailure(error, attempt: attempt)
+        guard let activeCapture, activeCapture.attempt == attempt else { return false }
+        let configuredDimensions = AutomaticScreenshotPixelDimensions(
+            width: activeCapture.configuration.width,
+            height: activeCapture.configuration.height
+        )
+        switch Self.frameResolutionAction(
+            frameDimensions: frame.pixelDimensions,
+            sourcePixelDimensions: frame.sourcePixelDimensions,
+            configuredDimensions: configuredDimensions
+        ) {
+        case .process:
+            return false
+        case .discard:
+            return true
+        case let .updateConfiguration(dimensions):
+            processingState.discardPendingFrame(matching: attempt)
+            activeCapture.configuration.width = dimensions.width
+            activeCapture.configuration.height = dimensions.height
+            do {
+                try await activeCapture.stream.updateConfiguration(activeCapture.configuration)
+            } catch {
+                // Failure cleanup joins the frame consumer, so it must run from another task.
+                Task { [weak self] in
+                    await self?.handleRuntimeFailure(error, attempt: attempt)
+                }
+            }
+            return true
         }
-        return true
     }
 
     private static func normalized(_ request: AutomaticScreenshotCaptureRequest) -> AutomaticScreenshotCaptureRequest {
@@ -761,6 +763,42 @@ extension AutomaticScreenshotCaptureService {
             width: max(1, Int((contentRect.width / contentScale * scaleFactor).rounded())),
             height: max(1, Int((contentRect.height / contentScale * scaleFactor).rounded()))
         )
+    }
+
+    static func sourcePixelDimensions(
+        from attachments: [SCStreamFrameInfo: Any]
+    ) -> AutomaticScreenshotPixelDimensions? {
+        guard let contentRect = contentRect(from: attachments[.contentRect]),
+              let contentScale = attachments[.contentScale] as? CGFloat,
+              let scaleFactor = attachments[.scaleFactor] as? CGFloat else { return nil }
+        return sourcePixelDimensions(
+            contentRect: contentRect,
+            contentScale: contentScale,
+            scaleFactor: scaleFactor
+        )
+    }
+
+    static func contentRect(from value: Any?) -> CGRect? {
+        guard let value else { return nil }
+        if let contentRect = value as? CGRect {
+            return contentRect
+        }
+        guard let dictionary = value as? NSDictionary else { return nil }
+        return CGRect(dictionaryRepresentation: dictionary)
+    }
+
+    static func frameResolutionAction(
+        frameDimensions: AutomaticScreenshotPixelDimensions,
+        sourcePixelDimensions: AutomaticScreenshotPixelDimensions?,
+        configuredDimensions: AutomaticScreenshotPixelDimensions
+    ) -> AutomaticScreenshotFrameResolutionAction {
+        guard frameDimensions == configuredDimensions else {
+            return .discard
+        }
+        if let sourcePixelDimensions, sourcePixelDimensions != configuredDimensions {
+            return .updateConfiguration(sourcePixelDimensions)
+        }
+        return .process
     }
 }
 
@@ -852,15 +890,8 @@ private final class AutomaticScreenshotStreamAdapter: NSObject, SCStreamOutput, 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let sourcePixelDimensions: AutomaticScreenshotPixelDimensions? = frameAttachments(sampleBuffer).flatMap { attachments in
-            guard let contentRect = attachments[.contentRect] as? CGRect,
-                  let contentScale = attachments[.contentScale] as? CGFloat,
-                  let scaleFactor = attachments[.scaleFactor] as? CGFloat else { return nil }
-            return AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                contentRect: contentRect,
-                contentScale: contentScale,
-                scaleFactor: scaleFactor
-            )
+        let sourcePixelDimensions = frameAttachments(sampleBuffer).flatMap {
+            AutomaticScreenshotCaptureService.sourcePixelDimensions(from: $0)
         }
         return CopiedScreenshotFrame(
             width: width,

@@ -267,9 +267,7 @@
 "Source" = "ソース";
 "Not Selected" = "未設定";
 "Entire Desktop" = "デスクトップ全体";
-"Take Screenshot" = "スクリーンショットを撮影";
 "Display not found" = "ディスプレイが見つかりません";
-"Screenshot image was unavailable" = "スクリーンショット画像を取得できませんでした";
 "Screenshot download failed: %@" = "スクリーンショットのダウンロードに失敗しました: %@";
 "Screenshot encoding failed" = "スクリーンショットのエンコードに失敗しました";
 "Screenshot source is not selected or is unavailable" = "スクリーンショット対象が未設定、または利用できません";
