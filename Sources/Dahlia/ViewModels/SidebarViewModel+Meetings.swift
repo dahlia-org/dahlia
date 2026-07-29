@@ -3,8 +3,12 @@ import GRDB
 import OSLog
 
 extension SidebarViewModel {
+    var meetingSearchQuery: String {
+        meetingSearchCriteria.text
+    }
+
     var isSearchingMeetings: Bool {
-        !meetingSearchQuery.isEmpty
+        !meetingSearchCriteria.isEmpty
     }
 
     var displayedMeetingItems: [MeetingSidebarItem] {
@@ -69,11 +73,11 @@ extension SidebarViewModel {
     }
 
     func restartMeetingSearchIfNeeded(dbQueue: DatabaseQueue, vaultId: UUID) {
-        guard !meetingSearchQuery.isEmpty else { return }
+        guard !meetingSearchCriteria.isEmpty else { return }
         startMeetingSearch(
             dbQueue: dbQueue,
             vaultId: vaultId,
-            query: meetingSearchQuery,
+            criteria: meetingSearchCriteria,
             delay: nil,
             appending: false
         )
@@ -82,7 +86,7 @@ extension SidebarViewModel {
     private func startMeetingSearch(
         dbQueue: DatabaseQueue,
         vaultId: UUID,
-        query: String,
+        criteria: MeetingSearchCriteria,
         delay: Duration?,
         appending: Bool
     ) {
@@ -97,7 +101,7 @@ extension SidebarViewModel {
                 }
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     vaultId: vaultId,
-                    query: query,
+                    criteria: criteria,
                     after: cursor,
                     limit: Self.meetingPageSize,
                     dbQueue: dbQueue
@@ -105,7 +109,7 @@ extension SidebarViewModel {
                 try Task.checkCancellation()
                 guard let self,
                       self.currentVault?.id == vaultId,
-                      self.meetingSearchQuery == query,
+                      self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
 
                 if appending {
@@ -126,7 +130,7 @@ extension SidebarViewModel {
                 ErrorReportingService.capture(error, context: ["source": "meetingSidebarSearch"])
                 guard let self,
                       self.currentVault?.id == vaultId,
-                      self.meetingSearchQuery == query,
+                      self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
                 self.isMeetingSearchLoaded = true
                 self.isMeetingSearchLoadingMore = false
@@ -263,12 +267,15 @@ extension SidebarViewModel {
     }
 
     func updateMeetingSearchQuery(_ value: String) {
-        let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard query != meetingSearchQuery else { return }
+        updateMeetingSearchCriteria(MeetingSearchCriteria(text: value))
+    }
+
+    func updateMeetingSearchCriteria(_ criteria: MeetingSearchCriteria) {
+        guard criteria != meetingSearchCriteria else { return }
 
         meetingSearchTask?.cancel()
         meetingSearchObservationGeneration &+= 1
-        meetingSearchQuery = query
+        meetingSearchCriteria = criteria
         meetingSearchItems.removeAll()
         meetingSearchGroups.removeAll()
         meetingSearchLoadError = nil
@@ -276,7 +283,7 @@ extension SidebarViewModel {
         meetingSearchCursor = nil
         isMeetingSearchLimited = false
 
-        guard !query.isEmpty else {
+        guard !criteria.isEmpty else {
             isMeetingSearchLoaded = true
             isMeetingSearchLoadingMore = false
             return
@@ -289,7 +296,7 @@ extension SidebarViewModel {
         startMeetingSearch(
             dbQueue: dbQueue,
             vaultId: vaultId,
-            query: query,
+            criteria: criteria,
             delay: .milliseconds(250),
             appending: false
         )
@@ -307,7 +314,7 @@ extension SidebarViewModel {
             startMeetingSearch(
                 dbQueue: dbQueue,
                 vaultId: vaultId,
-                query: meetingSearchQuery,
+                criteria: meetingSearchCriteria,
                 delay: nil,
                 appending: true
             )
@@ -332,7 +339,7 @@ extension SidebarViewModel {
             startMeetingSearch(
                 dbQueue: dbQueue,
                 vaultId: vaultId,
-                query: meetingSearchQuery,
+                criteria: meetingSearchCriteria,
                 delay: nil,
                 appending: hasItems
             )

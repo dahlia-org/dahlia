@@ -6,10 +6,11 @@ struct MeetingListStatusOverlay: View {
     let isEmpty: Bool
     let isSearching: Bool
     let onRetry: () -> Void
+    let onClearSearch: () -> Void
 
     var body: some View {
         if !isLoaded {
-            ProgressView(L10n.loadingMeetings)
+            ProgressView(isSearching ? L10n.searchingMeetings : L10n.loadingMeetings)
         } else if let error, isEmpty {
             ContentUnavailableView {
                 Label(L10n.meetingListLoadFailed, systemImage: "exclamationmark.triangle")
@@ -19,7 +20,13 @@ struct MeetingListStatusOverlay: View {
                 Button(L10n.retry, action: onRetry)
             }
         } else if isEmpty, isSearching {
-            ContentUnavailableView.search
+            ContentUnavailableView {
+                Label(L10n.noMeetingsMatchSearch, systemImage: "magnifyingglass")
+            } description: {
+                Text(L10n.adjustMeetingSearch)
+            } actions: {
+                Button(L10n.clearSearch, action: onClearSearch)
+            }
         } else if isEmpty {
             ContentUnavailableView {
                 Label(L10n.noMeetingsYet, systemImage: "waveform")
