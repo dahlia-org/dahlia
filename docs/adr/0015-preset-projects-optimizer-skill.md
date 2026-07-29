@@ -22,9 +22,14 @@ Vault 全体へアクセスできる対話チャットにだけ Dahlia 固有の
   `CODEX_HOME/skills/projects-optimizer` へ同期する。この preset と未リリース時に使った旧名の directory は
   stateless な app-owned path として置換し、同期先の古い files を残さない。`skills` 自体が symbolic link
   の場合は外部 directory を変更せず起動を失敗させる。
+- app-server 子 process の `HOME` も Dahlia 専用 `CODEX_HOME` に固定し、user の `~/.agents/skills` を
+  discovery 対象にしない。Codex bundled skills も無効にし、chat に公開する skill を preset だけに限定する。
 - chat thread config では `skills.include_instructions` を有効にする。apps、hooks、memory、plugins、
   orchestrator MCP、ユーザー設定の MCP は引き続き無効にし、Dahlia MCP だけを Vault 固定の `--write`
   session として追加する。
+- chat は user request と skill description に基づいて preset を自動選択する。developer instruction は
+  Dahlia 専用 `CODEX_HOME/skills` 配下の選択済み `SKILL.md` を読む read-only command だけを許可し、
+  その他の command と file access は禁止する。
 - summary thread config では skills を引き続き無効にする。Meeting 限定 MCP、structured output、
   temporary working directory、`approvalPolicy: never` の契約を変更しない。
 - `~/.codex` の skills、設定、認証、session はコピーも参照もしない。

@@ -20,7 +20,10 @@ actor CodexChatService: CodexChatServicing {
     remove, or resolve tool for exactly one record or relationship per call. Delete Organizations from the leaves upward
     after removing Contact memberships. Delete a Contact only after removing all supported references. Continue independent
     later changes when one call fails; re-fetch and retry only the failed record. Do not invent or change Meeting participants.
-    Do not execute commands, access files, use external services other than web search, or request permissions.
+    Select Dahlia preset skills automatically when the user's request matches their descriptions. When a preset is selected,
+    you may run a read-only command solely to read that preset's SKILL.md under Dahlia's private CODEX_HOME/skills directory.
+    Do not execute any other commands or access any other files.
+    Do not use external services other than web search or request permissions.
     """
 
     private let appServer: CodexAppServerService

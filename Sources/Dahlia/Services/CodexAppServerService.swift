@@ -491,6 +491,7 @@ actor CodexAppServerService {
             "memories.use_memories": .bool(false),
             "model_reasoning_effort": .string(reasoningEffort.nilIfBlank ?? CodexReasoningEffortOption.defaultValue),
             "orchestrator.mcp.enabled": .bool(false),
+            "skills.bundled.enabled": .bool(false),
             "skills.include_instructions": .bool(false),
         ])
     }

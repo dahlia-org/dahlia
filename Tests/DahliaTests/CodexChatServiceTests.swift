@@ -280,6 +280,7 @@ import Foundation
             #expect(config["memories.dedicated_tools"] == .bool(false))
             #expect(config["memories.use_memories"] == .bool(false))
             #expect(config["orchestrator.mcp.enabled"] == .bool(false))
+            #expect(config["skills.bundled.enabled"] == .bool(false))
             #expect(config["skills.include_instructions"] == .bool(true))
             #expect(config["web_search"] == .string("live"))
             #expect(config["mcp_servers"] == .object([
@@ -300,6 +301,10 @@ import Foundation
             #expect(instructions?.contains("get_meeting with each UUID directly") == true)
             #expect(instructions?.contains("use web search") == true)
             #expect(instructions?.contains("cite the sources") == true)
+            #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
+            #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
+            #expect(instructions?.contains("Do not execute any other commands or access any other files.") == true)
+            #expect(instructions?.contains("Do not use external services other than web search or request permissions.") == true)
         }
     }
 

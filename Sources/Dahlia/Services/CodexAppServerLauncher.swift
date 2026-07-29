@@ -24,6 +24,7 @@ struct BundledCodexAppServerLauncher: CodexAppServerLaunching {
         try presetSkillInstaller.install(into: homeURL)
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = homeURL.path
+        environment["HOME"] = homeURL.path
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
         return try CodexAppServerProcessTransport(
             executableURL: executableLocator.executableURL(),
