@@ -469,6 +469,7 @@ import Foundation
             let threadConfig = try #require(threadParams["config"]?.objectValue)
             #expect(threadConfig["features.apps"] == .bool(false))
             #expect(threadConfig["features.plugins"] == .bool(false))
+            #expect(threadConfig["skills.include_instructions"] == .bool(false))
             #expect(threadConfig["mcp_oauth_credentials_store"] == .string("file"))
             #expect(threadConfig["model_reasoning_effort"] == .string("medium"))
             #expect(threadConfig["mcp_servers"] == .object([
