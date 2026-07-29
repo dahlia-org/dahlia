@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum ScreenshotOverlayLayout {
@@ -74,6 +75,7 @@ struct ScreenshotOverlayView: View {
                 .padding(16)
                 .buttonStyle(.plain)
                 .pointerStyle(.link)
+                .help(L10n.close)
         }
         .onAppear {
             ScreenshotImageDecodeWorker.recordOverlayPresented(
@@ -105,6 +107,22 @@ struct ScreenshotOverlayView: View {
             .resizable()
             .frame(width: imageSize.width, height: imageSize.height)
             .clipShape(.rect(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) {
+                Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
+                    .labelStyle(.iconOnly)
+                    .font(.title2)
+                    .foregroundStyle(.black)
+                    .padding(8)
+                    .background(.white, in: .circle)
+                    .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+                    .padding(12)
+                    .buttonStyle(.plain)
+                    .pointerStyle(.link)
+                    .help(L10n.copyImage)
+            }
+            .contextMenu {
+                Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
+            }
             .background {
                 ScreenshotOverlayInputMonitor(onDismiss: onDismiss)
             }
@@ -115,5 +133,15 @@ struct ScreenshotOverlayView: View {
             .background {
                 ScreenshotOverlayInputMonitor(onDismiss: onDismiss)
             }
+    }
+
+    private func copyImageToGeneralPasteboard() {
+        Task {
+            await copyImage(to: .general)
+        }
+    }
+
+    func copyImage(to pasteboard: NSPasteboard = .general) async {
+        await ScreenshotPasteboardWriter.write(screenshot, to: pasteboard)
     }
 }

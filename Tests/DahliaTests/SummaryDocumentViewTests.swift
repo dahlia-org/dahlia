@@ -1,7 +1,9 @@
 #if canImport(Testing)
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 @testable import Dahlia
 
 @MainActor
@@ -13,9 +15,15 @@ struct SummaryDocumentViewTests {
         var openedScreenshotID: UUID?
         var openedImage: CGImage?
         var openCount = 0
+        let screenshot = MeetingScreenshotRecord(
+            id: screenshotID,
+            meetingId: .v7(),
+            capturedAt: .now,
+            imageData: Data([1, 2, 3]),
+            mimeType: "image/png"
+        )
         let view = SummaryScreenshotImageView(
-            screenshotID: screenshotID,
-            data: Data(),
+            screenshot: screenshot,
             accessibilityLabel: "Enlarge screenshot"
         ) { id, previewImage in
             openedScreenshotID = id
@@ -28,6 +36,32 @@ struct SummaryDocumentViewTests {
         #expect(openedScreenshotID == screenshotID)
         #expect(openedImage === image)
         #expect(openCount == 1)
+    }
+
+    @Test
+    func screenshotCopyWritesOriginalDataWithoutOpeningImage() async throws {
+        let pasteboard = NSPasteboard(name: .init("SummaryDocumentViewTests-\(UUID().uuidString)"))
+        let imageData = try #require(TestScreenshotImageFixture.data(using: .png))
+        let screenshot = MeetingScreenshotRecord(
+            id: .v7(),
+            meetingId: .v7(),
+            capturedAt: .now,
+            imageData: imageData,
+            mimeType: "image/png"
+        )
+        var openCount = 0
+        let view = SummaryScreenshotImageView(
+            screenshot: screenshot,
+            accessibilityLabel: "Enlarge screenshot"
+        ) { _, _ in
+            openCount += 1
+        }
+
+        await view.copyImage(to: pasteboard)
+
+        let type = NSPasteboard.PasteboardType(UTType.png.identifier)
+        #expect(pasteboard.data(forType: type) == screenshot.imageData)
+        #expect(openCount == 0)
     }
 
     private func makeImage() -> CGImage? {

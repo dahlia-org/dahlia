@@ -256,6 +256,7 @@ extension ScreenshotCollectionView {
                     activate: { [weak self] previewImage in
                         self?.activate(id: id, previewImage: previewImage)
                     },
+                    copy: { [weak self] in self?.copy(id: id) },
                     download: { [weak self] in self?.download(id: id) },
                     delete: { [weak self] in self?.delete(id: id) }
                 )
@@ -279,6 +280,13 @@ extension ScreenshotCollectionView {
         private func download(id: UUID) {
             guard let screenshot = screenshot(for: id) else { return }
             parent.download(screenshot)
+        }
+
+        private func copy(id: UUID) {
+            guard let screenshot = screenshot(for: id) else { return }
+            Task {
+                await ScreenshotPasteboardWriter.write(screenshot)
+            }
         }
 
         private func delete(id: UUID) {

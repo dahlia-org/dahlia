@@ -44,6 +44,7 @@ enum L10n {
     static var edit: String { String(localized: "Edit", bundle: bundle) }
     static var reload: String { String(localized: "Reload", bundle: bundle) }
     static var close: String { String(localized: "Close", bundle: bundle) }
+    static var copyImage: String { String(localized: "Copy Image", bundle: bundle) }
     static var done: String { String(localized: "Done", bundle: bundle) }
     static var select: String { String(localized: "Select", bundle: bundle) }
     static var selectAll: String { String(localized: "Select All", bundle: bundle) }
