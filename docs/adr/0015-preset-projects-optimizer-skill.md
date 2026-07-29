@@ -25,6 +25,10 @@ Vault 全体へアクセスできる対話チャットにだけ Dahlia 固有の
 - chat thread config では `skills.include_instructions` を有効にする。apps、hooks、memory、plugins、
   orchestrator MCP、ユーザー設定の MCP は引き続き無効にし、Dahlia MCP だけを Vault 固定の `--write`
   session として追加する。
+- chat input に `$projects-optimizer` が含まれる場合は、インストール済み `SKILL.md` の絶対 path を持つ
+  `skill` input item を一度だけ追加し、app-server に skill 本文を注入させる。自然文から skill が自動選択
+  された場合に限り、developer instruction は Dahlia 専用 `CODEX_HOME/skills` 配下の選択済み
+  `SKILL.md` を読む read-only command を許可し、その他の command と file access は禁止する。
 - summary thread config では skills を引き続き無効にする。Meeting 限定 MCP、structured output、
   temporary working directory、`approvalPolicy: never` の契約を変更しない。
 - `~/.codex` の skills、設定、認証、session はコピーも参照もしない。

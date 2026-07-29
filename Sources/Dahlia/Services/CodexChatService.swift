@@ -20,20 +20,26 @@ actor CodexChatService: CodexChatServicing {
     remove, or resolve tool for exactly one record or relationship per call. Delete Organizations from the leaves upward
     after removing Contact memberships. Delete a Contact only after removing all supported references. Continue independent
     later changes when one call fails; re-fetch and retry only the failed record. Do not invent or change Meeting participants.
-    Do not execute commands, access files, use external services other than web search, or request permissions.
+    A selected Dahlia preset skill is normally injected with the user's input. If a preset is selected automatically and
+    its instructions were not injected, you may run a read-only command solely to read that preset's SKILL.md under Dahlia's
+    private CODEX_HOME/skills directory. Do not execute any other commands or access any other files.
+    Do not use external services other than web search or request permissions.
     """
 
     private let appServer: CodexAppServerService
     private let workspaceLocator: any CodexChatWorkspaceLocating
+    private let presetSkillInputEncoder: CodexChatPresetSkillInputEncoder
     private let mcpExecutableURL: URL?
 
     init(
         appServer: CodexAppServerService = .shared,
         workspaceLocator: any CodexChatWorkspaceLocating = ApplicationSupportCodexChatWorkspaceLocator(),
+        homeLocator: any CodexHomeLocating = ApplicationSupportCodexHomeLocator(),
         mcpExecutableURL: URL? = nil
     ) {
         self.appServer = appServer
         self.workspaceLocator = workspaceLocator
+        presetSkillInputEncoder = CodexChatPresetSkillInputEncoder(homeLocator: homeLocator)
         self.mcpExecutableURL = mcpExecutableURL
     }
 
@@ -161,10 +167,11 @@ actor CodexChatService: CodexChatServicing {
         model: String?,
         effort: String
     ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
+        let encodedInputs = try presetSkillInputEncoder.appServerInputs(from: inputs)
         var params: [String: JSONValue] = [
             "approvalsReviewer": .string("auto_review"),
             "effort": .string(effort),
-            "input": .array(inputs.map(Self.jsonInput)),
+            "input": .array(encodedInputs),
             "summary": .string("auto"),
             "threadId": .string(threadID),
         ]
@@ -207,23 +214,15 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func steer(threadID: String, turnID: String, inputs: [CodexAppServerInput]) async throws {
+        let encodedInputs = try presetSkillInputEncoder.appServerInputs(from: inputs)
         _ = try await appServer.request(
             method: "turn/steer",
             params: .object([
                 "expectedTurnId": .string(turnID),
-                "input": .array(inputs.map(Self.jsonInput)),
+                "input": .array(encodedInputs),
                 "threadId": .string(threadID),
             ])
         )
-    }
-
-    private nonisolated static func jsonInput(_ input: CodexAppServerInput) -> JSONValue {
-        switch input {
-        case let .text(text), let .imageMetadata(text):
-            .object(["type": .string("text"), "text": .string(text)])
-        case let .imageDataURI(uri):
-            .object(["type": .string("image"), "url": .string(uri)])
-        }
     }
 
     func interrupt(threadID: String, turnID: String) async {
