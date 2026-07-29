@@ -13,16 +13,10 @@ struct BundledCodexPresetSkillInstaller: CodexPresetSkillInstalling {
         "agents/openai.yaml",
     ]
 
-    nonisolated static func skillFileURL(in homeURL: URL) -> URL {
-        homeURL
-            .appending(path: "skills", directoryHint: .isDirectory)
-            .appending(path: skillName, directoryHint: .isDirectory)
-            .appending(path: "SKILL.md")
-    }
-
     func install(into homeURL: URL) throws {
         let skillsURL = homeURL.appending(path: "skills", directoryHint: .isDirectory)
-        let destinationURL = Self.skillFileURL(in: homeURL).deletingLastPathComponent()
+        let destinationURL = skillsURL
+            .appending(path: Self.skillName, directoryHint: .isDirectory)
         let obsoleteSkillURL = skillsURL
             .appending(path: Self.obsoleteSkillName, directoryHint: .isDirectory)
 

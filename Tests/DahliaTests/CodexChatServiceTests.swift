@@ -300,6 +300,7 @@ import Foundation
             #expect(instructions?.contains("get_meeting with each UUID directly") == true)
             #expect(instructions?.contains("use web search") == true)
             #expect(instructions?.contains("cite the sources") == true)
+            #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
             #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
             #expect(instructions?.contains("Do not execute any other commands or access any other files.") == true)
             #expect(instructions?.contains("Do not use external services other than web search or request permissions.") == true)

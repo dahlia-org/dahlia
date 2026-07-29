@@ -18,8 +18,9 @@ import Foundation
 
             let homeLocator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let expectedHomeURL = try homeLocator.homeURL()
-            let installedSkillURL = BundledCodexPresetSkillInstaller.skillFileURL(in: expectedHomeURL)
-                .deletingLastPathComponent()
+            let installedSkillURL = expectedHomeURL
+                .appending(path: "skills", directoryHint: .isDirectory)
+                .appending(path: BundledCodexPresetSkillInstaller.skillName, directoryHint: .isDirectory)
             let obsoleteSkillURL = expectedHomeURL
                 .appending(path: "skills", directoryHint: .isDirectory)
                 .appending(
