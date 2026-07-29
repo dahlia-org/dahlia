@@ -161,6 +161,9 @@ actor TranscriptPersistenceWriter {
                         in: db
                     )
                 }
+                if !records.isEmpty {
+                    try MeetingTranscriptRevision.bump(meetingId: meetingId, in: db)
+                }
             }
         } catch {
             recordWriteDuration(since: writeStartedAt)

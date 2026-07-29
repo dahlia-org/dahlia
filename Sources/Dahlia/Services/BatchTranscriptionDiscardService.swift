@@ -21,9 +21,12 @@ enum BatchTranscriptionDiscardService {
             session.batchFailureKind = nil
             session.updatedAt = now
             try session.update(db)
-            _ = try TranscriptSegmentRecord
+            let deletedCount = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
+            if deletedCount > 0 {
+                try MeetingTranscriptRevision.bump(meetingId: session.meetingId, in: db)
+            }
             return true
         }
         guard claimed else { return false }
@@ -56,9 +59,12 @@ enum BatchTranscriptionDiscardService {
             session.batchFailureKind = nil
             session.updatedAt = now
             try session.update(db)
-            _ = try TranscriptSegmentRecord
+            let deletedCount = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
+            if deletedCount > 0 {
+                try MeetingTranscriptRevision.bump(meetingId: session.meetingId, in: db)
+            }
             return true
         }
     }

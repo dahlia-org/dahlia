@@ -1,20 +1,10 @@
 import SwiftUI
 
-private extension DetailTab {
-    var keyboardShortcut: KeyEquivalent {
-        switch self {
-        case .notes: "1"
-        case .screenshots: "2"
-        case .transcript: "3"
-        case .summary: "4"
-        }
-    }
-}
-
 /// Navigation for the content that belongs to the selected meeting.
 struct DetailTabBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    let tabs: [DetailTab]
 
     private var isFolderOnly: Bool {
         viewModel.currentMeetingId == nil && !viewModel.isListening && !viewModel.hasDraftMeeting
@@ -22,7 +12,7 @@ struct DetailTabBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(DetailTab.allCases) { tab in
+            ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
                 Button(tab.label) { selection = tab }
                     .buttonStyle(.plain)
                     .font(.body)
@@ -39,7 +29,7 @@ struct DetailTabBar: View {
                                 .padding(.horizontal, 8)
                         }
                     }
-                    .keyboardShortcut(tab.keyboardShortcut, modifiers: .command)
+                    .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                     .help(tab.label)
                     .accessibilityAddTraits(tab == selection ? .isSelected : [])
             }

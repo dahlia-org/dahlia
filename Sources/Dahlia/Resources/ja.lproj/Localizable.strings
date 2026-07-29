@@ -1123,3 +1123,26 @@
 "%lld insight" = "インサイト%lld件";
 "%lld insights" = "インサイト%lld件";
 "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "ドメイン「%@」は別の組織に属しています。元の組織には、%@、%@、%@、%@、%@、%@があります。これらを「%@」へ統合して元の組織を削除します。重複する関連では統合先の情報を維持します。";
+
+/* Meeting Metrics */
+"Meeting Metrics" = "ミーティング指標";
+"Meeting metrics (Beta)" = "ミーティング指標（ベータ）";
+"Microphone-source speech rate was around %@ characters per minute in this meeting." = "このミーティングのマイク音源の発話は、実発話時間あたり約 %@ 文字/分でした。";
+"This is above the provisional beta reference value and is an estimate, not a measurement of clarity." = "これはベータの暫定基準値を上回っています。推定値であり、聞き取りやすさを測ったものではありません。";
+"Microphone-source speech accounted for about %@ of labelled speaking time." = "ラベル付き発話時間のうち、マイク音源が約 %@ を占めていました。";
+"Microphone and system sources overlapped for about %@ of total talk time (%@)." = "同時に音が出ていた時間は、会話全体の発話時間の約 %@（%@）でした。";
+"No notable pattern stood out in this meeting." = "このミーティングで目立った傾向はありませんでした。";
+"Not enough transcript to summarise this meeting yet." = "指標を出せるだけの文字起こしがまだありません。";
+"Source labels cover too little of this transcript to compare sources." = "音源ラベルの付いた範囲が少なく、音源の比較ができません。";
+"This is an estimate based on labelled audio-source activity." = "音源ラベルが付いた発話時間から算出した推定値です。";
+"Metrics are derived from audio sources, not from speaker identification." = "指標は音源から算出しており、話者の識別は行っていません。";
+"The microphone source is treated as you and the system source as the other participants." = "マイク音源を自分、システム音源を相手として扱っています。";
+"When echo cancellation is unavailable, system audio can leak into the microphone source and inflate overlap." = "エコーキャンセルが利用できない場合、システム音がマイク音源に混入し、同時発話が過大に出ることがあります。";
+"Beta feature. Values are estimates and thresholds are provisional." = "ベータ機能です。数値は推定であり、しきい値は暫定です。";
+"Total talk time" = "会話全体の発話時間";
+"Speaking time" = "発話時間";
+"Turns" = "発話数";
+"%@ characters · %@ per minute" = "%@ 文字・%@ 文字/分";
+"%@ characters per minute" = "%@ 文字/分";
+"Simultaneous-source time" = "同時発話時間";
+"Meeting metrics could not be loaded." = "ミーティング指標を読み込めませんでした。";

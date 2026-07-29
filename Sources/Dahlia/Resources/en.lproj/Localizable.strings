@@ -1123,3 +1123,26 @@
 "%lld insight" = "%lld insight";
 "%lld insights" = "%lld insights";
 "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.";
+
+/* Meeting Metrics */
+"Meeting Metrics" = "Meeting Metrics";
+"Meeting metrics (Beta)" = "Meeting metrics (Beta)";
+"Microphone-source speech rate was around %@ characters per minute in this meeting." = "Microphone-source speech rate was around %@ characters per minute in this meeting.";
+"This is above the provisional beta reference value and is an estimate, not a measurement of clarity." = "This is above the provisional beta reference value and is an estimate, not a measurement of clarity.";
+"Microphone-source speech accounted for about %@ of labelled speaking time." = "Microphone-source speech accounted for about %@ of labelled speaking time.";
+"Microphone and system sources overlapped for about %@ of total talk time (%@)." = "Microphone and system sources overlapped for about %@ of total talk time (%@).";
+"No notable pattern stood out in this meeting." = "No notable pattern stood out in this meeting.";
+"Not enough transcript to summarise this meeting yet." = "Not enough transcript to summarise this meeting yet.";
+"Source labels cover too little of this transcript to compare sources." = "Source labels cover too little of this transcript to compare sources.";
+"This is an estimate based on labelled audio-source activity." = "This is an estimate based on labelled audio-source activity.";
+"Metrics are derived from audio sources, not from speaker identification." = "Metrics are derived from audio sources, not from speaker identification.";
+"The microphone source is treated as you and the system source as the other participants." = "The microphone source is treated as you and the system source as the other participants.";
+"When echo cancellation is unavailable, system audio can leak into the microphone source and inflate overlap." = "When echo cancellation is unavailable, system audio can leak into the microphone source and inflate overlap.";
+"Beta feature. Values are estimates and thresholds are provisional." = "Beta feature. Values are estimates and thresholds are provisional.";
+"Total talk time" = "Total talk time";
+"Speaking time" = "Speaking time";
+"Turns" = "Turns";
+"%@ characters · %@ per minute" = "%@ characters · %@ per minute";
+"%@ characters per minute" = "%@ characters per minute";
+"Simultaneous-source time" = "Simultaneous-source time";
+"Meeting metrics could not be loaded." = "Meeting metrics could not be loaded.";

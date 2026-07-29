@@ -4,8 +4,9 @@ import SwiftUI
 struct MeetingDetailNavigationBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    let tabs: [DetailTab]
 
     var body: some View {
-        DetailTabBar(selection: $selection, viewModel: viewModel)
+        DetailTabBar(selection: $selection, viewModel: viewModel, tabs: tabs)
     }
 }

@@ -106,6 +106,7 @@ flowchart LR
 | Event distribution | `TranscriptionEventPipeline` | durable persistence と bounded UI／optional consumer の分離 |
 | Realtime transcript | `TranscriptPersistenceWriter` | 確定イベントの順序、再試行、SQLite transaction |
 | Batch transcript | `BatchTranscriptionCoordinator`, `BatchTranscriptionPersistence` | ready CAF の読出し、認識、成功結果の原子的反映 |
+| Meeting metrics projection | `MeetingMetricsCoordinator`, `MeetingMetricsWorker` | active tab の demand、revision の latest-wins 監視、bounded な再計算と stale completion の拒否 |
 | UI projection | `TranscriptStore`, `LiveCaptionStore` | bounded で再構築可能な表示状態 |
 
 ## データと永続化境界
@@ -121,6 +122,7 @@ flowchart LR
 | realtime finalized event | event pipeline／persistence writer memory | UI より先に persistence lane へ受理した | `transcript_segments` の SQLite transaction が commit した時点 | batch 音声がなければ元音声からは再生成不能 |
 | batch recognition result | `BatchTranscriptionCoordinator` memory | ready CAF から一式を生成した | transcript rows と batch 完了状態の transaction が commit した時点 | ready CAF が残る間は再生成可能 |
 | transcript source of truth | SQLite `transcript_segments` | realtime の差分 insert または batch の一式置換 | SQLite commit 完了時 | UI projection を再構築できる |
+| meeting metrics projection | SQLite `meeting_metrics`／`meeting_source_metrics` | transcript revision の snapshot を streaming 集計した再構築可能な派生値 | 同じ revision を compare-and-swap で確認した SQLite transaction が commit した時点 | `transcript_segments` から再生成できる |
 | recording metadata | SQLite `recording_sessions` ほか | mode、開始／終了、batch 状態、audio progress を更新 | 各 SQLite commit 完了時 | ファイルだけから完全には再生成しない |
 
 ### 音声 segment の状態
@@ -199,6 +201,10 @@ preview は保存しない。finalized segment と確定 translation は `Transc
 SQLite failure 時は actor 内に保持して backoff 付きで再試行する。process が終了すれば memory backlog は失われ得るため、
 durable の境界は ingress ではなく SQLite commit である。
 
+`transcript_segments` の内容を変える realtime insert は、同じ transaction で meeting の `transcriptRevision` を進める。
+translation だけの更新は発話指標の入力を変えないため revision を進めない。active な metrics tab は scalar revision を
+重複除去・newest-one buffering で監視し、古い再計算を cancel して最新 snapshot だけを publish する。
+
 ### バッチ文字起こしと字幕
 
 batch mode では、字幕またはライブチャットを有効にした場合だけ録音中の逐次認識を追加する。そのイベントは
@@ -223,7 +229,10 @@ sequenceDiagram
 ```
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
-反映する。再文字起こし中は以前の成功結果を利用でき、新しい一式が成功した時だけ置き換える。
+反映し、その transaction で `transcriptRevision` も必ず進める。再文字起こし中は以前の成功結果を利用でき、新しい一式が
+成功した時だけ置き換える。batch discard と追加録音開始失敗の rollback も、実際に transcript row を削除した transaction
+内で revision を進める。meeting metrics の保存は解析開始時の revision との compare-and-swap なので、古い再計算は新しい
+transcript に対応する派生行を上書きできない。
 
 ### 正常停止
 
@@ -291,6 +300,7 @@ sequenceDiagram
 - audio segment の状態、publish、recovery、durability boundary
 - `TranscriptionEvent` の保存対象または UI projection 分離
 - realtime／batch transcript の transaction boundary
+- transcript revision の invalidation contract または meeting metrics projection の owner／保存境界
 - 正常停止時の受付停止と drain 順序
 
 実装規約や検証コマンドは `AGENTS.md` に置き、この文書へ複製しない。新しい設計判断と理由は ADR に記録し、

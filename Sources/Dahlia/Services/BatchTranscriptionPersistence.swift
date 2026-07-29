@@ -35,6 +35,7 @@ enum BatchTranscriptionPersistence {
                 sql: "UPDATE meetings SET status = ?, updatedAt = ? WHERE id = ?",
                 arguments: [MeetingStatus.ready.rawValue, persistedCompletedAt, meetingId]
             )
+            try MeetingTranscriptRevision.bump(meetingId: meetingId, in: db)
         }
     }
 }

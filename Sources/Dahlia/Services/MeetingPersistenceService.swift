@@ -217,9 +217,12 @@ final class MeetingPersistenceService {
             if createsMeeting {
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
-                _ = try TranscriptSegmentRecord
+                let deletedCount = try TranscriptSegmentRecord
                     .filter(Column("sessionId") == sessionId)
                     .deleteAll(db)
+                if deletedCount > 0 {
+                    try MeetingTranscriptRevision.bump(meetingId: meetingId, in: db)
+                }
                 _ = try RecordingSessionRecord.deleteOne(db, key: sessionId)
             }
         }

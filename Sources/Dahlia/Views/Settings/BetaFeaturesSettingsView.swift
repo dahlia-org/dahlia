@@ -11,6 +11,12 @@ struct BetaFeaturesSettingsView: View {
                     isOn: $settings.isCustomerIntelligenceBetaEnabled
                 )
                 .toggleStyle(.switch)
+
+                Toggle(
+                    L10n.meetingMetricsBetaToggle,
+                    isOn: $settings.isMeetingMetricsBetaEnabled
+                )
+                .toggleStyle(.switch)
             } header: {
                 Text(L10n.betaFeatures)
             } footer: {

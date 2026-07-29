@@ -12,6 +12,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
     case notes
     case screenshots
     case transcript
+    case metrics
     case summary
 
     var id: String { rawValue }
@@ -22,6 +23,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
         case .notes: L10n.notes
         case .screenshots: L10n.screenshots
         case .transcript: L10n.transcript
+        case .metrics: L10n.meetingMetrics
         }
     }
 }
@@ -290,7 +292,8 @@ struct ControlPanelView: View {
 
             MeetingDetailNavigationBar(
                 selection: $selectedTab,
-                viewModel: viewModel
+                viewModel: viewModel,
+                tabs: availableTabs
             )
 
             // タブコンテンツ
@@ -317,6 +320,13 @@ struct ControlPanelView: View {
                         discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription,
                         retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )
+                case .metrics:
+                    if let meetingId = viewModel.currentMeetingId,
+                       let dbQueue = sidebarViewModel.dbQueue {
+                        MeetingMetricsTabView(meetingId: meetingId, dbQueue: dbQueue)
+                    } else {
+                        ContentUnavailableView(L10n.meetingMetricsInsufficientTranscript, systemImage: "chart.bar.xaxis")
+                    }
                 }
             }
             .frame(minHeight: 280)
@@ -384,6 +394,11 @@ struct ControlPanelView: View {
             cancelMeetingRename()
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
+        }
+        .onChange(of: appSettings.isMeetingMetricsBetaEnabled) { _, isEnabled in
+            if !isEnabled, selectedTab == .metrics {
+                selectedTab = .transcript
+            }
         }
         .confirmationDialog(
             L10n.deleteCount(selectedScreenshotIds.count),
@@ -631,6 +646,10 @@ struct ControlPanelView: View {
         persistedSummaryExists || viewModel.hasCurrentMeetingSummary
     }
 
+    private var availableTabs: [DetailTab] {
+        DetailTab.allCases.filter { $0 != .metrics || appSettings.isMeetingMetricsBetaEnabled }
+    }
+
     private var tabContentBackgroundColor: Color {
         selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .controlBackgroundColor)
     }
@@ -728,7 +747,8 @@ struct ControlPanelView: View {
     }
 
     private var initialTabSelection: DetailTab {
-        hasSummaryTab ? .summary : .notes
+        let preferred: DetailTab = hasSummaryTab ? .summary : .notes
+        return availableTabs.contains(preferred) ? preferred : availableTabs.first ?? .notes
     }
 
 }

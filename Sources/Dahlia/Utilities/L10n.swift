@@ -2451,4 +2451,102 @@ enum L10n {
     ) }
     static var meetingUnavailable: String { String(localized: "Meeting unavailable", bundle: bundle) }
     static var showMeetingReferenceDetails: String { String(localized: "Show meeting details", bundle: bundle) }
+
+    // MARK: - Meeting Metrics
+
+    static var meetingMetrics: String { String(localized: "Meeting Metrics", bundle: bundle) }
+    static var meetingMetricsBetaToggle: String { String(localized: "Meeting metrics (Beta)", bundle: bundle) }
+
+    static func meetingMetricsPaceTitle(_ value: Int64) -> String {
+        String(
+            format: String(
+                localized: "Microphone-source speech rate was around %@ characters per minute in this meeting.",
+                bundle: bundle
+            ),
+            String(value)
+        )
+    }
+
+    static var meetingMetricsPaceDetail: String { String(
+        localized: "This is above the provisional beta reference value and is an estimate, not a measurement of clarity.",
+        bundle: bundle
+    ) }
+
+    static func meetingMetricsMicrophoneShareTitle(_ value: String) -> String {
+        String(
+            format: String(
+                localized: "Microphone-source speech accounted for about %@ of labelled speaking time.",
+                bundle: bundle
+            ),
+            value
+        )
+    }
+
+    static func meetingMetricsOverlapTitle(_ share: String, _ duration: String) -> String {
+        String(
+            format: String(
+                localized: "Microphone and system sources overlapped for about %@ of total talk time (%@).",
+                bundle: bundle
+            ),
+            share,
+            duration
+        )
+    }
+
+    static var meetingMetricsNoNotablePattern: String { String(
+        localized: "No notable pattern stood out in this meeting.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsInsufficientTranscript: String { String(
+        localized: "Not enough transcript to summarise this meeting yet.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsInsufficientCoverage: String { String(
+        localized: "Source labels cover too little of this transcript to compare sources.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsSourceEstimateDetail: String { String(
+        localized: "This is an estimate based on labelled audio-source activity.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsSourceCaveat: String { String(
+        localized: "Metrics are derived from audio sources, not from speaker identification.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsSourceApproximationCaveat: String { String(
+        localized: "The microphone source is treated as you and the system source as the other participants.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsEchoCancellationCaveat: String { String(
+        localized: "When echo cancellation is unavailable, system audio can leak into the microphone source and inflate overlap.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsBetaCaveat: String { String(
+        localized: "Beta feature. Values are estimates and thresholds are provisional.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsConversationTalkTime: String { String(localized: "Total talk time", bundle: bundle) }
+    static var meetingMetricsSpeakingTime: String { String(localized: "Speaking time", bundle: bundle) }
+    static var meetingMetricsTurnCount: String { String(localized: "Turns", bundle: bundle) }
+
+    static func meetingMetricsCharactersAndPaceValue(_ characters: String, _ pace: String) -> String {
+        String(
+            format: String(localized: "%@ characters · %@ per minute", bundle: bundle),
+            characters,
+            pace
+        )
+    }
+
+    static func meetingMetricsCharactersPerMinuteValue(_ value: Int64) -> String {
+        String(format: String(localized: "%@ characters per minute", bundle: bundle), String(value))
+    }
+
+    static var meetingMetricsSimultaneousSourceTime: String { String(
+        localized: "Simultaneous-source time",
+        bundle: bundle
+    ) }
+    static var meetingMetricsLoadFailed: String { String(
+        localized: "Meeting metrics could not be loaded.",
+        bundle: bundle
+    ) }
 }

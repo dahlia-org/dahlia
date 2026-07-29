@@ -99,10 +99,12 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
+    nonisolated static let meetingMetricsBetaEnabledUserDefaultsKey = "meetingMetricsBetaEnabled"
     nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
+    nonisolated static let defaultMeetingMetricsBetaEnabled = false
     nonisolated static let summaryPreviousMeetingCountOptions = [0, 1, 2, 3, 4, 5]
     nonisolated static let defaultSummaryPreviousMeetingCount = 3
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
@@ -117,6 +119,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
+
+    @AppStorage(AppSettings.meetingMetricsBetaEnabledUserDefaultsKey)
+    var isMeetingMetricsBetaEnabled = AppSettings.defaultMeetingMetricsBetaEnabled
 
     @AppStorage(AppSettings.customerIntelligenceSectionUserDefaultsKey)
     var customerIntelligenceSectionRawValue = CustomerIntelligenceSection.overview.rawValue
