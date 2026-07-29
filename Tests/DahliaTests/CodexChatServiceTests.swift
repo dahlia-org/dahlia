@@ -280,6 +280,7 @@ import Foundation
             #expect(config["memories.dedicated_tools"] == .bool(false))
             #expect(config["memories.use_memories"] == .bool(false))
             #expect(config["orchestrator.mcp.enabled"] == .bool(false))
+            #expect(config["skills.bundled.enabled"] == .bool(false))
             #expect(config["skills.include_instructions"] == .bool(true))
             #expect(config["web_search"] == .string("live"))
             #expect(config["mcp_servers"] == .object([

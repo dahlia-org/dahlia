@@ -13,7 +13,7 @@ import Foundation
             try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
             let executableURL = rootURL.appending(path: "print-working-directory")
-            try Data("#!/bin/sh\n/bin/pwd\n".utf8).write(to: executableURL)
+            try Data("#!/bin/sh\n/bin/pwd\n/usr/bin/printenv HOME\n".utf8).write(to: executableURL)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
 
             let homeLocator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
@@ -47,6 +47,8 @@ import Foundation
                 URL(filePath: workingDirectory, directoryHint: .isDirectory).resolvingSymlinksInPath()
                     == expectedHomeURL.resolvingSymlinksInPath()
             )
+            let homeEnvironment = try #require(await transport.receiveLine())
+            #expect(String(data: homeEnvironment, encoding: .utf8) == expectedHomeURL.path)
             let skill = try String(contentsOf: installedSkillURL.appending(path: "SKILL.md"), encoding: .utf8)
             let metadata = try String(
                 contentsOf: installedSkillURL.appending(path: "agents/openai.yaml"),
