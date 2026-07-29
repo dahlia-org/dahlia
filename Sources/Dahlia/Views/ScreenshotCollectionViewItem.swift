@@ -74,6 +74,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
 
     struct Actions {
         let activate: (CGImage?) -> Void
+        let copy: () -> Void
         let download: () -> Void
         let delete: () -> Void
     }
@@ -82,6 +83,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         let isThumbnailEnabled: Bool
         let isLockVisible: Bool
         let selectionSymbolName: String?
+        let isCopyHidden: Bool
         let isDeleteHidden: Bool
         let isDeleteEnabled: Bool
     }
@@ -92,12 +94,14 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     private let timestampLabel = NSTextField(labelWithString: "")
     private let lockImageView = NSImageView()
     private let selectionImageView = PassthroughImageView()
+    private let copyButton = NSButton()
     private let downloadButton = NSButton()
     private let deleteButton = NSButton()
     private var thumbnailTask: Task<Void, Never>?
     private var thumbnailLoadState = ThumbnailLoadState.idle
     private var loadGeneration: UInt64 = 0
     private var activationHandler: ((CGImage?) -> Void)?
+    private var copyHandler: (() -> Void)?
     private var downloadHandler: (() -> Void)?
     private var deleteHandler: (() -> Void)?
     private var representedImageIdentity: ScreenshotImageContentIdentity?
@@ -107,7 +111,10 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     private(set) var renderedState: RenderedState?
     var loadedThumbnailSize: NSSize? { thumbnailButton.image?.size }
     var isLoadingThumbnail: Bool { thumbnailTask != nil }
-    var hasCallbacks: Bool { activationHandler != nil || downloadHandler != nil || deleteHandler != nil }
+    var hasCallbacks: Bool {
+        activationHandler != nil || copyHandler != nil || downloadHandler != nil || deleteHandler != nil
+    }
+
     var selectionIndicatorAcceptsHitTesting: Bool { selectionImageView.hitTest(.zero) != nil }
     var selectionIndicatorIsAccessibilityElement: Bool { selectionImageView.isAccessibilityElement() }
 
@@ -122,7 +129,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         configureThumbnailButton()
         configureMetadataControls()
 
-        let metadataStack = NSStackView(views: [timestampLabel, lockImageView, downloadButton, deleteButton])
+        let metadataStack = NSStackView(views: [timestampLabel, lockImageView, copyButton, downloadButton, deleteButton])
         metadataStack.orientation = .horizontal
         metadataStack.alignment = .centerY
         metadataStack.spacing = 6
@@ -171,6 +178,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         representedImageIdentity = nil
         renderedState = nil
         activationHandler = nil
+        copyHandler = nil
         downloadHandler = nil
         deleteHandler = nil
         timestampLabel.stringValue = ""
@@ -195,6 +203,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         timestampLabel.stringValue = configuration.timestamp
         timestampLabel.toolTip = configuration.timestamp
         activationHandler = actions.activate
+        copyHandler = actions.copy
         downloadHandler = actions.download
         deleteHandler = actions.delete
 
@@ -227,6 +236,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
                 : .controlAccentColor
         }
 
+        copyButton.isHidden = configuration.isSelecting
         downloadButton.isHidden = configuration.isSelecting
         deleteButton.isHidden = configuration.isSelecting
         deleteButton.isEnabled = !configuration.isReferencedBySummary && !configuration.isDeletionDisabled
@@ -235,6 +245,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
             isThumbnailEnabled: thumbnailButton.isEnabled,
             isLockVisible: !lockImageView.isHidden,
             selectionSymbolName: selectionSymbolName,
+            isCopyHidden: copyButton.isHidden,
             isDeleteHidden: deleteButton.isHidden,
             isDeleteEnabled: deleteButton.isEnabled
         )
@@ -263,6 +274,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         thumbnailButton.layer?.cornerRadius = 6
         thumbnailButton.layer?.masksToBounds = true
         thumbnailButton.updateBackgroundColor()
+        configureContextMenu()
     }
 
     private func configureMetadataControls() {
@@ -274,6 +286,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         lockImageView.contentTintColor = .secondaryLabelColor
         lockImageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
 
+        configureIconButton(copyButton, symbolName: "doc.on.doc", label: L10n.copyImage, action: #selector(copyScreenshot))
         configureIconButton(downloadButton, symbolName: "arrow.down.circle", label: L10n.download, action: #selector(downloadScreenshot))
         configureIconButton(deleteButton, symbolName: "trash", label: L10n.delete, action: #selector(deleteScreenshot))
         deleteButton.contentTintColor = .secondaryLabelColor
@@ -287,6 +300,19 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         button.action = action
         button.toolTip = label
         button.setAccessibilityLabel(label)
+    }
+
+    private func configureContextMenu() {
+        let menu = NSMenu()
+        let copyItem = NSMenuItem(
+            title: L10n.copyImage,
+            action: #selector(copyScreenshot),
+            keyEquivalent: ""
+        )
+        copyItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: L10n.copyImage)
+        copyItem.target = self
+        menu.addItem(copyItem)
+        thumbnailButton.menu = menu
     }
 
     private func startThumbnailLoad(for screenshot: MeetingScreenshotRecord, provider: @escaping ThumbnailProvider) {
@@ -328,6 +354,10 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
 
     @objc private func activateThumbnail() {
         activationHandler?(loadedThumbnailImage)
+    }
+
+    @objc private func copyScreenshot() {
+        copyHandler?()
     }
 
     @objc private func downloadScreenshot() {

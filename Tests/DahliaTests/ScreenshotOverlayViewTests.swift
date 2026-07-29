@@ -1,6 +1,7 @@
 #if canImport(Testing)
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import Dahlia
 
 @MainActor
@@ -27,6 +28,42 @@ struct ScreenshotOverlayViewTests {
             imageSize: CGSize(width: 1_600, height: 900),
             availableSize: .zero
         ) == .zero)
+    }
+
+    @Test
+    func copyWritesOriginalImageWithoutDismissingOverlay() async throws {
+        let mouseFixture = try makeMouseFixture(
+            eventType: .leftMouseDown,
+            eventLocation: CGPoint(x: 50, y: 50)
+        )
+        let pasteboard = NSPasteboard(name: .init("ScreenshotOverlayViewTests-\(UUID().uuidString)"))
+        let imageData = try #require(TestScreenshotImageFixture.data(using: .jpeg))
+        let screenshot = MeetingScreenshotRecord(
+            id: .v7(),
+            meetingId: .v7(),
+            capturedAt: .now,
+            imageData: imageData,
+            mimeType: "image/jpeg"
+        )
+        var dismissCount = 0
+        let view = ScreenshotOverlayView(
+            screenshot: screenshot,
+            previewImage: nil,
+            requestedAt: .now
+        ) {
+            dismissCount += 1
+        }
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator {
+            dismissCount += 1
+        }
+
+        let handledEvent = coordinator.handle(mouseFixture.event, in: mouseFixture.view)
+        await view.copyImage(to: pasteboard)
+
+        let type = NSPasteboard.PasteboardType(UTType.jpeg.identifier)
+        #expect(handledEvent === mouseFixture.event)
+        #expect(pasteboard.data(forType: type) == screenshot.imageData)
+        #expect(dismissCount == 0)
     }
 
     @Test

@@ -1,21 +1,22 @@
+import AppKit
 import SwiftUI
 
 struct SummaryDocumentView: View {
     let document: SummaryDocument
-    let imageDataProvider: (UUID) -> Data?
+    let screenshotProvider: (UUID) -> MeetingScreenshotRecord?
     let onOpenImage: (UUID, CGImage) -> Void
     let transcriptTextProvider: (TranscriptReference) -> String?
     let allowsTranscriptReferencePopovers: Bool
 
     init(
         document: SummaryDocument,
-        imageDataProvider: @escaping (UUID) -> Data?,
+        screenshotProvider: @escaping (UUID) -> MeetingScreenshotRecord?,
         onOpenImage: @escaping (UUID, CGImage) -> Void,
         transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil },
         allowsTranscriptReferencePopovers: Bool = true
     ) {
         self.document = document
-        self.imageDataProvider = imageDataProvider
+        self.screenshotProvider = screenshotProvider
         self.onOpenImage = onOpenImage
         self.transcriptTextProvider = transcriptTextProvider
         self.allowsTranscriptReferencePopovers = allowsTranscriptReferencePopovers
@@ -154,10 +155,9 @@ struct SummaryDocumentView: View {
 
     private func imageView(screenshotId: UUID, caption: SummaryText) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let data = imageDataProvider(screenshotId) {
+            if let screenshot = screenshotProvider(screenshotId) {
                 SummaryScreenshotImageView(
-                    screenshotID: screenshotId,
-                    data: data,
+                    screenshot: screenshot,
                     accessibilityLabel: L10n.enlargeScreenshot(caption: caption.text.nilIfBlank),
                     onOpen: onOpenImage
                 )
@@ -258,8 +258,7 @@ struct SummaryDocumentView: View {
 }
 
 struct SummaryScreenshotImageView: View {
-    let screenshotID: UUID
-    let data: Data
+    let screenshot: MeetingScreenshotRecord
     let accessibilityLabel: String
     let onOpen: (UUID, CGImage) -> Void
     @StateObject private var imageLoader = ScreenshotImageLoadModel()
@@ -267,17 +266,30 @@ struct SummaryScreenshotImageView: View {
     var body: some View {
         Group {
             if case let .loaded(image) = imageLoader.state {
-                Button {
-                    activate(image)
-                } label: {
-                    Image(decorative: image, scale: 1)
-                        .resizable()
-                        .scaledToFit()
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        activate(image)
+                    } label: {
+                        Image(decorative: image, scale: 1)
+                            .resizable()
+                            .scaledToFit()
+                    }
+                    .buttonStyle(.plain)
+                    .pointerStyle(.link)
+                    .accessibilityLabel(accessibilityLabel)
+                    .help(accessibilityLabel)
+
+                    Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .background(.regularMaterial, in: .circle)
+                        .padding(8)
+                        .help(L10n.copyImage)
                 }
-                .buttonStyle(.plain)
-                .pointerStyle(.link)
-                .accessibilityLabel(accessibilityLabel)
-                .help(accessibilityLabel)
+                .contextMenu {
+                    Button(L10n.copyImage, systemImage: "doc.on.doc", action: copyImageToGeneralPasteboard)
+                }
             } else if case .failed = imageLoader.state {
                 Text(L10n.summaryImageUnavailable)
                     .font(.callout)
@@ -289,17 +301,27 @@ struct SummaryScreenshotImageView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: 360, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .task(id: screenshotID) {
+        .task(id: screenshot.id) {
             await imageLoader.load(
-                screenshotID: screenshotID,
-                data: data,
+                screenshotID: screenshot.id,
+                data: screenshot.imageData,
                 maxPixelSize: 1200
             )
         }
     }
 
     func activate(_ image: CGImage) {
-        onOpen(screenshotID, image)
+        onOpen(screenshot.id, image)
+    }
+
+    private func copyImageToGeneralPasteboard() {
+        Task {
+            await copyImage(to: .general)
+        }
+    }
+
+    func copyImage(to pasteboard: NSPasteboard = .general) async {
+        await ScreenshotPasteboardWriter.write(screenshot, to: pasteboard)
     }
 }
 

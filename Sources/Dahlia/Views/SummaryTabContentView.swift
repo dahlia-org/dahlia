@@ -14,7 +14,7 @@ struct SummaryTabContentView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     SummaryDocumentView(
                         document: document,
-                        imageDataProvider: imageData,
+                        screenshotProvider: screenshot,
                         onOpenImage: openScreenshot,
                         transcriptTextProvider: transcriptText,
                         allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
@@ -34,7 +34,7 @@ struct SummaryTabContentView: View {
         }
     }
 
-    private func imageData(for screenshotID: UUID) -> Data? {
-        screenshotStore.records.first { $0.id == screenshotID }?.imageData
+    private func screenshot(for screenshotID: UUID) -> MeetingScreenshotRecord? {
+        screenshotStore.records.first { $0.id == screenshotID }
     }
 }

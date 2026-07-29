@@ -69,7 +69,7 @@ struct ScreenshotCollectionViewTests {
         let screenshot = makeScreenshot()
         let image = try #require(makeImage(width: 32, height: 18))
 
-        configure(item, screenshot: screenshot) { _, _, _ in image }
+        configure(item, screenshot: screenshot, provider: { _, _, _ in image })
         await waitUntil { item.loadedThumbnailSize != nil }
         #expect(item.loadedThumbnailSize == NSSize(width: 32, height: 18))
 
@@ -85,7 +85,7 @@ struct ScreenshotCollectionViewTests {
         let screenshot = makeScreenshot()
         let image = try #require(makeImage(width: 32, height: 18))
 
-        configure(item, screenshot: screenshot) { _, _, _ in image }
+        configure(item, screenshot: screenshot, provider: { _, _, _ in image })
         await waitUntil { item.loadedThumbnailSize != nil }
 
         item.didEndDisplaying()
@@ -114,6 +114,7 @@ struct ScreenshotCollectionViewTests {
             isThumbnailEnabled: false,
             isLockVisible: true,
             selectionSymbolName: "lock.circle.fill",
+            isCopyHidden: true,
             isDeleteHidden: true,
             isDeleteEnabled: false
         ))
@@ -129,6 +130,7 @@ struct ScreenshotCollectionViewTests {
             isThumbnailEnabled: true,
             isLockVisible: false,
             selectionSymbolName: "checkmark.circle.fill",
+            isCopyHidden: true,
             isDeleteHidden: true,
             isDeleteEnabled: true
         ))
@@ -143,13 +145,14 @@ struct ScreenshotCollectionViewTests {
             isThumbnailEnabled: true,
             isLockVisible: false,
             selectionSymbolName: nil,
+            isCopyHidden: false,
             isDeleteHidden: false,
             isDeleteEnabled: false
         ))
     }
 
     @Test
-    func nativeButtonsRouteOpenDownloadAndDeleteActionsWithImmediatePreview() async throws {
+    func nativeButtonsAndContextMenuRouteImageActionsWithImmediatePreview() async throws {
         let item = ScreenshotCollectionViewItem()
         let screenshot = makeScreenshot()
         let preview = try #require(makeImage(width: 32, height: 18))
@@ -170,6 +173,7 @@ struct ScreenshotCollectionViewTests {
                     activatedPreviewSize = image.map { CGSize(width: $0.width, height: $0.height) }
                     invokedActions.append("open")
                 },
+                copy: { invokedActions.append("copy") },
                 download: { invokedActions.append("download") },
                 delete: { invokedActions.append("delete") }
             )
@@ -178,14 +182,17 @@ struct ScreenshotCollectionViewTests {
 
         let buttons = descendantViews(of: item.view).compactMap { $0 as? NSButton }
         let openButton = try #require(buttons.first { $0.accessibilityLabel() == L10n.open })
+        let copyButton = try #require(buttons.first { $0.accessibilityLabel() == L10n.copyImage })
         let downloadButton = try #require(buttons.first { $0.accessibilityLabel() == L10n.download })
         let deleteButton = try #require(buttons.first { $0.accessibilityLabel() == L10n.delete })
 
         openButton.performClick(nil)
+        copyButton.performClick(nil)
         downloadButton.performClick(nil)
         deleteButton.performClick(nil)
+        try #require(openButton.menu).performActionForItem(at: 0)
 
-        #expect(invokedActions == ["open", "download", "delete"])
+        #expect(invokedActions == ["open", "copy", "download", "delete", "copy"])
         #expect(activatedPreviewSize == CGSize(width: 32, height: 18))
     }
 
@@ -270,6 +277,7 @@ struct ScreenshotCollectionViewTests {
         _ item: ScreenshotCollectionViewItem,
         screenshot: MeetingScreenshotRecord,
         state: TestControlState = .init(),
+        copy: @escaping () -> Void = {},
         provider: @escaping ScreenshotCollectionViewItem.ThumbnailProvider
     ) {
         item.configure(
@@ -282,7 +290,7 @@ struct ScreenshotCollectionViewTests {
                 isDeletionDisabled: state.isDeletionDisabled
             ),
             thumbnailProvider: provider,
-            actions: .init(activate: { _ in }, download: {}, delete: {})
+            actions: .init(activate: { _ in }, copy: copy, download: {}, delete: {})
         )
     }
 
@@ -339,6 +347,39 @@ struct ScreenshotCollectionViewTests {
 }
 
 extension ScreenshotCollectionViewTests {
+    @Test
+    func reconfiguredContextMenuUsesCurrentCopyAction() throws {
+        let item = ScreenshotCollectionViewItem()
+        let first = makeScreenshot()
+        let second = makeScreenshot()
+        var copiedIDs: [UUID] = []
+
+        let provider: ScreenshotCollectionViewItem.ThumbnailProvider = { _, _, _ in nil }
+        configure(
+            item,
+            screenshot: first,
+            copy: { copiedIDs.append(first.id) },
+            provider: provider
+        )
+        let openButton = try #require(
+            descendantViews(of: item.view)
+                .compactMap { $0 as? NSButton }
+                .first { $0.accessibilityLabel() == L10n.open }
+        )
+        let contextMenu = try #require(openButton.menu)
+        contextMenu.performActionForItem(at: 0)
+
+        configure(
+            item,
+            screenshot: second,
+            copy: { copiedIDs.append(second.id) },
+            provider: provider
+        )
+        contextMenu.performActionForItem(at: 0)
+
+        #expect(copiedIDs == [first.id, second.id])
+    }
+
     @Test
     func imageIdentityMatchesSharedBackingStorage() {
         var first = makeScreenshot()
