@@ -37,6 +37,32 @@ struct ScreenshotPasteboardWriterTests {
     }
 
     @Test
+    func newerPasteboardContentsArePreservedDuringValidation() async throws {
+        let pasteboard = makePasteboard()
+        let imageData = try #require(TestScreenshotImageFixture.data(using: .png))
+        let screenshot = makeScreenshot(data: imageData, mimeType: "image/png")
+        let validationGate = ValidationGate()
+
+        let copyTask = Task {
+            await ScreenshotPasteboardWriter.write(
+                screenshot,
+                to: pasteboard
+            ) { _ in
+                await validationGate.suspend()
+                return "image/png"
+            }
+        }
+        await validationGate.waitUntilStarted()
+        pasteboard.clearContents()
+        pasteboard.setString("new value", forType: .string)
+        await validationGate.release()
+
+        let didWrite = await copyTask.value
+        #expect(!didWrite)
+        #expect(pasteboard.string(forType: .string) == "new value")
+    }
+
+    @Test
     func corruptImageDataDoesNotReplaceExistingPasteboardContents() async {
         let pasteboard = makePasteboard()
         pasteboard.setString("keep me", forType: .string)
@@ -85,6 +111,34 @@ struct ScreenshotPasteboardWriterTests {
             imageData: data,
             mimeType: mimeType
         )
+    }
+}
+
+private actor ValidationGate {
+    private var isStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func suspend() async {
+        isStarted = true
+        let waiters = startWaiters
+        startWaiters = []
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard !isStarted else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }
 #endif
