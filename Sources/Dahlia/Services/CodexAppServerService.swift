@@ -418,6 +418,7 @@ actor CodexAppServerService {
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
+        config["skills.include_instructions"] = .bool(true)
         config["web_search"] = .string("live")
         return .object(config)
     }
