@@ -12,6 +12,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
     var duration: TimeInterval?
     var createdAt: Date
     var calendarEventTitle: String?
+    var searchMatchContext: MeetingSearchMatchContext?
 
     var id: UUID { meetingId }
 
@@ -24,7 +25,8 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         status: MeetingStatus,
         duration: TimeInterval?,
         createdAt: Date,
-        calendarEventTitle: String?
+        calendarEventTitle: String?,
+        searchMatchContext: MeetingSearchMatchContext? = nil
     ) {
         self.meetingId = meetingId
         self.vaultId = vaultId
@@ -35,6 +37,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         self.duration = duration
         self.createdAt = createdAt
         self.calendarEventTitle = calendarEventTitle
+        self.searchMatchContext = searchMatchContext
     }
 
     init(detail: MeetingDetailItem) {
@@ -61,6 +64,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         duration = row["duration"]
         createdAt = row["createdAt"]
         calendarEventTitle = row["calendarEventTitle"]
+        searchMatchContext = nil
     }
 }
 

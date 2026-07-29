@@ -59,6 +59,51 @@ import GRDB
             #expect(try await fixture.resultIDs(query: "verbatimneedle").isEmpty)
             #expect(try await fixture.resultIDs(query: "%_") == [expected.literal])
             #expect(try await fixture.resultIDs(query: "resume") == [expected.localized])
+            #expect(try await fixture.resultIDs(query: "Priority") == [expected.separatorTag])
+        }
+
+        @Test
+        func filtersByProjectHierarchyTagsAndDateBounds() async throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let startDate = Date(timeIntervalSince1970: 1_800_000_000)
+            let endDate = startDate.addingTimeInterval(86_400)
+            let values = try fixture.insertAdvancedSearchFixtures(
+                startDate: startDate,
+                endDate: endDate
+            )
+
+            let page = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: fixture.vault.id,
+                criteria: MeetingSearchCriteria(
+                    text: "Needle",
+                    projectIDs: [values.projectID],
+                    tagIDs: [values.tagID],
+                    startDate: startDate,
+                    endDate: endDate
+                ),
+                limit: 50,
+                dbQueue: fixture.manager.dbQueue
+            )
+
+            #expect(page.items.map(\.id) == [values.meetingID])
+            #expect(page.items.first?.searchMatchContext?.kind == .title)
+        }
+
+        @Test
+        func reportsTheMetadataThatMatchedFreeText() async throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            _ = try fixture.insertSearchFixtures()
+
+            let page = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: fixture.vault.id,
+                criteria: MeetingSearchCriteria(text: "budget"),
+                limit: 50,
+                dbQueue: fixture.manager.dbQueue
+            )
+
+            #expect(page.items.count == 1)
+            #expect(page.items.first?.searchMatchContext?.kind == .description)
+            #expect(page.items.first?.searchMatchContext?.text.contains("budget") == true)
         }
 
         @Test
@@ -169,6 +214,13 @@ import GRDB
                 try insertTranscriptOnlyMeeting(text: "verbatimneedle", in: db)
                 let literalID = try insertMeeting(name: "Status 100%_ready", in: db)
                 let localizedID = try insertMeeting(name: "Résumé review", in: db)
+                let separatorTagID = try insertMeeting(name: "Separator tag match", in: db)
+                try attachTag(
+                    name: "Special\u{1E}Priority\u{1F}Tag",
+                    colorHex: "#112233",
+                    to: separatorTagID,
+                    in: db
+                )
                 try insertOtherVaultTitleMeeting(vaultId: otherVault.id, in: db)
                 return SidebarSearchFixtureIDs(
                     title: titleID,
@@ -177,7 +229,8 @@ import GRDB
                     calendar: calendarID,
                     tag: tagID,
                     literal: literalID,
-                    localized: localizedID
+                    localized: localizedID,
+                    separatorTag: separatorTagID
                 )
             }
         }
@@ -205,6 +258,52 @@ import GRDB
                 ).insert(db)
                 try attachTag(name: "Planning", colorHex: "#123456", to: meetingID, in: db)
                 return meetingID
+            }
+        }
+
+        func insertAdvancedSearchFixtures(
+            startDate: Date,
+            endDate: Date
+        ) throws -> AdvancedSearchFixtureValues {
+            try manager.dbQueue.write { db in
+                let rootID = try insertProject(name: "Root", type: .customer, in: db)
+                let childID = try insertProject(name: "Child", parentID: rootID, in: db)
+                let otherID = try insertProject(name: "Other", type: .internal, in: db)
+                let planningTagID = try insertTag(name: "Planning", colorHex: "#123456", in: db)
+                let reviewTagID = try insertTag(name: "Review", colorHex: "#654321", in: db)
+                let included = try insertMeeting(
+                    name: "Needle included",
+                    projectId: childID,
+                    createdAt: startDate,
+                    in: db
+                )
+                let wrongTag = try insertMeeting(
+                    name: "Needle wrong tag",
+                    projectId: childID,
+                    createdAt: startDate.addingTimeInterval(1),
+                    in: db
+                )
+                let wrongProject = try insertMeeting(
+                    name: "Needle wrong project",
+                    projectId: otherID,
+                    createdAt: startDate.addingTimeInterval(2),
+                    in: db
+                )
+                let excludedEnd = try insertMeeting(
+                    name: "Needle excluded end",
+                    projectId: childID,
+                    createdAt: endDate,
+                    in: db
+                )
+                try attachTag(id: planningTagID, to: included, in: db)
+                try attachTag(id: reviewTagID, to: wrongTag, in: db)
+                try attachTag(id: planningTagID, to: wrongProject, in: db)
+                try attachTag(id: planningTagID, to: excludedEnd, in: db)
+                return AdvancedSearchFixtureValues(
+                    projectID: rootID,
+                    tagID: planningTagID,
+                    meetingID: included
+                )
             }
         }
 
@@ -260,6 +359,33 @@ import GRDB
             try root.insert(db)
             try child.insert(db)
             return child.id
+        }
+
+        private func insertProject(
+            name: String,
+            parentID: UUID? = nil,
+            type: ProjectType? = nil,
+            in db: Database
+        ) throws -> UUID {
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: vault.id,
+                parentProjectId: parentID,
+                name: name,
+                createdAt: .now,
+                projectType: type
+            )
+            try project.insert(db)
+            return project.id
+        }
+
+        private func insertTag(name: String, colorHex: String, in db: Database) throws -> Int64 {
+            try TagRecord(name: name, colorHex: colorHex, createdAt: .now).insert(db)
+            return db.lastInsertedRowID
+        }
+
+        private func attachTag(id: Int64, to meetingID: UUID, in db: Database) throws {
+            try MeetingTagRecord(meetingId: meetingID, tagId: id).insert(db)
         }
 
         private func insertCalendarEvent(
@@ -346,5 +472,12 @@ import GRDB
         let tag: UUID
         let literal: UUID
         let localized: UUID
+        let separatorTag: UUID
+    }
+
+    private struct AdvancedSearchFixtureValues {
+        let projectID: UUID
+        let tagID: Int64
+        let meetingID: UUID
     }
 #endif

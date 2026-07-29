@@ -331,6 +331,68 @@ import GRDB
     }
 
     @MainActor
+    struct SidebarViewModelMeetingSearchTests {
+        @Test(.timeLimit(.minutes(1)))
+        func searchesWithFiltersWithoutFreeTextAndClearsThemTogether() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer {
+                fixture.stop()
+            }
+            let boundary = Date(timeIntervalSince1970: 1_800_000_000)
+            let includedID = UUID.v7()
+            try await fixture.manager.dbQueue.write { db in
+                try MeetingRecord(
+                    id: includedID,
+                    vaultId: fixture.vault.id,
+                    projectId: nil,
+                    name: "Included",
+                    createdAt: boundary,
+                    updatedAt: boundary
+                ).insert(db)
+                try MeetingRecord(
+                    id: .v7(),
+                    vaultId: fixture.vault.id,
+                    projectId: nil,
+                    name: "Excluded",
+                    createdAt: boundary.addingTimeInterval(-1),
+                    updatedAt: boundary
+                ).insert(db)
+            }
+            let viewModel = fixture.makeViewModel()
+            defer {
+                viewModel.setAppDatabase(nil)
+            }
+            #expect(await waitUntil { viewModel.isMeetingListLoaded })
+
+            viewModel.updateMeetingSearchCriteria(MeetingSearchCriteria(startDate: boundary))
+
+            #expect(viewModel.isSearchingMeetings)
+            #expect(await waitUntil {
+                viewModel.isMeetingSearchLoaded && viewModel.meetingSearchItems.map(\.id) == [includedID]
+            })
+
+            viewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
+
+            #expect(!viewModel.isSearchingMeetings)
+            #expect(viewModel.displayedMeetingItems.count == 2)
+        }
+
+        private func waitUntil(
+            timeout: Duration = .seconds(5),
+            _ predicate: @MainActor () -> Bool
+        ) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now + timeout
+
+            while clock.now < deadline, !Task.isCancelled {
+                if predicate() { return true }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return predicate()
+        }
+    }
+
+    @MainActor
     private final class SidebarViewModelMeetingListFixture {
         let manager: AppDatabaseManager
         let vault: VaultRecord

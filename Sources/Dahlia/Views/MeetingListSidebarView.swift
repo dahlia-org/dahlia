@@ -8,6 +8,7 @@ struct MeetingListSidebarView: View {
     let recordingCoordinator: RecordingCoordinator
 
     @State private var searchText = ""
+    @State private var searchTokens: [MeetingSearchToken] = []
     @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
@@ -28,7 +29,7 @@ struct MeetingListSidebarView: View {
         VStack(spacing: 0) {
             List(selection: meetingSelection) {
                 if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
-                    Section(L10n.selectedMeeting) {
+                    Section(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting) {
                         meetingRow(selectedMeeting)
                     }
                 }
@@ -47,7 +48,10 @@ struct MeetingListSidebarView: View {
                     isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
                     hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
                     limitMessage: meetingListLimitMessage,
-                    loadTrigger: "meeting-page-\(sidebarViewModel.meetingSearchQuery)-\(sidebarViewModel.displayedMeetingItems.count)",
+                    loadTrigger: """
+                    meeting-page-\(sidebarViewModel.meetingSearchCriteria.identity)\
+                    -\(sidebarViewModel.displayedMeetingItems.count)
+                    """,
                     onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
                     onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
                 )
@@ -59,7 +63,8 @@ struct MeetingListSidebarView: View {
                     error: sidebarViewModel.displayedMeetingListLoadError,
                     isEmpty: sidebarViewModel.displayedMeetingItems.isEmpty,
                     isSearching: sidebarViewModel.isSearchingMeetings,
-                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading
+                    onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                    onClearSearch: clearSearch
                 )
             }
             .contextMenu(forSelectionType: UUID.self) { selection in
@@ -75,7 +80,11 @@ struct MeetingListSidebarView: View {
                 .padding(8)
             }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: L10n.searchMeetings)
+        .meetingSidebarSearch(
+            text: $searchText,
+            tokens: $searchTokens,
+            sidebarViewModel: sidebarViewModel
+        )
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
@@ -84,12 +93,6 @@ struct MeetingListSidebarView: View {
         }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { _, selection in
             renderedMeetingSelection = selection
-        }
-        .onChange(of: searchText) { _, query in
-            sidebarViewModel.updateMeetingSearchQuery(query)
-        }
-        .onChange(of: sidebarViewModel.currentVault?.id) {
-            searchText = ""
         }
         .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
@@ -106,6 +109,7 @@ struct MeetingListSidebarView: View {
     private func meetingRow(_ item: MeetingSidebarItem) -> some View {
         MeetingSidebarRow(
             item: item,
+            searchText: sidebarViewModel.meetingSearchCriteria.text,
             isSelected: renderedMeetingSelection.contains(item.meetingId),
             isActiveRecording: item.meetingId == viewModel.recordingMeetingId,
             isEditing: editingMeetingId == item.meetingId,
@@ -115,6 +119,12 @@ struct MeetingListSidebarView: View {
             onCancelRename: cancelRename
         )
         .tag(item.meetingId)
+    }
+
+    private func clearSearch() {
+        searchText = ""
+        searchTokens.removeAll()
+        sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
     }
 
     @ViewBuilder
@@ -651,6 +661,7 @@ private struct RecordingSourceControlLabel: View {
 
 private struct MeetingSidebarRow: View {
     let item: MeetingSidebarItem
+    let searchText: String
     let isSelected: Bool
     let isActiveRecording: Bool
     let isEditing: Bool
@@ -678,7 +689,7 @@ private struct MeetingSidebarRow: View {
                         .onSubmit(onCommitRename)
                         .onExitCommand(perform: onCancelRename)
                 } else {
-                    Text(displayTitle)
+                    highlightedText(displayTitle)
                         .lineLimit(1)
                 }
 
@@ -699,6 +710,10 @@ private struct MeetingSidebarRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+                if let matchContext = visibleMatchContext {
+                    searchMatchRow(matchContext)
+                }
             }
         }
         .padding(.vertical, 3)
@@ -744,6 +759,65 @@ private struct MeetingSidebarRow: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    private var visibleMatchContext: MeetingSearchMatchContext? {
+        guard !searchText.isEmpty,
+              let context = item.searchMatchContext,
+              context.kind != .title,
+              context.kind != .project else { return nil }
+        return context
+    }
+
+    private func searchMatchRow(_ context: MeetingSearchMatchContext) -> some View {
+        HStack(spacing: 5) {
+            if context.kind == .tag {
+                Circle()
+                    .fill(context.colorHex.map(Color.init(hex:)) ?? Color.secondary)
+                    .frame(width: 6, height: 6)
+            } else {
+                Image(systemName: context.kind == .calendar ? "calendar" : "text.alignleft")
+                    .frame(width: 8)
+            }
+
+            Text(matchContextPrefix(context.kind))
+                .foregroundStyle(.tertiary)
+            highlightedText(context.text)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func matchContextPrefix(_ kind: MeetingSearchMatchContext.Kind) -> String {
+        switch kind {
+        case .description:
+            L10n.descriptionMatch
+        case .calendar:
+            L10n.calendarMatch
+        case .tag:
+            L10n.tagMatch
+        case .project:
+            L10n.projectMatch
+        case .title:
+            ""
+        }
+    }
+
+    private func highlightedText(_ text: String) -> Text {
+        guard !searchText.isEmpty,
+              let range = text.range(
+                  of: searchText,
+                  options: [.caseInsensitive, .diacriticInsensitive],
+                  locale: .current
+              ) else {
+            return Text(text)
+        }
+        let prefix = Text(verbatim: String(text[..<range.lowerBound]))
+        let match = Text(verbatim: String(text[range])).bold().foregroundStyle(Color.accentColor)
+        let suffix = Text(verbatim: String(text[range.upperBound...]))
+        return Text("\(prefix)\(match)\(suffix)")
+    }
+
     private var accessibilityLabel: String {
         var components = [displayTitle]
         if isActiveRecording {
@@ -751,6 +825,11 @@ private struct MeetingSidebarRow: View {
         }
         if let calendarEventTitle = item.calendarEventTitle {
             components.append(L10n.calendarEventOrigin(calendarEventTitle.nilIfBlank ?? L10n.newMeeting))
+        }
+        if !searchText.isEmpty,
+           let matchContext = item.searchMatchContext,
+           matchContext.kind != .title {
+            components.append("\(matchContextPrefix(matchContext.kind)) \(matchContext.text)")
         }
         return components.joined(separator: ", ")
     }

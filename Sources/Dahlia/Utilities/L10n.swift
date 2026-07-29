@@ -736,6 +736,55 @@ enum L10n {
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var noMeetingsMatchFilter: String { String(localized: "No meetings match the current filter.", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
+    static var searchingMeetings: String { String(localized: "Searching…", bundle: bundle) }
+    static var noMeetingsMatchSearch: String { String(localized: "No meetings match your search", bundle: bundle) }
+    static var adjustMeetingSearch: String { String(
+        localized: "Try changing the keywords or filters.",
+        bundle: bundle
+    ) }
+    static func searchInputLimitReached(_ count: Int) -> String {
+        String(localized: "Search is limited to \(count) characters. Extra text was not entered.", bundle: bundle)
+    }
+
+    static var clearAllSearchConditions: String { String(localized: "Clear All", bundle: bundle) }
+    static var selectedMeetingOutsideResults: String { String(localized: "Selected (Outside Results)", bundle: bundle) }
+    static var period: String { String(localized: "Period", bundle: bundle) }
+    static var tag: String { String(localized: "Tag", bundle: bundle) }
+    static var projectsAnyMatch: String { String(localized: "Projects (match any)", bundle: bundle) }
+    static var tagsAnyMatch: String { String(localized: "Tags (match any)", bundle: bundle) }
+    static var includesSubprojects: String { String(localized: "Includes subprojects", bundle: bundle) }
+    static var noTagsYet: String { String(localized: "No tags yet", bundle: bundle) }
+    static var noMatchingTags: String { String(localized: "No matching tags", bundle: bundle) }
+    static var loadingTags: String { String(localized: "Loading Tags…", bundle: bundle) }
+    static var pastSevenDays: String { String(localized: "Past 7 days", bundle: bundle) }
+    static var pastThirtyDays: String { String(localized: "Past 30 days", bundle: bundle) }
+    static var customDateRange: String { String(localized: "Custom Range", bundle: bundle) }
+    static var startDate: String { String(localized: "Start Date", bundle: bundle) }
+    static var endDate: String { String(localized: "End Date", bundle: bundle) }
+    static var invalidDateRange: String { String(localized: "Start date must be on or before the end date.", bundle: bundle) }
+    static var unknownProject: String { String(localized: "Unknown Project", bundle: bundle) }
+    static var unknownTag: String { String(localized: "Unknown Tag", bundle: bundle) }
+    static var unknownProjectFilterHelp: String { String(
+        localized: "Unknown project. Select the filter and press Delete to remove it.",
+        bundle: bundle
+    ) }
+    static var unknownTagFilterHelp: String { String(
+        localized: "Unknown tag. Select the filter and press Delete to remove it.",
+        bundle: bundle
+    ) }
+    static var unknownProjectFilterAccessibilityLabel: String {
+        String(localized: "Unknown project filter", bundle: bundle)
+    }
+
+    static var unknownTagFilterAccessibilityLabel: String {
+        String(localized: "Unknown tag filter", bundle: bundle)
+    }
+
+    static var periodFilter: String { String(localized: "Period filter", bundle: bundle) }
+    static var descriptionMatch: String { String(localized: "Description:", bundle: bundle) }
+    static var calendarMatch: String { String(localized: "Event:", bundle: bundle) }
+    static var tagMatch: String { String(localized: "Tag:", bundle: bundle) }
+    static var projectMatch: String { String(localized: "Project:", bundle: bundle) }
     static var selectedMeeting: String { String(localized: "Selected Meeting", bundle: bundle) }
     static var loadingMeetings: String { String(localized: "Loading Meetings…", bundle: bundle) }
     static var loadingMoreMeetings: String { String(localized: "Loading More…", bundle: bundle) }
@@ -747,6 +796,42 @@ enum L10n {
         localized: "Create a meeting to start building your history.",
         bundle: bundle
     ) }
+
+    static func projectFilterHelp(_ projectName: String) -> String {
+        String(format: String(localized: "Project: %@ (includes subprojects)", bundle: bundle), projectName)
+    }
+
+    static func projectFilterAccessibilityLabel(_ projectName: String) -> String {
+        String(
+            format: String(localized: "Project filter, %@, includes subprojects", bundle: bundle),
+            projectName
+        )
+    }
+
+    static func tagFilterHelp(_ tagName: String) -> String {
+        String(format: String(localized: "Tag: %@", bundle: bundle), tagName)
+    }
+
+    static func tagFilterAccessibilityLabel(_ tagName: String) -> String {
+        String(format: String(localized: "Tag filter, %@", bundle: bundle), tagName)
+    }
+
+    static func periodFilterAccessibilityLabel(_ period: String) -> String {
+        String(format: String(localized: "Period filter, %@", bundle: bundle), period)
+    }
+
+    static func dateRange(_ startDate: String, _ endDate: String) -> String {
+        String(format: String(localized: "%@ – %@", bundle: bundle), startDate, endDate)
+    }
+
+    static func dateOnOrAfter(_ date: String) -> String {
+        String(format: String(localized: "On or after %@", bundle: bundle), date)
+    }
+
+    static func dateBefore(_ date: String) -> String {
+        String(format: String(localized: "Before %@", bundle: bundle), date)
+    }
+
     static var searchProjects: String { String(localized: "Search projects...", bundle: bundle) }
     static var moveToProject: String { String(localized: "Move to Project", bundle: bundle) }
     static var noMeetingSelected: String { String(localized: "No meeting selected", bundle: bundle) }

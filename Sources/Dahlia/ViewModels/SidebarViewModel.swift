@@ -22,6 +22,7 @@ final class SidebarViewModel {
 
     /// 現在の vault に属する全 project のフラット一覧。
     var flatProjects: [FlatProjectRow] = []
+    private(set) var areSearchProjectsLoaded = false
     /// SwiftUI の `List(selection:)` と直結するミーティング選択。
     var selectedMeetingIds: Set<UUID> = [] {
         didSet {
@@ -36,7 +37,7 @@ final class SidebarViewModel {
     var isMeetingListLoadingMore = false
     var meetingListLoadError: String?
     var hasMoreMeetings = false
-    var meetingSearchQuery = ""
+    var meetingSearchCriteria = MeetingSearchCriteria()
     var meetingSearchItems: [MeetingSidebarItem] = []
     var meetingSearchGroups: [MeetingDateGroup] = []
     var isMeetingSearchLoaded = true
@@ -56,6 +57,7 @@ final class SidebarViewModel {
     var allInstructions: [InstructionRecord] = []
     var allVaults: [VaultRecord] = []
     var allTags: [TagRecord] = []
+    private(set) var areSearchTagsLoaded = false
     private(set) var allAvailableTags: [TagInfo] = []
     var selectedInstruction: InstructionRecord?
     var lastError: String?
@@ -99,6 +101,8 @@ final class SidebarViewModel {
     @ObservationIgnored var meetingPageLoadGeneration = 0
     @ObservationIgnored var selectedMeetingObservationGeneration = 0
     @ObservationIgnored var meetingReferencesObservationGeneration = 0
+    @ObservationIgnored private var projectObservationGeneration = 0
+    @ObservationIgnored private var tagObservationGeneration = 0
 
     init(settings: AppSettings = .shared) {
         self.settings = settings
@@ -143,13 +147,14 @@ final class SidebarViewModel {
         vaultSyncService = nil
         fileWatcher = nil
         flatProjects.removeAll()
+        areSearchProjectsLoaded = false
         meetingSidebarItems.removeAll()
         meetingSidebarGroups.removeAll()
         isMeetingListLoaded = false
         isMeetingListLoadingMore = false
         meetingListLoadError = nil
         hasMoreMeetings = false
-        meetingSearchQuery = ""
+        meetingSearchCriteria = MeetingSearchCriteria()
         meetingSearchItems.removeAll()
         meetingSearchGroups.removeAll()
         isMeetingSearchLoaded = true
@@ -171,12 +176,15 @@ final class SidebarViewModel {
         meetingPageLoadGeneration &+= 1
         selectedMeetingObservationGeneration &+= 1
         meetingReferencesObservationGeneration &+= 1
+        projectObservationGeneration &+= 1
+        tagObservationGeneration &+= 1
         allProjectItems.removeAll()
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
         projectDescriptionDrafts.removeAll()
         allInstructions.removeAll()
         allTags.removeAll()
+        areSearchTagsLoaded = false
         allAvailableTags.removeAll()
         selectedInstruction = nil
         clearMeetingSelection()
@@ -252,35 +260,62 @@ final class SidebarViewModel {
     }
 
     private func startProjectObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
+        projectObservation?.cancel()
+        projectObservationGeneration &+= 1
+        let generation = projectObservationGeneration
+        areSearchProjectsLoaded = false
         let observation = ValueObservation.tracking { db in
             try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         }
         projectObservation = observation.start(
             in: dbQueue,
-            onError: { _ in },
+            onError: { [weak self] _ in
+                Task { @MainActor in
+                    guard let self,
+                          self.currentVault?.id == vaultId,
+                          self.projectObservationGeneration == generation else { return }
+                    self.areSearchProjectsLoaded = true
+                }
+            },
             onChange: { [weak self] records in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self,
+                          self.currentVault?.id == vaultId,
+                          self.projectObservationGeneration == generation else { return }
                     let rows = FlatProjectRow.buildRows(fromRecords: records)
-                    guard self.flatProjects != rows else { return }
-                    self.flatProjects = rows
+                    if self.flatProjects != rows {
+                        self.flatProjects = rows
+                    }
+                    self.areSearchProjectsLoaded = true
                 }
             }
         )
     }
 
     private func startTagsObservation(dbQueue: DatabaseQueue) {
+        allTagsObservation?.cancel()
+        tagObservationGeneration &+= 1
+        let generation = tagObservationGeneration
+        areSearchTagsLoaded = false
         let observation = ValueObservation.tracking { db in
             try TagRecord.order(Column("name").asc).fetchAll(db)
         }
         allTagsObservation = observation.start(
             in: dbQueue,
-            onError: { _ in },
+            onError: { [weak self] _ in
+                Task { @MainActor in
+                    guard let self,
+                          self.tagObservationGeneration == generation else { return }
+                    self.areSearchTagsLoaded = true
+                }
+            },
             onChange: { [weak self] tags in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self,
+                          self.tagObservationGeneration == generation else { return }
                     self.allTags = tags
                     self.allAvailableTags = tags.map { TagInfo(name: $0.name, colorHex: $0.colorHex) }
+                    self.areSearchTagsLoaded = true
                 }
             }
         )
