@@ -6,6 +6,11 @@ import OSLog
 
 let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
 
+private struct ProjectDescriptionDraft {
+    let description: String
+    let baseRevision: Int?
+}
+
 /// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
 @MainActor
@@ -80,7 +85,7 @@ final class SidebarViewModel {
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
-    @ObservationIgnored private var projectDescriptionDrafts: [UUID: String] = [:]
+    @ObservationIgnored private var projectDescriptionDrafts: [UUID: ProjectDescriptionDraft] = [:]
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
     @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
@@ -628,7 +633,7 @@ extension SidebarViewModel {
         guard let meetingRepository else { return .failed }
         do {
             guard try meetingRepository.fetchProject(id: id) != nil else {
-                projectDescriptionDrafts[id] = nil
+                clearProjectDescriptionDraft(id: id)
                 return .projectNotFound
             }
             let updated: Bool
@@ -647,30 +652,53 @@ extension SidebarViewModel {
                 )
             }
             guard updated else {
-                projectDescriptionDrafts[id] = nil
+                clearProjectDescriptionDraft(id: id)
                 return .projectNotFound
             }
-            projectDescriptionDrafts[id] = nil
+            clearProjectDescriptionDraft(id: id)
             return .saved
         } catch ProjectWorkspaceError.projectNotFound {
-            projectDescriptionDrafts[id] = nil
+            clearProjectDescriptionDraft(id: id)
             return .projectNotFound
         } catch let ProjectWorkspaceError.staleRevision(current) {
-            projectDescriptionDrafts[id] = description
+            stageProjectDescriptionDraft(
+                id: id,
+                description: description,
+                baseRevision: expectedRevision
+            )
             return .staleRevision(current: current)
         } catch {
-            projectDescriptionDrafts[id] = description
+            stageProjectDescriptionDraft(
+                id: id,
+                description: description,
+                baseRevision: expectedRevision
+            )
             lastError = error.localizedDescription
             return .failed
         }
     }
 
-    func stageProjectDescriptionDraft(id: UUID, description: String) {
-        projectDescriptionDrafts[id] = description
+    func stageProjectDescriptionDraft(
+        id: UUID,
+        description: String,
+        baseRevision: Int? = nil
+    ) {
+        projectDescriptionDrafts[id] = ProjectDescriptionDraft(
+            description: description,
+            baseRevision: baseRevision
+        )
+    }
+
+    func clearProjectDescriptionDraft(id: UUID) {
+        projectDescriptionDrafts[id] = nil
     }
 
     func projectDescriptionDraft(id: UUID) -> String? {
-        projectDescriptionDrafts[id]
+        projectDescriptionDrafts[id]?.description
+    }
+
+    func projectDescriptionDraftBaseRevision(id: UUID) -> Int? {
+        projectDescriptionDrafts[id]?.baseRevision
     }
 
     func projectDescription(id: UUID) -> String? {
