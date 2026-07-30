@@ -1173,6 +1173,13 @@
 "Overlap" = "重なり";
 "Your Speaking Pace" = "自分の発話速度";
 "Speaking Pace" = "発話ペース";
+"Speaking Pace Over Time" = "発話ペースの推移";
+"Pace Series" = "発話ペース系列";
+"Elapsed Time" = "経過時間";
+"No measurable speaking pace over time." = "発話ペースの推移を算出できません。";
+"Segments without measurable duration are excluded from the pace-over-time chart." = "時間を計測できないセグメントは、発話ペースの推移から除外しています。";
+"Calculated in %@-minute windows using merged speech intervals." = "間を埋めた発話区間を使い、%@分単位で算出しています。";
+"From %@ to %@: %@ chars/min" = "%@〜%@：%@文字/分";
 "Your Speaking Share" = "自分の発話比率";
 "Share of total source speaking time" = "音源別発話時間の合計に占める割合";
 "Conversation Occupancy" = "会話占有率";

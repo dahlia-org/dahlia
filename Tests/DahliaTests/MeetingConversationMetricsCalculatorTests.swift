@@ -178,8 +178,56 @@ import Foundation
             #expect(metrics.isTimelineCondensed)
             #expect(metrics.timelineIntervals.count <= MeetingConversationMetricsCalculator.maximumTimelineIntervalsPerLane * 2)
             #expect(metrics.overlapIntervals.count <= MeetingConversationMetricsCalculator.maximumTimelineIntervalsPerLane)
+            #expect(metrics.paceSamples.count <= MeetingConversationMetricsCalculator.maximumPaceSamplesPerSource * 2)
             #expect(metrics.overlapCount == intervalCount)
             #expect(metrics.overlapDuration == TimeInterval(intervalCount))
+        }
+
+        @Test
+        func speakingPaceSamplesUseMergedSpeechTimeAndBreakAcrossSilence() {
+            let session = makeSession(duration: 180)
+            let input = makeInput(
+                sessions: [session],
+                segments: [
+                    makeSegment(
+                        session: session,
+                        start: 0,
+                        end: 30,
+                        text: String(repeating: "あ", count: 60),
+                        source: .microphone
+                    ),
+                    makeSegment(
+                        session: session,
+                        start: 31,
+                        end: 60,
+                        text: String(repeating: "い", count: 60),
+                        source: .microphone
+                    ),
+                    makeSegment(
+                        session: session,
+                        start: 120,
+                        end: 150,
+                        text: String(repeating: "う", count: 30),
+                        source: .microphone
+                    ),
+                    makeSegment(
+                        session: session,
+                        start: 0,
+                        end: 60,
+                        text: String(repeating: "a", count: 60),
+                        source: .system
+                    ),
+                ]
+            )
+
+            let metrics = MeetingConversationMetricsCalculator.calculate(input: input, fingerprint: "pace")
+
+            #expect(metrics.paceBucketDuration == 60)
+            #expect(metrics.paceSamples == [
+                .init(source: .microphone, start: 0, end: 60, charactersPerMinute: 120, seriesIndex: 0),
+                .init(source: .microphone, start: 120, end: 180, charactersPerMinute: 60, seriesIndex: 1),
+                .init(source: .system, start: 0, end: 60, charactersPerMinute: 60, seriesIndex: 0),
+            ])
         }
 
         @Test

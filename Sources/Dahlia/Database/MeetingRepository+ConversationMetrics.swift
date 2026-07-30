@@ -182,6 +182,8 @@ extension MeetingRepository {
                 )
             },
             speechMergeGap: speechMergeGap,
+            paceSamples: timeline.paceSamples,
+            paceBucketDuration: timeline.paceBucketDuration,
             timelineIntervals: timeline.intervals,
             overlapIntervals: timeline.overlaps,
             overlapCount: timeline.overlapCount,

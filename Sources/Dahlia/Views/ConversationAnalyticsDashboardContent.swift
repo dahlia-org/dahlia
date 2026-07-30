@@ -18,6 +18,7 @@ struct ConversationAnalyticsDashboardContent: View {
                         ConversationAnalyticsPaceCard(metrics: metrics)
                     }
                 }
+                ConversationAnalyticsPaceTrendCard(metrics: metrics)
                 ConversationAnalyticsFlowCard(metrics: metrics)
                 ConversationAnalyticsNotesView(metrics: metrics)
             }

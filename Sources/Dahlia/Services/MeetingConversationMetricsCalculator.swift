@@ -3,7 +3,9 @@ import Foundation
 enum MeetingConversationMetricsCalculator {
     static let defaultSpeechMergeGap: TimeInterval = 1.5
     static let maximumTimelineIntervalsPerLane = 512
+    static let maximumPaceSamplesPerSource = 60
     private static let sources: [RecordingAudioSource] = [.microphone, .system]
+    private static let minimumPaceBucketDuration: TimeInterval = 60
 
     private struct Interval: Equatable {
         let start: TimeInterval
@@ -20,9 +22,15 @@ enum MeetingConversationMetricsCalculator {
 
     private struct SourceAccumulator {
         var intervals: [Interval] = []
+        var timedSegments: [TimedSegment] = []
         var normalizedCharacterCount = 0
         var segmentCount = 0
         var unmeasurableSegmentCount = 0
+    }
+
+    private struct TimedSegment {
+        let interval: Interval
+        let normalizedCharacterCount: Int
     }
 
     private struct Analysis {
@@ -38,11 +46,18 @@ enum MeetingConversationMetricsCalculator {
         let overlaps: [MeetingConversationMetrics.OverlapInterval]
         let overlapCount: Int
         let isCondensed: Bool
+        let paceSamples: [MeetingConversationMetrics.PaceSample]
+        let paceBucketDuration: TimeInterval
     }
 
     private struct DisplayIntervals {
         let intervals: [Interval]
         let isCondensed: Bool
+    }
+
+    private struct PaceProjection {
+        let samples: [MeetingConversationMetrics.PaceSample]
+        let bucketDuration: TimeInterval
     }
 
     static func calculate(
@@ -71,6 +86,8 @@ enum MeetingConversationMetricsCalculator {
                 mergedBySource: analysis.mergedBySource
             ),
             speechMergeGap: mergeGap,
+            paceSamples: timeline.paceSamples,
+            paceBucketDuration: timeline.paceBucketDuration,
             timelineIntervals: timeline.intervals,
             overlapIntervals: timeline.overlaps,
             overlapCount: timeline.overlapCount,
@@ -117,8 +134,9 @@ enum MeetingConversationMetricsCalculator {
         for segment in input.segments {
             guard let source = RecordingAudioSource(speakerLabel: segment.speakerLabel) else { continue }
             var accumulator = accumulators[source, default: SourceAccumulator()]
+            let characterCount = normalizedCharacterCount(segment.text)
             accumulator.segmentCount += 1
-            accumulator.normalizedCharacterCount += normalizedCharacterCount(segment.text)
+            accumulator.normalizedCharacterCount += characterCount
 
             if let interval = interval(
                 for: segment,
@@ -127,6 +145,10 @@ enum MeetingConversationMetricsCalculator {
                 legacyBaseOffset: knownTimelineEnd
             ) {
                 accumulator.intervals.append(interval)
+                accumulator.timedSegments.append(TimedSegment(
+                    interval: interval,
+                    normalizedCharacterCount: characterCount
+                ))
             } else {
                 accumulator.unmeasurableSegmentCount += 1
             }
@@ -183,11 +205,88 @@ enum MeetingConversationMetricsCalculator {
         let overlaps = overlapProjection.intervals.map {
             MeetingConversationMetrics.OverlapInterval(start: $0.start, end: $0.end)
         }
+        let pace = paceProjection(
+            analysis: analysis,
+            timelineDuration: timelineDuration
+        )
         return TimelineProjection(
             intervals: intervals,
             overlaps: overlaps,
             overlapCount: analysis.overlapIntervals.count,
-            isCondensed: isCondensed
+            isCondensed: isCondensed,
+            paceSamples: pace.samples,
+            paceBucketDuration: pace.bucketDuration
+        )
+    }
+
+    private static func paceProjection(
+        analysis: Analysis,
+        timelineDuration: TimeInterval
+    ) -> PaceProjection {
+        let bucketDuration = resolvedPaceBucketDuration(timelineDuration: timelineDuration)
+        guard timelineDuration.isFinite, timelineDuration > 0 else {
+            return PaceProjection(samples: [], bucketDuration: bucketDuration)
+        }
+        let bucketCount = min(
+            maximumPaceSamplesPerSource,
+            Int(ceil(timelineDuration / bucketDuration))
+        )
+        let samples = sources.flatMap { source in
+            paceSamples(
+                source: source,
+                accumulator: analysis.accumulators[source, default: SourceAccumulator()],
+                speechIntervals: analysis.mergedBySource[source] ?? [],
+                bucketDuration: bucketDuration,
+                bucketCount: bucketCount,
+                timelineDuration: timelineDuration
+            )
+        }
+        return PaceProjection(samples: samples, bucketDuration: bucketDuration)
+    }
+
+    private static func paceSamples(
+        source: RecordingAudioSource,
+        accumulator: SourceAccumulator,
+        speechIntervals: [Interval],
+        bucketDuration: TimeInterval,
+        bucketCount: Int,
+        timelineDuration: TimeInterval
+    ) -> [MeetingConversationMetrics.PaceSample] {
+        var seriesIndex = -1
+        var previousBucketHadSpeech = false
+        return (0 ..< bucketCount).compactMap { bucketIndex in
+            let start = Double(bucketIndex) * bucketDuration
+            let end = min(start + bucketDuration, timelineDuration)
+            let bucket = Interval(start: start, end: end)
+            let speechDuration = overlapDuration(of: speechIntervals, with: bucket)
+            guard speechDuration > 0 else {
+                previousBucketHadSpeech = false
+                return nil
+            }
+            if !previousBucketHadSpeech {
+                seriesIndex += 1
+            }
+            previousBucketHadSpeech = true
+            let characterCount = accumulator.timedSegments.reduce(0.0) { result, segment in
+                let durationInBucket = overlapDuration(of: segment.interval, with: bucket)
+                return result + Double(segment.normalizedCharacterCount) * durationInBucket / segment.interval.duration
+            }
+            return MeetingConversationMetrics.PaceSample(
+                source: source,
+                start: start,
+                end: end,
+                charactersPerMinute: characterCount / speechDuration * 60,
+                seriesIndex: seriesIndex
+            )
+        }
+    }
+
+    private static func resolvedPaceBucketDuration(timelineDuration: TimeInterval) -> TimeInterval {
+        guard timelineDuration.isFinite, timelineDuration > 0 else { return minimumPaceBucketDuration }
+        let desiredDuration = timelineDuration / Double(maximumPaceSamplesPerSource)
+        return max(
+            minimumPaceBucketDuration,
+            ceil(desiredDuration / minimumPaceBucketDuration) * minimumPaceBucketDuration
         )
     }
 
@@ -322,6 +421,22 @@ enum MeetingConversationMetricsCalculator {
 
     private static func duration(of intervals: [Interval]) -> TimeInterval {
         intervals.reduce(0) { $0 + $1.duration }
+    }
+
+    private static func overlapDuration(
+        of intervals: [Interval],
+        with target: Interval
+    ) -> TimeInterval {
+        intervals.reduce(0) { result, interval in
+            result + overlapDuration(of: interval, with: target)
+        }
+    }
+
+    private static func overlapDuration(
+        of interval: Interval,
+        with target: Interval
+    ) -> TimeInterval {
+        max(0, min(interval.end, target.end) - max(interval.start, target.start))
     }
 
     private static func intersections(_ lhs: [Interval], _ rhs: [Interval]) -> [Interval] {

@@ -2556,6 +2556,17 @@ enum L10n {
     static var conversationAnalyticsOverlap: String { String(localized: "Overlap", bundle: bundle) }
     static var conversationAnalyticsYourPace: String { String(localized: "Your Speaking Pace", bundle: bundle) }
     static var conversationAnalyticsSpeakingPace: String { String(localized: "Speaking Pace", bundle: bundle) }
+    static var conversationAnalyticsPaceTrend: String { String(localized: "Speaking Pace Over Time", bundle: bundle) }
+    static var conversationAnalyticsPaceSeries: String { String(localized: "Pace Series", bundle: bundle) }
+    static var conversationAnalyticsElapsedTime: String { String(localized: "Elapsed Time", bundle: bundle) }
+    static var conversationAnalyticsPaceTrendUnavailable: String { String(
+        localized: "No measurable speaking pace over time.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPaceTrendExcludesUnmeasurable: String { String(
+        localized: "Segments without measurable duration are excluded from the pace-over-time chart.",
+        bundle: bundle
+    ) }
     static var conversationAnalyticsSpeakingShare: String { String(localized: "Your Speaking Share", bundle: bundle) }
     static var conversationAnalyticsYourSpeakingShare: String { String(
         localized: "Share of total source speaking time",
@@ -2582,6 +2593,17 @@ enum L10n {
 
     static func conversationAnalyticsPeerPaceComparison(_ pace: String, _ ratio: String) -> String {
         String(localized: "Other side: \(pace) chars/min · You: \(ratio)×", bundle: bundle)
+    }
+
+    static func conversationAnalyticsPaceTrendDescription(_ minutes: String) -> String {
+        String(
+            localized: "Calculated in \(minutes)-minute windows using merged speech intervals.",
+            bundle: bundle
+        )
+    }
+
+    static func conversationAnalyticsPaceSampleValue(_ start: String, _ end: String, _ pace: String) -> String {
+        String(localized: "From \(start) to \(end): \(pace) chars/min", bundle: bundle)
     }
 
     static func conversationAnalyticsSourceFacts(_ characters: String, _ duration: String, _ segments: String) -> String {

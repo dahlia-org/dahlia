@@ -1,6 +1,26 @@
 import Foundation
 
 struct MeetingConversationMetrics: Equatable, Sendable {
+    struct PaceSample: Equatable, Identifiable, Sendable {
+        let source: RecordingAudioSource
+        let start: TimeInterval
+        let end: TimeInterval
+        let charactersPerMinute: Double
+        let seriesIndex: Int
+
+        var id: String {
+            "\(source.rawValue):\(start.bitPattern):\(end.bitPattern)"
+        }
+
+        var seriesID: String {
+            "\(source.rawValue):\(seriesIndex)"
+        }
+
+        var midpoint: TimeInterval {
+            start + (end - start) / 2
+        }
+    }
+
     struct TimelineInterval: Equatable, Identifiable, Sendable {
         let source: RecordingAudioSource
         let start: TimeInterval
@@ -45,6 +65,8 @@ struct MeetingConversationMetrics: Equatable, Sendable {
     let computedAt: Date
     let sources: [SourceMetrics]
     let speechMergeGap: TimeInterval
+    let paceSamples: [PaceSample]
+    let paceBucketDuration: TimeInterval
     let timelineIntervals: [TimelineInterval]
     let overlapIntervals: [OverlapInterval]
     let overlapCount: Int

@@ -1173,6 +1173,13 @@
 "Overlap" = "Overlap";
 "Your Speaking Pace" = "Your Speaking Pace";
 "Speaking Pace" = "Speaking Pace";
+"Speaking Pace Over Time" = "Speaking Pace Over Time";
+"Pace Series" = "Pace Series";
+"Elapsed Time" = "Elapsed Time";
+"No measurable speaking pace over time." = "No measurable speaking pace over time.";
+"Segments without measurable duration are excluded from the pace-over-time chart." = "Segments without measurable duration are excluded from the pace-over-time chart.";
+"Calculated in %@-minute windows using merged speech intervals." = "Calculated in %@-minute windows using merged speech intervals.";
+"From %@ to %@: %@ chars/min" = "From %@ to %@: %@ chars/min";
 "Your Speaking Share" = "Your Speaking Share";
 "Share of total source speaking time" = "Share of total source speaking time";
 "Conversation Occupancy" = "Conversation Occupancy";
