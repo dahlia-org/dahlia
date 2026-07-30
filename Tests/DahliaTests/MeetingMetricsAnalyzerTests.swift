@@ -6,17 +6,12 @@ import Foundation
 
     struct MeetingMetricsAnalyzerTests {
         @Test
-        func excludesUnconfirmedAndBlankSegments() {
+        func blankSegmentsAreExcluded() {
             let meetingId = UUID.v7()
-            let result = MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 2,
-                records: [
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 10, confirmed: false),
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 10, end: 20, text: " \n "),
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 20, end: 30),
-                ]
-            )
+            let result = analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 10, end: 20, text: " \n "),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 20, end: 30),
+            ])
             #expect(result?.confirmedSegmentCount == 1)
             #expect(result?.validSegmentCount == 1)
         }
@@ -24,15 +19,11 @@ import Foundation
         @Test
         func invalidDurationsRemainInCoverageOnly() {
             let meetingId = UUID.v7()
-            let result = MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 0,
-                records: [
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: nil, text: "abcd"),
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 2, end: 1, text: "ef"),
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 3, end: 4, text: "gh"),
-                ]
-            )
+            let result = analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: nil, text: "abcd"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 2, end: 1, text: "ef"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 3, end: 4, text: "gh"),
+            ])
             #expect(result?.confirmedSegmentCount == 3)
             #expect(result?.invalidDurationSegmentCount == 2)
             #expect(result?.validSegmentCount == 1)
@@ -44,64 +35,47 @@ import Foundation
         @Test
         func noValidSegmentsReturnsNil() {
             let meetingId = UUID.v7()
-            let result = MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 0,
-                records: [MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: nil)]
-            )
-            #expect(result == nil)
+            #expect(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: nil),
+            ]) == nil)
         }
 
         @Test
         func countsExtendedGraphemeClustersAndCJK() throws {
             let meetingId = UUID.v7()
-            let result = try #require(MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 0,
-                records: [
-                    MeetingMetricsTestSupport.record(
-                        meetingId: meetingId,
-                        start: 0,
-                        end: 60,
-                        text: "日 e\u{301} 👨‍👩‍👧‍👦"
-                    ),
-                ],
-            ))
+            let result = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(
+                    meetingId: meetingId,
+                    start: 0,
+                    end: 60,
+                    text: "日 e\u{301} 👨‍👩‍👧‍👦"
+                ),
+            ]))
             let row = try #require(result.source(.microphone))
             #expect(row.characterCount == 3)
             #expect(row.cjkCharacterCount == 1)
         }
 
         @Test
-        func cancellationStopsBeforeAnalysis() {
-            let meetingId = UUID.v7()
-            var checks = 0
-            let result = MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 0,
-                records: [MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 1)],
-                isCancelled: {
-                    checks += 1
-                    return true
-                }
-            )
-            #expect(result == nil)
-            #expect(checks == 1)
-        }
-
-        @Test
         func unknownLabelsAreCounted() {
             let meetingId = UUID.v7()
-            let result = MeetingMetricsAnalyzer.analyze(
-                meetingId: meetingId,
-                revision: 0,
-                records: [
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 1, text: "abc", speakerLabel: nil),
-                    MeetingMetricsTestSupport.record(meetingId: meetingId, start: 1, end: 2, text: "de", speakerLabel: "other"),
-                ]
-            )
+            let result = analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 1, text: "abc", speakerLabel: nil),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 1, end: 2, text: "de", speakerLabel: "other"),
+            ])
             #expect(result?.unknownSourceSegmentCount == 2)
             #expect(result?.unknownSourceCharacterCount == 5)
+        }
+
+        private func analyze(
+            meetingId: UUID,
+            records: [TranscriptSegmentRecord]
+        ) -> MeetingMetricsResult? {
+            var accumulator = MeetingMetricsAnalyzer.Accumulator(meetingId: meetingId, revision: 0)
+            for record in records {
+                accumulator.append(MeetingMetricsTestSupport.segment(record))
+            }
+            return accumulator.finish()
         }
     }
 #endif

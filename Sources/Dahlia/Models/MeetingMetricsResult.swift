@@ -30,6 +30,7 @@ struct MeetingMetricsResult: Sendable, Equatable {
     let validCharacterCount: Int
     let unknownSourceCharacterCount: Int
     let sourceRows: [MeetingSourceMetricsRow]
+    let isPartialAnalysis: Bool
 
     func source(_ source: MetricsSource) -> MeetingSourceMetricsRow? {
         sourceRows.first { $0.source == source }

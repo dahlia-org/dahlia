@@ -156,7 +156,7 @@ import GRDB
             )
             try await service.persist(.finalized(segment))
             let current = try currentRevision(meeting.id, database: database)
-            #expect(try MeetingMetricsPersistence.save(
+            #expect(try await MeetingMetricsPersistence.save(
                 makeResult(meetingId: meeting.id, revision: current),
                 dbQueue: database.dbQueue
             ) == .saved)
@@ -187,7 +187,7 @@ import GRDB
                 projectId: nil,
                 initialName: "New"
             )
-            #expect(try MeetingMetricsPersistence.save(
+            #expect(try await MeetingMetricsPersistence.save(
                 makeResult(meetingId: service.meetingId, revision: 0),
                 dbQueue: database.dbQueue
             ) == .saved)
@@ -254,17 +254,17 @@ import GRDB
         }
 
         @Test
-        func staleCompareAndSwapLeavesExistingRowsByteForByteUnchanged() throws {
+        func staleCompareAndSwapLeavesExistingRowsByteForByteUnchanged() async throws {
             let (database, _, meeting, _) = try MeetingMetricsTestSupport.database()
             let initial = makeResult(meetingId: meeting.id, revision: 0)
-            #expect(try MeetingMetricsPersistence.save(initial, dbQueue: database.dbQueue) == .saved)
+            #expect(try await MeetingMetricsPersistence.save(initial, dbQueue: database.dbQueue) == .saved)
             let before = try storedMetrics(meeting.id, database: database)
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 try MeetingTranscriptRevision.bump(meetingId: meeting.id, in: db)
             }
             let stale = makeResult(meetingId: meeting.id, revision: 0, conversationTalkSeconds: 999)
 
-            let outcome = try MeetingMetricsPersistence.save(stale, dbQueue: database.dbQueue)
+            let outcome = try await MeetingMetricsPersistence.save(stale, dbQueue: database.dbQueue)
             let after = try storedMetrics(meeting.id, database: database)
 
             #expect(outcome == .revisionChanged(1))
@@ -273,9 +273,9 @@ import GRDB
         }
 
         @Test
-        func successfulCompareAndSwapReplacesOldSourceRows() throws {
+        func successfulCompareAndSwapReplacesOldSourceRows() async throws {
             let (database, _, meeting, _) = try MeetingMetricsTestSupport.database()
-            #expect(try MeetingMetricsPersistence.save(
+            #expect(try await MeetingMetricsPersistence.save(
                 makeResult(meetingId: meeting.id, revision: 0),
                 dbQueue: database.dbQueue
             ) == .saved)
@@ -293,16 +293,28 @@ import GRDB
                 totalCharacterCount: 40,
                 validCharacterCount: 40,
                 unknownSourceCharacterCount: 0,
-                sourceRows: [sourceRow(meetingId: meeting.id, source: .microphone, seconds: 80, characters: 40)]
+                sourceRows: [sourceRow(meetingId: meeting.id, source: .microphone, seconds: 80, characters: 40)],
+                isPartialAnalysis: false
             )
 
-            #expect(try MeetingMetricsPersistence.save(replacement, dbQueue: database.dbQueue) == .saved)
+            #expect(try await MeetingMetricsPersistence.save(replacement, dbQueue: database.dbQueue) == .saved)
             let stored = try storedMetrics(meeting.id, database: database)
 
             #expect(stored.metric?.conversationTalkSeconds == 80)
             #expect(stored.sources.count == 1)
             #expect(stored.sources.first?.source == .microphone)
             #expect(stored.sources.first?.characterCount == 40)
+        }
+
+        @Test
+        func saveReturnsMeetingDeletedWhenParentDisappears() async throws {
+            let (database, _, meeting, _) = try MeetingMetricsTestSupport.database()
+            let result = makeResult(meetingId: meeting.id, revision: 0)
+            try await database.dbQueue.write { db in
+                _ = try MeetingRecord.deleteOne(db, key: meeting.id)
+            }
+
+            #expect(try await MeetingMetricsPersistence.save(result, dbQueue: database.dbQueue) == .meetingDeleted)
         }
 
         private func seedSegmentAndMetrics(in fixture: BatchAudioTestFixture) async throws {
@@ -313,7 +325,7 @@ import GRDB
                 end: 4
             )
             try await fixture.database.dbQueue.write { db in try record.insert(db) }
-            #expect(try MeetingMetricsPersistence.save(
+            #expect(try await MeetingMetricsPersistence.save(
                 makeResult(meetingId: fixture.meeting.id, revision: 0),
                 dbQueue: fixture.database.dbQueue
             ) == .saved)
@@ -375,7 +387,8 @@ import GRDB
                 sourceRows: [
                     sourceRow(meetingId: meetingId, source: .microphone, seconds: 99, characters: 360),
                     sourceRow(meetingId: meetingId, source: .system, seconds: 81, characters: 240),
-                ]
+                ],
+                isPartialAnalysis: false
             )
         }
 

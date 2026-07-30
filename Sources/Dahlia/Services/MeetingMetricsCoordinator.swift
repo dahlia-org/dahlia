@@ -8,6 +8,7 @@ final class MeetingMetricsCoordinator {
     enum Phase: Equatable {
         case idle
         case loading
+        case waitingForStableRevision
         case ready
         case empty
         case failed
@@ -22,10 +23,15 @@ final class MeetingMetricsCoordinator {
 
     private let dbQueue: DatabaseQueue
     private let analyze: @Sendable (UUID) async throws -> MeetingMetricsWorker.Outcome
+    private let observeRevisions: (@Sendable (UUID) async -> AsyncThrowingStream<Int64, Error>)?
+    private let waitForRevisionSettle: @Sendable () async throws -> Void
     private var analysisTask: Task<Void, Never>?
     private var observationTask: Task<Void, Never>?
+    private var settleTask: Task<Void, Never>?
     private var scope: UUID?
-    private var latestKnownRevision: Int64?
+    private var observedRevision: Int64?
+    private var completedRevision: Int64?
+    private var consecutiveRevisionChangeRetries = 0
     private var generation: UInt64 = 0
 
     private(set) var phase: Phase = .idle
@@ -38,19 +44,38 @@ final class MeetingMetricsCoordinator {
         analyze = { meetingId in
             try await worker.analyze(meetingId: meetingId)
         }
+        observeRevisions = nil
+        waitForRevisionSettle = {
+            try await Task.sleep(for: MeetingMetricsConstants.revisionSettleDelay)
+        }
     }
 
     init(
         dbQueue: DatabaseQueue,
-        analyze: @escaping @Sendable (UUID) async throws -> MeetingMetricsWorker.Outcome
+        analyze: @escaping @Sendable (UUID) async throws -> MeetingMetricsWorker.Outcome,
+        observeRevisions: (@Sendable (UUID) async -> AsyncThrowingStream<Int64, Error>)? = nil,
+        waitForRevisionSettle: @escaping @Sendable () async throws -> Void = {
+            try await Task.sleep(for: MeetingMetricsConstants.revisionSettleDelay)
+        }
     ) {
         self.dbQueue = dbQueue
         self.analyze = analyze
+        self.observeRevisions = observeRevisions
+        self.waitForRevisionSettle = waitForRevisionSettle
+    }
+
+    isolated deinit {
+        analysisTask?.cancel()
+        observationTask?.cancel()
+        settleTask?.cancel()
     }
 
     func activate(meetingId: UUID) {
         guard scope != meetingId else {
             startObservationIfNeeded(meetingId: meetingId)
+            if analysisTask == nil, settleTask == nil, phase == .loading {
+                scheduleAnalysis(meetingId: meetingId, resetRetryBudget: true)
+            }
             return
         }
         deactivate()
@@ -65,8 +90,12 @@ final class MeetingMetricsCoordinator {
         analysisTask = nil
         observationTask?.cancel()
         observationTask = nil
+        settleTask?.cancel()
+        settleTask = nil
         scope = nil
-        latestKnownRevision = nil
+        observedRevision = nil
+        completedRevision = nil
+        consecutiveRevisionChangeRetries = 0
         phase = .idle
         result = nil
         insights = nil
@@ -74,7 +103,8 @@ final class MeetingMetricsCoordinator {
 
     func retry() {
         guard let scope else { return }
-        scheduleAnalysis(meetingId: scope)
+        startObservationIfNeeded(meetingId: scope)
+        scheduleAnalysis(meetingId: scope, resetRetryBudget: true)
     }
 
     func localizedCards() -> [Card] {
@@ -111,33 +141,64 @@ final class MeetingMetricsCoordinator {
 
     private func startObservationIfNeeded(meetingId: UUID) {
         guard observationTask == nil else { return }
-        let observation = ValueObservation.tracking { db in
-            try MeetingTranscriptRevision.current(meetingId: meetingId, in: db)
-        }
-        observationTask = Task { [weak self, dbQueue] in
+        observationTask = Task { [weak self, dbQueue, observeRevisions] in
             do {
-                let values = observation
-                    .removeDuplicates()
-                    .values(in: dbQueue, bufferingPolicy: .bufferingNewest(1))
-                for try await revision in values {
-                    guard let self, self.scope == meetingId else { return }
-                    guard self.latestKnownRevision != revision else { continue }
-                    self.latestKnownRevision = revision
-                    self.scheduleAnalysis(meetingId: meetingId)
+                if let observeRevisions {
+                    let values = await observeRevisions(meetingId)
+                    for try await revision in values {
+                        guard let self, self.scope == meetingId else { return }
+                        self.receiveObservedRevision(revision, meetingId: meetingId)
+                    }
+                } else {
+                    let observation = ValueObservation.tracking { db in
+                        try MeetingTranscriptRevision.current(meetingId: meetingId, in: db)
+                    }
+                    let values = observation
+                        .removeDuplicates()
+                        .values(in: dbQueue, bufferingPolicy: .bufferingNewest(1))
+                    for try await revision in values {
+                        guard let self, self.scope == meetingId else { return }
+                        self.receiveObservedRevision(revision, meetingId: meetingId)
+                    }
                 }
+                guard let self, self.scope == meetingId else { return }
+                self.observationTask = nil
             } catch is CancellationError {
             } catch {
                 guard let self, self.scope == meetingId else { return }
+                self.observationTask = nil
+                self.analysisTask?.cancel()
+                self.analysisTask = nil
+                self.settleTask?.cancel()
+                self.settleTask = nil
+                self.result = nil
+                self.insights = nil
                 self.phase = .failed
                 ErrorReportingService.capture(error, context: ["source": "meetingMetricsObservation"])
             }
         }
     }
 
-    private func scheduleAnalysis(meetingId: UUID) {
+    private func receiveObservedRevision(_ revision: Int64, meetingId: UUID) {
+        guard observedRevision != revision else { return }
+        observedRevision = revision
+        guard completedRevision != revision else { return }
+        if completedRevision == nil, analysisTask == nil, settleTask == nil {
+            scheduleAnalysis(meetingId: meetingId, resetRetryBudget: true)
+        } else {
+            scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+        }
+    }
+
+    private func scheduleAnalysis(meetingId: UUID, resetRetryBudget: Bool) {
         generation &+= 1
         let expectedGeneration = generation
         analysisTask?.cancel()
+        settleTask?.cancel()
+        settleTask = nil
+        if resetRetryBudget {
+            consecutiveRevisionChangeRetries = 0
+        }
         phase = .loading
         analysisTask = Task { [weak self, analyze] in
             do {
@@ -154,8 +215,40 @@ final class MeetingMetricsCoordinator {
                       self.scope == meetingId,
                       self.generation == expectedGeneration else { return }
                 self.analysisTask = nil
+                self.result = nil
+                self.insights = nil
                 self.phase = .failed
                 ErrorReportingService.capture(error, context: ["source": "meetingMetrics"])
+            }
+        }
+    }
+
+    private func scheduleAfterRevisionSettles(meetingId: UUID, resetRetryBudget: Bool) {
+        generation &+= 1
+        let expectedGeneration = generation
+        analysisTask?.cancel()
+        analysisTask = nil
+        settleTask?.cancel()
+        phase = .waitingForStableRevision
+        settleTask = Task { [weak self, waitForRevisionSettle] in
+            do {
+                try await waitForRevisionSettle()
+                guard let self,
+                      !Task.isCancelled,
+                      self.scope == meetingId,
+                      self.generation == expectedGeneration else { return }
+                self.settleTask = nil
+                self.scheduleAnalysis(meetingId: meetingId, resetRetryBudget: resetRetryBudget)
+            } catch is CancellationError {
+            } catch {
+                guard let self,
+                      self.scope == meetingId,
+                      self.generation == expectedGeneration else { return }
+                self.settleTask = nil
+                self.result = nil
+                self.insights = nil
+                self.phase = .failed
+                ErrorReportingService.capture(error, context: ["source": "meetingMetricsSettle"])
             }
         }
     }
@@ -163,18 +256,36 @@ final class MeetingMetricsCoordinator {
     private func apply(_ outcome: MeetingMetricsWorker.Outcome, meetingId: UUID) {
         switch outcome {
         case let .saved(result, insights):
-            latestKnownRevision = result.transcriptRevision
+            completedRevision = result.transcriptRevision
+            observedRevision = max(observedRevision ?? result.transcriptRevision, result.transcriptRevision)
+            consecutiveRevisionChangeRetries = 0
             self.result = result
             self.insights = insights
             phase = .ready
+            if observedRevision != completedRevision {
+                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+            }
         case let .empty(revision):
-            latestKnownRevision = revision
+            completedRevision = revision
+            observedRevision = max(observedRevision ?? revision, revision)
+            consecutiveRevisionChangeRetries = 0
             result = nil
             insights = nil
             phase = .empty
+            if observedRevision != completedRevision {
+                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+            }
         case let .revisionChanged(revision):
-            latestKnownRevision = revision
-            scheduleAnalysis(meetingId: meetingId)
+            observedRevision = max(observedRevision ?? revision, revision)
+            result = nil
+            insights = nil
+            if consecutiveRevisionChangeRetries < MeetingMetricsConstants.maximumRevisionChangeRetries {
+                consecutiveRevisionChangeRetries += 1
+                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: false)
+            } else {
+                consecutiveRevisionChangeRetries = 0
+                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+            }
         }
     }
 

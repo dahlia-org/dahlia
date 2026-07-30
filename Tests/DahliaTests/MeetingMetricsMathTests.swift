@@ -6,110 +6,86 @@ import Foundation
 
     struct MeetingMetricsMathTests {
         @Test
-        func sourceUnionMergesOverlappingAndTouchingIntervals() {
-            #expect(MeetingMetricsMath.speakingSeconds([
-                MeetingMetricsTestSupport.interval(0, 10),
-                MeetingMetricsTestSupport.interval(5, 15),
-            ]) == 15)
-            #expect(MeetingMetricsMath.mergedIntervals([
-                MeetingMetricsTestSupport.interval(0, 10),
-                MeetingMetricsTestSupport.interval(10, 20),
-            ]).count == 1)
-        }
-
-        @Test
-        func overlapAndBalanceBoundaries() {
-            let adjacent = MeetingMetricsMath.overlapSeconds(
-                microphone: [MeetingMetricsTestSupport.interval(0, 50)],
-                system: [MeetingMetricsTestSupport.interval(50, 100)]
-            )
-            let partial = MeetingMetricsMath.overlapSeconds(
-                microphone: [MeetingMetricsTestSupport.interval(0, 50)],
-                system: [MeetingMetricsTestSupport.interval(40, 90)]
-            )
-            let complete = MeetingMetricsMath.overlapSeconds(
-                microphone: [MeetingMetricsTestSupport.interval(0, 50)],
-                system: [MeetingMetricsTestSupport.interval(0, 50)]
-            )
-            #expect(adjacent == 0)
-            #expect(partial == 10)
-            #expect(complete == 50)
-            #expect(50.0 / (50.0 + 50.0) == 0.5)
-        }
-
-        @Test
-        func sourceUnionPrecedesIntersection() {
-            let overlap = MeetingMetricsMath.overlapSeconds(
-                microphone: [
-                    MeetingMetricsTestSupport.interval(0, 10),
-                    MeetingMetricsTestSupport.interval(5, 15),
-                ],
-                system: [MeetingMetricsTestSupport.interval(7, 12)]
-            )
-            #expect(overlap == 5)
-        }
-
-        @Test
-        func twoPointerIntersectionAndEpisodeMinimum() {
-            let multiple = MeetingMetricsMath.overlapSeconds(
-                microphone: [
-                    MeetingMetricsTestSupport.interval(0, 5),
-                    MeetingMetricsTestSupport.interval(10, 15),
-                    MeetingMetricsTestSupport.interval(20, 25),
-                ],
-                system: [
-                    MeetingMetricsTestSupport.interval(3, 12),
-                    MeetingMetricsTestSupport.interval(22, 30),
-                ]
-            )
-            let exact = MeetingMetricsMath.overlapSeconds(
-                microphone: [MeetingMetricsTestSupport.interval(0, 1)],
-                system: [MeetingMetricsTestSupport.interval(0.5, 1)]
-            )
-            let short = MeetingMetricsMath.overlapSeconds(
-                microphone: [MeetingMetricsTestSupport.interval(0, 1)],
-                system: [MeetingMetricsTestSupport.interval(0.6, 1)]
-            )
-            let split = MeetingMetricsMath.overlapSeconds(
-                microphone: [
-                    MeetingMetricsTestSupport.interval(0, 0.6),
-                    MeetingMetricsTestSupport.interval(2, 2.4),
-                ],
-                system: [
-                    MeetingMetricsTestSupport.interval(0, 0.6),
-                    MeetingMetricsTestSupport.interval(2, 2.4),
-                ]
-            )
-            #expect(multiple == 7)
-            #expect(exact == 0.5)
-            #expect(short == 0)
-            #expect(abs(split - 0.6) < 0.000_001)
-        }
-
-        @Test
-        func turnGapUsesStrictGreaterThanBoundary() {
-            #expect(MeetingMetricsMath.turnCount([
-                MeetingMetricsTestSupport.interval(0, 1),
-                MeetingMetricsTestSupport.interval(3, 4),
-            ]) == 1)
-            #expect(MeetingMetricsMath.turnCount([
-                MeetingMetricsTestSupport.interval(0, 1),
-                MeetingMetricsTestSupport.interval(3.1, 4),
-            ]) == 2)
-        }
-
-        @Test
-        func unknownContributesOnlyToConversationUnion() {
+        func shippingSweepMergesSameSourceAndProducesOverlap() throws {
             let meetingId = UUID.v7()
-            let records = [
+            let result = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 100, speakerLabel: "mic"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 50, end: 150, speakerLabel: "mic"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 70, end: 140, speakerLabel: "system"),
+            ]))
+
+            #expect(result.source(.microphone)?.speakingSeconds == 150)
+            #expect(result.source(.system)?.speakingSeconds == 70)
+            #expect(result.conversationTalkSeconds == 150)
+            #expect(result.overlapSeconds == 70)
+            #expect(result.sourceComparisonGatePassed)
+            #expect(result.talkBalance == 150.0 / 220.0)
+        }
+
+        @Test
+        func overlapEpisodeMinimumUsesShippingFinalFlush() throws {
+            let meetingId = UUID.v7()
+            let result = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 100, speakerLabel: "mic"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 0.4, speakerLabel: "system"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 40, end: 100, speakerLabel: "system"),
+            ]))
+
+            #expect(result.overlapSeconds == 60)
+            #expect(result.conversationTalkSeconds == 100)
+        }
+
+        @Test
+        func outOfOrderInputHitsTimelineEarlyReturn() throws {
+            let meetingId = UUID.v7()
+            let result = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 10, end: 20, speakerLabel: "mic"),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 5, speakerLabel: "mic"),
+            ]))
+
+            #expect(result.conversationTalkSeconds == 10)
+            #expect(result.source(.microphone)?.speakingSeconds == 10)
+        }
+
+        @Test
+        func turnGapUsesStrictGreaterThanBoundary() throws {
+            let meetingId = UUID.v7()
+            let boundary = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 1),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 3, end: 4),
+            ]))
+            let beyond = try #require(analyze(meetingId: meetingId, records: [
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 1),
+                MeetingMetricsTestSupport.record(meetingId: meetingId, start: 3.1, end: 4),
+            ]))
+
+            #expect(boundary.source(.microphone)?.turnCount == 1)
+            #expect(beyond.source(.microphone)?.turnCount == 2)
+        }
+
+        @Test
+        func unknownContributesOnlyToConversationUnion() throws {
+            let meetingId = UUID.v7()
+            let result = try #require(analyze(meetingId: meetingId, records: [
                 MeetingMetricsTestSupport.record(meetingId: meetingId, start: 0, end: 100, speakerLabel: "mic"),
                 MeetingMetricsTestSupport.record(meetingId: meetingId, start: 100, end: 200, speakerLabel: "system"),
                 MeetingMetricsTestSupport.record(meetingId: meetingId, start: 200, end: 300, speakerLabel: nil),
-            ]
-            let result = MeetingMetricsAnalyzer.analyze(meetingId: meetingId, revision: 0, records: records)
-            #expect(result?.conversationTalkSeconds == 300)
-            #expect(result?.talkBalance == 0.5)
-            #expect(result?.unknownSourceSegmentCount == 1)
+            ]))
+
+            #expect(result.conversationTalkSeconds == 300)
+            #expect(result.talkBalance == 0.5)
+            #expect(result.source(.unknown)?.speakingSeconds == 100)
+        }
+
+        private func analyze(
+            meetingId: UUID,
+            records: [TranscriptSegmentRecord]
+        ) -> MeetingMetricsResult? {
+            var accumulator = MeetingMetricsAnalyzer.Accumulator(meetingId: meetingId, revision: 0)
+            for record in records {
+                accumulator.append(MeetingMetricsTestSupport.segment(record))
+            }
+            return accumulator.finish()
         }
     }
 #endif

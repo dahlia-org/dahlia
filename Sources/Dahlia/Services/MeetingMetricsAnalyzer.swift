@@ -1,22 +1,13 @@
 import Foundation
+import GRDB
 
 enum MeetingMetricsAnalyzer {
-    static func analyze(
-        meetingId: UUID,
-        revision: Int64,
-        records: [TranscriptSegmentRecord],
-        isCancelled: () -> Bool = { false }
-    ) -> MeetingMetricsResult? {
-        guard !isCancelled() else { return nil }
-        var accumulator = Accumulator(meetingId: meetingId, revision: revision)
-        for (index, record) in records.enumerated() {
-            if index.isMultiple(of: MeetingMetricsConstants.cancellationCheckSegmentStride), isCancelled() {
-                return nil
-            }
-            accumulator.append(record)
-        }
-        guard !isCancelled() else { return nil }
-        return accumulator.finish()
+    struct Segment: Decodable, FetchableRecord, Sendable {
+        let id: UUID
+        let startTime: Date
+        let endTime: Date?
+        let text: String
+        let speakerLabel: String?
     }
 
     struct Accumulator {
@@ -31,6 +22,7 @@ enum MeetingMetricsAnalyzer {
 
         private let meetingId: UUID
         private let revision: Int64
+        private var isPartialAnalysis = false
         private var sourceStates: [MetricsSource: SourceState] = [:]
         private var timelineCursor: Date?
         private var conversationTalkSeconds = 0.0
@@ -49,8 +41,7 @@ enum MeetingMetricsAnalyzer {
             self.revision = revision
         }
 
-        mutating func append(_ record: TranscriptSegmentRecord) {
-            guard record.isConfirmed else { return }
+        mutating func append(_ record: Segment) {
             let characters = record.text.filter { !$0.isWhitespace }
             guard !characters.isEmpty else { return }
             confirmedSegmentCount += 1
@@ -90,6 +81,10 @@ enum MeetingMetricsAnalyzer {
                 state.currentTurnEnd = end
             }
             sourceStates[source] = state
+        }
+
+        mutating func markPartialAnalysis() {
+            isPartialAnalysis = true
         }
 
         mutating func finish() -> MeetingMetricsResult? {
@@ -134,7 +129,8 @@ enum MeetingMetricsAnalyzer {
                 totalCharacterCount: totalCharacterCount,
                 validCharacterCount: validCharacterCount,
                 unknownSourceCharacterCount: unknownSourceCharacterCount,
-                sourceRows: rows
+                sourceRows: rows,
+                isPartialAnalysis: isPartialAnalysis
             )
         }
 

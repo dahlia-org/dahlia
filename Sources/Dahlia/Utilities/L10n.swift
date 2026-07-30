@@ -2549,4 +2549,12 @@ enum L10n {
         localized: "Meeting metrics could not be loaded.",
         bundle: bundle
     ) }
+    static var meetingMetricsWaitingForStableRevision: String { String(
+        localized: "Metrics will update after the transcript stops changing.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsPartialAnalysis: String { String(
+        localized: "This is a partial analysis of the first part of a long transcript.",
+        bundle: bundle
+    ) }
 }

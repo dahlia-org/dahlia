@@ -120,7 +120,7 @@ import GRDB
         }
 
         @Test
-        func nullableValuesAndCascadeDeletionArePreserved() throws {
+        func nullableValuesAndCascadeDeletionArePreserved() async throws {
             let (database, _, meeting, _) = try MeetingMetricsTestSupport.database()
             let result = MeetingMetricsTestSupport.result(overlapSeconds: nil, talkBalance: nil)
             let persisted = MeetingMetricsResult(
@@ -148,9 +148,10 @@ import GRDB
                         charactersPerMinute: nil
                     ),
                 ],
+                isPartialAnalysis: false
             )
-            _ = try MeetingMetricsPersistence.save(persisted, dbQueue: database.dbQueue)
-            let nullable = try database.dbQueue.read { db in
+            _ = try await MeetingMetricsPersistence.save(persisted, dbQueue: database.dbQueue)
+            let nullable = try await database.dbQueue.read { db in
                 (
                     try MeetingMetricsRecord.fetchOne(db, key: meeting.id),
                     try MeetingSourceMetricsRecord.fetchAll(db).first
@@ -160,10 +161,10 @@ import GRDB
             #expect(nullable.0?.talkBalance == nil)
             #expect(nullable.1?.charactersPerMinute == nil)
 
-            try database.dbQueue.write { db in
+            try await database.dbQueue.write { db in
                 _ = try MeetingRecord.deleteOne(db, key: meeting.id)
             }
-            let counts = try database.dbQueue.read { db in
+            let counts = try await database.dbQueue.read { db in
                 try (MeetingMetricsRecord.fetchCount(db), MeetingSourceMetricsRecord.fetchCount(db))
             }
             #expect(counts.0 == 0)

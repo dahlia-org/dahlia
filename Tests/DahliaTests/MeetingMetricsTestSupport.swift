@@ -8,13 +8,6 @@ import GRDB
     enum MeetingMetricsTestSupport {
         static let baseDate = Date(timeIntervalSince1970: 1_776_384_000)
 
-        static func interval(_ start: Double, _ end: Double) -> MeetingMetricsMath.Interval {
-            MeetingMetricsMath.Interval(
-                start: baseDate.addingTimeInterval(start),
-                end: baseDate.addingTimeInterval(end)
-            )
-        }
-
         static func record(
             meetingId: UUID = .v7(),
             sessionId: UUID? = nil,
@@ -108,7 +101,18 @@ import GRDB
                 totalCharacterCount: totalCharacterCount,
                 validCharacterCount: validCharacterCount,
                 unknownSourceCharacterCount: unknownSourceCharacterCount,
-                sourceRows: [microphone, system].compactMap { $0 }
+                sourceRows: [microphone, system].compactMap { $0 },
+                isPartialAnalysis: false
+            )
+        }
+
+        static func segment(_ record: TranscriptSegmentRecord) -> MeetingMetricsAnalyzer.Segment {
+            MeetingMetricsAnalyzer.Segment(
+                id: record.id,
+                startTime: record.startTime,
+                endTime: record.endTime,
+                text: record.text,
+                speakerLabel: record.speakerLabel
             )
         }
 

@@ -1146,3 +1146,5 @@
 "%@ characters per minute" = "%@ characters per minute";
 "Simultaneous-source time" = "Simultaneous-source time";
 "Meeting metrics could not be loaded." = "Meeting metrics could not be loaded.";
+"Metrics will update after the transcript stops changing." = "Metrics will update after the transcript stops changing.";
+"This is a partial analysis of the first part of a long transcript." = "This is a partial analysis of the first part of a long transcript.";

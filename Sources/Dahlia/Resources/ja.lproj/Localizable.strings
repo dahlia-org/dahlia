@@ -1146,3 +1146,5 @@
 "%@ characters per minute" = "%@ 文字/分";
 "Simultaneous-source time" = "同時発話時間";
 "Meeting metrics could not be loaded." = "ミーティング指標を読み込めませんでした。";
+"Metrics will update after the transcript stops changing." = "文字起こしの更新が落ち着いた後に指標を更新します。";
+"This is a partial analysis of the first part of a long transcript." = "長い文字起こしの先頭部分だけを対象にした部分的な分析です。";

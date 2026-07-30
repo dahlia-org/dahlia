@@ -14,7 +14,7 @@ struct MeetingMetricsTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 stateContent
-                if let result = coordinator.result {
+                if let result = Self.breakdownResult(phase: coordinator.phase, result: coordinator.result) {
                     breakdown(result)
                 }
                 caveats
@@ -36,6 +36,8 @@ struct MeetingMetricsTabView: View {
         case .idle, .loading:
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 120)
+        case .waitingForStableRevision:
+            unavailable(L10n.meetingMetricsWaitingForStableRevision)
         case .empty:
             unavailable(L10n.meetingMetricsInsufficientTranscript)
         case .failed:
@@ -49,8 +51,22 @@ struct MeetingMetricsTabView: View {
             }
             .padding(12)
         case .ready:
-            readyContent
+            VStack(alignment: .leading, spacing: 12) {
+                if coordinator.result?.isPartialAnalysis == true {
+                    Label(L10n.meetingMetricsPartialAnalysis, systemImage: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                readyContent
+            }
         }
+    }
+
+    static func breakdownResult(
+        phase: MeetingMetricsCoordinator.Phase,
+        result: MeetingMetricsResult?
+    ) -> MeetingMetricsResult? {
+        phase == .ready ? result : nil
     }
 
     @ViewBuilder

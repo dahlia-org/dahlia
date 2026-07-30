@@ -17,4 +17,8 @@ enum MeetingMetricsConstants {
     static let micPaceMinimumSpeakingSeconds = 120.0
     static let micPaceMinimumTurnCount = 3
     static let cancellationCheckSegmentStride = 500
+    static let maximumAnalyzedSegmentCount = 5000
+    static let segmentReadChunkSize = 500
+    static let maximumRevisionChangeRetries = 2
+    static let revisionSettleDelay: Duration = .milliseconds(500)
 }

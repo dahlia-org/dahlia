@@ -22,3 +22,15 @@ struct MeetingSourceMetricsRecord: Codable, FetchableRecord, PersistableRecord, 
         charactersPerMinute = row.charactersPerMinute
     }
 }
+
+extension MeetingSourceMetricsRow {
+    init(_ record: MeetingSourceMetricsRecord) {
+        meetingId = record.meetingId
+        source = record.source
+        speakingSeconds = record.speakingSeconds
+        characterCount = record.characterCount
+        cjkCharacterCount = record.cjkCharacterCount
+        turnCount = record.turnCount
+        charactersPerMinute = record.charactersPerMinute
+    }
+}

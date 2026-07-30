@@ -34,3 +34,27 @@ struct MeetingMetricsRecord: Codable, FetchableRecord, PersistableRecord, Equata
         unknownSourceCharacterCount = result.unknownSourceCharacterCount
     }
 }
+
+extension MeetingMetricsResult {
+    init(
+        _ record: MeetingMetricsRecord,
+        sourceRows: [MeetingSourceMetricsRow],
+        isPartialAnalysis: Bool
+    ) {
+        meetingId = record.meetingId
+        metricsVersion = record.metricsVersion
+        transcriptRevision = record.transcriptRevision
+        conversationTalkSeconds = record.conversationTalkSeconds
+        overlapSeconds = record.overlapSeconds
+        talkBalance = record.talkBalance
+        confirmedSegmentCount = record.confirmedSegmentCount
+        validSegmentCount = record.validSegmentCount
+        invalidDurationSegmentCount = record.invalidDurationSegmentCount
+        unknownSourceSegmentCount = record.unknownSourceSegmentCount
+        totalCharacterCount = record.totalCharacterCount
+        validCharacterCount = record.validCharacterCount
+        unknownSourceCharacterCount = record.unknownSourceCharacterCount
+        self.sourceRows = sourceRows
+        self.isPartialAnalysis = isPartialAnalysis
+    }
+}

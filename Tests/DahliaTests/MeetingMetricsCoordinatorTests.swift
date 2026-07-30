@@ -310,7 +310,8 @@ import os
                 totalCharacterCount: 2,
                 validCharacterCount: 2,
                 unknownSourceCharacterCount: 0,
-                sourceRows: []
+                sourceRows: [],
+                isPartialAnalysis: false
             )
         }
 
