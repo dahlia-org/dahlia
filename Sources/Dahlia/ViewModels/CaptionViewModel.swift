@@ -2434,6 +2434,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func retryFailedPersistenceIfNeeded() async -> Bool {
         guard let failedPersistenceService else { return true }
+        let meetingId = failedPersistenceService.meetingId
         let result = await failedPersistenceService.stop()
         guard result.succeeded else {
             errorMessage = result.failureMessage
@@ -2443,7 +2444,7 @@ final class CaptionViewModel: ObservableObject {
         self.failedPersistenceService = nil
         failedPersistenceMeetingId = nil
         failedTranscriptionEventPipeline = nil
-        conversationMetricsStore.invalidate(meetingId: failedPersistenceService.meetingId)
+        conversationMetricsStore.invalidate(meetingId: meetingId)
         return true
     }
 
@@ -2453,6 +2454,7 @@ final class CaptionViewModel: ObservableObject {
             return await summaryPersistenceRecoveryTask.value
         }
         guard let failedPersistenceService else { return nil }
+        let meetingId = failedPersistenceService.meetingId
         let failedTranscriptionEventPipeline = failedTranscriptionEventPipeline
         let recoveryTask = Task { () -> String? in
             let result = await failedPersistenceService.stop()
@@ -2469,7 +2471,7 @@ final class CaptionViewModel: ObservableObject {
             self.failedPersistenceService = nil
             failedPersistenceMeetingId = nil
             self.failedTranscriptionEventPipeline = nil
-            conversationMetricsStore.invalidate(meetingId: failedPersistenceService.meetingId)
+            conversationMetricsStore.invalidate(meetingId: meetingId)
         }
         return failureMessage
     }
