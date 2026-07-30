@@ -10,6 +10,7 @@ struct MenuBarLabel: View {
     var body: some View {
         let agenda = calendarViewModel.agenda
         let calendarText = settings.menuBarCalendarEnabled
+            && (agenda.featuredEvent != nil || calendarViewModel.allEnabledSourcesAreLoaded)
             ? agenda.labelText(
                 showsTitle: settings.menuBarCalendarShowsEventTitle,
                 showsCountdown: settings.menuBarCalendarShowsCountdown,
