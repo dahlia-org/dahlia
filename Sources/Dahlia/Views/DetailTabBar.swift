@@ -3,10 +3,10 @@ import SwiftUI
 private extension DetailTab {
     var keyboardShortcut: KeyEquivalent {
         switch self {
-        case .notes: "1"
-        case .screenshots: "2"
-        case .transcript: "3"
-        case .summary: "4"
+        case .summary: "1"
+        case .notes: "2"
+        case .screenshots: "3"
+        case .transcript: "4"
         case .conversationAnalytics: "5"
         }
     }

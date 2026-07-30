@@ -70,7 +70,7 @@
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
-            #expect(DetailTab.allCases == [.notes, .screenshots, .transcript, .summary, .conversationAnalytics])
+            #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
         }
 
         @Test

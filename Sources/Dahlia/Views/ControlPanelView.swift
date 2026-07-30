@@ -9,10 +9,10 @@ private enum NotesEditorLayout {
 
 /// メイン領域のタブ種別。
 enum DetailTab: String, CaseIterable, Identifiable {
+    case summary
     case notes
     case screenshots
     case transcript
-    case summary
     case conversationAnalytics
 
     var id: String { rawValue }
