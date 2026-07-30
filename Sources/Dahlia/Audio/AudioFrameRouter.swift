@@ -11,11 +11,13 @@ final class AudioFrameRouter: Sendable {
     private struct Consumers {
         let batch: BatchConsumer?
         let liveWorker: LiveAudioFrameWorker?
+        let meteringWorker: AudioLevelMeteringWorker?
     }
 
     private struct State {
         var batchConsumer: BatchConsumer?
         var liveWorker: LiveAudioFrameWorker?
+        var meteringWorker: AudioLevelMeteringWorker?
         var liveFailureHandler: LiveFailureHandler?
         var liveGeneration: UInt64 = 0
         var inFlightRouteCount = 0
@@ -28,6 +30,15 @@ final class AudioFrameRouter: Sendable {
 
     func setBatchConsumer(_ consumer: BatchConsumer?) {
         state.withLock { $0.batchConsumer = consumer }
+    }
+
+    func setMeteringWorker(_ worker: AudioLevelMeteringWorker?) {
+        let previousWorker = state.withLock { state in
+            let previousWorker = state.meteringWorker
+            state.meteringWorker = worker
+            return previousWorker
+        }
+        previousWorker?.cancel()
     }
 
     func setLiveConsumer(
@@ -58,12 +69,18 @@ final class AudioFrameRouter: Sendable {
     }
 
     func removeAllConsumers() {
-        let workersToFinish = state.withLock { state -> [LiveAudioFrameWorker] in
+        let result = state.withLock { state -> (
+            liveWorkers: [LiveAudioFrameWorker],
+            meteringWorker: AudioLevelMeteringWorker?
+        ) in
             state.batchConsumer = nil
             state.liveGeneration &+= 1
-            return retireCurrentLiveWorker(state: &state)
+            let meteringWorker = state.meteringWorker
+            state.meteringWorker = nil
+            return (retireCurrentLiveWorker(state: &state), meteringWorker)
         }
-        workersToFinish.forEach { $0.finish() }
+        result.meteringWorker?.cancel()
+        result.liveWorkers.forEach { $0.finish() }
     }
 
     func removeLiveConsumerAndWait() async {
@@ -94,14 +111,21 @@ final class AudioFrameRouter: Sendable {
 
     func route(_ chunk: CapturedAudioChunk) {
         guard let consumers: Consumers = state.withLock({ state in
-            guard state.batchConsumer != nil || state.liveWorker != nil else { return nil }
+            guard state.batchConsumer != nil ||
+                state.liveWorker != nil ||
+                state.meteringWorker != nil else { return nil }
             state.inFlightRouteCount += 1
-            return Consumers(batch: state.batchConsumer, liveWorker: state.liveWorker)
+            return Consumers(
+                batch: state.batchConsumer,
+                liveWorker: state.liveWorker,
+                meteringWorker: state.meteringWorker
+            )
         }) else { return }
         defer { finishRoute() }
 
         consumers.batch?(chunk)
         consumers.liveWorker?.enqueue(chunk)
+        consumers.meteringWorker?.enqueue(chunk)
     }
 
     private func liveWorkerFailed(generation: UInt64) {

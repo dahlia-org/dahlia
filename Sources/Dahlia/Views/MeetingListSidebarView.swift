@@ -355,6 +355,9 @@ private struct RecordingStatusBar: View {
             title: L10n.mic,
             displayValue: selectedMicrophoneDisplayName,
             systemImage: "mic.fill",
+            audioLevelStore: viewModel.recordingAudioLevelStore,
+            inputSource: .microphone,
+            isInputActive: viewModel.isRecordingAudioSourceActive(.microphone),
             selection: $viewModel.microphoneSelection,
             items: microphoneMenuItems
         ) { oldValue, newValue in
@@ -388,6 +391,9 @@ private struct RecordingStatusBar: View {
             title: L10n.system,
             displayValue: viewModel.isSystemAudioEnabled ? L10n.record : L10n.none,
             systemImage: "speaker.wave.2.fill",
+            audioLevelStore: viewModel.recordingAudioLevelStore,
+            inputSource: .system,
+            isInputActive: viewModel.isRecordingAudioSourceActive(.system),
             selection: $viewModel.isSystemAudioEnabled,
             items: [
                 .option(title: L10n.noComputerAudio, value: false),
@@ -523,6 +529,9 @@ private struct RecordingSourceMenu<Value: Hashable>: View {
     let title: String
     let displayValue: String
     let systemImage: String
+    var audioLevelStore: RecordingAudioLevelStore?
+    var inputSource: RecordingAudioSource?
+    var isInputActive = false
     @Binding var selection: Value
     let items: [RecordingSourceMenuItem<Value>]
     var onSelectionChange: (Value, Value) -> Void = { _, _ in }
@@ -531,7 +540,10 @@ private struct RecordingSourceMenu<Value: Hashable>: View {
         RecordingSourceControlLabel(
             title: title,
             value: displayValue,
-            systemImage: systemImage
+            systemImage: systemImage,
+            audioLevelStore: audioLevelStore,
+            inputSource: inputSource,
+            isInputActive: isInputActive
         )
         .overlay {
             RecordingSourcePopupButton(
@@ -623,6 +635,9 @@ private struct RecordingSourceControlLabel: View {
     let title: String
     let value: String
     let systemImage: String
+    let audioLevelStore: RecordingAudioLevelStore?
+    let inputSource: RecordingAudioSource?
+    let isInputActive: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -644,6 +659,14 @@ private struct RecordingSourceControlLabel: View {
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if let audioLevelStore, let inputSource {
+                RecordingInputLevelMeter(
+                    store: audioLevelStore,
+                    source: inputSource,
+                    isActive: isInputActive
+                )
+            }
+
             Image(systemName: "chevron.down")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
@@ -656,6 +679,38 @@ private struct RecordingSourceControlLabel: View {
                 .fill(Color.primary.opacity(0.06))
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct RecordingInputLevelMeter: View {
+    private static let segmentHeights: [CGFloat] = [4, 6, 8, 10, 12]
+
+    @ObservedObject var store: RecordingAudioLevelStore
+    let source: RecordingAudioSource
+    let isActive: Bool
+
+    private var level: Double {
+        store.level(for: source)
+    }
+
+    private var activeSegmentCount: Int {
+        guard isActive, level > 0 else { return 0 }
+        return min(Self.segmentHeights.count, max(1, Int(ceil(level * Double(Self.segmentHeights.count)))))
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(Array(Self.segmentHeights.enumerated()), id: \.offset) { index, height in
+                Capsule()
+                    .fill(index < activeSegmentCount ? Color.green : Color.secondary.opacity(0.2))
+                    .frame(width: 3, height: height)
+            }
+        }
+        .frame(width: 23, height: 12, alignment: .bottom)
+        .opacity(isActive ? 1 : 0.45)
+        .animation(.linear(duration: 0.12), value: activeSegmentCount)
+        .accessibilityLabel(L10n.inputLevel)
+        .accessibilityValue(Text(level, format: .percent.precision(.fractionLength(0))))
     }
 }
 

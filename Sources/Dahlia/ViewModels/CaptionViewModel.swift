@@ -143,6 +143,9 @@ final class CaptionViewModel: ObservableObject {
         didSet { updateCanBeginRecording() }
     }
 
+    @Published private(set) var activeControllerSources: Set<RecordingAudioSource> = []
+    let recordingAudioLevelStore = RecordingAudioLevelStore()
+
     @Published var selectedLocale: String = AppSettings.shared.transcriptionLocale {
         didSet {
             guard selectedLocale != oldValue else { return }
@@ -380,7 +383,7 @@ final class CaptionViewModel: ObservableObject {
                     isEnabled,
                     translateSegment: self.translationHandler(for: locale)
                 )
-                self.activeControllerSources = snapshot.enabledSources
+                self.setActiveControllerSources(snapshot.enabledSources)
             } catch {
                 guard self.activeTranscriptionPlan?.liveChatEnabled == isEnabled else { return }
                 self.errorMessage = error.localizedDescription
@@ -462,6 +465,10 @@ final class CaptionViewModel: ObservableObject {
         recordingContext?.store ?? store
     }
 
+    func isRecordingAudioSourceActive(_ source: RecordingAudioSource) -> Bool {
+        activeControllerSources.contains(source)
+    }
+
     // MARK: - Private
 
     private var currentDbQueue: DatabaseQueue?
@@ -477,7 +484,6 @@ final class CaptionViewModel: ObservableObject {
     private let recordingSessionController = RecordingSessionController()
     private var activeTranscriptionPlan: TranscriptionSessionPlan?
     private var activeRecordingSessionId: UUID?
-    private var activeControllerSources: Set<RecordingAudioSource> = []
     private var recordingLifecycle: RecordingLifecycle = .idle {
         didSet { updateCanBeginRecording() }
     }
@@ -1833,6 +1839,7 @@ final class CaptionViewModel: ObservableObject {
         recordingSessionId: UUID
     ) async -> Bool {
         guard recordingLifecycle == .recording(recordingSessionId) else { return false }
+        resetAudioLevels(for: reason)
         do {
             let snapshot: RecordingSessionController.Snapshot
             switch reason {
@@ -1851,7 +1858,8 @@ final class CaptionViewModel: ObservableObject {
                 )
             }
             guard snapshot.sessionId == recordingSessionId else { return false }
-            activeControllerSources = snapshot.enabledSources
+            resetAudioLevels(for: reason)
+            setActiveControllerSources(snapshot.enabledSources)
             errorMessage = nil
             return true
         } catch {
@@ -1859,7 +1867,8 @@ final class CaptionViewModel: ObservableObject {
                   recordingLifecycle == .recording(recordingSessionId) else { return false }
             if let snapshot = await recordingSessionController.snapshot(),
                snapshot.sessionId == recordingSessionId {
-                activeControllerSources = snapshot.enabledSources
+                resetAudioLevels(for: reason)
+                setActiveControllerSources(snapshot.enabledSources)
             }
             setPipelineRebuildError(error, reason: reason)
             return false
@@ -1893,6 +1902,17 @@ final class CaptionViewModel: ObservableObject {
             errorMessage = L10n.languageChangeFailed(error.localizedDescription)
         case .audioSourceChange:
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func resetAudioLevels(for reason: PipelineRebuildReason) {
+        switch reason {
+        case .localeChange:
+            for source in activeControllerSources {
+                recordingAudioLevelStore.reset(source: source)
+            }
+        case let .audioSourceChange(source):
+            recordingAudioLevelStore.reset(source: source)
         }
     }
 
@@ -1945,9 +1965,15 @@ final class CaptionViewModel: ObservableObject {
                 isFatal: isFatal,
                 recordingSessionId: request.sessionId
             )
+        } onAudioLevel: { [weak self] source, level in
+            self?.handleControllerAudioLevel(
+                source: source,
+                level: level,
+                recordingSessionId: request.sessionId
+            )
         }
         let snapshot = try await recordingSessionController.startPrepared()
-        activeControllerSources = snapshot.enabledSources
+        setActiveControllerSources(snapshot.enabledSources)
         if request.plan.recordsBatchAudio {
             batchTranscriptionState = .recording(sessionId: request.sessionId)
         }
@@ -2115,7 +2141,7 @@ final class CaptionViewModel: ObservableObject {
         activeTranscriptionMode = nil
         activeTranscriptionPlan = nil
         activeRecordingSessionId = nil
-        activeControllerSources.removeAll()
+        setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
         startingMicrophoneSelection = nil
@@ -2214,6 +2240,7 @@ final class CaptionViewModel: ObservableObject {
         activeTranscriptionMode = transcriptionMode
         activeTranscriptionPlan = transcriptionPlan
         activeRecordingSessionId = recordingSessionId
+        setActiveControllerSources([])
         if transcriptionPlan.liveSubtitlesEnabled {
             liveCaptionStore.start(sessionId: recordingSessionId)
         } else {
@@ -2300,6 +2327,7 @@ final class CaptionViewModel: ObservableObject {
               !isFinalizingRecording else { return }
 
         recordingLifecycle = .stopping(activeSessionId)
+        recordingAudioLevelStore.reset()
         finalizingMeetingId = recordingMeetingId
         isFinalizingRecording = true
         let automaticScreenshotStopTask = stopAutomaticScreenshotCapture()
@@ -2384,7 +2412,7 @@ final class CaptionViewModel: ObservableObject {
         activeTranscriptionMode = nil
         activeTranscriptionPlan = nil
         activeRecordingSessionId = nil
-        activeControllerSources.removeAll()
+        setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
         startingMicrophoneSelection = nil
@@ -3612,12 +3640,28 @@ final class CaptionViewModel: ObservableObject {
                   self.activeRecordingSessionId == recordingSessionId else { return }
             if let snapshot = await self.recordingSessionController.snapshot(),
                snapshot.sessionId == recordingSessionId {
-                self.activeControllerSources = snapshot.enabledSources
+                self.setActiveControllerSources(snapshot.enabledSources)
             }
             if isFatal {
                 self.stopListening()
             }
         }
+    }
+
+    private func handleControllerAudioLevel(
+        source: RecordingAudioSource,
+        level: Double,
+        recordingSessionId: UUID
+    ) {
+        guard activeRecordingSessionId == recordingSessionId,
+              recordingLifecycle == .starting(recordingSessionId) ||
+              recordingLifecycle == .recording(recordingSessionId) else { return }
+        recordingAudioLevelStore.update(source: source, level: level)
+    }
+
+    private func setActiveControllerSources(_ sources: Set<RecordingAudioSource>) {
+        activeControllerSources = sources
+        recordingAudioLevelStore.retain(sources: sources)
     }
 
     private func handleLiveSubtitleSettingChange(isEnabled: Bool) {
@@ -3663,7 +3707,7 @@ final class CaptionViewModel: ObservableObject {
                     isEnabled,
                     translateSegment: self.translationHandler(for: locale)
                 )
-                self.activeControllerSources = snapshot.enabledSources
+                self.setActiveControllerSources(snapshot.enabledSources)
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.restoreLiveSubtitleSetting(
@@ -3727,7 +3771,7 @@ final class CaptionViewModel: ObservableObject {
                     latestPlan.liveSubtitlesEnabled,
                     translateSegment: translationHandler(for: locale)
                 )
-                activeControllerSources = snapshot.enabledSources
+                setActiveControllerSources(snapshot.enabledSources)
                 appliedPlan = snapshot.plan
             }
             if appliedPlan.liveChatEnabled != latestPlan.liveChatEnabled {
@@ -3736,7 +3780,7 @@ final class CaptionViewModel: ObservableObject {
                     latestPlan.liveChatEnabled,
                     translateSegment: translationHandler(for: locale)
                 )
-                activeControllerSources = snapshot.enabledSources
+                setActiveControllerSources(snapshot.enabledSources)
                 appliedPlan = snapshot.plan
             }
             guard activeTranscriptionPlan?.liveSubtitlesEnabled == latestPlan.liveSubtitlesEnabled,

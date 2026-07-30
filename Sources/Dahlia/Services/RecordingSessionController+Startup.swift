@@ -63,6 +63,11 @@ extension RecordingSessionController {
             recognition: recognition,
             batchRangeOrigin: batchRangeOrigin
         )
+        attachAudioLevelMeter(
+            to: pipeline,
+            runtimeID: runtimeID,
+            sessionId: snapshot.sessionId
+        )
         try await capture.start()
         try requireCurrentSourceRuntime(
             source: configuration.source,

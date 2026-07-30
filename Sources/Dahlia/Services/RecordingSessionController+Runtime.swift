@@ -1,6 +1,61 @@
 import Foundation
+import os
 
 extension RecordingSessionController {
+    func attachAudioLevelMeter(
+        to pipeline: AudioSourcePipeline,
+        runtimeID: UUID,
+        sessionId: UUID
+    ) {
+        let source = pipeline.source
+        audioLevelDeliveryGates[source]?.supersede()
+        let deliveryGate = RecordingAudioLevelDeliveryGate()
+        audioLevelDeliveryGates[source] = deliveryGate
+        let worker = AudioLevelMeteringWorker(source: source) { [weak self] source, level in
+            await self?.handleAudioLevel(
+                source: source,
+                level: level,
+                runtimeID: runtimeID,
+                sessionId: sessionId,
+                deliveryGate: deliveryGate
+            )
+        }
+        pipeline.router.setMeteringWorker(worker)
+    }
+
+    private func handleAudioLevel(
+        source: RecordingAudioSource,
+        level: Double,
+        runtimeID: UUID,
+        sessionId: UUID,
+        deliveryGate: RecordingAudioLevelDeliveryGate
+    ) async {
+        guard state.belongs(to: sessionId),
+              sourceRuntimeGenerations[source] == runtimeID,
+              sourceRuntimes[source]?.id == runtimeID,
+              audioLevelDeliveryGates[source] === deliveryGate,
+              let onAudioLevel else { return }
+        await deliveryGate.deliver(source: source, level: level, handler: onAudioLevel)
+    }
+
+    func invalidateAudioLevelDelivery(for source: RecordingAudioSource) {
+        audioLevelDeliveryGates[source]?.invalidate()
+    }
+
+    func invalidateAllAudioLevelDeliveries() {
+        audioLevelDeliveryGates.values.forEach { $0.invalidate() }
+        audioLevelDeliveryGates.removeAll()
+    }
+
+    func resetAudioLevelProjection(for source: RecordingAudioSource) {
+        guard let deliveryGate = audioLevelDeliveryGates[source],
+              let onAudioLevel else { return }
+        deliveryGate.invalidate()
+        Task { @MainActor in
+            deliveryGate.deliverReset(source: source, handler: onAudioLevel)
+        }
+    }
+
     func startRecognition(
         _ recognition: any ProgressiveRecognitionSession,
         source: RecordingAudioSource,
@@ -165,6 +220,7 @@ extension RecordingSessionController {
               sourceRuntimeGenerations[source] == runtimeID,
               sourceRuntimes[source]?.id == runtimeID else { return }
 
+        resetAudioLevelProjection(for: source)
         await stopSource(source, expectedRuntimeID: runtimeID, finalMode: snapshot.plan.finalMode)
         guard sourceRuntimeGenerations[source] == runtimeID,
               sourceRuntimes[source] == nil else { return }
@@ -185,6 +241,7 @@ extension RecordingSessionController {
     ) async {
         guard let runtime = sourceRuntimes[source],
               expectedRuntimeID == nil || runtime.id == expectedRuntimeID else { return }
+        invalidateAudioLevelDelivery(for: source)
         sourceRuntimes[source] = nil
         try? await runtime.capture.stop()
         runtime.pipeline.router.removeAllConsumers()
@@ -200,6 +257,7 @@ extension RecordingSessionController {
         cancelRecognition: Bool,
         deleteBatchRecording: Bool
     ) async {
+        invalidateAllAudioLevelDeliveries()
         for source in Self.sortedSources(sourceRuntimes.keys) {
             try? await sourceRuntimes[source]?.capture.stop()
         }
@@ -322,6 +380,7 @@ extension RecordingSessionController {
               snapshot.sessionId == sessionId else {
             throw RecordingSessionControllerError.sessionNotActive
         }
+        invalidateAudioLevelDelivery(for: source)
         let runtimeID = UUID.v7()
         sourceRuntimeGenerations[source] = runtimeID
         return runtimeID
@@ -373,6 +432,46 @@ extension RecordingSessionController {
         if let failureMessage = pending.failureMessage {
             throw RecordingSessionControllerError.recognitionFailed(failureMessage)
         }
+    }
+}
+
+final class RecordingAudioLevelDeliveryGate: Sendable {
+    private enum State: Equatable {
+        case active
+        case invalidated
+        case superseded
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State.active)
+
+    func invalidate() {
+        state.withLock { state in
+            guard state == .active else { return }
+            state = .invalidated
+        }
+    }
+
+    func supersede() {
+        state.withLock { $0 = .superseded }
+    }
+
+    @MainActor
+    func deliver(
+        source: RecordingAudioSource,
+        level: Double,
+        handler: RecordingSessionController.AudioLevelHandler
+    ) {
+        guard state.withLock({ $0 == .active }) else { return }
+        handler(source, level)
+    }
+
+    @MainActor
+    func deliverReset(
+        source: RecordingAudioSource,
+        handler: RecordingSessionController.AudioLevelHandler
+    ) {
+        guard state.withLock({ $0 == .invalidated }) else { return }
+        handler(source, 0)
     }
 }
 
