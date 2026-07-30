@@ -1127,6 +1127,10 @@
 /* Meeting Metrics */
 "Meeting Metrics" = "ミーティング指標";
 "Meeting metrics (Beta)" = "ミーティング指標（ベータ）";
+"Recalculate metrics" = "指標を再計算";
+"Recalculating metrics…" = "指標を再計算しています…";
+"Metrics cannot be recalculated while recording. Try again after recording stops." = "録音中は指標を再計算できません。録音の停止後に実行してください。";
+"This transcript has no audio-source labels, so sources cannot be compared. Recalculating will not change this." = "この文字起こしには音源ラベルがないため、音源を比較できません。再計算しても変わりません。";
 "Microphone-source speech rate was around %@ characters per minute in this meeting." = "このミーティングのマイク音源の発話は、実発話時間あたり約 %@ 文字/分でした。";
 "This is above the provisional beta reference value and is an estimate, not a measurement of clarity." = "これはベータの暫定基準値を上回っています。推定値であり、聞き取りやすさを測ったものではありません。";
 "Microphone-source speech accounted for about %@ of labelled speaking time." = "ラベル付き発話時間のうち、マイク音源が約 %@ を占めていました。";

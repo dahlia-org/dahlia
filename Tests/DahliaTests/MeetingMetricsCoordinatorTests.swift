@@ -18,7 +18,7 @@ import os
             )
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { meetingId in try await recorder.analyze(meetingId: meetingId) }
+                analyze: { meetingId, _ in try await recorder.analyze(meetingId: meetingId) }
             )
             await coordinator.activate(meetingId: meeting.id)
             #expect(await waitUntil { await recorder.revisions() == [0] })
@@ -61,7 +61,7 @@ import os
             let recorder = RevisionAnalysisRecorder(dbQueue: database.dbQueue)
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { meetingId in try await recorder.analyze(meetingId: meetingId) }
+                analyze: { meetingId, _ in try await recorder.analyze(meetingId: meetingId) }
             )
             await coordinator.activate(meetingId: meeting.id)
             #expect(await waitUntil { await recorder.revisions() == [0] })
@@ -101,7 +101,7 @@ import os
             let recorder = RevisionAnalysisRecorder(dbQueue: database.dbQueue)
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { meetingId in try await recorder.analyze(meetingId: meetingId) }
+                analyze: { meetingId, _ in try await recorder.analyze(meetingId: meetingId) }
             )
             await coordinator.activate(meetingId: meeting.id)
             #expect(await waitUntil { await recorder.revisions() == [0] })
@@ -144,7 +144,7 @@ import os
             let currentResult = result(meetingId: secondMeeting.id, revision: 0, seconds: 222)
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { meetingId in
+                analyze: { meetingId, _ in
                     if meetingId == firstMeeting.id {
                         await firstGate.wait()
                         return .saved(staleResult, MeetingMetricsEvaluator.evaluate(staleResult))
@@ -170,7 +170,7 @@ import os
             let probe = CancellationProbe()
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { _ in try await probe.waitForCancellation() }
+                analyze: { _, _ in try await probe.waitForCancellation() }
             )
             await coordinator.activate(meetingId: meeting.id)
             #expect(await probe.waitUntilStarted())
@@ -220,7 +220,7 @@ import os
             ])
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { _ in await probe.next() }
+                analyze: { _, _ in await probe.next() }
             )
             await coordinator.activate(meetingId: meeting.id)
 

@@ -25,12 +25,19 @@ import Foundation
             "Beta feature. Values are estimates and thresholds are provisional.",
         ]
 
+        private static let recomputeKeys = [
+            "Recalculate metrics",
+            "Recalculating metrics…",
+            "Metrics cannot be recalculated while recording. Try again after recording stops.",
+            "This transcript has no audio-source labels, so sources cannot be compared. Recalculating will not change this.",
+        ]
+
         @Test
         func localizationKeySetsMatch() throws {
             let english = try entries(language: "en")
             let japanese = try entries(language: "ja")
             #expect(Set(english.keys) == Set(japanese.keys))
-            for key in Self.insightKeys + Self.caveatKeys {
+            for key in Self.insightKeys + Self.caveatKeys + Self.recomputeKeys {
                 #expect(english[key] != nil)
                 #expect(japanese[key] != nil)
             }

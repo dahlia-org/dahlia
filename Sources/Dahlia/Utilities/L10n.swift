@@ -2456,6 +2456,16 @@ enum L10n {
 
     static var meetingMetrics: String { String(localized: "Meeting Metrics", bundle: bundle) }
     static var meetingMetricsBetaToggle: String { String(localized: "Meeting metrics (Beta)", bundle: bundle) }
+    static var recalculateMetrics: String { String(localized: "Recalculate metrics", bundle: bundle) }
+    static var recalculatingMetrics: String { String(localized: "Recalculating metrics…", bundle: bundle) }
+    static var metricsRecalculationUnavailableWhileRecording: String { String(
+        localized: "Metrics cannot be recalculated while recording. Try again after recording stops.",
+        bundle: bundle
+    ) }
+    static var meetingMetricsInsufficientCoverageRecalculation: String { String(
+        localized: "This transcript has no audio-source labels, so sources cannot be compared. Recalculating will not change this.",
+        bundle: bundle
+    ) }
 
     static func meetingMetricsPaceTitle(_ value: Int64) -> String {
         String(

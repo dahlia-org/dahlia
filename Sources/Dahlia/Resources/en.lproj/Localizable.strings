@@ -1127,6 +1127,10 @@
 /* Meeting Metrics */
 "Meeting Metrics" = "Meeting Metrics";
 "Meeting metrics (Beta)" = "Meeting metrics (Beta)";
+"Recalculate metrics" = "Recalculate metrics";
+"Recalculating metrics…" = "Recalculating metrics…";
+"Metrics cannot be recalculated while recording. Try again after recording stops." = "Metrics cannot be recalculated while recording. Try again after recording stops.";
+"This transcript has no audio-source labels, so sources cannot be compared. Recalculating will not change this." = "This transcript has no audio-source labels, so sources cannot be compared. Recalculating will not change this.";
 "Microphone-source speech rate was around %@ characters per minute in this meeting." = "Microphone-source speech rate was around %@ characters per minute in this meeting.";
 "This is above the provisional beta reference value and is an estimate, not a measurement of clarity." = "This is above the provisional beta reference value and is an estimate, not a measurement of clarity.";
 "Microphone-source speech accounted for about %@ of labelled speaking time." = "Microphone-source speech accounted for about %@ of labelled speaking time.";

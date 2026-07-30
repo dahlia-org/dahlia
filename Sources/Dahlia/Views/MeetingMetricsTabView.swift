@@ -3,10 +3,12 @@ import SwiftUI
 
 struct MeetingMetricsTabView: View {
     let meetingId: UUID
+    let isListening: Bool
     @State private var coordinator: MeetingMetricsCoordinator
 
-    init(meetingId: UUID, dbQueue: DatabaseQueue) {
+    init(meetingId: UUID, dbQueue: DatabaseQueue, isListening: Bool) {
         self.meetingId = meetingId
+        self.isListening = isListening
         _coordinator = State(initialValue: MeetingMetricsCoordinator(dbQueue: dbQueue))
     }
 
@@ -76,22 +78,52 @@ struct MeetingMetricsTabView: View {
             case .insufficientTranscript:
                 unavailable(L10n.meetingMetricsInsufficientTranscript)
             case .insufficientCoverage:
-                unavailable(L10n.meetingMetricsInsufficientCoverage)
+                unavailable(L10n.meetingMetricsInsufficientCoverageRecalculation)
             case .ok:
-                let cards = coordinator.localizedCards()
-                if cards.isEmpty {
-                    findingCard(
-                        title: L10n.meetingMetricsNoNotablePattern,
-                        detail: L10n.meetingMetricsSourceEstimateDetail,
-                        evidence: ""
-                    )
-                } else {
-                    ForEach(cards) { card in
-                        findingCard(title: card.title, detail: card.detail, evidence: card.evidence)
+                VStack(alignment: .leading, spacing: 12) {
+                    recomputeControl
+                    let cards = coordinator.localizedCards()
+                    if cards.isEmpty {
+                        findingCard(
+                            title: L10n.meetingMetricsNoNotablePattern,
+                            detail: L10n.meetingMetricsSourceEstimateDetail,
+                            evidence: ""
+                        )
+                    } else {
+                        ForEach(cards) { card in
+                            findingCard(title: card.title, detail: card.detail, evidence: card.evidence)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private var recomputeControl: some View {
+        HStack(spacing: 8) {
+            if coordinator.isRecomputing {
+                ProgressView()
+                    .controlSize(.small)
+                Text(L10n.recalculatingMetrics)
+                    .foregroundStyle(.secondary)
+            } else if isListening {
+                Text(L10n.metricsRecalculationUnavailableWhileRecording)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(L10n.recalculateMetrics) { coordinator.recompute() }
+                .buttonStyle(.borderless)
+                .disabled(Self.isRecomputeDisabled(
+                    isListening: isListening,
+                    isRecomputing: coordinator.isRecomputing
+                ))
+        }
+        .font(.subheadline)
+        .padding(12)
+    }
+
+    static func isRecomputeDisabled(isListening: Bool, isRecomputing: Bool) -> Bool {
+        isListening || isRecomputing
     }
 
     private func findingCard(title: String, detail: String, evidence: String) -> some View {

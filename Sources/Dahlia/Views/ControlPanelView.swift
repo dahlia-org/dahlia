@@ -323,7 +323,11 @@ struct ControlPanelView: View {
                 case .metrics:
                     if let meetingId = viewModel.currentMeetingId,
                        let dbQueue = sidebarViewModel.dbQueue {
-                        MeetingMetricsTabView(meetingId: meetingId, dbQueue: dbQueue)
+                        MeetingMetricsTabView(
+                            meetingId: meetingId,
+                            dbQueue: dbQueue,
+                            isListening: viewModel.isListening && viewModel.currentMeetingId == meetingId
+                        )
                     } else {
                         ContentUnavailableView(L10n.meetingMetricsInsufficientTranscript, systemImage: "chart.bar.xaxis")
                     }

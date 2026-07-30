@@ -22,7 +22,7 @@ final class MeetingMetricsCoordinator {
     }
 
     private let dbQueue: DatabaseQueue
-    private let analyze: @Sendable (UUID) async throws -> MeetingMetricsWorker.Outcome
+    private let analyze: @Sendable (UUID, Bool) async throws -> MeetingMetricsWorker.Outcome
     private let observeRevisions: (@Sendable (UUID) async -> AsyncThrowingStream<Int64, Error>)?
     private let waitForRevisionSettle: @Sendable () async throws -> Void
     private var analysisTask: Task<Void, Never>?
@@ -34,14 +34,16 @@ final class MeetingMetricsCoordinator {
     private var generation: UInt64 = 0
 
     private(set) var phase: Phase = .idle
+    private(set) var isRecomputing = false
     private(set) var result: MeetingMetricsResult?
     private(set) var insights: MeetingMetricsInsightSet?
+    var analysisGeneration: UInt64 { generation }
 
     init(dbQueue: DatabaseQueue, worker: MeetingMetricsWorker? = nil) {
         self.dbQueue = dbQueue
         let worker = worker ?? MeetingMetricsWorker(dbQueue: dbQueue)
-        analyze = { meetingId in
-            try await worker.analyze(meetingId: meetingId)
+        analyze = { meetingId, ignoringCache in
+            try await worker.analyze(meetingId: meetingId, ignoringCache: ignoringCache)
         }
         observeRevisions = nil
         waitForRevisionSettle = {
@@ -51,7 +53,7 @@ final class MeetingMetricsCoordinator {
 
     init(
         dbQueue: DatabaseQueue,
-        analyze: @escaping @Sendable (UUID) async throws -> MeetingMetricsWorker.Outcome,
+        analyze: @escaping @Sendable (UUID, Bool) async throws -> MeetingMetricsWorker.Outcome,
         observeRevisions: (@Sendable (UUID) async -> AsyncThrowingStream<Int64, Error>)? = nil,
         waitForRevisionSettle: @escaping @Sendable () async throws -> Void = {
             try await Task.sleep(for: MeetingMetricsConstants.revisionSettleDelay)
@@ -95,6 +97,7 @@ final class MeetingMetricsCoordinator {
         observedRevision = nil
         completedRevision = nil
         phase = .idle
+        isRecomputing = false
         result = nil
         insights = nil
     }
@@ -102,7 +105,13 @@ final class MeetingMetricsCoordinator {
     func retry() {
         guard let scope else { return }
         startObservationIfNeeded(meetingId: scope)
-        scheduleAnalysis(meetingId: scope)
+        scheduleAnalysis(meetingId: scope, ignoringCache: false)
+    }
+
+    func recompute() {
+        guard let scope, !isRecomputing else { return }
+        startObservationIfNeeded(meetingId: scope)
+        scheduleAnalysis(meetingId: scope, ignoringCache: true)
     }
 
     func localizedCards() -> [Card] {
@@ -169,6 +178,7 @@ final class MeetingMetricsCoordinator {
                 self.analysisTask = nil
                 self.settleTask?.cancel()
                 self.settleTask = nil
+                self.isRecomputing = false
                 self.result = nil
                 self.insights = nil
                 self.phase = .failed
@@ -182,22 +192,25 @@ final class MeetingMetricsCoordinator {
         observedRevision = revision
         guard completedRevision != revision else { return }
         if completedRevision == nil, analysisTask == nil, settleTask == nil {
-            scheduleAnalysis(meetingId: meetingId)
+            scheduleAnalysis(meetingId: meetingId, ignoringCache: false)
         } else {
             scheduleAfterRevisionSettles(meetingId: meetingId)
         }
     }
 
-    private func scheduleAnalysis(meetingId: UUID) {
+    private func scheduleAnalysis(meetingId: UUID, ignoringCache: Bool = false) {
         generation &+= 1
         let expectedGeneration = generation
         analysisTask?.cancel()
         settleTask?.cancel()
         settleTask = nil
-        phase = .loading
+        isRecomputing = ignoringCache
+        if !ignoringCache {
+            phase = .loading
+        }
         analysisTask = Task { [weak self, analyze] in
             do {
-                let outcome = try await analyze(meetingId)
+                let outcome = try await analyze(meetingId, ignoringCache)
                 guard let self,
                       !Task.isCancelled,
                       self.scope == meetingId,
@@ -210,6 +223,7 @@ final class MeetingMetricsCoordinator {
                       self.scope == meetingId,
                       self.generation == expectedGeneration else { return }
                 self.analysisTask = nil
+                self.isRecomputing = false
                 self.result = nil
                 self.insights = nil
                 self.phase = .failed
@@ -224,6 +238,7 @@ final class MeetingMetricsCoordinator {
         analysisTask?.cancel()
         analysisTask = nil
         settleTask?.cancel()
+        isRecomputing = false
         phase = .waitingForStableRevision
         settleTask = Task { [weak self, waitForRevisionSettle] in
             do {
@@ -233,7 +248,7 @@ final class MeetingMetricsCoordinator {
                       self.scope == meetingId,
                       self.generation == expectedGeneration else { return }
                 self.settleTask = nil
-                self.scheduleAnalysis(meetingId: meetingId)
+                self.scheduleAnalysis(meetingId: meetingId, ignoringCache: false)
             } catch is CancellationError {
             } catch {
                 guard let self,
@@ -249,6 +264,7 @@ final class MeetingMetricsCoordinator {
     }
 
     private func apply(_ outcome: MeetingMetricsWorker.Outcome, meetingId: UUID) {
+        isRecomputing = false
         switch outcome {
         case let .saved(result, insights):
             completedRevision = result.transcriptRevision

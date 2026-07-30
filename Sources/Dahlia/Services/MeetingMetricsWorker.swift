@@ -21,9 +21,10 @@ actor MeetingMetricsWorker {
         self.rowReadHook = rowReadHook
     }
 
-    func analyze(meetingId: UUID) async throws -> Outcome {
+    func analyze(meetingId: UUID, ignoringCache: Bool = false) async throws -> Outcome {
         try Task.checkCancellation()
-        if let cached = try await MeetingMetricsPersistence.load(meetingId: meetingId, dbQueue: dbQueue) {
+        if !ignoringCache,
+           let cached = try await MeetingMetricsPersistence.load(meetingId: meetingId, dbQueue: dbQueue) {
             return .saved(cached, MeetingMetricsEvaluator.evaluate(cached))
         }
 

@@ -14,7 +14,7 @@ import os
             let probe = RevisionSettleOrderingProbe()
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { _ in await probe.analyze() },
+                analyze: { _, _ in await probe.analyze() },
                 waitForRevisionSettle: { await probe.waitForSettle() }
             )
             await coordinator.activate(meetingId: meeting.id)
@@ -39,7 +39,7 @@ import os
             let recorder = RevisionAnalysisRecorder(dbQueue: database.dbQueue)
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { meetingId in try await recorder.analyze(meetingId: meetingId) },
+                analyze: { meetingId, _ in try await recorder.analyze(meetingId: meetingId) },
                 observeRevisions: { _ in await observationProbe.nextStream() },
                 waitForRevisionSettle: {}
             )
@@ -86,10 +86,15 @@ import os
                 dbQueue: database.dbQueue,
                 rowReadHook: { _ in rowReads.withLock { $0 += 1 } }
             )
-            let cached = try await cachedWorker.analyze(meetingId: meeting.id)
+            let cached = try await cachedWorker.analyze(meetingId: meeting.id, ignoringCache: false)
 
             #expect(first == cached)
             #expect(rowReads.withLock(\.self) == 0)
+
+            let recomputed = try await cachedWorker.analyze(meetingId: meeting.id, ignoringCache: true)
+
+            #expect(recomputed == cached)
+            #expect(rowReads.withLock(\.self) > 0)
         }
 
         @Test
