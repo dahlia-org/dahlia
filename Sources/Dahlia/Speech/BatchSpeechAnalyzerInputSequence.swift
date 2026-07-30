@@ -20,6 +20,7 @@ struct BatchSpeechAnalyzerInputSequence: AsyncSequence, Sendable {
         slices: [BatchSpeechAudioSlice],
         sourceFormat: AVAudioFormat,
         analyzerFormat: AVAudioFormat,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void = { _ in },
         converterFactory: AnalyzerInputConverterFactory = { sourceFormat, analyzerFormat in
             try AVAudioAnalyzerInputConverter(
                 sourceFormat: sourceFormat,
@@ -31,7 +32,8 @@ struct BatchSpeechAnalyzerInputSequence: AsyncSequence, Sendable {
             slices: slices,
             sourceFormat: sourceFormat,
             analyzerFormat: analyzerFormat,
-            converter: converterFactory(sourceFormat, analyzerFormat)
+            converter: converterFactory(sourceFormat, analyzerFormat),
+            onSliceConsumed: onSliceConsumed
         )
     }
 
@@ -47,18 +49,21 @@ actor BatchSpeechAudioSliceReader {
     private let sourceFormat: AVAudioFormat
     private let analyzerFormat: AVAudioFormat
     private let converter: any AnalyzerInputConverting
+    private let onSliceConsumed: @Sendable (Int) async -> Void
     private var sliceIndex = 0
     private var currentFile: AVAudioFile?
     private var remainingFrameCount: Int64 = 0
     private var nextAnalyzerFrame: Int64 = 0
     private var pendingInputs: [AnalyzerInput] = []
+    private var pendingCompletedSliceIndex: Int?
     private var didFinishConverter = false
 
     init(
         slices: [BatchSpeechAudioSlice],
         sourceFormat: AVAudioFormat,
         analyzerFormat: AVAudioFormat,
-        converter: any AnalyzerInputConverting
+        converter: any AnalyzerInputConverting,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
     ) throws {
         guard !slices.isEmpty else {
             throw BatchSpeechTranscriberError.invalidAudioRange
@@ -67,14 +72,21 @@ actor BatchSpeechAudioSliceReader {
         self.sourceFormat = sourceFormat
         self.analyzerFormat = analyzerFormat
         self.converter = converter
+        self.onSliceConsumed = onSliceConsumed
     }
 
-    func next() throws -> AnalyzerInput? {
-        try Task.checkCancellation()
-        if !pendingInputs.isEmpty {
-            return pendingInputs.removeFirst()
-        }
+    func next() async throws -> AnalyzerInput? {
         while true {
+            try Task.checkCancellation()
+            if !pendingInputs.isEmpty {
+                return pendingInputs.removeFirst()
+            }
+            if let completedSliceIndex = pendingCompletedSliceIndex {
+                pendingCompletedSliceIndex = nil
+                currentFile = nil
+                await onSliceConsumed(completedSliceIndex)
+                continue
+            }
             if remainingFrameCount > 0 {
                 if let input = try readNextBuffer() {
                     return input
@@ -129,6 +141,9 @@ actor BatchSpeechAudioSliceReader {
             throw BatchSpeechTranscriberError.invalidAudioRange
         }
         remainingFrameCount -= Int64(buffer.frameLength)
+        if remainingFrameCount == 0 {
+            pendingCompletedSliceIndex = sliceIndex - 1
+        }
         let startTime = CMTime(
             value: nextAnalyzerFrame,
             timescale: CMTimeScale(analyzerFormat.sampleRate.rounded())

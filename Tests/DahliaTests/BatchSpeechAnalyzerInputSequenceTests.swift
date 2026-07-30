@@ -23,6 +23,7 @@ import Speech
                 try? FileManager.default.removeItem(at: secondURL)
             }
             let readFormat = try AVAudioFile(forReading: firstURL).processingFormat
+            let consumedSliceProbe = ConsumedSliceProbe()
             let sequence = try BatchSpeechAnalyzerInputSequence(
                 slices: [
                     BatchSpeechAudioSlice(audioURL: firstURL, startFrame: 40, frameCount: 80),
@@ -30,6 +31,9 @@ import Speech
                 ],
                 sourceFormat: readFormat,
                 analyzerFormat: readFormat,
+                onSliceConsumed: { sliceIndex in
+                    await consumedSliceProbe.record(sliceIndex)
+                },
                 converterFactory: { _, _ in PassthroughAnalyzerInputConverter() }
             )
 
@@ -47,6 +51,7 @@ import Speech
             #expect(first.bufferStartTime == .zero)
             #expect(second.bufferStartTime?.seconds == 0.005)
             #expect(end == nil)
+            #expect(await consumedSliceProbe.sliceIndices == [0, 1])
         }
 
         @Test
@@ -120,6 +125,14 @@ import Speech
 
         func finish() -> [AnalyzerInput] {
             []
+        }
+    }
+
+    private actor ConsumedSliceProbe {
+        private(set) var sliceIndices: [Int] = []
+
+        func record(_ sliceIndex: Int) {
+            sliceIndices.append(sliceIndex)
         }
     }
 #endif

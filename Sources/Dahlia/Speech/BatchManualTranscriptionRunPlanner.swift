@@ -54,7 +54,7 @@ enum BatchManualTranscriptionRunPlanner {
             if lhs.source == rhs.source {
                 return lhs.sessionOffsetSeconds < rhs.sessionOffsetSeconds
             }
-            return lhs.source.rawValue < rhs.source.rawValue
+            return sourceOrder(lhs.source) < sourceOrder(rhs.source)
         }
 
         var grouped: [[Candidate]] = []
@@ -70,6 +70,7 @@ enum BatchManualTranscriptionRunPlanner {
             guard let first = candidates.first else { return nil }
             return BatchManualTranscriptionRun(
                 slices: candidates.map(\.slice),
+                sliceFileIndices: candidates.map(\.fileIndex),
                 localeIdentifier: first.localeIdentifier,
                 source: first.source,
                 recordingSessionId: first.recordingSessionId,
@@ -87,7 +88,14 @@ enum BatchManualTranscriptionRunPlanner {
               lhs.audioFormat == rhs.audioFormat else {
             return false
         }
-        let tolerance = 0.5 / lhs.audioFormat.sampleRate
+        let tolerance = 1 / lhs.audioFormat.sampleRate
         return abs(lhs.endOffsetSeconds - rhs.sessionOffsetSeconds) <= tolerance
+    }
+
+    private static func sourceOrder(_ source: RecordingAudioSource) -> Int {
+        switch source {
+        case .microphone: 0
+        case .system: 1
+        }
     }
 }

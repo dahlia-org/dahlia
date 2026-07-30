@@ -149,12 +149,28 @@ struct AdaptiveBatchSpeechRecognizer: BatchSpeechRecognizing {
     }
 
     func recognize(audioSlices: [BatchSpeechAudioSlice], locale: Locale) async throws -> [BatchSpeechRecognition] {
+        try await recognize(audioSlices: audioSlices, locale: locale, onSliceConsumed: { _ in })
+    }
+
+    func recognize(
+        audioSlices: [BatchSpeechAudioSlice],
+        locale: Locale,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
+    ) async throws -> [BatchSpeechRecognition] {
         do {
-            return try await performRecognition(audioSlices: audioSlices, locale: locale)
+            return try await performRecognition(
+                audioSlices: audioSlices,
+                locale: locale,
+                onSliceConsumed: onSliceConsumed
+            )
         } catch where Self.isInsufficientResources(error) {
             await limiter.reduceLimit(to: 1)
             try Task.checkCancellation()
-            return try await performRecognition(audioSlices: audioSlices, locale: locale)
+            return try await performRecognition(
+                audioSlices: audioSlices,
+                locale: locale,
+                onSliceConsumed: onSliceConsumed
+            )
         }
     }
 
@@ -177,10 +193,15 @@ struct AdaptiveBatchSpeechRecognizer: BatchSpeechRecognizing {
 
     private func performRecognition(
         audioSlices: [BatchSpeechAudioSlice],
-        locale: Locale
+        locale: Locale,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
     ) async throws -> [BatchSpeechRecognition] {
         try await limiter.perform {
-            try await recognizer.recognize(audioSlices: audioSlices, locale: locale)
+            try await recognizer.recognize(
+                audioSlices: audioSlices,
+                locale: locale,
+                onSliceConsumed: onSliceConsumed
+            )
         }
     }
 

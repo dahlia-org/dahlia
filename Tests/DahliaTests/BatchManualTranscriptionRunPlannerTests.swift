@@ -23,7 +23,7 @@ import Foundation
                     sessionID: sessionID,
                     segmentIndex: 1,
                     source: .microphone,
-                    startOffset: 0.01,
+                    startOffset: 0.01 + 0.75 / 16000,
                     frameCount: 320,
                     locale: "ja_JP"
                 ),

@@ -383,11 +383,13 @@ actor BatchTranscriptionCoordinator {
 
     private func transcribe(
         workItem: TranscriptionWorkItem,
-        fallbackCollector: BatchLanguageFallbackCollector
+        fallbackCollector: BatchLanguageFallbackCollector,
+        onFileConsumed: @escaping @Sendable (Int) async -> Void
     ) async throws -> TranscriptionWorkResult {
-        let result: BatchSpeechTranscriptionResult = switch workItem.request {
+        let result: BatchSpeechTranscriptionResult
+        switch workItem.request {
         case let .automatic(request):
-            try await BatchSpeechTranscriberService.transcribe(
+            result = try await BatchSpeechTranscriberService.transcribe(
                 request,
                 languageDetector: languageDetector,
                 speechRecognizer: speechRecognizer,
@@ -395,21 +397,27 @@ actor BatchTranscriptionCoordinator {
                     await fallbackCollector.record(fallback)
                 }
             )
+            for fileIndex in workItem.fileIndices {
+                await onFileConsumed(fileIndex)
+            }
         case let .manual(run):
-            try await BatchManualSpeechTranscriberService.transcribe(
+            result = try await BatchManualSpeechTranscriberService.transcribe(
                 run,
-                speechRecognizer: speechRecognizer
+                speechRecognizer: speechRecognizer,
+                onFileConsumed: onFileConsumed
             )
         case let .noAudio(localeIdentifier):
-            BatchSpeechTranscriptionResult(
+            result = BatchSpeechTranscriptionResult(
                 segments: [],
                 localeIdentifier: localeIdentifier,
                 languageFallback: nil
             )
+            for fileIndex in workItem.fileIndices {
+                await onFileConsumed(fileIndex)
+            }
         }
         return TranscriptionWorkResult(
             index: workItem.index,
-            fileIndices: workItem.fileIndices,
             segments: result.segments,
             localeIdentifier: result.localeIdentifier
         )
@@ -531,49 +539,49 @@ extension BatchTranscriptionCoordinator {
         totalFileCount: Int
     ) async throws -> [TranscriptionWorkResult] {
         try await withThrowingTaskGroup(of: TranscriptionWorkResult.self) { group in
+            let progressTracker = BatchTranscriptionFileProgressTracker(workItems: workItems)
+            let reportFileConsumed: @Sendable (Int, Int) async -> Void = { [weak self] workItemIndex, fileIndex in
+                guard let completedFileCount = await progressTracker.consume(
+                    workItemIndex: workItemIndex,
+                    fileIndex: fileIndex
+                ) else { return }
+                await self?.enqueueProgressNotification(
+                    meetingId: meetingId,
+                    sessionId: sessionId,
+                    completedFileCount: completedFileCount,
+                    totalFileCount: totalFileCount
+                )
+            }
             let initialCount = min(BatchTranscriptionConcurrency.appleSpeechMaximum, workItems.count)
             for workItem in workItems.prefix(initialCount) {
                 group.addTask { [self] in
-                    try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                    try await transcribe(
+                        workItem: workItem,
+                        fallbackCollector: fallbackCollector,
+                        onFileConsumed: { fileIndex in
+                            await reportFileConsumed(workItem.index, fileIndex)
+                        }
+                    )
                 }
             }
 
             var nextIndex = initialCount
             var results: [TranscriptionWorkResult] = []
-            var remainingWorkItemCountByFile: [Int: Int] = [:]
-            for workItem in workItems {
-                for fileIndex in workItem.fileIndices {
-                    remainingWorkItemCountByFile[fileIndex, default: 0] += 1
-                }
-            }
-            var completedFileCount = 0
             do {
                 while let result = try await group.next() {
                     results.append(result)
-                    var newlyCompletedFileCount = 0
-                    for fileIndex in result.fileIndices {
-                        if remainingWorkItemCountByFile[fileIndex] == 1 {
-                            remainingWorkItemCountByFile[fileIndex] = nil
-                            newlyCompletedFileCount += 1
-                        } else if let remainingCount = remainingWorkItemCountByFile[fileIndex] {
-                            remainingWorkItemCountByFile[fileIndex] = remainingCount - 1
-                        }
-                    }
-                    completedFileCount += newlyCompletedFileCount
                     if nextIndex < workItems.count {
                         let workItem = workItems[nextIndex]
                         nextIndex += 1
                         group.addTask { [self] in
-                            try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                            try await transcribe(
+                                workItem: workItem,
+                                fallbackCollector: fallbackCollector,
+                                onFileConsumed: { fileIndex in
+                                    await reportFileConsumed(workItem.index, fileIndex)
+                                }
+                            )
                         }
-                    }
-                    if newlyCompletedFileCount > 0 {
-                        enqueueProgressNotification(
-                            meetingId: meetingId,
-                            sessionId: sessionId,
-                            completedFileCount: completedFileCount,
-                            totalFileCount: totalFileCount
-                        )
                     }
                 }
                 await finishProgressNotifications()
@@ -734,5 +742,39 @@ extension BatchTranscriptionCoordinator {
             }
             return (session.meetingId, session.isBatchRetranscriptionPending)
         }
+    }
+}
+
+private actor BatchTranscriptionFileProgressTracker {
+    private struct Portion: Hashable {
+        let workItemIndex: Int
+        let fileIndex: Int
+    }
+
+    private var remainingWorkItemCountByFile: [Int: Int] = [:]
+    private var consumedPortions: Set<Portion> = []
+    private var completedFileCount = 0
+
+    init(workItems: [BatchTranscriptionCoordinator.TranscriptionWorkItem]) {
+        for workItem in workItems {
+            for fileIndex in workItem.fileIndices {
+                remainingWorkItemCountByFile[fileIndex, default: 0] += 1
+            }
+        }
+    }
+
+    func consume(workItemIndex: Int, fileIndex: Int) -> Int? {
+        let portion = Portion(workItemIndex: workItemIndex, fileIndex: fileIndex)
+        guard consumedPortions.insert(portion).inserted,
+              let remainingCount = remainingWorkItemCountByFile[fileIndex] else {
+            return nil
+        }
+        if remainingCount == 1 {
+            remainingWorkItemCountByFile[fileIndex] = nil
+            completedFileCount += 1
+            return completedFileCount
+        }
+        remainingWorkItemCountByFile[fileIndex] = remainingCount - 1
+        return nil
     }
 }

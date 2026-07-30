@@ -15,7 +15,6 @@ extension BatchTranscriptionCoordinator {
 
     struct TranscriptionWorkResult: Sendable {
         let index: Int
-        let fileIndices: [Int]
         var segments: [TranscriptSegment]
         let localeIdentifier: String
     }
@@ -43,10 +42,14 @@ extension BatchTranscriptionCoordinator {
             let coveredFileIndices = Set(runs.flatMap(\.fileIndices))
             for (fileIndex, verified) in verifiedSegments.enumerated()
                 where !coveredFileIndices.contains(fileIndex) {
+                guard let localeIdentifier = verified.ranges.first?.localeIdentifier,
+                      !localeIdentifier.isEmpty else {
+                    throw BatchSpeechTranscriberError.invalidAudioRange
+                }
                 workItems.append(TranscriptionWorkItem(
                     index: workItems.count,
                     fileIndices: [fileIndex],
-                    request: .noAudio(localeIdentifier: verified.ranges.first?.localeIdentifier ?? "")
+                    request: .noAudio(localeIdentifier: localeIdentifier)
                 ))
             }
             return workItems
