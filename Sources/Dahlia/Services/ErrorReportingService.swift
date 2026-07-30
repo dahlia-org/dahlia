@@ -9,6 +9,7 @@ enum ErrorReportingService {
         case googleDriveExportFolder = "google_drive_export_folder_error"
         case googleDocsExport = "google_docs_export_error"
         case customerIntelligenceIngestion = "customer_intelligence_ingestion_error"
+        case meetingConversationMetrics = "meeting_conversation_metrics_error"
     }
 
     enum AutomaticScreenshotStage: String {

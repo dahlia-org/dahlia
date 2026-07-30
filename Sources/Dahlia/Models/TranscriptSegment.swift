@@ -15,6 +15,10 @@ enum Formatters {
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
+    static func elapsedMinutesSeconds(duration: TimeInterval) -> String {
+        Duration.seconds(max(0, duration)).formatted(.time(pattern: .minuteSecond))
+    }
+
     static func elapsedSeconds(
         at date: Date,
         sessionId: UUID?,

@@ -69,6 +69,8 @@
             #expect(SettingsGroup.recording.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
+            #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
+            #expect(DetailTab.allCases == [.notes, .screenshots, .transcript, .summary, .conversationAnalytics])
         }
 
         @Test

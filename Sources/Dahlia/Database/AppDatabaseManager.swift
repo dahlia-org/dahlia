@@ -166,6 +166,10 @@ final class AppDatabaseManager: Sendable {
             try OrganizationDescriptionMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v31_meetingConversationMetrics") { db in
+            try MeetingConversationMetricsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

@@ -13,6 +13,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
     case screenshots
     case transcript
     case summary
+    case conversationAnalytics
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
         case .notes: L10n.notes
         case .screenshots: L10n.screenshots
         case .transcript: L10n.transcript
+        case .conversationAnalytics: L10n.conversationAnalytics
         }
     }
 }
@@ -317,6 +319,14 @@ struct ControlPanelView: View {
                         discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription,
                         retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )
+                case .conversationAnalytics:
+                    ConversationAnalyticsDashboardView(
+                        store: viewModel.conversationMetricsStore,
+                        meetingId: viewModel.currentMeetingId,
+                        isAnalysisPending: viewModel.isCurrentMeetingConversationAnalysisPending,
+                        hasTranscript: viewModel.currentMeetingHasTranscriptSegments,
+                        load: viewModel.loadCurrentMeetingConversationMetrics
+                    )
                 }
             }
             .frame(minHeight: 280)
@@ -384,6 +394,11 @@ struct ControlPanelView: View {
             cancelMeetingRename()
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
+        }
+        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled) { _, isEnabled in
+            if !isEnabled, selectedTab == .conversationAnalytics {
+                selectedTab = .transcript
+            }
         }
         .confirmationDialog(
             L10n.deleteCount(selectedScreenshotIds.count),
