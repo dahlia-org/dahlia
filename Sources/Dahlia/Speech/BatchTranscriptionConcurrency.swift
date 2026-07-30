@@ -148,6 +148,16 @@ struct AdaptiveBatchSpeechRecognizer: BatchSpeechRecognizing {
         }
     }
 
+    func recognize(audioSlices: [BatchSpeechAudioSlice], locale: Locale) async throws -> [BatchSpeechRecognition] {
+        do {
+            return try await performRecognition(audioSlices: audioSlices, locale: locale)
+        } catch where Self.isInsufficientResources(error) {
+            await limiter.reduceLimit(to: 1)
+            try Task.checkCancellation()
+            return try await performRecognition(audioSlices: audioSlices, locale: locale)
+        }
+    }
+
     func currentConcurrencyLimit() async -> Int {
         await limiter.currentLimit()
     }
@@ -162,6 +172,15 @@ struct AdaptiveBatchSpeechRecognizer: BatchSpeechRecognizing {
     private func performRecognition(audioURL: URL, locale: Locale) async throws -> [BatchSpeechRecognition] {
         try await limiter.perform {
             try await recognizer.recognize(audioURL: audioURL, locale: locale)
+        }
+    }
+
+    private func performRecognition(
+        audioSlices: [BatchSpeechAudioSlice],
+        locale: Locale
+    ) async throws -> [BatchSpeechRecognition] {
+        try await limiter.perform {
+            try await recognizer.recognize(audioSlices: audioSlices, locale: locale)
         }
     }
 

@@ -49,28 +49,44 @@ enum BatchSpeechTranscriberService {
             await onLanguageFallback(fallback)
         }
         let recognitions = try await speechRecognizer.recognize(audioURL: preparedAudio.url, locale: resolution.locale)
-        let segments = recognitions.compactMap { recognition -> TranscriptSegment? in
-            guard let text = SpeechTranscriberService.normalizedTranscriptText(recognition.text) else { return nil }
-            let absoluteStart = request.recordingStartTime.addingTimeInterval(
-                request.sessionOffsetSeconds + (recognition.startSeconds.isFinite ? recognition.startSeconds : 0)
-            )
-            let absoluteEnd = request.recordingStartTime.addingTimeInterval(
-                request.sessionOffsetSeconds + (recognition.endSeconds.isFinite ? recognition.endSeconds : 0)
-            )
-            return TranscriptSegment(
-                sessionId: request.recordingSessionId,
-                startTime: absoluteStart,
-                endTime: absoluteEnd,
-                text: text,
-                isConfirmed: true,
-                speakerLabel: request.source.speakerLabel
-            )
-        }
+        let segments = transcriptSegments(
+            from: recognitions,
+            recordingSessionId: request.recordingSessionId,
+            recordingStartTime: request.recordingStartTime,
+            sessionOffsetSeconds: request.sessionOffsetSeconds,
+            source: request.source
+        )
         return BatchSpeechTranscriptionResult(
             segments: segments,
             localeIdentifier: resolution.locale.identifier,
             languageFallback: resolution.fallback
         )
+    }
+
+    static func transcriptSegments(
+        from recognitions: [BatchSpeechRecognition],
+        recordingSessionId: UUID,
+        recordingStartTime: Date,
+        sessionOffsetSeconds: TimeInterval,
+        source: RecordingAudioSource
+    ) -> [TranscriptSegment] {
+        recognitions.compactMap { recognition -> TranscriptSegment? in
+            guard let text = SpeechTranscriberService.normalizedTranscriptText(recognition.text) else { return nil }
+            let absoluteStart = recordingStartTime.addingTimeInterval(
+                sessionOffsetSeconds + (recognition.startSeconds.isFinite ? recognition.startSeconds : 0)
+            )
+            let absoluteEnd = recordingStartTime.addingTimeInterval(
+                sessionOffsetSeconds + (recognition.endSeconds.isFinite ? recognition.endSeconds : 0)
+            )
+            return TranscriptSegment(
+                sessionId: recordingSessionId,
+                startTime: absoluteStart,
+                endTime: absoluteEnd,
+                text: text,
+                isConfirmed: true,
+                speakerLabel: source.speakerLabel
+            )
+        }
     }
 
     private static func resolvedLocale(

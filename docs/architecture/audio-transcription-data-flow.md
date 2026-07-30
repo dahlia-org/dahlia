@@ -216,11 +216,15 @@ sequenceDiagram
 
     Batch->>Audio: ready segments の read plan
     Audio-->>Batch: verified immutable CAF + locale ranges
-    Batch->>Speech: source / range ごとの transcription
+    Batch->>Speech: source / locale ごとの transcription run
     Speech-->>Batch: complete segment set
     Batch->>DB: session の旧 transcript を置換し、batchCompletedAt と meeting status を更新
     DB-->>Batch: single transaction commit
 ```
+
+固定言語では、同一音源、同一形式、同一 locale で session time が連続する verified CAF range を一つの論理 run として
+同じ `SpeechAnalyzer` へ順次供給する。ready CAF 自体は結合または変更せず、入力は一 buffer ずつ遅延読出しする。
+自動判定は CAF ごとの言語判定と認識の overlap を維持するため、CAF 単位の transcription のままとする。
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
 反映する。再文字起こし中は以前の成功結果を利用でき、新しい一式が成功した時だけ置き換える。
