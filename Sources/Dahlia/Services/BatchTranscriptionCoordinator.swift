@@ -38,7 +38,7 @@ actor BatchTranscriptionCoordinator {
     static let maximumAutomaticAttemptCount = 3
     private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
 
-    private struct Job {
+    struct Job {
         let session: RecordingSessionRecord
         let meeting: MeetingRecord
         let vault: VaultRecord
@@ -48,19 +48,6 @@ actor BatchTranscriptionCoordinator {
     private struct TranslationConfiguration: Sendable {
         let isEnabled: Bool
         let targetLanguage: String
-    }
-
-    private struct TranscriptionWorkItem: Sendable {
-        let index: Int
-        let fileIndex: Int
-        let request: BatchSpeechTranscriptionRequest
-    }
-
-    private struct TranscriptionWorkResult: Sendable {
-        let index: Int
-        let fileIndex: Int
-        var segments: [TranscriptSegment]
-        let localeIdentifier: String
     }
 
     private let dbQueue: DatabaseQueue
@@ -301,42 +288,20 @@ actor BatchTranscriptionCoordinator {
             BatchLanguageDetectionCandidateResolver.candidates(snapshot: $0, supportedLocales: supportedLocales).locales
         }
         let totalFileCount = verifiedSegments.count
-        var workItems: [TranscriptionWorkItem] = []
-        for (fileIndex, verified) in verifiedSegments.enumerated() {
-            let ranges = try BatchTranscriptionAudioRangePlanner.ranges(
-                for: verified,
-                mode: job.session.batchLanguageDetectionMode
-            )
-            for range in ranges {
-                workItems.append(
-                    TranscriptionWorkItem(
-                        index: workItems.count,
-                        fileIndex: fileIndex,
-                        request: BatchSpeechTranscriptionRequest(
-                            audioURL: verified.url,
-                            startFrame: range.startFrame,
-                            frameCount: range.frameCount,
-                            recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
-                            languageDetectionMode: job.session.batchLanguageDetectionMode,
-                            supportedLocales: supportedLocales,
-                            automaticLanguageCandidateLocales: automaticLanguageCandidateLocales,
-                            allowedLanguageIdentifiers: automaticLanguageCandidates?.identifierSet,
-                            source: verified.segment.source,
-                            recordingSessionId: job.session.id,
-                            recordingStartTime: job.session.startedAt,
-                            sessionOffsetSeconds: range.sessionOffsetSeconds
-                        )
-                    )
-                )
-            }
-        }
+        let workItems = try transcriptionWorkItems(
+            verifiedSegments: verifiedSegments,
+            job: job,
+            supportedLocales: supportedLocales,
+            automaticLanguageCandidateLocales: automaticLanguageCandidateLocales,
+            automaticLanguageCandidates: automaticLanguageCandidates
+        )
         await notifyProgress(
             meetingId: job.meeting.id,
             sessionId: job.session.id,
             completedFileCount: 0,
             totalFileCount: totalFileCount
         )
-        let recognitionState = Self.signposter.beginInterval("Recognize CAF files")
+        let recognitionState = Self.signposter.beginInterval("Recognize audio runs")
         let fallbackCollector = BatchLanguageFallbackCollector()
         var workResults: [TranscriptionWorkResult]
         do {
@@ -348,9 +313,9 @@ actor BatchTranscriptionCoordinator {
                 totalFileCount: totalFileCount
             )
             .sorted { $0.index < $1.index }
-            Self.signposter.endInterval("Recognize CAF files", recognitionState)
+            Self.signposter.endInterval("Recognize audio runs", recognitionState)
         } catch {
-            Self.signposter.endInterval("Recognize CAF files", recognitionState)
+            Self.signposter.endInterval("Recognize audio runs", recognitionState)
             await reportLanguageFallbacks(
                 fallbackCollector.snapshot(),
                 candidates: automaticLanguageCandidates
@@ -422,19 +387,41 @@ actor BatchTranscriptionCoordinator {
 
     private func transcribe(
         workItem: TranscriptionWorkItem,
-        fallbackCollector: BatchLanguageFallbackCollector
+        fallbackCollector: BatchLanguageFallbackCollector,
+        onFileConsumed: @escaping @Sendable (Int) async -> Void
     ) async throws -> TranscriptionWorkResult {
-        let result = try await BatchSpeechTranscriberService.transcribe(
-            workItem.request,
-            languageDetector: languageDetector,
-            speechRecognizer: speechRecognizer,
-            onLanguageFallback: { fallback in
-                await fallbackCollector.record(fallback)
+        let result: BatchSpeechTranscriptionResult
+        switch workItem.request {
+        case let .automatic(request):
+            result = try await BatchSpeechTranscriberService.transcribe(
+                request,
+                languageDetector: languageDetector,
+                speechRecognizer: speechRecognizer,
+                onLanguageFallback: { fallback in
+                    await fallbackCollector.record(fallback)
+                }
+            )
+            for fileIndex in workItem.fileIndices {
+                await onFileConsumed(fileIndex)
             }
-        )
+        case let .manual(run):
+            result = try await BatchManualSpeechTranscriberService.transcribe(
+                run,
+                speechRecognizer: speechRecognizer,
+                onFileConsumed: onFileConsumed
+            )
+        case let .noAudio(localeIdentifier):
+            result = BatchSpeechTranscriptionResult(
+                segments: [],
+                localeIdentifier: localeIdentifier,
+                languageFallback: nil
+            )
+            for fileIndex in workItem.fileIndices {
+                await onFileConsumed(fileIndex)
+            }
+        }
         return TranscriptionWorkResult(
             index: workItem.index,
-            fileIndex: workItem.fileIndex,
             segments: result.segments,
             localeIdentifier: result.localeIdentifier
         )
@@ -556,48 +543,49 @@ extension BatchTranscriptionCoordinator {
         totalFileCount: Int
     ) async throws -> [TranscriptionWorkResult] {
         try await withThrowingTaskGroup(of: TranscriptionWorkResult.self) { group in
+            let progressTracker = BatchTranscriptionFileProgressTracker(workItems: workItems)
+            let reportFileConsumed: @Sendable (Int, Int) async -> Void = { [weak self] workItemIndex, fileIndex in
+                guard let completedFileCount = await progressTracker.consume(
+                    workItemIndex: workItemIndex,
+                    fileIndex: fileIndex
+                ) else { return }
+                await self?.enqueueProgressNotification(
+                    meetingId: meetingId,
+                    sessionId: sessionId,
+                    completedFileCount: completedFileCount,
+                    totalFileCount: totalFileCount
+                )
+            }
             let initialCount = min(BatchTranscriptionConcurrency.appleSpeechMaximum, workItems.count)
             for workItem in workItems.prefix(initialCount) {
                 group.addTask { [self] in
-                    try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                    try await transcribe(
+                        workItem: workItem,
+                        fallbackCollector: fallbackCollector,
+                        onFileConsumed: { fileIndex in
+                            await reportFileConsumed(workItem.index, fileIndex)
+                        }
+                    )
                 }
             }
 
             var nextIndex = initialCount
             var results: [TranscriptionWorkResult] = []
-            var remainingWorkItemCountByFile = Dictionary(
-                grouping: workItems,
-                by: \.fileIndex
-            ).mapValues(\.count)
-            var completedFileCount = 0
             do {
                 while let result = try await group.next() {
                     results.append(result)
-                    let didCompleteFile: Bool
-                    if remainingWorkItemCountByFile[result.fileIndex] == 1 {
-                        remainingWorkItemCountByFile[result.fileIndex] = nil
-                        completedFileCount += 1
-                        didCompleteFile = true
-                    } else if let remainingCount = remainingWorkItemCountByFile[result.fileIndex] {
-                        remainingWorkItemCountByFile[result.fileIndex] = remainingCount - 1
-                        didCompleteFile = false
-                    } else {
-                        didCompleteFile = false
-                    }
                     if nextIndex < workItems.count {
                         let workItem = workItems[nextIndex]
                         nextIndex += 1
                         group.addTask { [self] in
-                            try await transcribe(workItem: workItem, fallbackCollector: fallbackCollector)
+                            try await transcribe(
+                                workItem: workItem,
+                                fallbackCollector: fallbackCollector,
+                                onFileConsumed: { fileIndex in
+                                    await reportFileConsumed(workItem.index, fileIndex)
+                                }
+                            )
                         }
-                    }
-                    if didCompleteFile {
-                        enqueueProgressNotification(
-                            meetingId: meetingId,
-                            sessionId: sessionId,
-                            completedFileCount: completedFileCount,
-                            totalFileCount: totalFileCount
-                        )
                     }
                 }
                 await finishProgressNotifications()
@@ -758,5 +746,39 @@ extension BatchTranscriptionCoordinator {
             }
             return (session.meetingId, session.isBatchRetranscriptionPending)
         }
+    }
+}
+
+private actor BatchTranscriptionFileProgressTracker {
+    private struct Portion: Hashable {
+        let workItemIndex: Int
+        let fileIndex: Int
+    }
+
+    private var remainingWorkItemCountByFile: [Int: Int] = [:]
+    private var consumedPortions: Set<Portion> = []
+    private var completedFileCount = 0
+
+    init(workItems: [BatchTranscriptionCoordinator.TranscriptionWorkItem]) {
+        for workItem in workItems {
+            for fileIndex in workItem.fileIndices {
+                remainingWorkItemCountByFile[fileIndex, default: 0] += 1
+            }
+        }
+    }
+
+    func consume(workItemIndex: Int, fileIndex: Int) -> Int? {
+        let portion = Portion(workItemIndex: workItemIndex, fileIndex: fileIndex)
+        guard consumedPortions.insert(portion).inserted,
+              let remainingCount = remainingWorkItemCountByFile[fileIndex] else {
+            return nil
+        }
+        if remainingCount == 1 {
+            remainingWorkItemCountByFile[fileIndex] = nil
+            completedFileCount += 1
+            return completedFileCount
+        }
+        remainingWorkItemCountByFile[fileIndex] = remainingCount - 1
+        return nil
     }
 }

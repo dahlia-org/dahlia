@@ -29,6 +29,27 @@ import GRDB
         }
 
         @Test
+        func manualModeCompletesProgressForCAFWithoutAudioFrames() async throws {
+            let fixture = try makeFixture(name: "BatchManualEmptyCAF", duration: 0.0125)
+            defer { fixture.removeFiles() }
+            try await createManualRecording(fixture: fixture, frameCounts: [])
+            let stateProbe = BatchProgressStateProbe()
+            let recognizer = ProgressSpeechRecognizer()
+            let coordinator = makeCoordinator(
+                fixture: fixture,
+                detector: ProgressLanguageDetector(detections: []),
+                recognizer: recognizer,
+                stateProbe: stateProbe
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitUntil { await stateProbe.didComplete }
+
+            #expect(await recognizer.callCount == 0)
+            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 1)
+        }
+
+        @Test
         func reportsEachManualMultiRangeCAFAsOneCompletedFile() async throws {
             let fixture = try makeFixture(name: "BatchManualMultiRangeProgress", duration: 0.015)
             defer { fixture.removeFiles() }
@@ -118,16 +139,24 @@ import GRDB
         }
 
         private func createSegmentedAutomaticRecording(fixture: BatchAudioTestFixture) async throws {
+            try await createManualRecording(fixture: fixture, frameCounts: [80, 120])
+            try await configureAutomaticLanguageDetection(fixture: fixture)
+        }
+
+        private func createManualRecording(
+            fixture: BatchAudioTestFixture,
+            frameCounts: [AVAudioFrameCount]
+        ) async throws {
             let recorder = try makeRecorder(fixture: fixture, targetSegmentDuration: .milliseconds(5))
             let writer = try await recorder.beginRange(
                 source: .microphone,
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now
             )
-            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 80))
-            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 120))
+            for frameCount in frameCounts {
+                try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: frameCount))
+            }
             try await recorder.finish()
-            try await configureAutomaticLanguageDetection(fixture: fixture)
         }
 
         private func createSeparateAutomaticRecordingFiles(
@@ -277,6 +306,44 @@ import GRDB
         }
     }
 
+    extension BatchTranscriptionProgressTests {
+        @Test
+        func manualModeRecognizesContiguousCAFAsOneLogicalRun() async throws {
+            let fixture = try makeFixture(name: "BatchManualLogicalRun", duration: 0.0125)
+            defer { fixture.removeFiles() }
+            try await createManualRecording(fixture: fixture, frameCounts: [80, 120])
+            let stateProbe = BatchProgressStateProbe()
+            let recognizer = ProgressSpeechRecognizer(pauseAfterFirstSlice: true)
+            defer { Task { await recognizer.releaseFirstSlice() } }
+            let coordinator = makeCoordinator(
+                fixture: fixture,
+                detector: ProgressLanguageDetector(detections: []),
+                recognizer: recognizer,
+                stateProbe: stateProbe
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitUntil { await recognizer.didConsumeFirstSlice }
+            try await waitUntil {
+                await stateProbe.reportedProgress().last?.completedFileCount == 1
+            }
+            #expect(!(await stateProbe.didComplete))
+            await recognizer.releaseFirstSlice()
+            try await waitUntil { await stateProbe.didComplete }
+
+            #expect(await recognizer.fileCallCount == 0)
+            #expect(await recognizer.sliceCounts == [2])
+            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 2)
+            let transcript = try await fixture.database.dbQueue.read { db in
+                try TranscriptSegmentRecord
+                    .filter(Column("sessionId") == fixture.session.id)
+                    .fetchOne(db)
+            }
+            #expect(transcript?.startTime == fixture.now.addingTimeInterval(0.001))
+            #expect(transcript?.speakerLabel == RecordingAudioSource.microphone.speakerLabel)
+        }
+    }
+
     private enum BatchTranscriptionProgressTestError: Error {
         case timedOut
     }
@@ -358,10 +425,22 @@ import GRDB
     }
 
     private actor ProgressSpeechRecognizer: BatchSpeechRecognizing {
-        private(set) var callCount = 0
+        private let pauseAfterFirstSlice: Bool
+        private var firstSliceContinuation: CheckedContinuation<Void, Never>?
+        private(set) var fileCallCount = 0
+        private(set) var sliceCounts: [Int] = []
+        private(set) var didConsumeFirstSlice = false
+
+        init(pauseAfterFirstSlice: Bool = false) {
+            self.pauseAfterFirstSlice = pauseAfterFirstSlice
+        }
+
+        var callCount: Int {
+            fileCallCount + sliceCounts.count
+        }
 
         func recognize(audioURL _: URL, locale _: Locale) -> [BatchSpeechRecognition] {
-            callCount += 1
+            fileCallCount += 1
             return [
                 BatchSpeechRecognition(
                     startSeconds: 0.001,
@@ -369,6 +448,49 @@ import GRDB
                     text: "recognized-\(callCount)"
                 ),
             ]
+        }
+
+        func recognize(
+            audioSlices: [BatchSpeechAudioSlice],
+            locale _: Locale
+        ) -> [BatchSpeechRecognition] {
+            sliceCounts.append(audioSlices.count)
+            return [
+                BatchSpeechRecognition(
+                    startSeconds: 0.001,
+                    endSeconds: 0.002,
+                    text: "recognized-\(callCount)"
+                ),
+            ]
+        }
+
+        func recognize(
+            audioSlices: [BatchSpeechAudioSlice],
+            locale _: Locale,
+            onSliceConsumed: @escaping @Sendable (Int) async -> Void
+        ) async -> [BatchSpeechRecognition] {
+            sliceCounts.append(audioSlices.count)
+            for sliceIndex in audioSlices.indices {
+                await onSliceConsumed(sliceIndex)
+                if sliceIndex == audioSlices.startIndex, pauseAfterFirstSlice {
+                    didConsumeFirstSlice = true
+                    await withCheckedContinuation { continuation in
+                        firstSliceContinuation = continuation
+                    }
+                }
+            }
+            return [
+                BatchSpeechRecognition(
+                    startSeconds: 0.001,
+                    endSeconds: 0.002,
+                    text: "recognized-\(callCount)"
+                ),
+            ]
+        }
+
+        func releaseFirstSlice() {
+            firstSliceContinuation?.resume()
+            firstSliceContinuation = nil
         }
     }
 #endif

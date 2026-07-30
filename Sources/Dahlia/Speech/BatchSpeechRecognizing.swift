@@ -11,10 +11,32 @@ struct BatchSpeechRecognition: Sendable {
 
 protocol BatchSpeechRecognizing: Sendable {
     func recognize(audioURL: URL, locale: Locale) async throws -> [BatchSpeechRecognition]
+    func recognize(audioSlices: [BatchSpeechAudioSlice], locale: Locale) async throws -> [BatchSpeechRecognition]
+    func recognize(
+        audioSlices: [BatchSpeechAudioSlice],
+        locale: Locale,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
+    ) async throws -> [BatchSpeechRecognition]
     func unload() async
 }
 
 extension BatchSpeechRecognizing {
+    func recognize(audioSlices _: [BatchSpeechAudioSlice], locale _: Locale) async throws -> [BatchSpeechRecognition] {
+        throw BatchSpeechTranscriberError.invalidAudioRange
+    }
+
+    func recognize(
+        audioSlices: [BatchSpeechAudioSlice],
+        locale: Locale,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
+    ) async throws -> [BatchSpeechRecognition] {
+        let recognitions = try await recognize(audioSlices: audioSlices, locale: locale)
+        for sliceIndex in audioSlices.indices {
+            await onSliceConsumed(sliceIndex)
+        }
+        return recognitions
+    }
+
     func unload() async {}
 }
 
@@ -29,11 +51,62 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
         try await assetPreparer.prepare(transcriber: transcriber, localeIdentifier: locale.identifier)
         let audioFile = try AVAudioFile(forReading: audioURL)
+        return try await recognize(
+            transcriber: transcriber,
+            audioFormat: audioFile.processingFormat
+        ) { analyzer in
+            try await analyzer.analyzeSequence(from: audioFile)
+        }
+    }
+
+    func recognize(audioSlices: [BatchSpeechAudioSlice], locale: Locale) async throws -> [BatchSpeechRecognition] {
+        try await recognize(audioSlices: audioSlices, locale: locale, onSliceConsumed: { _ in })
+    }
+
+    func recognize(
+        audioSlices: [BatchSpeechAudioSlice],
+        locale: Locale,
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void
+    ) async throws -> [BatchSpeechRecognition] {
+        guard let firstSlice = audioSlices.first else {
+            throw BatchSpeechTranscriberError.invalidAudioRange
+        }
+        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
+        try await assetPreparer.prepare(transcriber: transcriber, localeIdentifier: locale.identifier)
+        let sourceFormat = try {
+            let firstFile = try AVAudioFile(forReading: firstSlice.audioURL)
+            return firstFile.processingFormat
+        }()
+        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: [transcriber],
+            considering: sourceFormat
+        ) else {
+            throw BatchSpeechTranscriberError.audioFormatUnavailable
+        }
+        let inputSequence = try BatchSpeechAnalyzerInputSequence(
+            slices: audioSlices,
+            sourceFormat: sourceFormat,
+            analyzerFormat: analyzerFormat,
+            onSliceConsumed: onSliceConsumed
+        )
+        return try await recognize(
+            transcriber: transcriber,
+            audioFormat: analyzerFormat
+        ) { analyzer in
+            try await analyzer.analyzeSequence(inputSequence)
+        }
+    }
+
+    private func recognize(
+        transcriber: SpeechTranscriber,
+        audioFormat: AVAudioFormat,
+        analyze: @escaping @Sendable (SpeechAnalyzer) async throws -> CMTime?
+    ) async throws -> [BatchSpeechRecognition] {
         let analyzer = SpeechAnalyzer(
             modules: [transcriber],
             options: SpeechAnalyzer.Options(priority: .userInitiated, modelRetention: .lingering)
         )
-        try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
+        try await analyzer.prepareToAnalyze(in: audioFormat)
 
         let resultTask = Task<[BatchSpeechRecognition], Error> {
             var recognitions: [BatchSpeechRecognition] = []
@@ -50,7 +123,7 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         }
 
         do {
-            guard let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile) else {
+            guard let lastSampleTime = try await analyze(analyzer) else {
                 throw BatchSpeechTranscriberError.analysisDidNotAdvance
             }
             try await analyzer.finalizeAndFinish(through: lastSampleTime)
