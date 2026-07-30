@@ -9,36 +9,27 @@ import os
     @Suite(.serialized)
     struct MeetingMetricsReworkTests {
         @Test
-        func continuouslyAdvancingCompareAndSwapRetriesRemainBounded() async throws {
+        func continuouslyAdvancingCompareAndSwapWaitsForSettleBetweenAnalyses() async throws {
             let (database, _, meeting, _) = try MeetingMetricsTestSupport.database()
-            let probe = AdvancingRevisionOutcomeProbe()
-            let settleProbe = RevisionSettleProbe()
+            let probe = RevisionSettleOrderingProbe()
             let coordinator = await MeetingMetricsCoordinator(
                 dbQueue: database.dbQueue,
-                analyze: { _ in await probe.next() },
-                waitForRevisionSettle: { await settleProbe.wait() }
+                analyze: { _ in await probe.analyze() },
+                waitForRevisionSettle: { await probe.waitForSettle() }
             )
             await coordinator.activate(meetingId: meeting.id)
-            #expect(await waitUntil {
-                let calls = await probe.callCount()
-                let waits = await settleProbe.waitCount()
-                return calls == 1 && waits == 1
-            })
+            try #require(await probe.nextEvent() == .settle(1))
 
-            for expectedCallCount in 2 ... MeetingMetricsConstants.maximumRevisionChangeRetries + 1 {
-                await settleProbe.releaseNext()
-                #expect(await waitUntil {
-                    let calls = await probe.callCount()
-                    let waits = await settleProbe.waitCount()
-                    return calls == expectedCallCount && waits == expectedCallCount
-                })
+            for expectedCallCount in 2 ... 4 {
+                await probe.releaseNextSettle()
+                #expect(await probe.nextEvent() == .analysis(expectedCallCount))
+                #expect(await probe.nextEvent() == .settle(expectedCallCount))
             }
 
-            await drainMainActor()
-            #expect(await probe.callCount() == MeetingMetricsConstants.maximumRevisionChangeRetries + 1)
+            #expect(await probe.callCount() == 4)
             #expect(await coordinator.phase == .waitingForStableRevision)
             await coordinator.deactivate()
-            await settleProbe.releaseNext()
+            await probe.releaseNextSettle()
         }
 
         @Test
@@ -168,6 +159,70 @@ import os
             #expect(cached.isPartialAnalysis)
         }
 
+        @Test
+        func workerExcludesUnconfirmedSegmentsFromMetricsAndCoverage() async throws {
+            let (database, _, meeting, session) = try MeetingMetricsTestSupport.database()
+            try await database.dbQueue.write { db in
+                try MeetingMetricsTestSupport.record(
+                    meetingId: meeting.id,
+                    sessionId: session.id,
+                    start: 0,
+                    end: 10,
+                    text: "abc",
+                    speakerLabel: "mic"
+                ).insert(db)
+                try MeetingMetricsTestSupport.record(
+                    meetingId: meeting.id,
+                    sessionId: session.id,
+                    start: 2,
+                    end: 12,
+                    text: "unconfirmed system",
+                    confirmed: false,
+                    speakerLabel: "system"
+                ).insert(db)
+                try MeetingMetricsTestSupport.record(
+                    meetingId: meeting.id,
+                    sessionId: session.id,
+                    start: 12,
+                    end: 14,
+                    text: "unconfirmed unknown",
+                    confirmed: false,
+                    speakerLabel: nil
+                ).insert(db)
+                try MeetingMetricsTestSupport.record(
+                    meetingId: meeting.id,
+                    sessionId: session.id,
+                    start: 14,
+                    end: nil,
+                    text: "unconfirmed invalid",
+                    confirmed: false,
+                    speakerLabel: "mic"
+                ).insert(db)
+            }
+
+            let worker = MeetingMetricsWorker(dbQueue: database.dbQueue)
+            guard case let .saved(result, _) = try await worker.analyze(meetingId: meeting.id) else {
+                Issue.record("Expected metrics for the confirmed segment")
+                return
+            }
+
+            #expect(result.conversationTalkSeconds == 10)
+            #expect(result.overlapSeconds == nil)
+            #expect(result.confirmedSegmentCount == 1)
+            #expect(result.validSegmentCount == 1)
+            #expect(result.invalidDurationSegmentCount == 0)
+            #expect(result.unknownSourceSegmentCount == 0)
+            #expect(result.totalCharacterCount == 3)
+            #expect(result.validCharacterCount == 3)
+            #expect(result.unknownSourceCharacterCount == 0)
+            #expect(result.sourceRows.count == 1)
+            let microphone = try #require(result.sourceRows.first)
+            #expect(microphone.source == .microphone)
+            #expect(microphone.speakingSeconds == 10)
+            #expect(microphone.characterCount == 3)
+            #expect(microphone.turnCount == 1)
+        }
+
         private func result(meetingId: UUID, revision: Int64, seconds: Double) -> MeetingMetricsResult {
             MeetingMetricsResult(
                 meetingId: meetingId,
@@ -200,12 +255,6 @@ import os
             return false
         }
 
-        private func drainMainActor() async {
-            for _ in 0 ..< 20 {
-                await Task.yield()
-                await MainActor.run {}
-            }
-        }
     }
 
     private actor RevisionAnalysisRecorder {
@@ -229,37 +278,58 @@ import os
         }
     }
 
-    private actor AdvancingRevisionOutcomeProbe {
-        private var calls = 0
+    private actor RevisionSettleOrderingProbe {
+        enum Event: Equatable {
+            case analysis(Int)
+            case settle(Int)
+        }
 
-        func next() -> MeetingMetricsWorker.Outcome {
+        private var calls = 0
+        private var waits = 0
+        private var events: [Event] = []
+        private var eventWaiters: [CheckedContinuation<Event, Never>] = []
+        private var settleWaiters: [CheckedContinuation<Void, Never>] = []
+
+        func analyze() -> MeetingMetricsWorker.Outcome {
             calls += 1
+            if calls > 1 {
+                publish(.analysis(calls))
+            }
             return .revisionChanged(Int64(calls))
+        }
+
+        func waitForSettle() async {
+            waits += 1
+            publish(.settle(waits))
+            await withCheckedContinuation { continuation in
+                settleWaiters.append(continuation)
+            }
+        }
+
+        func nextEvent() async -> Event {
+            if !events.isEmpty {
+                return events.removeFirst()
+            }
+            return await withCheckedContinuation { continuation in
+                eventWaiters.append(continuation)
+            }
+        }
+
+        func releaseNextSettle() {
+            guard !settleWaiters.isEmpty else { return }
+            settleWaiters.removeFirst().resume()
         }
 
         func callCount() -> Int {
             calls
         }
-    }
 
-    private actor RevisionSettleProbe {
-        private var waiters: [CheckedContinuation<Void, Never>] = []
-        private var waits = 0
-
-        func wait() async {
-            waits += 1
-            await withCheckedContinuation { continuation in
-                waiters.append(continuation)
+        private func publish(_ event: Event) {
+            if eventWaiters.isEmpty {
+                events.append(event)
+            } else {
+                eventWaiters.removeFirst().resume(returning: event)
             }
-        }
-
-        func releaseNext() {
-            guard !waiters.isEmpty else { return }
-            waiters.removeFirst().resume()
-        }
-
-        func waitCount() -> Int {
-            waits
         }
     }
 

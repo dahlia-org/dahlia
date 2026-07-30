@@ -19,6 +19,5 @@ enum MeetingMetricsConstants {
     static let cancellationCheckSegmentStride = 500
     static let maximumAnalyzedSegmentCount = 5000
     static let segmentReadChunkSize = 500
-    static let maximumRevisionChangeRetries = 2
     static let revisionSettleDelay: Duration = .milliseconds(500)
 }

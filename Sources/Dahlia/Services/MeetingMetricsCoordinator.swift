@@ -31,7 +31,6 @@ final class MeetingMetricsCoordinator {
     private var scope: UUID?
     private var observedRevision: Int64?
     private var completedRevision: Int64?
-    private var consecutiveRevisionChangeRetries = 0
     private var generation: UInt64 = 0
 
     private(set) var phase: Phase = .idle
@@ -74,7 +73,7 @@ final class MeetingMetricsCoordinator {
         guard scope != meetingId else {
             startObservationIfNeeded(meetingId: meetingId)
             if analysisTask == nil, settleTask == nil, phase == .loading {
-                scheduleAnalysis(meetingId: meetingId, resetRetryBudget: true)
+                scheduleAnalysis(meetingId: meetingId)
             }
             return
         }
@@ -95,7 +94,6 @@ final class MeetingMetricsCoordinator {
         scope = nil
         observedRevision = nil
         completedRevision = nil
-        consecutiveRevisionChangeRetries = 0
         phase = .idle
         result = nil
         insights = nil
@@ -104,7 +102,7 @@ final class MeetingMetricsCoordinator {
     func retry() {
         guard let scope else { return }
         startObservationIfNeeded(meetingId: scope)
-        scheduleAnalysis(meetingId: scope, resetRetryBudget: true)
+        scheduleAnalysis(meetingId: scope)
     }
 
     func localizedCards() -> [Card] {
@@ -184,21 +182,18 @@ final class MeetingMetricsCoordinator {
         observedRevision = revision
         guard completedRevision != revision else { return }
         if completedRevision == nil, analysisTask == nil, settleTask == nil {
-            scheduleAnalysis(meetingId: meetingId, resetRetryBudget: true)
+            scheduleAnalysis(meetingId: meetingId)
         } else {
-            scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+            scheduleAfterRevisionSettles(meetingId: meetingId)
         }
     }
 
-    private func scheduleAnalysis(meetingId: UUID, resetRetryBudget: Bool) {
+    private func scheduleAnalysis(meetingId: UUID) {
         generation &+= 1
         let expectedGeneration = generation
         analysisTask?.cancel()
         settleTask?.cancel()
         settleTask = nil
-        if resetRetryBudget {
-            consecutiveRevisionChangeRetries = 0
-        }
         phase = .loading
         analysisTask = Task { [weak self, analyze] in
             do {
@@ -223,7 +218,7 @@ final class MeetingMetricsCoordinator {
         }
     }
 
-    private func scheduleAfterRevisionSettles(meetingId: UUID, resetRetryBudget: Bool) {
+    private func scheduleAfterRevisionSettles(meetingId: UUID) {
         generation &+= 1
         let expectedGeneration = generation
         analysisTask?.cancel()
@@ -238,7 +233,7 @@ final class MeetingMetricsCoordinator {
                       self.scope == meetingId,
                       self.generation == expectedGeneration else { return }
                 self.settleTask = nil
-                self.scheduleAnalysis(meetingId: meetingId, resetRetryBudget: resetRetryBudget)
+                self.scheduleAnalysis(meetingId: meetingId)
             } catch is CancellationError {
             } catch {
                 guard let self,
@@ -258,34 +253,26 @@ final class MeetingMetricsCoordinator {
         case let .saved(result, insights):
             completedRevision = result.transcriptRevision
             observedRevision = max(observedRevision ?? result.transcriptRevision, result.transcriptRevision)
-            consecutiveRevisionChangeRetries = 0
             self.result = result
             self.insights = insights
             phase = .ready
             if observedRevision != completedRevision {
-                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+                scheduleAfterRevisionSettles(meetingId: meetingId)
             }
         case let .empty(revision):
             completedRevision = revision
             observedRevision = max(observedRevision ?? revision, revision)
-            consecutiveRevisionChangeRetries = 0
             result = nil
             insights = nil
             phase = .empty
             if observedRevision != completedRevision {
-                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
+                scheduleAfterRevisionSettles(meetingId: meetingId)
             }
         case let .revisionChanged(revision):
             observedRevision = max(observedRevision ?? revision, revision)
             result = nil
             insights = nil
-            if consecutiveRevisionChangeRetries < MeetingMetricsConstants.maximumRevisionChangeRetries {
-                consecutiveRevisionChangeRetries += 1
-                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: false)
-            } else {
-                consecutiveRevisionChangeRetries = 0
-                scheduleAfterRevisionSettles(meetingId: meetingId, resetRetryBudget: true)
-            }
+            scheduleAfterRevisionSettles(meetingId: meetingId)
         }
     }
 
