@@ -8,6 +8,38 @@ import os
 
     struct AudioFrameRouterTests {
         @Test
+        func routesToMeteringWithoutRecordingOrRecognitionConsumers() async throws {
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: 48000,
+                channels: 1,
+                interleaved: false
+            ))
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 32))
+            buffer.frameLength = 32
+            let samples = try #require(buffer.floatChannelData?[0])
+            for frame in 0 ..< Int(buffer.frameLength) {
+                samples[frame] = 0.1
+            }
+            let events = AsyncStream.makeStream(of: Double.self, bufferingPolicy: .bufferingNewest(1))
+            let worker = AudioLevelMeteringWorker(source: .system) { _, level in
+                events.continuation.yield(level)
+            }
+            let router = AudioFrameRouter()
+            let pipeline = AudioSourcePipeline(source: .system, router: router, captureFormat: format)
+            router.setMeteringWorker(worker)
+            var iterator = events.stream.makeAsyncIterator()
+
+            router.route(pipeline.capture(buffer))
+
+            #expect(try #require(await iterator.next()) > 0)
+            router.removeAllConsumers()
+            await router.waitUntilIdle()
+            await worker.waitUntilFinished()
+            events.continuation.finish()
+        }
+
+        @Test
         func routesOneCapturedBufferToBatchAndLiveConsumers() async throws {
             let format = try #require(AVAudioFormat(
                 commonFormat: .pcmFormatInt16,

@@ -84,6 +84,9 @@ flowchart LR
     LiveWorker --> Recognizer["AudioBufferBridge<br/>SpeechTranscriberService"]
     Recognizer --> Events["TranscriptionEventPipeline"]
 
+    Router -.->|"latest-wins / 約10 Hz"| Meter["AudioLevelMeteringWorker<br/>rebuildable UI projection"]
+    Meter -.-> LevelUI["録音パネル<br/>音源別レベルメーター"]
+
     Events --> Caption["bounded UI projection<br/>LiveCaptionStore / TranscriptStore"]
     Events --> Chat["live transcript relay"]
     Events -->|"realtime policy"| StreamWriter["TranscriptPersistenceWriter"]
@@ -162,6 +165,8 @@ capture callback ごとに `AudioSourcePipeline.capture` が frame count から 
 
 - batch consumer は `SegmentedAudioSourceWriter.appendBuffer` へ同期投入する。
 - live consumer は `LiveAudioFrameWorker` へ投入し、format conversion と Speech recognition を callback 外で行う。
+- 音量メーターは最新1フレームだけを保持する表示専用workerへ渡し、約10 Hzで音源別レベルを更新する。
+  このprojectionは中間値を破棄でき、MainActorや表示処理を録音の保存・認識・停止drainから分離する。
 - writer queue が満杯の場合は、その後の受付を閉じて `writeQueueOverflow` を録音失敗として表面化する。
 - batch mode の live lane は低遅延の bounded queue であり、正本音声の writer lane とは独立して縮退できる。
 - realtime mode は再処理可能な batch 音声を持たないため、live recognition input を lossless に扱う。

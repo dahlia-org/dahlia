@@ -151,6 +151,11 @@ extension RecordingSessionController {
                 recognition: attachment.recognition,
                 batchRangeOrigin: batchRangeOrigin
             )
+            attachAudioLevelMeter(
+                to: preparation.pipeline,
+                runtimeID: newRuntimeID,
+                sessionId: snapshot.sessionId
+            )
             try await newCapture.start()
             try requireCurrentSourceRuntime(
                 source: preparation.source,
@@ -364,6 +369,11 @@ extension RecordingSessionController {
                 recognition: attachment.recognition,
                 batchRangeOrigin: batchRangeOrigin
             )
+            attachAudioLevelMeter(
+                to: preparation.pipeline,
+                runtimeID: replacementRuntimeID,
+                sessionId: snapshot.sessionId
+            )
             try await replacementCapture.start()
             try requireCurrentSourceRuntime(
                 source: preparation.source,
@@ -402,6 +412,7 @@ extension RecordingSessionController {
     ) async throws {
         if let runtimeID,
            sourceRuntimes[preparation.source]?.id == runtimeID {
+            invalidateAudioLevelDelivery(for: preparation.source)
             sourceRuntimes[preparation.source] = nil
         } else if sourceRuntimes[preparation.source]?.id == previousRuntime.id {
             if didAttemptPreviousCaptureStop {
@@ -483,6 +494,7 @@ extension RecordingSessionController {
         guard sourceRuntimes[source]?.id == runtime.id else {
             throw RecordingSessionControllerError.sessionNotActive
         }
+        invalidateAudioLevelDelivery(for: source)
         sourceRuntimes[source] = nil
         var currentSnapshot = snapshot
         currentSnapshot.enabledSources = Set(sourceRuntimes.keys)
@@ -639,6 +651,11 @@ extension RecordingSessionController {
         var restoredRuntime = previousRuntime
         restoredRuntime.batchRangeOrigin = batchRangeOrigin
         sourceRuntimes[source] = restoredRuntime
+        attachAudioLevelMeter(
+            to: previousRuntime.pipeline,
+            runtimeID: previousRuntime.id,
+            sessionId: sessionId
+        )
         do {
             try await previousRuntime.capture.start()
             try requireCurrentSourceRuntime(

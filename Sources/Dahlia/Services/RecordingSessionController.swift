@@ -12,6 +12,10 @@ actor RecordingSessionController {
         _ message: String,
         _ isFatal: Bool
     ) -> Void
+    typealias AudioLevelHandler = @MainActor @Sendable (
+        _ source: RecordingAudioSource,
+        _ level: Double
+    ) -> Void
 
     struct SourceConfiguration: Equatable {
         let source: RecordingAudioSource
@@ -131,12 +135,14 @@ actor RecordingSessionController {
     private var preparation: Preparation?
     var sourceRuntimes: [RecordingAudioSource: SourceRuntime] = [:]
     var sourceRuntimeGenerations: [RecordingAudioSource: UUID] = [:]
+    var audioLevelDeliveryGates: [RecordingAudioSource: RecordingAudioLevelDeliveryGate] = [:]
     var pendingRecognitionStarts: [UUID: PendingRecognitionStart] = [:]
     var batchRecording: (any BatchRecordingSession)?
     var batchEventTask: Task<Void, Never>?
     private var batchScheduler: (any BatchTranscriptionScheduling)?
     var onEvent: EventHandler?
     var onRuntimeFailure: RuntimeFailureHandler?
+    var onAudioLevel: AudioLevelHandler?
     var currentLocale: Locale?
     var batchRuntimeFailureMessage: String?
 
@@ -154,7 +160,8 @@ actor RecordingSessionController {
     func prepare(
         _ request: PreparationRequest,
         onEvent: @escaping EventHandler,
-        onRuntimeFailure: @escaping RuntimeFailureHandler
+        onRuntimeFailure: @escaping RuntimeFailureHandler,
+        onAudioLevel: @escaping AudioLevelHandler = { _, _ in }
     ) async throws {
         guard case .idle = state else {
             throw RecordingSessionControllerError.sessionAlreadyActive
@@ -243,6 +250,7 @@ actor RecordingSessionController {
             batchScheduler = request.batchScheduler
             self.onEvent = onEvent
             self.onRuntimeFailure = onRuntimeFailure
+            self.onAudioLevel = onAudioLevel
             currentLocale = request.locale
             state = .prepared(snapshot)
             startBatchEventMonitoring()
@@ -295,6 +303,7 @@ actor RecordingSessionController {
             throw RecordingSessionControllerError.sessionNotActive
         }
         state = .stopping(snapshot)
+        invalidateAllAudioLevelDeliveries()
 
         let firstCaptureFailure = await stopCaptures()
         await drainRouters()
@@ -429,6 +438,7 @@ actor RecordingSessionController {
     }
 
     private func resetState() {
+        invalidateAllAudioLevelDeliveries()
         batchEventTask?.cancel()
         batchEventTask = nil
         preparation = nil
@@ -439,6 +449,7 @@ actor RecordingSessionController {
         batchScheduler = nil
         onEvent = nil
         onRuntimeFailure = nil
+        onAudioLevel = nil
         currentLocale = nil
         batchRuntimeFailureMessage = nil
         state = .idle
