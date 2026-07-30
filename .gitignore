@@ -1,4 +1,5 @@
 .build/
+.codex-tmp/
 .swiftpm/
 *.app
 Dahlia.zip
