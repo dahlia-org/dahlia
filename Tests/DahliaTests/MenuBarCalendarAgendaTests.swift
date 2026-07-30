@@ -76,7 +76,18 @@ import Foundation
         }
 
         @Test
-        func prioritizesMostRecentlyStartedOngoingEventThenNextEvent() {
+        func prioritizesAttendingOngoingEventBeforeLaterUnconfirmedEvent() {
+            let attending = event(id: "attending", start: -1_800, end: 3_600, isAttending: true)
+            let laterUnconfirmed = event(id: "unconfirmed", start: -600, end: 1_800)
+
+            let agenda = agenda(googleEvents: [laterUnconfirmed, attending])
+
+            #expect(agenda.featuredEvent?.id == attending.id)
+            #expect(agenda.featuredEventIsOngoing)
+        }
+
+        @Test
+        func prioritizesMostRecentlyStartedOngoingEventWithSameParticipationThenNextEvent() {
             let earlierOngoing = event(id: "earlier", start: -1_800, end: 3_600)
             let laterOngoing = event(id: "later", start: -600, end: 1_800)
             let next = event(id: "next", start: 3_600, end: 7_200)
@@ -106,6 +117,41 @@ import Foundation
 
             #expect(agenda.events == [allDay])
             #expect(agenda.featuredEvent == nil)
+        }
+
+        @Test
+        func usesNoEventsLabelWhenNoTimedEventIsAvailable() {
+            let startOfDay = calendar.startOfDay(for: now)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)
+                ?? startOfDay.addingTimeInterval(86_400)
+            let allDay = event(
+                id: "all-day",
+                startDate: startOfDay,
+                endDate: endOfDay,
+                isAllDay: true
+            )
+            let declined = event(id: "declined", start: 3_600, end: 7_200, isDeclined: true)
+            let filteredAgenda = MenuBarCalendarAgenda(
+                googleEvents: [declined],
+                macEvents: [],
+                enabledSources: [.google],
+                filter: CalendarEventFilter(includesDeclinedEvents: false),
+                now: now,
+                calendar: calendar
+            )
+
+            for emptyAgenda in [agenda(googleEvents: []), agenda(googleEvents: [allDay]), filteredAgenda] {
+                #expect(emptyAgenda.labelText(showsTitle: true, showsCountdown: true, now: now) == L10n.menuBarNoEvents)
+                #expect(emptyAgenda.accessibilityLabel(now: now) == L10n.menuBarNoEvents)
+            }
+        }
+
+        @Test
+        func keepsDahliaFallbackWhenAllCalendarLabelDetailsAreDisabled() {
+            let upcoming = event(id: "upcoming", start: 3_600, end: 7_200)
+
+            #expect(agenda(googleEvents: [upcoming]).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
+            #expect(agenda(googleEvents: []).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
         }
 
         @Test
@@ -158,7 +204,8 @@ import Foundation
             start: TimeInterval,
             end: TimeInterval,
             isAllDay: Bool = false,
-            isDeclined: Bool = false
+            isDeclined: Bool = false,
+            isAttending: Bool = false
         ) -> CalendarEvent {
             event(
                 id: id,
@@ -168,7 +215,8 @@ import Foundation
                 startDate: now.addingTimeInterval(start),
                 endDate: now.addingTimeInterval(end),
                 isAllDay: isAllDay,
-                isDeclined: isDeclined
+                isDeclined: isDeclined,
+                isAttending: isAttending
             )
         }
 
@@ -180,7 +228,8 @@ import Foundation
             startDate: Date,
             endDate: Date,
             isAllDay: Bool = false,
-            isDeclined: Bool = false
+            isDeclined: Bool = false,
+            isAttending: Bool = false
         ) -> CalendarEvent {
             CalendarEvent(
                 id: id,
@@ -197,6 +246,7 @@ import Foundation
                 isAllDay: isAllDay,
                 hasOtherAttendees: true,
                 isDeclined: isDeclined,
+                isAttending: isAttending,
                 conferenceURI: URL(string: "https://meet.example.com/\(id)")
             )
         }

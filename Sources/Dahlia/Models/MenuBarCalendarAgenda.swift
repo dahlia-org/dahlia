@@ -47,7 +47,8 @@ struct MenuBarCalendarAgenda: Equatable {
     }
 
     func labelText(showsTitle: Bool, showsCountdown: Bool, now: Date) -> String? {
-        guard let featuredEvent else { return nil }
+        guard showsTitle || showsCountdown else { return nil }
+        guard let featuredEvent else { return L10n.menuBarNoEvents }
 
         var components: [String] = []
         if showsTitle {
@@ -56,11 +57,11 @@ struct MenuBarCalendarAgenda: Equatable {
         if showsCountdown {
             components.append(countdownText(now: now))
         }
-        return components.isEmpty ? nil : components.joined(separator: " · ")
+        return components.joined(separator: " · ")
     }
 
     func accessibilityLabel(now: Date) -> String? {
-        guard let featuredEvent else { return nil }
+        guard let featuredEvent else { return L10n.menuBarNoEvents }
         let participation = featuredEvent.isAttending ? ", \(L10n.calendarAttending)" : ""
         return "\(featuredEvent.resolvedMeetingTitle), \(countdownText(now: now))\(participation)"
     }
@@ -117,6 +118,9 @@ struct MenuBarCalendarAgenda: Equatable {
     }
 
     private static func compareOngoingEvents(_ lhs: CalendarEvent, _ rhs: CalendarEvent) -> Bool {
+        if lhs.isAttending != rhs.isAttending {
+            return !lhs.isAttending
+        }
         if lhs.startDate != rhs.startDate {
             return lhs.startDate < rhs.startDate
         }

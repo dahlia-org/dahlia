@@ -10,6 +10,7 @@ struct MenuBarLabel: View {
     var body: some View {
         let agenda = calendarViewModel.agenda
         let calendarText = settings.menuBarCalendarEnabled
+            && (agenda.featuredEvent != nil || calendarViewModel.allEnabledSourcesAreLoaded)
             ? agenda.labelText(
                 showsTitle: settings.menuBarCalendarShowsEventTitle,
                 showsCountdown: settings.menuBarCalendarShowsCountdown,
@@ -25,22 +26,18 @@ struct MenuBarLabel: View {
 
         Group {
             if settings.menuBarCalendarEnabled,
-               let featuredEvent = agenda.featuredEvent,
                let calendarText {
                 Label {
                     Text(calendarText)
                 } icon: {
                     if isListening {
                         Image(systemName: "record.circle.fill")
-                    } else {
+                    } else if let featuredEvent = agenda.featuredEvent {
                         MenuBarCalendarParticipationIndicator(isAttending: featuredEvent.isAttending)
+                    } else {
+                        Image(systemName: "waveform")
                     }
                 }
-            } else if settings.menuBarCalendarEnabled {
-                Label(
-                    L10n.dahlia,
-                    systemImage: isListening ? "record.circle.fill" : "waveform"
-                )
             } else {
                 Label(
                     L10n.dahlia,

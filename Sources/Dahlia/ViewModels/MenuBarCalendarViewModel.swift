@@ -13,6 +13,14 @@ final class MenuBarCalendarViewModel {
     private let macCalendarStore: MacCalendarStore
     private var cancellables: Set<AnyCancellable> = []
 
+    var allEnabledSourcesAreLoaded: Bool {
+        Self.allEnabledSourcesAreLoaded(
+            settings.enabledCalendarSources,
+            googleIsLoaded: googleCalendarStore.state == .loaded,
+            macOSIsLoaded: macCalendarStore.state == .loaded
+        )
+    }
+
     init(
         settings: AppSettings = .shared,
         googleCalendarStore: GoogleCalendarStore = .shared,
@@ -30,6 +38,16 @@ final class MenuBarCalendarViewModel {
             now: now
         )
         observeCalendarInputs()
+    }
+
+    static func allEnabledSourcesAreLoaded(
+        _ enabledSources: Set<CalendarSource>,
+        googleIsLoaded: Bool,
+        macOSIsLoaded: Bool
+    ) -> Bool {
+        guard !enabledSources.isEmpty else { return false }
+        return (!enabledSources.contains(.google) || googleIsLoaded)
+            && (!enabledSources.contains(.macOS) || macOSIsLoaded)
     }
 
     func runRefreshLoop() async {

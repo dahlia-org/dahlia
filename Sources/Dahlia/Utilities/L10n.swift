@@ -2414,6 +2414,7 @@ enum L10n {
         localized: "There are no ongoing or upcoming events today.",
         bundle: bundle
     ) }
+    static var menuBarNoEvents: String { String(localized: "No events", bundle: bundle) }
     static var menuBarOpenCalendarSettings: String { String(localized: "Open Calendar Settings", bundle: bundle) }
     static var menuBarInProgress: String { String(localized: "In progress", bundle: bundle) }
     static var menuBarStartingSoon: String { String(localized: "Starting soon", bundle: bundle) }
