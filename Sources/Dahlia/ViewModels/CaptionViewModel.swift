@@ -123,6 +123,7 @@ final class CaptionViewModel: ObservableObject {
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
     @Published private(set) var batchTranscriptionState: BatchTranscriptionState?
     @Published private(set) var retranscribableBatchSessionIds: [UUID] = []
+    @Published private(set) var failedPersistenceMeetingId: UUID?
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
     @Published var errorMessage: String?
     @Published var availableMicrophones: [MicrophoneDevice] = []
@@ -209,6 +210,7 @@ final class CaptionViewModel: ObservableObject {
     // MARK: - Screenshot State
 
     let screenshotStore = ScreenshotStore()
+    let conversationMetricsStore = MeetingConversationMetricsStore()
 
     @Published private(set) var isDeletingScreenshots = false {
         didSet {
@@ -407,11 +409,44 @@ final class CaptionViewModel: ObservableObject {
 
     /// 録音中に別トランスクリプトへナビゲーションした際の録音コンテキスト。
     private var recordingContext: RecordingContext?
+    private var finalizingMeetingId: UUID?
 
     /// 録音対象の文字起こし ID。
     /// recordingContext 初期化前（録音開始〜別トランスクリプトへ遷移前）は currentMeetingId で補う。
     var recordingMeetingId: UUID? {
-        recordingContext?.meetingId ?? (isListening ? currentMeetingId : nil)
+        recordingContext?.meetingId
+            ?? finalizingMeetingId
+            ?? ((isListening || isFinalizingRecording) ? currentMeetingId : nil)
+    }
+
+    var isCurrentMeetingConversationAnalysisPending: Bool {
+        Self.conversationAnalysisIsPending(
+            currentMeetingId: currentMeetingId,
+            recordingMeetingId: recordingMeetingId,
+            isListening: isListening,
+            isFinalizingRecording: isFinalizingRecording,
+            isBatchTranscriptionPending: batchTranscriptionState?.blocksSummaryGeneration == true,
+            failedPersistenceMeetingId: failedPersistenceMeetingId
+        )
+    }
+
+    nonisolated static func conversationAnalysisIsPending(
+        currentMeetingId: UUID?,
+        recordingMeetingId: UUID?,
+        isListening: Bool,
+        isFinalizingRecording: Bool,
+        isBatchTranscriptionPending: Bool,
+        failedPersistenceMeetingId: UUID?
+    ) -> Bool {
+        if isBatchTranscriptionPending {
+            return true
+        }
+        if let currentMeetingId, failedPersistenceMeetingId == currentMeetingId {
+            return true
+        }
+        guard let currentMeetingId,
+              isListening || isFinalizingRecording else { return false }
+        return recordingMeetingId == currentMeetingId
     }
 
     /// 録音中かつ録音対象とは別のトランスクリプトを閲覧中。
@@ -975,6 +1010,7 @@ final class CaptionViewModel: ObservableObject {
             batchTranscriptionState = update.state
         }
         guard case let .completed(sessionID) = update.state else { return }
+        conversationMetricsStore.invalidate(meetingId: update.meetingId)
         if pendingBatchSummaryRequestsBySessionId[sessionID] != nil {
             completedBatchSummarySessionIDs.insert(sessionID)
         }
@@ -1262,6 +1298,14 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
+    func loadCurrentMeetingConversationMetrics() async {
+        guard let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue,
+              !isCurrentMeetingConversationAnalysisPending,
+              currentMeetingHasTranscriptSegments else { return }
+        await conversationMetricsStore.load(meetingId: meetingId, dbQueue: dbQueue)
+    }
+
     private func startMeetingLoad(
         meetingId: UUID,
         dbQueue: DatabaseQueue,
@@ -1494,6 +1538,7 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting = nil
         batchTranscriptionState = nil
         retranscribableBatchSessionIds = []
+        conversationMetricsStore.reset(for: nil)
     }
 
     /// 録音対象のトランスクリプトに表示を復帰する。
@@ -1515,6 +1560,7 @@ final class CaptionViewModel: ObservableObject {
         batchTranscriptionState = ctx.batchTranscriptionState
         retranscribableBatchSessionIds = []
         draftMeeting = nil
+        conversationMetricsStore.reset(for: ctx.meetingId)
 
         store = ctx.store
         recordingContext = nil
@@ -1619,6 +1665,7 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting = nil
         batchTranscriptionState = nil
         retranscribableBatchSessionIds = []
+        conversationMetricsStore.reset(for: nil)
     }
 
     private func resetSummaryState() {
@@ -1643,6 +1690,7 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = projectName
         currentVaultURL = vaultURL
         currentDbQueue = dbQueue
+        conversationMetricsStore.reset(for: id)
         screenshotStore.replace(meetingID: id, records: [])
         draftMeeting = nil
         resetSummaryState()
@@ -2252,6 +2300,7 @@ final class CaptionViewModel: ObservableObject {
               !isFinalizingRecording else { return }
 
         recordingLifecycle = .stopping(activeSessionId)
+        finalizingMeetingId = recordingMeetingId
         isFinalizingRecording = true
         let automaticScreenshotStopTask = stopAutomaticScreenshotCapture()
         let configurationTasks = Array(recordingConfigurationTasks.values)
@@ -2320,9 +2369,13 @@ final class CaptionViewModel: ObservableObject {
         }
         await context.automaticScreenshotStopTask.value
         failedPersistenceService = persistenceResult.succeeded ? nil : stoppingPersistenceService
+        failedPersistenceMeetingId = persistenceResult.succeeded ? nil : stoppingPersistenceService?.meetingId
         failedTranscriptionEventPipeline = persistenceResult.succeeded ? nil : stoppingPipeline
         persistenceService = nil
         recordingContext = nil
+        if persistenceResult.succeeded, let meetingId = context.meetingId {
+            conversationMetricsStore.invalidate(meetingId: meetingId)
+        }
         firstFailureMessage = firstFailureMessage ?? persistenceResult.failureMessage
         if let firstFailureMessage {
             errorMessage = firstFailureMessage
@@ -2342,6 +2395,7 @@ final class CaptionViewModel: ObservableObject {
         var segments = context.store.segments
         let recordingSessions = context.store.recordingSessions
         isFinalizingRecording = false
+        finalizingMeetingId = nil
 
         if context.transcriptionMode == .batch, let recordingSessionId = context.recordingSessionId {
             await finishStoppedBatchRecording(
@@ -2380,6 +2434,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func retryFailedPersistenceIfNeeded() async -> Bool {
         guard let failedPersistenceService else { return true }
+        let meetingId = failedPersistenceService.meetingId
         let result = await failedPersistenceService.stop()
         guard result.succeeded else {
             errorMessage = result.failureMessage
@@ -2387,7 +2442,9 @@ final class CaptionViewModel: ObservableObject {
         }
         await failedTranscriptionEventPipeline?.notifyPersistenceRecoveredAfterFinish()
         self.failedPersistenceService = nil
+        failedPersistenceMeetingId = nil
         failedTranscriptionEventPipeline = nil
+        conversationMetricsStore.invalidate(meetingId: meetingId)
         return true
     }
 
@@ -2397,6 +2454,7 @@ final class CaptionViewModel: ObservableObject {
             return await summaryPersistenceRecoveryTask.value
         }
         guard let failedPersistenceService else { return nil }
+        let meetingId = failedPersistenceService.meetingId
         let failedTranscriptionEventPipeline = failedTranscriptionEventPipeline
         let recoveryTask = Task { () -> String? in
             let result = await failedPersistenceService.stop()
@@ -2411,7 +2469,9 @@ final class CaptionViewModel: ObservableObject {
         summaryPersistenceRecoveryTask = nil
         if failureMessage == nil {
             self.failedPersistenceService = nil
+            failedPersistenceMeetingId = nil
             self.failedTranscriptionEventPipeline = nil
+            conversationMetricsStore.invalidate(meetingId: meetingId)
         }
         return failureMessage
     }

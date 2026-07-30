@@ -2536,4 +2536,128 @@ enum L10n {
     ) }
     static var meetingUnavailable: String { String(localized: "Meeting unavailable", bundle: bundle) }
     static var showMeetingReferenceDetails: String { String(localized: "Show meeting details", bundle: bundle) }
+
+    // MARK: - Conversation Analytics
+
+    static var conversationAnalytics: String { String(localized: "Conversation Analytics", bundle: bundle) }
+    static var conversationAnalyticsBeta: String { String(localized: "BETA", bundle: bundle) }
+    static var conversationAnalyticsPending: String { String(localized: "Analysis is waiting for transcription", bundle: bundle) }
+    static var conversationAnalyticsAvailableAfterTranscription: String { String(
+        localized: "Conversation analytics will be available after recording and transcription finish.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsEmpty: String { String(
+        localized: "A confirmed microphone or system-audio transcript is required.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsLoadFailed: String { String(localized: "Could Not Load Conversation Analytics", bundle: bundle) }
+    static var conversationAnalyticsYou: String { String(localized: "You", bundle: bundle) }
+    static var conversationAnalyticsOtherSide: String { String(localized: "Other Side", bundle: bundle) }
+    static var conversationAnalyticsOverlap: String { String(localized: "Overlap", bundle: bundle) }
+    static var conversationAnalyticsYourPace: String { String(localized: "Your Speaking Pace", bundle: bundle) }
+    static var conversationAnalyticsSpeakingPace: String { String(localized: "Speaking Pace", bundle: bundle) }
+    static var conversationAnalyticsPaceTrend: String { String(localized: "Speaking Pace Over Time", bundle: bundle) }
+    static var conversationAnalyticsPaceSeries: String { String(localized: "Pace Series", bundle: bundle) }
+    static var conversationAnalyticsElapsedTime: String { String(localized: "Elapsed Time", bundle: bundle) }
+    static var conversationAnalyticsPaceTrendUnavailable: String { String(
+        localized: "No measurable speaking pace over time.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPaceTrendExcludesUnmeasurable: String { String(
+        localized: "Segments without measurable duration are excluded from the pace-over-time chart.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsSpeakingShare: String { String(localized: "Your Speaking Share", bundle: bundle) }
+    static var conversationAnalyticsYourSpeakingShare: String { String(
+        localized: "Share of total source speaking time",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsOccupancy: String { String(localized: "Conversation Occupancy", bundle: bundle) }
+    static var conversationAnalyticsOccupancyDescription: String { String(
+        localized: "Active speech within recording time",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsOverlapRate: String { String(localized: "Overlap Rate", bundle: bundle) }
+    static var conversationAnalyticsOverlapDescription: String { String(
+        localized: "Simultaneous speech within active speech",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPeerPaceUnavailable: String { String(
+        localized: "No comparable pace for the other side",
+        bundle: bundle
+    ) }
+
+    static func conversationAnalyticsSpeakingShareSummary(_ share: String) -> String {
+        String(localized: "Your speaking share is \(share)", bundle: bundle)
+    }
+
+    static func conversationAnalyticsPeerPaceComparison(_ pace: String, _ ratio: String) -> String {
+        String(localized: "Other side: \(pace) chars/min · You: \(ratio)×", bundle: bundle)
+    }
+
+    static func conversationAnalyticsPaceTrendDescription(_ minutes: String) -> String {
+        String(
+            localized: "Calculated in \(minutes)-minute windows using merged speech intervals.",
+            bundle: bundle
+        )
+    }
+
+    static func conversationAnalyticsPaceSampleValue(_ start: String, _ end: String, _ pace: String) -> String {
+        String(localized: "From \(start) to \(end): \(pace) chars/min", bundle: bundle)
+    }
+
+    static func conversationAnalyticsSourceFacts(_ characters: String, _ duration: String, _ segments: String) -> String {
+        String(localized: "\(characters) chars · \(duration) · \(segments) segments", bundle: bundle)
+    }
+
+    static var conversationAnalyticsSpeechBalance: String { String(localized: "Speaking-Time Balance", bundle: bundle) }
+    static var conversationAnalyticsYouMicrophone: String { String(localized: "You (Microphone)", bundle: bundle) }
+    static var conversationAnalyticsOtherSideSystemAudio: String { String(
+        localized: "Other Side (System Audio)",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsMissingSourceNote: String { String(
+        localized: "Only one audio source has confirmed speech.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsConversationComposition: String { String(localized: "Conversation Composition", bundle: bundle) }
+    static var conversationAnalyticsConversationFlow: String { String(localized: "Conversation Flow", bundle: bundle) }
+    static var conversationAnalyticsRecordingTime: String { String(localized: "Recording Time", bundle: bundle) }
+    static var conversationAnalyticsActiveSpeech: String { String(localized: "Active Speech", bundle: bundle) }
+    static var conversationAnalyticsSilence: String { String(localized: "Silence", bundle: bundle) }
+    static var conversationAnalyticsSoloSpeech: String { String(localized: "Non-overlapping Speech", bundle: bundle) }
+    static var conversationAnalyticsSimultaneousSpeech: String { String(localized: "Simultaneous Speech", bundle: bundle) }
+    static var conversationAnalyticsSourceDetails: String { String(localized: "Source Details", bundle: bundle) }
+    static var conversationAnalyticsSpeakingTime: String { String(localized: "Speaking Time", bundle: bundle) }
+    static var conversationAnalyticsNormalizedCharacters: String { String(localized: "Characters", bundle: bundle) }
+    static var conversationAnalyticsSpeechSegments: String { String(localized: "Speech Segments", bundle: bundle) }
+    static var conversationAnalyticsOverlapCount: String { String(localized: "Overlap Count", bundle: bundle) }
+    static var charactersPerMinute: String { String(localized: "chars/min", bundle: bundle) }
+    static func conversationAnalyticsSpeechGapDescription(_ maximumGap: String) -> String {
+        String(
+            localized: "Transcript gaps up to \(maximumGap) seconds are treated as continuous speech in the timeline and metrics; short overlaps may include recognition timing differences.",
+            bundle: bundle
+        )
+    }
+
+    static var conversationAnalyticsCondensedTimelineNote: String { String(
+        localized: "Dense timelines are condensed for display without changing calculated metrics.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsLegacyTimelineNote: String { String(
+        localized: "Some older transcript segments use an estimated timeline.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsEstimatedPaceNote: String { String(
+        localized: "Speaking pace is approximate because some segments have no measurable duration.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsSourceCaveat: String { String(
+        localized: "System audio may include multiple participants and audio from other apps.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsLanguageCaveat: String { String(
+        localized: "Characters per minute are not directly comparable across different languages or writing systems.",
+        bundle: bundle
+    ) }
 }

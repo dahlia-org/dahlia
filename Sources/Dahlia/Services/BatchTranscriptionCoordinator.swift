@@ -193,6 +193,10 @@ actor BatchTranscriptionCoordinator {
             completedAt: completedAt,
             dbQueue: dbQueue
         )
+        MeetingConversationMetricsRefreshService.schedule(
+            meetingId: job.meeting.id,
+            dbQueue: dbQueue
+        )
 
         await performPostProcessing(for: job)
     }

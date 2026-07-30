@@ -175,6 +175,69 @@ import GRDB
         }
 
         @Test
+        func conversationAnalyticsWaitsWhileCurrentMeetingFinalizes() {
+            let viewModel = CaptionViewModel()
+            let meetingId = UUID()
+            viewModel.currentMeetingId = meetingId
+            viewModel.isFinalizingRecording = true
+
+            #expect(viewModel.recordingMeetingId == meetingId)
+            #expect(viewModel.isCurrentMeetingConversationAnalysisPending)
+
+            viewModel.isFinalizingRecording = false
+            #expect(!viewModel.isCurrentMeetingConversationAnalysisPending)
+        }
+
+        @Test
+        func conversationAnalyticsWaitsForBatchTranscriptionWithExistingTranscript() async {
+            let viewModel = CaptionViewModel()
+            let meetingId = UUID()
+            let sessionId = UUID()
+            viewModel.currentMeetingId = meetingId
+            viewModel.store.loadSegments([
+                TranscriptSegment(
+                    startTime: .now,
+                    text: "existing transcript",
+                    isConfirmed: true,
+                    speakerLabel: "mic"
+                ),
+            ])
+
+            await viewModel.handleBatchTranscriptionUpdate(
+                BatchTranscriptionUpdate(
+                    meetingId: meetingId,
+                    state: .running(sessionId: sessionId)
+                )
+            )
+
+            #expect(viewModel.currentMeetingHasTranscriptSegments)
+            #expect(viewModel.isCurrentMeetingConversationAnalysisPending)
+        }
+
+        @Test
+        func conversationAnalyticsWaitsOnlyForTheMeetingWithFailedPersistence() {
+            let currentMeetingId = UUID()
+            let otherMeetingId = UUID()
+
+            #expect(CaptionViewModel.conversationAnalysisIsPending(
+                currentMeetingId: currentMeetingId,
+                recordingMeetingId: nil,
+                isListening: false,
+                isFinalizingRecording: false,
+                isBatchTranscriptionPending: false,
+                failedPersistenceMeetingId: currentMeetingId
+            ))
+            #expect(!CaptionViewModel.conversationAnalysisIsPending(
+                currentMeetingId: otherMeetingId,
+                recordingMeetingId: currentMeetingId,
+                isListening: false,
+                isFinalizingRecording: false,
+                isBatchTranscriptionPending: false,
+                failedPersistenceMeetingId: currentMeetingId
+            ))
+        }
+
+        @Test
         func structuredActionItemsCountAsDisplayableSummaryContent() {
             let viewModel = CaptionViewModel()
             viewModel.currentSummaryDocument = SummaryDocument(

@@ -197,6 +197,12 @@ final class MeetingPersistenceService {
             )
             recordingSession = persistedSession
             store.upsertRecordingSession(RecordingSessionTimeline(from: recordingSession))
+            if persistencePolicy.persistsStreamingSegments {
+                MeetingConversationMetricsRefreshService.schedule(
+                    meetingId: meetingId,
+                    dbQueue: dbQueue
+                )
+            }
             return .success
         } catch {
             return .failure(message: error.localizedDescription)
