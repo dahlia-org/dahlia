@@ -647,6 +647,7 @@
 "Show the time until the event starts or ends." = "Show the time until the event starts or ends.";
 "No more events today" = "No more events today";
 "There are no ongoing or upcoming events today." = "There are no ongoing or upcoming events today.";
+"No events" = "No events";
 "Open Calendar Settings" = "Open Calendar Settings";
 "In progress" = "In progress";
 "Starting soon" = "Starting soon";

@@ -647,6 +647,7 @@
 "Show the time until the event starts or ends." = "予定が開始または終了するまでの時間を表示します。";
 "No more events today" = "今日の予定はもうありません";
 "There are no ongoing or upcoming events today." = "今日の進行中または今後の予定はありません。";
+"No events" = "予定なし";
 "Open Calendar Settings" = "カレンダー設定を開く";
 "In progress" = "進行中";
 "Starting soon" = "まもなく開始";
