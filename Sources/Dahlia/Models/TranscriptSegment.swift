@@ -69,6 +69,7 @@ struct TranscriptSegment: Identifiable, Equatable {
     var translatedText: String?
     var isConfirmed: Bool
     var speakerLabel: String?
+    var audioFeatures: TranscriptAudioFeatures?
 
     /// 表示用テキスト。
     var displayText: String { text }
@@ -96,7 +97,8 @@ struct TranscriptSegment: Identifiable, Equatable {
         text: String,
         translatedText: String? = nil,
         isConfirmed: Bool = false,
-        speakerLabel: String? = nil
+        speakerLabel: String? = nil,
+        audioFeatures: TranscriptAudioFeatures? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -106,6 +108,7 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.translatedText = translatedText
         self.isConfirmed = isConfirmed
         self.speakerLabel = speakerLabel
+        self.audioFeatures = audioFeatures
     }
 
     /// TranscriptSegmentRecord からの変換イニシャライザ。
@@ -118,5 +121,6 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.translatedText = record.translatedText
         self.isConfirmed = record.isConfirmed
         self.speakerLabel = record.speakerLabel
+        self.audioFeatures = record.audioFeatures
     }
 }

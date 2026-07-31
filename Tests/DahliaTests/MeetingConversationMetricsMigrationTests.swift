@@ -26,20 +26,27 @@ import GRDB
                 createdAt: now,
                 updatedAt: now
             )
-            let segment = TranscriptSegmentRecord(
-                id: UUID(),
-                meetingId: meeting.id,
-                startTime: now,
-                endTime: now.addingTimeInterval(1),
-                text: "Preserved",
-                translatedText: nil,
-                isConfirmed: true,
-                speakerLabel: RecordingAudioSource.microphone.speakerLabel
-            )
+            let segmentID = UUID()
             try queue.write { db in
                 try vault.insert(db)
                 try meeting.insert(db)
-                try segment.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO transcript_segments (
+                        id, meetingId, startTime, endTime, text,
+                        translatedText, isConfirmed, speakerLabel
+                    )
+                    VALUES (?, ?, ?, ?, ?, NULL, 1, ?)
+                    """,
+                    arguments: [
+                        segmentID,
+                        meeting.id,
+                        now,
+                        now.addingTimeInterval(1),
+                        "Preserved",
+                        RecordingAudioSource.microphone.speakerLabel,
+                    ]
+                )
             }
 
             try AppDatabaseManager.migrator.migrate(queue)
@@ -47,7 +54,7 @@ import GRDB
             let result = try queue.read { db in
                 (
                     try MeetingRecord.fetchOne(db, key: meeting.id),
-                    try TranscriptSegmentRecord.fetchOne(db, key: segment.id),
+                    try TranscriptSegmentRecord.fetchOne(db, key: segmentID),
                     try db.tableExists(MeetingConversationMetricsRecord.databaseTableName),
                     try db.tableExists(MeetingConversationSourceMetricsRecord.databaseTableName)
                 )

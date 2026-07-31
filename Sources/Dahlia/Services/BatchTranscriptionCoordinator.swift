@@ -55,6 +55,7 @@ actor BatchTranscriptionCoordinator {
     private let translationService = TranscriptTranslationService()
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
+    private let audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing
     private let supportedLocalesProvider: @Sendable () async -> [Locale]
     let languageFallbackReporter: LanguageFallbackReporter
     let onStateChange: StateHandler
@@ -70,6 +71,7 @@ actor BatchTranscriptionCoordinator {
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
+        audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
             await SpeechTranscriber.supportedLocales
         },
@@ -83,6 +85,7 @@ actor BatchTranscriptionCoordinator {
         )
         self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
         self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
+        self.audioFeatureAnalyzer = audioFeatureAnalyzer
         self.supportedLocalesProvider = supportedLocalesProvider
         self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, candidates in
             ErrorReportingService.capture(
@@ -397,6 +400,7 @@ actor BatchTranscriptionCoordinator {
                 request,
                 languageDetector: languageDetector,
                 speechRecognizer: speechRecognizer,
+                audioFeatureAnalyzer: audioFeatureAnalyzer,
                 onLanguageFallback: { fallback in
                     await fallbackCollector.record(fallback)
                 }
@@ -408,6 +412,7 @@ actor BatchTranscriptionCoordinator {
             result = try await BatchManualSpeechTranscriberService.transcribe(
                 run,
                 speechRecognizer: speechRecognizer,
+                audioFeatureAnalyzer: audioFeatureAnalyzer,
                 onFileConsumed: onFileConsumed
             )
         case let .noAudio(localeIdentifier):

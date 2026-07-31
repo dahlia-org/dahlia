@@ -61,18 +61,42 @@ import GRDB
                 text: "final",
                 now: now
             )
+            let expectedAudioFeatures = sampleAudioFeatures
             try BatchTranscriptionPersistence.complete(
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
-                records: [finalRecord],
+                records: [record(finalRecord, with: expectedAudioFeatures)],
                 completedAt: completedAt,
                 dbQueue: fixture.database.dbQueue
             )
 
             let completed = try fetchState(fixture)
             #expect(completed.records.map(\.text) == ["final"])
+            #expect(completed.records.first?.audioFeatures == expectedAudioFeatures)
             #expect(completed.session.batchCompletedAt == completedAt)
             #expect(completed.meeting.status == .ready)
+        }
+
+        private var sampleAudioFeatures: TranscriptAudioFeatures {
+            TranscriptAudioFeatures(
+                activeRmsDecibels: -16,
+                medianPitchHertz: 210,
+                voicedFrameRatio: 0.8,
+                pitchSpreadHertz: 35
+            )
+        }
+
+        private func record(
+            _ record: TranscriptSegmentRecord,
+            with audioFeatures: TranscriptAudioFeatures
+        ) -> TranscriptSegmentRecord {
+            var record = record
+            record.audioFeatureVersion = audioFeatures.version
+            record.audioActiveRmsDecibels = audioFeatures.activeRmsDecibels
+            record.audioMedianPitchHertz = audioFeatures.medianPitchHertz
+            record.audioVoicedFrameRatio = audioFeatures.voicedFrameRatio
+            record.audioPitchSpreadHertz = audioFeatures.pitchSpreadHertz
+            return record
         }
 
         private func fetchState(_ fixture: BatchAudioTestFixture) throws -> PersistenceState {
