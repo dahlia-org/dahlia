@@ -68,6 +68,7 @@ struct OrganizationMergePreview: Equatable, Sendable {
 enum OrganizationDomainAssignmentPlan: Equatable, Sendable {
     case unassigned
     case alreadyAssigned
+    case shared
     case merge(OrganizationMergePreview)
 }
 

@@ -13,7 +13,6 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
     case invalidOrganizationParent
     case organizationCycle
     case organizationHierarchyTooDeep
-    case domainAlreadyAssigned
     case invalidOrganizationMerge
     case unsupportedProjectResource
     case topicNotFound
@@ -48,8 +47,6 @@ enum CustomerIntelligenceError: LocalizedError, Equatable {
             "The organization hierarchy cannot contain a cycle."
         case .organizationHierarchyTooDeep:
             "The organization hierarchy exceeds the maximum depth."
-        case .domainAlreadyAssigned:
-            "The domain is already assigned to another organization."
         case .invalidOrganizationMerge:
             "Only two different root organizations can be merged."
         case .unsupportedProjectResource:

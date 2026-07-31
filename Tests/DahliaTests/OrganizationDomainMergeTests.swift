@@ -7,6 +7,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct OrganizationDomainMergeTests {
         @Test
         // swiftlint:disable:next function_body_length
@@ -203,14 +204,14 @@ import GRDB
                 #expect(insightReferences.count == 2)
                 #expect(insightReferences.allSatisfy { $0.resourceId == target.id })
 
-                let resolved = try CustomerIntelligencePersistence.organization(
+                let resolved = try CustomerIntelligencePersistence.organizations(
                     forDomain: "example.co.jp",
                     vaultId: fixture.vault.id,
                     observedAt: .now,
                     automaticallyCreate: true,
                     in: db
                 )
-                #expect(resolved?.id == target.id)
+                #expect(resolved.map(\.id) == [target.id])
             }
         }
 
@@ -291,6 +292,7 @@ import GRDB
                 domainName: "moved.example"
             )
             try fixture.repository.removeOrganizationDomain(
+                organizationId: formerOwner.id,
                 vaultId: fixture.vault.id,
                 domainName: "moved.example"
             )
@@ -398,6 +400,111 @@ import GRDB
         }
 
         @Test
+        func mergeCoalescesDomainAlreadySharedWithTarget() throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let target = try fixture.repository.createOrganization(
+                vaultId: fixture.vault.id,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Target"
+            )
+            let source = try fixture.repository.createOrganization(
+                vaultId: fixture.vault.id,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Source"
+            )
+            let older = Date.now.addingTimeInterval(-1000)
+            let newer = Date.now
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: target.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example",
+                observedAt: newer
+            )
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: source.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example",
+                observedAt: older
+            )
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: source.id,
+                vaultId: fixture.vault.id,
+                domainName: "source.example"
+            )
+            let preview = try mergePreview(
+                repository: fixture.repository,
+                targetOrganizationId: target.id,
+                vaultId: fixture.vault.id,
+                domainName: "source.example"
+            )
+
+            _ = try fixture.repository.mergeOrganization(
+                sourceOrganizationId: source.id,
+                targetOrganizationId: target.id,
+                vaultId: fixture.vault.id,
+                expectedSourceDomainName: preview.domainName,
+                expectedSourceRevision: preview.source.revision,
+                expectedTargetRevision: preview.target.revision,
+                expectedImpact: preview.impact
+            )
+
+            let domains = try fixture.repository.fetchOrganizationDomains(
+                organizationId: target.id,
+                vaultId: fixture.vault.id
+            )
+            #expect(domains.map(\.domainName).sorted() == ["shared.example", "source.example"])
+            let shared = try #require(domains.first { $0.domainName == "shared.example" })
+            #expect(abs(shared.firstObservedAt.timeIntervalSince(older)) < 0.001)
+            #expect(abs(shared.lastObservedAt.timeIntervalSince(newer)) < 0.001)
+            #expect(domains.count(where: \.isPrimary) == 1)
+        }
+
+        @Test
+        func domainSharedByMultipleOwnersIsAddedWithoutOfferingMerge() throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let organizations = try ["First", "Second", "Target"].map { name in
+                try fixture.repository.createOrganization(
+                    vaultId: fixture.vault.id,
+                    parentOrganizationId: nil,
+                    nodeKind: .organization,
+                    name: name
+                )
+            }
+            for organization in organizations.prefix(2) {
+                _ = try fixture.repository.addOrganizationDomain(
+                    organizationId: organization.id,
+                    vaultId: fixture.vault.id,
+                    domainName: "shared.example"
+                )
+            }
+            let target = organizations[2]
+            let currentTarget = try #require(
+                try fixture.repository.fetchOrganization(id: target.id, vaultId: fixture.vault.id)
+            )
+            let plan = try fixture.repository.organizationDomainAssignmentPlan(
+                targetOrganizationId: target.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example",
+                expectedTargetRevision: currentTarget.revision
+            )
+            #expect(plan == .shared)
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: target.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example",
+                expectedOrganizationRevision: currentTarget.revision
+            )
+            let assignments = try fixture.manager.dbQueue.read { db in
+                try OrganizationDomainRecord
+                    .filter(Column("domainName") == "shared.example")
+                    .fetchCount(db)
+            }
+            #expect(assignments == 3)
+        }
+
+        @Test
         func viewModelAddsANewDomainAndPreparesAnExistingOwnerForMerge() async throws {
             let fixture = try CustomerIntelligenceFixture()
             let target = try fixture.repository.createOrganization(
@@ -479,6 +586,7 @@ import GRDB
 
         @Test
         func mergeImpactUsesSingularLabels() {
+            let title = L10n.organizationDomainAlreadyUsed(by: "Source")
             let message = L10n.organizationMergeImpact(
                 domainName: "source.example",
                 targetName: "Target",
@@ -492,6 +600,7 @@ import GRDB
                 )
             )
 
+            #expect(title.contains("Source"))
             #expect(message.contains("Target"))
             #expect(!message.contains("1 domains"))
             #expect(!message.contains("1 memberships"))

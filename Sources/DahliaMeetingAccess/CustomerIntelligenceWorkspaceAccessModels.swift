@@ -128,6 +128,7 @@ public struct CustomerIntelligenceRecordDeletionResult: Codable, Sendable, Equat
 }
 
 public enum CustomerIntelligenceRelationshipKind: String, Codable, Sendable, Equatable {
+    case organizationDomain = "organization_domain"
     case contactOrganizationMembership = "contact_organization_membership"
     case projectResourceReference = "project_resource_reference"
     case conversationTopicResourceReference = "conversation_topic_resource_reference"

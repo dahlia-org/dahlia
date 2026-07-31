@@ -1,6 +1,8 @@
 import Foundation
 
 public enum CustomerIdentityNormalizer {
+    public static let maximumDomainNameLength = 253
+
     public static func email(_ rawValue: String) -> String? {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
@@ -36,7 +38,7 @@ public enum CustomerIdentityNormalizer {
             value.removeLast()
         }
         guard !value.isEmpty,
-              value.utf8.count <= 253,
+              value.utf8.count <= maximumDomainNameLength,
               value.unicodeScalars.allSatisfy(\.isPrintableASCII),
               !value.contains("@"),
               !value.contains("/"),

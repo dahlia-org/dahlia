@@ -391,7 +391,7 @@ final class OrganizationWorkspaceViewModel {
             }
             guard self.vaultID == vaultID else { return false }
             switch plan {
-            case .unassigned:
+            case .unassigned, .shared:
                 return await mutate(vaultID: vaultID) {
                     try $0.addOrganizationDomain(
                         organizationId: target.id,
@@ -425,6 +425,20 @@ final class OrganizationWorkspaceViewModel {
                 expectedSourceRevision: preview.source.revision,
                 expectedTargetRevision: preview.target.revision,
                 expectedImpact: preview.impact
+            )
+        }
+    }
+
+    func confirmSharedDomain(_ pending: PendingOrganizationMerge) async {
+        pendingMerge = nil
+        let preview = pending.preview
+        guard let vaultID else { return }
+        await mutate(vaultID: vaultID) {
+            try $0.addOrganizationDomain(
+                organizationId: preview.target.id,
+                vaultId: vaultID,
+                domainName: preview.domainName,
+                expectedOrganizationRevision: preview.target.revision
             )
         }
     }

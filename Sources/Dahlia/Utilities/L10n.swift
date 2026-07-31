@@ -517,23 +517,40 @@ enum L10n {
     static var organizationDomains: String { String(localized: "Email Domains", bundle: bundle) }
     static var organizationDomain: String { String(localized: "Email Domain", bundle: bundle) }
     static var addOrganizationDomain: String { String(localized: "Add Email Domain", bundle: bundle) }
+    static func organizationDomainAlreadyUsed(by organizationName: String) -> String {
+        String(
+            format: String(localized: "This email domain is already used by “%@”", bundle: bundle),
+            locale: .current,
+            organizationName
+        )
+    }
+
+    static var addAsSharedOrganizationDomain: String {
+        String(localized: "Add as Shared Domain", bundle: bundle)
+    }
+
+    static var mergeOrganizations: String { String(localized: "Merge Organizations", bundle: bundle) }
+
+    static var automaticOrganizationMembership: String {
+        String(localized: "Automatically link participants to organizations", bundle: bundle)
+    }
+
+    static var automaticOrganizationMembershipDescription: String {
+        String(
+            localized: "Organizations are still created for new domains when this is off. Shared domains never link participants automatically.",
+            bundle: bundle
+        )
+    }
+
     static var organizationDomainHelp: String {
         String(
-            localized: "If this domain belongs to another organization, you can review a complete merge before anything changes.",
+            localized: "If another organization uses this domain, you can add it as shared or review a complete merge.",
             bundle: bundle
         )
     }
 
     static var primary: String { String(localized: "Primary", bundle: bundle) }
     static var merge: String { String(localized: "Merge", bundle: bundle) }
-
-    static func mergeOrganization(named name: String) -> String {
-        String(
-            format: String(localized: "Merge “%@”?", bundle: bundle),
-            locale: .current,
-            name
-        )
-    }
 
     static func organizationMergeImpact(
         domainName: String,
@@ -553,7 +570,7 @@ enum L10n {
         return String(
             format: String(
                 // swiftlint:disable:next line_length
-                localized: "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.",
+                localized: "The domain “%@” belongs to another organization. Adding it as shared keeps both organizations separate. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.",
                 bundle: bundle
             ),
             locale: .current,

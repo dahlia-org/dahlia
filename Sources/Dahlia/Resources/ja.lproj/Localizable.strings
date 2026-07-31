@@ -1055,6 +1055,11 @@
 "Related Resources" = "関係先";
 "Danger Zone" = "危険な操作";
 "Merge" = "統合";
+"This email domain is already used by “%@”" = "このメールドメインは「%@」でも使用されています";
+"Add as Shared Domain" = "共有ドメインとして追加";
+"Merge Organizations" = "組織を統合";
+"Automatically link participants to organizations" = "参加者を組織へ自動で紐付ける";
+"Organizations are still created for new domains when this is off. Shared domains never link participants automatically." = "オフでも初出ドメインの組織は自動登録されます。ドメインが複数組織に登録されている場合は自動で紐付けません。";
 "Merge with Existing Contact?" = "既存の人物と統合しますか？";
 "Accept" = "承認";
 "Accepted" = "承認済み";
@@ -1137,7 +1142,6 @@
 "The organization parent is invalid." = "親組織が正しくありません。";
 "The organization hierarchy cannot contain a cycle." = "組織階層を循環させることはできません。";
 "The organization hierarchy exceeds the maximum depth." = "組織階層が最大の深さを超えています。";
-"The domain is already assigned to another organization." = "このドメインは別の組織に割り当てられています。";
 "Projects can reference only organizations and contacts." = "Projects から参照できるのは組織と人物だけです。";
 "The conversation topic was not found." = "トピックが見つかりませんでした。";
 "The record changed after it was read." = "表示後にデータが変更されました。再読み込みしてください。";
@@ -1148,9 +1152,8 @@
 "Email Domains" = "メールドメイン";
 "Email Domain" = "メールドメイン";
 "Add Email Domain" = "メールドメインを追加";
-"If this domain belongs to another organization, you can review a complete merge before anything changes." = "別の組織に属するドメインの場合、変更前に完全統合の内容を確認できます。";
+"If another organization uses this domain, you can add it as shared or review a complete merge." = "別の組織でも使われているドメインは、共有として追加するか、完全統合の内容を確認できます。";
 "Primary" = "主ドメイン";
-"Merge “%@”?" = "「%@」を統合しますか？";
 "%lld domain" = "ドメイン%lld件";
 "%lld domains" = "ドメイン%lld件";
 "%lld membership" = "所属%lld件";
@@ -1162,7 +1165,7 @@
 "%lld Topics" = "トピック%lld件";
 "%lld insight" = "インサイト%lld件";
 "%lld insights" = "インサイト%lld件";
-"The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "ドメイン「%@」は別の組織に属しています。元の組織には、%@、%@、%@、%@、%@、%@があります。これらを「%@」へ統合して元の組織を削除します。重複する関連では統合先の情報を維持します。";
+"The domain “%@” belongs to another organization. Adding it as shared keeps both organizations separate. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "ドメイン「%@」は別の組織に属しています。共有ドメインとして追加すると両方の組織を分けたまま維持します。元の組織には、%@、%@、%@、%@、%@、%@があります。「%@」へ統合するとこれらを移し、元の組織を削除します。重複する関連では統合先の情報を維持します。";
 "Conversation Analytics" = "会話分析";
 "BETA" = "BETA";
 "Analysis is waiting for transcription" = "文字起こしの完了を待っています";

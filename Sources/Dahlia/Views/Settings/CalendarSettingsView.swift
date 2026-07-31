@@ -37,6 +37,14 @@ struct CalendarSettingsView: View {
             CalendarEventFilterSettingsView(settings: settings)
 
             Section {
+                Toggle(isOn: $settings.isAutomaticOrganizationMembershipEnabled) {
+                    Text(L10n.automaticOrganizationMembership)
+                    Text(L10n.automaticOrganizationMembershipDescription)
+                }
+                .toggleStyle(.switch)
+            }
+
+            Section {
                 ForEach(displayedCalendarSources) { source in
                     Toggle(isOn: calendarSourceBinding(for: source)) {
                         Text(source.displayName)

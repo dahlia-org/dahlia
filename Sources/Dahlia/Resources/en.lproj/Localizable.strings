@@ -1055,6 +1055,11 @@
 "Related Resources" = "Related Resources";
 "Danger Zone" = "Danger Zone";
 "Merge" = "Merge";
+"This email domain is already used by “%@”" = "This email domain is already used by “%@”";
+"Add as Shared Domain" = "Add as Shared Domain";
+"Merge Organizations" = "Merge Organizations";
+"Automatically link participants to organizations" = "Automatically link participants to organizations";
+"Organizations are still created for new domains when this is off. Shared domains never link participants automatically." = "Organizations are still created for new domains when this is off. Shared domains never link participants automatically.";
 "Merge with Existing Contact?" = "Merge with Existing Contact?";
 "Accept" = "Accept";
 "Accepted" = "Accepted";
@@ -1137,7 +1142,6 @@
 "The organization parent is invalid." = "The organization parent is invalid.";
 "The organization hierarchy cannot contain a cycle." = "The organization hierarchy cannot contain a cycle.";
 "The organization hierarchy exceeds the maximum depth." = "The organization hierarchy exceeds the maximum depth.";
-"The domain is already assigned to another organization." = "The domain is already assigned to another organization.";
 "Projects can reference only organizations and contacts." = "Projects can reference only organizations and contacts.";
 "The conversation topic was not found." = "The conversation topic was not found.";
 "The record changed after it was read." = "The record changed after it was read.";
@@ -1148,9 +1152,8 @@
 "Email Domains" = "Email Domains";
 "Email Domain" = "Email Domain";
 "Add Email Domain" = "Add Email Domain";
-"If this domain belongs to another organization, you can review a complete merge before anything changes." = "If this domain belongs to another organization, you can review a complete merge before anything changes.";
+"If another organization uses this domain, you can add it as shared or review a complete merge." = "If another organization uses this domain, you can add it as shared or review a complete merge.";
 "Primary" = "Primary";
-"Merge “%@”?" = "Merge “%@”?";
 "%lld domain" = "%lld domain";
 "%lld domains" = "%lld domains";
 "%lld membership" = "%lld membership";
@@ -1162,7 +1165,7 @@
 "%lld Topics" = "%lld Topics";
 "%lld insight" = "%lld insight";
 "%lld insights" = "%lld insights";
-"The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "The domain “%@” belongs to another organization. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.";
+"The domain “%@” belongs to another organization. Adding it as shared keeps both organizations separate. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata." = "The domain “%@” belongs to another organization. Adding it as shared keeps both organizations separate. The source contains %@, %@, %@, %@, %@, and %@. Merging into “%@” combines them and deletes the source organization. Matching relationships keep the target organization’s metadata.";
 "Conversation Analytics" = "Conversation Analytics";
 "BETA" = "BETA";
 "Analysis is waiting for transcription" = "Analysis is waiting for transcription";
