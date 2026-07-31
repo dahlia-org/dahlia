@@ -1207,8 +1207,11 @@
 "Characters" = "文字数";
 "Speech Segments" = "発話セグメント数";
 "Overlap Count" = "重なり回数";
+"Longest Monologue" = "最長連続発話";
+"%@ · %@–%@" = "%@・%@〜%@";
 "chars/min" = "文字/分";
-"Transcript gaps up to %@ seconds are treated as continuous speech in the timeline and metrics; short overlaps may include recognition timing differences." = "文字起こし区間の間隔が%@秒以内なら、タイムラインと各指標で連続した発話として扱います。短い重なりには認識時刻のずれが含まれる場合があります。";
+"Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences." = "文字起こし区間の間隔が%@秒以内なら、タイムライン、発話時間、割合、発話ペースで連続した発話として扱います。短い重なりには認識時刻のずれが含まれる場合があります。";
+"The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between." = "最長連続発話では、間に相手側の発話があっても、同じ音源の区間を%@秒以内の間隔で結合します。";
 "Dense timelines are condensed for display without changing calculated metrics." = "区間が多いタイムラインは、指標の計算値を変えずに表示を集約しています。";
 "Some older transcript segments use an estimated timeline." = "一部の旧文字起こしは推定タイムラインで集計しています。";
 "Speaking pace is approximate because some segments have no measurable duration." = "時間を計測できない発話があるため、発話速度は概算です。";

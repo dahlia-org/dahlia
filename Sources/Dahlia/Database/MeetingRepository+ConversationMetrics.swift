@@ -182,6 +182,8 @@ extension MeetingRepository {
                 )
             },
             speechMergeGap: speechMergeGap,
+            monologueMergeGap: MeetingConversationMetricsCalculator.defaultMonologueMergeGap,
+            longestMonologue: timeline.longestMonologue,
             paceSamples: timeline.paceSamples,
             paceBucketDuration: timeline.paceBucketDuration,
             timelineIntervals: timeline.intervals,

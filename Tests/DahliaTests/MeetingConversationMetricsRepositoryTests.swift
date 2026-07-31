@@ -31,6 +31,8 @@ import GRDB
             #expect(first.computedAt == firstComputedAt)
             #expect(second.computedAt == firstComputedAt)
             #expect(Set(saved.map(\.source)) == Set([RecordingAudioSource.microphone, .system]))
+            #expect(first.longestMonologue == .init(source: .microphone, start: 0, end: 10))
+            #expect(second.longestMonologue == first.longestMonologue)
         }
 
         @Test
