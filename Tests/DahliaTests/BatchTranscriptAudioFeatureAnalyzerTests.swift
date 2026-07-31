@@ -96,6 +96,7 @@ import Foundation
             )
 
             #expect(features.activeRmsDecibels != nil)
+            #expect(features.voicedFrameRatio > 0.99)
             #expect(features.medianPitchHertz == nil)
             #expect(features.pitchSpreadHertz == nil)
         }
@@ -255,6 +256,7 @@ import Foundation
             let analysis = try analyzer.analyze(
                 recognitions: [
                     recognition(start: 0.1, end: 0.5),
+                    recognition(start: 0.1, end: 1.000_062_5),
                     recognition(start: 2, end: 3),
                     recognition(start: 0.1, end: .greatestFiniteMagnitude),
                 ],
@@ -264,7 +266,8 @@ import Foundation
             #expect(analysis.features[0] != nil)
             #expect(analysis.features[1] == nil)
             #expect(analysis.features[2] == nil)
-            #expect(analysis.invalidRecognitionCount == 2)
+            #expect(analysis.features[3] == nil)
+            #expect(analysis.invalidRecognitionCount == 3)
         }
 
         private func recognition(start: TimeInterval, end: TimeInterval) -> BatchSpeechRecognition {

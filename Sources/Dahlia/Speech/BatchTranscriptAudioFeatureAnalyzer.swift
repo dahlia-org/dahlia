@@ -92,8 +92,8 @@ enum BatchTranscriptAudioFeatureExtraction {
                 )
             }
             return analysis.features
-        } catch is CancellationError {
-            throw CancellationError()
+        } catch let error as CancellationError {
+            throw error
         } catch {
             ErrorReportingService.capture(
                 BatchTranscriptAudioFeatureAnalyzerError.extractionFailed,
@@ -346,7 +346,7 @@ private struct FeatureWindowProcessor {
         }
 
         var invalidRecognitionIndices = initiallyInvalidRecognitionIndices
-        for interval in intervals where interval.endFrame > receivedFrameCount + 1 {
+        for interval in intervals where interval.endFrame > receivedFrameCount {
             invalidRecognitionIndices.insert(interval.recognitionIndex)
         }
         let features = accumulators.indices.map { index -> TranscriptAudioFeatures? in

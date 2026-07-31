@@ -7,6 +7,7 @@ struct TranscriptAudioFeatures: Equatable, Sendable {
     let version: Int
     let activeRmsDecibels: Double?
     let medianPitchHertz: Double?
+    /// Fraction of analysis frames whose RMS passed the version 1 activity gate.
     let voicedFrameRatio: Double
     let pitchSpreadHertz: Double?
 

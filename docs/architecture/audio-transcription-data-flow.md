@@ -123,7 +123,7 @@ flowchart LR
 | preview／preview translation | event pipeline と UI store memory | 現在の表示候補を更新した | durable にしない | 後続イベントまたは正本から置換 |
 | realtime finalized event | event pipeline／persistence writer memory | UI より先に persistence lane へ受理した | `transcript_segments` の SQLite transaction が commit した時点 | batch 音声がなければ元音声からは再生成不能 |
 | batch recognition result | `BatchTranscriptionCoordinator` memory | ready CAF から一式を生成した | transcript rows と batch 完了状態の transaction が commit した時点 | ready CAF が残る間は再生成可能 |
-| transcript audio features | batch recognition work item memory | 認識に使った音声から発話区間の RMS、pitch、voiced ratio、pitch spread を best effort で集約した | 対応する `transcript_segments` row と batch 完了状態の transaction が commit した時点 | ready CAF が残る間だけ再生成可能 |
+| transcript audio features | batch recognition work item memory | 認識に使った音声から発話区間の RMS、pitch、activity-gate ratio、pitch spread を best effort で集約した | 対応する `transcript_segments` row と batch 完了状態の transaction が commit した時点 | ready CAF が残る間だけ再生成可能 |
 | transcript source of truth | SQLite `transcript_segments` | realtime の差分 insert または batch の一式置換 | SQLite commit 完了時 | UI projection を再構築できる |
 | recording metadata | SQLite `recording_sessions` ほか | mode、開始／終了、batch 状態、audio progress を更新 | 各 SQLite commit 完了時 | ファイルだけから完全には再生成しない |
 
@@ -241,6 +241,7 @@ sequenceDiagram
 各 recognition work item は、認識直後かつ一時的な prepared audio または logical CAF slices が有効な間に、
 確定区間ごとの軽量な音声特徴量を一回の走査で集約する。特徴量は補助データであり、抽出失敗は文字起こし完了、
 既存の retry policy、音声 purge を妨げず、その区間または work item の値を `NULL` として保存する。
+version 1 の `audioVoicedFrameRatio` は pitch 検出率ではなく、全分析 frame に占める activity gate 通過 frame の比率を表す。
 音量は RMS dBFS の相対値であり、OS の処理や音源ごとの gain が異なるため microphone と system の間では比較せず、
 同一 recording session・同一音源内の参考値として扱う。リアルタイム文字起こしでは音声特徴量を生成しない。
 
