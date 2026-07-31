@@ -106,7 +106,28 @@ struct OrganizationHierarchyView: View {
                     await model.addDomain($0, to: target)
                 }
             }
-            .alert(item: $model.pendingMerge, content: mergeAlert)
+            .confirmationDialog(
+                L10n.organizationDomainAlreadyUsed(by: model.pendingMerge?.preview.source.name ?? ""),
+                isPresented: Binding(
+                    get: { model.pendingMerge != nil },
+                    set: { if !$0 { model.pendingMerge = nil } }
+                ),
+                presenting: model.pendingMerge
+            ) { pending in
+                Button(L10n.addAsSharedOrganizationDomain) {
+                    Task { await model.confirmSharedDomain(pending) }
+                }
+                Button(L10n.mergeOrganizations, role: .destructive) {
+                    Task { await model.confirmMerge(pending) }
+                }
+                Button(L10n.cancel, role: .cancel) {}
+            } message: { pending in
+                Text(L10n.organizationMergeImpact(
+                    domainName: pending.preview.domainName,
+                    targetName: pending.preview.target.name,
+                    impact: pending.preview.impact
+                ))
+            }
             .customerIntelligenceErrorAlert(
                 title: L10n.organizationWorkspaceError,
                 message: $model.errorMessage
@@ -119,21 +140,6 @@ struct OrganizationHierarchyView: View {
             message: Text(L10n.organizationDeletionImpact(pending.impact)),
             primaryButton: .destructive(Text(L10n.delete)) {
                 Task { await model.confirmDeletion(pending) }
-            },
-            secondaryButton: .cancel()
-        )
-    }
-
-    private func mergeAlert(_ pending: OrganizationWorkspaceViewModel.PendingOrganizationMerge) -> Alert {
-        Alert(
-            title: Text(L10n.mergeOrganization(named: pending.preview.source.name)),
-            message: Text(L10n.organizationMergeImpact(
-                domainName: pending.preview.domainName,
-                targetName: pending.preview.target.name,
-                impact: pending.preview.impact
-            )),
-            primaryButton: .destructive(Text(L10n.merge)) {
-                Task { await model.confirmMerge(pending) }
             },
             secondaryButton: .cancel()
         )

@@ -93,8 +93,8 @@ Meeting creation / recording-start coordinator
        └─ recordings: only after capture starts successfully
             ├─ Vault-scoped Contact
             ├─ Meeting participant
-            ├─ domain → Organization
-            └─ Organization membership
+            ├─ domain → one or more root Organizations
+            └─ unambiguous, setting-enabled Organization membership
 
 SQLite typed records
     ├─ Organization / unit / domain / membership

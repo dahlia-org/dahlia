@@ -20,9 +20,10 @@ Dahlia の「顧客インテリジェンス」画面は、選択中の Vault に
   確認受信箱で、確認済みへの変更を明示的に行います。
 - Project の名称、親、種別、説明はこの画面で編集できます。Meeting の移動、Project 階層の削除、
   要約ファイル処理は「Projectsで管理」から従来の管理ウインドウを開きます。
-- ルート Organization のインスペクタには、参加者の分類に使うメールドメインを表示します。未割当の
-  ドメインはそのまま追加し、別のルート Organization に割り当て済みの場合は、影響件数を確認してから
-  ドメイン、人物、部署、Project、Topic、Insight の参照を選択中の Organization へ一括統合します。
+- ルート Organization のインスペクタには、参加者の分類に使うメールドメインを表示します。同じドメインを
+  複数のルート Organization で共有できます。別の1組織に割り当て済みの場合は、非破壊の共有追加または
+  ドメイン、人物、部署、Project、Topic、Insight の参照を選択中の Organization へ移す統合を選びます。
+  すでに複数組織で共有されている場合は共有追加だけを行います。
   統合先の名称と主ドメインを維持し、重複する所属や参照では統合先の情報を優先して、元の Organization
   を削除します。統合先に主ドメインがない場合は、元の Organization の主ドメインを引き継ぎます。
 - Organization と部門には説明を保存でき、作成・編集・詳細表示と組織検索で利用できます。
@@ -46,7 +47,9 @@ Dahlia の「顧客インテリジェンス」画面は、選択中の Vault に
 ## AI で整理
 
 「AIで整理」は既定90日の期間、組織 UUID、任意の Project UUID を含む依頼をチャット入力欄に準備します。
-自動送信しません。AI は保存済み要約を先に読み、必要な場合だけ transcript を確認します。
+自動送信しません。AI は保存済み要約を先に読み、必要な場合だけ transcript を確認します。共有ドメインの
+人物はドメインだけで所属を決めず、議事録などの証拠に基づいて `set_contact_organization_membership` で
+明示的に所属させます。
 
 AI は書き込み前に `query_*` または `get_*` で現在値と revision を取得し、次の単純なツールを順番に呼びます。
 
@@ -82,6 +85,7 @@ Insight の参照がすべて解除されている場合だけ削除できます
 - `create_contact` / `update_contact` / `delete_contact` / `resolve_contact`
 - `create_conversation_topic` / `update_conversation_topic` / `delete_conversation_topic`
 - `create_insight` / `update_insight` / `delete_insight`
+- `set_organization_domain` / `remove_organization_domain`
 - `set_contact_organization_membership` / `remove_contact_organization_membership`
 - `set_project_resource_reference` / `remove_project_resource_reference`
 - `set_conversation_topic_resource_reference` / `remove_conversation_topic_resource_reference`
@@ -96,5 +100,10 @@ Topic と Insight の削除は所有する参照だけを削除し、参照先�
 
 開発途中の旧スキーマを適用済みの QA データベースは、Dahlia 起動時の
 `v29_customerIntelligenceDirectCRUD` で現在の Insight 列と cleanup trigger へ前方修復されます。
-続く `v30_organizationDescription` は既存 Organization を保持したまま説明列を追加します。MCP は v30
+続く `v30_organizationDescription` は既存 Organization を保持したまま説明列を追加します。
+`v33_sharedOrganizationDomains` は既存ドメイン行を無変換で保ちながら共有を可能にします。MCP は v33
 完了前のデータベースを開かず、Dahlia を一度起動してアップグレードするよう案内します。
+
+設定の「カレンダー」にある「参加者を組織へ自動で紐付ける」は既定でオンです。オフでも Contact、
+Meeting participant、初出ドメインの Organization は作成されます。設定にかかわらず、複数組織で共有する
+ドメインからは Membership を自動作成しません。

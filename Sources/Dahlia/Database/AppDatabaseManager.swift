@@ -174,6 +174,13 @@ final class AppDatabaseManager: Sendable {
             try addTranscriptAudioFeatureColumnsIfNeeded(in: db)
         }
 
+        migrator.registerMigration(
+            "v33_sharedOrganizationDomains",
+            foreignKeyChecks: .deferred
+        ) { db in
+            try SharedOrganizationDomainsMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

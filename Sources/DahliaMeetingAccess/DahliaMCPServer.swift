@@ -69,6 +69,8 @@ public final class DahliaMCPServer {
             + "change exactly one canonical record or relationship per call. Continue with independent records after one "
             + "call fails, and query a conflicted record again before retrying. Record updates require revision. "
             + "Relationship tools use set for create-or-update and remove for unlinking without deleting either endpoint. "
+            + "A domain may be shared by multiple root Organizations. For Contacts using a shared domain, use Meeting "
+            + "transcripts or other evidence and set_contact_organization_membership to assign membership explicitly. "
             + "Deletes require revision. Delete Organizations from the leaves upward after removing Contact memberships; "
             + "a Contact must have no memberships, Meeting participation, or typed resource references before deletion. "
             : ""
@@ -418,6 +420,34 @@ public final class DahliaMCPServer {
                 organizationID: requiredUUID(arguments, key: "organization_id"),
                 expectedOrganizationRevision: requiredRevision(arguments, key: "organization_revision"),
                 roleLabel: nullableString(arguments, key: "role_label")
+            ))
+        case "set_organization_domain":
+            try validate(arguments, allowedKeys: [
+                "organization_id", "expected_organization_revision", "domain_name", "is_primary",
+            ])
+            guard let isPrimary = try boolean(arguments, key: "is_primary") else {
+                throw ParameterError("is_primary is required")
+            }
+            return try toolResult(store.setOrganizationDomain(
+                organizationID: requiredUUID(arguments, key: "organization_id"),
+                expectedOrganizationRevision: requiredRevision(
+                    arguments,
+                    key: "expected_organization_revision"
+                ),
+                domainName: requiredString(arguments, key: "domain_name"),
+                isPrimary: isPrimary
+            ))
+        case "remove_organization_domain":
+            try validate(arguments, allowedKeys: [
+                "organization_id", "expected_organization_revision", "domain_name",
+            ])
+            return try toolResult(store.removeOrganizationDomain(
+                organizationID: requiredUUID(arguments, key: "organization_id"),
+                expectedOrganizationRevision: requiredRevision(
+                    arguments,
+                    key: "expected_organization_revision"
+                ),
+                domainName: requiredString(arguments, key: "domain_name")
             ))
         case "remove_contact_organization_membership":
             try validate(arguments, allowedKeys: [
@@ -1366,6 +1396,7 @@ private extension DahliaMCPServer {
                     "type": "string",
                     "enum": [
                         "contact_organization_membership",
+                        "organization_domain",
                         "project_resource_reference",
                         "conversation_topic_resource_reference",
                         "insight_resource_reference",
@@ -1833,6 +1864,11 @@ private extension DahliaMCPServer {
             "minLength": 1,
             "maxLength": CustomerIntelligenceWriteLimits.shortText,
         ]
+        let domainName: [String: Any] = [
+            "type": "string",
+            "minLength": 1,
+            "maxLength": CustomerIdentityNormalizer.maximumDomainNameLength,
+        ]
         let nullableText: [String: Any] = [
             "type": ["string", "null"],
             "maxLength": CustomerIntelligenceWriteLimits.shortText,
@@ -2018,6 +2054,35 @@ private extension DahliaMCPServer {
                 "Delete insight",
                 "Delete one Insight and its typed references without deleting referenced records.",
                 idKey: "insight_id"
+            ),
+            relationshipWriteTool(
+                "set_organization_domain",
+                "Set organization domain",
+                "Create or update one root Organization's domain link. A domain may be shared by multiple root "
+                    + "Organizations; this changes only this Organization's link. The first domain becomes primary even "
+                    + "when is_primary is false.",
+                [
+                    "organization_id": uuid,
+                    "expected_organization_revision": revision,
+                    "domain_name": domainName,
+                    "is_primary": ["type": "boolean"],
+                ],
+                required: [
+                    "organization_id", "expected_organization_revision", "domain_name", "is_primary",
+                ],
+                destructive: true
+            ),
+            relationshipWriteTool(
+                "remove_organization_domain",
+                "Remove organization domain",
+                "Remove one domain link from one root Organization without changing links from other Organizations.",
+                [
+                    "organization_id": uuid,
+                    "expected_organization_revision": revision,
+                    "domain_name": domainName,
+                ],
+                required: ["organization_id", "expected_organization_revision", "domain_name"],
+                destructive: true
             ),
             relationshipWriteTool(
                 "set_contact_organization_membership",

@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct CustomerIntelligenceIngestionTests {
         @Test
         // swiftlint:disable:next function_body_length
@@ -165,7 +166,7 @@ import GRDB
                 conferenceURI: nil
             )
 
-            try await CustomerIntelligenceIngestionService.ingest(
+            _ = try await CustomerIntelligenceIngestionService.ingest(
                 calendarEvent: event,
                 meetingId: meeting.id,
                 vaultId: fixture.vault.id,
@@ -213,7 +214,7 @@ import GRDB
                 )
             }
 
-            try await CustomerIntelligenceIngestionService.ingest(
+            _ = try await CustomerIntelligenceIngestionService.ingest(
                 calendarEvent: event(displayName: nil, role: .unknown),
                 meetingId: meeting.id,
                 vaultId: fixture.vault.id,
@@ -233,7 +234,7 @@ import GRDB
             let firstOrganization = try #require(first.1)
             #expect(firstContact.displayName == "person")
 
-            try await CustomerIntelligenceIngestionService.ingest(
+            _ = try await CustomerIntelligenceIngestionService.ingest(
                 calendarEvent: event(displayName: "Person", role: .required),
                 meetingId: meeting.id,
                 vaultId: fixture.vault.id,
@@ -250,6 +251,199 @@ import GRDB
             #expect(secondContact.displayName == "person")
             #expect(secondContact.revision == firstContact.revision + 1)
             #expect(secondOrganization.revision == firstOrganization.revision + 1)
+        }
+
+        @Test
+        func missingAutomaticMembershipSettingKeepsLegacyBehavior() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let meeting = try fixture.insertMeeting()
+            let suiteName = "CustomerIntelligenceIngestionTests.missing.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defaults.removePersistentDomain(forName: suiteName)
+            defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+            _ = try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(participants: [participant(email: "person@legacy.example")]),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: .now,
+                dbQueue: fixture.manager.dbQueue,
+                defaults: defaults
+            ).value
+
+            let counts = try await fixture.manager.dbQueue.read { db in
+                (
+                    organizations: try OrganizationRecord.fetchCount(db),
+                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                )
+            }
+            #expect(counts.organizations == 1)
+            #expect(counts.memberships == 1)
+        }
+
+        @Test
+        func disabledAutomaticMembershipStillCreatesOrganizationAndContact() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let meeting = try fixture.insertMeeting()
+            let suiteName = "CustomerIntelligenceIngestionTests.disabled.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defaults.set(false, forKey: AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
+            defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+            _ = try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(participants: [participant(email: "person@disabled.example")]),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: .now,
+                dbQueue: fixture.manager.dbQueue,
+                defaults: defaults
+            ).value
+
+            let counts = try await fixture.manager.dbQueue.read { db in
+                (
+                    contacts: try ContactRecord.fetchCount(db),
+                    organizations: try OrganizationRecord.fetchCount(db),
+                    participants: try MeetingParticipantRecord.fetchCount(db),
+                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                )
+            }
+            #expect(counts.contacts == 1)
+            #expect(counts.organizations == 1)
+            #expect(counts.participants == 1)
+            #expect(counts.memberships == 0)
+
+            defaults.set(true, forKey: AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
+            _ = try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(participants: [participant(email: "linked@disabled.example")]),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: .now,
+                dbQueue: fixture.manager.dbQueue,
+                defaults: defaults
+            ).value
+            let enabledCounts = try await fixture.manager.dbQueue.read { db in
+                (
+                    organizations: try OrganizationRecord.fetchCount(db),
+                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                )
+            }
+            #expect(enabledCounts.organizations == 1)
+            #expect(enabledCounts.memberships == 1)
+        }
+
+        @Test
+        func sharedDomainNeverCreatesAutomaticMembershipOrAnotherOrganization() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let meeting = try fixture.insertMeeting()
+            let first = try fixture.repository.createOrganization(
+                vaultId: fixture.vault.id,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "First"
+            )
+            let second = try fixture.repository.createOrganization(
+                vaultId: fixture.vault.id,
+                parentOrganizationId: nil,
+                nodeKind: .organization,
+                name: "Second"
+            )
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: first.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example"
+            )
+            _ = try fixture.repository.addOrganizationDomain(
+                organizationId: second.id,
+                vaultId: fixture.vault.id,
+                domainName: "shared.example"
+            )
+            let suiteName = "CustomerIntelligenceIngestionTests.shared.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defaults.set(true, forKey: AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
+            defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+            _ = try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(participants: [participant(email: "person@shared.example")]),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: .now,
+                dbQueue: fixture.manager.dbQueue,
+                defaults: defaults
+            ).value
+
+            let counts = try await fixture.manager.dbQueue.read { db in
+                (
+                    organizations: try OrganizationRecord.fetchCount(db),
+                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                )
+            }
+            #expect(counts.organizations == 2)
+            #expect(counts.memberships == 0)
+        }
+
+        @Test
+        func olderObservationUpdatesEverySharedDomainAssignment() async throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let meeting = try fixture.insertMeeting()
+            let recent = Date(timeIntervalSince1970: 1_800_000_000)
+            let older = recent.addingTimeInterval(-3600)
+            for name in ["First", "Second"] {
+                let organization = try fixture.repository.createOrganization(
+                    vaultId: fixture.vault.id,
+                    parentOrganizationId: nil,
+                    nodeKind: .organization,
+                    name: name
+                )
+                _ = try fixture.repository.addOrganizationDomain(
+                    organizationId: organization.id,
+                    vaultId: fixture.vault.id,
+                    domainName: "observed.example",
+                    observedAt: recent
+                )
+            }
+            let suiteName = "CustomerIntelligenceIngestionTests.observation.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defaults.set(false, forKey: AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
+            defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+            _ = try await CustomerIntelligenceIngestionService.ingest(
+                calendarEvent: event(participants: [participant(email: "person@observed.example")]),
+                meetingId: meeting.id,
+                vaultId: fixture.vault.id,
+                observedAt: older,
+                dbQueue: fixture.manager.dbQueue,
+                defaults: defaults
+            ).value
+
+            let domains = try await fixture.manager.dbQueue.read { db in
+                try OrganizationDomainRecord
+                    .filter(Column("domainName") == "observed.example")
+                    .fetchAll(db)
+            }
+            #expect(domains.count == 2)
+            #expect(domains.allSatisfy { $0.firstObservedAt == older })
+            #expect(domains.allSatisfy { $0.lastObservedAt == recent })
+        }
+
+        private func event(
+            participants: [CalendarParticipant],
+            observedAt: Date = .now
+        ) -> CalendarEvent {
+            CalendarEvent(
+                id: "event-\(UUID.v7())",
+                calendarID: "calendar",
+                calendarName: "Work",
+                calendarColorHex: nil,
+                platformId: "event-\(UUID.v7())",
+                title: "Customer sync",
+                description: "",
+                icalUid: "event-\(UUID.v7())@example.com",
+                startDate: observedAt,
+                endDate: observedAt.addingTimeInterval(1800),
+                isAllDay: false,
+                participants: participants,
+                conferenceURI: nil
+            )
         }
 
         private func participant(email: String) -> CalendarParticipant {

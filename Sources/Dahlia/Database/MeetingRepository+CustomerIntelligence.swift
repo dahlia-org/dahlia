@@ -335,14 +335,29 @@ extension MeetingRepository {
             guard target.isRootOrganization else {
                 throw CustomerIntelligenceError.invalidOrganizationMerge
             }
-            guard let domain = try OrganizationDomainRecord
+            let domains = try OrganizationDomainRecord
                 .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
-                .fetchOne(db)
-            else {
+                .fetchAll(db)
+            guard !domains.isEmpty else {
                 return .unassigned
             }
-            guard domain.organizationId != targetOrganizationId else {
+            guard !domains.contains(where: { $0.organizationId == targetOrganizationId }) else {
                 return .alreadyAssigned
+            }
+            guard domains.count == 1, let domain = domains.first else {
+                let ownerIDs = domains.map(\.organizationId)
+                let rootOwnerCount = try OrganizationRecord
+                    .filter(
+                        ownerIDs.contains(Column("id"))
+                            && Column("vaultId") == vaultId
+                            && Column("nodeKind") == OrganizationNodeKind.organization
+                            && Column("parentOrganizationId") == nil
+                    )
+                    .fetchCount(db)
+                guard rootOwnerCount == ownerIDs.count else {
+                    throw CustomerIntelligenceError.invalidOrganizationMerge
+                }
+                return .shared
             }
             guard let source = try OrganizationRecord
                 .filter(Column("id") == domain.organizationId && Column("vaultId") == vaultId)
@@ -376,7 +391,7 @@ extension MeetingRepository {
             guard let organization = try OrganizationRecord
                 .filter(Column("id") == organizationId && Column("vaultId") == vaultId)
                 .fetchOne(db),
-                organization.nodeKind == .organization
+                organization.isRootOrganization
             else {
                 throw CustomerIntelligenceError.organizationNotFound
             }
@@ -384,11 +399,12 @@ extension MeetingRepository {
                 throw CustomerIntelligenceError.revisionConflict
             }
             if var existing = try OrganizationDomainRecord
-                .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("domainName") == domainName
+                        && Column("organizationId") == organizationId
+                )
                 .fetchOne(db) {
-                guard existing.organizationId == organizationId else {
-                    throw CustomerIntelligenceError.domainAlreadyAssigned
-                }
                 let firstObservedAt = min(existing.firstObservedAt, observedAt)
                 let lastObservedAt = max(existing.lastObservedAt, observedAt)
                 if firstObservedAt != existing.firstObservedAt || lastObservedAt != existing.lastObservedAt {
@@ -408,7 +424,11 @@ extension MeetingRepository {
             )
             try domain.insert(db)
             domain = try OrganizationDomainRecord
-                .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("domainName") == domainName
+                        && Column("organizationId") == organizationId
+                )
                 .fetchOne(db) ?? domain
             return domain
         }
@@ -444,13 +464,21 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func removeOrganizationDomain(vaultId: UUID, domainName rawDomainName: String) throws {
+    nonisolated func removeOrganizationDomain(
+        organizationId: UUID,
+        vaultId: UUID,
+        domainName rawDomainName: String
+    ) throws {
         guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
             throw CustomerIntelligenceError.invalidDomain
         }
         try dbQueue.write { db in
             _ = try OrganizationDomainRecord
-                .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
+                .filter(
+                    Column("vaultId") == vaultId
+                        && Column("domainName") == domainName
+                        && Column("organizationId") == organizationId
+                )
                 .deleteAll(db)
         }
     }
@@ -538,14 +566,28 @@ extension MeetingRepository {
                 .filter(Column("organizationId") == sourceOrganizationId)
                 .deleteAll(db)
             for domain in domainsToMove {
-                try OrganizationDomainRecord(
-                    vaultId: domain.vaultId,
-                    domainName: domain.domainName,
-                    organizationId: targetOrganizationId,
-                    isPrimary: !targetHasPrimaryDomain && domain.isPrimary,
-                    firstObservedAt: domain.firstObservedAt,
-                    lastObservedAt: domain.lastObservedAt
-                ).insert(db)
+                let shouldBePrimary = !targetHasPrimaryDomain && domain.isPrimary
+                if var existing = try OrganizationDomainRecord
+                    .filter(
+                        Column("vaultId") == domain.vaultId
+                            && Column("domainName") == domain.domainName
+                            && Column("organizationId") == targetOrganizationId
+                    )
+                    .fetchOne(db) {
+                    existing.firstObservedAt = min(existing.firstObservedAt, domain.firstObservedAt)
+                    existing.lastObservedAt = max(existing.lastObservedAt, domain.lastObservedAt)
+                    existing.isPrimary = existing.isPrimary || shouldBePrimary
+                    try existing.update(db)
+                } else {
+                    try OrganizationDomainRecord(
+                        vaultId: domain.vaultId,
+                        domainName: domain.domainName,
+                        organizationId: targetOrganizationId,
+                        isPrimary: shouldBePrimary,
+                        firstObservedAt: domain.firstObservedAt,
+                        lastObservedAt: domain.lastObservedAt
+                    ).insert(db)
+                }
             }
 
             try db.execute(

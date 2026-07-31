@@ -79,29 +79,36 @@ enum CustomerIntelligencePersistence {
         return contact
     }
 
-    static func organization(
+    static func organizations(
         forDomain rawDomainName: String,
         vaultId: UUID,
         observedAt: Date,
         automaticallyCreate: Bool,
         in db: Database
-    ) throws -> OrganizationRecord? {
+    ) throws -> [OrganizationRecord] {
         guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
             throw CustomerIntelligenceError.invalidDomain
         }
-        if var domain = try OrganizationDomainRecord
+        let domains = try OrganizationDomainRecord
             .filter(Column("vaultId") == vaultId && Column("domainName") == domainName)
-            .fetchOne(db) {
-            let firstObservedAt = min(domain.firstObservedAt, observedAt)
-            let lastObservedAt = max(domain.lastObservedAt, observedAt)
-            if firstObservedAt != domain.firstObservedAt || lastObservedAt != domain.lastObservedAt {
+            .fetchAll(db)
+        if !domains.isEmpty {
+            for var domain in domains {
+                let firstObservedAt = min(domain.firstObservedAt, observedAt)
+                let lastObservedAt = max(domain.lastObservedAt, observedAt)
+                guard firstObservedAt != domain.firstObservedAt || lastObservedAt != domain.lastObservedAt else {
+                    continue
+                }
                 domain.firstObservedAt = firstObservedAt
                 domain.lastObservedAt = lastObservedAt
                 try domain.update(db)
             }
-            return try OrganizationRecord.fetchOne(db, key: domain.organizationId)
+            let organizationIDs = domains.map(\.organizationId)
+            return try OrganizationRecord
+                .filter(organizationIDs.contains(Column("id")))
+                .fetchAll(db)
         }
-        guard automaticallyCreate else { return nil }
+        guard automaticallyCreate else { return [] }
 
         let organization = OrganizationRecord(
             id: .v7(),
@@ -122,7 +129,7 @@ enum CustomerIntelligencePersistence {
             firstObservedAt: observedAt,
             lastObservedAt: observedAt
         ).insert(db)
-        return organization
+        return [organization]
     }
 
     static func addMembership(
@@ -150,6 +157,7 @@ enum CustomerIntelligencePersistence {
         meetingId: UUID,
         vaultId: UUID,
         observedAt: Date,
+        automaticallyLinkMemberships: Bool,
         in db: Database
     ) throws -> CustomerIntelligenceIngestionMetrics {
         let selection = canonicalParticipants(participants)
@@ -177,17 +185,19 @@ enum CustomerIntelligencePersistence {
             )
 
             guard let domainName = CustomerIdentityNormalizer.domainName(fromEmail: email),
-                  CustomerIdentityNormalizer.isAutomaticOrganizationDomain(domainName),
-                  let organization = try organization(
-                      forDomain: domainName,
-                      vaultId: vaultId,
-                      observedAt: observedAt,
-                      automaticallyCreate: true,
-                      in: db
-                  )
+                  CustomerIdentityNormalizer.isAutomaticOrganizationDomain(domainName)
             else {
                 continue
             }
+            let matchingOrganizations = try organizations(
+                forDomain: domainName,
+                vaultId: vaultId,
+                observedAt: observedAt,
+                automaticallyCreate: true,
+                in: db
+            )
+            guard automaticallyLinkMemberships, matchingOrganizations.count == 1,
+                  let organization = matchingOrganizations.first else { continue }
             try addMembership(
                 organizationId: organization.id,
                 contactId: contact.id,

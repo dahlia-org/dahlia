@@ -458,7 +458,7 @@ extension MeetingAccessStore {
         guard try Bool.fetchOne(
             db,
             sql: "SELECT EXISTS(SELECT 1 FROM grdb_migrations WHERE identifier = ?)",
-            arguments: ["v30_organizationDescription"]
+            arguments: ["v33_sharedOrganizationDomains"]
         ) == true else {
             throw MeetingAccessError.databaseUpgradeRequired
         }

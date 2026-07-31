@@ -24,3 +24,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0013](0013-expand-codex-stdout-burst-buffer.md) | AI runtime | Codex stdout の burst buffer を拡張し、消費済み payload を即時解放する | Accepted; amends 0003 |
 | [0014](0014-domain-driven-organization-merge.md) | Customer intelligence / Identity | メールドメイン追加を入口にルート組織を完全統合する | Accepted; amends 0011 and 0012 |
 | [0015](0015-preset-projects-optimizer-skill.md) | AI runtime / Project workspace | Projects Optimizer skill をアプリ内チャットへプリセットする | Accepted; amends 0003, builds on 0010 |
+| [0016](0016-shared-organization-domains.md) | Customer intelligence / Identity | 同じメールドメインを複数のルート組織で共有可能にする | Accepted; amends 0011 and 0014 |

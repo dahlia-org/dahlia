@@ -210,6 +210,7 @@ import GRDB
                 domainName: secondDomain.domainName
             )
             try fixture.repository.removeOrganizationDomain(
+                organizationId: organization.id,
                 vaultId: fixture.vault.id,
                 domainName: secondDomain.domainName
             )

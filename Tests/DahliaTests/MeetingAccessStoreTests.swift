@@ -1047,6 +1047,235 @@ import ImageIO
 
         @Test
         // swiftlint:disable:next function_body_length
+        func organizationDomainWriteToolsPreserveSharingRootAndPrimaryContracts() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let first = try store.createOrganization(
+                name: "First",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+            let second = try store.createOrganization(
+                name: "Second",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+
+            let firstDomain = try store.setOrganizationDomain(
+                organizationID: first.resourceID,
+                expectedOrganizationRevision: first.revision,
+                domainName: " Shared.Example. ",
+                isPrimary: false
+            )
+            #expect(firstDomain.changed)
+            #expect(try store.organization(id: first.resourceID).domains.first?.domainName == "shared.example")
+            #expect(try store.organization(id: first.resourceID).domains.first?.isPrimary == true)
+
+            let onlyPrimaryNoOp = try store.setOrganizationDomain(
+                organizationID: first.resourceID,
+                expectedOrganizationRevision: try #require(firstDomain.revision),
+                domainName: "shared.example",
+                isPrimary: false
+            )
+            #expect(!onlyPrimaryNoOp.changed)
+
+            let secondDomain = try store.setOrganizationDomain(
+                organizationID: first.resourceID,
+                expectedOrganizationRevision: try #require(onlyPrimaryNoOp.revision),
+                domainName: "second.example",
+                isPrimary: false
+            )
+            _ = try store.setOrganizationDomain(
+                organizationID: first.resourceID,
+                expectedOrganizationRevision: try #require(secondDomain.revision),
+                domainName: "alpha.example",
+                isPrimary: false
+            )
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE organization_domains SET firstObservedAt = ?
+                    WHERE organizationId = ? AND domainName IN ('alpha.example', 'second.example')
+                    """,
+                    arguments: [Date(timeIntervalSince1970: 1_700_000_000), first.resourceID]
+                )
+            }
+            let revisionAfterObservationUpdate = try store.organization(id: first.resourceID).organization.revision
+            let promotedReplacement = try store.setOrganizationDomain(
+                organizationID: first.resourceID,
+                expectedOrganizationRevision: revisionAfterObservationUpdate,
+                domainName: "shared.example",
+                isPrimary: false
+            )
+            #expect(promotedReplacement.changed)
+            let firstDomains = try store.organization(id: first.resourceID).domains
+            #expect(firstDomains.count(where: \.isPrimary) == 1)
+            #expect(firstDomains.first(where: \.isPrimary)?.domainName == "alpha.example")
+
+            let shared = try store.setOrganizationDomain(
+                organizationID: second.resourceID,
+                expectedOrganizationRevision: second.revision,
+                domainName: "shared.example",
+                isPrimary: false
+            )
+            #expect(shared.changed)
+            #expect(try store.organization(id: second.resourceID).domains.map(\.domainName) == ["shared.example"])
+
+            #expect(throws: MeetingAccessError.customerIntelligenceRevisionConflict) {
+                try store.setOrganizationDomain(
+                    organizationID: second.resourceID,
+                    expectedOrganizationRevision: second.revision,
+                    domainName: "stale.example",
+                    isPrimary: false
+                )
+            }
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.setOrganizationDomain(
+                    organizationID: second.resourceID,
+                    expectedOrganizationRevision: try #require(shared.revision),
+                    domainName: "not a domain",
+                    isPrimary: false
+                )
+            }
+
+            let unit = try store.createOrganization(
+                name: "Unit",
+                nodeKind: .unit,
+                parentOrganizationID: first.resourceID
+            )
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.setOrganizationDomain(
+                    organizationID: unit.resourceID,
+                    expectedOrganizationRevision: unit.revision,
+                    domainName: "unit.example",
+                    isPrimary: false
+                )
+            }
+            let nestedOrganization = try store.createOrganization(
+                name: "Nested organization",
+                nodeKind: .organization,
+                parentOrganizationID: first.resourceID
+            )
+            #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
+                try store.setOrganizationDomain(
+                    organizationID: nestedOrganization.resourceID,
+                    expectedOrganizationRevision: nestedOrganization.revision,
+                    domainName: "nested.example",
+                    isPrimary: false
+                )
+            }
+
+            let removed = try store.removeOrganizationDomain(
+                organizationID: second.resourceID,
+                expectedOrganizationRevision: try #require(shared.revision),
+                domainName: "shared.example"
+            )
+            #expect(removed.changed)
+            let removeNoOp = try store.removeOrganizationDomain(
+                organizationID: second.resourceID,
+                expectedOrganizationRevision: try #require(removed.revision),
+                domainName: "shared.example"
+            )
+            #expect(!removeNoOp.changed)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func organizationDomainMCPToolsDeclareDispatchAndEnforceWriteAccess() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let organization = try store.createOrganization(
+                name: "Domain MCP",
+                nodeKind: .organization,
+                parentOrganizationID: nil
+            )
+            let server = DahliaMCPServer(store: store)
+            let initialized = try Self.json(server.handleLine(
+                #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#
+            ))
+            let instructions = try #require(
+                (initialized["result"] as? [String: Any])?["instructions"] as? String
+            )
+            #expect(instructions.contains("domain may be shared"))
+            #expect(instructions.contains("set_contact_organization_membership"))
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+            let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            let setDefinition = try #require(
+                definitions.first { $0["name"] as? String == "set_organization_domain" }
+            )
+            let setSchema = try #require(setDefinition["inputSchema"] as? [String: Any])
+            #expect(Set(setSchema["required"] as? [String] ?? []) == [
+                "organization_id", "expected_organization_revision", "domain_name", "is_primary",
+            ])
+            let setProperties = try #require(setSchema["properties"] as? [String: Any])
+            let setDomainSchema = try #require(setProperties["domain_name"] as? [String: Any])
+            #expect(
+                setDomainSchema["maxLength"] as? Int
+                    == CustomerIdentityNormalizer.maximumDomainNameLength
+            )
+            let removeDefinition = try #require(
+                definitions.first { $0["name"] as? String == "remove_organization_domain" }
+            )
+            let removeSchema = try #require(removeDefinition["inputSchema"] as? [String: Any])
+            #expect(Set(removeSchema["required"] as? [String] ?? []) == [
+                "organization_id", "expected_organization_revision", "domain_name",
+            ])
+            let removeProperties = try #require(removeSchema["properties"] as? [String: Any])
+            let removeDomainSchema = try #require(removeProperties["domain_name"] as? [String: Any])
+            #expect(
+                removeDomainSchema["maxLength"] as? Int
+                    == CustomerIdentityNormalizer.maximumDomainNameLength
+            )
+
+            let setCall = try Self.json(server.handleLine("""
+            {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"set_organization_domain","arguments":{\
+            "organization_id":"\(organization.resourceID.uuidString)",\
+            "expected_organization_revision":\(organization.revision),\
+            "domain_name":"mcp.example","is_primary":false}}}
+            """))
+            let setContent = try #require(
+                (setCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            )
+            #expect(setContent["changed"] as? Bool == true)
+            let revision = try #require(setContent["revision"] as? Int)
+
+            let removeCall = try Self.json(server.handleLine("""
+            {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"remove_organization_domain","arguments":{\
+            "organization_id":"\(organization.resourceID.uuidString)",\
+            "expected_organization_revision":\(revision),\
+            "domain_name":"mcp.example"}}}
+            """))
+            let removeContent = try #require(
+                (removeCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            )
+            #expect(removeContent["changed"] as? Bool == true)
+
+            let readOnlyServer = try DahliaMCPServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID)
+            )
+            _ = try Self.json(readOnlyServer.handleLine(
+                #"{"jsonrpc":"2.0","id":5,"method":"initialize","params":{}}"#
+            ))
+            _ = readOnlyServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let readOnlyTools = try Self.json(
+                readOnlyServer.handleLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/list"}"#)
+            )
+            let readOnlyDefinitions =
+                ((readOnlyTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+            #expect(!readOnlyDefinitions.contains { $0["name"] as? String == "set_organization_domain" })
+            let denied = try Self.json(readOnlyServer.handleLine("""
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"set_organization_domain","arguments":{\
+            "organization_id":"\(organization.resourceID.uuidString)",\
+            "expected_organization_revision":1,\
+            "domain_name":"denied.example","is_primary":false}}}
+            """))
+            #expect((denied["result"] as? [String: Any])?["isError"] as? Bool == true)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
         func writeMCPPublishesSimpleCrudToolsOnlyWhenEnabled() throws {
             let fixture = try Fixture()
             let readOnlyServer = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
@@ -1080,6 +1309,7 @@ import ImageIO
                 "create_contact", "update_contact", "delete_contact", "resolve_contact",
                 "create_conversation_topic", "update_conversation_topic", "delete_conversation_topic",
                 "create_insight", "update_insight", "delete_insight",
+                "set_organization_domain", "remove_organization_domain",
                 "set_contact_organization_membership", "remove_contact_organization_membership",
                 "set_project_resource_reference", "remove_project_resource_reference",
                 "set_conversation_topic_resource_reference",

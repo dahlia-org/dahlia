@@ -697,6 +697,159 @@ public extension MeetingAccessStore {
         )
     }
 
+    // swiftlint:disable:next function_body_length
+    func setOrganizationDomain(
+        organizationID: UUID,
+        expectedOrganizationRevision: Int,
+        domainName rawDomainName: String,
+        isPrimary: Bool
+    ) throws -> CustomerIntelligenceRelationshipMutationResult {
+        try requireCustomerIntelligenceWriteAccess()
+        guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
+            throw MeetingAccessError.invalidCustomerIntelligenceMutation
+        }
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
+        let result = try database.write { db -> (Int, Bool) in
+            let revision = try validatedRootOrganizationRevision(
+                id: organizationID,
+                expected: expectedOrganizationRevision,
+                in: db
+            )
+            let existing = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT isPrimary
+                FROM organization_domains
+                WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                """,
+                arguments: [vaultID, organizationID, domainName]
+            )
+
+            if let existing {
+                let currentlyPrimary: Bool = existing["isPrimary"]
+                guard currentlyPrimary != isPrimary else { return (revision, false) }
+                if isPrimary {
+                    try db.execute(
+                        sql: """
+                        UPDATE organization_domains SET isPrimary = 0
+                        WHERE organizationId = ? AND isPrimary = 1
+                        """,
+                        arguments: [organizationID]
+                    )
+                    try db.execute(
+                        sql: """
+                        UPDATE organization_domains SET isPrimary = 1
+                        WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                        """,
+                        arguments: [vaultID, organizationID, domainName]
+                    )
+                } else {
+                    guard let replacement = try String.fetchOne(
+                        db,
+                        sql: """
+                        SELECT domainName
+                        FROM organization_domains
+                        WHERE organizationId = ? AND domainName <> ?
+                        ORDER BY firstObservedAt ASC, domainName ASC
+                        LIMIT 1
+                        """,
+                        arguments: [organizationID, domainName]
+                    ) else {
+                        return (revision, false)
+                    }
+                    try db.execute(
+                        sql: """
+                        UPDATE organization_domains SET isPrimary = 0
+                        WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                        """,
+                        arguments: [vaultID, organizationID, domainName]
+                    )
+                    try db.execute(
+                        sql: """
+                        UPDATE organization_domains SET isPrimary = 1
+                        WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                        """,
+                        arguments: [vaultID, organizationID, replacement]
+                    )
+                }
+            } else {
+                if isPrimary {
+                    try db.execute(
+                        sql: """
+                        UPDATE organization_domains SET isPrimary = 0
+                        WHERE organizationId = ? AND isPrimary = 1
+                        """,
+                        arguments: [organizationID]
+                    )
+                }
+                try db.execute(
+                    sql: """
+                    INSERT INTO organization_domains (
+                        vaultId, domainName, organizationId, isPrimary, firstObservedAt, lastObservedAt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [vaultID, domainName, organizationID, isPrimary, Date.now, Date.now]
+                )
+            }
+            return try (currentRevision(table: "organizations", id: organizationID, in: db), true)
+        }
+        if result.1 { postCustomerIntelligenceChange() }
+        return CustomerIntelligenceRelationshipMutationResult(
+            vault: vault,
+            relationship: .organizationDomain,
+            sourceID: organizationID,
+            targetID: nil,
+            revision: result.0,
+            changed: result.1
+        )
+    }
+
+    func removeOrganizationDomain(
+        organizationID: UUID,
+        expectedOrganizationRevision: Int,
+        domainName rawDomainName: String
+    ) throws -> CustomerIntelligenceRelationshipMutationResult {
+        try requireCustomerIntelligenceWriteAccess()
+        guard let domainName = CustomerIdentityNormalizer.domainName(rawDomainName) else {
+            throw MeetingAccessError.invalidCustomerIntelligenceMutation
+        }
+        let vault = try database.read(fetchCustomerIntelligenceVault(in:))
+        let result = try database.write { db -> (Int, Bool) in
+            let revision = try validatedRootOrganizationRevision(
+                id: organizationID,
+                expected: expectedOrganizationRevision,
+                in: db
+            )
+            let exists = try Int.fetchOne(
+                db,
+                sql: """
+                SELECT 1 FROM organization_domains
+                WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                """,
+                arguments: [vaultID, organizationID, domainName]
+            ) != nil
+            guard exists else { return (revision, false) }
+            try db.execute(
+                sql: """
+                DELETE FROM organization_domains
+                WHERE vaultId = ? AND organizationId = ? AND domainName = ?
+                """,
+                arguments: [vaultID, organizationID, domainName]
+            )
+            return try (currentRevision(table: "organizations", id: organizationID, in: db), true)
+        }
+        if result.1 { postCustomerIntelligenceChange() }
+        return CustomerIntelligenceRelationshipMutationResult(
+            vault: vault,
+            relationship: .organizationDomain,
+            sourceID: organizationID,
+            targetID: nil,
+            revision: result.0,
+            changed: result.1
+        )
+    }
+
     func setProjectResourceReference(
         projectID: UUID,
         expectedProjectRevision: Int,
@@ -1287,6 +1440,34 @@ private extension MeetingAccessStore {
         }
         guard revision == expected else {
             throw MeetingAccessError.customerIntelligenceRevisionConflict
+        }
+        return revision
+    }
+
+    func validatedRootOrganizationRevision(
+        id: UUID,
+        expected: Int,
+        in db: Database
+    ) throws -> Int {
+        guard let row = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT nodeKind, parentOrganizationId, revision
+            FROM organizations
+            WHERE id = ? AND vaultId = ?
+            """,
+            arguments: [id, vaultID]
+        ) else {
+            throw MeetingAccessError.organizationNotFound
+        }
+        let revision: Int = row["revision"]
+        guard revision == expected else {
+            throw MeetingAccessError.customerIntelligenceRevisionConflict
+        }
+        let nodeKind: String = row["nodeKind"]
+        let parentID: UUID? = row["parentOrganizationId"]
+        guard nodeKind == OrganizationAccessNodeKind.organization.rawValue, parentID == nil else {
+            throw MeetingAccessError.invalidCustomerIntelligenceMutation
         }
         return revision
     }

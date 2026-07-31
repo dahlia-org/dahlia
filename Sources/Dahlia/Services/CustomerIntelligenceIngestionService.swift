@@ -29,9 +29,11 @@ enum CustomerIntelligenceIngestionService {
         meetingId: UUID,
         vaultId: UUID,
         observedAt: Date,
-        dbQueue: DatabaseQueue
+        dbQueue: DatabaseQueue,
+        defaults: UserDefaults = .standard
     ) -> Task<Void, Never> {
         let participants = calendarEvent.participants
+        let automaticallyLinkMemberships = automaticallyLinkMemberships(defaults: defaults)
         return Task(priority: .utility) {
             do {
                 _ = try await ingest(
@@ -39,7 +41,8 @@ enum CustomerIntelligenceIngestionService {
                     meetingId: meetingId,
                     vaultId: vaultId,
                     observedAt: observedAt,
-                    dbQueue: dbQueue
+                    dbQueue: dbQueue,
+                    automaticallyLinkMemberships: automaticallyLinkMemberships
                 )
             } catch {
                 ErrorReportingService.captureSanitized(.customerIntelligenceIngestion)
@@ -55,13 +58,37 @@ enum CustomerIntelligenceIngestionService {
         observedAt: Date,
         dbQueue: DatabaseQueue
     ) async throws -> CustomerIntelligenceIngestionMetrics {
-        try await ingest(
+        let automaticallyLinkMemberships = automaticallyLinkMemberships(defaults: .standard)
+        return try await ingest(
             participants: calendarEvent.participants,
             meetingId: meetingId,
             vaultId: vaultId,
             observedAt: observedAt,
-            dbQueue: dbQueue
+            dbQueue: dbQueue,
+            automaticallyLinkMemberships: automaticallyLinkMemberships
         )
+    }
+
+    static func ingest(
+        calendarEvent: CalendarEvent,
+        meetingId: UUID,
+        vaultId: UUID,
+        observedAt: Date,
+        dbQueue: DatabaseQueue,
+        defaults: UserDefaults
+    ) -> Task<CustomerIntelligenceIngestionMetrics, Error> {
+        let participants = calendarEvent.participants
+        let automaticallyLinkMemberships = automaticallyLinkMemberships(defaults: defaults)
+        return Task {
+            try await ingest(
+                participants: participants,
+                meetingId: meetingId,
+                vaultId: vaultId,
+                observedAt: observedAt,
+                dbQueue: dbQueue,
+                automaticallyLinkMemberships: automaticallyLinkMemberships
+            )
+        }
     }
 
     private static func ingest(
@@ -69,7 +96,8 @@ enum CustomerIntelligenceIngestionService {
         meetingId: UUID,
         vaultId: UUID,
         observedAt: Date,
-        dbQueue: DatabaseQueue
+        dbQueue: DatabaseQueue,
+        automaticallyLinkMemberships: Bool
     ) async throws -> CustomerIntelligenceIngestionMetrics {
         guard !participants.isEmpty else {
             log(.empty)
@@ -81,11 +109,17 @@ enum CustomerIntelligenceIngestionService {
                 meetingId: meetingId,
                 vaultId: vaultId,
                 observedAt: observedAt,
+                automaticallyLinkMemberships: automaticallyLinkMemberships,
                 in: db
             )
         }
         log(metrics)
         return metrics
+    }
+
+    private static func automaticallyLinkMemberships(defaults: UserDefaults) -> Bool {
+        let key = AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey
+        return defaults.object(forKey: key) == nil ? true : defaults.bool(forKey: key)
     }
 
     private static func log(_ metrics: CustomerIntelligenceIngestionMetrics) {
