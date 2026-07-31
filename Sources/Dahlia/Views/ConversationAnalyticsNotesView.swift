@@ -10,6 +10,11 @@ struct ConversationAnalyticsNotesView: View {
                     .number.precision(.fractionLength(0 ... 1))
                 )
             ))
+            Text(L10n.conversationAnalyticsMonologueGapDescription(
+                metrics.monologueMergeGap.formatted(
+                    .number.precision(.fractionLength(0 ... 1))
+                )
+            ))
             if metrics.isTimelineCondensed {
                 Label(L10n.conversationAnalyticsCondensedTimelineNote, systemImage: "rectangle.compress.vertical")
             }

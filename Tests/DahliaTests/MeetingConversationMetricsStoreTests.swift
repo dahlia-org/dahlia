@@ -67,6 +67,8 @@ import GRDB
                 computedAt: .now,
                 sources: [],
                 speechMergeGap: 1.5,
+                monologueMergeGap: 3,
+                longestMonologue: nil,
                 paceSamples: [],
                 paceBucketDuration: 60,
                 timelineIntervals: [],

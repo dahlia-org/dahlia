@@ -58,6 +58,17 @@ struct ConversationAnalyticsFlowCard: View {
             title: L10n.conversationAnalyticsOverlapCount,
             value: metrics.overlapCount.formatted()
         )
+        if let monologue = metrics.longestMonologue {
+            ConversationAnalyticsMetricStat(
+                title: L10n.conversationAnalyticsLongestMonologue,
+                value: Formatters.elapsedMinutesSeconds(duration: monologue.duration),
+                detail: L10n.conversationAnalyticsMonologueDetail(
+                    sourceName(monologue.source),
+                    Formatters.elapsedMinutesSeconds(duration: monologue.start),
+                    Formatters.elapsedMinutesSeconds(duration: monologue.end)
+                )
+            )
+        }
     }
 
     private func timelineChart(
@@ -154,5 +165,14 @@ struct ConversationAnalyticsFlowCard: View {
     private func percentage(_ ratio: Double?) -> String {
         guard let ratio else { return L10n.notAvailable }
         return ratio.formatted(.percent.precision(.fractionLength(0)))
+    }
+
+    private func sourceName(_ source: RecordingAudioSource) -> String {
+        switch source {
+        case .microphone:
+            L10n.conversationAnalyticsYou
+        case .system:
+            L10n.conversationAnalyticsOtherSide
+        }
     }
 }

@@ -87,6 +87,80 @@ import Foundation
         }
 
         @Test
+        func longestMonologueUsesIndependentThreeSecondGapAcrossOtherSourceSpeech() {
+            let session = makeSession(duration: 20)
+            let input = makeInput(
+                sessions: [session],
+                segments: [
+                    makeSegment(session: session, start: 0, end: 2, source: .microphone),
+                    makeSegment(session: session, start: 4, end: 6, source: .microphone),
+                    makeSegment(session: session, start: 2.5, end: 3.5, source: .system),
+                ]
+            )
+
+            let metrics = MeetingConversationMetricsCalculator.calculate(input: input, fingerprint: "monologue")
+
+            #expect(metrics.source(.microphone).speechDuration == 4)
+            #expect(metrics.timelineIntervals == [
+                .init(source: .microphone, start: 0, end: 2),
+                .init(source: .microphone, start: 4, end: 6),
+                .init(source: .system, start: 2.5, end: 3.5),
+            ])
+            #expect(metrics.monologueMergeGap == 3)
+            #expect(metrics.longestMonologue == .init(source: .microphone, start: 0, end: 6))
+        }
+
+        @Test
+        func longestMonologueCanJoinAcrossRecordingSessionBoundaries() {
+            let first = makeSession(duration: 5)
+            let second = makeSession(start: 120, duration: 5, offset: 7)
+            let input = makeInput(
+                sessions: [first, second],
+                segments: [
+                    makeSegment(session: first, start: 4, end: 5, source: .microphone),
+                    makeSegment(session: second, start: 0, end: 2, source: .microphone),
+                ]
+            )
+
+            let metrics = MeetingConversationMetricsCalculator.calculate(input: input, fingerprint: "sessions")
+
+            #expect(metrics.longestMonologue == .init(source: .microphone, start: 4, end: 9))
+        }
+
+        @Test
+        func longestMonologueIncludesExactBoundaryAndUsesDeterministicTieBreaks() {
+            let session = makeSession(duration: 40)
+            let input = makeInput(
+                sessions: [session],
+                segments: [
+                    makeSegment(session: session, start: 0, end: 1, source: .system),
+                    makeSegment(session: session, start: 4, end: 7, source: .system),
+                    makeSegment(session: session, start: 10.1, end: 14.1, source: .system),
+                    makeSegment(session: session, start: 20, end: 24, source: .system),
+                    makeSegment(session: session, start: 20, end: 24, source: .microphone),
+                    makeSegment(session: session, start: 30, end: 37, source: .microphone),
+                ]
+            )
+
+            let metrics = MeetingConversationMetricsCalculator.calculate(input: input, fingerprint: "boundaries")
+
+            #expect(metrics.longestMonologue == .init(source: .system, start: 0, end: 7))
+
+            let tied = MeetingConversationMetricsCalculator.calculate(
+                input: makeInput(
+                    sessions: [session],
+                    segments: [
+                        makeSegment(session: session, start: 20, end: 24, source: .system),
+                        makeSegment(session: session, start: 20, end: 24, source: .microphone),
+                    ]
+                ),
+                fingerprint: "tie"
+            )
+
+            #expect(tied.longestMonologue == .init(source: .microphone, start: 20, end: 24))
+        }
+
+        @Test
         func clampsSessionIntervalsAndSumsRecordingSessions() {
             let first = makeSession(duration: 10)
             let second = makeSession(start: 20, duration: 5, offset: 10)
@@ -252,6 +326,7 @@ import Foundation
             #expect(microphone.charactersPerMinute == nil)
             #expect(metrics.conversationOccupancyRatio == 0)
             #expect(metrics.overlapRatio == nil)
+            #expect(metrics.longestMonologue == nil)
         }
 
         @Test

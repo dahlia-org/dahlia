@@ -2633,10 +2633,28 @@ enum L10n {
     static var conversationAnalyticsNormalizedCharacters: String { String(localized: "Characters", bundle: bundle) }
     static var conversationAnalyticsSpeechSegments: String { String(localized: "Speech Segments", bundle: bundle) }
     static var conversationAnalyticsOverlapCount: String { String(localized: "Overlap Count", bundle: bundle) }
+    static var conversationAnalyticsLongestMonologue: String { String(localized: "Longest Monologue", bundle: bundle) }
     static var charactersPerMinute: String { String(localized: "chars/min", bundle: bundle) }
+    static func conversationAnalyticsMonologueDetail(_ source: String, _ start: String, _ end: String) -> String {
+        String(localized: "\(source) · \(start)–\(end)", bundle: bundle)
+    }
+
     static func conversationAnalyticsSpeechGapDescription(_ maximumGap: String) -> String {
         String(
-            localized: "Transcript gaps up to \(maximumGap) seconds are treated as continuous speech in the timeline and metrics; short overlaps may include recognition timing differences.",
+            localized: """
+            Transcript gaps up to \(maximumGap) seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; \
+            short overlaps may include recognition timing differences.
+            """,
+            bundle: bundle
+        )
+    }
+
+    static func conversationAnalyticsMonologueGapDescription(_ maximumGap: String) -> String {
+        String(
+            localized: """
+            The longest monologue joins same-source gaps up to \(maximumGap) seconds, \
+            even when the other side speaks in between.
+            """,
             bundle: bundle
         )
     }

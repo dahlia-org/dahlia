@@ -2,6 +2,7 @@ import Foundation
 
 enum MeetingConversationMetricsCalculator {
     static let defaultSpeechMergeGap: TimeInterval = 1.5
+    static let defaultMonologueMergeGap: TimeInterval = 3
     static let maximumTimelineIntervalsPerLane = 512
     static let maximumPaceSamplesPerSource = 60
     private static let sources: [RecordingAudioSource] = [.microphone, .system]
@@ -38,6 +39,7 @@ enum MeetingConversationMetricsCalculator {
         let mergedBySource: [RecordingAudioSource: [Interval]]
         let allIntervals: [Interval]
         let overlapIntervals: [Interval]
+        let longestMonologue: MeetingConversationMetrics.MonologueInterval?
         let usesLegacyTimelineFallback: Bool
     }
 
@@ -48,6 +50,7 @@ enum MeetingConversationMetricsCalculator {
         let isCondensed: Bool
         let paceSamples: [MeetingConversationMetrics.PaceSample]
         let paceBucketDuration: TimeInterval
+        let longestMonologue: MeetingConversationMetrics.MonologueInterval?
     }
 
     private struct DisplayIntervals {
@@ -86,6 +89,8 @@ enum MeetingConversationMetricsCalculator {
                 mergedBySource: analysis.mergedBySource
             ),
             speechMergeGap: mergeGap,
+            monologueMergeGap: defaultMonologueMergeGap,
+            longestMonologue: analysis.longestMonologue,
             paceSamples: timeline.paceSamples,
             paceBucketDuration: timeline.paceBucketDuration,
             timelineIntervals: timeline.intervals,
@@ -174,6 +179,7 @@ enum MeetingConversationMetricsCalculator {
             mergedBySource: mergedBySource,
             allIntervals: allIntervals,
             overlapIntervals: intersections(microphoneIntervals, systemIntervals),
+            longestMonologue: longestMonologue(accumulators: accumulators, maximumGap: defaultMonologueMergeGap),
             usesLegacyTimelineFallback: !legacySegments.isEmpty
         )
     }
@@ -215,8 +221,31 @@ enum MeetingConversationMetricsCalculator {
             overlapCount: analysis.overlapIntervals.count,
             isCondensed: isCondensed,
             paceSamples: pace.samples,
-            paceBucketDuration: pace.bucketDuration
+            paceBucketDuration: pace.bucketDuration,
+            longestMonologue: analysis.longestMonologue
         )
+    }
+
+    private static func longestMonologue(
+        accumulators: [RecordingAudioSource: SourceAccumulator],
+        maximumGap: TimeInterval
+    ) -> MeetingConversationMetrics.MonologueInterval? {
+        sources.flatMap { source in
+            merged(
+                accumulators[source, default: SourceAccumulator()].intervals,
+                mergeGap: maximumGap
+            ).map { interval in
+                MeetingConversationMetrics.MonologueInterval(
+                    source: source,
+                    start: interval.start,
+                    end: interval.end
+                )
+            }
+        }.min { lhs, rhs in
+            if lhs.duration != rhs.duration { return lhs.duration > rhs.duration }
+            if lhs.start != rhs.start { return lhs.start < rhs.start }
+            return lhs.source == .microphone && rhs.source != .microphone
+        }
     }
 
     private static func paceProjection(

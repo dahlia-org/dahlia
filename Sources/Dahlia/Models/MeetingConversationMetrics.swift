@@ -40,6 +40,16 @@ struct MeetingConversationMetrics: Equatable, Sendable {
         }
     }
 
+    struct MonologueInterval: Equatable, Sendable {
+        let source: RecordingAudioSource
+        let start: TimeInterval
+        let end: TimeInterval
+
+        var duration: TimeInterval {
+            end - start
+        }
+    }
+
     struct SourceMetrics: Equatable, Identifiable, Sendable {
         let source: RecordingAudioSource
         let speechDuration: TimeInterval
@@ -65,6 +75,8 @@ struct MeetingConversationMetrics: Equatable, Sendable {
     let computedAt: Date
     let sources: [SourceMetrics]
     let speechMergeGap: TimeInterval
+    let monologueMergeGap: TimeInterval
+    let longestMonologue: MonologueInterval?
     let paceSamples: [PaceSample]
     let paceBucketDuration: TimeInterval
     let timelineIntervals: [TimelineInterval]

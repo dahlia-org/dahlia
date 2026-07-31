@@ -1207,8 +1207,11 @@
 "Characters" = "Characters";
 "Speech Segments" = "Speech Segments";
 "Overlap Count" = "Overlap Count";
+"Longest Monologue" = "Longest Monologue";
+"%@ · %@–%@" = "%@ · %@–%@";
 "chars/min" = "chars/min";
-"Transcript gaps up to %@ seconds are treated as continuous speech in the timeline and metrics; short overlaps may include recognition timing differences." = "Transcript gaps up to %@ seconds are treated as continuous speech in the timeline and metrics; short overlaps may include recognition timing differences.";
+"Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences." = "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences.";
+"The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between." = "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between.";
 "Dense timelines are condensed for display without changing calculated metrics." = "Dense timelines are condensed for display without changing calculated metrics.";
 "Some older transcript segments use an estimated timeline." = "Some older transcript segments use an estimated timeline.";
 "Speaking pace is approximate because some segments have no measurable duration." = "Speaking pace is approximate because some segments have no measurable duration.";
