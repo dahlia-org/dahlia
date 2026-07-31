@@ -170,6 +170,10 @@ final class AppDatabaseManager: Sendable {
             try MeetingConversationMetricsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v32_transcriptAudioFeatures") { db in
+            try addTranscriptAudioFeatureColumnsIfNeeded(in: db)
+        }
+
         return migrator
     }()
 
@@ -684,6 +688,14 @@ final class AppDatabaseManager: Sendable {
 
     private static func addTranscriptSegmentTranslatedTextColumnIfNeeded(in db: Database) throws {
         try addColumnIfNeeded(in: db, table: "transcript_segments", column: "translatedText", type: .text)
+    }
+
+    private static func addTranscriptAudioFeatureColumnsIfNeeded(in db: Database) throws {
+        try addColumnIfNeeded(in: db, table: "transcript_segments", column: "audioFeatureVersion", type: .integer)
+        try addColumnIfNeeded(in: db, table: "transcript_segments", column: "audioActiveRmsDecibels", type: .double)
+        try addColumnIfNeeded(in: db, table: "transcript_segments", column: "audioMedianPitchHertz", type: .double)
+        try addColumnIfNeeded(in: db, table: "transcript_segments", column: "audioVoicedFrameRatio", type: .double)
+        try addColumnIfNeeded(in: db, table: "transcript_segments", column: "audioPitchSpreadHertz", type: .double)
     }
 
     private static func addRecordingSessionSchemaIfNeeded(in db: Database) throws {

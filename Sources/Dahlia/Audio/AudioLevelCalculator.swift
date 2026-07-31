@@ -1,6 +1,11 @@
 @preconcurrency import AVFoundation
 
 enum AudioLevelCalculator {
+    static func rmsDecibels(rootMeanSquare: Double, floorDecibels: Double = -100) -> Double {
+        guard rootMeanSquare.isFinite, rootMeanSquare > 0 else { return floorDecibels }
+        return min(0, max(floorDecibels, 20 * log10(rootMeanSquare)))
+    }
+
     static func normalizedLevel(in buffer: AVAudioPCMBuffer) -> Double {
         normalizedLevels(in: buffer).max() ?? 0
     }
@@ -44,8 +49,7 @@ enum AudioLevelCalculator {
             }
 
             let rootMeanSquare = sqrt(sumOfSquares / Double(frameCount))
-            guard rootMeanSquare > 0 else { return 0 }
-            let decibels = 20 * log10(rootMeanSquare)
+            let decibels = rmsDecibels(rootMeanSquare: rootMeanSquare, floorDecibels: -60)
             return min(1, max(0, (decibels + 60) / 60))
         }
     }

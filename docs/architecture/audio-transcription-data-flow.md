@@ -123,6 +123,7 @@ flowchart LR
 | preview／preview translation | event pipeline と UI store memory | 現在の表示候補を更新した | durable にしない | 後続イベントまたは正本から置換 |
 | realtime finalized event | event pipeline／persistence writer memory | UI より先に persistence lane へ受理した | `transcript_segments` の SQLite transaction が commit した時点 | batch 音声がなければ元音声からは再生成不能 |
 | batch recognition result | `BatchTranscriptionCoordinator` memory | ready CAF から一式を生成した | transcript rows と batch 完了状態の transaction が commit した時点 | ready CAF が残る間は再生成可能 |
+| transcript audio features | batch recognition work item memory | 認識に使った音声から発話区間の RMS、pitch、voiced ratio、pitch spread を best effort で集約した | 対応する `transcript_segments` row と batch 完了状態の transaction が commit した時点 | ready CAF が残る間だけ再生成可能 |
 | transcript source of truth | SQLite `transcript_segments` | realtime の差分 insert または batch の一式置換 | SQLite commit 完了時 | UI projection を再構築できる |
 | recording metadata | SQLite `recording_sessions` ほか | mode、開始／終了、batch 状態、audio progress を更新 | 各 SQLite commit 完了時 | ファイルだけから完全には再生成しない |
 
@@ -217,12 +218,15 @@ sequenceDiagram
     participant Audio as RecordingAudioStore
     participant Batch as BatchTranscriptionCoordinator
     participant Speech as Batch speech recognizer
+    participant Features as Audio feature analyzer
     participant DB as SQLite
 
     Batch->>Audio: ready segments の read plan
     Audio-->>Batch: verified immutable CAF + locale ranges
     Batch->>Speech: source / locale ごとの transcription run
     Speech-->>Batch: complete segment set
+    Batch->>Features: recognition range + prepared audio / logical slices
+    Features-->>Batch: optional per-segment numeric features
     Batch->>DB: session の旧 transcript を置換し、batchCompletedAt と meeting status を更新
     DB-->>Batch: single transaction commit
 ```
@@ -233,6 +237,12 @@ sequenceDiagram
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
 反映する。再文字起こし中は以前の成功結果を利用でき、新しい一式が成功した時だけ置き換える。
+
+各 recognition work item は、認識直後かつ一時的な prepared audio または logical CAF slices が有効な間に、
+確定区間ごとの軽量な音声特徴量を一回の走査で集約する。特徴量は補助データであり、抽出失敗は文字起こし完了、
+既存の retry policy、音声 purge を妨げず、その区間または work item の値を `NULL` として保存する。
+音量は RMS dBFS の相対値であり、OS の処理や音源ごとの gain が異なるため microphone と system の間では比較せず、
+同一 recording session・同一音源内の参考値として扱う。リアルタイム文字起こしでは音声特徴量を生成しない。
 
 ### 正常停止
 
@@ -271,6 +281,7 @@ sequenceDiagram
 | live recognition failure in batch | audio writer が健全なら正本音声を継続 | 字幕／chat を縮退し、停止後 batch を維持 |
 | realtime SQLite failure | pending event と順序を writer actor 内で保持 | exponential backoff。停止時にも flush failure を返す |
 | batch recognition failure | 旧成功 transcript と ready audio を保持 | failure state を保存し、再試行可能 |
+| batch audio feature extraction failure | 認識済み transcript と通常の purge policy を維持 | sanitized error を報告し、該当 feature columns を `NULL` にする |
 | crash 中の partial／finalizing CAF | 既存 ready segment を変更しない | startup reconciler が DB state と file を照合 |
 | ready CAF の missing／mismatch | 自動再作成、上書き、削除をしない | `failed` と reconciliation issue を記録 |
 

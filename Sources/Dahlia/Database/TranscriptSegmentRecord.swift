@@ -14,6 +14,11 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var translatedText: String?
     var isConfirmed: Bool
     var speakerLabel: String?
+    var audioFeatureVersion: Int? = nil
+    var audioActiveRmsDecibels: Double? = nil
+    var audioMedianPitchHertz: Double? = nil
+    var audioVoicedFrameRatio: Double? = nil
+    var audioPitchSpreadHertz: Double? = nil
 }
 
 extension TranscriptSegmentRecord {
@@ -28,6 +33,23 @@ extension TranscriptSegmentRecord {
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
         self.speakerLabel = segment.speakerLabel
+        self.audioFeatureVersion = segment.audioFeatures?.version
+        self.audioActiveRmsDecibels = segment.audioFeatures?.activeRmsDecibels
+        self.audioMedianPitchHertz = segment.audioFeatures?.medianPitchHertz
+        self.audioVoicedFrameRatio = segment.audioFeatures?.voicedFrameRatio
+        self.audioPitchSpreadHertz = segment.audioFeatures?.pitchSpreadHertz
+    }
+
+    var audioFeatures: TranscriptAudioFeatures? {
+        guard let audioFeatureVersion,
+              let audioVoicedFrameRatio else { return nil }
+        return TranscriptAudioFeatures(
+            version: audioFeatureVersion,
+            activeRmsDecibels: audioActiveRmsDecibels,
+            medianPitchHertz: audioMedianPitchHertz,
+            voicedFrameRatio: audioVoicedFrameRatio,
+            pitchSpreadHertz: audioPitchSpreadHertz
+        )
     }
 
     static func updateTranslatedText(

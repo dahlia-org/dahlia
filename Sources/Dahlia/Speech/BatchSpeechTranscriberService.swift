@@ -12,6 +12,7 @@ enum BatchSpeechTranscriberService {
         _ request: BatchSpeechTranscriptionRequest,
         languageDetector: (any BatchLanguageDetecting)? = nil,
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
+        audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         onLanguageFallback: @escaping @Sendable (BatchLanguageFallback) async -> Void = { _ in }
     ) async throws -> BatchSpeechTranscriptionResult {
         guard request.startFrame >= 0, request.frameCount > 0 else {
@@ -49,8 +50,15 @@ enum BatchSpeechTranscriberService {
             await onLanguageFallback(fallback)
         }
         let recognitions = try await speechRecognizer.recognize(audioURL: preparedAudio.url, locale: resolution.locale)
+        let audioFeatures = try await BatchTranscriptAudioFeatureExtraction.bestEffort(
+            recognitions: recognitions,
+            audioURL: preparedAudio.url,
+            source: request.source,
+            analyzer: audioFeatureAnalyzer
+        )
         let segments = transcriptSegments(
             from: recognitions,
+            audioFeatures: audioFeatures,
             recordingSessionId: request.recordingSessionId,
             recordingStartTime: request.recordingStartTime,
             sessionOffsetSeconds: request.sessionOffsetSeconds,
@@ -65,12 +73,13 @@ enum BatchSpeechTranscriberService {
 
     static func transcriptSegments(
         from recognitions: [BatchSpeechRecognition],
+        audioFeatures: [TranscriptAudioFeatures?] = [],
         recordingSessionId: UUID,
         recordingStartTime: Date,
         sessionOffsetSeconds: TimeInterval,
         source: RecordingAudioSource
     ) -> [TranscriptSegment] {
-        recognitions.compactMap { recognition -> TranscriptSegment? in
+        recognitions.enumerated().compactMap { index, recognition -> TranscriptSegment? in
             guard let text = SpeechTranscriberService.normalizedTranscriptText(recognition.text) else { return nil }
             let absoluteStart = recordingStartTime.addingTimeInterval(
                 sessionOffsetSeconds + (recognition.startSeconds.isFinite ? recognition.startSeconds : 0)
@@ -84,7 +93,8 @@ enum BatchSpeechTranscriberService {
                 endTime: absoluteEnd,
                 text: text,
                 isConfirmed: true,
-                speakerLabel: source.speakerLabel
+                speakerLabel: source.speakerLabel,
+                audioFeatures: audioFeatures.indices.contains(index) ? audioFeatures[index] : nil
             )
         }
     }

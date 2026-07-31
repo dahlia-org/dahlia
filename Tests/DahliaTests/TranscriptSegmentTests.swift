@@ -189,14 +189,21 @@ struct TranscriptSegmentTests {
     }
 
     @Test
-    func transcriptSegmentRecordRoundTripsTranslatedText() {
+    func transcriptSegmentRecordRoundTripsTranslationAndAudioFeatures() {
         let meetingID = UUID.v7()
+        let audioFeatures = TranscriptAudioFeatures(
+            activeRmsDecibels: -18.5,
+            medianPitchHertz: 220,
+            voicedFrameRatio: 0.75,
+            pitchSpreadHertz: 42
+        )
         let segment = TranscriptSegment(
             startTime: Date(timeIntervalSince1970: 1_776_384_000),
             text: "Hello world",
             translatedText: "こんにちは、世界",
             isConfirmed: true,
-            speakerLabel: "mic"
+            speakerLabel: "mic",
+            audioFeatures: audioFeatures
         )
 
         let record = TranscriptSegmentRecord(from: segment, meetingId: meetingID)
@@ -204,6 +211,8 @@ struct TranscriptSegmentTests {
 
         #expect(record.translatedText == "こんにちは、世界")
         #expect(roundTripped.translatedText == "こんにちは、世界")
+        #expect(record.audioFeatureVersion == TranscriptAudioFeatures.currentVersion)
+        #expect(roundTripped.audioFeatures == audioFeatures)
     }
 
     @Test

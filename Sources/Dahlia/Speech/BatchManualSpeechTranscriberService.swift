@@ -4,6 +4,7 @@ enum BatchManualSpeechTranscriberService {
     static func transcribe(
         _ run: BatchManualTranscriptionRun,
         speechRecognizer: any BatchSpeechRecognizing,
+        audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         onFileConsumed: @escaping @Sendable (Int) async -> Void = { _ in }
     ) async throws -> BatchSpeechTranscriptionResult {
         guard !run.slices.isEmpty,
@@ -24,8 +25,15 @@ enum BatchManualSpeechTranscriberService {
                 await onFileConsumed(fileIndex)
             }
         )
+        let audioFeatures = try await BatchTranscriptAudioFeatureExtraction.bestEffort(
+            recognitions: recognitions,
+            audioSlices: run.slices,
+            source: run.source,
+            analyzer: audioFeatureAnalyzer
+        )
         let segments = BatchSpeechTranscriberService.transcriptSegments(
             from: recognitions,
+            audioFeatures: audioFeatures,
             recordingSessionId: run.recordingSessionId,
             recordingStartTime: run.recordingStartTime,
             sessionOffsetSeconds: run.sessionOffsetSeconds,
