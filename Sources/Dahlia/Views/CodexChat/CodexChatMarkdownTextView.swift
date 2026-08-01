@@ -5,18 +5,7 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
     let blocks: [CodexChatMarkdownRenderedBlock]
 
     func makeNSView(context _: Context) -> CodexChatSelectableTextView {
-        let textView = CodexChatSelectableTextView()
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isRichText = true
-        textView.drawsBackground = false
-        textView.textColor = .labelColor
-        textView.textContainerInset = .zero
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = false
-        return textView
+        CodexChatSelectableTextView.makeConfigured()
     }
 
     func updateNSView(_ textView: CodexChatSelectableTextView, context _: Context) {
@@ -41,6 +30,9 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
 
 final class CodexChatSelectableTextView: NSTextView {
     private static let layoutBatchCharacterCount = 4096
+    /// リサイズドラッグのように幅が連続で変わる間、レイアウトのやり直しを 1 表示フレームぶん待って合流させる。
+    private static let settleInterval = Duration.milliseconds(16)
+    private static let batchInterval = Duration.milliseconds(1)
 
     private var renderedBlocks: [CodexChatMarkdownRenderedBlock] = []
     private var blockOffsets: [Int] = []
@@ -50,6 +42,21 @@ final class CodexChatSelectableTextView: NSTextView {
     private var needsImmediateLayout = true
     private var layoutGeneration = 0
     private var layoutTask: Task<Void, Never>?
+
+    static func makeConfigured() -> Self {
+        let textView = Self()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = true
+        textView.drawsBackground = false
+        textView.textColor = .labelColor
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = false
+        return textView
+    }
 
     func setBlocks(_ blocks: [CodexChatMarkdownRenderedBlock]) {
         let reusableBlockCount = zip(renderedBlocks, blocks)
@@ -115,9 +122,16 @@ final class CodexChatSelectableTextView: NSTextView {
         guard let textContainer, layoutManager != nil else { return nil }
 
         if measuredWidth != width {
+            let previousWidth = measuredWidth
             measuredWidth = width
             textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
             resetLayout(from: 0)
+            // 実測済みの高さがあるなら、同期レイアウトをやり直さず面積を保つ近似値を返し、
+            // 正確な高さは段階レイアウトの収束に任せる。
+            if let previousWidth, measuredDocumentHeight > 0 {
+                measuredDocumentHeight = ceil(measuredDocumentHeight * previousWidth / width)
+                needsImmediateLayout = false
+            }
         }
         if needsImmediateLayout {
             needsImmediateLayout = false
@@ -194,16 +208,21 @@ final class CodexChatSelectableTextView: NSTextView {
         layoutTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
+            var interval = Self.settleInterval
             while !Task.isCancelled, layoutGeneration == generation {
                 do {
-                    try await Task.sleep(for: .milliseconds(1))
+                    try await Task.sleep(for: interval)
                 } catch {
                     break
                 }
                 guard !Task.isCancelled, layoutGeneration == generation else { break }
+                interval = Self.batchInterval
 
+                let previousHeight = measuredDocumentHeight
                 layoutNextBatch()
-                invalidateIntrinsicContentSize()
+                if measuredDocumentHeight != previousHeight {
+                    invalidateIntrinsicContentSize()
+                }
                 if nextLayoutCharacterIndex >= attributedString().length {
                     break
                 }
