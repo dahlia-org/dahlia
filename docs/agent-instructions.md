@@ -39,6 +39,7 @@ GPT-5.6 には、手順を細かく固定するより、成果、重要な制約
 
 - リポジトリ全体または subtree 固有の重大な制約: 最も近い `AGENTS.md` の `## Code Review Rules`
 - finding の採用基準、出力に必要な根拠、レビュー専用チェックリスト: `docs/code-review.md`
+- 機能の採否、scope の境界、AI と人の役割分担: `PRODUCT.md`
 - 現在の ownership、workload、failure mode、UI responsiveness の契約: `ARCHITECTURE.md`
 - 判断の経緯または既存決定の変更: 関連する ADR
 - format、lint、型検査など決定的に判定できる規則: test、lint、CI
