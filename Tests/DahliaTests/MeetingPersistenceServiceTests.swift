@@ -113,12 +113,7 @@ import os
                 factoryState.withLock { $0.finished = true }
                 return service
             }
-            let factoryStartDeadline = ContinuousClock.now + .seconds(10)
-            while !factoryState.withLock({ $0.started }),
-                  ContinuousClock.now < factoryStartDeadline {
-                try await Task.sleep(for: .milliseconds(10))
-            }
-            let didStartFactory = factoryState.withLock(\.started)
+            let didStartFactory = await pollUntil { factoryState.withLock(\.started) }
             #expect(didStartFactory)
 
             let mainActorResponded = await Task { @MainActor in true }.value
@@ -1166,17 +1161,11 @@ private func waitForAppendPersistence(
     database: AppDatabaseManager,
     meetingId: UUID,
     segmentId: UUID,
-    timeout: Duration = .seconds(5)
+    timeout: Duration = testPollTimeout
 ) async throws -> PersistedAppendState {
-    let clock = ContinuousClock()
-    let deadline = clock.now + timeout
-
-    while clock.now < deadline {
-        let state = try fetchAppendPersistence(database: database, meetingId: meetingId, segmentId: segmentId)
-        if state.segment != nil, state.meeting != nil {
-            return state
-        }
-        try? await Task.sleep(for: .milliseconds(20))
+    _ = await pollUntil(timeout: timeout, interval: .milliseconds(20)) {
+        let state = try? fetchAppendPersistence(database: database, meetingId: meetingId, segmentId: segmentId)
+        return state?.segment != nil && state?.meeting != nil
     }
 
     return try fetchAppendPersistence(database: database, meetingId: meetingId, segmentId: segmentId)
@@ -1224,14 +1213,7 @@ private final class SynchronousDatabaseGate: @unchecked Sendable {
     }
 
     func waitUntilStarted() async -> Bool {
-        let deadline = ContinuousClock.now + .seconds(10)
-        while ContinuousClock.now < deadline {
-            if hasStarted.withLock(\.self) {
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return false
+        await pollUntil { hasStarted.withLock(\.self) }
     }
 }
 

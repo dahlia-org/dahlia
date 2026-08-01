@@ -9,7 +9,7 @@ import Foundation
         @Test
         func persistentChatOmitsOutputSchemaAndReplaysEarlyDeltas() async throws {
             let transport = TestCodexChatAppServerTransport()
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let workspace = URL(filePath: "/tmp/dahlia-chat-tests", directoryHint: .isDirectory)
             let service = CodexChatService(
                 appServer: appServer,
@@ -75,7 +75,7 @@ import Foundation
         @Test
         func threadNameUsesPlainUserText() async throws {
             let transport = TestCodexChatAppServerTransport()
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let service = CodexChatService(
                 appServer: appServer,
                 workspaceLocator: TestCodexChatWorkspaceLocator(url: URL(filePath: "/tmp/dahlia-chat-tests"))
@@ -94,7 +94,7 @@ import Foundation
         @Test
         func steeringAddsTextBlocksToTheExpectedActiveTurn() async throws {
             let transport = TestCodexChatAppServerTransport()
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let service = CodexChatService(
                 appServer: appServer,
                 workspaceLocator: TestCodexChatWorkspaceLocator(url: URL(filePath: "/tmp/dahlia-chat-tests"))
@@ -128,7 +128,7 @@ import Foundation
         @Test
         func imageInputsAreSentAndRestoredFromHistory() async throws {
             let transport = TestCodexChatAppServerTransport()
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let service = CodexChatService(
                 appServer: appServer,
                 workspaceLocator: TestCodexChatWorkspaceLocator(url: URL(filePath: "/tmp/dahlia-chat-images"))
@@ -175,7 +175,7 @@ import Foundation
         @Test
         func connectionLossFailsTheTurnStream() async throws {
             let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let service = CodexChatService(
                 appServer: appServer,
                 workspaceLocator: TestCodexChatWorkspaceLocator(
@@ -202,7 +202,7 @@ import Foundation
         @Test
         func historyUsesExactWorkspaceAndBundledCodexSourceAndRestoresMessages() async throws {
             let transport = TestCodexChatAppServerTransport()
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let workspace = URL(filePath: "/tmp/dahlia-chat-history", directoryHint: .isDirectory)
             let service = CodexChatService(
                 appServer: appServer,
@@ -250,7 +250,7 @@ import Foundation
             for outcome: TestCodexChatAppServerTransport.TurnOutcome
         ) async throws -> [CodexChatTurnEvent] {
             let transport = TestCodexChatAppServerTransport(turnOutcome: outcome)
-            let appServer = CodexAppServerService(transportFactory: { transport })
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
             let service = CodexChatService(
                 appServer: appServer,
                 workspaceLocator: TestCodexChatWorkspaceLocator(

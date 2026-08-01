@@ -410,18 +410,8 @@ private actor AsyncCompletionState {
 }
 
 private func waitUntil(
-    timeout: Duration = .seconds(1),
+    timeout: Duration = testPollTimeout,
     condition: @escaping @Sendable () async -> Bool
 ) async -> Bool {
-    let clock = ContinuousClock()
-    let deadline = clock.now + timeout
-
-    while clock.now < deadline {
-        if await condition() {
-            return true
-        }
-        try? await Task.sleep(for: .milliseconds(10))
-    }
-
-    return await condition()
+    await pollUntil(timeout: timeout, condition)
 }

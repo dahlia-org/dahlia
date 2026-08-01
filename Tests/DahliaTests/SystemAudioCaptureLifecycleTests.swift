@@ -144,14 +144,7 @@
         }
 
         func waitUntilStarted() async -> Bool {
-            let deadline = ContinuousClock.now + .seconds(10)
-            while ContinuousClock.now < deadline {
-                if hasStarted.withLock(\.self) {
-                    return true
-                }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return false
+            await pollUntil { hasStarted.withLock(\.self) }
         }
     }
 #endif

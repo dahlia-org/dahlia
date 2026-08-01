@@ -377,15 +377,11 @@ import GRDB
         }
 
         private func waitUntil(
-            timeout: Duration = .seconds(5),
+            timeout: Duration = testPollTimeout,
             condition: @escaping @Sendable () async -> Bool
         ) async throws {
-            let deadline = ContinuousClock.now.advanced(by: timeout)
-            while await !condition() {
-                guard ContinuousClock.now < deadline else {
-                    throw CoordinatorLanguageDetectionTestError.timedOut
-                }
-                try await Task.sleep(for: .milliseconds(10))
+            guard await pollUntil(timeout: timeout, condition) else {
+                throw CoordinatorLanguageDetectionTestError.timedOut
             }
         }
     }

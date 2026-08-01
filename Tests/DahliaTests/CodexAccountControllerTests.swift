@@ -9,7 +9,7 @@ import Foundation
         @Test
         func explicitSignInOpensBrowserAndRefreshesAccount() async {
             let transport = TestCodexAppServerTransport(mode: .loginCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let urlOpener = TestCodexLoginURLOpener()
             let controller = CodexAccountController(service: service, urlOpener: urlOpener)
 
@@ -24,7 +24,7 @@ import Foundation
         @Test
         func browserOpenFailureCancelsLoginAndShowsRetryableError() async {
             let transport = TestCodexAppServerTransport(mode: .loginBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let urlOpener = TestCodexLoginURLOpener(result: false)
             let controller = CodexAccountController(service: service, urlOpener: urlOpener)
 
@@ -75,7 +75,7 @@ import Foundation
             let configURL = try locator.homeURL().appending(path: "config.toml")
             try Data("model_provider = \"Databricks\"\n".utf8).write(to: configURL)
             let transport = TestCodexAppServerTransport(mode: .blockInitialize)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let configurationStore = TestCodexAccountConfigurationStore(
                 configuredProvider: .databricks,
                 configuredDatabricksProfile: "DEFAULT"

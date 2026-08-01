@@ -8,7 +8,7 @@ import Foundation
         @Test
         func cancellingOneConcurrentGenerationDoesNotInterruptTheOther() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let first = Task { try await service.generate(request) }
             let second = Task { try await service.generate(request) }
 
@@ -40,7 +40,7 @@ import Foundation
         @Test
         func concurrentGenerationsCompleteOutOfOrderIndependently() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let first = Task { try await service.generate(request) }
             let second = Task { try await service.generate(request) }
 
@@ -63,7 +63,7 @@ import Foundation
         @Test
         func failedConcurrentGenerationDoesNotInterruptTheOther() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let first = Task { try await service.generate(request) }
             let second = Task { try await service.generate(request) }
 
@@ -89,7 +89,7 @@ import Foundation
             let timeout = Duration.seconds(270)
             let clock = SummaryTimeoutTestClock(summaryTimeout: timeout)
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(
+            let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
                 clock: clock,
                 summaryTimeout: timeout

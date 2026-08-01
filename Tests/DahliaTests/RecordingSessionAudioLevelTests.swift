@@ -190,13 +190,9 @@
             entries.append(.init(source: source, level: level))
         }
 
-        func waitUntilCount(_ count: Int, timeout: Duration = .seconds(5)) async throws {
-            let deadline = ContinuousClock.now + timeout
-            while entries.count < count {
-                guard ContinuousClock.now < deadline else {
-                    throw MeteringTestError.timedOutWaitingForLevel
-                }
-                await Task.yield()
+        func waitUntilCount(_ count: Int, timeout: Duration = testPollTimeout) async throws {
+            guard await pollUntil(timeout: timeout, { entries.count >= count }) else {
+                throw MeteringTestError.timedOutWaitingForLevel
             }
         }
     }
@@ -292,13 +288,9 @@
             }
         }
 
-        func waitUntilWaiting(timeout: Duration = .seconds(5)) async throws {
-            let deadline = ContinuousClock.now + timeout
-            while !isWaiting {
-                guard ContinuousClock.now < deadline else {
-                    throw MeteringTestError.timedOutWaitingForRecognitionFinish
-                }
-                await Task.yield()
+        func waitUntilWaiting(timeout: Duration = testPollTimeout) async throws {
+            guard await pollUntil(timeout: timeout, { isWaiting }) else {
+                throw MeteringTestError.timedOutWaitingForRecognitionFinish
             }
         }
 

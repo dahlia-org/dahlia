@@ -31,14 +31,10 @@ import GRDB
             }
         }
 
-        func waitUntilWaiting(timeout: Duration = .seconds(30)) async throws {
-            let deadline = ContinuousClock.now.advanced(by: timeout)
-            while !isWaiting {
-                guard ContinuousClock.now < deadline else {
-                    isOpen = true
-                    throw AudioConsumptionGateError.timedOut
-                }
-                try await Task.sleep(for: .milliseconds(10))
+        func waitUntilWaiting(timeout: Duration = testPollTimeout) async throws {
+            guard await pollUntil(timeout: timeout, { isWaiting }) else {
+                isOpen = true
+                throw AudioConsumptionGateError.timedOut
             }
         }
 
@@ -342,14 +338,8 @@ import GRDB
             #expect(delayed.pendingByteCount == 320)
             #expect(delayed.oldestFinalizationStartedAt != nil)
 
-            let clock = ContinuousClock()
-            let deadline = clock.now + .seconds(2)
-            var recovered = await writer.backlogSnapshot()
-            while recovered.segmentCount > 0, clock.now < deadline {
-                try await Task.sleep(for: .milliseconds(10))
-                recovered = await writer.backlogSnapshot()
-            }
-            #expect(recovered.segmentCount == 0)
+            let backlogRecovered = await pollUntil { await writer.backlogSnapshot().segmentCount == 0 }
+            #expect(backlogRecovered)
             try writer.appendBuffer(makeBuffer(
                 format: recorder.targetFormat,
                 frameCount: 80,

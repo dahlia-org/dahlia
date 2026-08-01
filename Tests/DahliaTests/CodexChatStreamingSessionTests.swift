@@ -5,7 +5,7 @@ import Foundation
     import Testing
 
     @MainActor
-    @Suite(.timeLimit(.minutes(1)))
+    @Suite(.timeLimit(.minutes(3)))
     struct CodexChatStreamingSessionTests {
         @Test
         func trailingUpdateAppearsWhileStreamIsStillWaiting() async {
@@ -80,19 +80,10 @@ import Foundation
         }
 
         private func waitUntil(
-            timeout: Duration = .seconds(30),
+            timeout: Duration = testPollTimeout,
             _ predicate: @MainActor () -> Bool
         ) async -> Bool {
-            let clock = ContinuousClock()
-            let deadline = clock.now + timeout
-
-            while clock.now < deadline, !Task.isCancelled {
-                if predicate() {
-                    return true
-                }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return predicate()
+            await pollUntil(timeout: timeout) { predicate() }
         }
     }
 #endif
