@@ -25,6 +25,7 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 
 | Task | Additional reference |
 | --- | --- |
+| Whether to build something, its product scope, or how AI and the user divide the work | [`PRODUCT.md`](PRODUCT.md), then the [`Tenets`](PRODUCT.md#tenets) that the change touches |
 | Current runtime ownership or workload boundaries | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
@@ -33,9 +34,13 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
 | Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
 
-Do not read every ADR by default. `ARCHITECTURE.md` describes the current system, target state, and conformance gaps;
-ADRs preserve decision history; and `AGENTS.md` contains actionable instructions. Keep detailed architecture out of
-`AGENTS.md` except for short safety invariants whose omission could cause data loss.
+Do not read every ADR by default. `PRODUCT.md` decides what to build and what to refuse; `ARCHITECTURE.md` describes
+the current system, target state, and conformance gaps; ADRs preserve decision history; and `AGENTS.md` contains
+actionable instructions. Keep detailed architecture out of `AGENTS.md` except for short safety invariants whose
+omission could cause data loss.
+
+A change that conflicts with a product tenet is not resolved by editing `PRODUCT.md` to match the change. Report the
+conflict, and update the tenet only through a new ADR that the user approves.
 
 ## Engineering Constraints
 

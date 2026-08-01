@@ -2,9 +2,11 @@
 
 この文書は、Dahlia の現在のシステム構成、守るべき architecture contract、実装との適合状況、修正完了条件を示す正本である。
 設計レビューと修正作業では、ここに記載した target state と現状との差分を基準にする。実装時の必須ルールは各スコープの
-`AGENTS.md`、過去の判断理由は [ADR index](docs/adr/README.md) を参照する。
+`AGENTS.md`、機能を作るかどうかの判断基準は [`PRODUCT.md`](PRODUCT.md)、過去の判断理由は
+[ADR index](docs/adr/README.md) を参照する。
 
 - `AGENTS.md`: Codex が最初に読む、短いルーティングと必須ガードレール
+- `PRODUCT.md`: 何を作り何を作らないかを決める product tenet と、競合時の優先順位
 - `ARCHITECTURE.md`: 現在の構成、横断的な設計原則、未適合箇所、修正の到達条件
 - `docs/architecture/`: 特定領域の現在の data flow、runtime scenario、永続化境界
 - `docs/adr/`: 決定時点の背景、選択肢、トレードオフを残す履歴
