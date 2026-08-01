@@ -1,11 +1,11 @@
 import Darwin
 import Dispatch
 import Foundation
+import os
 
 /// Process stdio adapter. All potentially blocking pipe operations stay outside Swift's cooperative executor.
 actor CodexAppServerProcessTransport: CodexAppServerTransport {
-    private enum OutputEvent: Sendable {
-        case chunk(Data)
+    private enum OutputTermination: Sendable {
         case overflow
         case end(Int32)
     }
@@ -238,36 +238,44 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private func startOutputDrainIfNeeded() {
         guard !isOutputDrainStarted else { return }
         isOutputDrainStarted = true
-        let (events, continuation) = AsyncStream<OutputEvent>.makeStream(
+        let (chunks, continuation) = AsyncStream<Data>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maximumBufferedOutputChunks)
         )
+        // The terminal outcome must not compete with chunks for stream capacity. Yielding it into a
+        // full buffer would drop it, ending the consumer without ever reporting EOF or overflow and
+        // leaving the reader suspended in receiveLine. First writer wins, so a later callback on the
+        // stopped channel cannot relabel an overflow as a clean exit.
+        let termination = OSAllocatedUnfairLock<OutputTermination?>(initialState: nil)
         // DispatchIO keeps the blocking pipe read on ioQueue. The stream carries chunks into the
         // actor in arrival order, which one unstructured task per chunk would not guarantee.
         outputChannel.read(offset: 0, length: Int.max, queue: ioQueue) { done, data, errorCode in
             if let data, !data.isEmpty {
                 // Losing even one chunk splices unrelated bytes into the next line, so a full
                 // buffer becomes the documented overflow rather than a silent discard.
-                if case .dropped = continuation.yield(.chunk(Data(data))) {
-                    continuation.yield(.overflow)
+                if case .dropped = continuation.yield(Data(data)) {
+                    termination.withLock { $0 = $0 ?? .overflow }
                     continuation.finish()
                     return
                 }
             }
             if done {
-                continuation.yield(.end(errorCode))
+                termination.withLock { $0 = $0 ?? .end(errorCode) }
                 continuation.finish()
             }
         }
         Task { [weak self] in
-            for await event in events {
-                switch event {
-                case let .chunk(data):
-                    await self?.consumeStdout(data)
-                case .overflow:
-                    await self?.failOutputDrainWithOverflow()
-                case let .end(errorCode):
-                    await self?.finishOutputDrain(errorCode: errorCode)
-                }
+            for await chunk in chunks {
+                await self?.consumeStdout(chunk)
+            }
+            // Runs after every buffered chunk has been parsed, so a trailing partial line is still
+            // whole by the time the terminal outcome is applied.
+            switch termination.withLock({ $0 }) {
+            case .overflow:
+                await self?.failOutputDrainWithOverflow()
+            case let .end(errorCode):
+                await self?.finishOutputDrain(errorCode: errorCode)
+            case nil:
+                break
             }
         }
     }
