@@ -93,7 +93,8 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
 - 音声フレームと確定文字起こしの永続化は、MainActor や UI の完了を待たない
   ([Reliability Scope](ARCHITECTURE.md#reliability-scope))。
 - 欠落を成功や無音として扱わない。queue overflow と永続化失敗は明示的な録音エラーにする。
-- 派生物は負荷に応じて集約、破棄、再生成してよい。一次データは UI の都合で破棄しない
+- 負荷に応じて集約、破棄、再生成してよいのは、再生成可能な UI projection だけである。音声フレーム、確定文字起こし、
+  確定翻訳、録音 range は、UI の都合で破棄しない
   ([Failure and Overload Policy](ARCHITECTURE.md#failure-and-overload-policy))。
 - 録音音声は検証済みの immutable segment として保存し ([ADR-0004](docs/adr/0004-protect-recordings-with-segmented-immutable-storage.md))、
   データベースは schema generation 付きで backup と restore ができる ([ADR-0007](docs/adr/0007-version-and-restore-sqlite-backups.md))。
@@ -104,7 +105,9 @@ Contact は、自分の会議記録を辿るためのローカルな整理軸で
 OS やストレージ自体の障害は現時点の保証対象外であり、範囲の拡張は ADR で決める。
 
 **誤読しやすい点**: 「死守する」は「あらゆる障害に耐える」ではない。保証する障害と対象外の障害を明示し、
-対象外を暗黙に保証したことにしない。
+対象外を暗黙に保証したことにしない。また「一次データから派生している」ことは「破棄してよい」ことを意味しない。
+確定翻訳のようにユーザーが確定した派生データは durable work であり、保全対象は
+[Workload Classes](ARCHITECTURE.md#workload-classes) の分類で判断する。
 
 ### T4. 他サービスへの連携を Dahlia に実装せず、MCP で外部の AI とツールに任せる
 
@@ -139,7 +142,8 @@ Dahlia の scope 外であり、妨げない。
 
 **設計上の判断**:
 
-- 文字起こしは on-device (Apple Speech、WhisperKit) で行い、録音音声を外部へ送信しない。
+- 文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行い、録音音声を外部へ
+  送信しない。WhisperKit は付加機能であるバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - 会議データはローカルの SQLite と file system に置く。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。
 - 認証やアカウント設定を中核機能の前提にしない。
