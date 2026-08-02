@@ -18,22 +18,21 @@ import Foundation
 
             let homeLocator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
             let expectedHomeURL = try homeLocator.homeURL()
-            let installedSkillURL = expectedHomeURL
-                .appending(path: "skills", directoryHint: .isDirectory)
-                .appending(path: BundledCodexPresetSkillInstaller.skillName, directoryHint: .isDirectory)
-            let obsoleteSkillURL = expectedHomeURL
-                .appending(path: "skills", directoryHint: .isDirectory)
-                .appending(
-                    path: BundledCodexPresetSkillInstaller.obsoleteSkillName,
-                    directoryHint: .isDirectory
+            let skillsURL = expectedHomeURL.appending(path: "skills", directoryHint: .isDirectory)
+            let installedSkillURLs = BundledCodexPresetSkillInstaller.skillNames.map { skillName in
+                skillsURL.appending(path: skillName, directoryHint: .isDirectory)
+            }
+            let obsoleteSkillName = try #require(BundledCodexPresetSkillInstaller.obsoleteSkillNames.first)
+            let obsoleteSkillURL = skillsURL.appending(path: obsoleteSkillName, directoryHint: .isDirectory)
+            for installedSkillURL in installedSkillURLs {
+                try FileManager.default.createDirectory(
+                    at: installedSkillURL.appending(path: "agents", directoryHint: .isDirectory),
+                    withIntermediateDirectories: true
                 )
-            try FileManager.default.createDirectory(
-                at: installedSkillURL.appending(path: "agents", directoryHint: .isDirectory),
-                withIntermediateDirectories: true
-            )
+                try Data("stale skill".utf8).write(to: installedSkillURL.appending(path: "SKILL.md"))
+                try Data("stale metadata".utf8).write(to: installedSkillURL.appending(path: "agents/openai.yaml"))
+            }
             try FileManager.default.createDirectory(at: obsoleteSkillURL, withIntermediateDirectories: true)
-            try Data("stale skill".utf8).write(to: installedSkillURL.appending(path: "SKILL.md"))
-            try Data("stale metadata".utf8).write(to: installedSkillURL.appending(path: "agents/openai.yaml"))
             try Data("obsolete preset".utf8).write(to: obsoleteSkillURL.appending(path: "SKILL.md"))
             let launcher = BundledCodexAppServerLauncher(
                 executableLocator: FixedCodexExecutableLocator(url: executableURL),
@@ -49,19 +48,46 @@ import Foundation
             )
             let homeEnvironment = try #require(await transport.receiveLine())
             #expect(String(data: homeEnvironment, encoding: .utf8) == expectedHomeURL.path)
-            let skill = try String(contentsOf: installedSkillURL.appending(path: "SKILL.md"), encoding: .utf8)
-            let metadata = try String(
-                contentsOf: installedSkillURL.appending(path: "agents/openai.yaml"),
-                encoding: .utf8
-            )
-            #expect(skill.contains("name: projects-optimizer"))
-            #expect(metadata.contains("$projects-optimizer"))
+            for (skillName, installedSkillURL) in zip(
+                BundledCodexPresetSkillInstaller.skillNames,
+                installedSkillURLs
+            ) {
+                let skill = try String(contentsOf: installedSkillURL.appending(path: "SKILL.md"), encoding: .utf8)
+                let metadata = try String(
+                    contentsOf: installedSkillURL.appending(path: "agents/openai.yaml"),
+                    encoding: .utf8
+                )
+                #expect(skill.contains("name: \(skillName)"))
+                #expect(metadata.contains("$\(skillName)"))
+                #expect(try permissions(of: installedSkillURL) == 0o700)
+                #expect(try permissions(of: installedSkillURL.appending(path: "agents")) == 0o700)
+                #expect(try permissions(of: installedSkillURL.appending(path: "SKILL.md")) == 0o600)
+                #expect(try permissions(of: installedSkillURL.appending(path: "agents/openai.yaml")) == 0o600)
+            }
             #expect(!FileManager.default.fileExists(atPath: obsoleteSkillURL.path))
-            #expect(try permissions(of: installedSkillURL) == 0o700)
-            #expect(try permissions(of: installedSkillURL.appending(path: "agents")) == 0o700)
-            #expect(try permissions(of: installedSkillURL.appending(path: "SKILL.md")) == 0o600)
-            #expect(try permissions(of: installedSkillURL.appending(path: "agents/openai.yaml")) == 0o600)
             await transport.close()
+        }
+
+        @Test
+        func installsEveryPresetSkillWithDistinctContent() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-codex-skill-set-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+
+            let homeURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL).homeURL()
+            try BundledCodexPresetSkillInstaller().install(into: homeURL)
+
+            let skillsURL = homeURL.appending(path: "skills", directoryHint: .isDirectory)
+            var bodies: Set<String> = []
+            for skillName in BundledCodexPresetSkillInstaller.skillNames {
+                let skillURL = skillsURL
+                    .appending(path: skillName, directoryHint: .isDirectory)
+                    .appending(path: "SKILL.md")
+                let body = try String(contentsOf: skillURL, encoding: .utf8)
+                #expect(body.contains("name: \(skillName)"))
+                bodies.insert(body)
+            }
+            #expect(bodies.count == BundledCodexPresetSkillInstaller.skillNames.count)
         }
 
         @Test
@@ -72,8 +98,8 @@ import Foundation
 
             let homeURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL).homeURL()
             let skillsURL = homeURL.appending(path: "skills", directoryHint: .isDirectory)
-            let installedSkillURL = skillsURL
-                .appending(path: BundledCodexPresetSkillInstaller.skillName, directoryHint: .isDirectory)
+            let skillName = try #require(BundledCodexPresetSkillInstaller.skillNames.first)
+            let installedSkillURL = skillsURL.appending(path: skillName, directoryHint: .isDirectory)
             let externalURL = rootURL.appending(path: "external-skill", directoryHint: .isDirectory)
             let externalSkillURL = externalURL.appending(path: "SKILL.md")
             try FileManager.default.createDirectory(at: skillsURL, withIntermediateDirectories: true)

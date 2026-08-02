@@ -5,8 +5,15 @@ protocol CodexPresetSkillInstalling: Sendable {
 }
 
 struct BundledCodexPresetSkillInstaller: CodexPresetSkillInstalling {
-    nonisolated static let skillName = "projects-optimizer"
-    nonisolated static let obsoleteSkillName = "organize-projects-meetings"
+    nonisolated static let skillNames = [
+        "projects-optimizer",
+        "contacts-organizations-curator",
+        "conversation-topics-curator",
+        "insights-curator",
+    ]
+    nonisolated static let obsoleteSkillNames = ["organize-projects-meetings"]
+
+    private static let bundledResourceDirectory = "CodexSkills"
 
     private static let bundledFilePaths = [
         "SKILL.md",
@@ -15,28 +22,36 @@ struct BundledCodexPresetSkillInstaller: CodexPresetSkillInstalling {
 
     func install(into homeURL: URL) throws {
         let skillsURL = homeURL.appending(path: "skills", directoryHint: .isDirectory)
-        let destinationURL = skillsURL
-            .appending(path: Self.skillName, directoryHint: .isDirectory)
-        let obsoleteSkillURL = skillsURL
-            .appending(path: Self.obsoleteSkillName, directoryHint: .isDirectory)
 
         do {
-            let bundledFiles = try Self.bundledFilePaths.map { relativePath in
-                try (relativePath, Data(contentsOf: sourceFileURL(relativePath: relativePath)))
-            }
+            let bundledSkills: [(name: String, files: [(path: String, data: Data)])] = try Self.skillNames
+                .map { skillName in
+                    let files: [(path: String, data: Data)] = try Self.bundledFilePaths.map { relativePath in
+                        let url = try sourceFileURL(skillName: skillName, relativePath: relativePath)
+                        return try (relativePath, Data(contentsOf: url))
+                    }
+                    return (skillName, files)
+                }
             try validatePrivateDirectory(homeURL)
             try createPrivateDirectory(skillsURL)
-            try removeItemIfPresent(at: obsoleteSkillURL)
-            try removeItemIfPresent(at: destinationURL)
-            try createPrivateDirectory(destinationURL)
-            for (relativePath, data) in bundledFiles {
-                let destinationFileURL = destinationURL.appending(path: relativePath)
-                try createPrivateDirectory(destinationFileURL.deletingLastPathComponent())
-                try data.write(to: destinationFileURL, options: .atomic)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600],
-                    ofItemAtPath: destinationFileURL.path
+            for obsoleteSkillName in Self.obsoleteSkillNames {
+                try removeItemIfPresent(
+                    at: skillsURL.appending(path: obsoleteSkillName, directoryHint: .isDirectory)
                 )
+            }
+            for skill in bundledSkills {
+                let destinationURL = skillsURL.appending(path: skill.name, directoryHint: .isDirectory)
+                try removeItemIfPresent(at: destinationURL)
+                try createPrivateDirectory(destinationURL)
+                for file in skill.files {
+                    let destinationFileURL = destinationURL.appending(path: file.path)
+                    try createPrivateDirectory(destinationFileURL.deletingLastPathComponent())
+                    try file.data.write(to: destinationFileURL, options: .atomic)
+                    try FileManager.default.setAttributes(
+                        [.posixPermissions: 0o600],
+                        ofItemAtPath: destinationFileURL.path
+                    )
+                }
             }
         } catch let error as CodexAppServerError {
             throw error
@@ -45,12 +60,16 @@ struct BundledCodexPresetSkillInstaller: CodexPresetSkillInstalling {
         }
     }
 
-    private func sourceFileURL(relativePath: String) throws -> URL {
-        let relativeURL = URL(filePath: relativePath)
-        let resourceName = relativeURL.deletingPathExtension().lastPathComponent
-        let resourceExtension = relativeURL.pathExtension
-        guard let url = Bundle.appModule.url(forResource: resourceName, withExtension: resourceExtension) else {
-            throw CodexAppServerError.launchFailed("The bundled Codex preset skill is missing.")
+    private func sourceFileURL(skillName: String, relativePath: String) throws -> URL {
+        var components = relativePath.split(separator: "/").map(String.init)
+        let fileName = URL(filePath: components.removeLast())
+        let subdirectory = ([Self.bundledResourceDirectory, skillName] + components).joined(separator: "/")
+        guard let url = Bundle.appModule.url(
+            forResource: fileName.deletingPathExtension().lastPathComponent,
+            withExtension: fileName.pathExtension,
+            subdirectory: subdirectory
+        ) else {
+            throw CodexAppServerError.launchFailed("The bundled Codex preset skill \(skillName) is missing.")
         }
         return url
     }

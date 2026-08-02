@@ -1,0 +1,4 @@
+interface:
+  display_name: "Contacts & Organizations Curator"
+  short_description: "Organize Dahlia Contacts, Organizations, and memberships"
+  default_prompt: "Use $contacts-organizations-curator to organize the people and organizations from my recent Dahlia Meetings."
