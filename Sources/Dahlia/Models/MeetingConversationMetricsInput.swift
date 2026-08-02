@@ -16,6 +16,55 @@ struct MeetingConversationMetricsInput: Codable, Equatable, Sendable {
         let endTime: Date?
         let text: String
         let speakerLabel: String
+        var audioFeatures: TranscriptAudioFeatures?
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case sessionId
+            case startTime
+            case endTime
+            case text
+            case speakerLabel
+        }
+
+        init(
+            id: UUID,
+            sessionId: UUID?,
+            startTime: Date,
+            endTime: Date?,
+            text: String,
+            speakerLabel: String,
+            audioFeatures: TranscriptAudioFeatures? = nil
+        ) {
+            self.id = id
+            self.sessionId = sessionId
+            self.startTime = startTime
+            self.endTime = endTime
+            self.text = text
+            self.speakerLabel = speakerLabel
+            self.audioFeatures = audioFeatures
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            sessionId = try container.decodeIfPresent(UUID.self, forKey: .sessionId)
+            startTime = try container.decode(Date.self, forKey: .startTime)
+            endTime = try container.decodeIfPresent(Date.self, forKey: .endTime)
+            text = try container.decode(String.self, forKey: .text)
+            speakerLabel = try container.decode(String.self, forKey: .speakerLabel)
+            audioFeatures = nil
+        }
+
+        func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            try container.encodeIfPresent(sessionId, forKey: .sessionId)
+            try container.encode(startTime, forKey: .startTime)
+            try container.encodeIfPresent(endTime, forKey: .endTime)
+            try container.encode(text, forKey: .text)
+            try container.encode(speakerLabel, forKey: .speakerLabel)
+        }
     }
 
     let meetingDuration: TimeInterval?

@@ -20,6 +20,14 @@ struct ConversationAnalyticsDashboardContent: View {
                 }
                 ConversationAnalyticsPaceTrendCard(metrics: metrics)
                 ConversationAnalyticsFlowCard(metrics: metrics)
+                if metrics.voiceAnalytics.hasAvailableSource {
+                    ConversationAnalyticsExcitementCard(metrics: metrics)
+                    ConversationAnalyticsEnergyTrendCard(metrics: metrics)
+                    ConversationAnalyticsExpressionCard(analytics: metrics.voiceAnalytics)
+                    ConversationAnalyticsEntrainmentCard(metrics: metrics)
+                } else {
+                    ConversationAnalyticsVoiceAvailabilityCard(analytics: metrics.voiceAnalytics)
+                }
                 ConversationAnalyticsNotesView(metrics: metrics)
             }
             .padding(16)

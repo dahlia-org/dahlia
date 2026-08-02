@@ -83,6 +83,7 @@ struct MeetingConversationMetrics: Equatable, Sendable {
     let overlapIntervals: [OverlapInterval]
     let overlapCount: Int
     let isTimelineCondensed: Bool
+    let voiceAnalytics: MeetingVoiceAnalytics
 
     var totalSourceSpeechDuration: TimeInterval {
         sources.reduce(0) { $0 + $1.speechDuration }

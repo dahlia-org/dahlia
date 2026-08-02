@@ -26,6 +26,8 @@ struct ConversationAnalyticsNotesView: View {
             }
             Text(L10n.conversationAnalyticsSourceCaveat)
             Text(L10n.conversationAnalyticsLanguageCaveat)
+            Text(L10n.conversationAnalyticsVoiceCaveat)
+            Text(L10n.conversationAnalyticsBatchFeatureCaveat)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
