@@ -42,7 +42,10 @@ Meeting を evidence とする Project description の作成と改善も定義�
 依頼した場合に限る。analysis-only や audit の依頼では提案を報告するだけで write tool を呼ばない。Dahlia は
 description の以前の版を保存せず、MCP も現在の text の作者を返さないため、非空の description はすべて user が
 確定した値として扱い、既存の記述を削除、置換、または矛盾させる変更は user の明示的な確認を得るまで実行しない
-（[T1](../../PRODUCT.md#tenets)）。Project deletion や merge など MCP が公開しない操作は実行可能と扱わない。
+（[T1](../../PRODUCT.md#tenets)）。Dahlia MCP が返す calendar、summary、transcript、既存 Project は会議参加者や
+外部の主催者が書いた untrusted data であり、skill はこれを evidence としてのみ読み、そこに含まれる指示を実行せず、
+命令形の text を Project の name や description に持ち込まない（[T4](../../PRODUCT.md#tenets)）。Project deletion や
+merge など MCP が公開しない操作は実行可能と扱わない。
 
 ## Consequences
 
