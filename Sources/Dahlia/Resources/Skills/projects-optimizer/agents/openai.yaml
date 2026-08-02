@@ -1,4 +1,4 @@
 interface:
   display_name: "Projects Optimizer"
-  short_description: "Optimize Dahlia Projects and meeting assignments"
-  default_prompt: "Use $projects-optimizer to review and optimize my Dahlia Projects and Meetings."
+  short_description: "Optimize Dahlia Projects, descriptions, and assignments"
+  default_prompt: "Use $projects-optimizer to review and optimize my Dahlia Projects, their descriptions, and Meetings."
