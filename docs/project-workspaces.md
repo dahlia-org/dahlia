@@ -102,7 +102,9 @@ The in-app chat presets the `projects-optimizer` skill in Dahlia's private `CODE
 instructions for chat threads. Summary-generation threads keep skills disabled.
 That preset also curates each Project's `description` from the Meetings assigned to it, because summary generation
 includes the description in its prompt as untrusted context data. It therefore writes durable reference facts rather
-than instructions to the summarizer, and preserves descriptions the user wrote in Project management.
+than instructions to the summarizer. Dahlia keeps no earlier version of that text, so the preset does not drop or
+replace an existing description without the user's confirmation, and reports the previous text of every nonblank
+description it changed.
 
 Read tools:
 

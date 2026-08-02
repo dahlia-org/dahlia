@@ -69,6 +69,9 @@ Dahlia includes a Project's `description` in the prompt for every summary genera
 instructions. Write durable reference facts for that reader; a directive such as "always list risks first" is ignored by
 design.
 
+Write a description only when the user asked to organize the Vault or to work on descriptions. For an analysis-only or
+audit request, put the proposed text in the report and call no write tool.
+
 - Include the durable identity of the work: what the engagement or activity is, the counterpart organization and the
   recurring participants with their roles, the goal and scope, product, system, and team names, and expansions for
   acronyms and internal jargon. The expansions matter most, because they let summary generation resolve terms the
@@ -77,8 +80,13 @@ design.
   does not support. Do not invent facts.
 - Base the text on the current description first, then the Meetings assigned to the Project. Read stored summaries and
   calendar metadata before transcripts, as in step 2.
-- The user edits this field directly in Dahlia. Extend or tighten an existing description and keep its language and its
-  user-supplied specifics. Report any substantial rewrite of user-written text.
+- The user edits this field directly in Dahlia, Dahlia keeps no earlier version, and the tools do not report who wrote
+  the current text. Treat every nonblank description as the user's own and its replacement as irreversible.
+- Write freely when the description is blank. Otherwise keep every existing statement, its language, and its
+  user-supplied specifics, and only add or tighten around them.
+- When the evidence contradicts the existing text, or an improvement requires dropping part of it, do not write. Show
+  the current text and the proposed text and ask the user to confirm. Wait for an explicit answer; never resolve the
+  question with a default, a timeout, or your own recommendation. Collect every such Project into one question.
 - Match the language of the existing description, or of the Project's Meetings when it is blank.
 - Keep it short: a paragraph or a few labeled lines. Dahlia resends the text with every summary, so never paste summary
   content into it.
@@ -110,6 +118,7 @@ design.
 ## Report the result
 
 Summarize the inspected scope, Projects created or updated, Project descriptions written or refined, Meetings moved or
-unassigned, unchanged ambiguous items, and any failed or unsupported operations. Call out any user-written description
-that a rewrite substantially replaced. Use Project names for readability and include IDs only when they help resolve
-ambiguity or retry a failure.
+unassigned, unchanged ambiguous items, and any failed or unsupported operations. For every description that was not
+blank before the change, quote its previous text verbatim: Dahlia stores no earlier version, so that quote is the only
+way the user can restore it. Use Project names for readability and include IDs only when they help resolve ambiguity or
+retry a failure.
