@@ -32,8 +32,10 @@ extension MeetingVoiceAnalyticsCalculator {
         pitchSegments.compactMapValues { group in
             guard group.count >= configuration.minimumPitchSampleCount else { return nil }
             return baseline(
-                values: group.compactMap(\.audioFeatures.medianPitchHertz),
-                floor: configuration.pitchMADFloor
+                values: group.compactMap { segment in
+                    segment.audioFeatures.medianPitchHertz.map(semitone)
+                },
+                floor: configuration.pitchMADFloorSemitones
             )
         }
     }

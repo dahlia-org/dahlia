@@ -165,6 +165,41 @@ import Foundation
         }
 
         @Test
+        func pitchExcitementIsIndependentOfAbsoluteRegister() throws {
+            var configuration = MeetingVoiceAnalyticsCalculator.Configuration.default
+            configuration.smoothingWindowSize = 1
+            let microphoneSession = UUID()
+            let systemSession = UUID()
+            let oneSemitone = pow(2.0, 1.0 / 12.0)
+            let microphone = (0 ..< 10).map {
+                segment(
+                    index: $0,
+                    source: .microphone,
+                    sessionId: microphoneSession,
+                    pitch: $0 == 9 ? 100 * oneSemitone : 100
+                )
+            }
+            let system = (0 ..< 10).map {
+                segment(
+                    index: $0,
+                    source: .system,
+                    sessionId: systemSession,
+                    pitch: $0 == 9 ? 300 * oneSemitone : 300
+                )
+            }
+
+            let samples = calculate(
+                microphone + system,
+                timelineDuration: 10,
+                configuration: configuration
+            ).excitement.samples
+            let microphoneScore = try #require(samples.first { $0.source == .microphone && $0.start == 9 })
+            let systemScore = try #require(samples.first { $0.source == .system && $0.start == 9 })
+
+            #expect(abs(microphoneScore.value - systemScore.value) < 0.000_001)
+        }
+
+        @Test
         func detectsPitchConvergenceAcrossBuckets() throws {
             let microphoneSession = UUID()
             let systemSession = UUID()

@@ -16,7 +16,7 @@ enum MeetingVoiceAnalyticsCalculator {
         var minimumSessionSampleCount = 5
         var minimumPitchSampleCount = 10
         var loudnessMADFloor = 1.0
-        var pitchMADFloor = 5.0
+        var pitchMADFloorSemitones = 0.5
         var robustZScale = 0.67448975
         var loudnessWeight = 0.6
         var pitchWeight = 0.4
@@ -190,7 +190,7 @@ enum MeetingVoiceAnalyticsCalculator {
                 let pitchZ: Double? = if hasUsablePitch(segment),
                                          let pitch = segment.audioFeatures.medianPitchHertz,
                                          let pitchBaseline {
-                    robustZ(pitch, baseline: pitchBaseline, configuration: configuration)
+                    robustZ(semitone(pitch), baseline: pitchBaseline, configuration: configuration)
                 } else {
                     nil
                 }
