@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import GRDB
+@testable import DahliaRuntimeSupport
 #if canImport(Testing)
     import Testing
     @testable import Dahlia

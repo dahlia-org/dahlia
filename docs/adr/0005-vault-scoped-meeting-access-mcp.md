@@ -6,6 +6,9 @@
 > ADR 0010 retains this Vault boundary and read-only default, and adds an explicit `--write` capability for Project
 > workspace and Meeting-membership mutations. Its write contract supersedes this ADR's statements that the helper never
 > writes and that future write tools require a separate decision.
+>
+> ADR 0018 adds `update_meeting_summary` under the same `--write` capability. `get_meeting` now also returns
+> `summary_document_version`, and a summary already exported to the vault is rewritten in place by the helper.
 
 ## Context
 

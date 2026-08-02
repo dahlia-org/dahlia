@@ -1,14 +1,15 @@
 import Foundation
 
-struct SummaryDocument: Codable, Equatable, Sendable {
-    var schemaVersion: Int
-    var title: String
-    var description: String
-    var sections: [SummarySection]
-    var tags: [String]
-    var actionItems: [SummaryActionItem]
+/// サマリーの正準表現。アプリと MCP ヘルパーが同じ型を共有する。
+public struct SummaryDocument: Codable, Equatable, Sendable {
+    public var schemaVersion: Int
+    public var title: String
+    public var description: String
+    public var sections: [SummarySection]
+    public var tags: [String]
+    public var actionItems: [SummaryActionItem]
 
-    init(
+    public init(
         schemaVersion: Int = 3,
         title: String,
         description: String = "",
@@ -33,7 +34,7 @@ struct SummaryDocument: Codable, Equatable, Sendable {
         case actionItems
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         title = try container.decode(String.self, forKey: .title)
@@ -43,20 +44,25 @@ struct SummaryDocument: Codable, Equatable, Sendable {
         actionItems = try container.decodeIfPresent([SummaryActionItem].self, forKey: .actionItems) ?? []
     }
 
-    func databaseJSONString() throws -> String {
+    /// データベースに保存する正準 JSON。アプリと MCP ヘルパーで同一のバイト列になる。
+    public func databaseJSONString() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return try String(decoding: encoder.encode(self), as: UTF8.self)
     }
 
-    var referencedScreenshotIds: Set<UUID> {
+    public static func decode(databaseJSON: String) throws -> SummaryDocument {
+        try JSONDecoder().decode(SummaryDocument.self, from: Data(databaseJSON.utf8))
+    }
+
+    public var referencedScreenshotIds: Set<UUID> {
         Set(sections.flatMap(\.blocks).compactMap { block in
             guard case let .image(screenshotId, _) = block.content else { return nil }
             return screenshotId
         })
     }
 
-    func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {
+    public func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {
         guard !screenshotIds.isEmpty else { return self }
 
         var updated = self
@@ -67,7 +73,7 @@ struct SummaryDocument: Codable, Equatable, Sendable {
                       screenshotIds.contains(screenshotId) else {
                     return block
                 }
-                guard caption.text.nilIfBlank != nil || caption.transcriptRef != nil else { return nil }
+                guard caption.text.summaryNilIfBlank != nil || caption.transcriptRef != nil else { return nil }
                 return SummaryBlock(id: block.id, content: .paragraph(caption))
             }
             return updatedSection
@@ -76,35 +82,41 @@ struct SummaryDocument: Codable, Equatable, Sendable {
     }
 }
 
-struct SummarySection: Codable, Equatable, Identifiable, Sendable {
-    var id: UUID
-    var heading: String
-    var blocks: [SummaryBlock]
+public struct SummarySection: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var heading: String
+    public var blocks: [SummaryBlock]
+
+    public init(id: UUID, heading: String, blocks: [SummaryBlock]) {
+        self.id = id
+        self.heading = heading
+        self.blocks = blocks
+    }
 }
 
-struct TranscriptReference: Codable, Equatable, Sendable {
-    var time: String
+public struct TranscriptReference: Codable, Equatable, Sendable {
+    public var time: String
 
-    init(time: String) {
+    public init(time: String) {
         self.time = time
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         time = try container.decode(String.self)
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(time)
     }
 }
 
-struct SummaryText: Codable, Equatable, Sendable {
-    var text: String
-    var transcriptRef: TranscriptReference?
+public struct SummaryText: Codable, Equatable, Sendable {
+    public var text: String
+    public var transcriptRef: TranscriptReference?
 
-    init(_ text: String, transcriptRef: TranscriptReference? = nil) {
+    public init(_ text: String, transcriptRef: TranscriptReference? = nil) {
         self.text = text
         self.transcriptRef = transcriptRef
     }
@@ -115,91 +127,106 @@ struct SummaryText: Codable, Equatable, Sendable {
     }
 }
 
-struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
-    var id: UUID
-    var content: SummaryBlockContent
+public struct SummaryActionItem: Codable, Equatable, Sendable {
+    public let title: String
+    public let assignee: String
 
-    init(id: UUID = .v7(), content: SummaryBlockContent) {
+    public init(title: String, assignee: String) {
+        self.title = title
+        self.assignee = assignee
+    }
+}
+
+public struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var content: SummaryBlockContent
+
+    public init(id: UUID, content: SummaryBlockContent) {
         self.id = id
         self.content = content
     }
 
-    typealias ChecklistItem = SummaryBlockContent.ChecklistItem
+    /// 新しい block id を採番する。ADR-0001 のとおり id はアプリ側が採番し、LLM には生成させない。
+    public init(content: SummaryBlockContent) {
+        self.init(id: summaryUUIDv7(), content: content)
+    }
 
-    static func paragraph(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+    public typealias ChecklistItem = SummaryBlockContent.ChecklistItem
+
+    public static func paragraph(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
         SummaryBlock(content: .paragraph(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    static func paragraph(_ text: SummaryText) -> SummaryBlock {
+    public static func paragraph(_ text: SummaryText) -> SummaryBlock {
         SummaryBlock(content: .paragraph(text))
     }
 
-    static func bulletedList(items: [String]) -> SummaryBlock {
+    public static func bulletedList(items: [String]) -> SummaryBlock {
         SummaryBlock(content: .bulletedList(items: items.map { SummaryText($0) }))
     }
 
-    static func bulletedList(items: [SummaryText]) -> SummaryBlock {
+    public static func bulletedList(items: [SummaryText]) -> SummaryBlock {
         SummaryBlock(content: .bulletedList(items: items))
     }
 
-    static func numberedList(items: [String]) -> SummaryBlock {
+    public static func numberedList(items: [String]) -> SummaryBlock {
         SummaryBlock(content: .numberedList(items: items.map { SummaryText($0) }))
     }
 
-    static func numberedList(items: [SummaryText]) -> SummaryBlock {
+    public static func numberedList(items: [SummaryText]) -> SummaryBlock {
         SummaryBlock(content: .numberedList(items: items))
     }
 
-    static func checklist(items: [ChecklistItem]) -> SummaryBlock {
+    public static func checklist(items: [ChecklistItem]) -> SummaryBlock {
         SummaryBlock(content: .checklist(items: items))
     }
 
-    static func quote(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+    public static func quote(_ text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
         SummaryBlock(content: .quote(SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    static func quote(_ text: SummaryText) -> SummaryBlock {
+    public static func quote(_ text: SummaryText) -> SummaryBlock {
         SummaryBlock(content: .quote(text))
     }
 
-    static func code(language: String, code: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+    public static func code(language: String, code: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
         SummaryBlock(content: .code(language: language, content: SummaryText(code, transcriptRef: transcriptRef)))
     }
 
-    static func code(language: String, content: SummaryText) -> SummaryBlock {
+    public static func code(language: String, content: SummaryText) -> SummaryBlock {
         SummaryBlock(content: .code(language: language, content: content))
     }
 
-    static func image(screenshotId: UUID, caption: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+    public static func image(screenshotId: UUID, caption: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
         SummaryBlock(content: .image(screenshotId: screenshotId, caption: SummaryText(caption, transcriptRef: transcriptRef)))
     }
 
-    static func image(screenshotId: UUID, caption: SummaryText) -> SummaryBlock {
+    public static func image(screenshotId: UUID, caption: SummaryText) -> SummaryBlock {
         SummaryBlock(content: .image(screenshotId: screenshotId, caption: caption))
     }
 
-    static func heading(level: Int, text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
+    public static func heading(level: Int, text: String, transcriptRef: TranscriptReference? = nil) -> SummaryBlock {
         SummaryBlock(content: .heading(level: level, content: SummaryText(text, transcriptRef: transcriptRef)))
     }
 
-    static func heading(level: Int, content: SummaryText) -> SummaryBlock {
+    public static func heading(level: Int, content: SummaryText) -> SummaryBlock {
         SummaryBlock(content: .heading(level: level, content: content))
     }
 
-    static func table(headers: [String], rows: [[String]]) -> SummaryBlock {
+    public static func table(headers: [String], rows: [[String]]) -> SummaryBlock {
         SummaryBlock(content: .table(headers: headers.map { SummaryText($0) }, rows: rows.map { $0.map { SummaryText($0) } }))
     }
 
-    static func table(headers: [SummaryText], rows: [[SummaryText]]) -> SummaryBlock {
+    public static func table(headers: [SummaryText], rows: [[SummaryText]]) -> SummaryBlock {
         SummaryBlock(content: .table(headers: headers, rows: rows))
     }
 
-    static func == (lhs: SummaryBlock, rhs: SummaryBlock) -> Bool {
+    public static func == (lhs: SummaryBlock, rhs: SummaryBlock) -> Bool {
         lhs.content == rhs.content
     }
 }
 
-enum SummaryBlockContent: Equatable, Sendable {
+public enum SummaryBlockContent: Equatable, Sendable {
     case paragraph(SummaryText)
     case bulletedList(items: [SummaryText])
     case numberedList(items: [SummaryText])
@@ -210,16 +237,16 @@ enum SummaryBlockContent: Equatable, Sendable {
     case heading(level: Int, content: SummaryText)
     case table(headers: [SummaryText], rows: [[SummaryText]])
 
-    struct ChecklistItem: Codable, Equatable, Sendable {
-        var text: SummaryText
-        var checked: Bool
+    public struct ChecklistItem: Codable, Equatable, Sendable {
+        public var text: SummaryText
+        public var checked: Bool
 
-        init(text: String, transcriptRef: TranscriptReference? = nil, checked: Bool) {
+        public init(text: String, transcriptRef: TranscriptReference? = nil, checked: Bool) {
             self.text = SummaryText(text, transcriptRef: transcriptRef)
             self.checked = checked
         }
 
-        init(text: SummaryText, checked: Bool) {
+        public init(text: SummaryText, checked: Bool) {
             self.text = text
             self.checked = checked
         }
@@ -230,7 +257,7 @@ enum SummaryBlockContent: Equatable, Sendable {
             case checked
         }
 
-        init(from decoder: Decoder) throws {
+        public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             let value = try container.decode(String.self, forKey: .text)
             let transcriptRef = try container.decodeIfPresent(TranscriptReference.self, forKey: .transcriptRef)
@@ -238,7 +265,7 @@ enum SummaryBlockContent: Equatable, Sendable {
             checked = (try? container.decode(Bool.self, forKey: .checked)) ?? false
         }
 
-        func encode(to encoder: Encoder) throws {
+        public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(text.text, forKey: .text)
             try container.encodeIfPresent(text.transcriptRef, forKey: .transcriptRef)
@@ -271,7 +298,7 @@ extension SummaryBlockContent: Codable {
         case table
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = (try? container.decode(String.self, forKey: .type)) ?? BlockType.paragraph.rawValue
 
@@ -315,7 +342,7 @@ extension SummaryBlockContent: Codable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
@@ -359,15 +386,59 @@ extension SummaryBlock {
         case id
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = (try? container.decode(UUID.self, forKey: .id)) ?? .v7()
+        // id を持たない旧ドキュメントでも同じ block が常に同じ id になるよう、coding path から決定的に導出する。
+        // ランダム採番にすると読み出しのたびに id が変わり、MCP 経由の書き戻しで block 同一性が壊れる。
+        id = (try? container.decode(UUID.self, forKey: .id)) ?? Self.derivedID(codingPath: decoder.codingPath)
         content = try SummaryBlockContent(from: decoder)
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try content.encode(to: encoder)
     }
+
+    static func derivedID(codingPath: [CodingKey]) -> UUID {
+        let seed = codingPath.map(\.stringValue).joined(separator: "/")
+        var high: UInt64 = 14_695_981_039_346_656_037
+        var low: UInt64 = 1_099_511_628_211
+        for byte in seed.utf8 {
+            high = (high ^ UInt64(byte)) &* 1_099_511_628_211
+            low = (low ^ UInt64(byte)) &* 14_029_467_366_897_019_727
+        }
+        var bytes = (0 ..< 16).map { index -> UInt8 in
+            let value = index < 8 ? high : low
+            return UInt8(truncatingIfNeeded: value >> UInt64((7 - index % 8) * 8))
+        }
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
+    }
+}
+
+/// `Sources/Dahlia` の同名ユーティリティと衝突しないよう、共有ターゲット内部だけで使う。
+extension String {
+    var summaryNilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// 共有ターゲット内部用の UUID v7 生成。`Sources/Dahlia` の `UUID.v7()` と同じレイアウト。
+func summaryUUIDv7() -> UUID {
+    let milliseconds = UInt64(Date().timeIntervalSince1970 * 1000)
+    var bytes = (0 ..< 16).map { index -> UInt8 in
+        index < 6 ? UInt8(truncatingIfNeeded: milliseconds >> UInt64((5 - index) * 8)) : UInt8.random(in: 0 ... 255)
+    }
+    bytes[6] = (bytes[6] & 0x0F) | 0x70
+    bytes[8] = (bytes[8] & 0x3F) | 0x80
+    return UUID(uuid: (
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
 }

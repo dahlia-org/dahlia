@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 
 /// ミーティング一覧サイドバーと詳細ビューを構成するルートビュー。
@@ -155,6 +156,10 @@ struct ContentView: View {
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
             syncChatContext()
+        }
+        .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
+            // MCP ヘルパーなど別プロセスが要約を書き換えた場合に Summary タブを追従させる。
+            viewModel.reloadSummaryDocument()
         }
         .task { syncChatContext() }
     }

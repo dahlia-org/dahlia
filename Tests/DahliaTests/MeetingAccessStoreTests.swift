@@ -2919,6 +2919,39 @@ import ImageIO
             }
         }
 
+        func insertVaultExport(meetingID: UUID, relativePath: String) throws {
+            let now = Date()
+            try manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    INSERT INTO summary_exports (meetingId, type, url, createdAt, updatedAt)
+                    VALUES (?, 'vault', ?, ?, ?)
+                    """,
+                    arguments: [meetingID, "vault:///\(relativePath)", now, now]
+                )
+            }
+        }
+
+        func storedDocument(meetingID: UUID) throws -> String {
+            try manager.dbQueue.read { db in
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT document FROM summaries WHERE meetingId = ?",
+                    arguments: [meetingID]
+                )
+            } ?? ""
+        }
+
+        func replaceSummaryDocument(meetingID: UUID, document: SummaryDocument) throws {
+            let json = try document.databaseJSONString()
+            try manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
+                    arguments: [json, meetingID]
+                )
+            }
+        }
+
         func insertPausedSessionContent() throws -> (segmentID: UUID, screenshotID: UUID) {
             let sessionID = UUID.v7()
             let segmentID = UUID.v7()

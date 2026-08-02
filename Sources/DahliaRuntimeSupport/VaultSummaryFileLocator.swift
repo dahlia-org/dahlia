@@ -1,8 +1,8 @@
 import Foundation
 
 /// Vault 内の要約 Markdown と、DB に保存する Vault 相対パスを相互変換する。
-enum VaultSummaryFileLocator {
-    static func findSummaryFile(
+public enum VaultSummaryFileLocator {
+    public static func findSummaryFile(
         storedRelativePath: String?,
         vaultURL: URL
     ) -> URL? {
@@ -14,7 +14,7 @@ enum VaultSummaryFileLocator {
         return storedURL
     }
 
-    static func relativePath(for fileURL: URL, vaultURL: URL) -> String? {
+    public static func relativePath(for fileURL: URL, vaultURL: URL) -> String? {
         let vaultPath = vaultURL.standardizedFileURL.path
         let filePath = fileURL.standardizedFileURL.path
         let prefix = vaultPath.hasSuffix("/") ? vaultPath : vaultPath + "/"
@@ -23,7 +23,7 @@ enum VaultSummaryFileLocator {
         return String(filePath.dropFirst(prefix.count))
     }
 
-    static func fileURL(for relativePath: String, vaultURL: URL) -> URL? {
+    public static func fileURL(for relativePath: String, vaultURL: URL) -> URL? {
         guard !relativePath.isEmpty, !relativePath.hasPrefix("/") else { return nil }
 
         let vaultPath = vaultURL.standardizedFileURL.path

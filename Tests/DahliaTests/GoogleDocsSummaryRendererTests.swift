@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing

@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 
 struct RecordToolbarButton: View {

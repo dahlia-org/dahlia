@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 /// Legacy LLM structured output. Kept only for fallback decoding.

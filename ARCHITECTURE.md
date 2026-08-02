@@ -104,7 +104,7 @@ SQLite typed records
     ├─ Project resource reference
     ├─ Glossary term
     └─ Insight + typed evidence/context reference
-            ↓ bounded, read-only, Vault-scoped queries
+            ↓ bounded, Vault-scoped queries (read-only by default; writes only with --write)
         Dahlia MCP
 ```
 

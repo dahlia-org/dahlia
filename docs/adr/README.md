@@ -28,3 +28,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0015](0015-preset-projects-optimizer-skill.md) | AI runtime / Project workspace | Projects Optimizer skill をアプリ内チャットへプリセットする | Accepted; amends 0003, builds on 0010 |
 | [0016](0016-shared-organization-domains.md) | Customer intelligence / Identity | 同じメールドメインを複数のルート組織で共有可能にする | Accepted; amends 0011 and 0014 |
 | [0017](0017-preset-customer-intelligence-skills.md) | AI runtime / Customer intelligence | 顧客インテリジェンスの curator skill を層ごとに分けてプリセットする | Accepted; amends 0015, builds on 0011 and 0012 |
+| [0018](0018-mcp-meeting-summary-update.md) | Summary / Meeting access | サマリーの訂正を MCP のドキュメント全体置換で行う | Accepted; amends 0005 and 0010, builds on 0001 |

@@ -5,6 +5,7 @@ import Foundation
 import Testing
 import UniformTypeIdentifiers
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 @MainActor
 struct SummaryDocumentViewTests {

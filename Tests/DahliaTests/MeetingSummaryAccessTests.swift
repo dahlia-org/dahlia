@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 @testable import Dahlia
 @testable import DahliaMeetingAccess
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing

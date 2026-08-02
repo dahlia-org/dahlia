@@ -502,6 +502,8 @@ final class CaptionViewModel: ObservableObject {
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
+    private var summaryReloadTask: Task<Void, Never>?
+    private var summaryReloadGeneration: UInt64 = 0
     private var isSynchronizingSelectedLocale = false
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
@@ -1603,6 +1605,34 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    /// サマリーだけを DB から読み込み直す。
+    /// MCP ヘルパーのような別プロセスの書き込みは GRDB の `ValueObservation` では検知できないため、
+    /// Vault の変更通知を受けた側から呼ぶ。編集中のノートを上書きしないよう `reloadMeetingDetail` は使わない。
+    func reloadSummaryDocument() {
+        guard let meetingId = currentMeetingId,
+              let dbQueue = currentDbQueue else { return }
+        summaryReloadTask?.cancel()
+        summaryReloadGeneration &+= 1
+        let generation = summaryReloadGeneration
+        summaryReloadTask = Task { [weak self, meetingId, dbQueue] in
+            guard let self else { return }
+            let document: SummaryDocument?
+            do {
+                document = try await Task.detached(priority: .userInitiated) {
+                    try dbQueue.read { db in
+                        try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
+                    }
+                }.value
+            } catch {
+                return
+            }
+            guard !Task.isCancelled,
+                  self.summaryReloadGeneration == generation,
+                  self.currentMeetingId == meetingId else { return }
+            self.currentSummaryDocument = document
+        }
+    }
+
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
     private func applyLoadedDetail(_ loaded: LoadedMeetingData) {
         currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
@@ -1675,6 +1705,9 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func resetSummaryState() {
+        summaryReloadTask?.cancel()
+        summaryReloadTask = nil
+        summaryReloadGeneration &+= 1
         currentSummaryDocument = nil
         currentSummaryGoogleFileId = nil
         lastSummaryURL = nil

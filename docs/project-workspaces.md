@@ -123,6 +123,14 @@ Write tools:
 - `update_project`
 - `set_meeting_project_assignment`
 - `remove_meeting_project_assignment`
+- `update_meeting_summary`
+
+`update_meeting_summary` replaces one Meeting's whole summary document and is described in
+[ADR 0018](adr/0018-mcp-meeting-summary-update.md). It takes the `summary_document` and `summary_document_version`
+that `get_meeting` returned, propagates the document title and description to the Meeting, adds document tags without
+removing existing ones, and rewrites an already-exported vault Markdown file in place under its current file name. It
+never creates a summary or a summary file that does not exist, never renames one, and leaves a Google Docs export
+stale.
 
 Project updates require the current `revision`. Omitted JSON properties are unchanged; `parent_project_id: null` means
 move to the Vault root. Project creation and rename use `name`; callers never submit a path. A Meeting assignment call

@@ -73,6 +73,12 @@ public final class DahliaMCPServer {
             + "transcripts or other evidence and set_contact_organization_membership to assign membership explicitly. "
             + "Deletes require revision. Delete Organizations from the leaves upward after removing Contact memberships; "
             + "a Contact must have no memberships, Meeting participation, or typed resource references before deletion. "
+            + "update_meeting_summary replaces one meeting's whole summary document. Call get_meeting first, edit the "
+            + "returned summary_document in place, and send it back with summary_document_version. Keep every section id, "
+            + "block id, screenshot_id, and transcript_ref you are not correcting; a dropped id loses that block's "
+            + "identity, and a screenshot_id from another meeting is rejected. A vault-exported summary is rewritten in "
+            + "place under its existing file name, while a Google Docs export is left stale and reported in "
+            + "stale_exports. "
             : ""
         return [
             "protocolVersion": "2025-06-18",
@@ -550,6 +556,13 @@ public final class DahliaMCPServer {
                     expectedRevision: revision
                 )
             ))
+        case "update_meeting_summary":
+            try validate(arguments, allowedKeys: ["meeting_id", "expected_document_version", "summary_document"])
+            return try toolResult(store.updateMeetingSummary(
+                meetingID: requiredUUID(arguments, key: "meeting_id"),
+                expectedDocumentVersion: requiredString(arguments, key: "expected_document_version"),
+                document: requiredSummaryDocument(arguments, key: "summary_document")
+            ))
         case "set_meeting_project_assignment":
             try validate(arguments, allowedKeys: ["meeting_id", "expected_project_id", "project_id"])
             return try toolResult(store.setMeetingProjectAssignment(
@@ -678,6 +691,20 @@ public final class DahliaMCPServer {
             throw ParameterError("\(key) is required")
         }
         return value
+    }
+
+    /// `get_meeting` が返す `summary_document` と同じ形状を受け取る。
+    private func requiredSummaryDocument(_ arguments: [String: Any], key: String) throws -> SummaryDocument {
+        guard let object = arguments[key] as? [String: Any] else {
+            throw ParameterError("\(key) must be an object matching the summary_document returned by get_meeting")
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: object)
+            let value = try JSONDecoder().decode(JSONValue.self, from: data)
+            return try StoredSummaryDocumentMarkdownRenderer.decode(toolJSON: value)
+        } catch {
+            throw ParameterError("\(key) does not match the summary_document schema")
+        }
     }
 
     private func optionalNonNullString(_ arguments: [String: Any], key: String) throws -> String? {
@@ -1089,6 +1116,7 @@ private extension DahliaMCPServer {
                 "meeting": meetingMetadataSchema,
                 "summary": ["type": "string"],
                 "summary_document": summaryDocumentSchema,
+                "summary_document_version": ["type": "string"],
             ],
             required: ["vault", "meeting"]
         )
@@ -1795,7 +1823,48 @@ private extension DahliaMCPServer {
     }
 
     private static var writeToolDefinitions: [[String: Any]] {
-        projectWriteToolDefinitions + customerIntelligenceWriteToolDefinitions
+        meetingWriteToolDefinitions + projectWriteToolDefinitions + customerIntelligenceWriteToolDefinitions
+    }
+
+    private static var meetingWriteToolDefinitions: [[String: Any]] { [
+        writeTool(
+            "update_meeting_summary",
+            "Update meeting summary",
+            "Replace the stored summary document of one meeting. Call get_meeting first and send its summary_document "
+                + "back with only the intended corrections applied, together with the returned summary_document_version. "
+                + "The whole document is replaced, so preserve every section id, block id, screenshot_id, and "
+                + "transcript_ref you do not intend to change. The meeting name and description follow the document "
+                + "title and description, and tags in the document are added without removing existing tags. A summary "
+                + "already exported to the vault is rewritten in place under its current file name; a Google Docs export "
+                + "is not updated and is reported in stale_exports.",
+            [
+                "meeting_id": ["type": "string", "format": "uuid"],
+                "expected_document_version": ["type": "string"],
+                "summary_document": summaryDocumentSchema,
+            ],
+            required: ["meeting_id", "expected_document_version", "summary_document"],
+            outputSchema: summaryMutationOutputSchema,
+            destructive: true,
+            idempotent: true
+        ),
+    ] }
+
+    private static var summaryMutationOutputSchema: [String: Any] {
+        objectSchema(
+            properties: [
+                "meeting_id": ["type": "string", "format": "uuid"],
+                "document_version": ["type": "string"],
+                "title": ["type": "string"],
+                "description": ["type": "string"],
+                "changed": ["type": "boolean"],
+                "vault_export": [
+                    "type": "string",
+                    "enum": ["updated", "unchanged", "not_exported", "file_missing"],
+                ],
+                "stale_exports": ["type": "array", "items": ["type": "string"]],
+            ],
+            required: ["meeting_id", "document_version", "title", "description", "changed", "vault_export", "stale_exports"]
+        )
     }
 
     private static var projectWriteToolDefinitions: [[String: Any]] { [
