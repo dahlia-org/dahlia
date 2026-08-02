@@ -51,7 +51,7 @@
             #expect(deletedOrganization == nil)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func workspaceChangeDuringDeletionPreparationStillPresentsConfirmation() async throws {
             let (fixture, organization, model) = try await makeDeletionFixture()
 
@@ -82,9 +82,10 @@
             }
 
             let preparation = Task { await model.prepareOrganizationDeletion() }
-            while !model.isPreparingDeletion {
-                await Task.yield()
-            }
+            // Spinning on Task.yield() here starves every other MainActor test while the
+            // database lock below is held.
+            let didStartPreparing = await pollUntil { model.isPreparingDeletion }
+            #expect(didStartPreparing)
             let reloadWasDeferred = await withTaskCancellationHandler {
                 await model.handleWorkspaceChange()
             } onCancel: {

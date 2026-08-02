@@ -147,5 +147,35 @@ import Foundation
             #expect(state.retainedByteCount == 768 * line.count)
             await transport.close()
         }
+
+        @Test
+        func receiveLineAfterCloseReportsClosureInsteadOfReadingATornDownDescriptor() async throws {
+            let transport = try CodexAppServerProcessTransport(
+                executableURL: URL(fileURLWithPath: "/bin/cat"),
+                arguments: []
+            )
+
+            try await transport.sendLine(Data("first".utf8))
+            #expect(try await transport.receiveLine() == Data("first".utf8))
+            await transport.close()
+
+            // The shared service reader loop can re-enter receiveLine after a concurrent shutdown.
+            #expect(try await transport.receiveLine() == nil)
+            #expect(try await transport.receiveLine() == nil)
+        }
+
+        @Test
+        func closeImmediatelyAfterStartingTheDrainDoesNotTearDownAnActiveRead() async throws {
+            let transport = try CodexAppServerProcessTransport(
+                executableURL: URL(fileURLWithPath: "/bin/cat"),
+                arguments: []
+            )
+
+            // Starts the stdout drain, then closes before the drain has observed any output.
+            let pending = Task { try await transport.receiveLine() }
+            await transport.close()
+
+            #expect(try await pending.value == nil)
+        }
     }
 #endif

@@ -1,17 +1,30 @@
 import Darwin
 import Dispatch
 import Foundation
+import os
 
 /// Process stdio adapter. All potentially blocking pipe operations stay outside Swift's cooperative executor.
 actor CodexAppServerProcessTransport: CodexAppServerTransport {
+    private enum OutputTermination: Sendable {
+        case overflow
+        case end(Int32)
+    }
+
+    // DispatchIO reads as fast as the child writes, so the bytes waiting to reach the actor need
+    // their own ceiling. Without one the documented maximumBufferedOutputLines policy only applies
+    // after parsing, which leaves memory growth unbounded ahead of it.
+    private static let maximumBufferedOutputChunks = 64
+    private static let maximumOutputChunkBytes = 64 * 1024
+
     private let process: Process
     private let inputChannel: DispatchIO
-    private let outputHandle: FileHandle
+    private let outputChannel: DispatchIO
     private let errorChannel: DispatchIO
     private let ioQueue = DispatchQueue(label: "app.dahlia.codex-app-server-stdio")
-    private var outputDrainTask: Task<Void, Never>?
+    private var isOutputDrainStarted = false
     private var isErrorDrainStarted = false
     private var isErrorDrainFinished = false
+    private var stdoutPending = Data()
     private var outputLines: [Data] = []
     private var outputLineReadIndex = 0
     private var outputWaiter: (id: UUID, continuation: CheckedContinuation<Data?, any Error>)?
@@ -58,24 +71,39 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             process.terminate()
             throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
         }
+        let outputHandle = standardOutput.fileHandleForReading
+        let duplicatedOutput = Darwin.dup(outputHandle.fileDescriptor)
+        guard duplicatedOutput >= 0 else {
+            Darwin.close(duplicatedInput)
+            process.terminate()
+            throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
+        }
         let errorHandle = standardError.fileHandleForReading
         let duplicatedError = Darwin.dup(errorHandle.fileDescriptor)
         guard duplicatedError >= 0 else {
+            Darwin.close(duplicatedOutput)
             Darwin.close(duplicatedInput)
             process.terminate()
             throw CodexAppServerError.launchFailed(String(cString: strerror(errno)))
         }
         try? inputHandle.close()
+        try? outputHandle.close()
         try? errorHandle.close()
 
         self.process = process
-        outputHandle = standardOutput.fileHandleForReading
         inputChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedInput, queue: ioQueue) { _ in
             Darwin.close(duplicatedInput)
+        }
+        outputChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedOutput, queue: ioQueue) { _ in
+            Darwin.close(duplicatedOutput)
         }
         errorChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedError, queue: ioQueue) { _ in
             Darwin.close(duplicatedError)
         }
+        // A JSON-RPC line must reach the reader as soon as the child writes it, and one delivery
+        // must stay small enough that the handoff ceiling below is expressed in bytes, not chunks.
+        outputChannel.setLimit(lowWater: 1)
+        outputChannel.setLimit(highWater: Self.maximumOutputChunkBytes)
         errorChannel.setLimit(highWater: 4096)
     }
 
@@ -154,10 +182,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             await waitForExit(for: .seconds(1))
         }
 
-        try? outputHandle.close()
+        outputChannel.close(flags: .stop)
         errorChannel.close(flags: .stop)
-        outputDrainTask?.cancel()
-        outputDrainTask = nil
         outputWaiter?.continuation.resume(returning: nil)
         outputWaiter = nil
     }
@@ -202,25 +228,54 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     }
 
     private func startDrainsIfNeeded() {
+        // A closed transport has already released its channels. Restarting a drain here would
+        // read from a torn-down descriptor instead of reporting the closure to the caller.
+        guard !isClosed else { return }
         startOutputDrainIfNeeded()
         startErrorDrainIfNeeded()
     }
 
     private func startOutputDrainIfNeeded() {
-        guard outputDrainTask == nil else { return }
-        let outputHandle = outputHandle
-        // Keep the long-lived iterator off the transport actor so waiting for the next pipe byte
-        // cannot prevent a later sendLine or receiveLine call from entering the actor.
-        outputDrainTask = Task.detached(priority: .utility) { [weak self] in
-            do {
-                for try await line in outputHandle.bytes.lines where !line.isEmpty {
-                    await self?.enqueueOutputLine(Data(line.utf8))
+        guard !isOutputDrainStarted else { return }
+        isOutputDrainStarted = true
+        let (chunks, continuation) = AsyncStream<Data>.makeStream(
+            bufferingPolicy: .bufferingOldest(Self.maximumBufferedOutputChunks)
+        )
+        // The terminal outcome must not compete with chunks for stream capacity. Yielding it into a
+        // full buffer would drop it, ending the consumer without ever reporting EOF or overflow and
+        // leaving the reader suspended in receiveLine. First writer wins, so a later callback on the
+        // stopped channel cannot relabel an overflow as a clean exit.
+        let termination = OSAllocatedUnfairLock<OutputTermination?>(initialState: nil)
+        // DispatchIO keeps the blocking pipe read on ioQueue. The stream carries chunks into the
+        // actor in arrival order, which one unstructured task per chunk would not guarantee.
+        outputChannel.read(offset: 0, length: Int.max, queue: ioQueue) { done, data, errorCode in
+            if let data, !data.isEmpty {
+                // Losing even one chunk splices unrelated bytes into the next line, so a full
+                // buffer becomes the documented overflow rather than a silent discard.
+                if case .dropped = continuation.yield(Data(data)) {
+                    termination.withLock { $0 = $0 ?? .overflow }
+                    continuation.finish()
+                    return
                 }
-                await self?.finishOutput()
-            } catch is CancellationError {
-                await self?.finishOutput()
-            } catch {
-                await self?.finishOutput(throwing: error)
+            }
+            if done {
+                termination.withLock { $0 = $0 ?? .end(errorCode) }
+                continuation.finish()
+            }
+        }
+        Task { [weak self] in
+            for await chunk in chunks {
+                await self?.consumeStdout(chunk)
+            }
+            // Runs after every buffered chunk has been parsed, so a trailing partial line is still
+            // whole by the time the terminal outcome is applied.
+            switch termination.withLock({ $0 }) {
+            case .overflow:
+                await self?.failOutputDrainWithOverflow()
+            case let .end(errorCode):
+                await self?.finishOutputDrain(errorCode: errorCode)
+            case nil:
+                break
             }
         }
     }
@@ -234,6 +289,56 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
                 await self?.consumeStderr(chunk, done: done)
             }
         }
+    }
+
+    private func consumeStdout(_ data: Data) {
+        stdoutPending.append(data)
+        guard stdoutPending.contains(0x0A) else { return }
+        var lines = stdoutPending.split(separator: 0x0A, omittingEmptySubsequences: false)
+        stdoutPending = Data(lines.removeLast())
+        for line in lines where !line.isEmpty {
+            enqueueOutputLine(Data(line))
+        }
+    }
+
+    private func failOutputDrainWithOverflow() {
+        // Continuing to read only discards more bytes, and the buffered prefix can no longer be
+        // parsed into whole lines.
+        outputChannel.close(flags: .stop)
+        stdoutPending.removeAll()
+        latchOutputBufferOverflow()
+        guard let waiter = outputWaiter else { return }
+        outputWaiter = nil
+        waiter.continuation.resume(throwing: CodexAppServerError.outputBufferOverflow)
+    }
+
+    private func latchOutputBufferOverflow() {
+        outputLines.removeAll(keepingCapacity: false)
+        outputLineReadIndex = 0
+        outputError = CodexAppServerError.outputBufferOverflow
+        #if DEBUG
+            let waiters = outputBufferOverflowWaiters
+            outputBufferOverflowWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        #endif
+    }
+
+    private func finishOutputDrain(errorCode: Int32) async {
+        // The child may exit after a final line that carries no trailing newline.
+        if !stdoutPending.isEmpty {
+            let trailing = stdoutPending
+            stdoutPending.removeAll()
+            enqueueOutputLine(trailing)
+        }
+        guard errorCode != 0 else {
+            await finishOutput()
+            return
+        }
+        await finishOutput(throwing: NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(errorCode),
+            userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errorCode))]
+        ))
     }
 
     private func consumeStderr(_ data: Data, done: Bool) {
@@ -252,14 +357,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         } else {
             guard outputError == nil else { return }
             if outputLines.count - outputLineReadIndex >= maximumBufferedOutputLines {
-                outputLines.removeAll(keepingCapacity: false)
-                outputLineReadIndex = 0
-                outputError = CodexAppServerError.outputBufferOverflow
-                #if DEBUG
-                    let waiters = outputBufferOverflowWaiters
-                    outputBufferOverflowWaiters.removeAll()
-                    waiters.forEach { $0.resume() }
-                #endif
+                latchOutputBufferOverflow()
                 return
             }
             outputLines.append(line)

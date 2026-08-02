@@ -17,6 +17,10 @@
             let blocker = Task { @MainActor in
                 blockMainActor(entered: mainActorEntered, release: releaseMainActor)
             }
+            // blockMainActor holds the MainActor until it is signalled. Leaving this scope without
+            // signalling — the wait below can time out — wedges the MainActor for every remaining
+            // test in the process, not just this one.
+            defer { releaseMainActor.signal() }
             try await wait(for: mainActorEntered)
             let delivery = Task {
                 await deliveryGate.deliver(source: .microphone, level: 1) { source, level in
@@ -139,7 +143,9 @@
 
         private func wait(
             for semaphore: DispatchSemaphore,
-            timeout: DispatchTimeInterval = .seconds(5)
+            // Matches testPollTimeout: the MainActor task this waits on competes with every other
+            // MainActor test, so a short bound here reports contention as a failure.
+            timeout: DispatchTimeInterval = .seconds(120)
         ) async throws {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global().async {
@@ -190,13 +196,9 @@
             entries.append(.init(source: source, level: level))
         }
 
-        func waitUntilCount(_ count: Int, timeout: Duration = .seconds(5)) async throws {
-            let deadline = ContinuousClock.now + timeout
-            while entries.count < count {
-                guard ContinuousClock.now < deadline else {
-                    throw MeteringTestError.timedOutWaitingForLevel
-                }
-                await Task.yield()
+        func waitUntilCount(_ count: Int, timeout: Duration = testPollTimeout) async throws {
+            guard await pollUntil(timeout: timeout, { entries.count >= count }) else {
+                throw MeteringTestError.timedOutWaitingForLevel
             }
         }
     }
@@ -292,13 +294,9 @@
             }
         }
 
-        func waitUntilWaiting(timeout: Duration = .seconds(5)) async throws {
-            let deadline = ContinuousClock.now + timeout
-            while !isWaiting {
-                guard ContinuousClock.now < deadline else {
-                    throw MeteringTestError.timedOutWaitingForRecognitionFinish
-                }
-                await Task.yield()
+        func waitUntilWaiting(timeout: Duration = testPollTimeout) async throws {
+            guard await pollUntil(timeout: timeout, { isWaiting }) else {
+                throw MeteringTestError.timedOutWaitingForRecognitionFinish
             }
         }
 

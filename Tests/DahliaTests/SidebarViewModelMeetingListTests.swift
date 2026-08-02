@@ -7,7 +7,7 @@ import GRDB
 
     @MainActor
     struct SidebarViewModelMeetingListTests {
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func loadsMeetingsInFiftyItemBatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -44,7 +44,7 @@ import GRDB
             #expect(!viewModel.hasMoreMeetings)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func refreshesMeetingRowsLoadedAfterInitialPage() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -98,7 +98,7 @@ import GRDB
             })
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func debouncesSearchAndKeepsTranscriptTextOutOfResults() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -152,7 +152,7 @@ import GRDB
             #expect(viewModel.displayedMeetingItems.count == 2)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func searchesBeyondInitialPageAndPaginatesMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -200,7 +200,7 @@ import GRDB
             #expect(!viewModel.hasMoreMeetingSearchResults)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func rapidSearchChangePublishesOnlyLatestQuery() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -226,7 +226,7 @@ import GRDB
             #expect(viewModel.meetingSearchQuery == "Beta")
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func selectedMeetingOutsideInitialPageStaysAvailableAndObservesChanges() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -275,7 +275,7 @@ import GRDB
             #expect(viewModel.selectedMeetingDetail == nil)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func capsMaterializedMeetingListAndDefersChatCatalog() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -316,23 +316,16 @@ import GRDB
         }
 
         private func waitUntil(
-            timeout: Duration = .seconds(5),
+            timeout: Duration = testPollTimeout,
             _ predicate: @MainActor () -> Bool
         ) async -> Bool {
-            let clock = ContinuousClock()
-            let deadline = clock.now + timeout
-
-            while clock.now < deadline, !Task.isCancelled {
-                if predicate() { return true }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return predicate()
+            await pollUntil(timeout: timeout) { predicate() }
         }
     }
 
     @MainActor
     struct SidebarViewModelMeetingSearchTests {
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(3)))
         func searchesWithFiltersWithoutFreeTextAndClearsThemTogether() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
@@ -378,17 +371,10 @@ import GRDB
         }
 
         private func waitUntil(
-            timeout: Duration = .seconds(5),
+            timeout: Duration = testPollTimeout,
             _ predicate: @MainActor () -> Bool
         ) async -> Bool {
-            let clock = ContinuousClock()
-            let deadline = clock.now + timeout
-
-            while clock.now < deadline, !Task.isCancelled {
-                if predicate() { return true }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return predicate()
+            await pollUntil(timeout: timeout) { predicate() }
         }
     }
 

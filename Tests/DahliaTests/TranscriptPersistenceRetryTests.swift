@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     @MainActor
-    @Suite(.timeLimit(.minutes(1)))
+    @Suite(.timeLimit(.minutes(3)))
     struct TranscriptPersistenceRetryTests {
         @Test
         func stopRetriesEventsRetainedAfterATemporaryDatabaseFailure() async throws {
@@ -245,17 +245,10 @@
     }
 
     private func waitUntil(
-        timeout: Duration = .seconds(10),
+        timeout: Duration = testPollTimeout,
         condition: @escaping @Sendable () async -> Bool
     ) async -> Bool {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if await condition() {
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-        return false
+        await pollUntil(timeout: timeout, condition)
     }
 
     private final class PersistenceDatabaseGate: @unchecked Sendable {
@@ -272,14 +265,7 @@
         }
 
         func waitUntilStarted() async -> Bool {
-            let deadline = ContinuousClock.now + .seconds(10)
-            while ContinuousClock.now < deadline {
-                if hasStarted.withLock(\.self) {
-                    return true
-                }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return false
+            await pollUntil { hasStarted.withLock(\.self) }
         }
     }
 #endif

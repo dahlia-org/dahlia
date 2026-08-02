@@ -116,16 +116,10 @@ import GRDB
         }
 
         private func waitUntil(
-            timeout: Duration = .seconds(15),
+            timeout: Duration = testPollTimeout,
             condition: () -> Bool
         ) async -> Bool {
-            let clock = ContinuousClock()
-            let deadline = clock.now + timeout
-            while clock.now < deadline {
-                if condition() { return true }
-                try? await Task.sleep(for: .milliseconds(10))
-            }
-            return condition()
+            await pollUntil(timeout: timeout) { condition() }
         }
     }
 #endif

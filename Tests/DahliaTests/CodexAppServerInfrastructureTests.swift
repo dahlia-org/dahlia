@@ -132,7 +132,7 @@ import Foundation
         @Test
         func invalidJSONClosesConnection() async {
             let transport = TestCodexAppServerTransport(mode: .invalidInitializeResponse)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.self) {
                 try await service.start()
@@ -143,7 +143,7 @@ import Foundation
         @Test
         func modelSelectionPrefersSavedThenDefault() async {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let catalog = CodexModelCatalog(service: service)
 
             await catalog.load()
@@ -173,7 +173,7 @@ import Foundation
         @Test
         func cancelledInitialCatalogLoadCanBeRetried() async {
             let transport = TestCodexAppServerTransport(mode: .blockFirstModelList)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let catalog = CodexModelCatalog(service: service)
             let load = Task { await catalog.load(forceRefresh: true) }
 

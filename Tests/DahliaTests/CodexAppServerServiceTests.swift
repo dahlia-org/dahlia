@@ -13,7 +13,7 @@ import Foundation
         @Test
         func connectionIsInitializedOnceAndReused() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             let first = try await service.models()
             let second = try await service.models(forceRefresh: true)
@@ -30,7 +30,7 @@ import Foundation
         @Test
         func bootstrapChecksAccountWithoutRefreshingToken() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             try await service.start()
 
@@ -44,7 +44,7 @@ import Foundation
         @Test
         func browserLoginUsesSupportedParametersAndBuffersImmediateCompletion() async throws {
             let transport = TestCodexAppServerTransport(mode: .loginCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             let initialStatus = try await service.accountStatus(forceRefresh: false)
             #expect(!initialStatus.isAuthenticated)
@@ -70,7 +70,7 @@ import Foundation
         @Test
         func cancellingBrowserLoginSendsCancelWithoutClosingSharedProcess() async throws {
             let transport = TestCodexAppServerTransport(mode: .loginBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let session = try await service.startChatGPTLogin()
             let completion = Task {
                 try await service.waitForLoginCompletion(loginID: session.id)
@@ -91,7 +91,7 @@ import Foundation
         @Test
         func logoutUsesNullParamsAndClearsCachedAccount() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             #expect(try await service.accountStatus(forceRefresh: false).isAuthenticated)
 
             try await service.logout()
@@ -107,7 +107,7 @@ import Foundation
         @Test
         func signedOutGenerationFailsBeforeStartingThread() async {
             let transport = TestCodexAppServerTransport(mode: .signedOut)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.notLoggedIn) {
                 _ = try await service.generate(.init(
@@ -125,7 +125,7 @@ import Foundation
         @Test
         func cancelledModelRequestDoesNotCloseHealthySharedProcess() async throws {
             let transport = TestCodexAppServerTransport(mode: .blockFirstModelList)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let firstRequest = Task { try await service.models(forceRefresh: true) }
 
             await transport.waitUntilSent("model/list")
@@ -144,7 +144,7 @@ import Foundation
         @Test
         func requestTimeoutKeepsHealthySharedTransport() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.requestTimedOut("test/blocked")) {
                 _ = try await service.request(method: "test/blocked", timeout: .milliseconds(20))
@@ -160,7 +160,7 @@ import Foundation
         @Test
         func lightweightRequestTimeoutDoesNotInterruptActiveSummary() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let generation = Task {
                 try await service.generate(.init(
                     model: nil,
@@ -209,7 +209,7 @@ import Foundation
             let second = TestCodexAppServerTransport(mode: .models)
             let transports = Mutex([first, second])
             let launchCount = Mutex(0)
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 launchCount.withLock { $0 += 1 }
                 return transports.withLock { $0.removeFirst() }
             })
@@ -261,7 +261,7 @@ import Foundation
         @Test
         func modelListRequiresCurrentAccountConfigurationUnlessBypassed() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(
+            let service = makeTestCodexAppServerService(
                 transportFactory: { transport },
                 configurationReadiness: { false }
             )
@@ -288,7 +288,7 @@ import Foundation
         func shutdownWaitsForCloseAndPermanentlyPreventsRestart() async throws {
             let blocked = TestCodexAppServerTransport(mode: .blockClose)
             let launchCount = Mutex(0)
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 launchCount.withLock { $0 += 1 }
                 return blocked
             })
@@ -315,7 +315,7 @@ import Foundation
             let second = TestCodexAppServerTransport(mode: .models)
             let transports = Mutex([first, second])
             let launchCount = Mutex(0)
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 launchCount.withLock { $0 += 1 }
                 return transports.withLock { $0.removeFirst() }
             })
@@ -335,7 +335,7 @@ import Foundation
             let blocked = TestCodexAppServerTransport(mode: .blockInitialize)
             let replacement = TestCodexAppServerTransport(mode: .models)
             let transports = Mutex([blocked, replacement])
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 transports.withLock { available in available.removeFirst() }
             })
             let startup = Task { try await service.start() }
@@ -355,7 +355,7 @@ import Foundation
         @Test
         func responsesAreMatchedByIDWhenTheyArriveOutOfOrder() async throws {
             let transport = TestCodexAppServerTransport(mode: .outOfOrder)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let first = Task { try await service.request(method: "test/first") }
 
             await transport.waitUntilSent("test/first")
@@ -370,7 +370,7 @@ import Foundation
         @Test
         func approvalRequestsAreDeclinedAndUnknownRequestsReturnMethodNotFound() async throws {
             let transport = TestCodexAppServerTransport(mode: .serverRequests)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             try await service.start()
             await transport.waitUntilResponded(to: "approval-1")
@@ -393,7 +393,7 @@ import Foundation
         @Test
         func turnNotificationSubscriptionReceivesMessagesAndFinishes() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             try await service.start()
             let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
             let collected = Task {
@@ -429,7 +429,7 @@ import Foundation
             let crashed = TestCodexAppServerTransport(mode: .blockRequests)
             let replacement = TestCodexAppServerTransport(mode: .models)
             let transports = Mutex([crashed, replacement])
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 transports.withLock { available in available.removeFirst() }
             })
             let first = Task { try await service.request(method: "test/one") }
@@ -449,7 +449,7 @@ import Foundation
         @Test
         func generationUsesEphemeralThreadAndStructuredOutput() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             let response = try await service.generate(.init(
                 model: "default-model",
@@ -551,7 +551,7 @@ import Foundation
         @Test
         func generationScopesDahliaMCPToConfiguredMeetings() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let vaultID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))
             let firstMeetingID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E7"))
             let secondMeetingID = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E8"))
@@ -598,7 +598,7 @@ import Foundation
         @Test
         func unavailableSavedModelFallsBackToServerDefault() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             _ = try await service.generate(.init(
                 model: "retired-model",
@@ -617,7 +617,7 @@ import Foundation
         @Test
         func defaultTextOnlyModelDropsImagesAndStillGenerates() async throws {
             let transport = TestCodexAppServerTransport(mode: .textOnlyGenerationCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             let response = try await service.generate(.init(
                 model: nil,
@@ -643,7 +643,7 @@ import Foundation
         @Test
         func structuredUnauthorizedTurnFailureRequiresLogin() async {
             let transport = TestCodexAppServerTransport(mode: .generationFailsUnauthorized)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.notLoggedIn) {
                 _ = try await service.generate(.init(
@@ -659,7 +659,7 @@ import Foundation
         @Test
         func expectedProviderAuthenticationFailurePreservesDetailWithoutReporting() async {
             let transport = TestCodexAppServerTransport(mode: .generationFailsExpectedProviderAuthentication)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let detail = """
             unexpected status 401 Unauthorized: {"error_code":401,"message":"Credential was not sent or was of an unsupported type for this API."}
             """
@@ -683,7 +683,7 @@ import Foundation
         @Test
         func unrelatedHTTPUnauthorizedTurnFailureRemainsReportable() async {
             let transport = TestCodexAppServerTransport(mode: .generationFailsOtherHTTPUnauthorized)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let detail = """
             unexpected status 401 Unauthorized: {"error":"An upstream tool rejected its credentials."}
             """
@@ -704,7 +704,7 @@ import Foundation
         @Test
         func unrelatedUnauthorizedTextRemainsTurnFailure() async {
             let transport = TestCodexAppServerTransport(mode: .generationFailsMessageOnlyUnauthorized)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.turnFailed("unauthorized while generating")) {
                 _ = try await service.generate(.init(
@@ -720,7 +720,7 @@ import Foundation
         @Test
         func structuredAuthenticationRPCErrorRequiresLogin() async {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
 
             await #expect(throws: CodexAppServerError.notLoggedIn) {
                 _ = try await service.request(method: "test/auth")
@@ -744,7 +744,7 @@ import Foundation
         @Test
         func generationReusesAccountAndConfigReads() async throws {
             let transport = TestCodexAppServerTransport(mode: .generationCompletes)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let request = CodexAppServerRequest(
                 model: nil,
                 developerInstructions: "Summarize.",
@@ -764,7 +764,7 @@ import Foundation
         @Test
         func loginCompletionInvalidatesCachedModels() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             _ = try await service.models()
 
             await transport.sendFromServer(.object([
@@ -785,7 +785,7 @@ import Foundation
         @Test
         func generationCancellationInterruptsAndUnsubscribesWithoutKillingProcess() async {
             let transport = TestCodexAppServerTransport(mode: .generationBlocks)
-            let service = CodexAppServerService(transportFactory: { transport })
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
             let generation = Task {
                 try await service.generate(.init(
                     model: nil,
@@ -815,7 +815,7 @@ import Foundation
             let replacement = TestCodexAppServerTransport(mode: .models)
             let transports = Mutex([crashed, replacement])
             let launchCount = Mutex(0)
-            let service = CodexAppServerService(transportFactory: {
+            let service = makeTestCodexAppServerService(transportFactory: {
                 launchCount.withLock { $0 += 1 }
                 return transports.withLock { $0.removeFirst() }
             })
