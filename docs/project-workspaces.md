@@ -100,6 +100,9 @@ meeting-limited MCP process cannot combine `--meeting-id` with `--write`.
 Full-Vault in-app chat starts the helper with `--write`; meeting-limited summary sessions remain read-only.
 The in-app chat presets the `projects-optimizer` skill in Dahlia's private `CODEX_HOME` and enables skill
 instructions for chat threads. Summary-generation threads keep skills disabled.
+That preset also curates each Project's `description` from the Meetings assigned to it, because summary generation
+includes the description in its prompt as untrusted context data. It therefore writes durable reference facts rather
+than instructions to the summarizer, and preserves descriptions the user wrote in Project management.
 
 Read tools:
 

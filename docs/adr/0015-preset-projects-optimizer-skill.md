@@ -34,13 +34,20 @@ Vault 全体へアクセスできる対話チャットにだけ Dahlia 固有の
   temporary working directory、`approvalPolicy: never` の契約を変更しない。
 - `~/.codex` の skills、設定、認証、session はコピーも参照もしない。
 
-skill は Project と Meeting の読み取り、分類、対応する単数 write tool の順序を定義する。Project deletion
-や merge など MCP が公開しない操作は実行可能と扱わない。
+skill は Project と Meeting の読み取り、分類、対応する単数 write tool の順序を定義する。あわせて、assign 済み
+Meeting を evidence とする Project description の作成と改善も定義する。description は `create_project` と
+`update_project` が既に受け付ける property であり、Dahlia は要約生成 prompt の `<project><description>` として
+渡す。この context は要約生成側で untrusted かつ instruction ではないと宣言されているため、skill は要約器への
+指示ではなく durable な事実だけを書き、Project 管理画面で user が書いた既存 description を尊重する。Project
+deletion や merge など MCP が公開しない操作は実行可能と扱わない。
 
 ## Consequences
 
 - 広い整理依頼でも、既定90日、既存 Project 優先、summary-first、曖昧な assignment の保持という一貫した
   workflow を再利用できる。
+- Project description の変更は、その Project で以降生成されるすべての要約の入力を変える。evidence のない記述と
+  要約器への指示を書かないこと、user が書いた description を実質的に置き換えた場合に報告することを skill の
+  要件とする。
 - preset 更新は次回 app-server 起動時に専用 `CODEX_HOME` へ反映される。
 - skill instruction は chat の tool choice に影響するため、skill 本体と chat／summary config の分離を
   テストし、Dahlia MCP の Vault 境界と write validation を最終 authority とする。
