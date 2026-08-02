@@ -27,7 +27,9 @@ Dahlia のデータは層が異なる。録音音声と確定文字起こしは1
 - 2次情報の curator を層ごとに3つの preset skill として同梱する。
   - `contacts-organizations-curator`: Contact、Organization と unit、domain、membership と役割。
   - `conversation-topics-curator`: Conversation Topic と typed reference。Meeting reference の note を必須とする。
-  - `insights-curator`: Insight と typed reference。`evidence` reference を必須とする。
+  - `insights-curator`: Insight と typed reference。`evidence` reference を必須とする。`create_insight` の直後に
+    最初の `evidence` reference を張り、再試行しても張れない場合は作成した Insight を `delete_insight` で
+    取り消す。根拠のない主張を Vault に残さないための、この run が作成した record に限った例外とする。
 - 3つとも ADR 0015 と同じ stateless な同期で Dahlia 専用 `CODEX_HOME/skills/<name>` へ配置する。
   同期先の古い files を残さず、`skills` 自体が symbolic link の場合は外部 directory を変更せず起動を
   失敗させる契約を維持する。preset files の同期失敗は引き続き起動失敗として扱う。

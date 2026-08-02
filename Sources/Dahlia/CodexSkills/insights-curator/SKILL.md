@@ -81,6 +81,13 @@ requested analysis only.
   assertion is about, `mentioned` for an incidental appearance.
 - Every Insight needs at least one `evidence` reference, normally the Meeting it came from. Do not create an Insight
   you cannot point at evidence for.
+- Attach that first `evidence` reference immediately after `create_insight`, before any `context` or `mentioned`
+  reference and before the next Insight. A new Insight is not finished until it carries evidence.
+- When the first `evidence` reference cannot be attached, delete the Insight you just created rather than leaving an
+  unsupported assertion in the Vault. Re-fetch and retry the reference once; if it still fails, call `delete_insight`
+  with that Insight's current `revision` and report the Insight, its intended evidence, and both failures. This is the
+  one delete the user does not have to ask for, because it removes only an incomplete record this run created; never
+  extend it to an Insight that already existed.
 - Call `remove_insight_resource_reference` only when a reference is wrong; it removes the link without deleting the
   referenced record.
 
@@ -106,9 +113,12 @@ requested analysis only.
   write returns the stored `revision`; use it as the next expected revision instead of re-reading, and treat
   `changed: false` as a no-op rather than a change.
 - Change exactly one record or one relationship per call. When one call fails, continue the independent later
-  changes, then re-fetch only the failed record and retry it once if the requested intent still holds.
-- Delete only when the user explicitly asked. Read the current `revision` first. `delete_insight` removes the
-  Insight and the references it owns; the referenced Meetings, Organizations, Contacts, and Projects remain.
+  changes, then re-fetch only the failed record and retry it once if the requested intent still holds. An Insight and
+  its first `evidence` reference are not independent of each other: finish or undo that pair as described in step 6
+  before moving on.
+- Delete only when the user explicitly asked, except for rolling back an Insight this run created without evidence.
+  Read the current `revision` first. `delete_insight` removes the Insight and the references it owns; the referenced
+  Meetings, Organizations, Contacts, and Projects remain.
 
 ## Report the result
 
