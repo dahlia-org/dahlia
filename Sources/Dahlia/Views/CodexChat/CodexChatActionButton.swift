@@ -7,14 +7,16 @@ struct CodexChatActionButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(label, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-            .background(.primary.opacity(isEnabled ? 0.85 : 0.32), in: Circle())
-            .contentShape(Circle())
-            .disabled(!isEnabled)
-            .help(label)
+        Button(action: action) {
+            Label(label, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .background(.primary.opacity(isEnabled ? 0.85 : 0.32), in: Circle())
+        .disabled(!isEnabled)
+        .help(label)
     }
 }

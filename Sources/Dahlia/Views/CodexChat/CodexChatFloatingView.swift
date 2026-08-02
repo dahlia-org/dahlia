@@ -24,8 +24,8 @@ struct CodexChatFloatingView: View {
         )
     }
 
-    // ドラッグ中に更新されるジオメトリは `CodexChatFloatingContainer` だけが読む。
-    // ここでレイアウトを読むとマウスイベントごとにチャット本体まで再評価される。
+    /// ドラッグ中に更新されるジオメトリは `CodexChatFloatingContainer` だけが読む。
+    /// ここでレイアウトを読むとマウスイベントごとにチャット本体まで再評価される。
     var body: some View {
         GeometryReader { geometry in
             CodexChatFloatingContainer(

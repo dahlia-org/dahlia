@@ -4,14 +4,16 @@ struct CodexChatCopyButton: View {
     let text: String
 
     var body: some View {
-        Button(L10n.copyChatMessage, systemImage: "square.on.square", action: copyMessage)
-            .labelStyle(.iconOnly)
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-            .frame(width: 24, height: 24)
-            .contentShape(Rectangle())
-            .help(L10n.copyChatMessage)
+        Button(action: copyMessage) {
+            Label(L10n.copyChatMessage, systemImage: "square.on.square")
+                .labelStyle(.iconOnly)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .help(L10n.copyChatMessage)
     }
 
     private func copyMessage() {
