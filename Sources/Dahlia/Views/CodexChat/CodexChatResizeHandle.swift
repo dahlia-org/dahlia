@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CodexChatResizeHandle: View {
-    @Binding var layout: CodexChatFloatingLayout
+    let layoutModel: CodexChatFloatingLayoutModel
     let availableSize: CGSize
     let edge: CodexChatResizeEdge
 
@@ -22,16 +22,16 @@ struct CodexChatResizeHandle: View {
 
     private func resize(_ value: DragGesture.Value) {
         if resizeStart == nil {
-            resizeStart = layout
+            resizeStart = layoutModel.layout
             edge.cursor.set()
         }
-        guard var resized = resizeStart else { return }
-        resized.resize(from: edge, translation: value.translation, availableSize: availableSize)
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
-            layout = resized
-        }
+        guard let resizeStart else { return }
+        layoutModel.resize(
+            from: edge,
+            start: resizeStart,
+            translation: value.translation,
+            availableSize: availableSize
+        )
     }
 
     private func endResize(_: DragGesture.Value) {

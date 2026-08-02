@@ -1,16 +1,17 @@
 import SwiftUI
 
 struct CodexChatResizeHandles: View {
-    @Binding var layout: CodexChatFloatingLayout
+    let layoutModel: CodexChatFloatingLayoutModel
     let availableSize: CGSize
 
     var body: some View {
-        let interactionSize = Self.interactionSize(for: layout.size)
+        let size = layoutModel.layout.size
+        let interactionSize = Self.interactionSize(for: size)
 
         ZStack(alignment: .topLeading) {
             ForEach(CodexChatResizeEdge.allCases, id: \.self) { edge in
-                let frame = Self.frame(for: edge, in: layout.size)
-                CodexChatResizeHandle(layout: $layout, availableSize: availableSize, edge: edge)
+                let frame = Self.frame(for: edge, in: size)
+                CodexChatResizeHandle(layoutModel: layoutModel, availableSize: availableSize, edge: edge)
                     .frame(width: frame.width, height: frame.height)
                     .position(x: frame.midX, y: frame.midY)
                     .accessibilityHidden(edge != .top)
@@ -85,18 +86,19 @@ struct CodexChatResizeHandles: View {
             return
         }
         let step = CodexChatDesign.resizeAccessibilityStep * multiplier
+        let layout = layoutModel.layout
         let edge: CodexChatResizeEdge = layout.dockSide == .left ? .topRight : .topLeft
         let horizontalTranslation = layout.dockSide == .left ? step : -step
-        var resized = layout
-        resized.resize(
+        layoutModel.resize(
             from: edge,
+            start: layout,
             translation: CGSize(width: horizontalTranslation, height: -step),
             availableSize: availableSize
         )
-        layout = resized
     }
 
     private var accessibilityValue: String {
-        "\(Int(layout.size.width.rounded())) × \(Int(layout.size.height.rounded()))"
+        let size = layoutModel.layout.size
+        return "\(Int(size.width.rounded())) × \(Int(size.height.rounded()))"
     }
 }

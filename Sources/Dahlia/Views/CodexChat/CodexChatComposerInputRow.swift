@@ -19,31 +19,33 @@ struct CodexChatComposerInputRow: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            Button(L10n.addToChat, systemImage: "plus", action: onToggleAddPanel)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
-                .background(.quaternary, in: Circle())
-                .contentShape(Circle())
-                .help(L10n.addToChat)
-                .overlay(alignment: .bottomLeading) {
-                    if showsAddPanel {
-                        CodexChatAddPanel(
-                            showsMeetingPicker: showsMeetingPicker,
-                            meetingReferences: suggestions,
-                            highlightedMeetingID: highlightedMeetingID,
-                            onAttachImages: onShowImageImporter,
-                            onAddMeetingReference: onShowMeetingPicker,
-                            onSelectMeeting: onSelectMeeting
-                        )
-                        .codexChatDismissOnOutsideClick(perform: onExitCommand)
-                        .offset(y: -(CodexChatDesign.controlSize + 8))
-                        .zIndex(1)
-                    }
+            Button(action: onToggleAddPanel) {
+                Label(L10n.addToChat, systemImage: "plus")
+                    .labelStyle(.iconOnly)
+                    .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .background(.quaternary, in: Circle())
+            .help(L10n.addToChat)
+            .overlay(alignment: .bottomLeading) {
+                if showsAddPanel {
+                    CodexChatAddPanel(
+                        showsMeetingPicker: showsMeetingPicker,
+                        meetingReferences: suggestions,
+                        highlightedMeetingID: highlightedMeetingID,
+                        onAttachImages: onShowImageImporter,
+                        onAddMeetingReference: onShowMeetingPicker,
+                        onSelectMeeting: onSelectMeeting
+                    )
+                    .codexChatDismissOnOutsideClick(perform: onExitCommand)
+                    .offset(y: -(CodexChatDesign.controlSize + 8))
+                    .zIndex(1)
                 }
-                .onExitCommand(perform: onExitCommand)
-                .zIndex(showsAddPanel ? 1 : 0)
+            }
+            .onExitCommand(perform: onExitCommand)
+            .zIndex(showsAddPanel ? 1 : 0)
 
             CodexChatComposerTextEditor(
                 text: $session.draft,
