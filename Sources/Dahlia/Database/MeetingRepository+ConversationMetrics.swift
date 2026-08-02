@@ -155,7 +155,8 @@ extension MeetingRepository {
             startTime: record.startTime,
             endTime: record.endTime,
             text: record.text,
-            speakerLabel: speakerLabel
+            speakerLabel: speakerLabel,
+            audioFeatures: record.audioFeatures
         )
     }
 
@@ -189,7 +190,8 @@ extension MeetingRepository {
             timelineIntervals: timeline.intervals,
             overlapIntervals: timeline.overlaps,
             overlapCount: timeline.overlapCount,
-            isTimelineCondensed: timeline.isCondensed
+            isTimelineCondensed: timeline.isCondensed,
+            voiceAnalytics: timeline.voiceAnalytics
         )
     }
 }

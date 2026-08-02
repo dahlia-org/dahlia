@@ -2696,4 +2696,105 @@ enum L10n {
         localized: "Characters per minute are not directly comparable across different languages or writing systems.",
         bundle: bundle
     ) }
+    static var conversationAnalyticsVoiceUnavailable: String { String(localized: "Voice Analysis Unavailable", bundle: bundle) }
+    static var conversationAnalyticsVoiceUnavailableDescription: String { String(
+        localized: "Voice analysis is available for meetings transcribed from retained batch audio.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsVoiceInsufficientDescription: String { String(
+        localized: "There are not enough measured speech segments for reliable voice analysis.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsExcitement: String { String(localized: "Conversation Energy", bundle: bundle) }
+    static var conversationAnalyticsExcitementDescription: String { String(
+        localized: "Relative changes in loudness and pitch compared with each source’s baseline.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsExcitementUnavailable: String { String(
+        localized: "No measurable conversation-energy trend.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsHotspots: String { String(localized: "Hotspots", bundle: bundle) }
+    static var conversationAnalyticsNoHotspots: String { String(localized: "No sustained hotspots detected.", bundle: bundle) }
+    static var conversationAnalyticsLoudnessOnly: String { String(
+        localized: "Pitch data was limited, so some scores use loudness only.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsLoudnessDriver: String { String(localized: "Loudness", bundle: bundle) }
+    static var conversationAnalyticsPitchDriver: String { String(localized: "Pitch", bundle: bundle) }
+    static var conversationAnalyticsBothDriver: String { String(localized: "Loudness and pitch", bundle: bundle) }
+
+    static func conversationAnalyticsVoiceSampleValue(_ start: String, _ end: String, _ value: String) -> String {
+        String(localized: "From \(start) to \(end): \(value)", bundle: bundle)
+    }
+
+    static func conversationAnalyticsHotspotDetail(
+        _ source: String,
+        _ start: String,
+        _ end: String,
+        _ peakScore: String,
+        _ driver: String
+    ) -> String {
+        String(localized: "\(source) · \(start)–\(end) · Peak \(peakScore) · \(driver)", bundle: bundle)
+    }
+
+    static var conversationAnalyticsExpression: String { String(localized: "Voice Expression", bundle: bundle) }
+    static var conversationAnalyticsExpressionDescription: String { String(
+        localized: "Pitch and loudness variation are evaluated independently.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPitchVariation: String { String(localized: "Pitch Variation", bundle: bundle) }
+    static var conversationAnalyticsLoudnessVariation: String { String(localized: "Loudness Variation", bundle: bundle) }
+    static var conversationAnalyticsExpressionLowPitch: String { String(localized: "Monotone", bundle: bundle) }
+    static var conversationAnalyticsExpressionLowLoudness: String { String(localized: "Steady", bundle: bundle) }
+    static var conversationAnalyticsExpressionStandard: String { String(localized: "Standard", bundle: bundle) }
+    static var conversationAnalyticsExpressionHighPitch: String { String(localized: "Expressive", bundle: bundle) }
+    static var conversationAnalyticsExpressionHighLoudness: String { String(localized: "Dynamic", bundle: bundle) }
+    static var conversationAnalyticsPitchEntrainment: String { String(localized: "Pitch Alignment", bundle: bundle) }
+    static var conversationAnalyticsPitchEntrainmentDescription: String { String(
+        localized: "Distance between microphone and system-audio pitch over time.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPitchEntrainmentConverging: String { String(
+        localized: "Voice pitch moved closer over the course of the meeting.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPitchEntrainmentNeutral: String { String(
+        localized: "No clear convergence in voice pitch was detected.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPitchEntrainmentExperimental: String { String(
+        localized: "This is an experimental indicator and does not establish rapport or psychological state.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsPitchEntrainmentUnavailable: String { String(
+        localized: "Both audio sources need sufficient pitch measurements.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsSemitones: String { String(localized: "semitones", bundle: bundle) }
+    static var conversationAnalyticsEnergyTrend: String { String(localized: "Voice Energy Over Time", bundle: bundle) }
+    static var conversationAnalyticsEnergyTrendDescription: String { String(
+        localized: "Loudness relative to each recording session’s baseline.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsEnergyTrendUnavailable: String { String(
+        localized: "No measurable voice-energy trend.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsEnergyDeclining: String { String(
+        localized: "Voice energy trends downward toward the end of the meeting.",
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsRelativeDecibels: String { String(localized: "Relative dB", bundle: bundle) }
+    static var conversationAnalyticsVoiceCaveat: String { String(
+        localized: """
+        Voice indicators show relative changes from speaker and recording-session baselines; \
+        they do not determine emotions or psychological state.
+        """,
+        bundle: bundle
+    ) }
+    static var conversationAnalyticsBatchFeatureCaveat: String { String(
+        localized: "Voice features are measured only during batch transcription.",
+        bundle: bundle
+    ) }
 }

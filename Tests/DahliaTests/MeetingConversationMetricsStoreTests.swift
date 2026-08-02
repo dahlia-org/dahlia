@@ -74,7 +74,8 @@ import GRDB
                 timelineIntervals: [],
                 overlapIntervals: [],
                 overlapCount: 0,
-                isTimelineCondensed: false
+                isTimelineCondensed: false,
+                voiceAnalytics: .empty
             )
         }
     }

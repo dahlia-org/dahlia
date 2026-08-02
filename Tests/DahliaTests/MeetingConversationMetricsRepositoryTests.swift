@@ -93,6 +93,41 @@ import GRDB
         }
 
         @Test
+        func cacheHitReprojectsUpdatedAudioFeaturesWithoutPersistingMetricsAgain() throws {
+            let fixture = try Fixture()
+            let segmentIds = try fixture.insertFeatureEligibleSegments(count: 10)
+            let firstComputedAt = fixture.baseDate.addingTimeInterval(100)
+            let secondComputedAt = fixture.baseDate.addingTimeInterval(200)
+            let first = try fixture.repository.loadOrRebuildConversationMetrics(
+                meetingId: fixture.meeting.id,
+                computedAt: firstComputedAt
+            )
+
+            try fixture.manager.dbQueue.write { db in
+                for id in segmentIds {
+                    try db.execute(
+                        sql: """
+                        UPDATE transcript_segments
+                        SET audioFeatureVersion = ?, audioActiveRmsDecibels = ?,
+                            audioMedianPitchHertz = ?, audioVoicedFrameRatio = ?, audioPitchSpreadHertz = ?
+                        WHERE id = ?
+                        """,
+                        arguments: [TranscriptAudioFeatures.currentVersion, -18, 220, 0.8, 20, id]
+                    )
+                }
+            }
+            let second = try fixture.repository.loadOrRebuildConversationMetrics(
+                meetingId: fixture.meeting.id,
+                computedAt: secondComputedAt
+            )
+
+            #expect(first.voiceAnalytics.status(for: .microphone) == .unavailable)
+            #expect(second.voiceAnalytics.status(for: .microphone) == .available)
+            #expect(second.inputFingerprint == first.inputFingerprint)
+            #expect(second.computedAt == firstComputedAt)
+        }
+
+        @Test
         func definitionVersionMismatchForcesRebuild() throws {
             let fixture = try Fixture()
             try fixture.insertSessionAndSegments()
@@ -248,6 +283,38 @@ import GRDB
                         .insert(db)
                     }
                 }
+            }
+
+            func insertFeatureEligibleSegments(count: Int) throws -> [UUID] {
+                let session = RecordingSessionRecord(
+                    id: UUID(),
+                    meetingId: meeting.id,
+                    startedAt: baseDate,
+                    endedAt: baseDate.addingTimeInterval(TimeInterval(count)),
+                    duration: TimeInterval(count),
+                    offsetSeconds: 0,
+                    createdAt: baseDate,
+                    updatedAt: baseDate
+                )
+                let ids = (0 ..< count).map { _ in UUID() }
+                try manager.dbQueue.write { db in
+                    try session.insert(db)
+                    for (index, id) in ids.enumerated() {
+                        try TranscriptSegmentRecord(
+                            id: id,
+                            meetingId: meeting.id,
+                            sessionId: session.id,
+                            startTime: baseDate.addingTimeInterval(TimeInterval(index)),
+                            endTime: baseDate.addingTimeInterval(TimeInterval(index + 1)),
+                            text: "segment",
+                            translatedText: nil,
+                            isConfirmed: true,
+                            speakerLabel: RecordingAudioSource.microphone.speakerLabel
+                        )
+                        .insert(db)
+                    }
+                }
+                return ids
             }
         }
     }

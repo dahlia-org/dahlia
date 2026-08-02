@@ -305,6 +305,34 @@ import Foundation
         }
 
         @Test
+        func wiresStoredAudioFeaturesIntoVoiceAnalytics() {
+            let session = makeSession(duration: 20)
+            let features = TranscriptAudioFeatures(
+                activeRmsDecibels: -18,
+                medianPitchHertz: 220,
+                voicedFrameRatio: 0.8,
+                pitchSpreadHertz: 20
+            )
+            let segments = (0 ..< 10).map { index in
+                makeSegment(
+                    session: session,
+                    start: Double(index),
+                    end: Double(index + 1),
+                    source: .microphone,
+                    audioFeatures: features
+                )
+            }
+
+            let metrics = MeetingConversationMetricsCalculator.calculate(
+                input: makeInput(sessions: [session], segments: segments),
+                fingerprint: "features"
+            )
+
+            #expect(metrics.voiceAnalytics.status(for: .microphone) == .available)
+            #expect(metrics.voiceAnalytics.expressions.first?.loudnessVariationDecibels == 0)
+        }
+
+        @Test
         func invalidTimesStillContributeTextAndSegmentCounts() {
             let session = makeSession(duration: 10)
             let input = makeInput(
@@ -384,10 +412,19 @@ import Foundation
                 segments: [segment]
             )
             let removedByConfirmation = makeInput(meetingDuration: 12, sessions: [session], segments: [])
+            var segmentWithFeatures = segment
+            segmentWithFeatures.audioFeatures = TranscriptAudioFeatures(
+                activeRmsDecibels: -18,
+                medianPitchHertz: 220,
+                voicedFrameRatio: 0.8,
+                pitchSpreadHertz: 20
+            )
+            let withFeatures = makeInput(meetingDuration: 12, sessions: [session], segments: [segmentWithFeatures])
 
             #expect(try input.fingerprint() != changedText.fingerprint())
             #expect(try input.fingerprint() != changedTiming.fingerprint())
             #expect(try input.fingerprint() != removedByConfirmation.fingerprint())
+            #expect(try input.fingerprint() == withFeatures.fingerprint())
         }
 
         private func makeInput(
@@ -421,7 +458,8 @@ import Foundation
             start: TimeInterval,
             end: TimeInterval?,
             text: String = "text",
-            source: RecordingAudioSource
+            source: RecordingAudioSource,
+            audioFeatures: TranscriptAudioFeatures? = nil
         ) -> MeetingConversationMetricsInput.Segment {
             .init(
                 id: UUID(),
@@ -429,7 +467,8 @@ import Foundation
                 startTime: session.startedAt.addingTimeInterval(start),
                 endTime: end.map(session.startedAt.addingTimeInterval),
                 text: text,
-                speakerLabel: source.speakerLabel
+                speakerLabel: source.speakerLabel,
+                audioFeatures: audioFeatures
             )
         }
 

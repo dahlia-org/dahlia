@@ -32,6 +32,8 @@ enum MeetingConversationMetricsCalculator {
     private struct TimedSegment {
         let interval: Interval
         let normalizedCharacterCount: Int
+        let sessionId: UUID?
+        let audioFeatures: TranscriptAudioFeatures?
     }
 
     private struct Analysis {
@@ -51,6 +53,7 @@ enum MeetingConversationMetricsCalculator {
         let paceSamples: [MeetingConversationMetrics.PaceSample]
         let paceBucketDuration: TimeInterval
         let longestMonologue: MeetingConversationMetrics.MonologueInterval?
+        let voiceAnalytics: MeetingVoiceAnalytics
     }
 
     private struct DisplayIntervals {
@@ -67,14 +70,16 @@ enum MeetingConversationMetricsCalculator {
         input: MeetingConversationMetricsInput,
         fingerprint: String,
         computedAt: Date = .now,
-        speechMergeGap: TimeInterval = defaultSpeechMergeGap
+        speechMergeGap: TimeInterval = defaultSpeechMergeGap,
+        voiceAnalyticsConfiguration: MeetingVoiceAnalyticsCalculator.Configuration = .default
     ) -> MeetingConversationMetrics {
         let mergeGap = normalizedSpeechMergeGap(speechMergeGap)
         let analysis = analyze(input: input, mergeGap: mergeGap)
         let recordingDuration = recordingDuration(for: input, analysis: analysis)
         let timeline = timelineProjection(
             from: analysis,
-            timelineDuration: max(recordingDuration, analysis.allIntervals.last?.end ?? 0)
+            timelineDuration: max(recordingDuration, analysis.allIntervals.last?.end ?? 0),
+            voiceAnalyticsConfiguration: voiceAnalyticsConfiguration
         )
 
         return MeetingConversationMetrics(
@@ -96,20 +101,23 @@ enum MeetingConversationMetricsCalculator {
             timelineIntervals: timeline.intervals,
             overlapIntervals: timeline.overlaps,
             overlapCount: timeline.overlapCount,
-            isTimelineCondensed: timeline.isCondensed
+            isTimelineCondensed: timeline.isCondensed,
+            voiceAnalytics: timeline.voiceAnalytics
         )
     }
 
     static func timelineProjection(
         input: MeetingConversationMetricsInput,
-        speechMergeGap: TimeInterval = defaultSpeechMergeGap
+        speechMergeGap: TimeInterval = defaultSpeechMergeGap,
+        voiceAnalyticsConfiguration: MeetingVoiceAnalyticsCalculator.Configuration = .default
     ) -> TimelineProjection {
         let mergeGap = normalizedSpeechMergeGap(speechMergeGap)
         let analysis = analyze(input: input, mergeGap: mergeGap)
         let recordingDuration = recordingDuration(for: input, analysis: analysis)
         return timelineProjection(
             from: analysis,
-            timelineDuration: max(recordingDuration, analysis.allIntervals.last?.end ?? 0)
+            timelineDuration: max(recordingDuration, analysis.allIntervals.last?.end ?? 0),
+            voiceAnalyticsConfiguration: voiceAnalyticsConfiguration
         )
     }
 
@@ -152,7 +160,9 @@ enum MeetingConversationMetricsCalculator {
                 accumulator.intervals.append(interval)
                 accumulator.timedSegments.append(TimedSegment(
                     interval: interval,
-                    normalizedCharacterCount: characterCount
+                    normalizedCharacterCount: characterCount,
+                    sessionId: segment.sessionId,
+                    audioFeatures: segment.audioFeatures
                 ))
             } else {
                 accumulator.unmeasurableSegmentCount += 1
@@ -186,7 +196,8 @@ enum MeetingConversationMetricsCalculator {
 
     private static func timelineProjection(
         from analysis: Analysis,
-        timelineDuration: TimeInterval
+        timelineDuration: TimeInterval,
+        voiceAnalyticsConfiguration: MeetingVoiceAnalyticsCalculator.Configuration
     ) -> TimelineProjection {
         var isCondensed = false
         let intervals = sources.flatMap { source in
@@ -215,6 +226,23 @@ enum MeetingConversationMetricsCalculator {
             analysis: analysis,
             timelineDuration: timelineDuration
         )
+        let voiceAnalytics = MeetingVoiceAnalyticsCalculator.calculate(
+            segments: sources.flatMap { source in
+                analysis.accumulators[source, default: SourceAccumulator()].timedSegments.compactMap { segment in
+                    guard let audioFeatures = segment.audioFeatures else { return nil }
+                    return MeetingVoiceAnalyticsCalculator.MeasuredSegment(
+                        source: source,
+                        sessionId: segment.sessionId,
+                        start: segment.interval.start,
+                        end: segment.interval.end,
+                        audioFeatures: audioFeatures
+                    )
+                }
+            },
+            timelineDuration: timelineDuration,
+            bucketDuration: pace.bucketDuration,
+            configuration: voiceAnalyticsConfiguration
+        )
         return TimelineProjection(
             intervals: intervals,
             overlaps: overlaps,
@@ -222,7 +250,8 @@ enum MeetingConversationMetricsCalculator {
             isCondensed: isCondensed,
             paceSamples: pace.samples,
             paceBucketDuration: pace.bucketDuration,
-            longestMonologue: analysis.longestMonologue
+            longestMonologue: analysis.longestMonologue,
+            voiceAnalytics: voiceAnalytics
         )
     }
 
