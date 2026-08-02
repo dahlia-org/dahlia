@@ -1,0 +1,4 @@
+interface:
+  display_name: "Insights Curator"
+  short_description: "Extract and review evidence-backed Insights from Dahlia Meetings"
+  default_prompt: "Use $insights-curator to extract evidence-backed Insights from my recent Dahlia Meetings."

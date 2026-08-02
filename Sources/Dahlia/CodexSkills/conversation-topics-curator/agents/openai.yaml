@@ -1,0 +1,4 @@
+interface:
+  display_name: "Conversation Topics Curator"
+  short_description: "Extract and update ongoing Topics from Dahlia Meetings"
+  default_prompt: "Use $conversation-topics-curator to extract and update the ongoing Topics from my recent Dahlia Meetings."

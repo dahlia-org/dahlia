@@ -56,7 +56,7 @@ let package = Package(
                 "Database/AGENTS.md",
                 "Database/CLAUDE.md",
             ],
-            resources: [.process("Resources")],
+            resources: [.process("Resources"), .copy("CodexSkills")],
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedFramework("CoreFoundation"),

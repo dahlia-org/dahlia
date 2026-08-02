@@ -129,3 +129,6 @@ unassigned, unchanged ambiguous items, and any failed or unsupported operations.
 blank before the change, quote its previous text verbatim: Dahlia stores no earlier version, so that quote is the only
 way the user can restore it. Use Project names for readability and include IDs only when they help resolve ambiguity or
 retry a failure.
+
+State the work left for the other presets: people and Organizations for `$contacts-organizations-curator`, ongoing
+Topics for `$conversation-topics-curator`, and Insights for `$insights-curator`.

@@ -51,6 +51,21 @@ Dahlia の「顧客インテリジェンス」画面は、選択中の Vault に
 人物はドメインだけで所属を決めず、議事録などの証拠に基づいて `set_contact_organization_membership` で
 明示的に所属させます。
 
+アプリ内チャットには、この整理手順を層ごとに固定した preset skill が同梱されています。人物・組織・所属は
+`contacts-organizations-curator`、継続トピックは `conversation-topics-curator`、インサイトは
+`insights-curator` が担当し、依頼内容に応じてチャットが自動で選択します。3つは互いを参照しないため、
+「コンタクトだけ」「トピックだけ」のように単独でも、まとめてでも実行できます。トピックとインサイトの
+skill は、参照先の人物や組織が1件足りない場合だけ最小限作成し、名寄せ・所属・ドメイン・階層の整理は
+`contacts-organizations-curator` へ残作業として報告します。AI が作成したインサイトは未確認のまま残ります。
+Meeting と Project の関連付けは1次情報側の扱いで、3つの skill はいずれも変更せず、`projects-optimizer`
+の責務です。
+
+Organization の名称と説明、Contact の表示名、Topic のタイトルと現在の状態、Insight の内容は画面から直接
+編集でき、Dahlia は以前の版を保存しません。skill はこれらを利用者が確定した値として扱い、空欄には自由に
+書き、既存の記述は保持したうえで追記または簡潔化だけを行います。記述を削除または矛盾させる変更は確認を
+求めてから実行し、変更した場合は変更前の内容を逐語で報告します。`projects-optimizer` が Project の説明に
+対して行う扱いと同じです。
+
 AI は書き込み前に `query_*` または `get_*` で現在値と revision を取得し、次の単純なツールを順番に呼びます。
 
 - 正準レコード: `create_*`、`update_*`、`delete_*`
