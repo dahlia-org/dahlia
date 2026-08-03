@@ -381,12 +381,12 @@ extension SummaryBlockContent: Codable {
     }
 }
 
-extension SummaryBlock {
+public extension SummaryBlock {
     private enum CodingKeys: String, CodingKey {
         case id
     }
 
-    public init(from decoder: Decoder) throws {
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // id を持たない旧ドキュメントでも同じ block が常に同じ id になるよう、coding path から決定的に導出する。
         // ランダム採番にすると読み出しのたびに id が変わり、MCP 経由の書き戻しで block 同一性が壊れる。
@@ -394,13 +394,13 @@ extension SummaryBlock {
         content = try SummaryBlockContent(from: decoder)
     }
 
-    public func encode(to encoder: Encoder) throws {
+    func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try content.encode(to: encoder)
     }
 
-    static func derivedID(codingPath: [CodingKey]) -> UUID {
+    internal static func derivedID(codingPath: [CodingKey]) -> UUID {
         let seed = codingPath.map(\.stringValue).joined(separator: "/")
         var high: UInt64 = 14_695_981_039_346_656_037
         var low: UInt64 = 1_099_511_628_211

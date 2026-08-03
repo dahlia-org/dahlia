@@ -2943,11 +2943,14 @@ import ImageIO
         }
 
         func replaceSummaryDocument(meetingID: UUID, document: SummaryDocument) throws {
-            let json = try document.databaseJSONString()
+            try replaceSummaryDocument(meetingID: meetingID, databaseJSON: document.databaseJSONString())
+        }
+
+        func replaceSummaryDocument(meetingID: UUID, databaseJSON: String) throws {
             try manager.dbQueue.write { db in
                 try db.execute(
                     sql: "UPDATE summaries SET document = ? WHERE meetingId = ?",
-                    arguments: [json, meetingID]
+                    arguments: [databaseJSON, meetingID]
                 )
             }
         }

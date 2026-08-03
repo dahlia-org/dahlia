@@ -38,13 +38,9 @@ public extension MeetingAccessStore {
             case let .unchanged(result):
                 return result
             case let .apply(update):
-                return try writingVaultFile(update) { () throws -> SummaryMutationResult in
-                    try database.write { db in
-                        try commitSummaryUpdate(update, in: db)
-                    }
-                    DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
-                    return update.result
-                }
+                try applySummaryUpdate(update)
+                DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
+                return update.result
             }
         }
     }
@@ -58,6 +54,7 @@ extension MeetingAccessStore {
 
     struct SummaryUpdate {
         let meetingID: UUID
+        let expectedDocumentVersion: String
         let storedDocument: String
         let summaryTitle: String
         let meetingName: String?
@@ -72,7 +69,7 @@ extension MeetingAccessStore {
         let fileURL: URL
         let relativePath: String
         let markdown: String
-        let previousContents: Data?
+        let previousContents: Data
     }
 
     struct SummaryVault {
@@ -139,7 +136,8 @@ extension MeetingAccessStore {
         let meetingDescription = SummaryGeneratedMetadata.normalizedDescription(document.description)
         let staleExports = try self.staleExports(meetingID: meetingID, in: db)
 
-        guard storedDocument != existingDocument else {
+        let normalizedExistingDocument = try SummaryDocument.decode(databaseJSON: existingDocument).databaseJSONString()
+        guard storedDocument != normalizedExistingDocument else {
             return .unchanged(SummaryMutationResult(
                 meetingID: meetingID,
                 documentVersion: expectedDocumentVersion,
@@ -162,6 +160,7 @@ extension MeetingAccessStore {
 
         return .apply(SummaryUpdate(
             meetingID: meetingID,
+            expectedDocumentVersion: expectedDocumentVersion,
             storedDocument: storedDocument,
             summaryTitle: meetingName ?? existingTitle,
             meetingName: meetingName,
@@ -283,11 +282,14 @@ extension MeetingAccessStore {
             )
         )
 
+        guard let previousContents = try? Data(contentsOf: fileURL) else {
+            return (nil, .fileMissing)
+        }
         let write = VaultFileWrite(
             fileURL: fileURL,
             relativePath: relativePath,
             markdown: rendered.markdown,
-            previousContents: try? Data(contentsOf: fileURL)
+            previousContents: previousContents
         )
         return (write, .updated)
     }
@@ -351,9 +353,8 @@ extension MeetingAccessStore {
         do {
             return try operation()
         } catch {
-            guard let previousContents = file.previousContents else { throw error }
             do {
-                try previousContents.write(to: file.fileURL, options: .atomic)
+                try file.previousContents.write(to: file.fileURL, options: .atomic)
             } catch {
                 throw MeetingAccessError.workspaceRollbackFailed
             }
@@ -363,14 +364,33 @@ extension MeetingAccessStore {
 
     // MARK: - Database
 
+    func applySummaryUpdate(_ update: SummaryUpdate) throws {
+        try writingVaultFile(update) {
+            try database.write { db in
+                try commitSummaryUpdate(update, in: db)
+            }
+        }
+    }
+
     func commitSummaryUpdate(_ update: SummaryUpdate, in db: Database) throws {
+        guard let currentDocument = try String.fetchOne(
+            db,
+            sql: "SELECT document FROM summaries WHERE meetingId = ?",
+            arguments: [update.meetingID]
+        ) else {
+            throw MeetingAccessError.summaryNotFound
+        }
+        guard Self.summaryDocumentVersion(currentDocument) == update.expectedDocumentVersion else {
+            throw MeetingAccessError.summaryVersionConflict
+        }
+
         let now = Date()
         try db.execute(
-            sql: "UPDATE summaries SET title = ?, document = ? WHERE meetingId = ?",
-            arguments: [update.summaryTitle, update.storedDocument, update.meetingID]
+            sql: "UPDATE summaries SET title = ?, document = ? WHERE meetingId = ? AND document = ?",
+            arguments: [update.summaryTitle, update.storedDocument, update.meetingID, currentDocument]
         )
         guard db.changesCount == 1 else {
-            throw MeetingAccessError.summaryNotFound
+            throw MeetingAccessError.summaryVersionConflict
         }
 
         var assignments = ["updatedAt = ?"]

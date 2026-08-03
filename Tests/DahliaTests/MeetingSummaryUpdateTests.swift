@@ -8,6 +8,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct MeetingSummaryUpdateTests {
         @Test
         func replacesDocumentAndPropagatesMeetingMetadata() throws {
@@ -91,7 +92,7 @@ import GRDB
                     arguments: [fixture.firstMeetingID]
                 )
             }
-            #expect(names == ["manual", "release"])
+            #expect(names == ["launch-tag", "manual", "release"])
         }
 
         @Test
@@ -221,6 +222,43 @@ import GRDB
             }
             let after = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(after == original)
+        }
+
+        @Test
+        func rejectsDocumentChangedBetweenPlanningAndCommitAndRestoresVaultFile() throws {
+            let fixture = try Fixture()
+            let relativePath = "Acme/2027-01-01-AI-planning-title.md"
+            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let originalFileContents = Data("original vault contents".utf8)
+            try originalFileContents.write(to: fileURL)
+            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let corrected = Self.document(title: "Corrected", body: "Planned correction")
+            let plan = try store.database.read { db in
+                try store.makeSummaryUpdatePlan(
+                    meetingID: fixture.firstMeetingID,
+                    expectedDocumentVersion: version,
+                    document: corrected,
+                    vaultURL: fixture.primaryVaultURL,
+                    in: db
+                )
+            }
+            guard case let .apply(update) = plan else {
+                Issue.record("Expected the changed document to produce an update plan")
+                return
+            }
+
+            let regenerated = Self.document(title: "Regenerated", body: "Newly generated summary")
+            try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: regenerated)
+            let regeneratedJSON = try regenerated.databaseJSONString()
+
+            #expect(throws: MeetingAccessError.summaryVersionConflict) {
+                try store.applySummaryUpdate(update)
+            }
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == regeneratedJSON)
+            #expect(try Data(contentsOf: fileURL) == originalFileContents)
         }
 
         @Test
@@ -397,6 +435,94 @@ import GRDB
             #expect(result["changed"] as? Bool == false)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(stored == (try rich.databaseJSONString()))
+        }
+
+        @Test
+        func legacyDocumentRoundTripIsUnchangedAndDoesNotRewriteVaultFile() throws {
+            let fixture = try Fixture()
+            let document = Self.richDocument(screenshotID: fixture.firstScreenshotID)
+            var legacyObject = try #require(
+                JSONSerialization.jsonObject(with: Data(document.databaseJSONString().utf8)) as? [String: Any]
+            )
+            legacyObject.removeValue(forKey: "description")
+            legacyObject.removeValue(forKey: "tags")
+            legacyObject.removeValue(forKey: "actionItems")
+            let legacyJSON = String(
+                decoding: try JSONSerialization.data(withJSONObject: legacyObject, options: [.sortedKeys]),
+                as: UTF8.self
+            )
+            try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, databaseJSON: legacyJSON)
+
+            let relativePath = "Acme/legacy-summary.md"
+            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let originalContents = Data("legacy vault contents".utf8)
+            try originalContents.write(to: fileURL)
+            let originalModificationDate = Date(timeIntervalSince1970: 1_700_000_000)
+            try FileManager.default.setAttributes(
+                [.modificationDate: originalModificationDate],
+                ofItemAtPath: fileURL.path
+            )
+            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+
+            let server = try Self.initializedServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            )
+            let detail = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture
+                .firstMeetingID.uuidString)"}}}
+            """#))
+            let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            let roundTrippedDocument = try #require(structured["summary_document"] as? [String: Any])
+            let version = try #require(structured["summary_document_version"] as? String)
+            let arguments: [String: Any] = [
+                "meeting_id": fixture.firstMeetingID.uuidString,
+                "expected_document_version": version,
+                "summary_document": roundTrippedDocument,
+            ]
+            let request: [String: Any] = [
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": ["name": "update_meeting_summary", "arguments": arguments],
+            ]
+            let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+            let response = try Self.json(server.handleLine(line))
+            let result = try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+
+            #expect(result["changed"] as? Bool == false)
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == legacyJSON)
+            #expect(try Data(contentsOf: fileURL) == originalContents)
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            #expect(attributes[.modificationDate] as? Date == originalModificationDate)
+        }
+
+        @Test
+        func unreadableVaultFileIsNotRewritten() throws {
+            let fixture = try Fixture()
+            let relativePath = "Acme/unreadable-summary.md"
+            let fileURL = fixture.primaryVaultURL.appending(path: relativePath)
+            let originalContents = Data("must remain unchanged".utf8)
+            try originalContents.write(to: fileURL)
+            try fixture.insertVaultExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: fileURL.path)
+            defer {
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            }
+
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let corrected = Self.document(title: "Corrected", body: "Database-only update")
+            let result = try store.updateMeetingSummary(
+                meetingID: fixture.firstMeetingID,
+                expectedDocumentVersion: version,
+                document: corrected
+            )
+
+            #expect(result.changed)
+            #expect(result.vaultExport == .fileMissing)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            #expect(try Data(contentsOf: fileURL) == originalContents)
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == corrected.databaseJSONString())
         }
 
         // MARK: - Helpers
