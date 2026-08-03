@@ -409,28 +409,10 @@ import GRDB
             let server = try Self.initializedServer(
                 store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             )
-            let detail = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture
-                .firstMeetingID.uuidString)"}}}
-            """#))
-            let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
-            let document = try #require(structured["summary_document"] as? [String: Any])
-            let version = try #require(structured["summary_document_version"] as? String)
-
-            let arguments: [String: Any] = [
-                "meeting_id": fixture.firstMeetingID.uuidString,
-                "expected_document_version": version,
-                "summary_document": document,
-            ]
-            let request: [String: Any] = [
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": ["name": "update_meeting_summary", "arguments": arguments],
-            ]
-            let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-            let response = try Self.json(server.handleLine(line))
-            let result = try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            let result = try Self.roundTripSummaryDocument(
+                server: server,
+                meetingID: fixture.firstMeetingID
+            )
 
             #expect(result["changed"] as? Bool == false)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
@@ -467,27 +449,10 @@ import GRDB
             let server = try Self.initializedServer(
                 store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             )
-            let detail = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture
-                .firstMeetingID.uuidString)"}}}
-            """#))
-            let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
-            let roundTrippedDocument = try #require(structured["summary_document"] as? [String: Any])
-            let version = try #require(structured["summary_document_version"] as? String)
-            let arguments: [String: Any] = [
-                "meeting_id": fixture.firstMeetingID.uuidString,
-                "expected_document_version": version,
-                "summary_document": roundTrippedDocument,
-            ]
-            let request: [String: Any] = [
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": ["name": "update_meeting_summary", "arguments": arguments],
-            ]
-            let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-            let response = try Self.json(server.handleLine(line))
-            let result = try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            let result = try Self.roundTripSummaryDocument(
+                server: server,
+                meetingID: fixture.firstMeetingID
+            )
 
             #expect(result["changed"] as? Bool == false)
             #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == legacyJSON)
@@ -577,6 +542,33 @@ import GRDB
             let tools = try json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             return definitions.compactMap { $0["name"] as? String }
+        }
+
+        private static func roundTripSummaryDocument(
+            server: DahliaMCPServer,
+            meetingID: UUID
+        ) throws -> [String: Any] {
+            let detail = try json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(meetingID
+                .uuidString)"}}}
+            """#))
+            let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            let document = try #require(structured["summary_document"] as? [String: Any])
+            let version = try #require(structured["summary_document_version"] as? String)
+            let arguments: [String: Any] = [
+                "meeting_id": meetingID.uuidString,
+                "expected_document_version": version,
+                "summary_document": document,
+            ]
+            let request: [String: Any] = [
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": ["name": "update_meeting_summary", "arguments": arguments],
+            ]
+            let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+            let response = try json(server.handleLine(line))
+            return try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
         }
 
         private static func initializedServer(

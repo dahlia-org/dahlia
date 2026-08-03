@@ -22,14 +22,14 @@ public extension MeetingAccessStore {
     ) throws -> SummaryMutationResult {
         try requireWriteAccess()
 
-        let vault = try database.read(summaryVault(in:))
-        return try withVaultMutationLock(vaultURL: vault.url) { () throws -> SummaryMutationResult in
+        let vaultURL = try database.read(summaryVaultURL(in:))
+        return try withVaultMutationLock(vaultURL: vaultURL) { () throws -> SummaryMutationResult in
             let plan = try database.read { db in
                 try makeSummaryUpdatePlan(
                     meetingID: meetingID,
                     expectedDocumentVersion: expectedDocumentVersion,
                     document: document,
-                    vaultURL: vault.url,
+                    vaultURL: vaultURL,
                     in: db
                 )
             }
@@ -72,24 +72,16 @@ extension MeetingAccessStore {
         let previousContents: Data
     }
 
-    struct SummaryVault {
-        let id: UUID
-        let name: String
-        let path: String
-
-        var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
-    }
-
-    func summaryVault(in db: Database) throws -> SummaryVault {
+    func summaryVaultURL(in db: Database) throws -> URL {
         _ = try fetchVault(in: db)
-        guard let row = try Row.fetchOne(
+        guard let path = try String.fetchOne(
             db,
-            sql: "SELECT id, name, path FROM vaults WHERE id = ?",
+            sql: "SELECT path FROM vaults WHERE id = ?",
             arguments: [vaultID]
         ) else {
             throw MeetingAccessError.vaultNotFound
         }
-        return SummaryVault(id: row["id"], name: row["name"], path: row["path"])
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     // MARK: - Prevalidation
@@ -133,6 +125,7 @@ extension MeetingAccessStore {
 
         let existingTitle: String = summaryRow["title"]
         let meetingName = SummaryGeneratedMetadata.normalizedTitle(document.title)
+        let summaryTitle = meetingName ?? existingTitle
         let meetingDescription = SummaryGeneratedMetadata.normalizedDescription(document.description)
         let staleExports = try self.staleExports(meetingID: meetingID, in: db)
 
@@ -162,7 +155,7 @@ extension MeetingAccessStore {
             meetingID: meetingID,
             expectedDocumentVersion: expectedDocumentVersion,
             storedDocument: storedDocument,
-            summaryTitle: meetingName ?? existingTitle,
+            summaryTitle: summaryTitle,
             meetingName: meetingName,
             meetingDescription: meetingDescription,
             tags: document.tags.filter { !$0.isEmpty },
@@ -170,7 +163,7 @@ extension MeetingAccessStore {
             result: SummaryMutationResult(
                 meetingID: meetingID,
                 documentVersion: Self.summaryDocumentVersion(storedDocument),
-                title: meetingName ?? existingTitle,
+                title: summaryTitle,
                 description: meetingDescription ?? "",
                 changed: true,
                 vaultExport: vaultFile.outcome,

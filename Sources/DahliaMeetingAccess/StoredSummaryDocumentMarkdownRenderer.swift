@@ -9,7 +9,9 @@ import Foundation
 enum StoredSummaryDocumentMarkdownRenderer {
     /// DB 保存形と MCP 公開形で綴りが異なるキー。ほかのキーは両形で同一。
     private static let toolKeyByDatabaseKey = ["schemaVersion": "schema_version", "actionItems": "action_items"]
-    private static let databaseKeyByToolKey = ["schema_version": "schemaVersion", "action_items": "actionItems"]
+    private static let databaseKeyByToolKey = Dictionary(
+        uniqueKeysWithValues: toolKeyByDatabaseKey.map { ($0.value, $0.key) }
+    )
 
     static func decode(json: String) throws -> SummaryDocument {
         try SummaryDocument.decode(databaseJSON: json)
