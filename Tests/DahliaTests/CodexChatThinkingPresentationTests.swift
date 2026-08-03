@@ -36,7 +36,7 @@ import Foundation
                 showsStandaloneThinking: session.showsStandaloneThinking
             )
             #expect(waitingItems.count == 2)
-            if case let .message(message) = waitingItems.first {
+            if case let .message(message, _) = waitingItems.first {
                 #expect(message.role == .user)
                 #expect(message.text == "Question")
             } else {
@@ -60,6 +60,16 @@ import Foundation
             ))
             await waitUntil { !session.showsStandaloneThinking }
             #expect(session.messages.last?.reasoning == "More reasoning")
+            let reasoningItems = CodexChatConversationItem.build(
+                from: session.messages,
+                showsStandaloneThinking: session.showsStandaloneThinking
+            )
+            #expect(!reasoningItems.contains(.thinking))
+            if case let .message(_, showsInlineActivity) = reasoningItems.last {
+                #expect(!showsInlineActivity)
+            } else {
+                Issue.record("Expected the active response message")
+            }
 
             await service.yieldBlockedEvent(.reasoningCompleted(itemID: "reasoning-1", text: "More reasoning"))
             await waitUntil { session.showsStandaloneThinking }
@@ -204,7 +214,7 @@ import Foundation
         }
 
         @Test
-        func completedResponseDoesNotShowThinkingDuringReconciliation() async {
+        func completedResponseShowsThinkingDuringReconciliation() async {
             let service = TestCodexChatService(mode: .complete, delaysLoad: true)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
@@ -222,10 +232,11 @@ import Foundation
             #expect(session.isGenerating)
             #expect(session.messages.last?.text == "Final answer")
             #expect(session.messages.last?.isStreaming == false)
-            #expect(!session.showsStandaloneThinking)
+            #expect(session.showsStandaloneThinking)
 
             await service.resumeDelayedLoad()
             await waitUntil { !session.isGenerating }
+            #expect(!session.showsStandaloneThinking)
         }
 
         private static func testVault() -> VaultRecord {

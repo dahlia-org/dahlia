@@ -20,9 +20,10 @@ struct CodexChatConversationView: View {
                     switch item {
                     case let .contextDivider(_, context):
                         CodexChatContextDivider(context: context)
-                    case let .message(message):
+                    case let .message(message, showsInlineActivity):
                         CodexChatMessageRow(
                             message: message,
+                            showsInlineActivity: showsInlineActivity,
                             meetingNamesByID: meetingNamesByID,
                             meetingReferencesByID: meetingReferencesByID
                         )

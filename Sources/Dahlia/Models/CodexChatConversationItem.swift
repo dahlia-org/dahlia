@@ -2,14 +2,14 @@ import Foundation
 
 enum CodexChatConversationItem: Identifiable, Equatable {
     case contextDivider(id: String, context: CodexChatContext?)
-    case message(CodexChatMessage)
+    case message(CodexChatMessage, showsInlineActivity: Bool = false)
     case thinking
 
     var id: String {
         switch self {
         case let .contextDivider(id, _):
             "context-\(id)"
-        case let .message(message):
+        case let .message(message, _):
             "message-\(message.id)"
         case .thinking:
             "thinking"
@@ -44,7 +44,19 @@ enum CodexChatConversationItem: Identifiable, Equatable {
                 items.append(.message(message))
             }
         }
-        if showsStandaloneThinking {
+
+        var showsInlineActivity = false
+        if let lastIndex = items.indices.last,
+           case let .message(message, _) = items[lastIndex],
+           message.role == .assistant,
+           message.isStreaming,
+           message.text.isEmpty,
+           !message.reasoning.isEmpty {
+            items[lastIndex] = .message(message, showsInlineActivity: true)
+            showsInlineActivity = true
+        }
+
+        if showsStandaloneThinking, !showsInlineActivity {
             items.append(.thinking)
         }
         return items

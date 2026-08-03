@@ -3,7 +3,7 @@ actor CodexChatMarkdownCache {
 
     private let capacity: Int
     private let maximumCost: Int
-    private var blocksByMarkdown: [String: [CodexChatMarkdownRenderedBlock]] = [:]
+    private var resultsByMarkdown: [String: CodexChatMarkdownRenderResult] = [:]
     private var costsByMarkdown: [String: Int] = [:]
     private var insertionOrder: [String] = []
     private var totalCost = 0
@@ -16,15 +16,15 @@ actor CodexChatMarkdownCache {
         self.maximumCost = maximumCost
     }
 
-    func blocks(for markdown: String) -> [CodexChatMarkdownRenderedBlock]? {
-        blocksByMarkdown[markdown]
+    func result(for markdown: String) -> CodexChatMarkdownRenderResult? {
+        resultsByMarkdown[markdown]
     }
 
     func insert(
-        _ blocks: [CodexChatMarkdownRenderedBlock],
+        _ result: CodexChatMarkdownRenderResult,
         for markdown: String
     ) {
-        guard blocksByMarkdown[markdown] == nil,
+        guard resultsByMarkdown[markdown] == nil,
               capacity > 0,
               maximumCost > 0
         else { return }
@@ -34,19 +34,19 @@ actor CodexChatMarkdownCache {
 
         while insertionOrder.count >= capacity || totalCost + cost > maximumCost {
             guard let oldest = insertionOrder.first else { break }
-            blocksByMarkdown.removeValue(forKey: oldest)
+            resultsByMarkdown.removeValue(forKey: oldest)
             totalCost -= costsByMarkdown.removeValue(forKey: oldest) ?? 0
             insertionOrder.removeFirst()
         }
 
-        blocksByMarkdown[markdown] = blocks
+        resultsByMarkdown[markdown] = result
         costsByMarkdown[markdown] = cost
         insertionOrder.append(markdown)
         totalCost += cost
     }
 
     func cachedEntryCount() -> Int {
-        blocksByMarkdown.count
+        resultsByMarkdown.count
     }
 
     func cachedCost() -> Int {

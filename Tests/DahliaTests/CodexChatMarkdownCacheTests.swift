@@ -27,14 +27,19 @@
         @Test func keepsCompletedProjectionCacheCostBounded() async {
             let cache = CodexChatMarkdownCache(capacity: 10, maximumCost: 8)
             let blocks: [CodexChatMarkdownRenderedBlock] = [.paragraph(AttributedString("value"))]
+            let result = CodexChatMarkdownRenderResult(
+                blocks: blocks,
+                stablePrefixBlockCount: 0,
+                reparseSource: "value"
+            )
 
-            await cache.insert(blocks, for: "1234")
-            await cache.insert(blocks, for: "5678")
-            await cache.insert(blocks, for: "oversized")
+            await cache.insert(result, for: "1234")
+            await cache.insert(result, for: "5678")
+            await cache.insert(result, for: "oversized")
 
             #expect(await cache.cachedEntryCount() == 2)
             #expect(await cache.cachedCost() == 8)
-            #expect(await cache.blocks(for: "oversized") == nil)
+            #expect(await cache.result(for: "oversized") == nil)
         }
     }
 #endif

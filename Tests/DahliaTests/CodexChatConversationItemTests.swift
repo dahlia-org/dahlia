@@ -59,6 +59,49 @@ import Foundation
         }
 
         @Test
+        func reasoningOnlyLatestResponseUsesInlineActivityWithoutStandaloneThinking() {
+            let response = CodexChatMessage(
+                id: "response",
+                role: .assistant,
+                text: "",
+                reasoning: "Working through it",
+                isStreaming: true
+            )
+
+            let items = CodexChatConversationItem.build(
+                from: [response],
+                showsStandaloneThinking: true
+            )
+
+            #expect(items == [.message(response, showsInlineActivity: true)])
+            #expect(!items.contains(.thinking))
+        }
+
+        @Test
+        func steeredReasoningResponseMovesActivityToConversationTail() {
+            let response = CodexChatMessage(
+                id: "response",
+                role: .assistant,
+                text: "",
+                reasoning: "Working through it",
+                isStreaming: true
+            )
+            let followUp = CodexChatMessage(
+                id: "follow-up",
+                role: .user,
+                text: "Additional context"
+            )
+
+            let items = CodexChatConversationItem.build(
+                from: [response, followUp],
+                showsStandaloneThinking: true
+            )
+
+            #expect(items == [.message(response), .message(followUp), .thinking])
+            #expect(items.count { $0 == .thinking } == 1)
+        }
+
+        @Test
         func completedResponseDoesNotRegainThinkingDuringReconciliation() {
             let message = CodexChatMessage(
                 id: "answer",

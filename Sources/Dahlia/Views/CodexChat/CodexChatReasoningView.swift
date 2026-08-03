@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatReasoningView: View {
     let reasoning: String
     let isStreaming: Bool
+    let showsActivity: Bool
 
     @State private var isExpanded = false
 
@@ -14,8 +15,13 @@ struct CodexChatReasoningView: View {
             )
             .padding(.top, 8)
         } label: {
-            Text(L10n.chatReasoning)
-                .foregroundStyle(.secondary)
+            HStack {
+                Text(L10n.chatReasoning)
+                if showsActivity {
+                    CodexChatThinkingIndicator()
+                }
+            }
+            .foregroundStyle(.secondary)
         }
         .textSelection(.enabled)
     }

@@ -27,6 +27,7 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var activeTurnID: String?
     var isPreparingTurn = false
     var isAwaitingTurnOutput = false
+    var isFinalizingTurn = false
     var lastSubmittedText: String?
     var attachedImages: [CodexChatImageAttachment] = []
     private(set) var pendingImagePreparationCount = 0
@@ -42,7 +43,9 @@ final class CodexChatSessionModel: Identifiable {
         set { setLiveModeEnabled(newValue) }
     }
 
-    var showsStandaloneThinking: Bool { isGenerating && isAwaitingTurnOutput }
+    var showsStandaloneThinking: Bool {
+        isGenerating && (isAwaitingTurnOutput || isFinalizingTurn)
+    }
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored let settings: AppSettings
@@ -387,6 +390,7 @@ extension CodexChatSessionModel {
             updateLimiter.submit(force: true)
             completeTurnResponse(responseID: responseID)
             if turnCompleted {
+                isFinalizingTurn = true
                 await reconcileFromRollout(
                     preservingReasoningFrom: responseID,
                     submissionID: submissionID
@@ -561,6 +565,7 @@ extension CodexChatSessionModel {
         preparingManualComposerSnapshot = nil
         activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false
+        isFinalizingTurn = false
         activeTurnID = nil
         isStopRequested = false
         isActiveTurnLiveTranscript = false
