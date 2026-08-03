@@ -774,6 +774,10 @@
 "Captures raw microphone PCM and system audio through ScreenCaptureKit, then uses the system audio as the WebRTC AEC3 reference to remove speaker echo." = "ScreenCaptureKit でマイクの raw PCM とシステム音声を取得し、システム音声を WebRTC AEC3 の参照信号としてスピーカー回り込みを除去します。";
 "Echo cancellation became unavailable, so the test is continuing with raw microphone audio." = "エコー除去を利用できなくなったため、マイクの raw 音声でテストを継続しています。";
 "Open Test…" = "テストを開く…";
+"Audio Process Activity Monitor" = "音声プロセス動作モニター";
+"Logs CoreAudio process input and output activity for diagnosing meeting detection." = "会議検出の診断用に CoreAudio プロセスの入出力状態をログへ記録します。";
+"Start Monitoring" = "モニターを開始";
+"Stop Monitoring" = "モニターを停止";
 "Application Logs" = "アプリケーションログ";
 "Open Logs…" = "ログを開く…";
 "View Dahlia logs from the current app session. Private values remain redacted." = "現在のアプリセッションに記録された Dahlia のログを表示します。非公開の値はマスクされたままです。";
