@@ -2545,6 +2545,7 @@ enum L10n {
     static var chatWindowUnavailable: String { String(localized: "This chat is no longer available.", bundle: bundle) }
     static var resize: String { String(localized: "Resize", bundle: bundle) }
     static var chatShowAll: String { String(localized: "Show all chats", bundle: bundle) }
+    static var chatPresets: String { String(localized: "Presets", bundle: bundle) }
     static func chatProjectOrganizationShortcutTitle(_ days: Int) -> String {
         String(localized: "Organize meetings and Projects from the last \(days) days", bundle: bundle)
     }
