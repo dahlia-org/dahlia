@@ -108,44 +108,6 @@ private struct MeetingNameHeader: View {
     }
 }
 
-private struct MeetingActionsMenu: View {
-    @ObservedObject var viewModel: CaptionViewModel
-    let onRename: () -> Void
-    let onDelete: () -> Void
-
-    private var canOpenSummary: Bool {
-        viewModel.lastSummaryURL != nil || viewModel.currentSummaryGoogleFileURL != nil
-    }
-
-    var body: some View {
-        Menu {
-            Button(L10n.rename, systemImage: "pencil", action: onRename)
-
-            if canOpenSummary {
-                SummaryOpenMenu(viewModel: viewModel)
-            }
-
-            if viewModel.canRetranscribeBatchAudio {
-                Button(
-                    L10n.retranscribe,
-                    systemImage: "arrow.clockwise",
-                    action: viewModel.presentBatchRetranscriptionConfirmation
-                )
-            }
-
-            Divider()
-
-            Button(role: .destructive, action: onDelete) {
-                Label(L10n.delete, systemImage: "trash")
-            }
-            .disabled(viewModel.currentMeetingId == nil)
-        } label: {
-            Label(L10n.actions, systemImage: "ellipsis.circle")
-        }
-        .menuStyle(.borderlessButton)
-    }
-}
-
 private struct MeetingDetailHeader: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
@@ -159,7 +121,6 @@ private struct MeetingDetailHeader: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
     let onEditorTap: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -174,18 +135,7 @@ private struct MeetingDetailHeader: View {
                 onEditorTap: onEditorTap
             )
 
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    metadataStack
-                    Spacer(minLength: 12)
-                    controls
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    metadataStack
-                    controls
-                }
-            }
+            metadataStack
         }
         .padding(.bottom, 2)
     }
@@ -198,16 +148,6 @@ private struct MeetingDetailHeader: View {
             calendarEvent: calendarEvent
         )
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var controls: some View {
-        MeetingActionsMenu(
-            viewModel: viewModel,
-            onRename: onBeginEditing,
-            onDelete: onDelete
-        )
-        .controlSize(.regular)
-        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -255,14 +195,15 @@ struct ControlPanelView: View {
                         onBeginEditing: beginMeetingRename,
                         onCommit: commitMeetingRename,
                         onCancel: cancelMeetingRename,
-                        onEditorTap: markMeetingNameEditorTap,
-                        onDelete: requestCurrentMeetingDeletion
+                        onEditorTap: markMeetingNameEditorTap
                     )
                 }
 
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
-                    viewModel: viewModel
+                    viewModel: viewModel,
+                    onRename: beginMeetingRename,
+                    onDelete: requestCurrentMeetingDeletion
                 )
             }
             .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
