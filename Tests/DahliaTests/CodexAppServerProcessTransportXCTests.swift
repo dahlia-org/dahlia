@@ -7,6 +7,22 @@ import Foundation
 
     struct CodexAppServerProcessTransportTests {
         @Test
+        func outputRelayPreservesOneThousandCallbackFragmentsInOrder() async {
+            let relay = CodexOutputReadRelay()
+            let fragments = (0 ..< 1000).map { Data(String(format: "%04d,", $0).utf8) }
+
+            for (index, fragment) in fragments.enumerated() {
+                relay.append(fragment, done: index == fragments.count - 1, errorCode: 0)
+            }
+
+            let snapshot = await relay.next()
+            let expectedData = fragments.reduce(into: Data()) { $0.append($1) }
+            #expect(snapshot.data == expectedData)
+            #expect(snapshot.totalByteCount == expectedData.count)
+            #expect(snapshot.terminalErrorCode == 0)
+        }
+
+        @Test
         func exchangesMultipleLinesWithLongLivedChild() async throws {
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/cat"),
@@ -37,10 +53,10 @@ import Foundation
         }
 
         @Test
-        func cleanOutputEOFIncludesStderrTail() async throws {
+        func abnormalProcessExitIncludesStderrTail() async throws {
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "printf 'codex panic detail' >&2"]
+                arguments: ["-c", "printf 'codex panic detail' >&2; exit 7"]
             )
 
             do {
@@ -58,28 +74,50 @@ import Foundation
         }
 
         @Test
-        func stdoutBufferHasAnUpperBound() async throws {
+        func delayedActorDrainPreservesOneThousandDeltaLinesWithinOneReadWindow() async throws {
+            let gate = CodexAppServerOutputReadTestGate()
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "i=0; while [ $i -lt 1200 ]; do printf '%s\\n' $i; i=$((i+1)); done; read _"]
+                arguments: [
+                    "-c",
+                    "i=0; while [ $i -lt 1000 ]; do "
+                        + "printf '{\"method\":\"delta\",\"params\":{\"index\":%04d,\"delta\":\"xxxxxxxx\"}}\\n' $i; "
+                        + "i=$((i+1)); done",
+                ]
             )
+            await transport.setOutputReadTestGateForTesting(gate)
 
-            await transport.waitUntilOutputBufferOverflowForTesting()
-            await #expect(throws: CodexAppServerError.outputBufferOverflow) {
-                _ = try await transport.receiveLine()
+            let firstLine = Task { try await transport.receiveLine() }
+            let retainedByteCount = await gate.waitUntilReadFinished()
+            #expect(retainedByteCount > 0)
+            #expect(retainedByteCount <= 64 * 1024)
+            gate.resumeDraining()
+
+            let expectedLines = (0 ..< 1000).map {
+                Data(String(format: "{\"method\":\"delta\",\"params\":{\"index\":%04d,\"delta\":\"xxxxxxxx\"}}", $0).utf8)
             }
+            let receivedFirstLine = try #require(await firstLine.value)
+            var receivedLines = [receivedFirstLine]
+            for _ in 1 ..< expectedLines.count {
+                try receivedLines.append(#require(await transport.receiveLine()))
+            }
+            #expect(receivedLines == expectedLines)
             await transport.close()
         }
 
         @Test
-        func stdoutBufferAcceptsDocumentedCapacityInFIFOOrder() async throws {
+        func burstBeyondFormerLineLimitDrainsInFIFOOrder() async throws {
+            let payload = String(repeating: "x", count: 64)
             let transport = try CodexAppServerProcessTransport(
-                executableURL: URL(fileURLWithPath: "/bin/cat"),
-                arguments: []
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c",
+                    "i=0; while [ $i -lt 2048 ]; do printf '%04d:\(payload)\\n' $i; i=$((i+1)); done",
+                ]
             )
-            let expectedLines = (0 ..< 1024).map { Data(String($0).utf8) }
-
-            await transport.enqueueOutputLinesForTesting(expectedLines)
+            let expectedLines = (0 ..< 2048).map {
+                Data((String(format: "%04d:", $0) + payload).utf8)
+            }
 
             var receivedLines: [Data] = []
             for _ in expectedLines.indices {
@@ -90,61 +128,59 @@ import Foundation
         }
 
         @Test
-        func stdoutBufferRejectsLineAfterDocumentedCapacity() async throws {
+        func lineCanCrossSixtyFourKiBReadBoundary() async throws {
             let transport = try CodexAppServerProcessTransport(
-                executableURL: URL(fileURLWithPath: "/bin/cat"),
-                arguments: []
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "dd if=/dev/zero bs=65536 count=1 2>/dev/null | tr '\\000' a; printf 'b\\n'"]
             )
-            let lines = (0 ... 1024).map { Data(String($0).utf8) }
 
-            await transport.enqueueOutputLinesForTesting(lines)
-
-            await #expect(throws: CodexAppServerError.outputBufferOverflow) {
-                _ = try await transport.receiveLine()
-            }
+            var expectedLine = Data(repeating: 0x61, count: 64 * 1024)
+            expectedLine.append(0x62)
+            #expect(try await transport.receiveLine() == expectedLine)
             await transport.close()
         }
 
         @Test
-        func stdoutBufferPreservesFIFOWhenReplenishedAfterCompaction() async throws {
+        func eofDeliversTrailingLineWithoutNewline() async throws {
             let transport = try CodexAppServerProcessTransport(
-                executableURL: URL(fileURLWithPath: "/bin/cat"),
-                arguments: []
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf trailing"]
             )
-            let initialLines = (0 ..< 1024).map { Data(String($0).utf8) }
-            let replenishedLines = (1024 ..< 1536).map { Data(String($0).utf8) }
 
-            await transport.enqueueOutputLinesForTesting(initialLines)
-            for expectedLine in initialLines.prefix(512) {
-                #expect(try await transport.receiveLine() == expectedLine)
-            }
-            await transport.enqueueOutputLinesForTesting(replenishedLines)
-
-            let expectedRemainder = Array(initialLines.dropFirst(512)) + replenishedLines
-            var receivedRemainder: [Data] = []
-            for _ in expectedRemainder.indices {
-                try receivedRemainder.append(#require(await transport.receiveLine()))
-            }
-            #expect(receivedRemainder == expectedRemainder)
+            #expect(try await transport.receiveLine() == Data("trailing".utf8))
             await transport.close()
         }
 
         @Test
-        func stdoutBufferReleasesConsumedPayloadsBeforeCompaction() async throws {
+        func lineAtFourMiBLimitIsAccepted() async throws {
             let transport = try CodexAppServerProcessTransport(
-                executableURL: URL(fileURLWithPath: "/bin/cat"),
-                arguments: []
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c",
+                    "dd if=/dev/zero bs=1048576 count=4 2>/dev/null | tr '\\000' a; printf '\\n'",
+                ]
             )
-            let line = Data(repeating: 0x61, count: 64)
-            await transport.enqueueOutputLinesForTesting(Array(repeating: line, count: 1024))
 
-            for _ in 0 ..< 256 {
+            let line = try #require(await transport.receiveLine())
+            #expect(line.count == 4 * 1024 * 1024)
+            #expect(line.first == 0x61)
+            #expect(line.last == 0x61)
+            await transport.close()
+        }
+
+        @Test
+        func lineBeyondFourMiBLimitFailsClosed() async throws {
+            let transport = try CodexAppServerProcessTransport(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c",
+                    "{ dd if=/dev/zero bs=1048576 count=4 2>/dev/null; printf '\\000'; } | tr '\\000' a",
+                ]
+            )
+
+            await #expect(throws: CodexAppServerError.outputLineTooLarge) {
                 _ = try await transport.receiveLine()
             }
-
-            let state = await transport.outputBufferStateForTesting()
-            #expect(state.unreadLineCount == 768)
-            #expect(state.retainedByteCount == 768 * line.count)
             await transport.close()
         }
 
@@ -166,13 +202,16 @@ import Foundation
 
         @Test
         func closeImmediatelyAfterStartingTheDrainDoesNotTearDownAnActiveRead() async throws {
+            let gate = CodexAppServerOutputReadTestGate()
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/cat"),
                 arguments: []
             )
+            await transport.setOutputReadTestGateForTesting(gate)
 
-            // Starts the stdout drain, then closes before the drain has observed any output.
             let pending = Task { try await transport.receiveLine() }
+            await gate.waitUntilReadStarted()
+            gate.resumeDraining()
             await transport.close()
 
             #expect(try await pending.value == nil)
