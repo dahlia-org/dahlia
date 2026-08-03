@@ -6,14 +6,15 @@ import Foundation
 
     struct CodexAppServerLauncherTests {
         @Test
-        func launchesAppServerFromPrivateCodexHome() async throws {
+        func launchesAppServerWithPrivateCodexHomeAndUserHome() async throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-codex-launcher-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
             let executableURL = rootURL.appending(path: "print-working-directory")
-            try Data("#!/bin/sh\n/bin/pwd\n/usr/bin/printenv HOME\n".utf8).write(to: executableURL)
+            try Data("#!/bin/sh\n/bin/pwd\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv HOME\n".utf8)
+                .write(to: executableURL)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
 
             let homeLocator = ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL)
@@ -46,8 +47,11 @@ import Foundation
                 URL(filePath: workingDirectory, directoryHint: .isDirectory).resolvingSymlinksInPath()
                     == expectedHomeURL.resolvingSymlinksInPath()
             )
-            let homeEnvironment = try #require(await transport.receiveLine())
-            #expect(String(data: homeEnvironment, encoding: .utf8) == expectedHomeURL.path)
+            let codexHomeEnvironment = try #require(await transport.receiveLine())
+            #expect(String(data: codexHomeEnvironment, encoding: .utf8) == expectedHomeURL.path)
+            let userHomeEnvironment = try #require(await transport.receiveLine())
+            let inheritedHome = try #require(ProcessInfo.processInfo.environment["HOME"])
+            #expect(String(data: userHomeEnvironment, encoding: .utf8) == inheritedHome)
             for (skillName, installedSkillURL) in zip(
                 BundledCodexPresetSkillInstaller.skillNames,
                 installedSkillURLs
