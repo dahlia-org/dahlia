@@ -35,6 +35,7 @@ enum L10n {
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }
     static var remove: String { String(localized: "Remove", bundle: bundle) }
+    static var removeProjectAssignment: String { String(localized: "Remove from Project", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
     static var retry: String { String(localized: "Retry", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }

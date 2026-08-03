@@ -1,5 +1,6 @@
 /* Common */
 "Delete" = "Delete";
+"Remove from Project" = "Remove from Project";
 "Backups" = "Backups";
 "Database Backup" = "Database Backup";
 "Backups include transcripts and other database content. Audio files and their references are excluded." = "Backups include transcripts and other database content. Audio files and their references are excluded.";

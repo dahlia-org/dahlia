@@ -120,7 +120,7 @@ struct TranscriptTabView: View {
                     }
                 }
                 .scrollTargetLayout()
-                .padding(8)
+                .padding(DahliaDesign.tabContentInset)
             }
             .scrollPosition($scrollPosition)
             .onScrollTargetVisibilityChange(idType: TranscriptSegment.ID.self, threshold: 0.1) { ids in

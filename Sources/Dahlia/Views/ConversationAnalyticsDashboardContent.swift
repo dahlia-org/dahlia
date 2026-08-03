@@ -30,7 +30,7 @@ struct ConversationAnalyticsDashboardContent: View {
                 }
                 ConversationAnalyticsNotesView(metrics: metrics)
             }
-            .padding(16)
+            .padding(DahliaDesign.tabContentInset)
         }
     }
 }

@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// ミーティング詳細ヘッダーの下に配置するメタデータバー。
-/// タグチップ群を横並びで表示する。
+/// ミーティング詳細ヘッダーのメタデータを一つの折り返し行にまとめる。
 struct MeetingMetadataBar: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    let metadataText: String
+    let calendarEvent: CalendarEventDisplayInfo?
+
+    @State private var showTagPopover = false
+    @State private var tagInput = ""
 
     private var tags: [TagInfo] {
         guard let meetingId = viewModel.currentMeetingId,
@@ -12,22 +16,6 @@ struct MeetingMetadataBar: View {
               item.meetingId == meetingId else { return [] }
         return item.tags
     }
-
-    var body: some View {
-        MeetingTagsView(viewModel: viewModel, tags: tags, sidebarViewModel: sidebarViewModel)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Tag Management
-
-private struct MeetingTagsView: View {
-    @ObservedObject var viewModel: CaptionViewModel
-    let tags: [TagInfo]
-    var sidebarViewModel: SidebarViewModel
-
-    @State private var showTagPopover = false
-    @State private var tagInput = ""
 
     private var trimmedTagInput: String {
         tagInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -48,7 +36,19 @@ private struct MeetingTagsView: View {
     }
 
     var body: some View {
-        FlowLayout(spacing: 6, rowSpacing: 7) {
+        FlowLayout(spacing: DahliaDesign.chipSpacing, rowSpacing: DahliaDesign.chipRowSpacing) {
+            if let calendarEvent {
+                CalendarEventMetadataButton(text: metadataText, event: calendarEvent)
+            } else {
+                MeetingMetadataPill(systemImage: "calendar", text: metadataText)
+            }
+
+            MeetingProjectPicker(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                style: .regular
+            )
+
             ForEach(tags, id: \.name) { tag in
                 TagChip(tag: tag) {
                     guard let meetingId = viewModel.currentMeetingId else { return }
@@ -58,6 +58,7 @@ private struct MeetingTagsView: View {
 
             addTagButton
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var addTagButton: some View {
@@ -66,16 +67,16 @@ private struct MeetingTagsView: View {
             showTagPopover.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "tag")
+                Image(systemName: "tag.badge.plus")
                     .font(.caption2)
                 Text(L10n.addTag)
                     .font(.caption.weight(.medium))
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, DahliaDesign.chipHorizontalPadding)
+            .padding(.vertical, DahliaDesign.chipVerticalPadding)
             .background(
-                RoundedRectangle(cornerRadius: 6)
+                Capsule()
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     .foregroundStyle(Color.secondary.opacity(0.4))
             )
@@ -172,6 +173,24 @@ private struct MeetingTagsView: View {
     }
 }
 
+private struct MeetingMetadataPill: View {
+    let systemImage: String
+    let text: String
+
+    var body: some View {
+        Label {
+            Text(text)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.caption2)
+        }
+        .foregroundStyle(.secondary)
+        .dahliaChipSurface()
+    }
+}
+
 // MARK: - Tag Chip
 
 private struct TagChip: View {
@@ -179,42 +198,49 @@ private struct TagChip: View {
     let onRemove: () -> Void
 
     @State private var isHovered = false
+    @FocusState private var isRemoveFocused: Bool
+
+    private var showsRemoveButton: Bool {
+        isHovered || isRemoveFocused
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             ZStack {
                 Circle()
                     .fill(Color(hex: tag.colorHex))
-                    .opacity(isHovered ? 0 : 1)
+                    .opacity(showsRemoveButton ? 0 : 1)
 
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 10, height: 10)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                .focusable()
+                .focused($isRemoveFocused)
+                .opacity(showsRemoveButton ? 1 : 0)
+                .allowsHitTesting(showsRemoveButton)
                 .accessibilityLabel(L10n.delete)
             }
-            .frame(width: 10, height: 10)
+            .frame(width: 16, height: 16)
 
             Text(tag.name)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(hex: tag.colorHex).opacity(isHovered ? 0.16 : 0.1))
-        )
+        .dahliaChipSurface(isHovered: isHovered, tint: Color(hex: tag.colorHex))
         .frame(maxWidth: 220)
         .onHover { hovering in
             isHovered = hovering
         }
+        .contextMenu {
+            Button(L10n.delete, role: .destructive, action: onRemove)
+        }
+        .accessibilityAction(named: Text(L10n.delete), onRemove)
     }
 }
 
@@ -233,7 +259,16 @@ struct MeetingProjectPicker: View {
     @State private var showProjectPopover = false
     @State private var projectInput = ""
     @FocusState private var isProjectFieldFocused: Bool
+    @FocusState private var isRemoveFocused: Bool
     @State private var isHovered = false
+
+    private var hasProjectAssignment: Bool {
+        viewModel.currentProjectId != nil
+    }
+
+    private var showsRemoveButton: Bool {
+        hasProjectAssignment && (isHovered || isRemoveFocused)
+    }
 
     private var trimmedProjectInput: String {
         projectInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -269,51 +304,67 @@ struct MeetingProjectPicker: View {
                 Image(systemName: "folder")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .opacity(isHovered && viewModel.currentProjectId != nil ? 0 : 1)
+                    .opacity(showsRemoveButton ? 0 : 1)
 
-                if viewModel.currentProjectId != nil {
+                if hasProjectAssignment {
                     Button(action: clearProject) {
                         Image(systemName: "xmark")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.secondary)
-                            .frame(width: 10, height: 10)
+                            .frame(minWidth: 16, minHeight: 16)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .opacity(isHovered ? 1 : 0)
-                    .allowsHitTesting(isHovered)
-                    .accessibilityLabel(L10n.delete)
+                    .focusable()
+                    .focused($isRemoveFocused)
+                    .opacity(showsRemoveButton ? 1 : 0)
+                    .allowsHitTesting(showsRemoveButton)
+                    .accessibilityLabel(L10n.removeProjectAssignment)
                 }
             }
-            .frame(width: 10, height: 10)
+            .frame(width: 16, height: 16)
 
-            Button(action: presentProjectPopover) {
-                HStack(spacing: 4) {
-                    if style == .regular {
-                        Text(currentProjectName ?? L10n.noProject)
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                    }
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .medium))
-                }
-            }
-            .buttonStyle(.plain)
+            projectSelectionButton
         }
         .foregroundStyle(.secondary)
-        .padding(.horizontal, style == .compact ? 6 : 8)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(isHovered ? 0.08 : 0.06))
-        )
+        .dahliaChipSurface(isHovered: isHovered)
+        .contentShape(Capsule())
         .fixedSize(horizontal: true, vertical: false)
+        .pointerStyle(.link)
         .onHover { hovering in
             isHovered = hovering
+        }
+        .contextMenu {
+            if hasProjectAssignment {
+                Button(L10n.removeProjectAssignment, role: .destructive, action: clearProject)
+            }
         }
         .popover(isPresented: $showProjectPopover, arrowEdge: .bottom) {
             projectPopoverContent
         }
         .help(currentProjectName ?? L10n.noProject)
+    }
+
+    @ViewBuilder
+    private var projectSelectionButton: some View {
+        let button = Button(action: presentProjectPopover) {
+            HStack(spacing: 4) {
+                if style == .regular {
+                    Text(currentProjectName ?? L10n.noProject)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .medium))
+            }
+        }
+        .buttonStyle(.plain)
+
+        if hasProjectAssignment {
+            button.accessibilityAction(named: Text(L10n.removeProjectAssignment), clearProject)
+        } else {
+            button
+        }
     }
 
     private func presentProjectPopover() {

@@ -24,7 +24,7 @@ struct SummaryDocumentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
             if !document.title.isEmpty {
                 inlineMarkdownText(document.title)
                     .font(.title2.bold())
@@ -47,7 +47,7 @@ struct SummaryDocumentView: View {
             inlineMarkdownText(section.heading)
                 .font(.title3.bold())
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
+                .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         }
 
         ForEach(section.blocks) { block in
@@ -63,21 +63,24 @@ struct SummaryDocumentView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .font(.body)
+                    .lineSpacing(DahliaDesign.paragraphLineSpacing)
             case let .bulletedList(items):
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
+                                .foregroundStyle(.secondary)
                             summaryTextView(item)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
                     }
                 }
                 .padding(.leading, 8)
             case let .numberedList(items):
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("\(index + 1).")
@@ -85,13 +88,14 @@ struct SummaryDocumentView: View {
                             summaryTextView(item)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
                     }
                 }
                 .padding(.leading, 8)
             case let .checklist(items):
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: item.checked ? "checkmark.square" : "square")
@@ -99,6 +103,7 @@ struct SummaryDocumentView: View {
                             summaryTextView(item.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
                     }
@@ -114,6 +119,7 @@ struct SummaryDocumentView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         .padding(.leading, 8)
                 }
                 .padding(.vertical, 2)
@@ -142,7 +148,7 @@ struct SummaryDocumentView: View {
         case 1, 2:
             summaryTextView(content)
                 .font(.title3.bold())
-                .padding(.top, 4)
+                .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         case 3:
             summaryTextView(content)
                 .font(.headline)
@@ -335,11 +341,12 @@ private struct TranscriptReferenceChip: View {
 
     var body: some View {
         Text(reference.time)
-            .font(.caption)
+            .font(.caption2.weight(.medium))
+            .monospacedDigit()
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.primary.opacity(0.06), in: Capsule())
+            .padding(.horizontal, DahliaDesign.timestampChipHorizontalPadding)
+            .padding(.vertical, DahliaDesign.timestampChipVerticalPadding)
+            .background(Color.primary.opacity(DahliaDesign.timestampChipBackgroundOpacity), in: Capsule())
             .onHover { isHovering in
                 isTranscriptPopoverPresented = allowsPopover
                     && isHovering

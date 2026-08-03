@@ -1,5 +1,6 @@
 /* Common */
 "Delete" = "削除";
+"Remove from Project" = "プロジェクトを解除";
 "Backups" = "バックアップ";
 "Database Backup" = "データベースのバックアップ";
 "Backups include transcripts and other database content. Audio files and their references are excluded." = "文字起こしなどのデータベース内容を保存します。音声ファイルとその参照情報は含まれません。";
