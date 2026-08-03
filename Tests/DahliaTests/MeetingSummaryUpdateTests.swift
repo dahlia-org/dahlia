@@ -399,6 +399,44 @@ import GRDB
             #expect(after == original)
         }
 
+        @Test
+        func rejectsMalformedToolDocumentsWithoutChangingTheSummary() throws {
+            let fixture = try Fixture()
+            let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
+            let server = try Self.initializedServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            )
+            let current = try Self.summaryDocumentFromMeeting(
+                server: server,
+                meetingID: fixture.firstMeetingID
+            )
+
+            var unknownRootKey = current.document
+            unknownRootKey["unexpected"] = true
+            var collidingAlias = current.document
+            collidingAlias["schemaVersion"] = collidingAlias["schema_version"]
+            let unknownBlockType = try Self.updatingFirstBlock(in: current.document) { block in
+                block["type"] = "paragraf"
+            }
+            let missingBlockContent = try Self.updatingFirstBlock(in: current.document) { block in
+                block.removeValue(forKey: "content")
+            }
+
+            for (index, document) in [unknownRootKey, collidingAlias, unknownBlockType, missingBlockContent].enumerated() {
+                let line = try Self.summaryUpdateRequest(
+                    id: 20 + index,
+                    meetingID: fixture.firstMeetingID,
+                    version: current.version,
+                    document: document
+                )
+                let response = try Self.json(server.handleLine(line))
+                let error = try #require(response["error"] as? [String: Any])
+                #expect(error["code"] as? Int == -32602)
+            }
+
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == original)
+        }
+
         /// `get_meeting` が返した `summary_document` をそのまま返送すると、保存内容がバイト単位で一致する。
         @Test
         func summaryDocumentRoundTripsThroughTheToolSurface() throws {
@@ -548,6 +586,21 @@ import GRDB
             server: DahliaMCPServer,
             meetingID: UUID
         ) throws -> [String: Any] {
+            let current = try summaryDocumentFromMeeting(server: server, meetingID: meetingID)
+            let line = try summaryUpdateRequest(
+                id: 2,
+                meetingID: meetingID,
+                version: current.version,
+                document: current.document
+            )
+            let response = try json(server.handleLine(line))
+            return try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+        }
+
+        private static func summaryDocumentFromMeeting(
+            server: DahliaMCPServer,
+            meetingID: UUID
+        ) throws -> (document: [String: Any], version: String) {
             let detail = try json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(meetingID
                 .uuidString)"}}}
@@ -555,6 +608,15 @@ import GRDB
             let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
             let document = try #require(structured["summary_document"] as? [String: Any])
             let version = try #require(structured["summary_document_version"] as? String)
+            return (document, version)
+        }
+
+        private static func summaryUpdateRequest(
+            id: Int,
+            meetingID: UUID,
+            version: String,
+            document: [String: Any]
+        ) throws -> String {
             let arguments: [String: Any] = [
                 "meeting_id": meetingID.uuidString,
                 "expected_document_version": version,
@@ -562,13 +624,28 @@ import GRDB
             ]
             let request: [String: Any] = [
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": id,
                 "method": "tools/call",
                 "params": ["name": "update_meeting_summary", "arguments": arguments],
             ]
-            let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-            let response = try json(server.handleLine(line))
-            return try #require((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            return String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+        }
+
+        private static func updatingFirstBlock(
+            in document: [String: Any],
+            update: (inout [String: Any]) -> Void
+        ) throws -> [String: Any] {
+            var document = document
+            var sections = try #require(document["sections"] as? [[String: Any]])
+            var section = try #require(sections.first)
+            var blocks = try #require(section["blocks"] as? [[String: Any]])
+            var block = try #require(blocks.first)
+            update(&block)
+            blocks[0] = block
+            section["blocks"] = blocks
+            sections[0] = section
+            document["sections"] = sections
+            return document
         }
 
         private static func initializedServer(

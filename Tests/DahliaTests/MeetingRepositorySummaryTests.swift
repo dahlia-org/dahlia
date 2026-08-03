@@ -75,11 +75,12 @@ import GRDB
         @Test
         func regeneratingSummaryClearsStaleExportLocations() throws {
             let context = try makeRepositoryContext()
+            let oldDocument = try SummaryDocument(title: "Old", sections: []).databaseJSONString()
             try context.repo.upsertSummary(
                 SummaryRecord(
                     meetingId: context.meeting.id,
                     title: "Old",
-                    document: try SummaryDocument(title: "Old", sections: []).databaseJSONString(),
+                    document: oldDocument,
                     createdAt: .now
                 )
             )
@@ -87,10 +88,11 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Existing.md"
             )
-            try context.repo.updateSummaryGoogleFileId(
+            #expect(try context.repo.updateSummaryGoogleFileId(
                 forMeetingId: context.meeting.id,
-                googleFileId: "old-google-file"
-            )
+                googleFileId: "old-google-file",
+                expectedDocument: oldDocument
+            ))
             let document = SummaryDocument(
                 title: "Updated",
                 sections: [SummarySection(id: .v7(), heading: "Summary", blocks: [.paragraph("New body")])],
@@ -116,11 +118,12 @@ import GRDB
         @Test
         func storesVaultAndGoogleDocsExportsIndependently() throws {
             let context = try makeRepositoryContext()
+            let document = try SummaryDocument(title: "Summary", sections: []).databaseJSONString()
             try context.repo.upsertSummary(
                 SummaryRecord(
                     meetingId: context.meeting.id,
                     title: "Summary",
-                    document: try SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
+                    document: document,
                     createdAt: .now
                 )
             )
@@ -129,10 +132,11 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 relativePath: "Acme/Summary.md"
             )
-            try context.repo.updateSummaryGoogleFileId(
+            #expect(try context.repo.updateSummaryGoogleFileId(
                 forMeetingId: context.meeting.id,
-                googleFileId: "google-123"
-            )
+                googleFileId: "google-123",
+                expectedDocument: document
+            ))
 
             let vault = try context.repo.fetchSummaryExport(
                 forMeetingId: context.meeting.id,
@@ -160,6 +164,34 @@ import GRDB
                 forMeetingId: context.meeting.id,
                 type: .googleDocs
             )?.googleDocumentID == "google-123")
+        }
+
+        @Test
+        func rejectsGoogleDocsAssociationWhenSummaryChangedDuringExport() throws {
+            let context = try makeRepositoryContext()
+            let exportedDocument = SummaryDocument(title: "Exported", sections: [])
+            try context.repo.applyGeneratedSummary(
+                toMeetingId: context.meeting.id,
+                document: exportedDocument,
+                tags: []
+            )
+            let expectedDocument = try exportedDocument.databaseJSONString()
+
+            try context.repo.applyGeneratedSummary(
+                toMeetingId: context.meeting.id,
+                document: SummaryDocument(title: "Corrected while exporting", sections: []),
+                tags: []
+            )
+
+            #expect(try !context.repo.updateSummaryGoogleFileId(
+                forMeetingId: context.meeting.id,
+                googleFileId: "stale-google-document",
+                expectedDocument: expectedDocument
+            ))
+            #expect(try context.repo.fetchSummaryExport(
+                forMeetingId: context.meeting.id,
+                type: .googleDocs
+            ) == nil)
         }
 
         @Test

@@ -8,7 +8,73 @@ import GRDB
 
     @MainActor
     @Suite(.serialized)
+    // swiftlint:disable:next type_body_length
     struct CaptionViewModelSummaryGenerationTests {
+        @Test
+        func generatedSummaryWinsOverAnEarlierReload() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let loader = BlockingSummaryDocumentLoader()
+            let viewModel = CaptionViewModel(
+                summaryGenerationRunner: runner.run,
+                summaryDocumentLoader: loader.load
+            )
+            let options = SummaryGenerationOptions(
+                previousMeetingCount: 0,
+                exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+            )
+
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            viewModel.reloadSummaryDocument()
+            await loader.waitForCall()
+
+            #expect(viewModel.triggerManualSummary(options: options))
+            await runner.waitForCallCount(1)
+            runner.complete(meetingID: fixture.first.id, title: "Generated")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+
+            loader.complete(document: SummaryDocument(title: "Stale", sections: []))
+            #expect(await waitUntil { viewModel.currentSummaryDocument?.title == "Generated" })
+        }
+
+        @Test
+        func googleDocsExportDoesNotAttachToASummaryChangedDuringUpload() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let exporter = BlockingGoogleDocsSummaryExporter()
+            let viewModel = CaptionViewModel(googleDocsSummaryExporter: exporter.export)
+            let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
+            try repository.applyGeneratedSummary(
+                toMeetingId: fixture.first.id,
+                document: SummaryDocument(title: "Original", sections: []),
+                tags: []
+            )
+            await fixture.select(fixture.first, in: viewModel, note: "note")
+            #expect(await waitUntil { viewModel.currentSummaryDocument?.title == "Original" })
+
+            let export = Task { await viewModel.exportCurrentSummaryToGoogleDocs() }
+            await exporter.waitForCall()
+            try repository.applyGeneratedSummary(
+                toMeetingId: fixture.first.id,
+                document: SummaryDocument(title: "Corrected", sections: []),
+                tags: []
+            )
+            exporter.complete(fileId: "stale-file")
+
+            let exported = await export.value
+            #expect(!exported)
+            let googleExport = try await fixture.database.dbQueue.read { db in
+                try SummaryExportRecord.fetchOne(
+                    meetingId: fixture.first.id,
+                    type: .googleDocs,
+                    in: db
+                )
+            }
+            #expect(googleExport == nil)
+            #expect(try repository.fetchSummary(forMeetingId: fixture.first.id)?.loadDocument().title == "Corrected")
+        }
+
         @Test
         func manualSummaryUsesProjectSelectedBeforeGeneration() async throws {
             let fixture = try SummaryGenerationFixture()
@@ -657,6 +723,54 @@ import GRDB
             let ready = callWaiters.filter { calls.count >= $0.count }
             callWaiters.removeAll { calls.count >= $0.count }
             ready.forEach { $0.continuation.resume() }
+        }
+    }
+
+    @MainActor
+    private final class BlockingSummaryDocumentLoader {
+        private var continuation: CheckedContinuation<SummaryDocument?, Never>?
+        private var callWaiter: CheckedContinuation<Void, Never>?
+
+        func load(_: UUID, _: DatabaseQueue) async throws -> SummaryDocument? {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                callWaiter?.resume()
+                callWaiter = nil
+            }
+        }
+
+        func waitForCall() async {
+            if continuation != nil { return }
+            await withCheckedContinuation { callWaiter = $0 }
+        }
+
+        func complete(document: SummaryDocument?) {
+            continuation?.resume(returning: document)
+            continuation = nil
+        }
+    }
+
+    @MainActor
+    private final class BlockingGoogleDocsSummaryExporter {
+        private var continuation: CheckedContinuation<String, Never>?
+        private var callWaiter: CheckedContinuation<Void, Never>?
+
+        func export(_: SummaryDocument, _: SummaryRenderContext, _: String) async throws -> String {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                callWaiter?.resume()
+                callWaiter = nil
+            }
+        }
+
+        func waitForCall() async {
+            if continuation != nil { return }
+            await withCheckedContinuation { callWaiter = $0 }
+        }
+
+        func complete(fileId: String) {
+            continuation?.resume(returning: fileId)
+            continuation = nil
         }
     }
 

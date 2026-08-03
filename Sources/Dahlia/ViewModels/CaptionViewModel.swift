@@ -27,6 +27,12 @@ struct SummaryGenerationRunnerInput {
 
 typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
+typealias SummaryGoogleDocsExporter = @MainActor (SummaryDocument, SummaryRenderContext, String) async throws -> String
+typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
+
+private enum SummaryGoogleDocsExportError: Error {
+    case summaryChanged
+}
 
 /// 録音中のナビゲーション時に保持する録音コンテキスト。
 private struct RecordingContext {
@@ -294,12 +300,18 @@ final class CaptionViewModel: ObservableObject {
         let dbQueue = currentDbQueue
 
         do {
+            let expectedDocument = try document.databaseJSONString()
             let fileId = try await exportSummaryToGoogleDocs(
                 document: document,
                 context: context,
                 fileName: fileName
             )
-            try persistGoogleDocsFileId(fileId, meetingId: meetingId, dbQueue: dbQueue)
+            try persistGoogleDocsFileId(
+                fileId,
+                meetingId: meetingId,
+                expectedDocument: expectedDocument,
+                dbQueue: dbQueue
+            )
             if let url = URL(string: "https://docs.google.com/document/d/\(fileId)/edit") {
                 NSWorkspace.shared.open(url)
             }
@@ -503,13 +515,15 @@ final class CaptionViewModel: ObservableObject {
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     private var summaryReloadTask: Task<Void, Never>?
-    private var summaryReloadGeneration: UInt64 = 0
+    private var summaryProjectionGeneration: UInt64 = 0
     private var isSynchronizingSelectedLocale = false
     private let audioHardwareQueryService: AudioHardwareQueryService
     private let transcriptTranslationService = TranscriptTranslationService()
     private let automaticScreenshotCaptureControl: AutomaticScreenshotCaptureControl
     private let summaryGenerationRunner: SummaryGenerationRunner
     private let summaryJobSleeper: SummaryJobSleeper
+    private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
+    private let summaryDocumentLoader: SummaryDocumentLoader
 
     private func updateCanBeginRecording() {
         let updatedValue = recordingLifecycle == .idle
@@ -537,7 +551,21 @@ final class CaptionViewModel: ObservableObject {
                 generationSettings: input.generationSettings
             )
         },
-        summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) }
+        summaryJobSleeper: @escaping SummaryJobSleeper = { try await Task.sleep(for: $0) },
+        googleDocsSummaryExporter: @escaping SummaryGoogleDocsExporter = { document, context, fileName in
+            try await GoogleDocsSummaryExportService.exportSummary(
+                document: document,
+                context: context,
+                fileName: fileName
+            )
+        },
+        summaryDocumentLoader: @escaping SummaryDocumentLoader = { meetingId, dbQueue in
+            try await Task.detached(priority: .userInitiated) {
+                try dbQueue.read { db in
+                    try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
+                }
+            }.value
+        }
     ) {
         self.audioHardwareQueryService = audioHardwareQueryService
         automaticScreenshotCaptureControl = AutomaticScreenshotCaptureControl(
@@ -545,6 +573,8 @@ final class CaptionViewModel: ObservableObject {
         )
         self.summaryGenerationRunner = summaryGenerationRunner
         self.summaryJobSleeper = summaryJobSleeper
+        self.googleDocsSummaryExporter = googleDocsSummaryExporter
+        self.summaryDocumentLoader = summaryDocumentLoader
         bindStoreSegments()
         Task { [weak self] in
             await self?.refreshAvailableMicrophones()
@@ -1036,6 +1066,7 @@ final class CaptionViewModel: ObservableObject {
         guard let dbQueue = currentDbQueue,
               let vaultURL = currentVaultURL,
               currentMeetingId == meetingId else { return }
+        let summaryGeneration = summaryProjectionGeneration
         do {
             let loaded = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLoadedMeetingData(
@@ -1053,7 +1084,7 @@ final class CaptionViewModel: ObservableObject {
                 loader: TranscriptPageLoader(dbQueue: dbQueue),
                 initialPage: loaded.initialTranscriptPage
             )
-            applyLoadedDetail(loaded)
+            applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1323,6 +1354,7 @@ final class CaptionViewModel: ObservableObject {
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         let generation = meetingLoadGeneration
+        let summaryGeneration = summaryProjectionGeneration
         meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL, transcriptPageLoader] in
             guard let self else { return }
 
@@ -1359,7 +1391,7 @@ final class CaptionViewModel: ObservableObject {
                 loader: transcriptPageLoader,
                 initialPage: loaded.initialTranscriptPage
             )
-            self.applyLoadedDetail(loaded)
+            self.applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
             self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
         }
     }
@@ -1584,6 +1616,7 @@ final class CaptionViewModel: ObservableObject {
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         let generation = meetingLoadGeneration
+        let summaryGeneration = summaryProjectionGeneration
         meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL] in
             guard let self else { return }
             let loaded: LoadedMeetingData
@@ -1601,7 +1634,7 @@ final class CaptionViewModel: ObservableObject {
             guard !Task.isCancelled,
                   self.meetingLoadGeneration == generation,
                   self.currentMeetingId == meetingId else { return }
-            self.applyLoadedDetail(loaded)
+            self.applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
         }
     }
 
@@ -1612,34 +1645,32 @@ final class CaptionViewModel: ObservableObject {
         guard let meetingId = currentMeetingId,
               let dbQueue = currentDbQueue else { return }
         summaryReloadTask?.cancel()
-        summaryReloadGeneration &+= 1
-        let generation = summaryReloadGeneration
+        summaryProjectionGeneration &+= 1
+        let generation = summaryProjectionGeneration
         summaryReloadTask = Task { [weak self, meetingId, dbQueue] in
             guard let self else { return }
             let document: SummaryDocument?
             do {
-                document = try await Task.detached(priority: .userInitiated) {
-                    try dbQueue.read { db in
-                        try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
-                    }
-                }.value
+                document = try await self.summaryDocumentLoader(meetingId, dbQueue)
             } catch {
                 return
             }
             guard !Task.isCancelled,
-                  self.summaryReloadGeneration == generation,
+                  self.summaryProjectionGeneration == generation,
                   self.currentMeetingId == meetingId else { return }
             self.currentSummaryDocument = document
         }
     }
 
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
-    private func applyLoadedDetail(_ loaded: LoadedMeetingData) {
+    private func applyLoadedDetail(_ loaded: LoadedMeetingData, summaryGeneration: UInt64) {
         currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
         replaceVisibleScreenshots(meetingID: currentMeetingId, records: loaded.screenshots)
-        currentSummaryDocument = loaded.summaryDocument
-        currentSummaryGoogleFileId = loaded.googleFileId
-        lastSummaryURL = loaded.lastSummaryURL
+        if summaryProjectionGeneration == summaryGeneration {
+            currentSummaryDocument = loaded.summaryDocument
+            currentSummaryGoogleFileId = loaded.googleFileId
+            lastSummaryURL = loaded.lastSummaryURL
+        }
         noteText = loaded.note?.text ?? ""
         hasNote = loaded.note != nil
         currentNoteCreatedAt = loaded.note?.createdAt
@@ -1707,7 +1738,7 @@ final class CaptionViewModel: ObservableObject {
     private func resetSummaryState() {
         summaryReloadTask?.cancel()
         summaryReloadTask = nil
-        summaryReloadGeneration &+= 1
+        summaryProjectionGeneration &+= 1
         currentSummaryDocument = nil
         currentSummaryGoogleFileId = nil
         lastSummaryURL = nil
@@ -3121,6 +3152,9 @@ final class CaptionViewModel: ObservableObject {
             summaryWasApplied = true
             job.progress.summaryGeneration = .completed
             if currentMeetingId == meetingId {
+                summaryReloadTask?.cancel()
+                summaryReloadTask = nil
+                summaryProjectionGeneration &+= 1
                 currentSummaryDocument = generatedSummary.document
                 currentSummaryGoogleFileId = nil
             }
@@ -3190,7 +3224,12 @@ final class CaptionViewModel: ObservableObject {
                     ),
                     fileName: generatedSummary.fileName
                 )
-                try persistGoogleDocsFileId(fileId, meetingId: meetingId, dbQueue: request.dbQueue)
+                try persistGoogleDocsFileId(
+                    fileId,
+                    meetingId: meetingId,
+                    expectedDocument: generatedSummary.document.databaseJSONString(),
+                    dbQueue: request.dbQueue
+                )
                 job.progress.googleDocsExport = .completed
             } catch {
                 let message = GoogleAuthErrorFormatter.message(
@@ -3237,11 +3276,21 @@ final class CaptionViewModel: ObservableObject {
     private func persistGoogleDocsFileId(
         _ fileId: String,
         meetingId: UUID,
+        expectedDocument: String,
         dbQueue: DatabaseQueue?
     ) throws {
         if let dbQueue {
-            try MeetingRepository(dbQueue: dbQueue)
-                .updateSummaryGoogleFileId(forMeetingId: meetingId, googleFileId: fileId)
+            let persisted = try MeetingRepository(dbQueue: dbQueue).updateSummaryGoogleFileId(
+                forMeetingId: meetingId,
+                googleFileId: fileId,
+                expectedDocument: expectedDocument
+            )
+            guard persisted else { throw SummaryGoogleDocsExportError.summaryChanged }
+        } else {
+            guard currentMeetingId == meetingId,
+                  try currentSummaryDocument?.databaseJSONString() == expectedDocument else {
+                throw SummaryGoogleDocsExportError.summaryChanged
+            }
         }
         if currentMeetingId == meetingId {
             currentSummaryGoogleFileId = fileId
@@ -3255,11 +3304,7 @@ final class CaptionViewModel: ObservableObject {
     ) async throws -> String {
         await acquireGoogleDocsExport()
         defer { releaseGoogleDocsExport() }
-        return try await GoogleDocsSummaryExportService.exportSummary(
-            document: document,
-            context: context,
-            fileName: fileName
-        )
+        return try await googleDocsSummaryExporter(document, context, fileName)
     }
 
     private func acquireGoogleDocsExport() async {

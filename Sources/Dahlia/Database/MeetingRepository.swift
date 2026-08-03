@@ -645,9 +645,14 @@ final class MeetingRepository {
         }
     }
 
-    func updateSummaryGoogleFileId(forMeetingId meetingId: UUID, googleFileId: String?) throws {
+    func updateSummaryGoogleFileId(
+        forMeetingId meetingId: UUID,
+        googleFileId: String?,
+        expectedDocument: String
+    ) throws -> Bool {
         try dbQueue.write { db in
-            guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }
+            guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
+                  try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
                 SummaryExportRecord.googleDocsURL(fileId: fileId)
             }
@@ -657,6 +662,7 @@ final class MeetingRepository {
                 type: .googleDocs,
                 in: db
             )
+            return true
         }
     }
 

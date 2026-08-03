@@ -1047,23 +1047,47 @@ private extension DahliaMCPServer {
             ],
             required: ["text", "checked"]
         )
-        let block = objectSchema(
-            properties: [
-                "id": ["type": "string", "format": "uuid"],
-                "type": ["type": "string"],
-                "content": summaryText,
-                "items": ["type": "array", "items": ["anyOf": [summaryText, checklistItem]]],
-                "language": ["type": "string"],
-                "screenshot_id": ["type": "string", "format": "uuid"],
-                "level": ["type": "integer"],
-                "headers": ["type": "array", "items": summaryText],
-                "rows": [
-                    "type": "array",
-                    "items": ["type": "array", "items": summaryText],
+        let summaryTextItems: [String: Any] = ["type": "array", "items": summaryText]
+        let block: [String: Any] = ["oneOf": [
+            summaryBlockSchema("paragraph", properties: ["content": summaryText], required: ["content"]),
+            summaryBlockSchema("bulleted_list", properties: ["items": summaryTextItems], required: ["items"]),
+            summaryBlockSchema("numbered_list", properties: ["items": summaryTextItems], required: ["items"]),
+            summaryBlockSchema(
+                "checklist",
+                properties: ["items": ["type": "array", "items": checklistItem]],
+                required: ["items"]
+            ),
+            summaryBlockSchema("quote", properties: ["content": summaryText], required: ["content"]),
+            summaryBlockSchema(
+                "code",
+                properties: ["language": ["type": "string"], "content": summaryText],
+                required: ["language", "content"]
+            ),
+            summaryBlockSchema(
+                "image",
+                properties: [
+                    "screenshot_id": ["type": "string", "format": "uuid"],
+                    "content": summaryText,
                 ],
-            ],
-            required: ["id", "type"]
-        )
+                required: ["screenshot_id", "content"]
+            ),
+            summaryBlockSchema(
+                "heading",
+                properties: ["level": ["type": "integer"], "content": summaryText],
+                required: ["level", "content"]
+            ),
+            summaryBlockSchema(
+                "table",
+                properties: [
+                    "headers": summaryTextItems,
+                    "rows": [
+                        "type": "array",
+                        "items": ["type": "array", "items": summaryText],
+                    ],
+                ],
+                required: ["headers", "rows"]
+            ),
+        ]]
         let section = objectSchema(
             properties: [
                 "id": ["type": "string", "format": "uuid"],
@@ -1096,6 +1120,19 @@ private extension DahliaMCPServer {
             "required": required,
             "additionalProperties": false,
         ]
+    }
+
+    private static func summaryBlockSchema(
+        _ type: String,
+        properties: [String: Any],
+        required: [String]
+    ) -> [String: Any] {
+        var blockProperties: [String: Any] = [
+            "id": ["type": "string", "format": "uuid"],
+            "type": ["type": "string", "enum": [type]],
+        ]
+        blockProperties.merge(properties) { _, value in value }
+        return objectSchema(properties: blockProperties, required: ["id", "type"] + required)
     }
 
     private static var meetingQueryOutputSchema: [String: Any] {

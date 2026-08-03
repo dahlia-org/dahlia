@@ -38,25 +38,49 @@ enum StoredSummaryDocumentMarkdownRenderer {
     static func toolJSONValue(_ document: SummaryDocument) throws -> JSONValue {
         let data = try JSONEncoder().encode(document)
         let value = try JSONDecoder().decode(JSONValue.self, from: data)
-        return rewritingKeys(value, using: toolKeyByDatabaseKey)
+        return try rewritingKeys(value, using: toolKeyByDatabaseKey)
     }
 
-    /// `toolJSONValue` の逆変換。
+    /// `toolJSONValue` の逆変換。旧 DB 行向けの寛容な decoder を使う前に、MCP 入力が欠落なく往復することを検証する。
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
-        let databaseShaped = rewritingKeys(toolJSON, using: databaseKeyByToolKey)
-        return try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
+        let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
+        let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
+        guard try addingAllowedDefaults(to: toolJSON) == toolJSONValue(document) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: "summary_document contains unknown, missing, or invalid fields"
+            ))
+        }
+        return document
     }
 
-    private static func rewritingKeys(_ value: JSONValue, using mapping: [String: String]) -> JSONValue {
+    private static func addingAllowedDefaults(to value: JSONValue) -> JSONValue {
+        guard case var .object(object) = value else { return value }
+        object["description"] = object["description"] ?? .string("")
+        object["tags"] = object["tags"] ?? .array([])
+        object["action_items"] = object["action_items"] ?? .array([])
+        return .object(object)
+    }
+
+    private static func rewritingKeys(_ value: JSONValue, using mapping: [String: String]) throws -> JSONValue {
         switch value {
         case let .object(object):
-            .object(Dictionary(uniqueKeysWithValues: object.map { key, element in
-                (mapping[key] ?? key, rewritingKeys(element, using: mapping))
-            }))
+            var rewritten: [String: JSONValue] = [:]
+            for (key, element) in object {
+                let rewrittenKey = mapping[key] ?? key
+                guard rewritten[rewrittenKey] == nil else {
+                    throw DecodingError.dataCorrupted(.init(
+                        codingPath: [],
+                        debugDescription: "summary_document contains colliding keys"
+                    ))
+                }
+                rewritten[rewrittenKey] = try rewritingKeys(element, using: mapping)
+            }
+            return .object(rewritten)
         case let .array(elements):
-            .array(elements.map { rewritingKeys($0, using: mapping) })
+            return try .array(elements.map { try rewritingKeys($0, using: mapping) })
         default:
-            value
+            return value
         }
     }
 
