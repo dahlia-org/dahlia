@@ -283,16 +283,8 @@ struct ControlPanelView: View {
                 case .transcript:
                     TranscriptTabView(
                         store: viewModel.store,
-                        isListening: viewModel.isListening,
-                        showsRecordingIndicator: viewModel.isListening
-                            && !viewModel.isBatchRecording
-                            && !viewModel.isViewingOtherWhileRecording,
+                        allowsTextSelection: !viewModel.isListening,
                         showsTranslatedText: appSettings.isTranscriptTranslationEffectivelyEnabled,
-                        batchTranscriptionState: viewModel.batchTranscriptionState,
-                        confirmBatchTranscription: viewModel.presentBatchTranscriptionConfirmation,
-                        retryBatchTranscription: viewModel.retryBatchTranscription,
-                        cancelFailedBatchRetranscription: viewModel.cancelFailedBatchRetranscription,
-                        discardFailedBatchTranscription: viewModel.discardFailedBatchTranscription,
                         retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                     )
                 case .conversationAnalytics:
