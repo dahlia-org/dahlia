@@ -9,7 +9,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
     case processExited(String?)
     case requestTimedOut(String)
     case invalidProtocolResponse
-    case outputBufferOverflow
+    case outputLineTooLarge
     case rpcError(code: Int?, message: String)
     case providerAuthenticationFailed(String?)
     case turnFailed(String?)
@@ -27,7 +27,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
             detail.map(L10n.codexProcessExitedWithDetail) ?? L10n.codexProcessExited
         case let .requestTimedOut(operation): L10n.codexRequestTimedOut(operation)
         case .invalidProtocolResponse: L10n.codexInvalidResponse
-        case .outputBufferOverflow: L10n.codexOutputBufferOverflow
+        case .outputLineTooLarge: L10n.codexOutputLineTooLarge
         case let .rpcError(_, message): L10n.codexRequestFailed(message)
         case let .providerAuthenticationFailed(detail):
             detail.map(L10n.codexRequestFailed) ?? L10n.codexTurnFailed

@@ -1,6 +1,6 @@
 # ADR 0013: Codex stdout の burst buffer を拡張する
 
-- Status: Accepted
+- Status: Superseded by [ADR 0019](0019-pull-codex-stdout-with-backpressure.md)
 - Date: 2026-07-28
 - Amends: [ADR 0003](0003-use-a-shared-codex-app-server.md)
 

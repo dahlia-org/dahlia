@@ -1,27 +1,18 @@
 import Darwin
 import Dispatch
 import Foundation
-import os
 
 /// Process stdio adapter. All potentially blocking pipe operations stay outside Swift's cooperative executor.
 actor CodexAppServerProcessTransport: CodexAppServerTransport {
-    private enum OutputTermination: Sendable {
-        case overflow
-        case end(Int32)
-    }
-
-    // DispatchIO reads as fast as the child writes, so the bytes waiting to reach the actor need
-    // their own ceiling. Without one the documented maximumBufferedOutputLines policy only applies
-    // after parsing, which leaves memory growth unbounded ahead of it.
-    private static let maximumBufferedOutputChunks = 64
-    private static let maximumOutputChunkBytes = 64 * 1024
+    private static let maximumOutputReadBytes = 64 * 1024
+    private static let maximumOutputLineBytes = 4 * 1024 * 1024
 
     private let process: Process
     private let inputChannel: DispatchIO
     private let outputChannel: DispatchIO
     private let errorChannel: DispatchIO
     private let ioQueue = DispatchQueue(label: "app.dahlia.codex-app-server-stdio")
-    private var isOutputDrainStarted = false
+    private var activeOutputReadID: UUID?
     private var isErrorDrainStarted = false
     private var isErrorDrainFinished = false
     private var stdoutPending = Data()
@@ -33,10 +24,9 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var pendingWrites: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var isClosed = false
     private var stderrTail = Data()
-    private let maximumBufferedOutputLines = 1024
     private let minimumConsumedOutputLinesBeforeCompaction = 256
     #if DEBUG
-        private var outputBufferOverflowWaiters: [CheckedContinuation<Void, Never>] = []
+        private var outputReadTestGate: CodexAppServerOutputReadTestGate?
     #endif
 
     init(
@@ -100,16 +90,15 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         errorChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedError, queue: ioQueue) { _ in
             Darwin.close(duplicatedError)
         }
-        // A JSON-RPC line must reach the reader as soon as the child writes it, and one delivery
-        // must stay small enough that the handoff ceiling below is expressed in bytes, not chunks.
+        // Deliver short JSON-RPC lines promptly while keeping each read window byte-bounded.
         outputChannel.setLimit(lowWater: 1)
-        outputChannel.setLimit(highWater: Self.maximumOutputChunkBytes)
+        outputChannel.setLimit(highWater: Self.maximumOutputReadBytes)
         errorChannel.setLimit(highWater: 4096)
     }
 
     func sendLine(_ data: Data) async throws {
         guard !isClosed else { throw CodexAppServerError.processExited(stderrDescription) }
-        startDrainsIfNeeded()
+        startErrorDrainIfNeeded()
         var line = data
         line.append(0x0A)
         let writeID = UUID()
@@ -138,7 +127,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     }
 
     func receiveLine() async throws -> Data? {
-        startDrainsIfNeeded()
+        startErrorDrainIfNeeded()
         if let line = dequeueOutputLine() {
             return line
         }
@@ -154,6 +143,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
                     continuation.resume(throwing: CodexAppServerError.invalidProtocolResponse)
                 } else {
                     outputWaiter = (waiterID, continuation)
+                    startOutputReadIfNeeded()
                 }
             }
         } onCancel: {
@@ -193,25 +183,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             process.processIdentifier
         }
 
-        func waitUntilOutputBufferOverflowForTesting() async {
-            startDrainsIfNeeded()
-            if outputError as? CodexAppServerError == .outputBufferOverflow { return }
-            await withCheckedContinuation { continuation in
-                outputBufferOverflowWaiters.append(continuation)
-            }
-        }
-
-        func enqueueOutputLinesForTesting(_ lines: [Data]) {
-            for line in lines {
-                enqueueOutputLine(line)
-            }
-        }
-
-        func outputBufferStateForTesting() -> (unreadLineCount: Int, retainedByteCount: Int) {
-            (
-                outputLines.count - outputLineReadIndex,
-                outputLines.reduce(into: 0) { $0 += $1.count }
-            )
+        func setOutputReadTestGateForTesting(_ gate: CodexAppServerOutputReadTestGate) {
+            outputReadTestGate = gate
         }
     #endif
 
@@ -227,61 +200,37 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         }
     }
 
-    private func startDrainsIfNeeded() {
-        // A closed transport has already released its channels. Restarting a drain here would
-        // read from a torn-down descriptor instead of reporting the closure to the caller.
-        guard !isClosed else { return }
-        startOutputDrainIfNeeded()
-        startErrorDrainIfNeeded()
-    }
-
-    private func startOutputDrainIfNeeded() {
-        guard !isOutputDrainStarted else { return }
-        isOutputDrainStarted = true
-        let (chunks, continuation) = AsyncStream<Data>.makeStream(
-            bufferingPolicy: .bufferingOldest(Self.maximumBufferedOutputChunks)
-        )
-        // The terminal outcome must not compete with chunks for stream capacity. Yielding it into a
-        // full buffer would drop it, ending the consumer without ever reporting EOF or overflow and
-        // leaving the reader suspended in receiveLine. First writer wins, so a later callback on the
-        // stopped channel cannot relabel an overflow as a clean exit.
-        let termination = OSAllocatedUnfairLock<OutputTermination?>(initialState: nil)
-        // DispatchIO keeps the blocking pipe read on ioQueue. The stream carries chunks into the
-        // actor in arrival order, which one unstructured task per chunk would not guarantee.
-        outputChannel.read(offset: 0, length: Int.max, queue: ioQueue) { done, data, errorCode in
-            if let data, !data.isEmpty {
-                // Losing even one chunk splices unrelated bytes into the next line, so a full
-                // buffer becomes the documented overflow rather than a silent discard.
-                if case .dropped = continuation.yield(Data(data)) {
-                    termination.withLock { $0 = $0 ?? .overflow }
-                    continuation.finish()
-                    return
+    private func startOutputReadIfNeeded() {
+        guard !isClosed, !didReachOutputEOF, outputError == nil,
+              outputWaiter != nil, activeOutputReadID == nil else { return }
+        let readID = UUID()
+        let relay = CodexOutputReadRelay()
+        activeOutputReadID = readID
+        #if DEBUG
+            let testGate = outputReadTestGate
+            testGate?.recordReadStarted()
+        #endif
+        outputChannel.read(
+            offset: 0,
+            length: Self.maximumOutputReadBytes,
+            queue: ioQueue
+        ) { done, data, errorCode in
+            relay.append(data.map { Data($0) } ?? Data(), done: done, errorCode: errorCode)
+            #if DEBUG
+                if done {
+                    testGate?.recordReadFinished(retainedByteCount: relay.retainedByteCount())
                 }
-            }
-            if done {
-                termination.withLock { $0 = $0 ?? .end(errorCode) }
-                continuation.finish()
-            }
+            #endif
         }
         Task { [weak self] in
-            for await chunk in chunks {
-                await self?.consumeStdout(chunk)
-            }
-            // Runs after every buffered chunk has been parsed, so a trailing partial line is still
-            // whole by the time the terminal outcome is applied.
-            switch termination.withLock({ $0 }) {
-            case .overflow:
-                await self?.failOutputDrainWithOverflow()
-            case let .end(errorCode):
-                await self?.finishOutputDrain(errorCode: errorCode)
-            case nil:
-                break
-            }
+            await self?.consumeOutputRead(readID: readID, relay: relay)
         }
     }
 
     private func startErrorDrainIfNeeded() {
-        guard !isErrorDrainStarted else { return }
+        // A closed transport has already released its channels. Restarting a drain here would
+        // read from a torn-down descriptor instead of reporting the closure to the caller.
+        guard !isClosed, !isErrorDrainStarted else { return }
         isErrorDrainStarted = true
         errorChannel.read(offset: 0, length: Int.max, queue: ioQueue) { [weak self] done, data, _ in
             let chunk = data.map { Data($0) } ?? Data()
@@ -291,39 +240,66 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         }
     }
 
-    private func consumeStdout(_ data: Data) {
-        stdoutPending.append(data)
-        guard stdoutPending.contains(0x0A) else { return }
-        var lines = stdoutPending.split(separator: 0x0A, omittingEmptySubsequences: false)
-        stdoutPending = Data(lines.removeLast())
-        for line in lines where !line.isEmpty {
-            enqueueOutputLine(Data(line))
+    private func consumeOutputRead(readID: UUID, relay: CodexOutputReadRelay) async {
+        #if DEBUG
+            await outputReadTestGate?.waitBeforeDraining()
+        #endif
+        while activeOutputReadID == readID {
+            let snapshot = await relay.next()
+            guard activeOutputReadID == readID else { return }
+            if !snapshot.data.isEmpty, !consumeStdout(snapshot.data) {
+                return
+            }
+            guard let errorCode = snapshot.terminalErrorCode else { continue }
+            activeOutputReadID = nil
+            if errorCode != 0 || snapshot.totalByteCount < Self.maximumOutputReadBytes {
+                await finishOutputRead(errorCode: errorCode)
+            } else {
+                startOutputReadIfNeeded()
+            }
         }
     }
 
-    private func failOutputDrainWithOverflow() {
-        // Continuing to read only discards more bytes, and the buffered prefix can no longer be
-        // parsed into whole lines.
-        outputChannel.close(flags: .stop)
-        stdoutPending.removeAll()
-        latchOutputBufferOverflow()
-        guard let waiter = outputWaiter else { return }
-        outputWaiter = nil
-        waiter.continuation.resume(throwing: CodexAppServerError.outputBufferOverflow)
+    private func consumeStdout(_ data: Data) -> Bool {
+        var segmentStart = data.startIndex
+        while let newline = data[segmentStart...].firstIndex(of: 0x0A) {
+            let fragment = data[segmentStart ..< newline]
+            guard appendToPendingLine(fragment) else { return false }
+            if !stdoutPending.isEmpty {
+                let line = stdoutPending
+                stdoutPending = Data()
+                enqueueOutputLine(line)
+            }
+            segmentStart = data.index(after: newline)
+        }
+        return appendToPendingLine(data[segmentStart...])
     }
 
-    private func latchOutputBufferOverflow() {
+    private func appendToPendingLine(_ fragment: Data.SubSequence) -> Bool {
+        guard fragment.count <= Self.maximumOutputLineBytes - stdoutPending.count else {
+            failOutputLineTooLarge()
+            return false
+        }
+        stdoutPending.append(contentsOf: fragment)
+        return true
+    }
+
+    private func failOutputLineTooLarge() {
+        // The output can no longer be framed safely. Stop the shared connection without retaining
+        // or reporting any portion of the line.
+        let error = CodexAppServerError.outputLineTooLarge
+        activeOutputReadID = nil
+        outputChannel.close(flags: .stop)
+        stdoutPending.removeAll(keepingCapacity: false)
         outputLines.removeAll(keepingCapacity: false)
         outputLineReadIndex = 0
-        outputError = CodexAppServerError.outputBufferOverflow
-        #if DEBUG
-            let waiters = outputBufferOverflowWaiters
-            outputBufferOverflowWaiters.removeAll()
-            waiters.forEach { $0.resume() }
-        #endif
+        outputError = error
+        guard let waiter = outputWaiter else { return }
+        outputWaiter = nil
+        waiter.continuation.resume(throwing: error)
     }
 
-    private func finishOutputDrain(errorCode: Int32) async {
+    private func finishOutputRead(errorCode: Int32) async {
         // The child may exit after a final line that carries no trailing newline.
         if !stdoutPending.isEmpty {
             let trailing = stdoutPending
@@ -356,10 +332,6 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
             waiter.continuation.resume(returning: line)
         } else {
             guard outputError == nil else { return }
-            if outputLines.count - outputLineReadIndex >= maximumBufferedOutputLines {
-                latchOutputBufferOverflow()
-                return
-            }
             outputLines.append(line)
         }
     }
