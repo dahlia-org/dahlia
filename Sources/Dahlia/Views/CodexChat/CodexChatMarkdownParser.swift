@@ -2,6 +2,10 @@ import Foundation
 
 enum CodexChatMarkdownParser {
     static func parse(_ markdown: String) throws -> [CodexChatMarkdownBlock] {
+        try parseTrackingUnstableTail(markdown).blocks
+    }
+
+    static func parseTrackingUnstableTail(_ markdown: String) throws -> CodexChatMarkdownParseResult {
         try Task.checkCancellation()
         let normalizedLineEndings = markdown.replacingOccurrences(of: "\r\n", with: "\n")
         try Task.checkCancellation()
@@ -10,6 +14,7 @@ enum CodexChatMarkdownParser {
         let lines = normalized.components(separatedBy: "\n")
         try Task.checkCancellation()
         var blocks: [CodexChatMarkdownBlock] = []
+        var blockStartLineIndices: [Int] = []
         var index = 0
 
         while index < lines.count {
@@ -18,6 +23,8 @@ enum CodexChatMarkdownParser {
                 index += 1
                 continue
             }
+
+            blockStartLineIndices.append(index)
 
             if let block = try parseFence(lines, index: &index) {
                 blocks.append(block)
@@ -38,21 +45,90 @@ enum CodexChatMarkdownParser {
             }
         }
 
-        return blocks
+        return try makeParseResult(
+            markdown: markdown,
+            lines: lines,
+            blocks: blocks,
+            blockStartLineIndices: blockStartLineIndices
+        )
+    }
+}
+
+private extension CodexChatMarkdownParser {
+    static func makeParseResult(
+        markdown: String,
+        lines: [String],
+        blocks: [CodexChatMarkdownBlock],
+        blockStartLineIndices: [Int]
+    ) throws -> CodexChatMarkdownParseResult {
+        guard let finalBlockStartLine = blockStartLineIndices.last else {
+            return CodexChatMarkdownParseResult(
+                blocks: blocks,
+                stablePrefixBlockCount: 0,
+                reparseSource: markdown
+            )
+        }
+
+        let includesPreviousBlock = shouldIncludePreviousBlock(
+            lines: lines,
+            blocks: blocks,
+            finalBlockStartLine: finalBlockStartLine
+        )
+        let reparseBlockIndex = includesPreviousBlock ? blocks.count - 2 : blocks.count - 1
+        let reparseStartLine = blockStartLineIndices[reparseBlockIndex]
+        let sourceStartIndex = try sourceStartIndex(
+            ofLine: reparseStartLine,
+            in: markdown
+        )
+        return CodexChatMarkdownParseResult(
+            blocks: blocks,
+            stablePrefixBlockCount: reparseBlockIndex,
+            reparseSource: String(markdown[sourceStartIndex...])
+        )
     }
 
-    private enum ListKind: Equatable {
+    static func shouldIncludePreviousBlock(
+        lines: [String],
+        blocks: [CodexChatMarkdownBlock],
+        finalBlockStartLine: Int
+    ) -> Bool {
+        guard blocks.count > 1,
+              finalBlockStartLine == lines.count - 1
+        else { return false }
+
+        let finalLine = lines[finalBlockStartLine]
+        let precedingLine = lines[finalBlockStartLine - 1]
+        let previousBlock = blocks[blocks.count - 2]
+        let finalLineCanInvalidateItsBlockStart = !isAppendStableBlockStart(line: finalLine)
+        let finalLineCanJoinPreviousTable = !precedingLine.trimmingCharacters(in: .whitespaces).isEmpty
+            && previousBlock.isTable
+        let finalLineCanCompleteTableDelimiter = canBecomeTableDelimiter(
+            finalLine,
+            forHeader: precedingLine
+        )
+        let finalLineCanJoinPreviousList = potentialListKind(afterAppendingTo: finalLine)
+            .map { $0 == listKind(previousBlock) } ?? false
+
+        return [
+            finalLineCanInvalidateItsBlockStart,
+            finalLineCanJoinPreviousTable,
+            finalLineCanCompleteTableDelimiter,
+            finalLineCanJoinPreviousList,
+        ].contains(true)
+    }
+
+    enum ListKind: Equatable {
         case unordered
         case ordered
     }
 
-    private struct ListMarker {
+    struct ListMarker {
         let kind: ListKind
         let orderedMarker: String?
         let content: String
     }
 
-    private static func parseFence(
+    static func parseFence(
         _ lines: [String],
         index: inout Int
     ) throws -> CodexChatMarkdownBlock? {
@@ -78,7 +154,7 @@ enum CodexChatMarkdownParser {
         )
     }
 
-    private static func parseTable(
+    static func parseTable(
         _ lines: [String],
         index: inout Int
     ) throws -> CodexChatMarkdownBlock? {
@@ -107,7 +183,7 @@ enum CodexChatMarkdownParser {
         ))
     }
 
-    private static func tableCells(in line: String) -> [String] {
+    static func tableCells(in line: String) -> [String] {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.contains("|") else { return [] }
 
@@ -137,7 +213,7 @@ enum CodexChatMarkdownParser {
         return cells
     }
 
-    private static func tableAlignments(
+    static func tableAlignments(
         in delimiterCells: [String]
     ) -> [CodexChatMarkdownTableAlignment]? {
         var alignments: [CodexChatMarkdownTableAlignment] = []
@@ -159,14 +235,14 @@ enum CodexChatMarkdownParser {
         return alignments
     }
 
-    private static func normalizedTableRow(
+    static func normalizedTableRow(
         _ cells: [String],
         columnCount: Int
     ) -> [String] {
         Array((cells + Array(repeating: "", count: columnCount)).prefix(columnCount))
     }
 
-    private static func parseHeading(_ line: String) -> CodexChatMarkdownBlock? {
+    static func parseHeading(_ line: String) -> CodexChatMarkdownBlock? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         let level = trimmed.prefix(while: { $0 == "#" }).count
         guard (1 ... 6).contains(level),
@@ -179,7 +255,7 @@ enum CodexChatMarkdownParser {
         )
     }
 
-    private static func parseBlockquote(
+    static func parseBlockquote(
         _ lines: [String],
         index: inout Int
     ) throws -> CodexChatMarkdownBlock {
@@ -193,7 +269,7 @@ enum CodexChatMarkdownParser {
         return .blockquote(joinedText(quoteLines))
     }
 
-    private static func parseList(
+    static func parseList(
         _ lines: [String],
         index: inout Int,
         kind: ListKind
@@ -241,7 +317,7 @@ enum CodexChatMarkdownParser {
         }
     }
 
-    private static func parseParagraph(
+    static func parseParagraph(
         _ lines: [String],
         index: inout Int
     ) throws -> CodexChatMarkdownBlock {
@@ -258,7 +334,7 @@ enum CodexChatMarkdownParser {
         return .paragraph(joinedText(paragraphLines))
     }
 
-    private static func joinedText(_ lines: [String]) -> String {
+    static func joinedText(_ lines: [String]) -> String {
         lines.enumerated().reduce(into: "") { result, element in
             let (offset, line) = element
             let hasHardBreak = line.hasSuffix("  ")
@@ -269,7 +345,7 @@ enum CodexChatMarkdownParser {
         }
     }
 
-    private static func listMarker(in line: String) -> ListMarker? {
+    static func listMarker(in line: String) -> ListMarker? {
         let trimmed = removingLeadingWhitespace(from: line)
         if let first = trimmed.first,
            ["-", "*", "+"].contains(first),
@@ -295,7 +371,7 @@ enum CodexChatMarkdownParser {
         )
     }
 
-    private static func nextNonemptyLine(in lines: [String], after index: Int) -> Int? {
+    static func nextNonemptyLine(in lines: [String], after index: Int) -> Int? {
         var candidate = index + 1
         while candidate < lines.count {
             if !lines[candidate].trimmingCharacters(in: .whitespaces).isEmpty {
@@ -306,11 +382,11 @@ enum CodexChatMarkdownParser {
         return nil
     }
 
-    private static func removingLeadingWhitespace(from line: String) -> String {
+    static func removingLeadingWhitespace(from line: String) -> String {
         String(line.drop(while: { $0 == " " || $0 == "\t" }))
     }
 
-    private static func isBlockStart(_ line: String) -> Bool {
+    static func isBlockStart(_ line: String) -> Bool {
         parseHeading(line) != nil ||
             isDivider(line) ||
             isBlockquote(line) ||
@@ -318,13 +394,99 @@ enum CodexChatMarkdownParser {
             listMarker(in: line) != nil
     }
 
-    private static func isBlockquote(_ line: String) -> Bool {
+    static func isBlockquote(_ line: String) -> Bool {
         line.trimmingCharacters(in: .whitespaces).hasPrefix(">")
     }
 
-    private static func isDivider(_ line: String) -> Bool {
+    static func isDivider(_ line: String) -> Bool {
         let compact = line.filter { !$0.isWhitespace }
         guard compact.count >= 3, let marker = compact.first else { return false }
         return ["-", "*", "_"].contains(marker) && compact.allSatisfy { $0 == marker }
+    }
+
+    static func isAppendStableBlockStart(line: String) -> Bool {
+        !isDivider(line)
+    }
+
+    static func canBecomeTableDelimiter(
+        _ line: String,
+        forHeader headerLine: String
+    ) -> Bool {
+        let header = tableCells(in: headerLine)
+        guard !header.isEmpty else { return false }
+
+        let candidate = line.trimmingCharacters(in: .whitespaces)
+        guard !candidate.isEmpty else { return false }
+        return candidate.allSatisfy { character in
+            character == "-"
+                || character == ":"
+                || character == "|"
+                || character.isWhitespace
+        }
+    }
+
+    static func potentialListKind(afterAppendingTo line: String) -> ListKind? {
+        let trimmed = removingLeadingWhitespace(from: line)
+        if trimmed.count == 1, let marker = trimmed.first,
+           ["-", "*", "+"].contains(marker) {
+            return .unordered
+        }
+
+        let number = trimmed.prefix(while: { $0.isNumber })
+        guard !number.isEmpty else { return nil }
+        let suffix = trimmed.dropFirst(number.count)
+        guard suffix.isEmpty || suffix == "." || suffix == ")" else { return nil }
+        return .ordered
+    }
+
+    static func listKind(_ block: CodexChatMarkdownBlock) -> ListKind? {
+        switch block {
+        case .unorderedList:
+            .unordered
+        case .orderedList:
+            .ordered
+        default:
+            nil
+        }
+    }
+
+    static func sourceStartIndex(
+        ofLine targetLine: Int,
+        in markdown: String
+    ) throws -> String.Index {
+        guard targetLine > 0 else { return markdown.startIndex }
+
+        var line = 0
+        var index = markdown.unicodeScalars.startIndex
+        var scannedScalarCount = 0
+
+        while index < markdown.unicodeScalars.endIndex {
+            if scannedScalarCount.isMultiple(of: 1024) {
+                try Task.checkCancellation()
+            }
+            scannedScalarCount += 1
+
+            let scalar = markdown.unicodeScalars[index]
+            index = markdown.unicodeScalars.index(after: index)
+            guard scalar == "\r" || scalar == "\n" else { continue }
+
+            if scalar == "\r",
+               index < markdown.unicodeScalars.endIndex,
+               markdown.unicodeScalars[index] == "\n" {
+                index = markdown.unicodeScalars.index(after: index)
+            }
+            line += 1
+            if line == targetLine {
+                return index
+            }
+        }
+
+        return markdown.endIndex
+    }
+}
+
+private extension CodexChatMarkdownBlock {
+    var isTable: Bool {
+        if case .table = self { true } else { false }
     }
 }

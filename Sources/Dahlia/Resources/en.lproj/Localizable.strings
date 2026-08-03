@@ -932,6 +932,7 @@
 "Organize meetings and Projects from the last %lld days" = "Organize meetings and Projects from the last %lld days";
 "Project organization chat shortcut prompt" = "Use $projects-optimizer to organize Dahlia Meetings and Projects from the last %1$lld days.\ncreated_from: %2$@\ncreated_before: %3$@\n\nReview the Meetings in this period together with the existing Project hierarchy, improve Project descriptions when supported by evidence, and update Meeting assignments.";
 "Copy message" = "Copy message";
+"Copy code" = "Copy code";
 "Thought process" = "Thought process";
 "Selected" = "Selected";
 "Response performance" = "Response performance";

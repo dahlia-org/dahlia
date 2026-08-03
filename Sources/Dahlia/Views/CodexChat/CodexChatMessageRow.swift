@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatMessageRow: View {
     let message: CodexChatMessage
+    let showsInlineActivity: Bool
     let meetingNamesByID: [UUID: String]
     let meetingReferencesByID: [UUID: CodexChatMeetingReference]
 
@@ -35,7 +36,8 @@ struct CodexChatMessageRow: View {
                     if !displayReasoning.isEmpty {
                         CodexChatReasoningView(
                             reasoning: displayReasoning,
-                            isStreaming: message.isStreaming
+                            isStreaming: message.isStreaming,
+                            showsActivity: showsInlineActivity
                         )
                     }
 

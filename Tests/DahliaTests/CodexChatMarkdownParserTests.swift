@@ -151,5 +151,91 @@
             #expect(blocks.count == 1)
             #expect(items.count == 2000)
         }
+
+        @Test func tracksTheUnstableTailSource() throws {
+            let paragraph = try CodexChatMarkdownParser.parseTrackingUnstableTail("single paragraph")
+            #expect(paragraph.stablePrefixBlockCount == 0)
+            #expect(paragraph.reparseSource == "single paragraph")
+
+            let multiple = try CodexChatMarkdownParser.parseTrackingUnstableTail("First\n\n# Heading\n")
+            #expect(multiple.stablePrefixBlockCount == 1)
+            #expect(multiple.reparseSource == "# Heading\n")
+
+            let fence = try CodexChatMarkdownParser.parseTrackingUnstableTail("Intro\n\n```swift\nlet value = 1")
+            #expect(fence.stablePrefixBlockCount == 1)
+            #expect(fence.reparseSource == "```swift\nlet value = 1")
+
+            let empty = try CodexChatMarkdownParser.parseTrackingUnstableTail("")
+            #expect(empty.blocks.isEmpty)
+            #expect(empty.stablePrefixBlockCount == 0)
+            #expect(empty.reparseSource.isEmpty)
+        }
+
+        @Test func expandsTheUnstableTailAcrossADividerBoundary() throws {
+            let result = try CodexChatMarkdownParser.parseTrackingUnstableTail("paragraph\n---")
+
+            #expect(result.blocks == [.paragraph("paragraph"), .divider])
+            #expect(result.stablePrefixBlockCount == 0)
+            #expect(result.reparseSource == "paragraph\n---")
+        }
+
+        @Test func unstableTailReparseMatchesFullParseAtEveryStreamingSplit() throws {
+            let documents = [
+                "Paragraph soft\nline  \nhard\n\n# Heading\n\n- one\n- two",
+                "Before\n\n```swift\nlet value = 1\n```\n\nAfter",
+                "| Name | Value |\n| --- | ---: |\n| one | 1 |\n| two | 2 |",
+                "paragraph\n---x",
+                "```swift\nlet x = 1 ```",
+                "First\r\nsecond\r\n\r\n# Heading",
+                "First\rsecond\r\r# Heading",
+                "# A | B\n--- | ---",
+                "> A | B\n--- | ---",
+                "- A | B\n--- | ---",
+                "- one\n\n- two",
+                "1. one\n\n2. two",
+            ]
+
+            for markdown in documents {
+                let expected = try CodexChatMarkdownParser.parse(markdown)
+                for splitIndex in markdown.indicesIncludingEnd {
+                    let prefix = String(markdown[..<splitIndex])
+                    let suffix = String(markdown[splitIndex...])
+                    let partial = try CodexChatMarkdownParser.parseTrackingUnstableTail(prefix)
+                    let reparsedTail = try CodexChatMarkdownParser.parse(partial.reparseSource + suffix)
+                    let combined = Array(partial.blocks.prefix(partial.stablePrefixBlockCount)) + reparsedTail
+                    #expect(combined == expected, "Mismatch at split \(markdown.distance(from: markdown.startIndex, to: splitIndex)) in \(markdown)")
+                }
+            }
+        }
+
+        @Test func boundarySensitiveStreamingSplitsMatchFullParse() throws {
+            let cases = [
+                ("```swift\nlet x ", "```"),
+                ("```sw", "ift\nlet x = 1"),
+                ("a ", " \nb"),
+                ("paragraph\n---", "x"),
+                ("first\r", "\nsecond"),
+                ("# A | B\n--- | --", "-"),
+                ("> A | B\n--- | --", "-"),
+                ("- A | B\n--", "- | ---"),
+                ("- one\n\n-", " two"),
+                ("1. one\n\n2", ". two"),
+            ]
+
+            for (prefix, suffix) in cases {
+                let partial = try CodexChatMarkdownParser.parseTrackingUnstableTail(prefix)
+                let reparsedTail = try CodexChatMarkdownParser.parse(partial.reparseSource + suffix)
+                let combined = Array(partial.blocks.prefix(partial.stablePrefixBlockCount))
+                    + reparsedTail
+                let expected = try CodexChatMarkdownParser.parse(prefix + suffix)
+                #expect(combined == expected)
+            }
+        }
+    }
+
+    private extension String {
+        var indicesIncludingEnd: [Index] {
+            Array(indices) + [endIndex]
+        }
     }
 #endif

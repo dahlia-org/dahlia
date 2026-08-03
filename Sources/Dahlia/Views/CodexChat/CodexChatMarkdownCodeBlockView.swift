@@ -6,10 +6,14 @@ struct CodexChatMarkdownCodeBlockView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let language {
-                Text(language)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack {
+                if let language {
+                    Text(language)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                CodexChatCopyButton(text: text, title: L10n.copyCodeBlock)
             }
             ScrollView(.horizontal) {
                 Text(text)

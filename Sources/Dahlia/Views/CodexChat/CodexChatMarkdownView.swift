@@ -16,35 +16,12 @@ struct CodexChatMarkdownView: View {
     }
 
     var body: some View {
-        let projection = projectionModel.projection
-        let showsProjection = projection != nil
-            && projectionModel.canDisplayProjection
-            && projectionModel.canDisplayPendingSuffix
-        let pendingSuffix: String? = if projectionModel.canDisplayPendingSuffix {
-            projectionModel.pendingSuffix
-        } else {
-            nil
-        }
-
-        ZStack(alignment: .topLeading) {
-            Text(markdown)
-                .textSelection(.enabled)
-                .opacity(showsProjection ? 0 : 1)
-                .frame(height: showsProjection ? 0 : nil, alignment: .top)
-                .clipped()
-                .allowsHitTesting(!showsProjection)
-                .accessibilityHidden(showsProjection)
-
-            if let projection {
-                CodexChatMarkdownProjectionView(
-                    blocks: projection.blocks,
-                    pendingSuffix: pendingSuffix
-                )
-                .opacity(showsProjection ? 1 : 0)
-                .frame(height: showsProjection ? nil : 0, alignment: .top)
-                .clipped()
-                .allowsHitTesting(showsProjection)
-                .accessibilityHidden(!showsProjection)
+        Group {
+            if let displayBlocks = projectionModel.displayBlocks {
+                CodexChatMarkdownProjectionView(blocks: displayBlocks)
+            } else {
+                Text(markdown)
+                    .textSelection(.enabled)
             }
         }
         .transaction { transaction in

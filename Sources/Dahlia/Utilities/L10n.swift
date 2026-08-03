@@ -2565,6 +2565,7 @@ enum L10n {
     }
 
     static var copyChatMessage: String { String(localized: "Copy message", bundle: bundle) }
+    static var copyCodeBlock: String { String(localized: "Copy code", bundle: bundle) }
     static var chatReasoning: String { String(localized: "Thought process", bundle: bundle) }
     static var selected: String { String(localized: "Selected", bundle: bundle) }
     static var responsePerformance: String { String(localized: "Response performance", bundle: bundle) }

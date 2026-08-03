@@ -12,25 +12,39 @@ actor CodexChatMarkdownRenderer: CodexChatMarkdownRendering {
     func blocks(
         for markdown: String,
         cacheResult: Bool
-    ) async throws -> [CodexChatMarkdownRenderedBlock] {
+    ) async throws -> CodexChatMarkdownRenderResult {
         try Task.checkCancellation()
-        if cacheResult, let blocks = await cache.blocks(for: markdown) {
-            return blocks
+        if cacheResult, let result = await cache.result(for: markdown) {
+            return result
         }
 
-        let parsedBlocks = try CodexChatMarkdownParser.parse(markdown)
-        let blocks = try renderReusingStablePrefix(parsedBlocks)
+        let parsed = try CodexChatMarkdownParser.parseTrackingUnstableTail(markdown)
+        let blocks = try renderReusingStablePrefix(parsed.blocks)
+        let result = CodexChatMarkdownRenderResult(
+            blocks: blocks,
+            stablePrefixBlockCount: parsed.stablePrefixBlockCount,
+            reparseSource: parsed.reparseSource
+        )
         if cacheResult {
-            await cache.insert(blocks, for: markdown)
+            await cache.insert(result, for: markdown)
         }
-        return blocks
+        return result
+    }
+
+    @concurrent nonisolated func pendingBlocks(
+        reparseSource: String,
+        suffix: String
+    ) async throws -> [CodexChatMarkdownRenderedBlock] {
+        try Task.checkCancellation()
+        let blocks = try CodexChatMarkdownParser.parse(reparseSource + suffix)
+        return try CodexChatMarkdownBlockRenderer.render(blocks)
     }
 
     func cache(
-        _ blocks: [CodexChatMarkdownRenderedBlock],
+        _ result: CodexChatMarkdownRenderResult,
         for markdown: String
     ) async {
-        await cache.insert(blocks, for: markdown)
+        await cache.insert(result, for: markdown)
     }
 
     private func renderReusingStablePrefix(
@@ -43,61 +57,11 @@ actor CodexChatMarkdownRenderer: CodexChatMarkdownRendering {
         renderedBlocks.reserveCapacity(parsedBlocks.count)
         for block in parsedBlocks.dropFirst(reusableCount) {
             try Task.checkCancellation()
-            try renderedBlocks.append(render(block))
+            try renderedBlocks.append(CodexChatMarkdownBlockRenderer.render(block))
         }
         previousParsedBlocks = parsedBlocks
         previousRenderedBlocks = renderedBlocks
         return renderedBlocks
     }
 
-    private func render(_ block: CodexChatMarkdownBlock) throws -> CodexChatMarkdownRenderedBlock {
-        try Task.checkCancellation()
-        return switch block {
-        case let .paragraph(text):
-            .paragraph(attributedMarkdown(text))
-        case let .heading(level, text):
-            .heading(level: level, text: attributedMarkdown(text))
-        case let .unorderedList(items):
-            try .unorderedList(items.map { item in
-                try Task.checkCancellation()
-                return attributedMarkdown(item)
-            })
-        case let .orderedList(items):
-            try .orderedList(items.map { item in
-                try Task.checkCancellation()
-                return CodexChatMarkdownRenderedOrderedItem(
-                    marker: item.marker,
-                    text: attributedMarkdown(item.text)
-                )
-            })
-        case let .blockquote(text):
-            .blockquote(attributedMarkdown(text))
-        case let .table(table):
-            try .table(CodexChatMarkdownRenderedTable(
-                header: table.header.map { value in
-                    try Task.checkCancellation()
-                    return attributedMarkdown(value)
-                },
-                rows: table.rows.map { row in
-                    try Task.checkCancellation()
-                    return try row.map { value in
-                        try Task.checkCancellation()
-                        return attributedMarkdown(value)
-                    }
-                },
-                alignments: table.alignments
-            ))
-        case let .code(language, text):
-            .code(language: language, text: text)
-        case .divider:
-            .divider
-        }
-    }
-
-    private func attributedMarkdown(_ value: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: value,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(value)
-    }
 }
