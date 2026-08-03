@@ -31,7 +31,6 @@ struct ConversationAnalyticsEnergyTrendCard: View {
                         y: .value(L10n.conversationAnalyticsRelativeDecibels, sample.value)
                     )
                     .foregroundStyle(by: .value(L10n.conversationAnalyticsSourceDetails, source))
-                    .symbol(by: .value(L10n.conversationAnalyticsSourceDetails, source))
                     .accessibilityLabel(source)
                     .accessibilityValue(L10n.conversationAnalyticsVoiceSampleValue(
                         Formatters.elapsedMinutesSeconds(duration: sample.start),
