@@ -709,6 +709,7 @@ import Foundation
         private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
+        private(set) var returnedSendCount = 0
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
         private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
@@ -808,6 +809,7 @@ import Foundation
                     delayedSendContinuation = continuation
                 }
             }
+            returnedSendCount += 1
             if mode == .failThenComplete, sentTextBlocks.count == 1 {
                 throw CodexAppServerError.invalidProtocolResponse
             }
@@ -951,6 +953,10 @@ import Foundation
             shouldBlock = false
             continuation?.resume()
             continuation = nil
+        }
+
+        func block() {
+            shouldBlock = true
         }
     }
 

@@ -346,6 +346,7 @@ extension CodexChatSessionModel {
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             var replacementTitleText: String?
             if liveTranscript == nil {
                 let submission = CodexChatManualSubmission(text: text ?? "", images: images)

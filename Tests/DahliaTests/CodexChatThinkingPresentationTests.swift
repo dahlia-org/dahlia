@@ -129,6 +129,44 @@ import Foundation
         }
 
         @Test
+        func staleSendCannotReplaceNewPreparationState() async {
+            let service = TestCodexChatService(mode: .delayFirstSendIgnoringCancellation)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Old question"
+
+            session.sendDraft()
+            await waitUntilAsync { await service.isSendWaiting }
+            session.stop()
+
+            contextProvider.block()
+            session.draft = "New question"
+            session.sendDraft()
+            await waitUntil { contextProvider.requestCount == 2 }
+            await service.resumeDelayedSend()
+            await waitUntilAsync { await service.returnedSendCount == 1 }
+
+            #expect(session.isPreparingTurn)
+            #expect(!session.showsStandaloneThinking)
+            #expect(session.draft == "New question")
+            #expect(session.messages.isEmpty)
+
+            session.sendDraft()
+            #expect(session.pendingManualInputs.isEmpty)
+
+            session.stop()
+            contextProvider.resume()
+        }
+
+        @Test
         func completedReasoningDoesNotShowThinkingWhileResponseStreams() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
