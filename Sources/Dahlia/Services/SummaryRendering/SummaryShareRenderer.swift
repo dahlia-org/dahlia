@@ -381,10 +381,15 @@ enum SummaryShareRenderer {
             return blocks.joined(separator: "\n")
         case .slack:
             guard let first = blocks.first else { return "" }
-            return blocks.dropFirst().reduce(first) { result, nextBlock in
-                let separator = result.hasSuffix("</ul>") || result.hasSuffix("</ol>") ? "<br>\n" : "<br><br>\n"
-                return result + separator + nextBlock
+            var html = first
+            var previousBlock = first
+            for block in blocks.dropFirst() {
+                let separator = previousBlock.hasSuffix("</ul>") || previousBlock.hasSuffix("</ol>") ? "<br>\n" : "<br><br>\n"
+                html.append(separator)
+                html.append(block)
+                previousBlock = block
             }
+            return html
         }
     }
 
