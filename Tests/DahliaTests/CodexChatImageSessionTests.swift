@@ -20,6 +20,7 @@ import Foundation
             session.sendDraft()
             await waitUntil { !session.isGenerating }
 
+            #expect(!session.isPreparingTurn)
             #expect(session.attachedImages.count == 1)
             let firstInputs = await service.sentInputs
             #expect(firstInputs.count == 1)

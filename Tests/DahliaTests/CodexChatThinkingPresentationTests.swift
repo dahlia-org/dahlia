@@ -8,7 +8,7 @@ import Foundation
     struct CodexChatThinkingPresentationTests {
         @Test
         func standaloneThinkingHandsOffToActiveResponse() async {
-            let service = TestCodexChatService(mode: .block)
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
             let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
@@ -23,9 +23,28 @@ import Foundation
 
             session.sendDraft()
             await waitUntil { contextProvider.requestCount == 1 }
-            #expect(session.showsStandaloneThinking)
+            #expect(session.isPreparingTurn)
+            #expect(session.messages.isEmpty)
+            #expect(!session.showsStandaloneThinking)
 
             contextProvider.resume()
+            await waitUntil { session.activeTurnID != nil }
+            #expect(!session.isPreparingTurn)
+            #expect(session.showsStandaloneThinking)
+            let waitingItems = CodexChatConversationItem.build(
+                from: session.messages,
+                showsStandaloneThinking: session.showsStandaloneThinking
+            )
+            #expect(waitingItems.count == 2)
+            if case let .message(message) = waitingItems.first {
+                #expect(message.role == .user)
+                #expect(message.text == "Question")
+            } else {
+                Issue.record("Expected the user message before the thinking indicator")
+            }
+            #expect(waitingItems.last == .thinking)
+
+            await service.yieldBlockedEvent(.delta(itemID: "item-1", text: "Partial"))
             await waitUntil { session.messages.last?.text == "Partial" }
             #expect(!session.showsStandaloneThinking)
 
@@ -52,6 +71,99 @@ import Foundation
             session.stop()
             await waitUntil { !session.isGenerating }
             #expect(!session.showsStandaloneThinking)
+        }
+
+        @Test
+        func liveTranscriptShowsThinkingDuringContextResolution() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+
+            session.toggleLiveMode()
+            session.receiveFinalizedLiveTranscript("Live speech")
+            await waitUntil { contextProvider.requestCount == 1 }
+
+            #expect(!session.isPreparingTurn)
+            #expect(session.messages.isEmpty)
+            #expect(session.showsStandaloneThinking)
+
+            session.stop()
+            await waitUntil { !session.isGenerating }
+            contextProvider.resume()
+        }
+
+        @Test
+        func repeatedManualSubmitWhilePreparingIsIgnored() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider(shouldBlock: true)
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Question"
+
+            session.sendDraft()
+            await waitUntil { contextProvider.requestCount == 1 }
+            #expect(session.isPreparingTurn)
+
+            session.sendDraft()
+            #expect(session.pendingManualInputs.isEmpty)
+
+            contextProvider.resume()
+            await waitUntil { !session.isGenerating }
+            #expect(await service.sentTextBlocks == [["Question"]])
+            #expect(session.messages.filter { $0.role == .user }.map(\.text) == ["Question"])
+        }
+
+        @Test
+        func staleSendCannotReplaceNewPreparationState() async {
+            let service = TestCodexChatService(mode: .delayFirstSendIgnoringCancellation)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let contextProvider = TestCodexChatContextProvider()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                contextProvider: contextProvider
+            )
+            session.draft = "Old question"
+
+            session.sendDraft()
+            await waitUntilAsync { await service.isSendWaiting }
+            session.stop()
+
+            contextProvider.block()
+            session.draft = "New question"
+            session.sendDraft()
+            await waitUntil { contextProvider.requestCount == 2 }
+            await service.resumeDelayedSend()
+            await waitUntilAsync { await service.returnedSendCount == 1 }
+
+            #expect(session.isPreparingTurn)
+            #expect(!session.showsStandaloneThinking)
+            #expect(session.draft == "New question")
+            #expect(session.messages.isEmpty)
+
+            session.sendDraft()
+            #expect(session.pendingManualInputs.isEmpty)
+
+            session.stop()
+            contextProvider.resume()
         }
 
         @Test

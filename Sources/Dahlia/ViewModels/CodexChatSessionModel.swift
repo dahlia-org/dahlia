@@ -25,6 +25,7 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
+    var isPreparingTurn = false
     var isAwaitingTurnOutput = false
     var lastSubmittedText: String?
     var attachedImages: [CodexChatImageAttachment] = []
@@ -53,6 +54,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
     @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
+    @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     @ObservationIgnored var isActiveTurnLiveTranscript = false
     @ObservationIgnored var didSendLiveModeContext = false
@@ -170,7 +172,8 @@ final class CodexChatSessionModel: Identifiable {
             composerSnapshot: composerSnapshot
         )
         if isGenerating {
-            let isDuplicate = activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
+            let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
+                || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
                 || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
             guard !isDuplicate else { return }
             enqueueManualInput(submission)
@@ -343,7 +346,8 @@ extension CodexChatSessionModel {
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
-            var replacedLiveModePlaceholderTitle = false
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            var replacementTitleText: String?
             if liveTranscript == nil {
                 let submission = CodexChatManualSubmission(text: text ?? "", images: images)
                 clearComposer(ifMatching: composerSnapshot)
@@ -355,11 +359,18 @@ extension CodexChatSessionModel {
                     context: context,
                     images: images
                 ))
-                let titleText = submission.text.nilIfBlank ?? L10n.chatImage
-                replacedLiveModePlaceholderTitle = await replaceLiveModePlaceholderTitleIfNeeded(with: titleText)
+                replacementTitleText = submission.text.nilIfBlank ?? L10n.chatImage
             }
             messages.append(CodexChatMessage(id: responseID, role: .assistant, text: "", isStreaming: true))
             activeResponseID = responseID
+            isAwaitingTurnOutput = true
+            isPreparingTurn = false
+            preparingManualComposerSnapshot = nil
+            let replacedLiveModePlaceholderTitle = if let replacementTitleText {
+                await replaceLiveModePlaceholderTitleIfNeeded(with: replacementTitleText)
+            } else {
+                false
+            }
             if liveModeState.includesContext,
                isLiveModeEnabled,
                liveModeGeneration == liveModeState.generation {
@@ -546,6 +557,8 @@ extension CodexChatSessionModel {
     ) {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
+        isPreparingTurn = false
+        preparingManualComposerSnapshot = nil
         activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false
         activeTurnID = nil
@@ -868,9 +881,6 @@ extension CodexChatSessionModel {
         context: CodexChatContext?,
         awaitsOutput: Bool
     ) async {
-        if awaitsOutput {
-            isAwaitingTurnOutput = true
-        }
         switch input {
         case let .manual(submission):
             clearComposer(ifMatching: submission.composerSnapshot)
@@ -880,8 +890,14 @@ extension CodexChatSessionModel {
                 context: context,
                 images: submission.images
             ))
+            if awaitsOutput {
+                isAwaitingTurnOutput = true
+            }
             _ = await replaceLiveModePlaceholderTitleIfNeeded(with: submission.text.nilIfBlank ?? L10n.chatImage)
         case let .liveTranscript(_, wasTruncated):
+            if awaitsOutput {
+                isAwaitingTurnOutput = true
+            }
             if wasTruncated {
                 noticeMessage = L10n.chatLiveTranscriptBacklogTruncated
             }

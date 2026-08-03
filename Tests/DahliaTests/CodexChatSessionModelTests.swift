@@ -435,6 +435,7 @@ import Foundation
             await waitUntil { !session.isGenerating }
 
             #expect(session.draft == "Keep this")
+            #expect(!session.isPreparingTurn)
             #expect(session.messages.isEmpty)
             #expect(session.errorMessage != nil)
             #expect(session.lastSubmittedText == "Keep this")
@@ -687,6 +688,7 @@ import Foundation
         enum Mode {
             case complete
             case block
+            case blockBeforeOutput
             case burstThenBlock
             case bufferedBurstThenInterrupt
             case finishesWithoutTerminal
@@ -707,6 +709,7 @@ import Foundation
         private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
         private(set) var unsubscribedThreadIDs: [String] = []
+        private(set) var returnedSendCount = 0
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
         private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
@@ -748,7 +751,7 @@ import Foundation
                 }
             }
             let assistantMessages: [CodexChatMessage] = switch mode {
-            case .complete, .block, .burstThenBlock, .bufferedBurstThenInterrupt,
+            case .complete, .block, .blockBeforeOutput, .burstThenBlock, .bufferedBurstThenInterrupt,
                  .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
                  .delayFirstSendIgnoringCancellation:
                 [CodexChatMessage(role: .assistant, text: "Final answer", reasoning: "Considered the question")]
@@ -806,6 +809,7 @@ import Foundation
                     delayedSendContinuation = continuation
                 }
             }
+            returnedSendCount += 1
             if mode == .failThenComplete, sentTextBlocks.count == 1 {
                 throw CodexAppServerError.invalidProtocolResponse
             }
@@ -829,6 +833,8 @@ import Foundation
                 continuation.finish()
             case .block:
                 continuation.yield(.delta(itemID: "item-1", text: "Partial"))
+                blockedContinuation = continuation
+            case .blockBeforeOutput:
                 blockedContinuation = continuation
             case .burstThenBlock:
                 continuation.yield(.delta(itemID: "item-1", text: "First"))
@@ -947,6 +953,10 @@ import Foundation
             shouldBlock = false
             continuation?.resume()
             continuation = nil
+        }
+
+        func block() {
+            shouldBlock = true
         }
     }
 
