@@ -45,6 +45,9 @@ struct CodexChatView: View {
                 CodexChatEmptyStateView(
                     recentThreads: Array(coordinator.history.prefix(3)),
                     meetingNamesByID: session.meetingNamesByID,
+                    showsProjectOrganizationShortcut: session.showsProjectOrganizationShortcut,
+                    isProjectOrganizationShortcutEnabled: session.canSendProjectOrganizationShortcut,
+                    onOrganizeRecentMeetingsAndProjects: { session.sendProjectOrganizationShortcut() },
                     onOpenThread: openHistoryThread,
                     onShowAll: showHistory
                 )

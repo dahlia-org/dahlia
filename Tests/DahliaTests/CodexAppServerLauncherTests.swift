@@ -91,6 +91,21 @@ import Foundation
         }
 
         @Test
+        func projectsOptimizerDefaultsToTheMostRecentNinetyDays() throws {
+            let rootURL = URL.temporaryDirectory
+                .appending(path: "dahlia-codex-projects-default-\(UUID().uuidString)", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+
+            let homeURL = try ApplicationSupportCodexHomeLocator(applicationSupportURL: rootURL).homeURL()
+            try BundledCodexPresetSkillInstaller().install(into: homeURL)
+            let skillURL = homeURL
+                .appending(path: "skills/projects-optimizer/SKILL.md")
+            let body = try String(contentsOf: skillURL, encoding: .utf8)
+
+            #expect(body.contains("For a broad request without dates, use the most recent 90 days"))
+        }
+
+        @Test
         func replacesSymlinkedPresetWithoutModifyingItsTarget() throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-codex-skill-link-\(UUID().uuidString)", directoryHint: .isDirectory)

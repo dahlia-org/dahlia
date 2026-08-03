@@ -51,6 +51,11 @@ Dahlia の「顧客インテリジェンス」画面は、選択中の Vault に
 人物はドメインだけで所属を決めず、議事録などの証拠に基づいて `set_contact_organization_membership` で
 明示的に所属させます。
 
+新しい AI チャットの上部には「直近30日のミーティングとProjectを整理」ショートカットがあります。選択時に
+直近30日の開始・終了日時を確定して依頼を自動送信し、`projects-optimizer` が Meeting、Project 階層、説明、
+Meeting assignment を整理します。この30日はショートカット固有の明示指定であり、期間を指定せずに
+`projects-optimizer` を依頼した場合は既定の90日を使用します。
+
 アプリ内チャットには、この整理手順を層ごとに固定した preset skill が同梱されています。人物・組織・所属は
 `contacts-organizations-curator`、継続トピックは `conversation-topics-curator`、インサイトは
 `insights-curator` が担当し、依頼内容に応じてチャットが自動で選択します。3つは互いを参照しないため、
