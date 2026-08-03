@@ -38,9 +38,9 @@ public extension MeetingAccessStore {
             case let .unchanged(result):
                 return result
             case let .apply(update):
-                try applySummaryUpdate(update)
+                let result = try applySummaryUpdate(update)
                 DahliaWorkspaceChangeNotification.post(vaultID: vaultID)
-                return update.result
+                return result
             }
         }
     }
@@ -57,12 +57,24 @@ extension MeetingAccessStore {
         let expectedDocumentVersion: String
         let storedDocument: String
         let summaryTitle: String
-        let meetingName: String?
-        let meetingDescription: String?
+        let meetingName: String
+        let meetingDescription: String
         let tags: [String]
         /// 書き戻す Vault の Markdown。書き出し記録がない、または到達できない場合は nil。
         let vaultFile: VaultFileWrite?
-        let result: SummaryMutationResult
+        let vaultExport: SummaryMutationResult.VaultExportOutcome
+
+        func result(staleExports: [String]) -> SummaryMutationResult {
+            SummaryMutationResult(
+                meetingID: meetingID,
+                documentVersion: MeetingAccessStore.summaryDocumentVersion(storedDocument),
+                title: summaryTitle,
+                description: meetingDescription,
+                changed: true,
+                vaultExport: vaultExport,
+                staleExports: staleExports
+            )
+        }
     }
 
     struct VaultFileWrite {
@@ -124,21 +136,19 @@ extension MeetingAccessStore {
         try validateScreenshotReferences(document, meetingID: meetingID, in: db)
 
         let existingTitle: String = summaryRow["title"]
-        let meetingName = SummaryGeneratedMetadata.normalizedTitle(document.title)
-        let summaryTitle = meetingName ?? existingTitle
-        let meetingDescription = SummaryGeneratedMetadata.normalizedDescription(document.description)
-        let staleExports = try self.staleExports(meetingID: meetingID, in: db)
+        let meetingName = SummaryGeneratedMetadata.normalizedTitle(document.title) ?? ""
+        let meetingDescription = SummaryGeneratedMetadata.normalizedDescription(document.description) ?? ""
 
         let normalizedExistingDocument = try SummaryDocument.decode(databaseJSON: existingDocument).databaseJSONString()
         guard storedDocument != normalizedExistingDocument else {
-            return .unchanged(SummaryMutationResult(
+            return try .unchanged(SummaryMutationResult(
                 meetingID: meetingID,
                 documentVersion: expectedDocumentVersion,
                 title: existingTitle,
-                description: meetingDescription ?? "",
+                description: meetingDescription,
                 changed: false,
                 vaultExport: .unchanged,
-                staleExports: staleExports
+                staleExports: staleExports(meetingID: meetingID, in: db)
             ))
         }
 
@@ -155,26 +165,21 @@ extension MeetingAccessStore {
             meetingID: meetingID,
             expectedDocumentVersion: expectedDocumentVersion,
             storedDocument: storedDocument,
-            summaryTitle: summaryTitle,
+            summaryTitle: meetingName,
             meetingName: meetingName,
             meetingDescription: meetingDescription,
             tags: document.tags.filter { !$0.isEmpty },
             vaultFile: vaultFile.write,
-            result: SummaryMutationResult(
-                meetingID: meetingID,
-                documentVersion: Self.summaryDocumentVersion(storedDocument),
-                title: summaryTitle,
-                description: meetingDescription ?? "",
-                changed: true,
-                vaultExport: vaultFile.outcome,
-                staleExports: staleExports
-            )
+            vaultExport: vaultFile.outcome
         ))
     }
 
     private func validate(_ document: SummaryDocument) throws {
         guard document.schemaVersion == 3 else {
             throw MeetingAccessError.invalidSummaryUpdate("schema_version must be 3.")
+        }
+        guard StoredSummaryDocumentMarkdownRenderer.hasValidTranscriptReferences(document) else {
+            throw MeetingAccessError.invalidSummaryUpdate("transcript_ref must match HH:MM:SS.")
         }
         guard document.sections.count <= SummaryWriteLimits.sections else {
             throw MeetingAccessError.invalidSummaryUpdate(
@@ -357,15 +362,16 @@ extension MeetingAccessStore {
 
     // MARK: - Database
 
-    func applySummaryUpdate(_ update: SummaryUpdate) throws {
+    func applySummaryUpdate(_ update: SummaryUpdate) throws -> SummaryMutationResult {
         try writingVaultFile(update) {
             try database.write { db in
-                try commitSummaryUpdate(update, in: db)
+                let staleExports = try commitSummaryUpdate(update, in: db)
+                return update.result(staleExports: staleExports)
             }
         }
     }
 
-    func commitSummaryUpdate(_ update: SummaryUpdate, in db: Database) throws {
+    func commitSummaryUpdate(_ update: SummaryUpdate, in db: Database) throws -> [String] {
         guard let currentDocument = try String.fetchOne(
             db,
             sql: "SELECT document FROM summaries WHERE meetingId = ?",
@@ -386,20 +392,9 @@ extension MeetingAccessStore {
             throw MeetingAccessError.summaryVersionConflict
         }
 
-        var assignments = ["updatedAt = ?"]
-        var arguments: StatementArguments = [now]
-        if let meetingName = update.meetingName {
-            assignments.append("name = ?")
-            arguments += [meetingName]
-        }
-        if let meetingDescription = update.meetingDescription {
-            assignments.append("description = ?")
-            arguments += [meetingDescription]
-        }
-        arguments += [update.meetingID, vaultID]
         try db.execute(
-            sql: "UPDATE meetings SET \(assignments.joined(separator: ", ")) WHERE id = ? AND vaultId = ?",
-            arguments: arguments
+            sql: "UPDATE meetings SET name = ?, description = ?, updatedAt = ? WHERE id = ? AND vaultId = ?",
+            arguments: [update.meetingName, update.meetingDescription, now, update.meetingID, vaultID]
         )
 
         try upsertTags(update.tags, meetingID: update.meetingID, now: now, in: db)
@@ -410,6 +405,7 @@ extension MeetingAccessStore {
                 arguments: [vaultSummaryURL(file.relativePath), now, update.meetingID]
             )
         }
+        return try staleExports(meetingID: update.meetingID, in: db)
     }
 
     /// アプリの生成経路と同じく追加のみ。既存タグは外さない。

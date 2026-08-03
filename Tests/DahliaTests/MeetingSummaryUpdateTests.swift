@@ -61,6 +61,36 @@ import GRDB
         }
 
         @Test
+        func blankDocumentMetadataClearsMeetingMetadata() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            var corrected = Self.document(title: "   ", body: "Corrected body")
+            corrected.description = "\n"
+
+            let result = try store.updateMeetingSummary(
+                meetingID: fixture.firstMeetingID,
+                expectedDocumentVersion: version,
+                document: corrected
+            )
+
+            #expect(result.title.isEmpty)
+            #expect(result.description.isEmpty)
+            let metadata = try fixture.manager.dbQueue.read { db in
+                try Row.fetchOne(
+                    db,
+                    sql: "SELECT name, description FROM meetings WHERE id = ?",
+                    arguments: [fixture.firstMeetingID]
+                )
+            }
+            let row = try #require(metadata)
+            let name: String = row["name"]
+            let description: String? = row["description"]
+            #expect(name.isEmpty)
+            #expect(description == "")
+        }
+
+        @Test
         func addsDocumentTagsWithoutRemovingExistingTags() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -208,6 +238,39 @@ import GRDB
         }
 
         @Test
+        func includesExportCreatedBetweenPlanningAndCommitInStaleExports() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let plan = try store.database.read { db in
+                try store.makeSummaryUpdatePlan(
+                    meetingID: fixture.firstMeetingID,
+                    expectedDocumentVersion: version,
+                    document: Self.document(title: "Corrected", body: "Corrected body"),
+                    vaultURL: fixture.primaryVaultURL,
+                    in: db
+                )
+            }
+            guard case let .apply(update) = plan else {
+                Issue.record("Expected the changed document to produce an update plan")
+                return
+            }
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    INSERT INTO summary_exports (meetingId, type, url, createdAt, updatedAt)
+                    VALUES (?, 'google_docs', 'https://docs.google.com/document/d/late/edit', ?, ?)
+                    """,
+                    arguments: [fixture.firstMeetingID, Date(), Date()]
+                )
+            }
+
+            let result = try store.applySummaryUpdate(update)
+
+            #expect(result.staleExports == ["google_docs"])
+        }
+
+        @Test
         func rejectsStaleDocumentVersionWithoutChangingAnything() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -291,6 +354,26 @@ import GRDB
             document.sections[0].blocks.append(.image(screenshotId: fixture.otherVaultScreenshotID, caption: "Shot"))
 
             #expect(throws: MeetingAccessError.summaryScreenshotNotFound) {
+                try store.updateMeetingSummary(
+                    meetingID: fixture.firstMeetingID,
+                    expectedDocumentVersion: version,
+                    document: document
+                )
+            }
+        }
+
+        @Test
+        func rejectsInvalidTranscriptReferencesFromDirectStoreCallers() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            var document = Self.document(title: "Bad reference", body: "Body")
+            document.sections[0].blocks[0] = .paragraph(
+                "Body",
+                transcriptRef: TranscriptReference(time: "not-a-time")
+            )
+
+            #expect(throws: MeetingAccessError.self) {
                 try store.updateMeetingSummary(
                     meetingID: fixture.firstMeetingID,
                     expectedDocumentVersion: version,
@@ -421,8 +504,20 @@ import GRDB
             let missingBlockContent = try Self.updatingFirstBlock(in: current.document) { block in
                 block.removeValue(forKey: "content")
             }
+            let invalidTranscriptReference = try Self.updatingFirstBlock(in: current.document) { block in
+                guard var content = block["content"] as? [String: Any] else { return }
+                content["transcript_ref"] = "not-a-time"
+                block["content"] = content
+            }
 
-            for (index, document) in [unknownRootKey, collidingAlias, unknownBlockType, missingBlockContent].enumerated() {
+            let malformedDocuments = [
+                unknownRootKey,
+                collidingAlias,
+                unknownBlockType,
+                missingBlockContent,
+                invalidTranscriptReference,
+            ]
+            for (index, document) in malformedDocuments.enumerated() {
                 let line = try Self.summaryUpdateRequest(
                     id: 20 + index,
                     meetingID: fixture.firstMeetingID,

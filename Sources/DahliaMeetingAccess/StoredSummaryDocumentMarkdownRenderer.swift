@@ -51,7 +51,20 @@ enum StoredSummaryDocumentMarkdownRenderer {
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
             ))
         }
+        guard hasValidTranscriptReferences(document) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: "transcript_ref must match HH:MM:SS"
+            ))
+        }
         return document
+    }
+
+    static func hasValidTranscriptReferences(_ document: SummaryDocument) -> Bool {
+        document.sections
+            .flatMap(\.blocks)
+            .flatMap(transcriptReferenceTimes)
+            .allSatisfy { $0.wholeMatch(of: /^[0-9]{2,}:[0-9]{2}:[0-9]{2}$/) != nil }
     }
 
     private static func addingLegacyDefaults(to value: JSONValue) -> JSONValue {
@@ -82,6 +95,22 @@ enum StoredSummaryDocumentMarkdownRenderer {
         default:
             return value
         }
+    }
+
+    private static func transcriptReferenceTimes(_ block: SummaryBlock) -> [String] {
+        let texts: [SummaryText] = switch block.content {
+        case let .paragraph(text), let .quote(text):
+            [text]
+        case let .bulletedList(items), let .numberedList(items):
+            items
+        case let .checklist(items):
+            items.map(\.text)
+        case let .code(_, text), let .image(_, text), let .heading(_, text):
+            [text]
+        case let .table(headers, rows):
+            headers + rows.joined()
+        }
+        return texts.compactMap { $0.transcriptRef?.time }
     }
 
     private static func renderSection(_ section: SummarySection) -> String? {
