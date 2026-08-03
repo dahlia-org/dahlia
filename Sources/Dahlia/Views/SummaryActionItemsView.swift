@@ -8,13 +8,13 @@ struct SummaryActionItemsView: View {
         let displayableItems = actionItems.filter { $0.title.nilIfBlank != nil }
 
         if !displayableItems.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
                 Text(L10n.actionItems)
                     .font(.title3.bold())
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
+                    .padding(.top, DahliaDesign.sectionHeadingTopPadding)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(Array(displayableItems.enumerated()), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "square")
@@ -24,6 +24,7 @@ struct SummaryActionItemsView: View {
                             Text(inlineMarkdown(item.title))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .lineSpacing(DahliaDesign.paragraphLineSpacing)
 
                             if let assignee = item.assignee.nilIfBlank {
                                 Text("(\(assignee))")

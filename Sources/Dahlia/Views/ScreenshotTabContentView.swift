@@ -53,6 +53,8 @@ struct ScreenshotTabContentView: View {
                     download: download,
                     delete: delete
                 )
+                .padding(.horizontal, DahliaDesign.tabContentInset)
+                .padding(.bottom, DahliaDesign.tabContentInset)
             }
         }
     }

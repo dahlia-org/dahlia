@@ -45,6 +45,8 @@ private struct MeetingNameHeader: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
     let onEditorTap: () -> Void
+    @State private var isHovered = false
+    @FocusState private var isTitleButtonFocused: Bool
 
     private var displayName: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -85,10 +87,16 @@ private struct MeetingNameHeader: View {
                         Image(systemName: "pencil")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.tertiary)
+                            .opacity(isHovered || isTitleButtonFocused ? 1 : 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable()
+                .focused($isTitleButtonFocused)
+                .onHover { hovering in
+                    isHovered = hovering
+                }
                 .help(L10n.rename)
             }
         }
@@ -154,7 +162,7 @@ private struct MeetingDetailHeader: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             MeetingNameHeader(
                 title: title,
                 isEditing: $isEditing,
@@ -183,29 +191,12 @@ private struct MeetingDetailHeader: View {
     }
 
     private var metadataStack: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            FlowLayout(spacing: 8, rowSpacing: 8) {
-                if let calendarEvent {
-                    CalendarEventMetadataButton(
-                        text: metadataText,
-                        event: calendarEvent
-                    )
-                } else {
-                    MeetingMetadataPill(systemImage: "calendar", text: metadataText)
-                }
-
-                MeetingProjectPicker(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    style: .regular
-                )
-            }
-
-            MeetingMetadataBar(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel
-            )
-        }
+        MeetingMetadataBar(
+            viewModel: viewModel,
+            sidebarViewModel: sidebarViewModel,
+            metadataText: metadataText,
+            calendarEvent: calendarEvent
+        )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -220,29 +211,6 @@ private struct MeetingDetailHeader: View {
     }
 }
 
-private struct MeetingMetadataPill: View {
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        Label {
-            Text(text)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-        } icon: {
-            Image(systemName: systemImage)
-                .font(.caption2)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(0.06))
-        )
-    }
-}
-
 /// メインコントロールウィンドウ（議事録ビュー）。
 struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
@@ -250,7 +218,7 @@ struct ControlPanelView: View {
     let recordingCoordinator: RecordingCoordinator
     let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
-    @State private var selectedTab: DetailTab = .notes
+    @State private var selectedTab: DetailTab = .summary
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
@@ -265,36 +233,43 @@ struct ControlPanelView: View {
     @FocusState private var isNotesFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 12) {
-            // 準備中プログレス
-            if viewModel.isPreparingAnalyzer {
-                ProgressView(L10n.preparingSpeechRecognition)
-                    .progressViewStyle(.linear)
-            }
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                // 準備中プログレス
+                if viewModel.isPreparingAnalyzer {
+                    ProgressView(L10n.preparingSpeechRecognition)
+                        .progressViewStyle(.linear)
+                }
 
-            if let meetingTitle = displayedMeetingTitle,
-               viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil {
-                MeetingDetailHeader(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    title: meetingTitle,
-                    metadataText: meetingMetadataText,
-                    calendarEvent: displayedCalendarEvent,
-                    isEditing: $isEditingMeetingName,
-                    editingName: $editingMeetingName,
-                    isFocused: $isMeetingNameFieldFocused,
-                    onBeginEditing: beginMeetingRename,
-                    onCommit: commitMeetingRename,
-                    onCancel: cancelMeetingRename,
-                    onEditorTap: markMeetingNameEditorTap,
-                    onDelete: requestCurrentMeetingDeletion
+                if let meetingTitle = displayedMeetingTitle,
+                   viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil {
+                    MeetingDetailHeader(
+                        viewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        title: meetingTitle,
+                        metadataText: meetingMetadataText,
+                        calendarEvent: displayedCalendarEvent,
+                        isEditing: $isEditingMeetingName,
+                        editingName: $editingMeetingName,
+                        isFocused: $isMeetingNameFieldFocused,
+                        onBeginEditing: beginMeetingRename,
+                        onCommit: commitMeetingRename,
+                        onCancel: cancelMeetingRename,
+                        onEditorTap: markMeetingNameEditorTap,
+                        onDelete: requestCurrentMeetingDeletion
+                    )
+                }
+
+                MeetingDetailNavigationBar(
+                    selection: $selectedTab,
+                    viewModel: viewModel
                 )
             }
+            .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+            .padding(.top, DahliaDesign.detailTopPadding)
 
-            MeetingDetailNavigationBar(
-                selection: $selectedTab,
-                viewModel: viewModel
-            )
+            Divider()
+                .opacity(0.5)
 
             // タブコンテンツ
             Group {
@@ -330,49 +305,25 @@ struct ControlPanelView: View {
                     )
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(minHeight: 280)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(tabContentBackgroundColor)
-            )
+            .background {
+                Rectangle().fill(tabContentBackgroundColor)
+            }
 
             // エラー表示
             if let error = viewModel.errorMessage {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                    Spacer()
-                }
+                detailErrorBanner(message: error, tint: .red)
             }
 
             if let summaryError = viewModel.summaryError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(summaryError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                    Spacer()
-                }
+                detailErrorBanner(message: summaryError, tint: .red)
             }
 
             if let googleDocsExportError = viewModel.googleDocsExportError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(googleDocsExportError)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                    Spacer()
-                }
+                detailErrorBanner(message: googleDocsExportError, tint: .orange)
             }
-
         }
-        .padding(28)
         .frame(minWidth: 500, minHeight: 500)
         .simultaneousGesture(
             TapGesture().onEnded {
@@ -466,6 +417,21 @@ struct ControlPanelView: View {
 
     // MARK: - Tab Contents
 
+    private func detailErrorBanner(message: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(tint)
+            Spacer()
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
+        .padding(.vertical, 4)
+    }
+
     private var summaryTabContent: some View {
         SummaryTabContentView(
             screenshotStore: viewModel.screenshotStore,
@@ -501,15 +467,10 @@ struct ControlPanelView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(.background)
-                )
-
                 Spacer(minLength: 0)
             }
         }
-        .padding(12)
+        .padding(DahliaDesign.tabContentInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -639,16 +600,8 @@ struct ControlPanelView: View {
         return nil
     }
 
-    private var persistedSummaryExists: Bool {
-        currentMeetingItem?.hasSummary == true
-    }
-
-    private var hasSummaryTab: Bool {
-        persistedSummaryExists || viewModel.hasCurrentMeetingSummary
-    }
-
     private var tabContentBackgroundColor: Color {
-        selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .controlBackgroundColor)
+        selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .windowBackgroundColor)
     }
 
     private var showsToolbarRecordButton: Bool {
@@ -744,7 +697,7 @@ struct ControlPanelView: View {
     }
 
     private var initialTabSelection: DetailTab {
-        hasSummaryTab ? .summary : .notes
+        .summary
     }
 
 }

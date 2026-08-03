@@ -273,8 +273,8 @@ private extension ProjectManagementView {
             )
 
             projectNameSection(for: project)
-            hierarchySection(for: project)
             descriptionSection
+            hierarchySection(for: project)
             destinationSection(for: project)
             projectDeletionSection
         }

@@ -12,18 +12,17 @@ struct SummaryTabContentView: View {
     var body: some View {
         if let document, hasSummary {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    SummaryDocumentView(
-                        document: document,
-                        screenshotProvider: screenshot,
-                        onOpenImage: openScreenshot,
-                        transcriptTextProvider: transcriptText,
-                        allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                SummaryDocumentView(
+                    document: document,
+                    screenshotProvider: screenshot,
+                    onOpenImage: openScreenshot,
+                    transcriptTextProvider: transcriptText,
+                    allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
+                )
+                .frame(maxWidth: DahliaDesign.readingMaxWidth, alignment: .leading)
+                .padding(.horizontal, DahliaDesign.readingHorizontalPadding)
+                .padding(.vertical, DahliaDesign.tabContentInset)
+                .frame(maxWidth: .infinity)
             }
         } else {
             ContentUnavailableView {

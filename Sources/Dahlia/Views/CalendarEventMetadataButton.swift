@@ -6,6 +6,7 @@ struct CalendarEventMetadataButton: View {
     private let attributedDescription: AttributedString?
 
     @State private var isPresented = false
+    @State private var isHovered = false
 
     init(text: String, event: CalendarEventDisplayInfo) {
         self.text = text
@@ -24,15 +25,14 @@ struct CalendarEventMetadataButton: View {
                     .font(.caption2)
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.primary.opacity(0.06))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .dahliaChipSurface(isHovered: isHovered)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .help(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityLabel(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityValue(detailLines.joined(separator: ", "))

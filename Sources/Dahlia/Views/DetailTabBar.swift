@@ -17,6 +17,9 @@ struct DetailTabBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
     @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selectionIndicator
+    @State private var hoveredTab: DetailTab?
 
     private var isFolderOnly: Bool {
         viewModel.currentMeetingId == nil && !viewModel.isListening && !viewModel.hasDraftMeeting
@@ -32,32 +35,73 @@ struct DetailTabBar: View {
         ScrollView(.horizontal) {
             HStack(spacing: 4) {
                 ForEach(availableTabs) { tab in
-                    Button(tab.label) { selection = tab }
-                        .buttonStyle(.plain)
-                        .font(.body)
-                        .bold(tab == selection)
-                        .foregroundStyle(tab == selection ? .primary : .secondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .contentShape(.rect)
-                        .overlay(alignment: .bottom) {
-                            if tab == selection {
-                                Capsule()
-                                    .fill(.primary)
-                                    .frame(height: 2)
-                                    .padding(.horizontal, 8)
-                            }
+                    let isSelected = tab == selection
+
+                    Button {
+                        select(tab)
+                    } label: {
+                        ZStack {
+                            Text(tab.label)
+                                .font(.body.weight(.semibold))
+                                .hidden()
+                            Text(tab.label)
+                                .font(.body.weight(isSelected ? .semibold : .regular))
                         }
-                        .keyboardShortcut(tab.keyboardShortcut, modifiers: .command)
-                        .help(tab.label)
-                        .accessibilityAddTraits(tab == selection ? .isSelected : [])
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
+                    .padding(.vertical, DahliaDesign.tabVerticalPadding)
+                    .background {
+                        if !isFolderOnly, hoveredTab == tab {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.primary.opacity(0.05))
+                        }
+                    }
+                    .contentShape(.rect)
+                    .overlay(alignment: .bottom) {
+                        if isSelected {
+                            Capsule()
+                                .fill(.primary)
+                                .frame(height: DahliaDesign.tabIndicatorHeight)
+                                .padding(.horizontal, 8)
+                                .matchedGeometryEffect(id: "detail-tab-selection", in: selectionIndicator)
+                        }
+                    }
+                    .onHover { hovering in
+                        guard !isFolderOnly else { return }
+                        if hovering {
+                            hoveredTab = tab
+                        } else if hoveredTab == tab {
+                            hoveredTab = nil
+                        }
+                    }
+                    .keyboardShortcut(tab.keyboardShortcut, modifiers: .command)
+                    .help(tab.label)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
         }
         .scrollIndicators(.hidden)
         .disabled(isFolderOnly)
+        .onChange(of: isFolderOnly) { _, folderOnly in
+            if folderOnly {
+                hoveredTab = nil
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.meetingContent)
+    }
+
+    private func select(_ tab: DetailTab) {
+        guard tab != selection else { return }
+        if reduceMotion {
+            selection = tab
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                selection = tab
+            }
+        }
     }
 }
