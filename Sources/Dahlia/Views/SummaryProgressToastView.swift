@@ -5,28 +5,73 @@ struct SummaryProgressToastView: View {
     let jobs: [SummaryGenerationJob]
     let onDismiss: (UUID) -> Void
 
+    @State private var isExpanded = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(L10n.runningTasks)
-                .font(.callout)
-                .bold()
-                .foregroundStyle(.primary)
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(L10n.runningTasks)
+                        .font(.callout)
+                        .bold()
+                        .foregroundStyle(.primary)
 
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(jobs) { job in
-                        SummaryGenerationJobProgressView(job: job, onDismiss: onDismiss)
+                    Text(jobs.count, format: .number)
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(Color.primary.opacity(0.1), in: Capsule())
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L10n.runningTasks)
+                .accessibilityValue(jobs.count.formatted())
+
+                Spacer(minLength: 8)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Label(
+                        isExpanded ? L10n.collapse : L10n.expand,
+                        systemImage: isExpanded ? "minus" : "chevron.up"
+                    )
+                    .labelStyle(.iconOnly)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(isExpanded ? L10n.collapse : L10n.expand)
+            }
+
+            if isExpanded {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(jobs) { job in
+                            SummaryGenerationJobProgressView(job: job, onDismiss: onDismiss)
+                        }
                     }
                 }
+                .scrollIndicators(.automatic)
+                .frame(maxHeight: 360)
+                .transition(.opacity)
             }
-            .scrollIndicators(.automatic)
-            .frame(maxHeight: 360)
         }
         .padding(12)
         .frame(minWidth: 260, idealWidth: 300, maxWidth: 340)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+        .onChange(of: jobs.map(\.id)) { oldIDs, newIDs in
+            guard !isExpanded, newIDs.contains(where: { !oldIDs.contains($0) }) else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isExpanded = true
+            }
+        }
     }
 }
 
