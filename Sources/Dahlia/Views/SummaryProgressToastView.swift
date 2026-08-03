@@ -5,6 +5,7 @@ struct SummaryProgressToastView: View {
     let jobs: [SummaryGenerationJob]
     let onDismiss: (UUID) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = true
 
     var body: some View {
@@ -31,9 +32,7 @@ struct SummaryProgressToastView: View {
                 Spacer(minLength: 8)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isExpanded.toggle()
-                    }
+                    setExpanded(!isExpanded)
                 } label: {
                     Label(
                         isExpanded ? L10n.collapse : L10n.expand,
@@ -68,8 +67,16 @@ struct SummaryProgressToastView: View {
         .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
         .onChange(of: jobs.map(\.id)) { oldIDs, newIDs in
             guard !isExpanded, newIDs.contains(where: { !oldIDs.contains($0) }) else { return }
+            setExpanded(true)
+        }
+    }
+
+    private func setExpanded(_ expanded: Bool) {
+        if reduceMotion {
+            isExpanded = expanded
+        } else {
             withAnimation(.easeInOut(duration: 0.2)) {
-                isExpanded = true
+                isExpanded = expanded
             }
         }
     }
