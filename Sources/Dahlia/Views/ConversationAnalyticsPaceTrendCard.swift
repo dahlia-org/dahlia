@@ -32,7 +32,6 @@ struct ConversationAnalyticsPaceTrendCard: View {
                         y: .value(L10n.charactersPerMinute, sample.charactersPerMinute)
                     )
                     .foregroundStyle(by: .value(L10n.conversationAnalyticsSourceDetails, source))
-                    .symbol(by: .value(L10n.conversationAnalyticsSourceDetails, source))
                     .accessibilityLabel(source)
                     .accessibilityValue(L10n.conversationAnalyticsPaceSampleValue(
                         Formatters.elapsedMinutesSeconds(duration: sample.start),
