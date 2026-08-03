@@ -169,6 +169,27 @@ import Foundation
         }
 
         @Test
+        func sentLineAllowsLargerWrappedEcho() async throws {
+            let baseMaximumOutputLineBytes = 64
+            let transport = try CodexAppServerProcessTransport(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c",
+                    "IFS= read -r line; printf '{\"echo\":\"%s\"}\\n' \"$line\"",
+                ],
+                baseMaximumOutputLineBytes: baseMaximumOutputLineBytes
+            )
+            let sentLine = Data(repeating: 0x61, count: baseMaximumOutputLineBytes + 1)
+
+            try await transport.sendLine(sentLine)
+            let response = try #require(await transport.receiveLine())
+            #expect(response.count > sentLine.count)
+            #expect(response.starts(with: Data(#"{"echo":""#.utf8)))
+            #expect(response.suffix(2) == Data(#""}"#.utf8))
+            await transport.close()
+        }
+
+        @Test
         func lineBeyondFourMiBLimitFailsClosed() async throws {
             let transport = try CodexAppServerProcessTransport(
                 executableURL: URL(fileURLWithPath: "/bin/sh"),
@@ -178,6 +199,26 @@ import Foundation
                 ]
             )
 
+            await #expect(throws: CodexAppServerError.outputLineTooLarge) {
+                _ = try await transport.receiveLine()
+            }
+            await transport.close()
+        }
+
+        @Test
+        func lineBeyondSentLineAllowanceFailsClosed() async throws {
+            let baseMaximumOutputLineBytes = 64
+            let transport = try CodexAppServerProcessTransport(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: [
+                    "-c",
+                    "head -c 8 >/dev/null; "
+                        + "dd if=/dev/zero bs=72 count=1 2>/dev/null",
+                ],
+                baseMaximumOutputLineBytes: baseMaximumOutputLineBytes
+            )
+
+            try await transport.sendLine(Data("request".utf8))
             await #expect(throws: CodexAppServerError.outputLineTooLarge) {
                 _ = try await transport.receiveLine()
             }
