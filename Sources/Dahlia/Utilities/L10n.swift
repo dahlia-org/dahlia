@@ -2285,6 +2285,13 @@ enum L10n {
         bundle: bundle
     ) }
     static var openAudioRecognitionTest: String { String(localized: "Open Test…", bundle: bundle) }
+    static var audioProcessActivityMonitor: String { String(localized: "Audio Process Activity Monitor", bundle: bundle) }
+    static var audioProcessActivityMonitorDescription: String { String(
+        localized: "Logs CoreAudio process input and output activity for diagnosing meeting detection.",
+        bundle: bundle
+    ) }
+    static var startAudioProcessActivityMonitor: String { String(localized: "Start Monitoring", bundle: bundle) }
+    static var stopAudioProcessActivityMonitor: String { String(localized: "Stop Monitoring", bundle: bundle) }
     static var applicationLogs: String { String(localized: "Application Logs", bundle: bundle) }
     static var openApplicationLogs: String { String(localized: "Open Logs…", bundle: bundle) }
     static var applicationLogsDescription: String { String(

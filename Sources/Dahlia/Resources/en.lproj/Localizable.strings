@@ -774,6 +774,10 @@
 "Captures raw microphone PCM and system audio through ScreenCaptureKit, then uses the system audio as the WebRTC AEC3 reference to remove speaker echo." = "Captures raw microphone PCM and system audio through ScreenCaptureKit, then uses the system audio as the WebRTC AEC3 reference to remove speaker echo.";
 "Echo cancellation became unavailable, so the test is continuing with raw microphone audio." = "Echo cancellation became unavailable, so the test is continuing with raw microphone audio.";
 "Open Test…" = "Open Test…";
+"Audio Process Activity Monitor" = "Audio Process Activity Monitor";
+"Logs CoreAudio process input and output activity for diagnosing meeting detection." = "Logs CoreAudio process input and output activity for diagnosing meeting detection.";
+"Start Monitoring" = "Start Monitoring";
+"Stop Monitoring" = "Stop Monitoring";
 "Application Logs" = "Application Logs";
 "Open Logs…" = "Open Logs…";
 "View Dahlia logs from the current app session. Private values remain redacted." = "View Dahlia logs from the current app session. Private values remain redacted.";
