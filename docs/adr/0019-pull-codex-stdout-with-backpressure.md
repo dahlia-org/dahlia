@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted; supersedes 0013, amends 0003
+Accepted; supersedes 0013, amends 0003; amended by 0020
 
 ## Date
 

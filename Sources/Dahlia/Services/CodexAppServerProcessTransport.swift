@@ -5,7 +5,7 @@ import Foundation
 /// Process stdio adapter. All potentially blocking pipe operations stay outside Swift's cooperative executor.
 actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private static let maximumOutputReadBytes = 64 * 1024
-    private static let maximumOutputLineBytes = 4 * 1024 * 1024
+    private static let defaultMaximumOutputLineBytes = 4 * 1024 * 1024
 
     private let process: Process
     private let inputChannel: DispatchIO
@@ -22,6 +22,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     private var outputError: (any Error)?
     private var didReachOutputEOF = false
     private var pendingWrites: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    private let baseMaximumOutputLineBytes: Int
+    private var maximumOutputLineBytes: Int
     private var isClosed = false
     private var stderrTail = Data()
     private let minimumConsumedOutputLinesBeforeCompaction = 256
@@ -33,7 +35,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         executableURL: URL,
         arguments: [String] = ["app-server"],
         environment: [String: String]? = nil,
-        currentDirectoryURL: URL? = nil
+        currentDirectoryURL: URL? = nil,
+        baseMaximumOutputLineBytes: Int = CodexAppServerProcessTransport.defaultMaximumOutputLineBytes
     ) throws {
         let process = Process()
         let standardInput = Pipe()
@@ -81,6 +84,8 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
         try? errorHandle.close()
 
         self.process = process
+        self.baseMaximumOutputLineBytes = baseMaximumOutputLineBytes
+        maximumOutputLineBytes = baseMaximumOutputLineBytes
         inputChannel = DispatchIO(type: .stream, fileDescriptor: duplicatedInput, queue: ioQueue) { _ in
             Darwin.close(duplicatedInput)
         }
@@ -99,6 +104,12 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     func sendLine(_ data: Data) async throws {
         guard !isClosed else { throw CodexAppServerError.processExited(stderrDescription) }
         startErrorDrainIfNeeded()
+        // app-server echoes user input in item lifecycle notifications. Allow one response line to
+        // wrap the largest request we have sent while retaining a fixed allowance for its envelope.
+        maximumOutputLineBytes = max(
+            maximumOutputLineBytes,
+            baseMaximumOutputLineBytes + data.count
+        )
         var line = data
         line.append(0x0A)
         let writeID = UUID()
@@ -276,7 +287,7 @@ actor CodexAppServerProcessTransport: CodexAppServerTransport {
     }
 
     private func appendToPendingLine(_ fragment: Data.SubSequence) -> Bool {
-        guard fragment.count <= Self.maximumOutputLineBytes - stdoutPending.count else {
+        guard fragment.count <= maximumOutputLineBytes - stdoutPending.count else {
             failOutputLineTooLarge()
             return false
         }

@@ -2062,7 +2062,7 @@ enum L10n {
     ) }
     static var codexInvalidResponse: String { String(localized: "Codex returned an invalid response.", bundle: bundle) }
     static var codexOutputLineTooLarge: String { String(
-        localized: "Codex returned an output line larger than Dahlia's 4 MiB safety limit.",
+        localized: "Codex returned an output line larger than Dahlia's safety limit.",
         bundle: bundle
     ) }
     static func codexRequestFailed(_ detail: String) -> String { String(
