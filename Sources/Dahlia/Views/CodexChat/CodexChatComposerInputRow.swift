@@ -65,7 +65,7 @@ struct CodexChatComposerInputRow: View {
                 CodexChatConfigurationButton(session: session)
             }
 
-            if session.isGenerating, !session.canSend {
+            if session.isGenerating, session.isPreparingTurn || !session.canSend {
                 CodexChatActionButton(
                     label: L10n.stopGenerating,
                     systemImage: "stop.fill",

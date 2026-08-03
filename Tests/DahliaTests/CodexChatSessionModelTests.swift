@@ -435,6 +435,7 @@ import Foundation
             await waitUntil { !session.isGenerating }
 
             #expect(session.draft == "Keep this")
+            #expect(!session.isPreparingTurn)
             #expect(session.messages.isEmpty)
             #expect(session.errorMessage != nil)
             #expect(session.lastSubmittedText == "Keep this")
@@ -687,6 +688,7 @@ import Foundation
         enum Mode {
             case complete
             case block
+            case blockBeforeOutput
             case burstThenBlock
             case bufferedBurstThenInterrupt
             case finishesWithoutTerminal
@@ -748,7 +750,7 @@ import Foundation
                 }
             }
             let assistantMessages: [CodexChatMessage] = switch mode {
-            case .complete, .block, .burstThenBlock, .bufferedBurstThenInterrupt,
+            case .complete, .block, .blockBeforeOutput, .burstThenBlock, .bufferedBurstThenInterrupt,
                  .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
                  .delayFirstSendIgnoringCancellation:
                 [CodexChatMessage(role: .assistant, text: "Final answer", reasoning: "Considered the question")]
@@ -829,6 +831,8 @@ import Foundation
                 continuation.finish()
             case .block:
                 continuation.yield(.delta(itemID: "item-1", text: "Partial"))
+                blockedContinuation = continuation
+            case .blockBeforeOutput:
                 blockedContinuation = continuation
             case .burstThenBlock:
                 continuation.yield(.delta(itemID: "item-1", text: "First"))

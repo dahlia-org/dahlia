@@ -54,7 +54,9 @@ extension CodexChatSessionModel {
         }
         prepareFailureStateForSubmission(liveTranscript: liveTranscript)
         isGenerating = true
-        isAwaitingTurnOutput = true
+        isPreparingTurn = liveTranscript == nil
+        isAwaitingTurnOutput = liveTranscript != nil
+        preparingManualComposerSnapshot = liveTranscript == nil ? composerSnapshot : nil
         errorMessage = nil
         isActiveTurnLiveTranscript = liveTranscript != nil
         let isLiveModeSnapshot = liveTranscript != nil || isLiveModeEnabled
