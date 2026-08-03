@@ -8,6 +8,13 @@ import SwiftUI
     @MainActor
     struct CodexChatComposerTextEditorTests {
         @Test
+        func placeholderIsHiddenWhileEditorIsFocused() {
+            #expect(CodexChatComposerTextEditor.shouldShowPlaceholder(text: "", isFocused: false))
+            #expect(!CodexChatComposerTextEditor.shouldShowPlaceholder(text: "", isFocused: true))
+            #expect(!CodexChatComposerTextEditor.shouldShowPlaceholder(text: "Draft", isFocused: false))
+        }
+
+        @Test
         func editorGrowsWithContentAndCapsItsVisibleHeight() throws {
             let singleLine = ComposerTextEditorHarness(text: "One line")
             let longDraft = ComposerTextEditorHarness(text: String(repeating: "Line\n", count: 20))

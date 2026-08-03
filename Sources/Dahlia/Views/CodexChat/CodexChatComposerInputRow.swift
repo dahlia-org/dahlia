@@ -86,6 +86,7 @@ struct CodexChatComposerInputRow: View {
 
 struct CodexChatComposerTextEditor: View {
     @Binding var text: String
+    @FocusState private var isFocused: Bool
     let onSubmit: () -> Void
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
@@ -108,6 +109,7 @@ struct CodexChatComposerTextEditor: View {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $text)
                         .font(.body)
+                        .focused($isFocused)
                         .scrollContentBackground(.hidden)
                         .padding(.leading, 3)
                         .padding(.vertical, 6)
@@ -121,7 +123,7 @@ struct CodexChatComposerTextEditor: View {
                             return .handled
                         }
 
-                    if text.isEmpty {
+                    if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
                         Text(L10n.messageCodex)
                             .font(.body)
                             .foregroundStyle(.tertiary)
@@ -134,6 +136,10 @@ struct CodexChatComposerTextEditor: View {
                 .contentShape(.rect)
                 .onContinuousHover(perform: onHover)
             }
+    }
+
+    static func shouldShowPlaceholder(text: String, isFocused: Bool) -> Bool {
+        text.isEmpty && !isFocused
     }
 
     private func handleReturnKey(_ keyPress: KeyPress) -> KeyPress.Result {
