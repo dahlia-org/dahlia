@@ -218,7 +218,7 @@ struct ControlPanelView: View {
     let recordingCoordinator: RecordingCoordinator
     let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
-    @State private var selectedTab: DetailTab = .notes
+    @State private var selectedTab: DetailTab = .summary
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
@@ -600,14 +600,6 @@ struct ControlPanelView: View {
         return nil
     }
 
-    private var persistedSummaryExists: Bool {
-        currentMeetingItem?.hasSummary == true
-    }
-
-    private var hasSummaryTab: Bool {
-        persistedSummaryExists || viewModel.hasCurrentMeetingSummary
-    }
-
     private var tabContentBackgroundColor: Color {
         selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .windowBackgroundColor)
     }
@@ -705,7 +697,7 @@ struct ControlPanelView: View {
     }
 
     private var initialTabSelection: DetailTab {
-        hasSummaryTab ? .summary : .notes
+        .summary
     }
 
 }
