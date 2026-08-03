@@ -376,13 +376,21 @@ enum SummaryShareRenderer {
     }
 
     private static func joinHTMLBlocks(_ blocks: [String], destination: Destination) -> String {
-        let separator = switch destination {
+        switch destination {
         case .googleDocs:
-            "\n"
+            return blocks.joined(separator: "\n")
         case .slack:
-            "<br><br>\n"
+            guard let first = blocks.first else { return "" }
+            var html = first
+            var previousBlock = first
+            for block in blocks.dropFirst() {
+                let separator = previousBlock.hasSuffix("</ul>") || previousBlock.hasSuffix("</ol>") ? "<br>\n" : "<br><br>\n"
+                html.append(separator)
+                html.append(block)
+                previousBlock = block
+            }
+            return html
         }
-        return blocks.joined(separator: separator)
     }
 
     private static func normalizedActionItem(_ item: SummaryActionItem) -> (title: String, assignee: String?)? {
