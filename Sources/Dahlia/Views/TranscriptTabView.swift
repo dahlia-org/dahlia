@@ -4,14 +4,8 @@ struct TranscriptTabView: View {
     private static let prefetchDistance = 30
 
     @ObservedObject var store: TranscriptStore
-    let isListening: Bool
-    let showsRecordingIndicator: Bool
+    let allowsTextSelection: Bool
     let showsTranslatedText: Bool
-    let batchTranscriptionState: BatchTranscriptionState?
-    let confirmBatchTranscription: () -> Void
-    let retryBatchTranscription: () -> Void
-    let cancelFailedBatchRetranscription: () -> Void
-    let discardFailedBatchTranscription: () -> Void
     let retryInitialMeetingLoad: () -> Void
 
     @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
@@ -20,22 +14,11 @@ struct TranscriptTabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let batchTranscriptionState {
-                BatchTranscriptionStatusView(
-                    state: batchTranscriptionState,
-                    confirm: confirmBatchTranscription,
-                    retry: retryBatchTranscription,
-                    cancelRetranscription: cancelFailedBatchRetranscription,
-                    discard: discardFailedBatchTranscription
-                )
-            }
-
             if store.isLoadingInitialPage {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if store.segments.isEmpty,
-                      store.pageLoadError == nil,
-                      !isListening || batchTranscriptionState != nil {
+                      store.pageLoadError == nil {
                 ContentUnavailableView {
                     Label(L10n.transcript, systemImage: "waveform.badge.microphone")
                 } description: {
@@ -100,23 +83,10 @@ struct TranscriptTabView: View {
                                 fallbackTimeBase: timeBase
                             ),
                             showsTranslatedText: showsTranslatedText,
-                            allowsTextSelection: !isListening
+                            allowsTextSelection: allowsTextSelection
                         )
                         .equatable()
                         .id(segment.id)
-                    }
-
-                    if showsRecordingIndicator {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .frame(width: 12, height: 12)
-                            Text(L10n.recognizing)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        .padding(.leading, 68)
                     }
                 }
                 .scrollTargetLayout()

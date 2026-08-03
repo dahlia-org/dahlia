@@ -55,12 +55,15 @@ final class SummaryProgressState {
     var vaultExport: StepStatus = .pending
     var googleDocsExport: StepStatus = .pending
     var summaryGeneration: StepStatus = .pending
+    var transcription: StepStatus = .skipped
+    var transcriptionProgress: Double?
 
     /// 全ステップが完了・失敗・スキップのいずれかに到達したか。
     var isAllDone: Bool {
         vaultExport.isTerminal
             && googleDocsExport.isTerminal
             && summaryGeneration.isTerminal
+            && transcription.isTerminal
     }
 
 }

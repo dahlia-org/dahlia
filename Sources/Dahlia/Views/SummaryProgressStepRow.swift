@@ -3,6 +3,8 @@ import SwiftUI
 struct SummaryProgressStepRow: View {
     let label: String
     let status: SummaryProgressState.StepStatus
+    var progress: Double?
+    var showsProgressBar = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -41,10 +43,22 @@ struct SummaryProgressStepRow: View {
                     .lineLimit(2)
                     .padding(.leading, 22)
             }
+
+            if case .running = status, showsProgressBar {
+                Group {
+                    if let progress {
+                        ProgressView(value: progress, total: 1)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .progressViewStyle(.linear)
+                .padding(.leading, 22)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
-        .accessibilityValue(status.accessibilityDescription)
+        .accessibilityValue(accessibilityValue)
     }
 
     private var textColor: Color {
@@ -54,5 +68,13 @@ struct SummaryProgressStepRow: View {
         case .completed, .skipped: .secondary
         case .failed: .red
         }
+    }
+
+    private var accessibilityValue: String {
+        guard case .running = status,
+              let progress else {
+            return status.accessibilityDescription
+        }
+        return progress.formatted(.percent.precision(.fractionLength(0)))
     }
 }

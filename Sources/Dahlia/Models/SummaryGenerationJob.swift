@@ -9,10 +9,18 @@ final class SummaryGenerationJob: Identifiable {
     let startedAt: Date
     let progress = SummaryProgressState()
 
-    init(meetingId: UUID, meetingName: String, startedAt: Date = .now) {
+    init(
+        meetingId: UUID,
+        meetingName: String,
+        includesTranscription: Bool = false,
+        startedAt: Date = .now
+    ) {
         self.meetingId = meetingId
         self.meetingName = meetingName
         self.startedAt = startedAt
+        if includesTranscription {
+            progress.transcription = .running
+        }
     }
 
     var hasFailure: Bool {
@@ -23,7 +31,12 @@ final class SummaryGenerationJob: Identifiable {
         stepStatuses.allSatisfy(\.isTerminal)
     }
 
+    func configureExports(_ options: SummaryExportOptions) {
+        progress.vaultExport = options.exportsToVault ? .pending : .skipped
+        progress.googleDocsExport = options.exportsToGoogleDocs ? .pending : .skipped
+    }
+
     private var stepStatuses: [SummaryProgressState.StepStatus] {
-        [progress.summaryGeneration, progress.vaultExport, progress.googleDocsExport]
+        [progress.transcription, progress.summaryGeneration, progress.vaultExport, progress.googleDocsExport]
     }
 }
