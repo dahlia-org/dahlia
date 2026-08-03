@@ -186,8 +186,8 @@ EOF
         echo "error: DMG must enable automatic Sparkle update checks" >&2
         exit 1
     fi
-    if [ "$DMG_SPARKLE_CHECK_INTERVAL" != "86400" ]; then
-        echo "error: DMG Sparkle update check interval is ${DMG_SPARKLE_CHECK_INTERVAL}, expected 86400" >&2
+    if [ "$DMG_SPARKLE_CHECK_INTERVAL" != "3600" ]; then
+        echo "error: DMG Sparkle update check interval is ${DMG_SPARKLE_CHECK_INTERVAL}, expected 3600" >&2
         exit 1
     fi
     if [ "$DMG_SPARKLE_AUTOMATIC_UPDATES" != "false" ]; then
