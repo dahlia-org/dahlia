@@ -12,18 +12,26 @@ struct CodexChatEmptyStateView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsProjectOrganizationShortcut {
-                Button(action: onOrganizeRecentMeetingsAndProjects) {
-                    Label(CodexChatProjectOrganizationShortcut.title, systemImage: "sparkles")
-                        .font(.callout)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 4)
-                        .frame(minHeight: 28)
+                Spacer(minLength: 24)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L10n.chatPresets)
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+
+                    Button(action: onOrganizeRecentMeetingsAndProjects) {
+                        Label(CodexChatProjectOrganizationShortcut.title, systemImage: "sparkles")
+                            .font(.callout)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 4)
+                            .frame(minHeight: 28)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .disabled(!isProjectOrganizationShortcutEnabled)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(!isProjectOrganizationShortcutEnabled)
-                .padding(.top, 12)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
 
             Spacer(minLength: 40)
