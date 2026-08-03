@@ -31,7 +31,7 @@ actor CodexChatMarkdownRenderer: CodexChatMarkdownRendering {
         return result
     }
 
-    nonisolated func pendingBlocks(
+    @concurrent nonisolated func pendingBlocks(
         reparseSource: String,
         suffix: String
     ) async throws -> [CodexChatMarkdownRenderedBlock] {
