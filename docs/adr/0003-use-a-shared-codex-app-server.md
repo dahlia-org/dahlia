@@ -100,10 +100,11 @@ Databricks:
 2. 選択したプロファイルの HTTPS workspace host を Databricks AI Gateway の `/ai-gateway/codex/v1` に変換する。
 3. Dahlia 専用 `config.toml` に `model_provider = "Databricks"` と Responses wire API を設定する。
 4. provider の auth command は `databricks auth token --profile <profile> --output json` の出力から macOS 標準の `plutil` で短期アクセストークンを取得する。Dahlia はトークンを保存しない。
-5. 設定変更後は共有 app-server connection を閉じて再初期化し、`model/list` が成功した場合だけ設定完了とする。
-6. 成功後に account と model cache を無効化し、`account/read` で表示状態を更新する。
+5. 要約生成、モデル一覧、AI チャットの thread 一覧・読込・復元・開始と turn 開始の前に選択中のプロファイルを検証する。Databricks CLI が未ログインまたは無効な refresh token を明示した場合は、同じプロファイルで `databricks auth login` を実行してブラウザ認証を待つ。同時要求は1回の認証処理を共有し、個別の待機要求のキャンセルは残りの要求を中断しない。
+6. 設定変更またはブラウザ再認証の開始後は共有 app-server connection を閉じて再初期化し、古い provider token cache を破棄する。token の再検証が失敗またはキャンセルされた場合も再初期化の必要性を保持し、次回の認証 preflight で実行する。設定時は `model/list` が成功した場合だけ設定完了とする。
+7. 成功後に account と model cache を無効化し、`account/read` で表示状態を更新する。
 
-設定変更による connection の再初期化は、進行中の要約 generation が完了して unsubscribe されるまで待機する。account 設定が検証済みの選択と一致しない間は、service 層が通常の `model/list` と generation を拒否し、設定 controller の検証 request だけが明示的にこの guard を迂回する。
+設定変更または再認証による connection の再初期化は、進行中の要約 generation が完了して unsubscribe され、購読中の AI チャット turn が完了するまで待機する。チャットの `turn/start` 応答と通知購読は同じ connection generation 上で登録し、再初期化との間に購読不能な turn を残さない。account 設定が検証済みの選択と一致しない間は、service 層が通常の `model/list` と generation を拒否し、設定 controller の検証 request だけが明示的にこの guard を迂回する。
 
 ログイン待機 Task のキャンセル、ブラウザを開けなかった場合、ユーザーのキャンセルでは `account/login/cancel` を送る。notification が waiter 登録より先に到着する場合に備え、直近 10 件の login outcome を一時保持する。ログアウトは `account/logout` を明示的に呼ぶ。
 

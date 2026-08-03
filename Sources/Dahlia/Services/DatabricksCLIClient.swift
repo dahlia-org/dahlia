@@ -2,6 +2,11 @@ import Foundation
 import os
 
 struct DatabricksCLIClient {
+    enum AuthenticationResult: Equatable, Sendable {
+        case alreadyAuthenticated
+        case browserLoginCompleted
+    }
+
     struct CommandOutput {
         let standardOutput: Data
         let standardError: Data
@@ -80,7 +85,10 @@ struct DatabricksCLIClient {
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    func ensureAuthenticated(profileName: String) async throws {
+    func ensureAuthenticated(
+        profileName: String,
+        onBrowserLoginRequired: @Sendable () async -> Void = {}
+    ) async throws -> AuthenticationResult {
         let tokenArguments = [
             "auth",
             "token",
@@ -91,12 +99,14 @@ struct DatabricksCLIClient {
         ]
         let tokenOutput = try await runCommand(tokenArguments)
         try Task.checkCancellation()
-        guard tokenOutput.terminationStatus != 0 else { return }
+        guard tokenOutput.terminationStatus != 0 else { return .alreadyAuthenticated }
         guard requiresBrowserLogin(tokenOutput) else {
             try validate(tokenOutput)
-            return
+            return .alreadyAuthenticated
         }
 
+        await onBrowserLoginRequired()
+        try Task.checkCancellation()
         _ = try await runValidatedCommand([
             "auth",
             "login",
@@ -104,6 +114,7 @@ struct DatabricksCLIClient {
             profileName,
         ])
         _ = try await runValidatedCommand(tokenArguments)
+        return .browserLoginCompleted
     }
 
     static func locateExecutable(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {

@@ -45,6 +45,8 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func listThreads(cursor: String? = nil, vaultID: UUID) async throws -> CodexChatThreadPage {
+        try await appServer.prepareProviderAuthentication()
+
         let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
         var params: [String: JSONValue] = [
             "archived": .bool(false),
@@ -59,7 +61,7 @@ actor CodexChatService: CodexChatServicing {
             params["cursor"] = .string(cursor)
         }
 
-        let result = try await appServer.request(method: "thread/list", params: .object(params))
+        let result = try await appServer.chatRequest(method: "thread/list", params: .object(params))
         guard let object = result.objectValue,
               let data = object["data"]?.arrayValue
         else {
@@ -73,7 +75,9 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func loadThread(id: String) async throws -> CodexChatThread {
-        let result = try await appServer.request(
+        try await appServer.prepareProviderAuthentication()
+
+        let result = try await appServer.chatRequest(
             method: "thread/read",
             params: .object([
                 "includeTurns": .bool(true),
@@ -89,22 +93,26 @@ actor CodexChatService: CodexChatServicing {
     func resumeThread(id: String, vaultID: UUID) async throws -> CodexChatThread {
         let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
         let helperURL = try resolvedMCPExecutableURL()
-        let config = try await appServer.chatThreadConfiguration(
-            reasoningEffort: CodexReasoningEffortOption.defaultValue,
-            vaultID: vaultID,
-            helperURL: helperURL
-        )
-        let result = try await appServer.request(
-            method: "thread/resume",
-            params: .object([
-                "approvalPolicy": .string("on-request"),
-                "config": config,
-                "cwd": .string(workspaceURL.path),
-                "developerInstructions": .string(Self.developerInstructions),
-                "sandbox": .string("read-only"),
-                "threadId": .string(id),
-            ])
-        )
+        let result = try await appServer.withChatOperation { appServer in
+            let config = try await appServer.chatThreadConfiguration(
+                reasoningEffort: CodexReasoningEffortOption.defaultValue,
+                vaultID: vaultID,
+                helperURL: helperURL,
+                bypassConfigurationReloadAdmission: true
+            )
+            return try await appServer.chatRequest(
+                method: "thread/resume",
+                params: .object([
+                    "approvalPolicy": .string("on-request"),
+                    "config": config,
+                    "cwd": .string(workspaceURL.path),
+                    "developerInstructions": .string(Self.developerInstructions),
+                    "sandbox": .string("read-only"),
+                    "threadId": .string(id),
+                ]),
+                bypassConfigurationReloadAdmission: true
+            )
+        }
         guard let object = result.objectValue,
               let thread = object["thread"]?.objectValue
         else {
@@ -120,32 +128,40 @@ actor CodexChatService: CodexChatServicing {
     func startThread(model: String?, effort: String, vaultID: UUID) async throws -> CodexChatThread {
         let workspaceURL = try workspaceLocator.workspaceURL(vaultID: vaultID)
         let helperURL = try resolvedMCPExecutableURL()
-        let availableModels = try await appServer.models()
-        let selectedModel = model
-            .flatMap { requested in availableModels.first { $0.model == requested } }
-            ?? availableModels.first(where: \CodexModel.isDefault)
-            ?? availableModels.first
-        guard let selectedModel else {
-            throw CodexAppServerError.invalidProtocolResponse
-        }
+        let (result, selectedModel) = try await appServer.withChatOperation { appServer in
+            let availableModels = try await appServer.models(
+                bypassProviderAuthenticationPreparation: true,
+                bypassConfigurationReloadAdmission: true
+            )
+            let selectedModel = model
+                .flatMap { requested in availableModels.first { $0.model == requested } }
+                ?? availableModels.first(where: \CodexModel.isDefault)
+                ?? availableModels.first
+            guard let selectedModel else {
+                throw CodexAppServerError.invalidProtocolResponse
+            }
 
-        let config = try await appServer.chatThreadConfiguration(
-            reasoningEffort: effort,
-            vaultID: vaultID,
-            helperURL: helperURL
-        )
-        let result = try await appServer.request(
-            method: "thread/start",
-            params: .object([
-                "approvalPolicy": .string("on-request"),
-                "config": config,
-                "cwd": .string(workspaceURL.path),
-                "developerInstructions": .string(Self.developerInstructions),
-                "ephemeral": .bool(false),
-                "model": .string(selectedModel.model),
-                "sandbox": .string("read-only"),
-            ])
-        )
+            let config = try await appServer.chatThreadConfiguration(
+                reasoningEffort: effort,
+                vaultID: vaultID,
+                helperURL: helperURL,
+                bypassConfigurationReloadAdmission: true
+            )
+            let result = try await appServer.chatRequest(
+                method: "thread/start",
+                params: .object([
+                    "approvalPolicy": .string("on-request"),
+                    "config": config,
+                    "cwd": .string(workspaceURL.path),
+                    "developerInstructions": .string(Self.developerInstructions),
+                    "ephemeral": .bool(false),
+                    "model": .string(selectedModel.model),
+                    "sandbox": .string("read-only"),
+                ]),
+                bypassConfigurationReloadAdmission: true
+            )
+            return (result, selectedModel)
+        }
         guard let object = result.objectValue,
               let thread = object["thread"]?.objectValue
         else {
@@ -164,6 +180,8 @@ actor CodexChatService: CodexChatServicing {
         model: String?,
         effort: String
     ) async throws -> AsyncThrowingStream<CodexChatTurnEvent, any Error> {
+        try await appServer.prepareProviderAuthentication()
+
         var params: [String: JSONValue] = [
             "approvalsReviewer": .string("auto_review"),
             "effort": .string(effort),
@@ -175,17 +193,13 @@ actor CodexChatService: CodexChatServicing {
             params["model"] = .string(model)
         }
 
-        let result = try await appServer.request(method: "turn/start", params: .object(params))
-        guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
-            throw CodexAppServerError.invalidProtocolResponse
-        }
-        let notifications = await appServer.notifications(threadID: threadID, turnID: turnID)
+        let turn = try await appServer.startChatTurn(threadID: threadID, params: .object(params))
 
         return AsyncThrowingStream { continuation in
             let task = Task {
-                continuation.yield(.started(turnID: turnID))
+                continuation.yield(.started(turnID: turn.turnID))
                 do {
-                    for try await notification in notifications {
+                    for try await notification in turn.notifications {
                         if let event = try Self.parseTurnEvent(notification) {
                             continuation.yield(event)
                         }
