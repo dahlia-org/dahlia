@@ -710,7 +710,8 @@ extension BatchTranscriptionCoordinator {
         sessionId: UUID,
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool
+        retainAudioAfterBatch: Bool,
+        onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
@@ -719,6 +720,7 @@ extension BatchTranscriptionCoordinator {
             retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
+        await onConfirmed(result)
         for confirmedSessionId in result.sessionIds {
             await notify(meetingId: result.meetingId, state: .queued(sessionId: confirmedSessionId))
             await enqueue(sessionId: confirmedSessionId)
@@ -729,7 +731,8 @@ extension BatchTranscriptionCoordinator {
         sessionIds: [UUID],
         languageSelection: BatchTranscriptionLanguageSelection,
         automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
-        retainAudioAfterBatch: Bool
+        retainAudioAfterBatch: Bool,
+        onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
         let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
             sessionIds: sessionIds,
@@ -738,6 +741,7 @@ extension BatchTranscriptionCoordinator {
             retainAudioAfterBatch: retainAudioAfterBatch,
             dbQueue: dbQueue
         )
+        await onConfirmed(result)
         for sessionId in result.sessionIds {
             await notify(meetingId: result.meetingId, state: .queued(sessionId: sessionId))
             await enqueue(sessionId: sessionId)

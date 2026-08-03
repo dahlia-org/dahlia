@@ -3,7 +3,7 @@ import GRDB
 
 /// 同じミーティングの未確認バッチ録音を確定し、再起動後も自動復旧できる状態へ原子的に移す。
 enum BatchTranscriptionConfirmationService {
-    struct Result: Equatable {
+    struct Result: Equatable, Sendable {
         let meetingId: UUID
         let sessionIds: [UUID]
     }

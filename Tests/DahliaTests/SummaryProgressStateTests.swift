@@ -36,5 +36,23 @@
             #expect(!second.hasFailure)
             #expect(second.progress.summaryGeneration.failureMessage == nil)
         }
+
+        @Test
+        func batchSummaryJobIncludesTranscriptionUntilItCompletes() {
+            let job = SummaryGenerationJob(
+                meetingId: .v7(),
+                meetingName: "Planning",
+                includesTranscription: true
+            )
+            job.progress.summaryGeneration = .completed
+            job.progress.vaultExport = .skipped
+            job.progress.googleDocsExport = .skipped
+
+            #expect(!job.isFinished)
+
+            job.progress.transcription = .completed
+
+            #expect(job.isFinished)
+        }
     }
 #endif

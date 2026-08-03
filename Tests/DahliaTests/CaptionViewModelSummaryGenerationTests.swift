@@ -221,12 +221,25 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 vaultURL: fixture.vaultURL
             )
+            let job = try #require(viewModel.summaryGenerationJobs.first)
+            let progress = BatchTranscriptionProgress(completedFileCount: 2, totalFileCount: 5)
+            await viewModel.handleBatchTranscriptionUpdate(.init(
+                meetingId: fixture.first.id,
+                state: .running(sessionId: sessionID, progress: progress)
+            ))
+
+            #expect(job.progress.transcriptionProgress == 0.4)
+            #expect(!job.progress.transcription.isTerminal)
+
             await viewModel.handleBatchTranscriptionUpdate(.init(
                 meetingId: fixture.first.id,
                 state: .completed(sessionId: sessionID)
             ))
             await runner.waitForCallCount(1)
 
+            #expect(viewModel.summaryGenerationJobs.first?.id == job.id)
+            #expect(job.progress.transcription.isTerminal)
+            #expect(job.progress.transcriptionProgress == nil)
             #expect(runner.calls[0].projectName == project.path)
             #expect(runner.calls[0].projectDescription == "Batch context")
             runner.complete(meetingID: fixture.first.id, title: "Summary")
@@ -666,7 +679,7 @@ import GRDB
     }
 
     @MainActor
-    private final class BlockingSummaryRunner {
+    final class BlockingSummaryRunner {
         struct Call {
             let meetingID: UUID
             let noteText: String?
@@ -798,7 +811,7 @@ import GRDB
     }
 
     @MainActor
-    private final class SummaryGenerationFixture {
+    final class SummaryGenerationFixture {
         let database: AppDatabaseManager
         let vault: VaultRecord
         let vaultURL: URL

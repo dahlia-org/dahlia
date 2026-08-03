@@ -178,7 +178,6 @@ final class CaptionViewModel: ObservableObject {
     @Published private(set) var summaryGenerationJobs: [SummaryGenerationJob] = []
     @Published var summaryGeneratingMeetingIDs: Set<UUID> = []
     private var pendingBatchSummaryRequestsBySessionId: [UUID: PendingBatchSummaryRequest] = [:]
-    private var completedBatchSummarySessionIDs: Set<UUID> = []
     private var batchSummaryContextsBySessionId: [UUID: BatchSummaryContext] = [:]
     @Published private var summaryErrorsByMeetingId: [UUID: String] = [:]
     @Published private var googleDocsExportErrorsByMeetingId: [UUID: String] = [:]
@@ -714,13 +713,16 @@ final class CaptionViewModel: ObservableObject {
         sessionIds: [UUID],
         meetingId: UUID
     ) {
-        var context: BatchSummaryContext?
+        let details = makeBatchTranscriptionConfirmationDetails(
+            meetingId: meetingId,
+            dbQueue: currentDbQueue
+        )
         if let currentDbQueue, let currentVaultURL {
-            context = BatchSummaryContext(
+            batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
                 dbQueue: currentDbQueue,
-                vaultURL: currentVaultURL
+                vaultURL: currentVaultURL,
+                meetingName: details.meetingName
             )
-            batchSummaryContextsBySessionId[sessionId] = context
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
@@ -737,7 +739,7 @@ final class CaptionViewModel: ObservableObject {
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: hasCurrentMeetingSummary
                 || AppSettings.shared.generateSummaryAfterBatchTranscription,
-            projectSelection: makeBatchTranscriptionProjectSelection(meetingId: meetingId, context: context)
+            projectSelection: details.projectSelection
         )
     }
 
@@ -768,30 +770,46 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    private func makeBatchTranscriptionProjectSelection(
+    private struct BatchTranscriptionConfirmationDetails {
+        let projectSelection: BatchTranscriptionProjectSelection
+        let meetingName: String
+    }
+
+    private func makeBatchTranscriptionConfirmationDetails(
         meetingId: UUID,
-        context: BatchSummaryContext?
-    ) -> BatchTranscriptionProjectSelection {
-        guard let context else { return .unavailable }
+        dbQueue: DatabaseQueue?
+    ) -> BatchTranscriptionConfirmationDetails {
+        guard let dbQueue else {
+            return BatchTranscriptionConfirmationDetails(
+                projectSelection: .unavailable,
+                meetingName: L10n.newMeeting
+            )
+        }
 
         do {
-            let snapshot = try context.dbQueue.read { db -> (MeetingRecord, [ProjectRecord]) in
+            let snapshot = try dbQueue.read { db -> (MeetingRecord, [ProjectRecord]) in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
                 let projects = try ProjectRecord.fetchResolvedAll(vaultId: meeting.vaultId, in: db)
                 return (meeting, projects)
             }
-            return BatchTranscriptionProjectSelection(
-                projects: FlatProjectRow.buildRows(fromRecords: snapshot.1),
-                selectedProjectId: snapshot.0.projectId,
-                errorMessage: nil
+            return BatchTranscriptionConfirmationDetails(
+                projectSelection: BatchTranscriptionProjectSelection(
+                    projects: FlatProjectRow.buildRows(fromRecords: snapshot.1),
+                    selectedProjectId: snapshot.0.projectId,
+                    errorMessage: nil
+                ),
+                meetingName: snapshot.0.name.nilIfBlank ?? L10n.newMeeting
             )
         } catch {
-            return BatchTranscriptionProjectSelection(
-                projects: [],
-                selectedProjectId: nil,
-                errorMessage: error.localizedDescription
+            return BatchTranscriptionConfirmationDetails(
+                projectSelection: BatchTranscriptionProjectSelection(
+                    projects: [],
+                    selectedProjectId: nil,
+                    errorMessage: error.localizedDescription
+                ),
+                meetingName: L10n.newMeeting
             )
         }
     }
@@ -909,10 +927,10 @@ final class CaptionViewModel: ObservableObject {
             automaticLanguageCandidateSnapshot: automaticLanguageCandidates.snapshot,
             purpose: confirmation.purpose,
             initiallyGeneratesSummary: summaryGenerationOptions != nil,
-            projectSelection: makeBatchTranscriptionProjectSelection(
+            projectSelection: makeBatchTranscriptionConfirmationDetails(
                 meetingId: confirmation.meetingId,
-                context: batchSummaryContextsBySessionId[confirmation.sessionId]
-            )
+                dbQueue: batchSummaryContextsBySessionId[confirmation.sessionId]?.dbQueue
+            ).projectSelection
         )
         let batchSummaryContext = batchSummaryContextsBySessionId[confirmation.sessionId]
         updatePendingBatchSummaryRequest(
@@ -927,42 +945,83 @@ final class CaptionViewModel: ObservableObject {
             retranscribableBatchSessionIds = []
         }
 
-        Task {
-            do {
-                switch confirmation.purpose {
-                case .initialOrRetry:
-                    try await coordinator.confirmAndEnqueue(
-                        sessionId: confirmation.sessionId,
-                        languageSelection: languageSelection,
-                        automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
-                        retainAudioAfterBatch: retainAudioAfterBatch
-                    )
-                case let .retranscription(sessionIds):
-                    try await coordinator.confirmRetranscriptionAndEnqueue(
-                        sessionIds: sessionIds,
-                        languageSelection: languageSelection,
-                        automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
-                        retainAudioAfterBatch: retainAudioAfterBatch
-                    )
-                }
-            } catch {
-                if let batchSummaryContext {
-                    batchSummaryContextsBySessionId[confirmation.sessionId] = batchSummaryContext
-                }
-                if currentMeetingId == confirmation.meetingId {
-                    switch confirmation.purpose {
-                    case .initialOrRetry:
-                        batchTranscriptionState = .awaitingConfirmation(sessionId: confirmation.sessionId)
-                    case let .retranscription(sessionIds):
-                        batchTranscriptionState = nil
-                        retranscribableBatchSessionIds = sessionIds
-                    }
-                }
-                errorMessage = error.localizedDescription
-                pendingBatchTranscriptionConfirmation = retryConfirmation
-                MainWindowOpener.shared.openMainWindow()
+        Task { [weak self] in
+            await self?.performBatchTranscriptionConfirmation(.init(
+                confirmation: confirmation,
+                coordinator: coordinator,
+                languageSelection: languageSelection,
+                automaticLanguageCandidates: selectedAutomaticLanguageCandidates,
+                retainAudioAfterBatch: retainAudioAfterBatch,
+                retryConfirmation: retryConfirmation,
+                batchSummaryContext: batchSummaryContext
+            ))
+        }
+    }
+
+    private struct BatchTranscriptionConfirmationExecution {
+        let confirmation: BatchTranscriptionConfirmation
+        let coordinator: BatchTranscriptionCoordinator
+        let languageSelection: BatchTranscriptionLanguageSelection
+        let automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
+        let retainAudioAfterBatch: Bool
+        let retryConfirmation: BatchTranscriptionConfirmation
+        let batchSummaryContext: BatchSummaryContext?
+    }
+
+    private func performBatchTranscriptionConfirmation(_ execution: BatchTranscriptionConfirmationExecution) async {
+        do {
+            let onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void = { [weak self] result in
+                await self?.registerConfirmedBatchSummarySessions(
+                    anchorSessionID: execution.confirmation.sessionId,
+                    result: result
+                )
+            }
+            switch execution.confirmation.purpose {
+            case .initialOrRetry:
+                try await execution.coordinator.confirmAndEnqueue(
+                    sessionId: execution.confirmation.sessionId,
+                    languageSelection: execution.languageSelection,
+                    automaticLanguageCandidates: execution.automaticLanguageCandidates,
+                    retainAudioAfterBatch: execution.retainAudioAfterBatch,
+                    onConfirmed: onConfirmed
+                )
+            case let .retranscription(sessionIds):
+                try await execution.coordinator.confirmRetranscriptionAndEnqueue(
+                    sessionIds: sessionIds,
+                    languageSelection: execution.languageSelection,
+                    automaticLanguageCandidates: execution.automaticLanguageCandidates,
+                    retainAudioAfterBatch: execution.retainAudioAfterBatch,
+                    onConfirmed: onConfirmed
+                )
+            }
+        } catch {
+            restoreBatchTranscriptionConfirmation(execution, error: error)
+        }
+    }
+
+    private func restoreBatchTranscriptionConfirmation(
+        _ execution: BatchTranscriptionConfirmationExecution,
+        error: Error
+    ) {
+        let confirmation = execution.confirmation
+        if let job = pendingBatchSummaryRequestsBySessionId[confirmation.sessionId]?.job {
+            failBatchTranscription(in: job, message: error.localizedDescription)
+        }
+        if let batchSummaryContext = execution.batchSummaryContext {
+            batchSummaryContextsBySessionId[confirmation.sessionId] = batchSummaryContext
+        }
+        if currentMeetingId == confirmation.meetingId {
+            switch confirmation.purpose {
+            case .initialOrRetry:
+                batchTranscriptionState = .awaitingConfirmation(sessionId: confirmation.sessionId)
+            case let .retranscription(sessionIds):
+                batchTranscriptionState = nil
+                retranscribableBatchSessionIds = sessionIds
             }
         }
+        errorMessage = error.localizedDescription
+        pendingBatchTranscriptionConfirmation = execution.retryConfirmation
+        MainWindowOpener.shared.openMainWindow()
     }
 
     private func updatePendingBatchSummaryRequest(
@@ -970,19 +1029,74 @@ final class CaptionViewModel: ObservableObject {
         meetingID: UUID,
         options: SummaryGenerationOptions?
     ) {
-        if let options,
-           let context = batchSummaryContextsBySessionId[sessionID] {
-            pendingBatchSummaryRequestsBySessionId[sessionID] = PendingBatchSummaryRequest(
-                meetingId: meetingID,
-                options: options,
-                dbQueue: context.dbQueue,
-                vaultURL: context.vaultURL
-            )
-            completedBatchSummarySessionIDs.remove(sessionID)
-        } else {
-            pendingBatchSummaryRequestsBySessionId.removeValue(forKey: sessionID)
-            completedBatchSummarySessionIDs.remove(sessionID)
+        removePendingBatchSummaryFlow(for: sessionID, removesJobFromDisplay: true)
+        guard let options,
+              let context = batchSummaryContextsBySessionId[sessionID] else {
+            return
         }
+
+        let job = makeBatchSummaryGenerationJob(
+            meetingID: meetingID,
+            options: options,
+            meetingName: context.meetingName
+        )
+        pendingBatchSummaryRequestsBySessionId[sessionID] = PendingBatchSummaryRequest(
+            sessionID: sessionID,
+            meetingId: meetingID,
+            options: options,
+            dbQueue: context.dbQueue,
+            vaultURL: context.vaultURL,
+            job: job
+        )
+        summaryGenerationJobs.append(job)
+    }
+
+    private func removePendingBatchSummaryFlow(for sessionID: UUID, removesJobFromDisplay: Bool) {
+        guard let request = pendingBatchSummaryRequestsBySessionId[sessionID] else { return }
+        removeSessionAliases(for: request)
+        if removesJobFromDisplay {
+            summaryGenerationJobs.removeAll { $0.id == request.job.id }
+        }
+    }
+
+    private func registerConfirmedBatchSummarySessions(
+        anchorSessionID: UUID,
+        result: BatchTranscriptionConfirmationService.Result
+    ) {
+        guard let request = pendingBatchSummaryRequestsBySessionId[anchorSessionID],
+              request.meetingId == result.meetingId else { return }
+        removeSessionAliases(for: request)
+        request.sessionIDs = Set(result.sessionIds)
+        request.completedSessionIDs.formIntersection(request.sessionIDs)
+        request.transcriptionProgressBySessionID = request.transcriptionProgressBySessionID.filter {
+            request.sessionIDs.contains($0.key)
+        }
+        for sessionID in request.sessionIDs {
+            pendingBatchSummaryRequestsBySessionId[sessionID] = request
+        }
+        updateBatchSummaryJobProgress(request)
+    }
+
+    private func makeBatchSummaryGenerationJob(
+        meetingID: UUID,
+        options: SummaryGenerationOptions,
+        meetingName: String
+    ) -> SummaryGenerationJob {
+        let job = SummaryGenerationJob(
+            meetingId: meetingID,
+            meetingName: meetingName,
+            includesTranscription: true
+        )
+        job.configureExports(options.exportOptions)
+        return job
+    }
+
+    private func failBatchTranscription(in job: SummaryGenerationJob, message: String) {
+        job.progress.transcription = .failed(message)
+        job.progress.transcriptionProgress = nil
+        job.progress.summaryGeneration = .skipped
+        job.progress.vaultExport = .skipped
+        job.progress.googleDocsExport = .skipped
     }
 
     func discardFailedBatchTranscription() {
@@ -993,8 +1107,7 @@ final class CaptionViewModel: ObservableObject {
             do {
                 let repository = MeetingRepository(dbQueue: dbQueue)
                 guard try await repository.discardFailedBatchSessionSafely(id: sessionId) else { return }
-                pendingBatchSummaryRequestsBySessionId.removeValue(forKey: sessionId)
-                completedBatchSummarySessionIDs.remove(sessionId)
+                removePendingBatchSummaryFlow(for: sessionId, removesJobFromDisplay: false)
                 batchSummaryContextsBySessionId.removeValue(forKey: sessionId)
                 try refreshBatchTranscriptionState(meetingId: meetingId, dbQueue: dbQueue)
             } catch {
@@ -1018,6 +1131,9 @@ final class CaptionViewModel: ObservableObject {
                     sessionIds: sessionIds,
                     dbQueue: dbQueue
                 )
+                for sessionID in sessionIds {
+                    removePendingBatchSummaryFlow(for: sessionID, removesJobFromDisplay: false)
+                }
                 guard currentMeetingId == meetingId else { return }
                 batchTranscriptionState = nil
                 retranscribableBatchSessionIds = sessionIds
@@ -1047,15 +1163,47 @@ final class CaptionViewModel: ObservableObject {
            !(isBatchRecording && recordingMeetingId == update.meetingId) {
             batchTranscriptionState = update.state
         }
-        guard case let .completed(sessionID) = update.state else { return }
+        updatePendingBatchSummaryProgress(for: update)
+        guard case .completed = update.state else { return }
         conversationMetricsStore.invalidate(meetingId: update.meetingId)
-        if pendingBatchSummaryRequestsBySessionId[sessionID] != nil {
-            completedBatchSummarySessionIDs.insert(sessionID)
-        }
         if isVisibleMeeting, canReloadMeetingAfterBatchCompletion(update.meetingId) {
             await reloadCurrentMeetingAfterBatchCompletion(meetingId: update.meetingId)
         }
         generatePendingBatchSummaryIfReady(meetingId: update.meetingId)
+    }
+
+    private func updatePendingBatchSummaryProgress(for update: BatchTranscriptionUpdate) {
+        let sessionID = update.state.sessionId
+        guard let request = pendingBatchSummaryRequestsBySessionId[sessionID],
+              !request.job.progress.transcription.isFailed else { return }
+        let progress: Double
+        switch update.state {
+        case .recording, .awaitingConfirmation, .queued:
+            progress = 0
+        case let .running(_, batchProgress):
+            progress = batchProgress.map { batchProgress in
+                guard batchProgress.totalFileCount > 0 else { return 0.0 }
+                return min(Double(batchProgress.completedFileCount) / Double(batchProgress.totalFileCount), 1)
+            } ?? 0
+        case .completed:
+            request.completedSessionIDs.insert(sessionID)
+            progress = 1
+        case let .failed(_, message), let .retranscriptionFailed(_, message):
+            failBatchTranscription(in: request.job, message: message)
+            return
+        }
+        request.transcriptionProgressBySessionID[sessionID] = progress
+        updateBatchSummaryJobProgress(request)
+    }
+
+    private func updateBatchSummaryJobProgress(_ request: PendingBatchSummaryRequest) {
+        if request.isTranscriptionCompleted {
+            request.job.progress.transcription = .completed
+            request.job.progress.transcriptionProgress = nil
+        } else {
+            request.job.progress.transcription = .running
+            request.job.progress.transcriptionProgress = request.transcriptionProgress
+        }
     }
 
     private func canReloadMeetingAfterBatchCompletion(_ meetingId: UUID) -> Bool {
@@ -2635,13 +2783,16 @@ final class CaptionViewModel: ObservableObject {
         dbQueue: DatabaseQueue?,
         vaultURL: URL?
     ) {
-        var context: BatchSummaryContext?
+        let details = makeBatchTranscriptionConfirmationDetails(
+            meetingId: meetingId,
+            dbQueue: dbQueue
+        )
         if let dbQueue, let vaultURL {
-            context = BatchSummaryContext(
+            batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
                 dbQueue: dbQueue,
-                vaultURL: vaultURL
+                vaultURL: vaultURL,
+                meetingName: details.meetingName
             )
-            batchSummaryContextsBySessionId[sessionId] = context
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
@@ -2656,7 +2807,7 @@ final class CaptionViewModel: ObservableObject {
             initialLanguageSelection: preferences.languageSelection,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: AppSettings.shared.generateSummaryAfterBatchTranscription,
-            projectSelection: makeBatchTranscriptionProjectSelection(meetingId: meetingId, context: context)
+            projectSelection: details.projectSelection
         )
         MainWindowOpener.shared.openMainWindow()
     }
@@ -2802,15 +2953,52 @@ final class CaptionViewModel: ObservableObject {
     private struct BatchSummaryContext {
         let dbQueue: DatabaseQueue
         let vaultURL: URL
+        let meetingName: String
     }
 
-    private struct PendingBatchSummaryRequest {
+    private final class PendingBatchSummaryRequest {
         let meetingId: UUID
         let options: SummaryGenerationOptions
         let dbQueue: DatabaseQueue
         let vaultURL: URL
+        let job: SummaryGenerationJob
+        var sessionIDs: Set<UUID>
+        var completedSessionIDs: Set<UUID> = []
+        var transcriptionProgressBySessionID: [UUID: Double] = [:]
 
-        func hasSamePersistenceContext(as other: Self) -> Bool {
+        init(
+            sessionID: UUID,
+            meetingId: UUID,
+            options: SummaryGenerationOptions,
+            dbQueue: DatabaseQueue,
+            vaultURL: URL,
+            job: SummaryGenerationJob
+        ) {
+            self.meetingId = meetingId
+            self.options = options
+            self.dbQueue = dbQueue
+            self.vaultURL = vaultURL
+            self.job = job
+            sessionIDs = [sessionID]
+        }
+
+        var isTranscriptionCompleted: Bool {
+            sessionIDs.isSubset(of: completedSessionIDs)
+        }
+
+        var transcriptionProgress: Double {
+            guard !sessionIDs.isEmpty else { return 0 }
+            let completedProgress = sessionIDs.reduce(0.0) { partialResult, sessionID in
+                partialResult + (transcriptionProgressBySessionID[sessionID] ?? 0)
+            }
+            return completedProgress / Double(sessionIDs.count)
+        }
+
+        var sortKey: String {
+            sessionIDs.map(\.uuidString).min() ?? ""
+        }
+
+        func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
                 && vaultURL.standardizedFileURL == other.vaultURL.standardizedFileURL
         }
@@ -2861,11 +3049,35 @@ final class CaptionViewModel: ObservableObject {
             dbQueue: DatabaseQueue,
             vaultURL: URL
         ) {
+            let meetingName = (try? MeetingRepository(dbQueue: dbQueue).fetchMeeting(id: meetingID)?.name.nilIfBlank)
+                ?? L10n.newMeeting
+            let job = makeBatchSummaryGenerationJob(
+                meetingID: meetingID,
+                options: options,
+                meetingName: meetingName
+            )
             pendingBatchSummaryRequestsBySessionId[sessionID] = PendingBatchSummaryRequest(
+                sessionID: sessionID,
                 meetingId: meetingID,
                 options: options,
                 dbQueue: dbQueue,
-                vaultURL: vaultURL
+                vaultURL: vaultURL,
+                job: job
+            )
+            summaryGenerationJobs.append(job)
+        }
+
+        func registerConfirmedBatchSummarySessionsForTesting(
+            anchorSessionID: UUID,
+            sessionIDs: [UUID]
+        ) {
+            guard let request = pendingBatchSummaryRequestsBySessionId[anchorSessionID] else { return }
+            registerConfirmedBatchSummarySessions(
+                anchorSessionID: anchorSessionID,
+                result: BatchTranscriptionConfirmationService.Result(
+                    meetingId: request.meetingId,
+                    sessionIds: sessionIDs
+                )
             )
         }
 
@@ -2883,7 +3095,7 @@ final class CaptionViewModel: ObservableObject {
         }
 
         var completedBatchSummarySessionCountForTesting: Int {
-            completedBatchSummarySessionIDs.count
+            Set(pendingBatchSummaryRequestsBySessionId.values.flatMap(\.completedSessionIDs)).count
         }
 
         func setScreenshotDeletionInProgressForTesting(_ isInProgress: Bool) {
@@ -2972,34 +3184,38 @@ final class CaptionViewModel: ObservableObject {
     private func generatePendingBatchSummaryIfReady(meetingId: UUID) {
         guard !isDeletingScreenshots,
               !isSummaryGenerating(meetingId: meetingId) else { return }
-        let completedRequests = pendingBatchSummaryRequestsBySessionId.compactMap { sessionId, request in
-            request.meetingId == meetingId && completedBatchSummarySessionIDs.contains(sessionId)
-                ? (sessionId: sessionId, request: request)
-                : nil
+        var seenJobIDs: Set<UUID> = []
+        let completedRequests = pendingBatchSummaryRequestsBySessionId.values.filter { request in
+            seenJobIDs.insert(request.job.id).inserted
+                && request.meetingId == meetingId
+                && request.isTranscriptionCompleted
+                && !request.job.hasFailure
         }
-        .sorted { $0.sessionId.uuidString < $1.sessionId.uuidString }
+        .sorted { $0.sortKey < $1.sortKey }
         guard let first = completedRequests.first else { return }
         let pendingRequests = completedRequests.filter {
-            $0.request.hasSamePersistenceContext(as: first.request)
+            $0.hasSamePersistenceContext(as: first)
         }
-        let sessionIDs = pendingRequests.map(\.sessionId)
-        let options = SummaryGenerationOptions.merging(pendingRequests.map(\.request.options))
+        let options = SummaryGenerationOptions.merging(pendingRequests.map(\.options))
+        let job = first.job
+        let redundantJobIDs = Set(pendingRequests.map(\.job.id)).subtracting([job.id])
         do {
             let request = try makePersistedSummaryRequest(
                 meetingId: meetingId,
-                dbQueue: first.request.dbQueue,
-                vaultURL: first.request.vaultURL,
+                dbQueue: first.dbQueue,
+                vaultURL: first.vaultURL,
                 options: options
             )
-            removePendingBatchSummaryRequests(sessionIDs: sessionIDs)
-            startSummaryGeneration(request)
+            removePendingBatchSummaryRequests(pendingRequests)
+            summaryGenerationJobs.removeAll { redundantJobIDs.contains($0.id) }
+            startSummaryGeneration(request, job: job)
         } catch {
-            removePendingBatchSummaryRequests(sessionIDs: sessionIDs)
-            recordSummaryPreparationFailure(
-                error.localizedDescription,
-                meetingId: meetingId,
-                dbQueue: first.request.dbQueue
-            )
+            removePendingBatchSummaryRequests(pendingRequests)
+            summaryGenerationJobs.removeAll { redundantJobIDs.contains($0.id) }
+            job.progress.summaryGeneration = .failed(error.localizedDescription)
+            job.progress.vaultExport = .skipped
+            job.progress.googleDocsExport = .skipped
+            summaryErrorsByMeetingId[meetingId] = error.localizedDescription
             generatePendingBatchSummaryIfReady(meetingId: meetingId)
         }
     }
@@ -3011,10 +3227,15 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
-    private func removePendingBatchSummaryRequests(sessionIDs: [UUID]) {
-        for sessionID in sessionIDs {
+    private func removePendingBatchSummaryRequests(_ requests: [PendingBatchSummaryRequest]) {
+        for request in requests {
+            removeSessionAliases(for: request)
+        }
+    }
+
+    private func removeSessionAliases(for request: PendingBatchSummaryRequest) {
+        for sessionID in request.sessionIDs where pendingBatchSummaryRequestsBySessionId[sessionID] === request {
             pendingBatchSummaryRequestsBySessionId.removeValue(forKey: sessionID)
-            completedBatchSummarySessionIDs.remove(sessionID)
         }
     }
 
@@ -3069,13 +3290,16 @@ final class CaptionViewModel: ObservableObject {
     }
 
     @discardableResult
-    private func startSummaryGeneration(_ request: SummaryGenerationRequest) -> Bool {
+    private func startSummaryGeneration(
+        _ request: SummaryGenerationRequest,
+        job existingJob: SummaryGenerationJob? = nil
+    ) -> Bool {
         guard !isSummaryGenerating(meetingId: request.meetingId) else { return false }
-        let job = SummaryGenerationJob(meetingId: request.meetingId, meetingName: request.meetingName)
-        let exportOptions = request.options.exportOptions
-        job.progress.vaultExport = exportOptions.exportsToVault ? .pending : .skipped
-        job.progress.googleDocsExport = exportOptions.exportsToGoogleDocs ? .pending : .skipped
-        summaryGenerationJobs.append(job)
+        let job = existingJob ?? SummaryGenerationJob(meetingId: request.meetingId, meetingName: request.meetingName)
+        job.configureExports(request.options.exportOptions)
+        if existingJob == nil {
+            summaryGenerationJobs.append(job)
+        }
         summaryErrorsByMeetingId.removeValue(forKey: request.meetingId)
         googleDocsExportErrorsByMeetingId.removeValue(forKey: request.meetingId)
         summaryGeneratingMeetingIDs.insert(request.meetingId)

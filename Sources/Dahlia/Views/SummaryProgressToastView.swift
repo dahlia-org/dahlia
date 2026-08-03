@@ -49,6 +49,14 @@ private struct SummaryGenerationJobProgressView: View {
                 }
             }
 
+            if !job.progress.transcription.isSkipped {
+                SummaryProgressStepRow(
+                    label: L10n.transcription,
+                    status: job.progress.transcription,
+                    progress: job.progress.transcriptionProgress,
+                    showsProgressBar: true
+                )
+            }
             SummaryProgressStepRow(label: L10n.generateSummary, status: job.progress.summaryGeneration)
             if !job.progress.vaultExport.isSkipped {
                 SummaryProgressStepRow(label: L10n.exportBatchSummaryToVault, status: job.progress.vaultExport)
