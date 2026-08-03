@@ -8,6 +8,9 @@ import OSLog
 actor CodexAppServerService {
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
     typealias ConfigurationReadiness = @Sendable () async -> Bool
+    typealias ProviderAuthenticationPreparation = @Sendable (
+        _ authenticationMayChange: @Sendable () async -> Void
+    ) async throws -> Bool
 
     struct AccountStatus: Equatable {
         let isAuthenticated: Bool
@@ -49,6 +52,12 @@ actor CodexAppServerService {
         var didSendInterrupt = false
     }
 
+    struct ProviderAuthenticationPreparationState {
+        let id: UUID
+        let task: Task<Void, Error>
+        var waiters: Set<UUID>
+    }
+
     private enum LoginOutcome {
         case succeeded
         case failed(String?)
@@ -59,6 +68,7 @@ actor CodexAppServerService {
     private let clock: any CodexAppServerClock
     private let transportTimeout: Duration
     private let summaryTimeout: Duration
+    let providerAuthenticationPreparation: ProviderAuthenticationPreparation
     private let logger = Logger(subsystem: "com.dahlia", category: "CodexAppServer")
     private var transport: (any CodexAppServerTransport)?
     private var readerTask: Task<Void, Never>?
@@ -71,6 +81,11 @@ actor CodexAppServerService {
     private var startupWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var generations: [UUID: GenerationContext] = [:]
     private var generationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    private var activeCodexOperations: Set<UUID> = []
+    private var codexOperationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    private var pendingChatTurnStarts: Set<UUID> = []
+    private var chatTurnDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    private var configurationReloadWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var cachedModels: [CodexModel]?
     private var cachedAccountStatus: AccountStatus?
     private var cachedConfigReadResult: JSONValue?
@@ -80,12 +95,16 @@ actor CodexAppServerService {
     private var ignoredLoginIDs: Set<String> = []
     private var isStarting = false
     private var isStoppingConnection = false
+    private var isConfigurationReloading = false
     private var connectionStopWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var isInitialized = false
-    private var isShuttingDown = false
+    var isShuttingDown = false
+    var providerAuthenticationReloadRequired = false
+    var providerAuthenticationPreparationState: ProviderAuthenticationPreparationState?
     #if DEBUG
         private var activeTurnTestWaiters: [CheckedContinuation<Void, Never>] = []
         private var generationDrainTestWaiters: [CheckedContinuation<Void, Never>] = []
+        private var chatTurnDrainTestWaiters: [CheckedContinuation<Void, Never>] = []
     #endif
 
     init(
@@ -93,6 +112,8 @@ actor CodexAppServerService {
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
         summaryTimeout: Duration = .seconds(270),
+        providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation =
+            CodexAppServerService.prepareConfiguredDatabricksAuthentication,
         configurationReadiness: @escaping ConfigurationReadiness = {
             await MainActor.run { AppSettings.shared.isCodexAccountConfigurationCurrent }
         }
@@ -102,6 +123,7 @@ actor CodexAppServerService {
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
+        self.providerAuthenticationPreparation = providerAuthenticationPreparation
     }
 
     init(
@@ -109,6 +131,7 @@ actor CodexAppServerService {
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
         summaryTimeout: Duration = .seconds(270),
+        providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation = { _ in false },
         configurationReadiness: @escaping ConfigurationReadiness = { true }
     ) {
         self.transportFactory = transportFactory
@@ -116,6 +139,7 @@ actor CodexAppServerService {
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
+        self.providerAuthenticationPreparation = providerAuthenticationPreparation
     }
 
     func start() async throws {
@@ -146,20 +170,40 @@ actor CodexAppServerService {
 
     func shutdown() async {
         isShuttingDown = true
+        providerAuthenticationPreparationState?.task.cancel()
+        providerAuthenticationPreparationState = nil
         cachedModels = nil
         cachedAccountStatus = nil
         await stopConnection(error: CancellationError())
         resumeStartupWaiters(throwing: CancellationError())
         resumeGenerationDrainWaiters(throwing: CancellationError())
+        resumeCodexOperationDrainWaiters(throwing: CancellationError())
+        resumeChatTurnDrainWaiters(throwing: CancellationError())
+        resumeConfigurationReloadWaiters(throwing: CancellationError())
         isStarting = false
     }
 
     func reloadConfiguration() async throws {
         guard !isShuttingDown else { throw CancellationError() }
-        try await waitForGenerationsToFinish()
-        await stopConnection(error: CancellationError())
-        try Task.checkCancellation()
-        try await start()
+        if isConfigurationReloading {
+            try await waitForConfigurationReloadToFinish()
+            return
+        }
+
+        isConfigurationReloading = true
+        do {
+            try await waitForCodexOperationsToFinish()
+            try await waitForGenerationsToFinish()
+            try await waitForChatTurnsToFinish()
+            await stopConnection(error: CancellationError())
+            try Task.checkCancellation()
+            try await start()
+            providerAuthenticationReloadRequired = false
+            finishConfigurationReload()
+        } catch {
+            finishConfigurationReload(throwing: error)
+            throw error
+        }
     }
 
     func request(
@@ -177,11 +221,20 @@ actor CodexAppServerService {
 
     func models(
         forceRefresh: Bool = false,
-        bypassConfigurationCheck: Bool = false
+        bypassConfigurationCheck: Bool = false,
+        bypassProviderAuthenticationPreparation: Bool = false,
+        bypassConfigurationReloadAdmission: Bool = false
     ) async throws -> [CodexModel] {
+        if !bypassProviderAuthenticationPreparation {
+            try await prepareProviderAuthentication()
+        }
         if !bypassConfigurationCheck {
             try await requireCurrentConfiguration()
         }
+        let operationID = try await beginCodexOperation(
+            bypassingAdmission: bypassConfigurationReloadAdmission
+        )
+        defer { finishCodexOperation(operationID) }
         let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
         if !forceRefresh, let cachedModels { return cachedModels }
@@ -325,13 +378,47 @@ actor CodexAppServerService {
         }
     }
 
+    func startChatTurn(
+        threadID: String,
+        params: JSONValue
+    ) async throws -> (turnID: String, notifications: AsyncThrowingStream<JSONValue, any Error>) {
+        try await waitForConfigurationReloadToFinish()
+        let startID = UUID()
+        pendingChatTurnStarts.insert(startID)
+        defer {
+            pendingChatTurnStarts.remove(startID)
+            resumeChatTurnDrainWaitersIfIdle()
+        }
+        try await start()
+        let generation = connectionGeneration
+        let result = try await requestOnCurrentConnection(
+            method: "turn/start",
+            params: params,
+            timeout: transportTimeout
+        )
+        guard generation == connectionGeneration else { throw CancellationError() }
+        guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        return (turnID, notifications(threadID: threadID, turnID: turnID))
+    }
+
     // swiftformat:disable:next modifierOrder
     nonisolated private static func isTurnCompletionMessage(_ message: JSONValue) -> Bool {
         message.objectValue?["method"]?.stringValue == "turn/completed"
     }
 
-    func chatThreadConfiguration(reasoningEffort: String, vaultID: UUID, helperURL: URL) async throws -> JSONValue {
+    func chatThreadConfiguration(
+        reasoningEffort: String,
+        vaultID: UUID,
+        helperURL: URL,
+        bypassConfigurationReloadAdmission: Bool = false
+    ) async throws -> JSONValue {
         try await requireCurrentConfiguration()
+        let operationID = try await beginCodexOperation(
+            bypassingAdmission: bypassConfigurationReloadAdmission
+        )
+        defer { finishCodexOperation(operationID) }
         let configuration = try await configReadResult()
         return try Self.chatThreadConfig(
             from: configuration,
@@ -341,13 +428,36 @@ actor CodexAppServerService {
         )
     }
 
+    func chatRequest(
+        method: String,
+        params: JSONValue,
+        bypassConfigurationReloadAdmission: Bool = false
+    ) async throws -> JSONValue {
+        let operationID = try await beginCodexOperation(
+            bypassingAdmission: bypassConfigurationReloadAdmission
+        )
+        defer { finishCodexOperation(operationID) }
+        return try await request(method: method, params: params)
+    }
+
+    func withChatOperation<Result: Sendable>(
+        _ operation: @Sendable (isolated CodexAppServerService) async throws -> Result
+    ) async throws -> Result {
+        try await prepareProviderAuthentication()
+        let operationID = try await beginCodexOperation()
+        defer { finishCodexOperation(operationID) }
+        return try await operation(self)
+    }
+
     func generate(
         _ request: CodexAppServerRequest,
         bypassConfigurationCheck: Bool = false
     ) async throws -> String {
+        try await prepareProviderAuthentication()
         if !bypassConfigurationCheck {
             try await requireCurrentConfiguration()
         }
+        try await waitForConfigurationReloadToFinish()
         let generationID = UUID()
         generations[generationID] = GenerationContext()
 
@@ -549,7 +659,10 @@ private extension CodexAppServerService {
 
         let account = try await accountStatus(forceRefresh: false)
         guard account.canUseCodex else { throw CodexAppServerError.notLoggedIn }
-        let availableModels = try await models()
+        let availableModels = try await models(
+            bypassProviderAuthenticationPreparation: true,
+            bypassConfigurationReloadAdmission: true
+        )
         let selectedModel = request.model
             .flatMap { requestedModel in availableModels.first { $0.model == requestedModel } }
             ?? availableModels.first(where: \CodexModel.isDefault)
@@ -1029,6 +1142,7 @@ private extension CodexAppServerService {
         let subscribers = turnSubscribers.values.flatMap(\.values)
         turnSubscribers.removeAll()
         subscribers.forEach { $0.finish(throwing: error) }
+        resumeChatTurnDrainWaiters(throwing: error)
         await currentTransport?.close()
     }
 
@@ -1086,11 +1200,13 @@ private extension CodexAppServerService {
         if turnSubscribers[key]?.isEmpty == true {
             turnSubscribers.removeValue(forKey: key)
         }
+        resumeChatTurnDrainWaitersIfIdle()
     }
 
     private func finishTurnSubscribers(for key: TurnKey) {
         guard let subscribers = turnSubscribers.removeValue(forKey: key)?.values else { return }
         subscribers.forEach { $0.finish() }
+        resumeChatTurnDrainWaitersIfIdle()
     }
 
     private func waitForStartup() async throws {
@@ -1137,6 +1253,146 @@ private extension CodexAppServerService {
 
     private func cancelGenerationDrainWaiter(_ waiterID: UUID) {
         generationDrainWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func beginCodexOperation() async throws -> UUID {
+        try await waitForConfigurationReloadToFinish()
+        let operationID = UUID()
+        activeCodexOperations.insert(operationID)
+        return operationID
+    }
+
+    private func beginCodexOperation(bypassingAdmission: Bool) async throws -> UUID? {
+        guard !bypassingAdmission else { return nil }
+        return try await beginCodexOperation()
+    }
+
+    private func finishCodexOperation(_ operationID: UUID) {
+        activeCodexOperations.remove(operationID)
+        guard activeCodexOperations.isEmpty else { return }
+        resumeCodexOperationDrainWaiters()
+    }
+
+    private func finishCodexOperation(_ operationID: UUID?) {
+        guard let operationID else { return }
+        finishCodexOperation(operationID)
+    }
+
+    private func waitForCodexOperationsToFinish() async throws {
+        guard !activeCodexOperations.isEmpty else { return }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if activeCodexOperations.isEmpty {
+                    continuation.resume()
+                } else {
+                    codexOperationDrainWaiters[waiterID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelCodexOperationDrainWaiter(waiterID) }
+        }
+    }
+
+    private func cancelCodexOperationDrainWaiter(_ waiterID: UUID) {
+        codexOperationDrainWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func resumeCodexOperationDrainWaiters(throwing error: (any Error)? = nil) {
+        let waiters = codexOperationDrainWaiters.values
+        codexOperationDrainWaiters.removeAll()
+        for waiter in waiters {
+            if let error {
+                waiter.resume(throwing: error)
+            } else {
+                waiter.resume()
+            }
+        }
+    }
+
+    private func waitForChatTurnsToFinish() async throws {
+        guard !pendingChatTurnStarts.isEmpty || !turnSubscribers.isEmpty else { return }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty {
+                    continuation.resume()
+                } else {
+                    chatTurnDrainWaiters[waiterID] = continuation
+                    #if DEBUG
+                        let testWaiters = chatTurnDrainTestWaiters
+                        chatTurnDrainTestWaiters.removeAll()
+                        testWaiters.forEach { $0.resume() }
+                    #endif
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelChatTurnDrainWaiter(waiterID) }
+        }
+    }
+
+    private func cancelChatTurnDrainWaiter(_ waiterID: UUID) {
+        chatTurnDrainWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func resumeChatTurnDrainWaitersIfIdle() {
+        guard pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty else { return }
+        resumeChatTurnDrainWaiters()
+    }
+
+    private func resumeChatTurnDrainWaiters(throwing error: (any Error)? = nil) {
+        let waiters = chatTurnDrainWaiters.values
+        chatTurnDrainWaiters.removeAll()
+        for waiter in waiters {
+            if let error {
+                waiter.resume(throwing: error)
+            } else {
+                waiter.resume()
+            }
+        }
+    }
+
+    private func waitForConfigurationReloadToFinish() async throws {
+        guard isConfigurationReloading else { return }
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else if isConfigurationReloading {
+                    configurationReloadWaiters[waiterID] = continuation
+                } else {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelConfigurationReloadWaiter(waiterID) }
+        }
+    }
+
+    private func cancelConfigurationReloadWaiter(_ waiterID: UUID) {
+        configurationReloadWaiters.removeValue(forKey: waiterID)?.resume(throwing: CancellationError())
+    }
+
+    private func finishConfigurationReload(throwing error: (any Error)? = nil) {
+        isConfigurationReloading = false
+        resumeConfigurationReloadWaiters(throwing: error)
+    }
+
+    private func resumeConfigurationReloadWaiters(throwing error: (any Error)? = nil) {
+        let waiters = configurationReloadWaiters.values
+        configurationReloadWaiters.removeAll()
+        for waiter in waiters {
+            if let error {
+                waiter.resume(throwing: error)
+            } else {
+                waiter.resume()
+            }
+        }
     }
 
     private func resumeGenerationDrainWaitersIfIdle() {
@@ -1263,6 +1519,17 @@ private extension CodexAppServerService {
             await withCheckedContinuation { continuation in
                 generationDrainTestWaiters.append(continuation)
             }
+        }
+
+        func waitUntilChatTurnReloadIsWaitingForTesting() async {
+            if !chatTurnDrainWaiters.isEmpty { return }
+            await withCheckedContinuation { continuation in
+                chatTurnDrainTestWaiters.append(continuation)
+            }
+        }
+
+        var providerAuthenticationWaiterCountForTesting: Int {
+            providerAuthenticationPreparationState?.waiters.count ?? 0
         }
     }
 #endif

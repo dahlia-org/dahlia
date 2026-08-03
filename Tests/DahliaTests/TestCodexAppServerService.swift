@@ -12,6 +12,7 @@ func makeTestCodexAppServerService(
     transportFactory: @escaping CodexAppServerService.TransportFactory,
     clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
     summaryTimeout: Duration = .seconds(270),
+    providerAuthenticationPreparation: @escaping CodexAppServerService.ProviderAuthenticationPreparation = { _ in false },
     configurationReadiness: @escaping CodexAppServerService.ConfigurationReadiness = { true }
 ) -> CodexAppServerService {
     CodexAppServerService(
@@ -19,6 +20,7 @@ func makeTestCodexAppServerService(
         clock: clock,
         transportTimeout: .seconds(600),
         summaryTimeout: summaryTimeout,
+        providerAuthenticationPreparation: providerAuthenticationPreparation,
         configurationReadiness: configurationReadiness
     )
 }

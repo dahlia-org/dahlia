@@ -10,13 +10,15 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
     }
 
     private let turnOutcome: TurnOutcome
+    private let automaticallyRespondsToModelList: Bool
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
     private var isClosed = false
 
-    init(turnOutcome: TurnOutcome = .completed) {
+    init(turnOutcome: TurnOutcome = .completed, automaticallyRespondsToModelList: Bool = true) {
         self.turnOutcome = turnOutcome
+        self.automaticallyRespondsToModelList = automaticallyRespondsToModelList
     }
 
     func sendLine(_ data: Data) throws {
@@ -58,7 +60,9 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
                 "requiresOpenaiAuth": .bool(true),
             ]))
         case "model/list":
-            enqueueResponse(requestID, result: TestCodexChatFixtures.modelList)
+            if automaticallyRespondsToModelList {
+                enqueueResponse(requestID, result: TestCodexChatFixtures.modelList)
+            }
         case "config/read":
             enqueueResponse(requestID, result: .object([
                 "config": .object([
@@ -134,6 +138,10 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
 
     func simulateDisconnect() async {
         await close()
+    }
+
+    func sendFromServer(_ value: JSONValue) {
+        enqueue(value)
     }
 
     private func enqueueTurn(requestID: Int) {

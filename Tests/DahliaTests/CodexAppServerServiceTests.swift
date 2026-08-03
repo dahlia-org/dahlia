@@ -10,6 +10,22 @@ import Foundation
     // Protocol lifecycle scenarios share test doubles and are kept in one auditable suite.
     // swiftlint:disable:next type_body_length
     struct CodexAppServerServiceTests {
+        private actor CompletionGate {
+            private var isOpen = false
+            private var continuation: CheckedContinuation<Void, Never>?
+
+            func wait() async {
+                if isOpen { return }
+                await withCheckedContinuation { continuation = $0 }
+            }
+
+            func open() {
+                isOpen = true
+                continuation?.resume()
+                continuation = nil
+            }
+        }
+
         @Test
         func connectionIsInitializedOnceAndReused() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
@@ -327,6 +343,348 @@ import Foundation
             #expect(await first.isClosed)
             #expect(await !second.isClosed)
             #expect(try await service.models().map(\.model) == ["default-model"])
+            await service.shutdown()
+        }
+
+        @Test
+        func browserLoginReloadsConfigurationBeforeGeneration() async throws {
+            let first = TestCodexAppServerTransport(mode: .models)
+            let second = TestCodexAppServerTransport(mode: .generationCompletes)
+            let transports = Mutex([first, second])
+            let launchCount = Mutex(0)
+            let preparationCount = Mutex(0)
+            let service = makeTestCodexAppServerService(
+                transportFactory: {
+                    launchCount.withLock { $0 += 1 }
+                    return transports.withLock { $0.removeFirst() }
+                },
+                providerAuthenticationPreparation: { _ in
+                    preparationCount.withLock { $0 += 1 }
+                    return true
+                }
+            )
+            try await service.start()
+
+            let result = try await service.generate(.init(
+                model: nil,
+                developerInstructions: "Summarize.",
+                inputs: [.text("Transcript")],
+                outputSchema: Data(#"{"type":"object"}"#.utf8)
+            ))
+
+            #expect(result == #"{"status":"ok"}"#)
+            #expect(preparationCount.withLock { $0 } == 1)
+            #expect(launchCount.withLock { $0 } == 2)
+            #expect(await first.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func concurrentRequestsShareProviderAuthenticationPreparation() async throws {
+            let first = TestCodexAppServerTransport(mode: .models)
+            let second = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([first, second])
+            let preparationCount = Mutex(0)
+            let preparationStarted = AsyncStream.makeStream(of: Void.self)
+            let releasePreparation = AsyncStream.makeStream(of: Void.self)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transports.withLock { $0.removeFirst() } },
+                providerAuthenticationPreparation: { _ in
+                    preparationCount.withLock { $0 += 1 }
+                    preparationStarted.continuation.yield()
+                    for await _ in releasePreparation.stream {
+                        break
+                    }
+                    return true
+                }
+            )
+            try await service.start()
+
+            let firstPreparation = Task { try await service.prepareProviderAuthentication() }
+            for await _ in preparationStarted.stream {
+                break
+            }
+            let secondPreparation = Task { try await service.prepareProviderAuthentication() }
+            await Task.yield()
+            releasePreparation.continuation.yield()
+
+            try await firstPreparation.value
+            try await secondPreparation.value
+            #expect(preparationCount.withLock { $0 } == 1)
+            #expect(await first.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func cancellingOneAuthenticationWaiterReturnsWithoutCancellingSharedPreparation() async throws {
+            let firstTransport = TestCodexAppServerTransport(mode: .models)
+            let secondTransport = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([firstTransport, secondTransport])
+            let preparationCount = Mutex(0)
+            let firstFinished = Mutex(false)
+            let preparationStarted = AsyncStream.makeStream(of: Void.self)
+            let releasePreparation = AsyncStream.makeStream(of: Void.self)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transports.withLock { $0.removeFirst() } },
+                providerAuthenticationPreparation: { _ in
+                    preparationCount.withLock { $0 += 1 }
+                    preparationStarted.continuation.yield()
+                    for await _ in releasePreparation.stream {
+                        break
+                    }
+                    return true
+                }
+            )
+            try await service.start()
+
+            let first = Task {
+                defer { firstFinished.withLock { $0 = true } }
+                try await service.prepareProviderAuthentication()
+            }
+            for await _ in preparationStarted.stream {
+                break
+            }
+            let second = Task { try await service.prepareProviderAuthentication() }
+            #expect(await pollUntil(timeout: .seconds(10)) {
+                await service.providerAuthenticationWaiterCountForTesting == 2
+            })
+
+            first.cancel()
+            #expect(await pollUntil(timeout: .seconds(10)) { firstFinished.withLock { $0 } })
+            #expect(preparationCount.withLock { $0 } == 1)
+
+            releasePreparation.continuation.yield()
+            await #expect(throws: CancellationError.self) { try await first.value }
+            try await second.value
+            #expect(preparationCount.withLock { $0 } == 1)
+            await service.shutdown()
+        }
+
+        @Test
+        func cancellingOnlyAuthenticationWaiterCancelsUnderlyingPreparation() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let preparationCancelled = Mutex(false)
+            let preparationStarted = AsyncStream.makeStream(of: Void.self)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                providerAuthenticationPreparation: { _ in
+                    preparationStarted.continuation.yield()
+                    do {
+                        try await Task.sleep(for: .seconds(60))
+                    } catch is CancellationError {
+                        preparationCancelled.withLock { $0 = true }
+                        throw CancellationError()
+                    }
+                    return true
+                }
+            )
+            try await service.start()
+
+            let preparation = Task { try await service.prepareProviderAuthentication() }
+            for await _ in preparationStarted.stream {
+                break
+            }
+            preparation.cancel()
+
+            await #expect(throws: CancellationError.self) { try await preparation.value }
+            #expect(await pollUntil(timeout: .seconds(10)) { preparationCancelled.withLock { $0 } })
+            #expect(await !transport.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func replacementAuthenticationWaitsForCancelledPreparationToFinish() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let preparationCount = Mutex(0)
+            let preparationStarted = AsyncStream.makeStream(of: Void.self)
+            let cancellationObserved = AsyncStream.makeStream(of: Void.self)
+            let cancellationCompletion = CompletionGate()
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                providerAuthenticationPreparation: { _ in
+                    let attempt = preparationCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    guard attempt == 1 else { return false }
+                    preparationStarted.continuation.yield()
+                    do {
+                        try await Task.sleep(for: .seconds(60))
+                    } catch is CancellationError {
+                        cancellationObserved.continuation.yield()
+                        await cancellationCompletion.wait()
+                        throw CancellationError()
+                    }
+                    return false
+                }
+            )
+            try await service.start()
+
+            let cancelled = Task { try await service.prepareProviderAuthentication() }
+            for await _ in preparationStarted.stream {
+                break
+            }
+            cancelled.cancel()
+            await #expect(throws: CancellationError.self) { try await cancelled.value }
+            for await _ in cancellationObserved.stream {
+                break
+            }
+
+            let replacement = Task { try await service.prepareProviderAuthentication() }
+            await Task.yield()
+            #expect(preparationCount.withLock { $0 } == 1)
+
+            await cancellationCompletion.open()
+            try await replacement.value
+            #expect(preparationCount.withLock { $0 } == 2)
+            #expect(await !transport.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func failedLoginAttemptKeepsReloadRequiredForNextPreparation() async throws {
+            let first = TestCodexAppServerTransport(mode: .models)
+            let second = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([first, second])
+            let preparationCount = Mutex(0)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transports.withLock { $0.removeFirst() } },
+                providerAuthenticationPreparation: { authenticationMayChange in
+                    let attempt = preparationCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    if attempt == 1 {
+                        await authenticationMayChange()
+                        throw CodexAppServerError.notLoggedIn
+                    }
+                    return false
+                }
+            )
+            try await service.start()
+
+            await #expect(throws: CodexAppServerError.notLoggedIn) {
+                try await service.prepareProviderAuthentication()
+            }
+            try await service.prepareProviderAuthentication()
+
+            #expect(preparationCount.withLock { $0 } == 2)
+            #expect(await first.isClosed)
+            #expect(await !second.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func configurationReloadWaitsForActiveChatTurn() async throws {
+            let first = TestCodexAppServerTransport(mode: .generationBlocks)
+            let second = TestCodexAppServerTransport(mode: .models)
+            let transports = Mutex([first, second])
+            let launchCount = Mutex(0)
+            let service = makeTestCodexAppServerService(transportFactory: {
+                launchCount.withLock { $0 += 1 }
+                return transports.withLock { $0.removeFirst() }
+            })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object([
+                    "input": .array([.object(["type": .string("text"), "text": .string("Hi")])]),
+                    "threadId": .string("thread-1"),
+                ])
+            )
+            let consumption = Task {
+                for try await _ in turn.notifications {}
+            }
+
+            let reload = Task { try await service.reloadConfiguration() }
+            await service.waitUntilChatTurnReloadIsWaitingForTesting()
+            #expect(launchCount.withLock { $0 } == 1)
+            #expect(await !first.isClosed)
+
+            await first.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string(turn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            try await consumption.value
+            try await reload.value
+            #expect(launchCount.withLock { $0 } == 2)
+            #expect(await first.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func summaryAdmissionWaitsForReloadThatIsDrainingChat() async throws {
+            let first = TestCodexAppServerTransport(mode: .generationBlocks)
+            let second = TestCodexAppServerTransport(mode: .generationCompletes)
+            let transports = Mutex([first, second])
+            let configurationReadCount = Mutex(0)
+            let configurationReadStarted = AsyncStream.makeStream(of: Void.self)
+            let releaseConfigurationRead = AsyncStream.makeStream(of: Void.self)
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transports.withLock { $0.removeFirst() } },
+                configurationReadiness: {
+                    let readCount = configurationReadCount.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    guard readCount == 1 else { return true }
+                    configurationReadStarted.continuation.yield()
+                    for await _ in releaseConfigurationRead.stream {
+                        break
+                    }
+                    return true
+                }
+            )
+            let chatTurn = try await service.startChatTurn(
+                threadID: "chat-thread",
+                params: .object([
+                    "input": .array([.object(["type": .string("text"), "text": .string("Hi")])]),
+                    "threadId": .string("chat-thread"),
+                ])
+            )
+            let chatConsumption = Task {
+                for try await _ in chatTurn.notifications {}
+            }
+            let summary = Task {
+                try await service.generate(.init(
+                    model: nil,
+                    developerInstructions: "Summarize.",
+                    inputs: [.text("Transcript")],
+                    outputSchema: Data(#"{"type":"object"}"#.utf8)
+                ))
+            }
+            for await _ in configurationReadStarted.stream {
+                break
+            }
+
+            let reload = Task { try await service.reloadConfiguration() }
+            await service.waitUntilChatTurnReloadIsWaitingForTesting()
+            releaseConfigurationRead.continuation.yield()
+            await Task.yield()
+            #expect(await !methodsSent(to: first).contains("thread/start"))
+
+            await first.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("chat-thread"),
+                    "turn": .object([
+                        "id": .string(chatTurn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            try await chatConsumption.value
+            try await reload.value
+            #expect(try await summary.value == #"{"status":"ok"}"#)
+            #expect(await first.isClosed)
+            #expect(await methodsSent(to: second).contains("thread/start"))
             await service.shutdown()
         }
 

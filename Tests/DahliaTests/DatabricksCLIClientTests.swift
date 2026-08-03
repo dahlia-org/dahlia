@@ -62,8 +62,9 @@ import Foundation
                 return .init(standardOutput: Data(), standardError: Data(), terminationStatus: 0)
             }
 
-            try await client.ensureAuthenticated(profileName: "DEFAULT")
+            let result = try await client.ensureAuthenticated(profileName: "DEFAULT")
 
+            #expect(result == .alreadyAuthenticated)
             #expect(await recorder.commands == [
                 [
                     "auth",
@@ -87,8 +88,9 @@ import Foundation
                 await responder.run(arguments)
             }
 
-            try await client.ensureAuthenticated(profileName: "Team Profile")
+            let result = try await client.ensureAuthenticated(profileName: "Team Profile")
 
+            #expect(result == .browserLoginCompleted)
             #expect(await responder.commands == [
                 [
                     "auth",
@@ -125,7 +127,7 @@ import Foundation
             }
 
             await #expect(throws: DatabricksCLIError.self) {
-                try await client.ensureAuthenticated(profileName: "DEFAULT")
+                _ = try await client.ensureAuthenticated(profileName: "DEFAULT")
             }
             #expect(await responder.commands.count == 1)
         }
@@ -141,7 +143,7 @@ import Foundation
             }
 
             do {
-                try await client.ensureAuthenticated(profileName: "DEFAULT")
+                _ = try await client.ensureAuthenticated(profileName: "DEFAULT")
                 Issue.record("Expected browser login to fail")
             } catch {
                 #expect(error.localizedDescription.contains("browser login timed out"))
@@ -161,7 +163,7 @@ import Foundation
             }
 
             do {
-                try await client.ensureAuthenticated(profileName: "DEFAULT")
+                _ = try await client.ensureAuthenticated(profileName: "DEFAULT")
                 Issue.record("Expected token recheck to fail")
             } catch {
                 #expect(error.localizedDescription.contains("token still unavailable"))

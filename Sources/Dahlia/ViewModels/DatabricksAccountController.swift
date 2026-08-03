@@ -83,14 +83,24 @@ final class DatabricksAccountController {
         do {
             try Task.checkCancellation()
             try configurationManager.validateDatabricks(profile: profile)
-            try await client.ensureAuthenticated(profileName: profile.name)
+            let authenticationResult = try await client.ensureAuthenticated(
+                profileName: profile.name,
+                onBrowserLoginRequired: {
+                    await service.markProviderAuthenticationReloadRequired()
+                }
+            )
             try Task.checkCancellation()
             configurationStore.invalidateCodexAccountConfiguration()
-            if try configurationManager.configureDatabricks(profile: profile) {
+            let configurationChanged = try configurationManager.configureDatabricks(profile: profile)
+            if configurationChanged || authenticationResult == .browserLoginCompleted {
                 try await service.reloadConfiguration()
             }
             try Task.checkCancellation()
-            _ = try await service.models(forceRefresh: true, bypassConfigurationCheck: true)
+            _ = try await service.models(
+                forceRefresh: true,
+                bypassConfigurationCheck: true,
+                bypassProviderAuthenticationPreparation: true
+            )
             try Task.checkCancellation()
             configurationStore.markCodexAccountConfigurationCurrent(
                 provider: .databricks,
