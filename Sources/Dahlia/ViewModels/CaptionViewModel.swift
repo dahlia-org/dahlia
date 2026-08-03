@@ -1066,7 +1066,7 @@ final class CaptionViewModel: ObservableObject {
         guard let dbQueue = currentDbQueue,
               let vaultURL = currentVaultURL,
               currentMeetingId == meetingId else { return }
-        let summaryGeneration = summaryProjectionGeneration
+        let projectionGeneration = summaryProjectionGeneration
         do {
             let loaded = try await Task.detached(priority: .userInitiated) {
                 try Self.fetchLoadedMeetingData(
@@ -1084,7 +1084,7 @@ final class CaptionViewModel: ObservableObject {
                 loader: TranscriptPageLoader(dbQueue: dbQueue),
                 initialPage: loaded.initialTranscriptPage
             )
-            applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
+            applyLoadedDetail(loaded, expectedProjectionGeneration: projectionGeneration)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1354,7 +1354,7 @@ final class CaptionViewModel: ObservableObject {
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         let generation = meetingLoadGeneration
-        let summaryGeneration = summaryProjectionGeneration
+        let projectionGeneration = summaryProjectionGeneration
         meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL, transcriptPageLoader] in
             guard let self else { return }
 
@@ -1391,7 +1391,10 @@ final class CaptionViewModel: ObservableObject {
                 loader: transcriptPageLoader,
                 initialPage: loaded.initialTranscriptPage
             )
-            self.applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
+            self.applyLoadedDetail(
+                loaded,
+                expectedProjectionGeneration: projectionGeneration
+            )
             self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
         }
     }
@@ -1616,7 +1619,7 @@ final class CaptionViewModel: ObservableObject {
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
         let generation = meetingLoadGeneration
-        let summaryGeneration = summaryProjectionGeneration
+        let projectionGeneration = summaryProjectionGeneration
         meetingLoadTask = Task { [weak self, meetingId, dbQueue, vaultURL] in
             guard let self else { return }
             let loaded: LoadedMeetingData
@@ -1634,7 +1637,10 @@ final class CaptionViewModel: ObservableObject {
             guard !Task.isCancelled,
                   self.meetingLoadGeneration == generation,
                   self.currentMeetingId == meetingId else { return }
-            self.applyLoadedDetail(loaded, summaryGeneration: summaryGeneration)
+            self.applyLoadedDetail(
+                loaded,
+                expectedProjectionGeneration: projectionGeneration
+            )
         }
     }
 
@@ -1663,10 +1669,13 @@ final class CaptionViewModel: ObservableObject {
     }
 
     /// 読み込み済みデータのノート・スクリーンショット・サマリーを UI 状態に反映する。
-    private func applyLoadedDetail(_ loaded: LoadedMeetingData, summaryGeneration: UInt64) {
+    private func applyLoadedDetail(
+        _ loaded: LoadedMeetingData,
+        expectedProjectionGeneration: UInt64
+    ) {
         currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
         replaceVisibleScreenshots(meetingID: currentMeetingId, records: loaded.screenshots)
-        if summaryProjectionGeneration == summaryGeneration {
+        if summaryProjectionGeneration == expectedProjectionGeneration {
             currentSummaryDocument = loaded.summaryDocument
             currentSummaryGoogleFileId = loaded.googleFileId
             lastSummaryURL = loaded.lastSummaryURL
@@ -3279,19 +3288,17 @@ final class CaptionViewModel: ObservableObject {
         expectedDocument: String,
         dbQueue: DatabaseQueue?
     ) throws {
-        if let dbQueue {
-            let persisted = try MeetingRepository(dbQueue: dbQueue).updateSummaryGoogleFileId(
+        let summaryIsCurrent = if let dbQueue {
+            try MeetingRepository(dbQueue: dbQueue).updateSummaryGoogleFileId(
                 forMeetingId: meetingId,
                 googleFileId: fileId,
                 expectedDocument: expectedDocument
             )
-            guard persisted else { throw SummaryGoogleDocsExportError.summaryChanged }
         } else {
-            guard currentMeetingId == meetingId,
-                  try currentSummaryDocument?.databaseJSONString() == expectedDocument else {
-                throw SummaryGoogleDocsExportError.summaryChanged
-            }
+            try currentMeetingId == meetingId
+                && currentSummaryDocument?.databaseJSONString() == expectedDocument
         }
+        guard summaryIsCurrent else { throw SummaryGoogleDocsExportError.summaryChanged }
         if currentMeetingId == meetingId {
             currentSummaryGoogleFileId = fileId
         }

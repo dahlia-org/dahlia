@@ -45,7 +45,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
         let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
         let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
-        guard try addingAllowedDefaults(to: toolJSON) == toolJSONValue(document) else {
+        guard try addingLegacyDefaults(to: toolJSON) == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
@@ -54,7 +54,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
         return document
     }
 
-    private static func addingAllowedDefaults(to value: JSONValue) -> JSONValue {
+    private static func addingLegacyDefaults(to value: JSONValue) -> JSONValue {
         guard case var .object(object) = value else { return value }
         object["description"] = object["description"] ?? .string("")
         object["tags"] = object["tags"] ?? .array([])
