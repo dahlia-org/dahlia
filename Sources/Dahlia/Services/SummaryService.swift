@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 /// Codex app-server で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。

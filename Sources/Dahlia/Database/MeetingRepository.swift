@@ -351,11 +351,11 @@ final class MeetingRepository {
             guard var meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
 
             let existingSummary = try SummaryRecord.fetchOne(db, key: meetingId)
-            let normalizedTitle = Self.normalizedGeneratedMetadata(document.title, maximumLength: 120)
+            let normalizedTitle = SummaryGeneratedMetadata.normalizedTitle(document.title)
             if let normalizedTitle {
                 meeting.name = normalizedTitle
             }
-            if let description = Self.normalizedGeneratedMetadata(document.description, maximumLength: 240) {
+            if let description = SummaryGeneratedMetadata.normalizedDescription(document.description) {
                 meeting.description = description
             }
             meeting.updatedAt = Date()
@@ -402,14 +402,6 @@ final class MeetingRepository {
                 }
             }
         }
-    }
-
-    private nonisolated static func normalizedGeneratedMetadata(_ value: String, maximumLength: Int) -> String? {
-        let oneLine = value
-            .split(whereSeparator: \.isNewline)
-            .joined(separator: " ")
-            .nilIfBlank
-        return oneLine.map { String($0.prefix(maximumLength)) }
     }
 
     // MARK: - Tags
@@ -653,9 +645,14 @@ final class MeetingRepository {
         }
     }
 
-    func updateSummaryGoogleFileId(forMeetingId meetingId: UUID, googleFileId: String?) throws {
+    func updateSummaryGoogleFileId(
+        forMeetingId meetingId: UUID,
+        googleFileId: String?,
+        expectedDocument: String
+    ) throws -> Bool {
         try dbQueue.write { db in
-            guard try SummaryRecord.fetchOne(db, key: meetingId) != nil else { return }
+            guard let summary = try SummaryRecord.fetchOne(db, key: meetingId),
+                  try summary.loadDocument().databaseJSONString() == expectedDocument else { return false }
             let googleDocsURL = googleFileId?.nilIfBlank.flatMap { fileId in
                 SummaryExportRecord.googleDocsURL(fileId: fileId)
             }
@@ -665,6 +662,7 @@ final class MeetingRepository {
                 type: .googleDocs,
                 in: db
             )
+            return true
         }
     }
 

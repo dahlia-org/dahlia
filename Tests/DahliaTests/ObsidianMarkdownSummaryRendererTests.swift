@@ -1,10 +1,18 @@
 import Foundation
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing
 
     struct ObsidianMarkdownSummaryRendererTests {
+        /// MCP ヘルパーはアプリの `.lproj` を読めないため共有ターゲットの既定値を使う。
+        /// 訳文が変わったら両経路の出力が食い違うので、ここで固定する。
+        @Test
+        func sharedActionItemsHeadingMatchesTheApplicationLocalization() {
+            #expect(ObsidianMarkdownSummaryRenderer.defaultActionItemsHeading == L10n.actionItems)
+        }
+
         @Test
         func rendersFrontmatterFilenameTranscriptLinksAndImages() throws {
             let meetingId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))

@@ -1,5 +1,6 @@
 import Foundation
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 @MainActor
 struct PreviousSummaryTestFixture {

@@ -1,4 +1,5 @@
 import AppKit
+import DahliaRuntimeSupport
 import SwiftUI
 
 struct SummaryDocumentView: View {

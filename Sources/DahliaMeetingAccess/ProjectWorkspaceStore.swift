@@ -270,22 +270,6 @@ private extension MeetingAccessStore {
         let updates: [SummaryExportUpdate]
     }
 
-    func requireWriteAccess() throws {
-        guard allowsWrites else { throw MeetingAccessError.writeAccessRequired }
-    }
-
-    func withVaultMutationLock<T>(vaultURL: URL, operation: () throws -> T) throws -> T {
-        do {
-            return try DahliaVaultMutationLock.withLock(
-                vaultURL: vaultURL,
-                vaultID: vaultID,
-                operation: operation
-            )
-        } catch is DahliaVaultMutationLockError {
-            throw MeetingAccessError.workspaceBusy
-        }
-    }
-
     func workspaceVault(in db: Database) throws -> WorkspaceVault {
         let columns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         guard columns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]) else {
@@ -1081,29 +1065,6 @@ private extension MeetingAccessStore {
             }
             throw error
         }
-    }
-
-    func vaultRelativeSummaryPath(_ value: String) -> String? {
-        guard let components = URLComponents(string: value),
-              components.scheme?.lowercased() == "vault",
-              components.host?.isEmpty != false else { return nil }
-        let path = String(components.path.drop(while: { $0 == "/" }))
-        return path.isEmpty ? nil : path
-    }
-
-    func vaultSummaryURL(_ relativePath: String) -> String {
-        var components = URLComponents()
-        components.scheme = "vault"
-        components.host = ""
-        components.path = "/" + relativePath
-        return components.string ?? "vault:///\(relativePath)"
-    }
-
-    func isInsideVault(_ value: URL, vaultURL: URL) -> Bool {
-        let rootPath = vaultURL.resolvingSymlinksInPath().standardizedFileURL.path
-        let valuePath = value.resolvingSymlinksInPath().standardizedFileURL.path
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        return valuePath.hasPrefix(prefix)
     }
 
     func isInsideVaultOrRoot(_ value: URL, vaultURL: URL) -> Bool {

@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import GRDB
+@testable import DahliaRuntimeSupport
 #if canImport(Testing)
     import Testing
     @testable import Dahlia
@@ -562,10 +563,13 @@ import GRDB
                 context: context,
                 writeFile: true
             )
-            try context.repository.updateSummaryGoogleFileId(
+            let summary = try context.repository.fetchSummary(forMeetingId: meeting.id)
+            let expectedDocument = try #require(summary).document
+            #expect(try context.repository.updateSummaryGoogleFileId(
                 forMeetingId: meeting.id,
-                googleFileId: "google-document-id"
-            )
+                googleFileId: "google-document-id",
+                expectedDocument: expectedDocument
+            ))
 
             try context.service.moveMeeting(id: meeting.id, toProjectId: destination.id)
             let movedMeeting = try context.database.dbQueue.read { db in

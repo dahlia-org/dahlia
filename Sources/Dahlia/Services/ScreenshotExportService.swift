@@ -10,7 +10,11 @@ enum ScreenshotExportService {
     }
 
     static func filename(for screenshot: MeetingScreenshotRecord) -> String {
-        "\(screenshot.id.uuidString).\(fileExtension(for: screenshot))"
+        SummaryScreenshotFilename.filename(
+            id: screenshot.id,
+            mimeType: screenshot.mimeType,
+            imageData: screenshot.imageData
+        )
     }
 
     /// スクリーンショットを `<vault>/_dahlia/screenshots/<screenshotId>.<ext>` に書き出す。
@@ -48,9 +52,5 @@ enum ScreenshotExportService {
             guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
             try FileManager.default.removeItem(at: fileURL)
         }
-    }
-
-    private static func fileExtension(for screenshot: MeetingScreenshotRecord) -> String {
-        ImageEncoder.fileExtension(mimeType: screenshot.mimeType, data: screenshot.imageData)
     }
 }

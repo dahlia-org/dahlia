@@ -1,3 +1,4 @@
+import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -226,7 +227,7 @@ public final class MeetingAccessStore: Sendable {
                 if let document {
                     let decoded = try StoredSummaryDocumentMarkdownRenderer.decode(json: document)
                     summary = StoredSummaryDocumentMarkdownRenderer.render(decoded)
-                    summaryDocument = try StoredSummaryDocumentMarkdownRenderer.jsonValue(decoded)
+                    summaryDocument = try StoredSummaryDocumentMarkdownRenderer.toolJSONValue(decoded)
                 } else {
                     summary = nil
                     summaryDocument = nil
@@ -238,9 +239,19 @@ public final class MeetingAccessStore: Sendable {
                 vault: vault,
                 meeting: Self.metadata(from: row),
                 summary: summary,
-                summaryDocument: summaryDocument
+                summaryDocument: summaryDocument,
+                summaryDocumentVersion: document.map(Self.summaryDocumentVersion)
             )
         }
+    }
+
+    /// 保存済みドキュメント文字列そのものから導く版。`summaries` に revision 列がないため、
+    /// これを `update_meeting_summary` の compare-and-swap に使う。
+    /// 書き手が採番を忘れる余地がなく、マイグレーションも不要。
+    static func summaryDocumentVersion(_ storedDocument: String) -> String {
+        SHA256.hash(data: Data(storedDocument.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     public func transcript(

@@ -31,6 +31,10 @@ final class SidebarViewModel {
         }
     }
 
+    /// 別プロセスが同じ Vault を変更するたびに増える。
+    /// GRDB の `ValueObservation` は他プロセスの書き込みを検知しないため、これが跨プロセス更新の合図になる。
+    private(set) var workspaceChangeToken: UInt64 = 0
+
     var meetingSidebarItems: [MeetingSidebarItem] = []
     var meetingSidebarGroups: [MeetingDateGroup] = []
     var isMeetingListLoaded = false
@@ -239,6 +243,7 @@ final class SidebarViewModel {
                 self.restartMeetingSearchIfNeeded(dbQueue: dbQueue, vaultId: vaultId)
                 self.startSelectedMeetingObservationIfNeeded()
                 self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
+                self.workspaceChangeToken &+= 1
             }
         }
     }

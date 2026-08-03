@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 struct SummaryShareContent {

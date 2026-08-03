@@ -73,6 +73,30 @@ public struct MeetingDetail: Codable, Sendable, Equatable {
     public let meeting: MeetingMetadata
     public let summary: String?
     public let summaryDocument: JSONValue?
+    /// `update_meeting_summary` に渡す compare-and-swap 用の版。
+    public let summaryDocumentVersion: String?
+}
+
+public struct SummaryMutationResult: Codable, Sendable, Equatable {
+    public enum VaultExportOutcome: String, Codable, Sendable {
+        /// Vault の Markdown を新しい内容で書き直した。
+        case updated
+        /// 送られたドキュメントが保存済みと同一だったため、何も書かなかった。
+        case unchanged
+        /// この要約はまだ Vault へ書き出されていないため、ファイルは作らなかった。
+        case notExported = "not_exported"
+        /// 書き出し記録はあるが実ファイルへ到達できなかったため、データベースだけ更新した。
+        case fileMissing = "file_missing"
+    }
+
+    public let meetingID: UUID
+    public let documentVersion: String
+    public let title: String
+    public let description: String
+    public let changed: Bool
+    public let vaultExport: VaultExportOutcome
+    /// 追従できず古いままになっている書き出し先。
+    public let staleExports: [String]
 }
 
 public struct TranscriptPage: Codable, Sendable, Equatable {
@@ -295,6 +319,10 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case customerIntelligenceRevisionConflict
     case customerIntelligenceResourceInUse(String)
     case duplicateContactEmail
+    case summaryNotFound
+    case summaryVersionConflict
+    case summaryScreenshotNotFound
+    case invalidSummaryUpdate(String)
 
     public var errorDescription: String? {
         switch self {
@@ -360,6 +388,14 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             message
         case .duplicateContactEmail:
             "Another Contact already uses this email. Use resolve_contact when merging a provisional Contact."
+        case .summaryNotFound:
+            "The meeting has no summary yet. Generate the summary in Dahlia before updating it."
+        case .summaryVersionConflict:
+            "The summary changed after it was read. Call get_meeting again before retrying."
+        case .summaryScreenshotNotFound:
+            "An image block references a screenshot that does not belong to this meeting."
+        case let .invalidSummaryUpdate(message):
+            message
         }
     }
 
@@ -367,15 +403,16 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         switch self {
         case .vaultNotFound, .meetingNotFound, .projectNotFound, .organizationNotFound,
              .contactNotFound, .conversationTopicNotFound, .insightNotFound,
-             .screenshotNotFound:
+             .screenshotNotFound, .summaryNotFound:
             "not_found"
-        case .projectConflict, .meetingMembershipConflict, .customerIntelligenceRevisionConflict:
+        case .projectConflict, .meetingMembershipConflict, .customerIntelligenceRevisionConflict,
+             .summaryVersionConflict:
             "revision_conflict"
         case .customerIntelligenceResourceInUse:
             "resource_in_use"
         case .duplicateContactEmail:
             "duplicate_email"
-        case .invalidResourceFilter, .invalidCustomerIntelligenceReference:
+        case .invalidResourceFilter, .invalidCustomerIntelligenceReference, .summaryScreenshotNotFound:
             "invalid_reference"
         case .workspaceBusy:
             "database_busy"
