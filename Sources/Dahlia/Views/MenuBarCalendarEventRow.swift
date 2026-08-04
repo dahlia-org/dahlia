@@ -25,6 +25,7 @@ struct MenuBarCalendarEventRow: View {
         } label: {
             Label {
                 Text(menuTitle)
+                    .foregroundStyle(event.isAttending ? Color.primary : Color.secondary)
             } icon: {
                 MenuBarCalendarParticipationIndicator(isAttending: event.isAttending)
             }
