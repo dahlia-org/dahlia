@@ -52,7 +52,9 @@ import Foundation
         @Test
         func closingDetachedThreadRemovesSessionAndUnsubscribes() async {
             let service = CoordinatorTestCodexChatService()
-            let coordinator = CodexChatCoordinator(service: service)
+            let settings = AppSettings()
+            settings.currentVault = Self.vault(name: "Lease")
+            let coordinator = CodexChatCoordinator(service: service, settings: settings)
             let selectedID = await coordinator.openHistoryThreadInDetachedWindow(Self.threadSummary(id: "history-thread"))
 
             coordinator.detachedWindowClosed(sessionID: selectedID)

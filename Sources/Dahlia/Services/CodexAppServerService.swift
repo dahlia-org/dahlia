@@ -58,6 +58,26 @@ actor CodexAppServerService {
         var bufferedKeys: Set<TurnKey> = []
     }
 
+    private struct ChatTurnRuntime {
+        enum Phase {
+            case starting
+            case active
+            case stopping
+        }
+
+        let generation: Int
+        let threadID: String
+        let requestID: Int
+        var turnID: String?
+        var phase: Phase
+        var pendingApprovals: [String: JSONValue] = [:]
+        var respondedApprovalIDs: Set<String> = []
+        let continuation: AsyncThrowingStream<CodexAppServerChatTurnEvent, any Error>.Continuation
+        var timeoutTask: Task<Void, Never>?
+        var didSendInterrupt = false
+        var stopWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    }
+
     private struct GenerationContext {
         var threadID: String?
         var key: TurnKey?
@@ -93,6 +113,7 @@ actor CodexAppServerService {
     private var activeChatTurnIDs: [String: String] = [:]
     private var bufferedTurnMessages: [TurnKey: [JSONValue]] = [:]
     private var chatThreadIDs: Set<String> = []
+    private var chatThreadLeases: [String: Set<UUID>] = [:]
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var startupWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var generations: [UUID: GenerationContext] = [:]
@@ -100,6 +121,9 @@ actor CodexAppServerService {
     private var activeCodexOperations: Set<UUID> = []
     private var codexOperationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var pendingChatTurnStarts: [UUID: PendingChatTurnStart] = [:]
+    private var chatTurnRuntimes: [UUID: ChatTurnRuntime] = [:]
+    private var retiredChatTurnKeys: Set<TurnKey> = []
+    private var retiredChatTurnOrder: [TurnKey] = []
     private var chatTurnDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var configurationReloadWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var cachedModels: [CodexModel]?
@@ -408,7 +432,7 @@ actor CodexAppServerService {
         do {
             try await sendMessage(.object([
                 "id": approval.requestID,
-                "result": .object(["decision": .string(decision.rawValue)]),
+                "result": .object(["decision": decision.jsonValue]),
             ]))
         } catch {
             await stopConnection(error: error)
@@ -416,6 +440,13 @@ actor CodexAppServerService {
     }
 
     func prepareChatTurnForInterrupt(threadID: String, turnID: String?) async -> String? {
+        if let localTurnID = chatTurnRuntimes.first(where: { _, runtime in
+            runtime.threadID == threadID
+                && (turnID == nil || runtime.turnID == turnID)
+        })?.key {
+            await cancelPendingApprovals(localTurnID)
+            return chatTurnRuntimes[localTurnID]?.turnID
+        }
         guard let turnID = turnID ?? activeChatTurnIDs[threadID] else { return nil }
         let key = TurnKey(threadID: threadID, turnID: turnID)
         await resolvePendingApprovals(for: key, decision: .cancel)
@@ -424,6 +455,23 @@ actor CodexAppServerService {
 
     func forgetChatThread(_ threadID: String) {
         chatThreadIDs.remove(threadID)
+    }
+
+    func acquireChatThreadLease(_ threadID: String) -> UUID {
+        let leaseID = UUID.v7()
+        chatThreadLeases[threadID, default: []].insert(leaseID)
+        return leaseID
+    }
+
+    /// Returns true when the caller released the final owner and the server subscription can end.
+    func releaseChatThreadLease(_ threadID: String, leaseID: UUID) -> Bool {
+        guard chatThreadLeases[threadID]?.remove(leaseID) != nil else { return false }
+        if chatThreadLeases[threadID]?.isEmpty == false {
+            return false
+        }
+        chatThreadLeases.removeValue(forKey: threadID)
+        chatThreadIDs.remove(threadID)
+        return true
     }
 
     func startChatTurn(
@@ -468,6 +516,113 @@ actor CodexAppServerService {
             await cleanUpFailedChatTurnStart(startID)
             throw error
         }
+    }
+
+    func beginChatTurn(
+        threadID: String,
+        params: JSONValue
+    ) async throws -> CodexAppServerChatTurn {
+        try await waitForConfigurationReloadToFinish()
+        try await start()
+        guard chatTurnRuntimes.values.allSatisfy({ $0.threadID != threadID }) else {
+            throw CodexAppServerError.rpcError(code: nil, message: "A chat turn is already active for this thread")
+        }
+
+        let localTurnID = UUID.v7()
+        let requestID = nextRequestID
+        nextRequestID += 1
+        let generation = connectionGeneration
+        let (stream, continuation) = AsyncThrowingStream<CodexAppServerChatTurnEvent, any Error>.makeStream()
+        chatTurnRuntimes[localTurnID] = ChatTurnRuntime(
+            generation: generation,
+            threadID: threadID,
+            requestID: requestID,
+            phase: .starting,
+            continuation: continuation
+        )
+        let timeoutTask = Task { [weak self, clock, transportTimeout] in
+            do {
+                try await clock.sleep(for: transportTimeout)
+                await self?.chatTurnStartTimedOut(localTurnID, generation: generation)
+            } catch {
+                // Runtime completion cancels its owned timeout.
+            }
+        }
+        chatTurnRuntimes[localTurnID]?.timeoutTask = timeoutTask
+
+        var turnParams = params.objectValue ?? [:]
+        turnParams["clientUserMessageId"] = .string(localTurnID.uuidString)
+        do {
+            try await sendMessage(.object([
+                "id": .number(Double(requestID)),
+                "method": .string("turn/start"),
+                "params": .object(turnParams),
+            ]))
+        } catch {
+            finishChatTurn(localTurnID, throwing: error)
+            throw error
+        }
+        return CodexAppServerChatTurn(id: localTurnID, events: stream)
+    }
+
+    func decideChatApproval(
+        turnID: UUID,
+        approvalID: String,
+        decision: CodexChatApprovalDecision
+    ) async throws {
+        guard let runtime = chatTurnRuntimes[turnID],
+              runtime.generation == connectionGeneration,
+              let requestID = runtime.pendingApprovals[approvalID]
+        else { throw CodexAppServerError.approvalNoLongerPending }
+        do {
+            try await sendMessage(.object([
+                "id": requestID,
+                "result": .object(["decision": decision.jsonValue]),
+            ]))
+            chatTurnRuntimes[turnID]?.pendingApprovals.removeValue(forKey: approvalID)
+            chatTurnRuntimes[turnID]?.respondedApprovalIDs.insert(approvalID)
+        } catch {
+            if runtime.generation == connectionGeneration {
+                await stopConnection(error: error)
+            }
+            throw error
+        }
+    }
+
+    func stopChatTurn(_ localTurnID: UUID) async {
+        guard var runtime = chatTurnRuntimes[localTurnID] else { return }
+        runtime.phase = .stopping
+        runtime.timeoutTask?.cancel()
+        runtime.timeoutTask = nil
+        chatTurnRuntimes[localTurnID] = runtime
+
+        for approvalID in runtime.pendingApprovals.keys {
+            try? await decideChatApproval(
+                turnID: localTurnID,
+                approvalID: approvalID,
+                decision: .cancel
+            )
+        }
+
+        guard let turnID = chatTurnRuntimes[localTurnID]?.turnID else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return
+        }
+        guard chatTurnRuntimes[localTurnID]?.didSendInterrupt == false else {
+            await waitForChatTurnToFinish(localTurnID)
+            return
+        }
+        chatTurnRuntimes[localTurnID]?.didSendInterrupt = true
+        do {
+            try await sendChatTurnInterrupt(runtime: runtime, turnID: turnID)
+        } catch {
+            if runtime.generation == connectionGeneration {
+                await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            }
+            return
+        }
+        armChatTurnStopTimeout(localTurnID, generation: runtime.generation)
+        await waitForChatTurnToFinish(localTurnID)
     }
 
     // swiftformat:disable:next modifierOrder
@@ -942,6 +1097,10 @@ private extension CodexAppServerService {
         }
 
         if let requestID = object["id"]?.intValue {
+            if let localTurnID = chatTurnRuntimes.first(where: { $0.value.requestID == requestID })?.key {
+                await handleChatTurnStartResponse(object, localTurnID: localTurnID)
+                return
+            }
             guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
             guard let continuation = pending.continuation else {
                 if let threadID = pending.lateChatTurnStartThreadID {
@@ -976,6 +1135,9 @@ private extension CodexAppServerService {
             throw CodexAppServerError.invalidProtocolResponse
         }
         if try handleAccountNotification(object) {
+            return
+        }
+        if await routeChatTurnRuntimeMessage(message) {
             return
         }
         await routeTurnMessage(message)
@@ -1030,6 +1192,9 @@ private extension CodexAppServerService {
     ) async throws {
         switch method {
         case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+            if await routeOwnedChatApprovalRequest(id: id, params: params, message: message) {
+                return
+            }
             if await routeChatApprovalRequest(id: id, params: params, message: message) {
                 return
             }
@@ -1065,6 +1230,206 @@ private extension CodexAppServerService {
                 "message": .string(message),
             ]),
         ]))
+    }
+
+    private func handleChatTurnStartResponse(
+        _ object: [String: JSONValue],
+        localTurnID: UUID
+    ) async {
+        guard let runtime = chatTurnRuntimes[localTurnID],
+              runtime.generation == connectionGeneration else { return }
+        if let error = object["error"]?.objectValue {
+            let message = error["message"]?.stringValue ?? L10n.codexUnknownError
+            await cancelPendingApprovals(localTurnID)
+            finishChatTurn(
+                localTurnID,
+                throwing: CodexAppServerError.rpcError(
+                    code: error["code"]?.intValue,
+                    message: message
+                )
+            )
+            return
+        }
+        guard let turnID = object["result"]?.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return
+        }
+        guard bindChatTurn(localTurnID, to: turnID) else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return
+        }
+        chatTurnRuntimes[localTurnID]?.timeoutTask?.cancel()
+        chatTurnRuntimes[localTurnID]?.timeoutTask = nil
+        if chatTurnRuntimes[localTurnID]?.phase == .starting {
+            chatTurnRuntimes[localTurnID]?.phase = .active
+        }
+    }
+
+    private func routeOwnedChatApprovalRequest(
+        id: JSONValue,
+        params: [String: JSONValue]?,
+        message: JSONValue
+    ) async -> Bool {
+        guard let params,
+              let threadID = params["threadId"]?.stringValue,
+              let turnID = params["turnId"]?.stringValue,
+              let approvalID = Self.approvalID(for: id),
+              let localTurnID = chatTurnRuntimeID(threadID: threadID, turnID: turnID)
+        else { return false }
+        guard bindChatTurn(localTurnID, to: turnID) else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return true
+        }
+        guard chatTurnRuntimes[localTurnID]?.pendingApprovals.count ?? 0 < 16 else {
+            try? await sendMessage(.object([
+                "id": id,
+                "result": .object(["decision": .string("cancel")]),
+            ]))
+            await initiateChatTurnStopFromReader(localTurnID)
+            return true
+        }
+        chatTurnRuntimes[localTurnID]?.pendingApprovals[approvalID] = id
+        if chatTurnRuntimes[localTurnID]?.phase == .stopping {
+            try? await decideChatApproval(
+                turnID: localTurnID,
+                approvalID: approvalID,
+                decision: .cancel
+            )
+        } else {
+            chatTurnRuntimes[localTurnID]?.continuation.yield(.message(message))
+        }
+        return true
+    }
+
+    private func routeChatTurnRuntimeMessage(_ message: JSONValue) async -> Bool {
+        guard let object = message.objectValue,
+              let method = object["method"]?.stringValue,
+              let params = object["params"]?.objectValue else { return false }
+
+        if method == "serverRequest/resolved", let requestID = params["requestId"] {
+            guard let approvalID = Self.approvalID(for: requestID),
+                  let localTurnID = chatTurnRuntimes.first(where: {
+                      $0.value.pendingApprovals[approvalID] != nil
+                          || $0.value.respondedApprovalIDs.contains(approvalID)
+                  })?.key else { return false }
+            chatTurnRuntimes[localTurnID]?.pendingApprovals.removeValue(forKey: approvalID)
+            chatTurnRuntimes[localTurnID]?.respondedApprovalIDs.remove(approvalID)
+            chatTurnRuntimes[localTurnID]?.continuation.yield(.approvalResolved(id: approvalID))
+            return true
+        }
+
+        guard let threadID = params["threadId"]?.stringValue else { return false }
+        let turnID: String? = switch method {
+        case "turn/started":
+            params["turn"]?.objectValue?["id"]?.stringValue
+        case "turn/completed":
+            params["turn"]?.objectValue?["id"]?.stringValue
+        default:
+            params["turnId"]?.stringValue
+        }
+        guard let turnID,
+              let localTurnID = chatTurnRuntimeID(threadID: threadID, turnID: turnID)
+        else { return false }
+        guard bindChatTurn(localTurnID, to: turnID) else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return true
+        }
+        if method == "turn/started" {
+            chatTurnRuntimes[localTurnID]?.timeoutTask?.cancel()
+            chatTurnRuntimes[localTurnID]?.timeoutTask = nil
+            if chatTurnRuntimes[localTurnID]?.phase == .starting {
+                chatTurnRuntimes[localTurnID]?.phase = .active
+            }
+        }
+        chatTurnRuntimes[localTurnID]?.continuation.yield(.message(message))
+        if method == "turn/completed" {
+            let pendingApprovalIDs = chatTurnRuntimes[localTurnID].map {
+                Array($0.pendingApprovals.keys)
+            } ?? []
+            for approvalID in pendingApprovalIDs {
+                try? await decideChatApproval(
+                    turnID: localTurnID,
+                    approvalID: approvalID,
+                    decision: .decline
+                )
+            }
+            finishChatTurn(localTurnID)
+        }
+        return true
+    }
+
+    private func chatTurnRuntimeID(threadID: String, turnID: String) -> UUID? {
+        guard !retiredChatTurnKeys.contains(TurnKey(threadID: threadID, turnID: turnID)) else {
+            return nil
+        }
+        return chatTurnRuntimes.first { _, runtime in
+            runtime.threadID == threadID && (runtime.turnID == nil || runtime.turnID == turnID)
+        }?.key
+    }
+
+    private func cancelPendingApprovals(_ localTurnID: UUID) async {
+        let approvalIDs = chatTurnRuntimes[localTurnID].map {
+            Array($0.pendingApprovals.keys)
+        } ?? []
+        for approvalID in approvalIDs {
+            try? await decideChatApproval(
+                turnID: localTurnID,
+                approvalID: approvalID,
+                decision: .cancel
+            )
+        }
+    }
+
+    /// The reader cannot await an RPC response while it is the only task consuming responses.
+    private func initiateChatTurnStopFromReader(_ localTurnID: UUID) async {
+        guard var runtime = chatTurnRuntimes[localTurnID] else { return }
+        runtime.phase = .stopping
+        runtime.timeoutTask?.cancel()
+        runtime.timeoutTask = nil
+        chatTurnRuntimes[localTurnID] = runtime
+        await cancelPendingApprovals(localTurnID)
+        guard let turnID = chatTurnRuntimes[localTurnID]?.turnID else {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            return
+        }
+        guard chatTurnRuntimes[localTurnID]?.didSendInterrupt == false else { return }
+        chatTurnRuntimes[localTurnID]?.didSendInterrupt = true
+        do {
+            try await sendChatTurnInterrupt(runtime: runtime, turnID: turnID)
+            armChatTurnStopTimeout(localTurnID, generation: runtime.generation)
+        } catch {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+        }
+    }
+
+    /// A terminal notification, rather than the JSON-RPC acknowledgement, is the
+    /// source of truth that interruption has completed.
+    private func sendChatTurnInterrupt(
+        runtime: ChatTurnRuntime,
+        turnID: String
+    ) async throws {
+        let requestID = nextRequestID
+        nextRequestID += 1
+        try await sendMessage(.object([
+            "id": .number(Double(requestID)),
+            "method": .string("turn/interrupt"),
+            "params": .object([
+                "threadId": .string(runtime.threadID),
+                "turnId": .string(turnID),
+            ]),
+        ]))
+    }
+
+    @discardableResult
+    private func bindChatTurn(_ localTurnID: UUID, to turnID: String) -> Bool {
+        guard var runtime = chatTurnRuntimes[localTurnID] else { return false }
+        if let existing = runtime.turnID {
+            return existing == turnID
+        }
+        runtime.turnID = turnID
+        runtime.continuation.yield(.started(turnID: turnID))
+        chatTurnRuntimes[localTurnID] = runtime
+        return true
     }
 
     /// Registers a chat-thread approval request and delivers it to the turn subscriber.
@@ -1355,6 +1720,12 @@ private extension CodexAppServerService {
         // The transport is gone, so outstanding approvals cannot be answered.
         pendingApprovals.removeAll()
         chatThreadIDs.removeAll()
+        let localTurnIDs = Array(chatTurnRuntimes.keys)
+        for localTurnID in localTurnIDs {
+            finishChatTurn(localTurnID, throwing: error)
+        }
+        retiredChatTurnKeys.removeAll()
+        retiredChatTurnOrder.removeAll()
         resumeChatTurnDrainWaiters(throwing: error)
         await currentTransport?.close()
     }
@@ -1379,6 +1750,79 @@ private extension CodexAppServerService {
         guard let waiter = turnWaiters.removeValue(forKey: key) else { return }
         waiter.timeoutTask.cancel()
         waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    private func chatTurnStartTimedOut(_ localTurnID: UUID, generation: Int) async {
+        guard let runtime = chatTurnRuntimes[localTurnID],
+              runtime.generation == generation,
+              generation == connectionGeneration else { return }
+        if runtime.turnID == nil {
+            await stopConnection(error: CodexAppServerError.backendResetForSafety)
+        } else {
+            await stopChatTurn(localTurnID)
+        }
+    }
+
+    private func armChatTurnStopTimeout(_ localTurnID: UUID, generation: Int) {
+        chatTurnRuntimes[localTurnID]?.timeoutTask?.cancel()
+        chatTurnRuntimes[localTurnID]?.timeoutTask = Task { [weak self, clock, transportTimeout] in
+            do {
+                try await clock.sleep(for: transportTimeout)
+                guard let self else { return }
+                await self.resetConnectionForChatTurnTimeout(localTurnID, generation: generation)
+            } catch {
+                // Terminal completion cancels the owned timeout.
+            }
+        }
+    }
+
+    private func resetConnectionForChatTurnTimeout(_ localTurnID: UUID, generation: Int) async {
+        guard chatTurnRuntimes[localTurnID]?.generation == generation,
+              generation == connectionGeneration else { return }
+        await stopConnection(error: CodexAppServerError.backendResetForSafety)
+    }
+
+    private func waitForChatTurnToFinish(_ localTurnID: UUID) async {
+        guard chatTurnRuntimes[localTurnID] != nil else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard chatTurnRuntimes[localTurnID] != nil else {
+                    continuation.resume()
+                    return
+                }
+                chatTurnRuntimes[localTurnID]?.stopWaiters[waiterID] = continuation
+            }
+        } onCancel: {
+            Task { await self.removeChatTurnStopWaiter(waiterID, localTurnID: localTurnID) }
+        }
+    }
+
+    private func removeChatTurnStopWaiter(_ waiterID: UUID, localTurnID: UUID) {
+        chatTurnRuntimes[localTurnID]?.stopWaiters.removeValue(forKey: waiterID)?.resume()
+    }
+
+    private func finishChatTurn(_ localTurnID: UUID, throwing error: (any Error)? = nil) {
+        guard let runtime = chatTurnRuntimes.removeValue(forKey: localTurnID) else { return }
+        if let turnID = runtime.turnID {
+            rememberRetiredChatTurn(TurnKey(threadID: runtime.threadID, turnID: turnID))
+        }
+        runtime.timeoutTask?.cancel()
+        if let error {
+            runtime.continuation.finish(throwing: error)
+        } else {
+            runtime.continuation.finish()
+        }
+        runtime.stopWaiters.values.forEach { $0.resume() }
+        resumeChatTurnDrainWaitersIfIdle()
+    }
+
+    private func rememberRetiredChatTurn(_ key: TurnKey) {
+        guard retiredChatTurnKeys.insert(key).inserted else { return }
+        retiredChatTurnOrder.append(key)
+        while retiredChatTurnOrder.count > 64 {
+            retiredChatTurnKeys.remove(retiredChatTurnOrder.removeFirst())
+        }
     }
 
     private func cancelLoginWaiter(_ loginID: String) {
@@ -1536,13 +1980,13 @@ private extension CodexAppServerService {
     }
 
     private func waitForChatTurnsToFinish() async throws {
-        guard !pendingChatTurnStarts.isEmpty || !turnSubscribers.isEmpty else { return }
+        guard !pendingChatTurnStarts.isEmpty || !turnSubscribers.isEmpty || !chatTurnRuntimes.isEmpty else { return }
         let waiterID = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
-                } else if pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty {
+                } else if pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty, chatTurnRuntimes.isEmpty {
                     continuation.resume()
                 } else {
                     chatTurnDrainWaiters[waiterID] = continuation
@@ -1563,7 +2007,7 @@ private extension CodexAppServerService {
     }
 
     private func resumeChatTurnDrainWaitersIfIdle() {
-        guard pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty else { return }
+        guard pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty, chatTurnRuntimes.isEmpty else { return }
         resumeChatTurnDrainWaiters()
     }
 
@@ -1753,6 +2197,10 @@ private extension CodexAppServerService {
 
         func hasPendingApprovalForTesting(_ approvalID: String) -> Bool {
             pendingApprovals[approvalID] != nil
+        }
+
+        func hasOwnedChatApprovalForTesting(turnID: UUID, approvalID: String) -> Bool {
+            chatTurnRuntimes[turnID]?.pendingApprovals[approvalID] != nil
         }
 
         func hasBufferedTurnMessagesForTesting(threadID: String, turnID: String) -> Bool {

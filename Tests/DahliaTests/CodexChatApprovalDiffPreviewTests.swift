@@ -3,90 +3,114 @@
 #if canImport(Testing)
     import Testing
 
-    struct CodexChatApprovalDetailsProjectionTests {
+    struct CodexChatApprovalNormalizerTests {
         @Test
-        func preservesPreviewAtTheAggregateByteLimit() {
-            let path = "file.swift"
-            let diff = String(repeating: "a", count: CodexChatApprovalDetailsProjection.byteLimit - path.utf8.count)
-            let request = CodexChatApprovalRequest(
-                id: "approval",
-                kind: .fileChange,
-                fileChanges: [.init(path: path, diff: diff)]
-            )
-
-            let projection = CodexChatApprovalDetailsProjection.projection(for: request)
-
-            #expect(projection.fileChanges == [.init(path: path, diff: diff)])
-            #expect(!projection.areFileChangesTruncated)
-            #expect(!projection.isTruncated)
-        }
-
-        @Test
-        func boundsAggregateBytesWithoutChangingRawChanges() {
-            let diff = String(repeating: "a", count: CodexChatApprovalDetailsProjection.byteLimit * 100)
-            let request = CodexChatApprovalRequest(
-                id: "approval",
-                kind: .fileChange,
-                fileChanges: [
-                    .init(path: "first.swift", diff: diff),
-                    .init(path: "second.swift", diff: diff),
+        func preservesAReviewableRequestWithinTheAggregateLimit() throws {
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: [
+                    "availableDecisions": .array([
+                        .string("accept"),
+                        .string("acceptForSession"),
+                        .string("decline"),
+                    ]),
+                    "command": .string("swift test"),
+                    "cwd": .string("/workspace"),
+                    "itemId": .string("item-1"),
+                    "reason": .string("Run tests"),
                 ],
-                grantRoot: diff,
-                reason: diff
-            )
-
-            let projection = CodexChatApprovalDetailsProjection.projection(for: request)
-            let displayedBytes = [projection.reason, projection.grantRoot]
-                .compactMap(\.self)
-                .reduce(0) { $0 + $1.utf8.count }
-                + projection.fileChanges.reduce(0) { result, item in
-                    result + item.path.utf8.count + (item.diff?.utf8.count ?? 0)
-                }
-
-            #expect(displayedBytes <= CodexChatApprovalDetailsProjection.byteLimit)
-            #expect(projection.areFileChangesTruncated)
-            #expect(projection.isTruncated)
-            #expect(request.fileChanges[0].diff == diff)
-            #expect(request.fileChanges[1].diff == diff)
-            #expect(request.grantRoot == diff)
-            #expect(request.reason == diff)
-        }
-
-        @Test
-        func limitsDisplayedFileCount() {
-            let changes = (0 ... CodexChatApprovalDetailsProjection.fileLimit).map { index in
-                CodexChatApprovalRequest.FileChange(path: "file-\(index).swift", diff: "+change")
-            }
-            let request = CodexChatApprovalRequest(id: "approval", kind: .fileChange, fileChanges: changes)
-
-            let projection = CodexChatApprovalDetailsProjection.projection(for: request)
-
-            #expect(projection.fileChanges.count == CodexChatApprovalDetailsProjection.fileLimit)
-            #expect(projection.areFileChangesTruncated)
-            #expect(projection.isTruncated)
-        }
-
-        @Test
-        func boundsCommandDetailsWithoutChangingRawRequest() {
-            let text = String(repeating: "a", count: CodexChatApprovalDetailsProjection.byteLimit * 100)
-            let request = CodexChatApprovalRequest(
-                id: "approval",
                 kind: .commandExecution,
-                command: text,
-                cwd: text,
-                reason: text
+                fileChanges: []
             )
 
-            let projection = CodexChatApprovalDetailsProjection.projection(for: request)
-            let displayedBytes = [projection.reason, projection.command, projection.cwd]
+            #expect(request.reviewability == .ready)
+            #expect(request.itemID == "item-1")
+            #expect(request.actions == [.allowOnce, .allowForSession, .deny])
+        }
+
+        @Test
+        func oversizedCommandIsBoundedAndFailClosed() throws {
+            let text = String(repeating: "a", count: CodexChatApprovalNormalizer.byteLimit * 2)
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: ["command": .string(text), "reason": .string(text)],
+                kind: .commandExecution,
+                fileChanges: []
+            )
+            let displayedBytes = [request.reason, request.command, request.cwd]
                 .compactMap(\.self)
                 .reduce(0) { $0 + $1.utf8.count }
 
-            #expect(displayedBytes <= CodexChatApprovalDetailsProjection.byteLimit)
-            #expect(projection.isTruncated)
-            #expect(request.command == text)
-            #expect(request.cwd == text)
-            #expect(request.reason == text)
+            #expect(displayedBytes <= CodexChatApprovalNormalizer.byteLimit)
+            #expect(request.reviewability == .tooLarge)
+            #expect(request.actions == [.deny])
+        }
+
+        @Test
+        func unsupportedPermissionScopeCannotBeApproved() throws {
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: [
+                    "command": .string("cat /outside/file"),
+                    "grantRoot": .string("/outside"),
+                ],
+                kind: .commandExecution,
+                fileChanges: []
+            )
+
+            #expect(request.reviewability == .unsupported)
+            #expect(request.actions == [.deny])
+        }
+
+        @Test
+        func structuredExecpolicyDecisionUsesTheServerAmendment() throws {
+            let amendment = ["git", "status"]
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: [
+                    "availableDecisions": .array([
+                        .string("accept"),
+                        .string("decline"),
+                        .object(["acceptWithExecpolicyAmendment": .object([:])]),
+                    ]),
+                    "command": .string("git status"),
+                    "proposedExecpolicyAmendment": .array(amendment.map(JSONValue.string)),
+                ],
+                kind: .commandExecution,
+                fileChanges: []
+            )
+
+            #expect(request.actions == [
+                .allowOnce,
+                .allowSimilarCommands(amendment: amendment),
+                .deny,
+            ])
+            #expect(request.actions[1].decision.jsonValue == .object([
+                "acceptWithExecpolicyAmendment": .object([
+                    "execpolicy_amendment": .array(amendment.map(JSONValue.string)),
+                ]),
+            ]))
+        }
+
+        @Test
+        func truncatedFileChangeSourceIsFailClosed() throws {
+            let snapshot = CodexChatApprovalNormalizer.boundedFileChangeSnapshot([
+                .init(
+                    path: "Large.swift",
+                    diff: String(repeating: "+line\n", count: CodexChatApprovalNormalizer.byteLimit)
+                ),
+            ])
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: [:],
+                kind: .fileChange,
+                fileChanges: snapshot.changes,
+                sourceWasTruncated: snapshot.isTruncated
+            )
+
+            #expect(snapshot.isTruncated)
+            #expect(request.reviewability == .tooLarge)
+            #expect(request.actions == [.deny])
         }
     }
 #endif

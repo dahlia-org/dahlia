@@ -855,6 +855,8 @@
 "Codex request failed: %@" = "Codex request failed: %@";
 "Codex could not complete the request." = "Codex could not complete the request.";
 "Codex generation was interrupted." = "Codex generation was interrupted.";
+"The AI backend was restarted to stop an unconfirmed operation safely." = "The AI backend was restarted to stop an unconfirmed operation safely.";
+"This approval request is no longer pending." = "This approval request is no longer pending.";
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Codex Version" = "Codex Version";
 "Account" = "Account";
@@ -933,6 +935,7 @@
 "Allow similar commands" = "Allow similar commands";
 "Deny" = "Deny";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
+"This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
 "Open AI Connection Settings" = "Open AI Connection Settings";
 "Loading models…" = "Loading models…";
 "This chat is no longer available." = "This chat is no longer available.";

@@ -84,7 +84,8 @@ struct CodexChatView: View {
             if let pendingApproval = session.pendingApproval {
                 CodexChatApprovalView(
                     request: pendingApproval,
-                    onDecide: session.respondToPendingApproval,
+                    isResponding: session.respondingApprovalID == pendingApproval.id,
+                    onDecide: session.respondToApproval,
                     onStop: session.stop
                 )
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)

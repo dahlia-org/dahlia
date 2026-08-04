@@ -34,7 +34,8 @@ import Foundation
             #expect(events == [
                 .started(turnID: "turn-1"),
                 .reasoningDelta(itemID: "reasoning-1", summaryIndex: 0, text: "Checked the request"),
-                .delta(itemID: "item-1", text: "Hello"),
+                .delta(itemID: "item-1", text: "Hel"),
+                .delta(itemID: "item-1", text: "lo"),
                 .reasoningCompleted(itemID: "reasoning-1", text: "Checked the request"),
                 .completed(itemID: "item-1", text: "Hello"),
                 .completed(itemID: nil, text: nil),
@@ -327,6 +328,7 @@ import Foundation
                 .started(turnID: "turn-1"),
                 .approvalRequested(CodexChatApprovalRequest(
                     id: "s:approval-1",
+                    itemID: "item-1",
                     kind: .commandExecution,
                     command: "ls -la",
                     cwd: "/tmp/dahlia-chat-approval",
@@ -334,6 +336,7 @@ import Foundation
                 )),
                 .approvalRequested(CodexChatApprovalRequest(
                     id: "s:approval-2",
+                    itemID: "item-2",
                     kind: .fileChange,
                     fileChanges: [
                         CodexChatApprovalRequest.FileChange(
@@ -341,7 +344,9 @@ import Foundation
                             diff: "@@ -1 +1 @@\n-old\n+new"
                         ),
                     ],
-                    grantRoot: "/tmp/outside-workspace"
+                    grantRoot: "/tmp/outside-workspace",
+                    reviewability: .unsupported,
+                    actions: [.deny]
                 )),
                 .completed(itemID: nil, text: nil),
             ])

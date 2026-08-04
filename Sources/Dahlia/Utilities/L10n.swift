@@ -2096,6 +2096,14 @@ enum L10n {
     ) }
     static var codexTurnFailed: String { String(localized: "Codex could not complete the request.", bundle: bundle) }
     static var codexTurnInterrupted: String { String(localized: "Codex generation was interrupted.", bundle: bundle) }
+    static var codexBackendResetForSafety: String {
+        String(localized: "The AI backend was restarted to stop an unconfirmed operation safely.", bundle: bundle)
+    }
+
+    static var codexApprovalNoLongerPending: String {
+        String(localized: "This approval request is no longer pending.", bundle: bundle)
+    }
+
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
@@ -2579,6 +2587,10 @@ enum L10n {
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
     static var chatApprovalDetailsTooLarge: String {
         String(localized: "This request is too large to review completely, so it cannot be approved.", bundle: bundle)
+    }
+
+    static var chatApprovalUnsupportedScope: String {
+        String(localized: "This request asks for permissions outside the allowed workspace and cannot be approved.", bundle: bundle)
     }
 
     static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }

@@ -25,7 +25,9 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
+    private(set) var activeTurnHandleID: UUID?
     private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
+    private(set) var respondingApprovalID: String?
     var isPreparingTurn = false
     var isAwaitingTurnOutput = false
     var isFinalizingTurn = false
@@ -60,6 +62,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var isTurnCleanupPending = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
+    @ObservationIgnored private var threadLeaseID: UUID?
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
     @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
@@ -141,6 +144,7 @@ final class CodexChatSessionModel: Identifiable {
             guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
             async let restoredThread = service.resumeThread(id: backendThreadID, vaultID: vaultID)
             let (models, thread) = try await (availableModels, restoredThread)
+            try await ensureThreadLease(thread.id)
             self.models = models
             apply(thread)
             resolveSelections()
@@ -209,10 +213,25 @@ final class CodexChatSessionModel: Identifiable {
         }
     }
 
-    func respondToPendingApproval(_ decision: CodexChatApprovalDecision) {
-        guard !pendingApprovals.isEmpty else { return }
-        let request = pendingApprovals.removeFirst()
-        Task { await service.respondToApproval(id: request.id, decision: decision) }
+    func respondToApproval(id: String, decision: CodexChatApprovalDecision) {
+        guard respondingApprovalID == nil,
+              pendingApprovals.contains(where: { $0.id == id }),
+              let activeTurnHandleID else { return }
+        respondingApprovalID = id
+        Task {
+            do {
+                try await service.decideApproval(
+                    turnID: activeTurnHandleID,
+                    id: id,
+                    decision: decision
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+                if respondingApprovalID == id {
+                    respondingApprovalID = nil
+                }
+            }
+        }
     }
 
     func stop() {
@@ -220,25 +239,28 @@ final class CodexChatSessionModel: Identifiable {
         isStopRequested = true
         let approvals = pendingApprovals
         let activeTask = turnTask
-        let threadID = backendThreadID
-        let turnID = activeTurnID
+        let localTurnID = activeTurnHandleID
+        let submissionID = activeSubmissionID
         isTurnCleanupPending = true
-        pendingApprovals.removeAll()
+        activeTask?.cancel()
         Task {
-            for approval in approvals {
-                await service.respondToApproval(id: approval.id, decision: .cancel)
+            if let localTurnID {
+                await service.stopTurn(localTurnID)
+            } else {
+                for approval in approvals {
+                    await service.respondToApproval(id: approval.id, decision: .cancel)
+                }
+                isTurnCleanupPending = false
+                finishGeneration(submissionID: submissionID)
             }
-            activeTask?.cancel()
             await activeTask?.value
-            if let threadID {
-                await service.interruptActiveTurn(threadID: threadID, turnID: turnID)
-            }
+            guard localTurnID != nil else { return }
+            pendingApprovals.removeAll()
             isTurnCleanupPending = false
             unsubscribeIfPossible()
             processPendingInputIfPossible()
         }
         finalizeActiveResponseForCancellation()
-        finishGeneration(submissionID: activeSubmissionID)
     }
 
     func toggleLiveMode() {
@@ -354,6 +376,7 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 submissionID: submissionID
             )
+            try await ensureThreadLease(backendThreadID)
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
 
             let promptContext = liveModeState.isEnabled && !liveModeState.includesContext ? nil : context
@@ -370,12 +393,13 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 images: images
             )
-            let stream = try await service.send(
+            let turn = try await service.beginTurn(
                 threadID: backendThreadID,
                 inputs: inputs,
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
+            activeTurnHandleID = turn.id
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             var replacementTitleText: String?
             if liveTranscript == nil {
@@ -408,7 +432,7 @@ extension CodexChatSessionModel {
             }
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             let turnCompleted = try await consumeTurnEvents(
-                stream,
+                turn.events,
                 accumulator: accumulator,
                 updateLimiter: updateLimiter,
                 submissionID: submissionID,
@@ -498,8 +522,13 @@ extension CodexChatSessionModel {
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
         case let .approvalRequested(request):
             updateLimiter.submit(force: true)
-            if !pendingApprovals.contains(request) {
+            if !pendingApprovals.contains(where: { $0.id == request.id }) {
                 pendingApprovals.append(request)
+            }
+        case let .approvalResolved(id):
+            pendingApprovals.removeAll { $0.id == id }
+            if respondingApprovalID == id {
+                respondingApprovalID = nil
             }
         case .interrupted:
             updateLimiter.submit(force: true)
@@ -600,6 +629,8 @@ extension CodexChatSessionModel {
         isAwaitingTurnOutput = false
         isFinalizingTurn = false
         activeTurnID = nil
+        activeTurnHandleID = nil
+        respondingApprovalID = nil
         isStopRequested = false
         isActiveTurnLiveTranscript = false
         activeTurnSupportsImages = nil
@@ -699,10 +730,24 @@ extension CodexChatSessionModel {
               !isTurnCleanupPending,
               !isLoading,
               !didUnsubscribe,
-              let backendThreadID
+              let backendThreadID,
+              let threadLeaseID
         else { return }
         didUnsubscribe = true
-        Task { await service.unsubscribe(threadID: backendThreadID) }
+        self.threadLeaseID = nil
+        Task {
+            await service.releaseThreadLease(threadID: backendThreadID, leaseID: threadLeaseID)
+        }
+    }
+
+    private func ensureThreadLease(_ threadID: String) async throws {
+        guard threadLeaseID == nil else { return }
+        let leaseID = await service.acquireThreadLease(threadID: threadID)
+        guard !isReleased else {
+            await service.releaseThreadLease(threadID: threadID, leaseID: leaseID)
+            throw CancellationError()
+        }
+        threadLeaseID = leaseID
     }
 
     private func resolveSelections() {

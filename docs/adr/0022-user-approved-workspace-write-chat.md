@@ -35,13 +35,21 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
   `CodexChatWorkspaceLocating` が返す Vault ごとの workspace ディレクトリと一時ディレクトリに限られる。
 - `turn/start` の `approvalsReviewer` を `user` にする。適用条件は provider に依存せず、ChatGPT サブスクリプション接続でも
   同じ挙動にする。provider ごとに承認主体が変わると、同じ rollout を別 provider で再開したときに承認履歴の意味が変わる。
-- `item/commandExecution/requestApproval` と `item/fileChange/requestApproval` は、対象 `threadId` がチャット thread として
-  登録されている場合だけ turn subscriber へ配送し、`CodexChatSessionModel` が承認 UI を表示する。ユーザーの決定は
-  `accept` / `acceptForSession` / `decline` のいずれかとして元の JSON-RPC id へ返す。
+- 各 `turn/start` は、応答待ちとは独立したローカル turn handle を先に作成する。この handle が start request、wire turn ID、
+  approval request、停止タイマー、terminal event を接続世代ごとに所有する。`turn/started` または start response で wire ID を
+  確定し、別 turn や再接続前の request ID を現在の UI へ流用しない。
+- `item/commandExecution/requestApproval` と `item/fileChange/requestApproval` は、対象 `threadId` と `turnId` が同一のローカル
+  turn handle に属する場合だけ `CodexChatSessionModel` へ配送する。ユーザーの決定は元の JSON-RPC id に返し、
+  `serverRequest/resolved` で同じ承認だけを UI から除く。利用可能な操作は server の `availableDecisions` と交差させ、
+  `acceptWithExecpolicyAmendment` は server が提示した amendment を構造化 decision のまま返す。
 - 要約 thread と未知の thread からの approval request は従来どおり `decline` する。判定は「チャット thread として登録済みか」
   だけで行い、subscriber の有無では判定しない。`turn/start` の応答より approval request が先着し得るため。
 - `item/permissions/requestApproval` は fail-closed のままとする。これは sandbox 外への権限昇格要求であり、応答が
   `GrantedPermissionProfile` という別形式を必要とする。workspace-write の範囲では通常発生しない。
+- `grantRoot`、追加 filesystem permission、network permission を含む要求は、この UI で許可できる範囲外として扱う。
+  workspace と temporary directory の境界は sandbox が決め、承認 UI がその境界を拡張しない。
+- UI に渡す承認 prompt は正規化時に合計 20 KB、file change 50 件へ制限する。上限を超えた要求、必要な command/diff が
+  欠ける要求、未対応の権限要求は fail-closed とし、拒否だけを表示する。未加工の巨大 payload を presentation state に保持しない。
 - v1 互換の `applyPatchApproval` と `execCommandApproval` も従来どおり `denied` を返す。
 
 ## Invariants
@@ -49,7 +57,9 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
 - 未応答の approval request を残さない。ユーザーの決定、turn の完了、subscriber の終了のいずれかで必ず解決する。
   transport が失われた場合は応答せず登録だけ破棄する。
 - 停止操作は未応答の approval を `cancel` で閉じてから `turn/interrupt` を送る。approval を待っている間 server は turn を
-  完了できないため、interrupt だけでは停止しない。
+  完了できないため、interrupt だけでは停止しない。wire turn ID がまだ確定していない場合、または terminal event が期限内に
+  届かない場合は、対象を推測せず共有 app-server 接続を再起動する。
+- 同じ thread の購読は lease で所有する。古い画面が解放されても、別画面の lease が残る限り `thread/unsubscribe` を送らない。
 - 要約 thread の `approvalPolicy: never` と `sandbox: read-only` は変更しない。
 - 承認 UI に表示するコマンド、パス、理由を診断ログや Sentry へ送らない。
 
@@ -66,6 +76,7 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
 - チャットが workspace ディレクトリへ書き込めるようになる。書き込み範囲は sandbox が制限するが、read-only ではなくなる。
 - 承認プロンプトの分だけユーザーの操作が増える。`acceptForSession` で同一セッション内の再確認は抑えられる。
 - Dahlia が approval の状態機械を持つことになり、未応答のまま turn が終わる経路をテストで固定する必要がある。
+- 安全な停止のため、wire turn ID を特定できない稀な競合では app-server を再起動し、同じプロセス上の他の処理も再接続する。
 
 ## References
 

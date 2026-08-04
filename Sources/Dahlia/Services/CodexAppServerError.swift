@@ -14,6 +14,8 @@ enum CodexAppServerError: LocalizedError, Equatable {
     case providerAuthenticationFailed(String?)
     case turnFailed(String?)
     case turnInterrupted
+    case backendResetForSafety
+    case approvalNoLongerPending
     case emptyResponse
 
     var errorDescription: String? {
@@ -33,6 +35,8 @@ enum CodexAppServerError: LocalizedError, Equatable {
             detail.map(L10n.codexRequestFailed) ?? L10n.codexTurnFailed
         case let .turnFailed(detail): detail.map(L10n.codexRequestFailed) ?? L10n.codexTurnFailed
         case .turnInterrupted: L10n.codexTurnInterrupted
+        case .backendResetForSafety: L10n.codexBackendResetForSafety
+        case .approvalNoLongerPending: L10n.codexApprovalNoLongerPending
         case .emptyResponse: L10n.llmErrorEmptyResponse
         }
     }

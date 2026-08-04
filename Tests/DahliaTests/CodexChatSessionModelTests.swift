@@ -291,13 +291,59 @@ import Foundation
             await service.yieldBlockedEvent(.approvalRequested(request))
             await waitUntil { session.pendingApproval == request }
 
-            session.respondToPendingApproval(.accept)
+            session.respondToApproval(id: request.id, decision: .accept)
             await waitUntilAsync { await service.approvalDecisions.count == 1 }
 
-            #expect(session.pendingApproval == nil)
+            #expect(session.pendingApproval == request)
+            #expect(session.respondingApprovalID == request.id)
             #expect(await service.approvalDecisions == [
                 TestCodexChatService.ApprovalDecision(id: "s:approval-1", decision: .accept),
             ])
+            await service.yieldBlockedEvent(.approvalResolved(id: request.id))
+            await waitUntil { session.pendingApproval == nil }
+            #expect(session.respondingApprovalID == nil)
+        }
+
+        @Test
+        func decidingOneApprovalDoesNotResolveAnotherPendingRequest() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { session.messages.last?.text == "Partial" }
+
+            let first = CodexChatApprovalRequest(
+                id: "s:approval-a",
+                kind: .commandExecution,
+                command: "date"
+            )
+            let second = CodexChatApprovalRequest(
+                id: "s:approval-b",
+                kind: .commandExecution,
+                command: "uname -s"
+            )
+            await service.yieldBlockedEvent(.approvalRequested(first))
+            await service.yieldBlockedEvent(.approvalRequested(second))
+            await waitUntil { session.pendingApprovals.count == 2 }
+
+            session.respondToApproval(id: first.id, decision: .accept)
+            await waitUntilAsync { await service.approvalDecisions.count == 1 }
+
+            #expect(session.pendingApprovals == [first, second])
+            #expect(await service.approvalDecisions == [
+                TestCodexChatService.ApprovalDecision(id: first.id, decision: .accept),
+            ])
+            await service.yieldBlockedEvent(.approvalResolved(id: first.id))
+            await waitUntil { session.pendingApprovals == [second] }
+            session.stop()
+            await waitUntil { !session.isGenerating }
         }
 
         @Test
@@ -793,6 +839,8 @@ import Foundation
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
         private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
+        private var activeLocalTurnID: UUID?
+        private var pendingApprovalIDs: [String] = []
 
         var unsubscribeCount: Int {
             unsubscribedThreadIDs.count
@@ -944,6 +992,41 @@ import Foundation
             return stream
         }
 
+        func beginTurn(
+            threadID: String,
+            inputs: [CodexAppServerInput],
+            model: String?,
+            effort: String
+        ) async throws -> CodexChatTurnHandle {
+            let stream = try await send(
+                threadID: threadID,
+                inputs: inputs,
+                model: model,
+                effort: effort
+            )
+            let id = UUID.v7()
+            activeLocalTurnID = id
+            return CodexChatTurnHandle(id: id, events: stream)
+        }
+
+        func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws {
+            guard turnID == activeLocalTurnID, pendingApprovalIDs.contains(id) else {
+                throw CodexAppServerError.approvalNoLongerPending
+            }
+            pendingApprovalIDs.removeAll { $0 == id }
+            await respondToApproval(id: id, decision: decision)
+        }
+
+        func stopTurn(_ turnID: UUID) async {
+            guard turnID == activeLocalTurnID else { return }
+            for approvalID in pendingApprovalIDs {
+                await respondToApproval(id: approvalID, decision: .cancel)
+            }
+            pendingApprovalIDs.removeAll()
+            await interrupt(threadID: "thread-1", turnID: "turn-1")
+            activeLocalTurnID = nil
+        }
+
         func interrupt(threadID _: String, turnID _: String) async {
             interruptCount += 1
             lifecycleEvents.append(.interrupt)
@@ -977,6 +1060,9 @@ import Foundation
         }
 
         func yieldBlockedEvent(_ event: CodexChatTurnEvent) {
+            if case let .approvalRequested(request) = event {
+                pendingApprovalIDs.append(request.id)
+            }
             blockedContinuation?.yield(event)
         }
 
