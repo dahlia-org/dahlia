@@ -98,6 +98,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
     nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
+    nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
@@ -114,6 +115,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     init() {
         Self.migrateCalendarEventFilterSettings(in: .standard)
+        batchTranscriptionStallTimeoutRawValue = batchTranscriptionStallTimeout.rawValue
     }
 
     // MARK: - ベータ機能
@@ -191,6 +193,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
+    @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =
+        BatchTranscriptionStallTimeout.defaultValue.rawValue
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
@@ -215,6 +219,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     var isRealtimeTranscriptionEnabled: Bool {
         get { transcriptionMode == .realtime }
         set { transcriptionMode = newValue ? .realtime : .batch }
+    }
+
+    var batchTranscriptionStallTimeout: BatchTranscriptionStallTimeout {
+        get { BatchTranscriptionStallTimeout.resolved(rawValue: batchTranscriptionStallTimeoutRawValue) }
+        set { batchTranscriptionStallTimeoutRawValue = newValue.rawValue }
     }
 
     var batchSummaryGenerationOptions: SummaryGenerationOptions {

@@ -1267,3 +1267,8 @@
 "Relative dB" = "相対dB";
 "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state." = "音声指標は話者・録音セッションごとの基準からの相対変化であり、感情や心理状態を断定するものではありません。";
 "Voice features are measured only during batch transcription." = "音声特徴はバッチ文字起こし時のみ計測されます。";
+"Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry." = "Apple Speech に %@進捗がなかったため、バッチ文字起こしを停止しました。再試行できるよう録音音声は保持されています。";
+"No-progress Timeout" = "進捗停止の検出時間";
+"Stop batch transcription when Apple Speech makes no progress for this long." = "Apple Speech の処理に進捗がない状態がこの時間続くと、バッチ文字起こしを停止します。";
+"%lld minute" = "%lld分間";
+"%lld minutes" = "%lld分間";

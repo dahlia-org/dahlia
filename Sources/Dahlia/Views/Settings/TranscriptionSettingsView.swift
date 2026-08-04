@@ -24,6 +24,16 @@ struct TranscriptionSettingsView: View {
                 .toggleStyle(.switch)
 
                 if !settings.isRealtimeTranscriptionEnabled {
+                    Picker(selection: $settings.batchTranscriptionStallTimeout) {
+                        ForEach(BatchTranscriptionStallTimeout.allCases) { timeout in
+                            Text(timeout.displayName).tag(timeout)
+                        }
+                    } label: {
+                        Text(L10n.batchTranscriptionStallTimeout)
+                        Text(L10n.batchTranscriptionStallTimeoutDescription)
+                    }
+                    .pickerStyle(.menu)
+
                     Toggle(isOn: $settings.retainAudioAfterBatchTranscription) {
                         Text(L10n.retainBatchAudio)
                         Text(L10n.retainBatchAudioDescription)

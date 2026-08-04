@@ -12,8 +12,13 @@ enum BatchTranscriptionPersistence {
     ) throws {
         try dbQueue.write { db in
             guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
+                  session.meetingId == meetingId,
                   try MeetingRecord.fetchOne(db, key: meetingId) != nil else {
                 throw CocoaError(.fileNoSuchFile)
+            }
+            guard session.batchDiscardedAt == nil,
+                  session.batchCompletedAt == nil || session.isBatchRetranscriptionPending else {
+                throw CancellationError()
             }
             let persistedCompletedAt = max(completedAt, session.batchLastAttemptAt ?? completedAt)
             _ = try TranscriptSegmentRecord

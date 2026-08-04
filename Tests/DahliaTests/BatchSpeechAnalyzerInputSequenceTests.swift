@@ -24,6 +24,7 @@ import Speech
             }
             let readFormat = try AVAudioFile(forReading: firstURL).processingFormat
             let consumedSliceProbe = ConsumedSliceProbe()
+            let consumedBufferProbe = ConsumedBufferProbe()
             let sequence = try BatchSpeechAnalyzerInputSequence(
                 slices: [
                     BatchSpeechAudioSlice(audioURL: firstURL, startFrame: 40, frameCount: 80),
@@ -33,6 +34,9 @@ import Speech
                 analyzerFormat: readFormat,
                 onSliceConsumed: { sliceIndex in
                     await consumedSliceProbe.record(sliceIndex)
+                },
+                onBufferConsumed: {
+                    await consumedBufferProbe.record()
                 },
                 converterFactory: { _, _ in PassthroughAnalyzerInputConverter() }
             )
@@ -52,6 +56,7 @@ import Speech
             #expect(second.bufferStartTime?.seconds == 0.005)
             #expect(end == nil)
             #expect(await consumedSliceProbe.sliceIndices == [0, 1])
+            #expect(await consumedBufferProbe.count == 2)
         }
 
         @Test
@@ -133,6 +138,14 @@ import Speech
 
         func record(_ sliceIndex: Int) {
             sliceIndices.append(sliceIndex)
+        }
+    }
+
+    private actor ConsumedBufferProbe {
+        private(set) var count = 0
+
+        func record() {
+            count += 1
         }
     }
 #endif

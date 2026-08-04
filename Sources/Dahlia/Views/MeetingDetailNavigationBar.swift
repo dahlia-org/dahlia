@@ -21,7 +21,7 @@ private struct MeetingActionsMenu: View {
                 Button(
                     L10n.retranscribe,
                     systemImage: "arrow.clockwise",
-                    action: viewModel.presentBatchRetranscriptionConfirmation
+                    action: viewModel.presentAvailableBatchRetranscription
                 )
             }
 
