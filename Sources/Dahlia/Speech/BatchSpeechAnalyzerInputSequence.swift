@@ -21,6 +21,7 @@ struct BatchSpeechAnalyzerInputSequence: AsyncSequence, Sendable {
         sourceFormat: AVAudioFormat,
         analyzerFormat: AVAudioFormat,
         onSliceConsumed: @escaping @Sendable (Int) async -> Void = { _ in },
+        onBufferConsumed: @escaping @Sendable () async -> Void = {},
         converterFactory: AnalyzerInputConverterFactory = { sourceFormat, analyzerFormat in
             try AVAudioAnalyzerInputConverter(
                 sourceFormat: sourceFormat,
@@ -33,7 +34,8 @@ struct BatchSpeechAnalyzerInputSequence: AsyncSequence, Sendable {
             sourceFormat: sourceFormat,
             analyzerFormat: analyzerFormat,
             converter: converterFactory(sourceFormat, analyzerFormat),
-            onSliceConsumed: onSliceConsumed
+            onSliceConsumed: onSliceConsumed,
+            onBufferConsumed: onBufferConsumed
         )
     }
 
@@ -50,6 +52,7 @@ actor BatchSpeechAudioSliceReader {
     private let analyzerFormat: AVAudioFormat
     private let converter: any AnalyzerInputConverting
     private let onSliceConsumed: @Sendable (Int) async -> Void
+    private let onBufferConsumed: @Sendable () async -> Void
     private var sliceIndex = 0
     private var currentFile: AVAudioFile?
     private var remainingFrameCount: Int64 = 0
@@ -63,7 +66,8 @@ actor BatchSpeechAudioSliceReader {
         sourceFormat: AVAudioFormat,
         analyzerFormat: AVAudioFormat,
         converter: any AnalyzerInputConverting,
-        onSliceConsumed: @escaping @Sendable (Int) async -> Void
+        onSliceConsumed: @escaping @Sendable (Int) async -> Void,
+        onBufferConsumed: @escaping @Sendable () async -> Void
     ) throws {
         guard !slices.isEmpty else {
             throw BatchSpeechTranscriberError.invalidAudioRange
@@ -73,6 +77,7 @@ actor BatchSpeechAudioSliceReader {
         self.analyzerFormat = analyzerFormat
         self.converter = converter
         self.onSliceConsumed = onSliceConsumed
+        self.onBufferConsumed = onBufferConsumed
     }
 
     func next() async throws -> AnalyzerInput? {
@@ -88,7 +93,9 @@ actor BatchSpeechAudioSliceReader {
                 continue
             }
             if remainingFrameCount > 0 {
-                if let input = try readNextBuffer() {
+                let input = try readNextBuffer()
+                await onBufferConsumed()
+                if let input {
                     return input
                 }
                 continue

@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import Foundation
 @testable import Dahlia
 
@@ -81,6 +82,34 @@ import Foundation
         }
 
         @Test
+        func appleRecognizerStartsWatchdogBeforeAnalyzerPreparation() async throws {
+            let clock = WatchdogTestClock()
+            let preparation = SuspendedAnalyzerPreparation()
+            let audioURL = try makeAudioFile()
+            defer { try? FileManager.default.removeItem(at: audioURL) }
+            let recognizer = AppleBatchSpeechRecognizer(
+                assetPreparer: AppleSpeechAssetPreparer(prepareOperation: { _ in }),
+                stallTimeoutProvider: { .oneMinute },
+                watchdogClock: clock,
+                analyzerPreparation: { _, _ in
+                    try await preparation.run()
+                }
+            )
+
+            let recognitionTask = Task {
+                try await recognizer.recognize(audioURL: audioURL, locale: Locale(identifier: "ja_JP"))
+            }
+            try await waitUntil {
+                let didStart = await preparation.didStart
+                let waiterCount = await clock.waiterCount
+                return didStart && waiterCount == 1
+            }
+
+            recognitionTask.cancel()
+            _ = try? await recognitionTask.value
+        }
+
+        @Test
         func stallTimeoutValuesResolveAndFallBack() {
             #expect(BatchTranscriptionStallTimeout.allCases.map(\.rawValue) == [1, 2, 3])
             #expect(BatchTranscriptionStallTimeout.resolved(rawValue: 1) == .oneMinute)
@@ -114,6 +143,27 @@ import Foundation
             )
         }
 
+        private func makeAudioFile() throws -> URL {
+            let format = try #require(AVAudioFormat(
+                commonFormat: .pcmFormatInt16,
+                sampleRate: 16000,
+                channels: 1,
+                interleaved: false
+            ))
+            let url = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-watchdog-preparation-\(UUID.v7().uuidString).caf")
+            let file = try AVAudioFile(
+                forWriting: url,
+                settings: format.settings,
+                commonFormat: .pcmFormatInt16,
+                interleaved: false
+            )
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+            buffer.frameLength = 160
+            try file.write(from: buffer)
+            return url
+        }
+
         private func waitUntil(
             timeout: Duration = testPollTimeout,
             condition: @escaping @Sendable () async -> Bool
@@ -141,6 +191,15 @@ import Foundation
             } catch {
                 // The watchdog owns and cancels its outstanding timeout action on stop.
             }
+        }
+    }
+
+    private actor SuspendedAnalyzerPreparation {
+        private(set) var didStart = false
+
+        func run() async throws {
+            didStart = true
+            try await Task.sleep(for: .seconds(60))
         }
     }
 

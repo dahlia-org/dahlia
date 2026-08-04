@@ -527,7 +527,9 @@ actor BatchTranscriptionCoordinator {
                 sql: """
                 UPDATE recording_sessions
                 SET batchLastError = ?, batchFailureKind = ?, updatedAt = ?
-                WHERE id = ? AND batchDiscardedAt IS NULL
+                WHERE id = ?
+                  AND batchDiscardedAt IS NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
                 """,
                 arguments: [message, kind, Date.now, sessionId]
             )
