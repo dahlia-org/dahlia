@@ -60,6 +60,12 @@ struct CodexChatView: View {
                 )
             }
 
+            if let pendingApproval = session.pendingApproval {
+                CodexChatApprovalView(request: pendingApproval) { decision in
+                    session.respondToPendingApproval(decision)
+                }
+            }
+
             if let errorMessage = session.errorMessage {
                 CodexChatErrorView(
                     message: errorMessage,

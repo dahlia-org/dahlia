@@ -25,6 +25,7 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
+    private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
     var isPreparingTurn = false
     var isAwaitingTurnOutput = false
     var isFinalizingTurn = false
@@ -41,6 +42,10 @@ final class CodexChatSessionModel: Identifiable {
     var liveModeEnabled: Bool {
         get { isLiveModeEnabled }
         set { setLiveModeEnabled(newValue) }
+    }
+
+    var pendingApproval: CodexChatApprovalRequest? {
+        pendingApprovals.first
     }
 
     var showsStandaloneThinking: Bool {
@@ -203,9 +208,29 @@ final class CodexChatSessionModel: Identifiable {
         }
     }
 
+    func respondToPendingApproval(_ decision: CodexChatApprovalDecision) {
+        guard !pendingApprovals.isEmpty else { return }
+        let request = pendingApprovals.removeFirst()
+        Task { await service.respondToApproval(id: request.id, decision: decision) }
+    }
+
+    private func cancelPendingApprovals() {
+        let requests = pendingApprovals
+        guard !requests.isEmpty else { return }
+        pendingApprovals.removeAll()
+        Task {
+            for request in requests {
+                await service.respondToApproval(id: request.id, decision: .cancel)
+            }
+        }
+    }
+
     func stop() {
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
+        // The server cannot complete the turn while an approval is outstanding, so cancel
+        // them before interrupting.
+        cancelPendingApprovals()
         turnTask?.cancel()
         if let backendThreadID, let activeTurnID {
             Task { await service.interrupt(threadID: backendThreadID, turnID: activeTurnID) }
@@ -469,6 +494,11 @@ extension CodexChatSessionModel {
         case let .reasoningCompleted(itemID, text):
             accumulator.completeReasoning(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
+        case let .approvalRequested(request):
+            updateLimiter.submit(force: true)
+            if !pendingApprovals.contains(request) {
+                pendingApprovals.append(request)
+            }
         case .interrupted:
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
@@ -562,6 +592,7 @@ extension CodexChatSessionModel {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
         isPreparingTurn = false
+        pendingApprovals.removeAll()
         preparingManualComposerSnapshot = nil
         activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false

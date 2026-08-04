@@ -2565,6 +2565,18 @@ enum L10n {
         String(localized: "Some older live transcript was skipped because the chat backlog was too large.", bundle: bundle)
     }
 
+    static var chatApprovalCommandTitle: String {
+        String(localized: "The assistant wants to run a command.", bundle: bundle)
+    }
+
+    static var chatApprovalFileChangeTitle: String {
+        String(localized: "The assistant wants to change files.", bundle: bundle)
+    }
+
+    static var chatApprovalAllow: String { String(localized: "Allow", bundle: bundle) }
+    static var chatApprovalAlwaysAllow: String { String(localized: "Always allow in this chat", bundle: bundle) }
+    static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
+
     static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatWindowUnavailable: String { String(localized: "This chat is no longer available.", bundle: bundle) }

@@ -269,6 +269,69 @@ import Foundation
         }
 
         @Test
+        func approvalRequestIsPresentedAndDecisionIsForwarded() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { session.messages.last?.text == "Partial" }
+
+            let request = CodexChatApprovalRequest(
+                id: "s:approval-1",
+                kind: .commandExecution,
+                command: "ls -la"
+            )
+            await service.yieldBlockedEvent(.approvalRequested(request))
+            await waitUntil { session.pendingApproval == request }
+
+            session.respondToPendingApproval(.accept)
+            await waitUntilAsync { await service.approvalDecisions.count == 1 }
+
+            #expect(session.pendingApproval == nil)
+            #expect(await service.approvalDecisions == [
+                TestCodexChatService.ApprovalDecision(id: "s:approval-1", decision: .accept),
+            ])
+        }
+
+        @Test
+        func stopCancelsAnOutstandingApproval() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { session.messages.last?.text == "Partial" }
+
+            await service.yieldBlockedEvent(.approvalRequested(CodexChatApprovalRequest(
+                id: "s:approval-1",
+                kind: .fileChange
+            )))
+            await waitUntil { session.pendingApproval != nil }
+
+            session.stop()
+            await waitUntil { !session.isGenerating }
+            await waitUntilAsync { await service.approvalDecisions.count == 1 }
+
+            #expect(session.pendingApproval == nil)
+            #expect(await service.approvalDecisions == [
+                TestCodexChatService.ApprovalDecision(id: "s:approval-1", decision: .cancel),
+            ])
+        }
+
+        @Test
         func staleRolloutDoesNotReplaceCompletedStream() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
@@ -685,6 +748,11 @@ import Foundation
     }
 
     actor TestCodexChatService: CodexChatServicing {
+        struct ApprovalDecision: Equatable {
+            let id: String
+            let decision: CodexChatApprovalDecision
+        }
+
         enum Mode {
             case complete
             case block
@@ -708,6 +776,7 @@ import Foundation
         private(set) var steeredTextBlocks: [[String]] = []
         private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
+        private(set) var approvalDecisions: [ApprovalDecision] = []
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var returnedSendCount = 0
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
@@ -869,6 +938,10 @@ import Foundation
             blockedContinuation?.yield(.interrupted)
             blockedContinuation?.finish()
             blockedContinuation = nil
+        }
+
+        func respondToApproval(id: String, decision: CodexChatApprovalDecision) async {
+            approvalDecisions.append(ApprovalDecision(id: id, decision: decision))
         }
 
         func steer(threadID _: String, turnID _: String, inputs: [CodexAppServerInput]) async throws {

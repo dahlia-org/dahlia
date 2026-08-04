@@ -749,6 +749,112 @@ import Foundation
         }
 
         @Test
+        func chatApprovalRequestsReachSubscribersAndAreDeclinedWhenTheTurnCompletes() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            try await service.start()
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                var methods: [String] = []
+                for try await message in turn.notifications {
+                    if let method = message.objectValue?["method"]?.stringValue {
+                        methods.append(method)
+                    }
+                }
+                return methods
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string(turn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-1")
+
+            #expect(try await collected.value == [
+                "item/commandExecution/requestApproval",
+                "turn/completed",
+            ])
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("decline"))
+            await service.shutdown()
+        }
+
+        @Test
+        func chatApprovalDecisionUsesTheOriginalRequestIdentifier() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            try await service.start()
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            // Responds from inside the subscription so the stream is never abandoned early,
+            // which would decline the request before the decision is sent.
+            let responded = Task {
+                for try await message in turn.notifications {
+                    guard message.objectValue?["method"]?.stringValue == "item/fileChange/requestApproval",
+                          let requestID = message.objectValue?["id"],
+                          let approvalID = CodexAppServerService.approvalID(for: requestID)
+                    else { continue }
+                    await service.respondToApproval(
+                        id: approvalID,
+                        decision: CodexChatApprovalDecision.acceptForSession.rawValue
+                    )
+                }
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .number(41),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "41")
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string(turn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+            try await responded.value
+
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .number(41) && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("acceptForSession"))
+            await service.shutdown()
+        }
+
+        @Test
         func turnNotificationSubscriptionReceivesMessagesAndFinishes() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })

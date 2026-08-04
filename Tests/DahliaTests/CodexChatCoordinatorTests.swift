@@ -250,6 +250,7 @@ import Foundation
             AsyncThrowingStream { $0.finish() }
         }
 
+        func respondToApproval(id _: String, decision _: CodexChatApprovalDecision) async {}
         func steer(threadID _: String, turnID _: String, inputs _: [CodexAppServerInput]) async throws {}
         func interrupt(threadID _: String, turnID _: String) async {}
         func unsubscribe(threadID _: String) async {}
@@ -317,6 +318,7 @@ import Foundation
             return AsyncThrowingStream<CodexChatTurnEvent, any Error> { $0.finish() }
         }
 
+        func respondToApproval(id _: String, decision _: CodexChatApprovalDecision) async {}
         func steer(threadID _: String, turnID _: String, inputs _: [CodexAppServerInput]) async throws {}
         func interrupt(threadID _: String, turnID _: String) async {}
 

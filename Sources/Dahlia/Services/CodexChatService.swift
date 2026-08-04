@@ -22,7 +22,8 @@ actor CodexChatService: CodexChatServicing {
     later changes when one call fails; re-fetch and retry only the failed record. Do not invent or change Meeting participants.
     Select Dahlia preset skills automatically when the user's request matches their descriptions. When a preset is selected,
     you may run a read-only command solely to read that preset's SKILL.md under Dahlia's private CODEX_HOME/skills directory.
-    Do not execute any other commands or access any other files.
+    Do not run other commands or read other files unless the user's request cannot be completed without them.
+    Anything the sandbox blocks is asked of the user as an approval prompt, so keep such requests rare and explain why one is needed.
     Do not use external services other than web search or request permissions.
     """
 
@@ -107,7 +108,7 @@ actor CodexChatService: CodexChatServicing {
                     "config": config,
                     "cwd": .string(workspaceURL.path),
                     "developerInstructions": .string(Self.developerInstructions),
-                    "sandbox": .string("read-only"),
+                    "sandbox": .string("workspace-write"),
                     "threadId": .string(id),
                 ]),
                 bypassConfigurationReloadAdmission: true
@@ -156,7 +157,7 @@ actor CodexChatService: CodexChatServicing {
                     "developerInstructions": .string(Self.developerInstructions),
                     "ephemeral": .bool(false),
                     "model": .string(selectedModel.model),
-                    "sandbox": .string("read-only"),
+                    "sandbox": .string("workspace-write"),
                 ]),
                 bypassConfigurationReloadAdmission: true
             )
@@ -183,7 +184,7 @@ actor CodexChatService: CodexChatServicing {
         try await appServer.prepareProviderAuthentication()
 
         var params: [String: JSONValue] = [
-            "approvalsReviewer": .string("auto_review"),
+            "approvalsReviewer": .string("user"),
             "effort": .string(effort),
             "input": .array(inputs.map(Self.jsonInput)),
             "summary": .string("auto"),
@@ -253,7 +254,12 @@ actor CodexChatService: CodexChatServicing {
         )
     }
 
+    func respondToApproval(id: String, decision: CodexChatApprovalDecision) async {
+        await appServer.respondToApproval(id: id, decision: decision.rawValue)
+    }
+
     func unsubscribe(threadID: String) async {
+        await appServer.forgetChatThread(threadID)
         _ = try? await appServer.request(
             method: "thread/unsubscribe",
             params: .object(["threadId": .string(threadID)])
@@ -393,11 +399,34 @@ private extension CodexChatService {
             return try parseReasoningDelta(params)
         case "item/completed":
             return try parseCompletedItem(params)
+        case "item/commandExecution/requestApproval":
+            return try parseApprovalRequest(object, params: params, kind: .commandExecution)
+        case "item/fileChange/requestApproval":
+            return try parseApprovalRequest(object, params: params, kind: .fileChange)
         case "turn/completed":
             return try parseTurnCompletion(params)
         default:
             return nil
         }
+    }
+
+    nonisolated static func parseApprovalRequest(
+        _ object: [String: JSONValue],
+        params: [String: JSONValue],
+        kind: CodexChatApprovalRequest.Kind
+    ) throws -> CodexChatTurnEvent {
+        guard let requestID = object["id"],
+              let approvalID = CodexAppServerService.approvalID(for: requestID)
+        else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        return .approvalRequested(CodexChatApprovalRequest(
+            id: approvalID,
+            kind: kind,
+            command: params["command"]?.stringValue?.nilIfBlank,
+            cwd: params["cwd"]?.stringValue?.nilIfBlank,
+            reason: params["reason"]?.stringValue?.nilIfBlank
+        ))
     }
 
     nonisolated static func parseReasoningDelta(_ params: [String: JSONValue]) throws -> CodexChatTurnEvent {

@@ -46,7 +46,7 @@ import Foundation
             }?.objectValue?["params"]?.objectValue)
             #expect(threadParams["ephemeral"] == .bool(false))
             #expect(threadParams["approvalPolicy"] == .string("on-request"))
-            #expect(threadParams["sandbox"] == .string("read-only"))
+            #expect(threadParams["sandbox"] == .string("workspace-write"))
             #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
             expectChatConfiguration(config, vaultID: vaultID)
@@ -56,7 +56,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(turnParams["outputSchema"] == nil)
-            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
+            #expect(turnParams["approvalsReviewer"] == .string("user"))
             #expect(turnParams["effort"] == .string("high"))
             #expect(turnParams["summary"] == .string("auto"))
             #expect(turnParams["input"] == .array([
@@ -243,6 +243,68 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "thread/resume"
             }?.objectValue?["params"]?.objectValue)
             #expect(resumeParams["approvalPolicy"] == .string("on-request"))
+            #expect(resumeParams["sandbox"] == .string("workspace-write"))
+            await appServer.shutdown()
+        }
+
+        @Test
+        func approvalRequestsBecomeTurnEvents() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-approval", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Test")],
+                model: "default-model",
+                effort: "medium"
+            )
+            let collected = Task {
+                var events: [CodexChatTurnEvent] = []
+                for try await event in stream {
+                    events.append(event)
+                }
+                return events
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls -la"),
+                    "cwd": .string("/tmp/dahlia-chat-approval"),
+                    "itemId": .string("item-1"),
+                    "reason": .string("Needs the workspace listing"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            #expect(try await collected.value == [
+                .started(turnID: "turn-1"),
+                .approvalRequested(CodexChatApprovalRequest(
+                    id: "s:approval-1",
+                    kind: .commandExecution,
+                    command: "ls -la",
+                    cwd: "/tmp/dahlia-chat-approval",
+                    reason: "Needs the workspace listing"
+                )),
+                .completed(itemID: nil, text: nil),
+            ])
             await appServer.shutdown()
         }
 
@@ -303,7 +365,8 @@ import Foundation
             #expect(instructions?.contains("cite the sources") == true)
             #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
             #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
-            #expect(instructions?.contains("Do not execute any other commands or access any other files.") == true)
+            #expect(instructions?.contains("unless the user's request cannot be completed without them") == true)
+            #expect(instructions?.contains("asked of the user as an approval prompt") == true)
             #expect(instructions?.contains("Do not use external services other than web search or request permissions.") == true)
         }
     }

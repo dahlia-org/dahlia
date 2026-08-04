@@ -45,6 +45,11 @@ actor CodexAppServerService {
         let timeoutTask: Task<Void, Never>
     }
 
+    private struct PendingApproval {
+        let requestID: JSONValue
+        let key: TurnKey
+    }
+
     private struct GenerationContext {
         var threadID: String?
         var key: TurnKey?
@@ -78,6 +83,8 @@ actor CodexAppServerService {
     private var turnWaiters: [TurnKey: TurnWaiter] = [:]
     private var turnSubscribers: [TurnKey: [UUID: AsyncThrowingStream<JSONValue, any Error>.Continuation]] = [:]
     private var bufferedTurnMessages: [TurnKey: [JSONValue]] = [:]
+    private var chatThreadIDs: Set<String> = []
+    private var pendingApprovals: [String: PendingApproval] = [:]
     private var startupWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var generations: [UUID: GenerationContext] = [:]
     private var generationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
@@ -378,11 +385,35 @@ actor CodexAppServerService {
         }
     }
 
+    /// Stable identifier for a server request whose JSON-RPC `id` may be a string or a number.
+    nonisolated static func approvalID(for id: JSONValue) -> String? {
+        switch id {
+        case let .string(value): "s:\(value)"
+        case let .number(value): "n:\(value)"
+        default: nil
+        }
+    }
+
+    func respondToApproval(id: String, decision: String) async {
+        guard let approval = pendingApprovals.removeValue(forKey: id) else { return }
+        try? await sendMessage(.object([
+            "id": approval.requestID,
+            "result": .object(["decision": .string(decision)]),
+        ]))
+    }
+
+    func forgetChatThread(_ threadID: String) {
+        chatThreadIDs.remove(threadID)
+    }
+
     func startChatTurn(
         threadID: String,
         params: JSONValue
     ) async throws -> (turnID: String, notifications: AsyncThrowingStream<JSONValue, any Error>) {
         try await waitForConfigurationReloadToFinish()
+        // Registered before the request so an approval request that arrives ahead of the
+        // turn/start response is still recognized as a chat thread.
+        chatThreadIDs.insert(threadID)
         let startID = UUID()
         pendingChatTurnStarts.insert(startID)
         defer {
@@ -854,7 +885,12 @@ private extension CodexAppServerService {
 
         if let requestID = object["id"],
            let method = object["method"]?.stringValue {
-            try await handleServerRequest(id: requestID, method: method)
+            try await handleServerRequest(
+                id: requestID,
+                method: method,
+                params: object["params"]?.objectValue,
+                message: message
+            )
             return
         }
 
@@ -889,7 +925,7 @@ private extension CodexAppServerService {
         if try handleAccountNotification(object) {
             return
         }
-        routeTurnMessage(message)
+        await routeTurnMessage(message)
     }
 
     private func handleAccountNotification(_ object: [String: JSONValue]) throws -> Bool {
@@ -933,9 +969,17 @@ private extension CodexAppServerService {
         }
     }
 
-    private func handleServerRequest(id: JSONValue, method: String) async throws {
+    private func handleServerRequest(
+        id: JSONValue,
+        method: String,
+        params: [String: JSONValue]?,
+        message: JSONValue
+    ) async throws {
         switch method {
         case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+            if await routeChatApprovalRequest(id: id, params: params, message: message) {
+                return
+            }
             try await sendMessage(.object([
                 "id": id,
                 "result": .object(["decision": .string("decline")]),
@@ -970,7 +1014,37 @@ private extension CodexAppServerService {
         ]))
     }
 
-    private func routeTurnMessage(_ message: JSONValue) {
+    /// Registers a chat-thread approval request and delivers it to the turn subscriber.
+    /// Returns `false` for summary threads and unknown threads so the caller keeps the
+    /// fail-closed decline.
+    private func routeChatApprovalRequest(
+        id: JSONValue,
+        params: [String: JSONValue]?,
+        message: JSONValue
+    ) async -> Bool {
+        guard let params,
+              let threadID = params["threadId"]?.stringValue,
+              chatThreadIDs.contains(threadID),
+              let turnID = params["turnId"]?.stringValue,
+              let approvalID = Self.approvalID(for: id)
+        else { return false }
+        pendingApprovals[approvalID] = PendingApproval(
+            requestID: id,
+            key: TurnKey(threadID: threadID, turnID: turnID)
+        )
+        await routeTurnMessage(message)
+        return true
+    }
+
+    private func declinePendingApprovals(for key: TurnKey) async {
+        let expired = pendingApprovals.filter { $0.value.key == key }
+        guard !expired.isEmpty else { return }
+        for approvalID in expired.keys {
+            await respondToApproval(id: approvalID, decision: CodexChatApprovalDecision.decline.rawValue)
+        }
+    }
+
+    private func routeTurnMessage(_ message: JSONValue) async {
         guard let object = message.objectValue,
               let method = object["method"]?.stringValue,
               let params = object["params"]?.objectValue,
@@ -992,7 +1066,7 @@ private extension CodexAppServerService {
             bufferTurnMessage(message, for: key)
         }
         if method == "turn/completed" {
-            finishTurnSubscribers(for: key)
+            await finishTurnSubscribers(for: key)
         }
     }
 
@@ -1142,6 +1216,9 @@ private extension CodexAppServerService {
         let subscribers = turnSubscribers.values.flatMap(\.values)
         turnSubscribers.removeAll()
         subscribers.forEach { $0.finish(throwing: error) }
+        // The transport is gone, so outstanding approvals cannot be answered.
+        pendingApprovals.removeAll()
+        chatThreadIDs.removeAll()
         resumeChatTurnDrainWaiters(throwing: error)
         await currentTransport?.close()
     }
@@ -1195,15 +1272,17 @@ private extension CodexAppServerService {
         waiter.continuation.resume(throwing: CodexAppServerError.requestTimedOut("summary"))
     }
 
-    private func removeTurnSubscriber(_ subscriberID: UUID, for key: TurnKey) {
+    private func removeTurnSubscriber(_ subscriberID: UUID, for key: TurnKey) async {
         turnSubscribers[key]?.removeValue(forKey: subscriberID)
         if turnSubscribers[key]?.isEmpty == true {
             turnSubscribers.removeValue(forKey: key)
+            await declinePendingApprovals(for: key)
         }
         resumeChatTurnDrainWaitersIfIdle()
     }
 
-    private func finishTurnSubscribers(for key: TurnKey) {
+    private func finishTurnSubscribers(for key: TurnKey) async {
+        await declinePendingApprovals(for: key)
         guard let subscribers = turnSubscribers.removeValue(forKey: key)?.values else { return }
         subscribers.forEach { $0.finish() }
         resumeChatTurnDrainWaitersIfIdle()
