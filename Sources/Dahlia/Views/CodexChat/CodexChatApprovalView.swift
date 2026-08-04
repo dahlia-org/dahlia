@@ -82,7 +82,7 @@ struct CodexChatApprovalView: View {
                             Text(change.path)
                                 .font(.system(.caption, design: .monospaced).weight(.medium))
                             if let diff = change.diff.nilIfBlank {
-                                Text(diff)
+                                Text(CodexChatApprovalDiffPreview.text(for: diff))
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
@@ -97,6 +97,16 @@ struct CodexChatApprovalView: View {
                 .detailRegionStyle()
             }
         }
+    }
+}
+
+enum CodexChatApprovalDiffPreview {
+    static let byteLimit = 20000
+
+    static func text(for diff: String) -> String {
+        let prefix = diff.utf8.prefix(byteLimit + 1)
+        guard prefix.count > byteLimit else { return diff }
+        return String(decoding: prefix.dropLast(), as: UTF8.self) + "\n…"
     }
 }
 

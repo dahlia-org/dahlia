@@ -53,6 +53,7 @@ actor CodexAppServerService {
 
     private struct PendingChatTurnStart {
         let threadID: String
+        var turnID: String?
         var bufferedKeys: Set<TurnKey> = []
     }
 
@@ -442,6 +443,10 @@ actor CodexAppServerService {
             guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
                 throw CodexAppServerError.invalidProtocolResponse
             }
+            await reconcilePendingChatTurnStart(
+                startID,
+                with: TurnKey(threadID: threadID, turnID: turnID)
+            )
             return (turnID, notifications(threadID: threadID, turnID: turnID))
         } catch {
             await cleanUpFailedChatTurnStart(startID)
@@ -1044,7 +1049,7 @@ private extension CodexAppServerService {
               let approvalID = Self.approvalID(for: id)
         else { return false }
         let key = TurnKey(threadID: threadID, turnID: turnID)
-        let pendingStartID = pendingStartID(for: threadID)
+        let pendingStartID = pendingStartID(for: key)
         pendingApprovals[approvalID] = PendingApproval(
             requestID: id,
             key: key,
@@ -1078,8 +1083,29 @@ private extension CodexAppServerService {
         }
     }
 
-    private func pendingStartID(for threadID: String) -> UUID? {
-        pendingChatTurnStarts.first { $0.value.threadID == threadID }?.key
+    private func reconcilePendingChatTurnStart(_ startID: UUID, with key: TurnKey) async {
+        guard var pendingStart = pendingChatTurnStarts[startID] else { return }
+        pendingStart.turnID = key.turnID
+        let mismatchedKeys = pendingStart.bufferedKeys.filter { $0 != key }
+        pendingStart.bufferedKeys.subtract(mismatchedKeys)
+        pendingChatTurnStarts[startID] = pendingStart
+
+        for mismatchedKey in mismatchedKeys {
+            bufferedTurnMessages.removeValue(forKey: mismatchedKey)
+        }
+        let approvalIDs = pendingApprovals.compactMap { approvalID, approval in
+            approval.pendingStartID == startID && approval.key != key ? approvalID : nil
+        }
+        for approvalID in approvalIDs {
+            await respondToApproval(id: approvalID, decision: .cancel)
+        }
+    }
+
+    private func pendingStartID(for key: TurnKey) -> UUID? {
+        pendingChatTurnStarts.first { _, pendingStart in
+            pendingStart.threadID == key.threadID
+                && (pendingStart.turnID == nil || pendingStart.turnID == key.turnID)
+        }?.key
     }
 
     private func routeTurnMessage(_ message: JSONValue) async {
@@ -1101,7 +1127,7 @@ private extension CodexAppServerService {
         if turnWaiters[key] != nil {
             processTurnMessage(message, for: key)
         } else if !hasSubscribers {
-            if let startID = pendingStartID(for: threadID) {
+            if let startID = pendingStartID(for: key) {
                 bufferTurnMessage(message, for: key)
                 pendingChatTurnStarts[startID]?.bufferedKeys.insert(key)
             } else if !chatThreadIDs.contains(threadID) {
