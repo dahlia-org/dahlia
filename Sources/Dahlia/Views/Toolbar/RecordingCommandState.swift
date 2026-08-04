@@ -54,7 +54,12 @@ struct RecordingCommandPlacement: Equatable {
         recordingMeetingID: UUID?,
         currentMeetingID: UUID?
     ) {
-        showsSidebarIndicator = isListening && isSidebarVisible
+        showsSidebarIndicator = isListening
+            && isSidebarVisible
+            && RecordingCommandState.showsSidebarStop(
+                recordingMeetingID: recordingMeetingID,
+                currentMeetingID: currentMeetingID
+            )
         showsDetailRecordingBar = isListening && recordingMeetingID != nil && recordingMeetingID == currentMeetingID
         showsToolbarStop = isListening && !isSidebarVisible
     }

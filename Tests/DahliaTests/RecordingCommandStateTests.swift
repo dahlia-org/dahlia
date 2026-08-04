@@ -130,5 +130,27 @@ import Foundation
 
             #expect(!placement.hasImmediateStop)
         }
+
+        @Test
+        func placementUsesSidebarIndicatorOnlyOutsideTheRecordingMeeting() {
+            let recordingMeetingID = UUID()
+            let recordingMeetingPlacement = RecordingCommandPlacement(
+                isListening: true,
+                isSidebarVisible: true,
+                recordingMeetingID: recordingMeetingID,
+                currentMeetingID: recordingMeetingID
+            )
+            let otherMeetingPlacement = RecordingCommandPlacement(
+                isListening: true,
+                isSidebarVisible: true,
+                recordingMeetingID: recordingMeetingID,
+                currentMeetingID: UUID()
+            )
+
+            #expect(recordingMeetingPlacement.showsDetailRecordingBar)
+            #expect(!recordingMeetingPlacement.showsSidebarIndicator)
+            #expect(!otherMeetingPlacement.showsDetailRecordingBar)
+            #expect(otherMeetingPlacement.showsSidebarIndicator)
+        }
     }
 #endif
