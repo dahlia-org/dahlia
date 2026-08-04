@@ -32,9 +32,8 @@ private struct MeetingActionsMenu: View {
             }
             .disabled(viewModel.currentMeetingId == nil)
         } label: {
-            Label(L10n.actions, systemImage: "ellipsis.circle")
+            Label(L10n.actions, systemImage: "ellipsis")
         }
-        .menuStyle(.borderlessButton)
     }
 }
 
@@ -57,22 +56,21 @@ struct MeetingDetailNavigationBar: View {
             Spacer(minLength: 0)
 
             if showsActions {
-                if selection == .summary {
-                    HStack(spacing: 8) {
+                ControlGroup {
+                    if selection == .summary {
                         GenerateSummaryToolbarButton(
                             viewModel: viewModel,
                             sidebarViewModel: sidebarViewModel
                         )
                         ShareSummaryToolbarButton(viewModel: viewModel)
                     }
-                    .fixedSize(horizontal: true, vertical: false)
-                }
 
-                MeetingActionsMenu(
-                    viewModel: viewModel,
-                    onRename: onRename,
-                    onDelete: onDelete
-                )
+                    MeetingActionsMenu(
+                        viewModel: viewModel,
+                        onRename: onRename,
+                        onDelete: onDelete
+                    )
+                }
                 .controlSize(.regular)
                 .fixedSize(horizontal: true, vertical: false)
             }

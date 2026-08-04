@@ -86,7 +86,6 @@ struct GenerateSummaryToolbarButton: View {
             }
         }
         .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
         .disabled(isGeneratingCurrentMeeting || !viewModel.canGenerateSummary)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
@@ -123,11 +122,9 @@ struct ShareSummaryToolbarButton: View {
                 Text(L10n.share)
             } icon: {
                 Image(systemName: "square.and.arrow.up")
-                    .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : .secondary)
             }
         }
         .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
         .disabled(!viewModel.canShareCurrentSummary)
         .help(L10n.shareSummary)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
