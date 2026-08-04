@@ -5,4 +5,5 @@ enum BatchFailureKind: String, Codable, DatabaseValueConvertible {
     case recordingRecovery
     case recordingAudioPermanent
     case transcription
+    case transcriptionStalled
 }

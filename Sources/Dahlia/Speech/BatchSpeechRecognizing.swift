@@ -41,10 +41,22 @@ extension BatchSpeechRecognizing {
 }
 
 struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
-    private let assetPreparer: AppleSpeechAssetPreparer
+    typealias StallTimeoutProvider = @Sendable () async -> BatchTranscriptionStallTimeout
 
-    init(assetPreparer: AppleSpeechAssetPreparer = AppleSpeechAssetPreparer()) {
+    private let assetPreparer: AppleSpeechAssetPreparer
+    private let stallTimeoutProvider: StallTimeoutProvider
+    private let watchdogClock: any BatchSpeechWatchdogClock
+
+    init(
+        assetPreparer: AppleSpeechAssetPreparer = AppleSpeechAssetPreparer(),
+        stallTimeoutProvider: @escaping StallTimeoutProvider = {
+            await MainActor.run { AppSettings.shared.batchTranscriptionStallTimeout }
+        },
+        watchdogClock: any BatchSpeechWatchdogClock = ContinuousBatchSpeechWatchdogClock()
+    ) {
         self.assetPreparer = assetPreparer
+        self.stallTimeoutProvider = stallTimeoutProvider
+        self.watchdogClock = watchdogClock
     }
 
     func recognize(audioURL: URL, locale: Locale) async throws -> [BatchSpeechRecognition] {
@@ -54,8 +66,9 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         return try await recognize(
             transcriber: transcriber,
             audioFormat: audioFile.processingFormat
-        ) { analyzer in
-            try await analyzer.analyzeSequence(from: audioFile)
+        ) { analyzer, recordProgress in
+            await recordProgress()
+            return try await analyzer.analyzeSequence(from: audioFile)
         }
     }
 
@@ -83,34 +96,50 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         ) else {
             throw BatchSpeechTranscriberError.audioFormatUnavailable
         }
-        let inputSequence = try BatchSpeechAnalyzerInputSequence(
-            slices: audioSlices,
-            sourceFormat: sourceFormat,
-            analyzerFormat: analyzerFormat,
-            onSliceConsumed: onSliceConsumed
-        )
         return try await recognize(
             transcriber: transcriber,
             audioFormat: analyzerFormat
-        ) { analyzer in
-            try await analyzer.analyzeSequence(inputSequence)
+        ) { analyzer, recordProgress in
+            let inputSequence = try BatchSpeechAnalyzerInputSequence(
+                slices: audioSlices,
+                sourceFormat: sourceFormat,
+                analyzerFormat: analyzerFormat
+            ) { sliceIndex in
+                await recordProgress()
+                await onSliceConsumed(sliceIndex)
+            }
+            await recordProgress()
+            return try await analyzer.analyzeSequence(inputSequence)
         }
     }
 
     private func recognize(
         transcriber: SpeechTranscriber,
         audioFormat: AVAudioFormat,
-        analyze: @escaping @Sendable (SpeechAnalyzer) async throws -> CMTime?
+        analyze: @escaping @Sendable (
+            SpeechAnalyzer,
+            @escaping @Sendable () async -> Void
+        ) async throws -> CMTime?
     ) async throws -> [BatchSpeechRecognition] {
+        let stallTimeout = await stallTimeoutProvider()
         let analyzer = SpeechAnalyzer(
             modules: [transcriber],
             options: SpeechAnalyzer.Options(priority: .userInitiated, modelRetention: .lingering)
         )
         try await analyzer.prepareToAnalyze(in: audioFormat)
+        let watchdog = BatchSpeechAnalysisWatchdog(
+            timeout: stallTimeout.duration,
+            clock: watchdogClock
+        ) {
+            await analyzer.cancelAndFinishNow()
+        }
+        await watchdog.start()
 
         let resultTask = Task<[BatchSpeechRecognition], Error> {
             var recognitions: [BatchSpeechRecognition] = []
-            for try await result in transcriber.results where result.isFinal {
+            for try await result in transcriber.results {
+                await watchdog.recordProgress()
+                guard result.isFinal else { continue }
                 recognitions.append(
                     BatchSpeechRecognition(
                         startSeconds: result.range.start.seconds,
@@ -123,16 +152,37 @@ struct AppleBatchSpeechRecognizer: BatchSpeechRecognizing {
         }
 
         do {
-            guard let lastSampleTime = try await analyze(analyzer) else {
+            let recordProgress: @Sendable () async -> Void = {
+                await watchdog.recordProgress()
+            }
+            guard let lastSampleTime = try await analyze(analyzer, recordProgress) else {
                 throw BatchSpeechTranscriberError.analysisDidNotAdvance
             }
+            try await throwIfAnalysisStalled(watchdog: watchdog, timeout: stallTimeout)
             try await analyzer.finalizeAndFinish(through: lastSampleTime)
-            return try await resultTask.value
+            let recognitions = try await resultTask.value
+            try await throwIfAnalysisStalled(watchdog: watchdog, timeout: stallTimeout)
+            await watchdog.stop()
+            return recognitions
         } catch {
-            await analyzer.cancelAndFinishNow()
+            let didTimeOut = await watchdog.didTimeOut
+            await watchdog.stop()
             resultTask.cancel()
+            if didTimeOut {
+                throw BatchSpeechTranscriberError.analysisStalled(minutes: stallTimeout.rawValue)
+            }
+            await analyzer.cancelAndFinishNow()
             _ = try? await resultTask.value
             throw error
+        }
+    }
+
+    private func throwIfAnalysisStalled(
+        watchdog: BatchSpeechAnalysisWatchdog,
+        timeout: BatchTranscriptionStallTimeout
+    ) async throws {
+        if await watchdog.didTimeOut {
+            throw BatchSpeechTranscriberError.analysisStalled(minutes: timeout.rawValue)
         }
     }
 

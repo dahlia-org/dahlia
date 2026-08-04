@@ -253,6 +253,17 @@ struct ControlPanelView: View {
                 Rectangle().fill(tabContentBackgroundColor)
             }
 
+            if let failureMessage = viewModel.batchTranscriptionFailureMessage {
+                BatchTranscriptionFailureBanner(
+                    message: failureMessage,
+                    canRetry: viewModel.canRetranscribeBatchAudio,
+                    isRetranscription: viewModel.isBatchRetranscriptionFailure,
+                    onRetry: viewModel.presentAvailableBatchRetranscription,
+                    onDiscard: viewModel.discardFailedBatchTranscription,
+                    onKeepCurrentTranscript: viewModel.cancelFailedBatchRetranscription
+                )
+            }
+
             // エラー表示
             if let error = viewModel.errorMessage {
                 detailErrorBanner(message: error, tint: .red)

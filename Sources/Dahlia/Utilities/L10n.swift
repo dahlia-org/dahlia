@@ -1353,6 +1353,18 @@ enum L10n {
     static var batchAudioFormatUnavailable: String { String(localized: "No compatible audio format is available.", bundle: bundle) }
     static var batchAudioRangeInvalid: String { String(localized: "The recorded audio range is invalid or damaged.", bundle: bundle) }
     static var batchAnalysisDidNotAdvance: String { String(localized: "Speech analysis could not read the recorded audio.", bundle: bundle) }
+
+    static func batchAnalysisStalled(minutes: Int) -> String {
+        let duration = localizedCount(minutes, singular: "%lld minute", plural: "%lld minutes")
+        return String(
+            format: String(
+                localized: "Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry.",
+                bundle: bundle
+            ),
+            duration
+        )
+    }
+
     static var assignee: String { String(localized: "Assignee", bundle: bundle) }
     static var assignToMe: String { String(localized: "Assign to me", bundle: bundle) }
     static var editAssignee: String { String(localized: "Edit assignee", bundle: bundle) }
@@ -1608,6 +1620,16 @@ enum L10n {
         localized: "Record audio first, then create a higher-accuracy transcript after recording stops.",
         bundle: bundle
     ) }
+    static var batchTranscriptionStallTimeout: String { String(localized: "No-progress Timeout", bundle: bundle) }
+    static var batchTranscriptionStallTimeoutDescription: String { String(
+        localized: "Stop batch transcription when Apple Speech makes no progress for this long.",
+        bundle: bundle
+    ) }
+
+    static func batchTranscriptionStallTimeoutMinutes(_ minutes: Int) -> String {
+        localizedCount(minutes, singular: "%lld minute", plural: "%lld minutes")
+    }
+
     static var retainBatchAudio: String { String(localized: "Keep Audio After Transcription", bundle: bundle) }
     static var retainBatchAudioDescription: String { String(
         localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",

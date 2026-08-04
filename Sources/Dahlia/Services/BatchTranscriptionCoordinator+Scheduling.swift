@@ -10,7 +10,8 @@ extension BatchTranscriptionCoordinator: BatchTranscriptionScheduling {
               session.batchCompletedAt == nil || session.isBatchRetranscriptionPending,
               session.batchDiscardedAt == nil else { return false }
         guard session.batchFailureKind != .recordingRecovery,
-              session.batchFailureKind != .recordingAudioPermanent else { return false }
+              session.batchFailureKind != .recordingAudioPermanent,
+              session.batchFailureKind != .transcriptionStalled else { return false }
         guard session.batchLastAttemptAt != nil || session.batchLastError?.nilIfBlank != nil else {
             return false
         }

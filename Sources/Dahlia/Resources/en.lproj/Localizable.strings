@@ -1267,3 +1267,8 @@
 "Relative dB" = "Relative dB";
 "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state." = "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state.";
 "Voice features are measured only during batch transcription." = "Voice features are measured only during batch transcription.";
+"Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry." = "Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry.";
+"No-progress Timeout" = "No-progress Timeout";
+"Stop batch transcription when Apple Speech makes no progress for this long." = "Stop batch transcription when Apple Speech makes no progress for this long.";
+"%lld minute" = "%lld minute";
+"%lld minutes" = "%lld minutes";

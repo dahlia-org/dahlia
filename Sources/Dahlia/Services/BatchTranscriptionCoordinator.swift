@@ -497,11 +497,15 @@ actor BatchTranscriptionCoordinator {
 
     private func recordFailure(sessionId: UUID, error: Error) async {
         let message = error.localizedDescription
-        let kind: BatchFailureKind = switch error as? RecordingAudioStoreError {
-        case .ambiguousFiles, .integrityMismatch, .invalidPath, .invalidState, .missingFile:
-            .recordingAudioPermanent
-        default:
-            .transcription
+        let kind: BatchFailureKind = if case .analysisStalled = error as? BatchSpeechTranscriberError {
+            .transcriptionStalled
+        } else {
+            switch error as? RecordingAudioStoreError {
+            case .ambiguousFiles, .integrityMismatch, .invalidPath, .invalidState, .missingFile:
+                .recordingAudioPermanent
+            default:
+                .transcription
+            }
         }
         await persistFailure(sessionId: sessionId, message: message, kind: kind)
         var context = [
@@ -677,6 +681,10 @@ extension BatchTranscriptionCoordinator {
                 WHERE sessions.transcriptionMode = ?
                   AND sessions.batchCompletedAt IS NOT NULL
                   AND sessions.batchDiscardedAt IS NULL
+                  AND (
+                      sessions.batchLastAttemptAt IS NULL
+                      OR sessions.batchLastAttemptAt <= sessions.batchCompletedAt
+                  )
                   AND sessions.audioRetentionPolicy = ?
                   AND EXISTS (
                       SELECT 1 FROM recording_audio_segments AS segments

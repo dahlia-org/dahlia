@@ -235,6 +235,12 @@ sequenceDiagram
 同じ `SpeechAnalyzer` へ順次供給する。ready CAF 自体は結合または変更せず、入力は一 buffer ずつ遅延読出しする。
 自動判定は CAF ごとの言語判定と認識の overlap を維持するため、CAF 単位の transcription のままとする。
 
+各 Apple Speech 解析には無進捗 watchdog を設ける。解析開始、論理 run 内の CAF slice 消費、認識結果の受信を進捗とし、
+解析開始時に固定した設定時間（1／2／3分、既定1分）進捗がなければ `SpeechAnalyzer` をキャンセルして失敗として保存する。
+これは総処理時間の上限ではない。停止失敗では ready CAF を保持し、startup recovery の自動再試行から除外する。
+ユーザーはミーティング詳細に復元される失敗理由と再文字起こし操作から、保持音声を明示的に再処理できる。
+再試行成功後は通常の `retainAudioAfterBatch` 方針に戻り、保持しない設定なら音声を purge する。
+
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
 反映する。再文字起こし中は以前の成功結果を利用でき、新しい一式が成功した時だけ置き換える。
 
@@ -282,6 +288,7 @@ sequenceDiagram
 | live recognition failure in batch | audio writer が健全なら正本音声を継続 | 字幕／chat を縮退し、停止後 batch を維持 |
 | realtime SQLite failure | pending event と順序を writer actor 内で保持 | exponential backoff。停止時にも flush failure を返す |
 | batch recognition failure | 旧成功 transcript と ready audio を保持 | failure state を保存し、再試行可能 |
+| Apple Speech の無進捗停止 | 旧成功 transcript と ready audio を保持 | 待機時間を含む専用 failure state を保存し、自動再試行せず手動再試行を待つ |
 | batch audio feature extraction failure | 認識済み transcript と通常の purge policy を維持 | sanitized error を報告し、該当 feature columns を `NULL` にする |
 | crash 中の partial／finalizing CAF | 既存 ready segment を変更しない | startup reconciler が DB state と file を照合 |
 | ready CAF の missing／mismatch | 自動再作成、上書き、削除をしない | `failed` と reconciliation issue を記録 |
