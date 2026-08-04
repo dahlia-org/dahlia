@@ -415,16 +415,10 @@ actor CodexAppServerService {
     }
 
     func prepareChatTurnForInterrupt(threadID: String, turnID: String?) async -> String? {
-        let key: TurnKey
-        if let turnID {
-            key = TurnKey(threadID: threadID, turnID: turnID)
-        } else if let activeTurnID = activeChatTurnIDs[threadID] {
-            key = TurnKey(threadID: threadID, turnID: activeTurnID)
-        } else {
-            return nil
-        }
+        guard let turnID = turnID ?? activeChatTurnIDs[threadID] else { return nil }
+        let key = TurnKey(threadID: threadID, turnID: turnID)
         await resolvePendingApprovals(for: key, decision: .cancel)
-        return key.turnID
+        return turnID
     }
 
     func forgetChatThread(_ threadID: String) {

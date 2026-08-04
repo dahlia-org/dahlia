@@ -18,7 +18,7 @@
 
         @Test
         func boundsAggregateBytesWithoutChangingRawChanges() {
-            let diff = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit)
+            let diff = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit * 100)
             let changes = [
                 CodexChatApprovalRequest.FileChange(path: "first.swift", diff: diff),
                 CodexChatApprovalRequest.FileChange(path: "second.swift", diff: diff),

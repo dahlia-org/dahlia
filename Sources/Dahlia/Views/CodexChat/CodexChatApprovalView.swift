@@ -76,43 +76,19 @@ struct CodexChatApprovalView: View {
             }
         case .fileChange:
             if !request.fileChanges.isEmpty || request.grantRoot != nil {
-                let preview = CodexChatApprovalDiffPreview.projection(for: request.fileChanges)
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(preview.items.indices, id: \.self) { index in
-                        let item = preview.items[index]
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.path)
-                                .font(.system(.caption, design: .monospaced).weight(.medium))
-                            if let diff = item.diff {
-                                Text(diff)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    if preview.isTruncated {
-                        Text("…")
-                            .foregroundStyle(.secondary)
-                    }
-                    if let grantRoot = request.grantRoot {
-                        Text(grantRoot)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .detailRegionStyle()
+                CodexChatApprovalFileChangeDetails(request: request)
             }
         }
     }
 }
 
 enum CodexChatApprovalDiffPreview {
-    struct Item: Equatable {
+    struct Item: Equatable, Sendable {
         let path: String
         let diff: String?
     }
 
-    struct Projection: Equatable {
+    struct Projection: Equatable, Sendable {
         let items: [Item]
         let isTruncated: Bool
     }
@@ -134,12 +110,10 @@ enum CodexChatApprovalDiffPreview {
             remainingBytes -= path.byteCount
 
             var diff: String?
-            if let rawDiff = change.diff.nilIfBlank {
-                let boundedDiff = bounded(rawDiff, byteLimit: remainingBytes)
-                diff = boundedDiff.text.nilIfBlank
-                remainingBytes -= boundedDiff.byteCount
-                isTruncated = isTruncated || boundedDiff.isTruncated
-            }
+            let boundedDiff = bounded(change.diff, byteLimit: remainingBytes)
+            diff = boundedDiff.text.nilIfBlank
+            remainingBytes -= boundedDiff.byteCount
+            isTruncated = isTruncated || boundedDiff.isTruncated
             items.append(Item(path: path.text, diff: diff))
             isTruncated = isTruncated || path.isTruncated
 
@@ -153,7 +127,8 @@ enum CodexChatApprovalDiffPreview {
     }
 
     private static func bounded(_ text: String, byteLimit: Int) -> (text: String, byteCount: Int, isTruncated: Bool) {
-        guard text.utf8.count > byteLimit else { return (text, text.utf8.count, false) }
+        let boundedBytes = text.utf8.prefix(byteLimit + 1)
+        guard boundedBytes.count > byteLimit else { return (text, boundedBytes.count, false) }
         guard byteLimit >= 3 else { return ("", 0, true) }
 
         let contentLimit = byteLimit - 3
@@ -168,6 +143,59 @@ enum CodexChatApprovalDiffPreview {
         }
         let truncated = String(scalars[..<end]) + "…"
         return (truncated, byteCount + 3, true)
+    }
+}
+
+private struct CodexChatApprovalFileChangeDetails: View {
+    let request: CodexChatApprovalRequest
+
+    @State private var preview: CodexChatApprovalDiffPreview.Projection?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let preview {
+                ForEach(preview.items.indices, id: \.self) { index in
+                    let item = preview.items[index]
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.path)
+                            .font(.system(.caption, design: .monospaced).weight(.medium))
+                        if let diff = item.diff {
+                            Text(diff)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if preview.isTruncated {
+                    Text("…")
+                        .foregroundStyle(.secondary)
+                }
+            } else if !request.fileChanges.isEmpty {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            if let grantRoot = request.grantRoot {
+                Text(grantRoot)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .detailRegionStyle()
+        .task(id: request.id) {
+            preview = nil
+            let fileChanges = request.fileChanges
+            guard !fileChanges.isEmpty else {
+                preview = .init(items: [], isTruncated: false)
+                return
+            }
+
+            let projection = await Task.detached(priority: .userInitiated) {
+                CodexChatApprovalDiffPreview.projection(for: fileChanges)
+            }.value
+            guard !Task.isCancelled else { return }
+            preview = projection
+        }
     }
 }
 
