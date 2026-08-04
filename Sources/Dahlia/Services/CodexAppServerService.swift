@@ -1075,7 +1075,7 @@ private extension CodexAppServerService {
             approval.pendingStartID == startID ? approvalID : nil
         }
         for approvalID in approvalIDs {
-            await respondToApproval(id: approvalID, decision: .decline)
+            await respondToApproval(id: approvalID, decision: .cancel)
         }
         let bufferedKeys = pendingChatTurnStarts[startID]?.bufferedKeys ?? []
         for key in bufferedKeys {

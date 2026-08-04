@@ -852,7 +852,7 @@ import Foundation
         }
 
         @Test
-        func cancelledTurnStartDeclinesEarlyApprovalAndDiscardsBufferedMessages() async throws {
+        func cancelledTurnStartCancelsEarlyApprovalAndDiscardsBufferedMessages() async throws {
             let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
             let start = Task {
@@ -885,7 +885,7 @@ import Foundation
                 $0.objectValue?["id"] == .string("approval-1")
                     && $0.objectValue?["method"] == nil
             }?.objectValue)
-            #expect(approval["result"]?.objectValue?["decision"] == .string("decline"))
+            #expect(approval["result"]?.objectValue?["decision"] == .string("cancel"))
 
             await transport.sendFromServer(.object([
                 "id": .string("approval-late"),

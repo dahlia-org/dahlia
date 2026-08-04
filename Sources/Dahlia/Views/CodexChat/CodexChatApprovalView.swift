@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexChatApprovalView: View {
     let request: CodexChatApprovalRequest
     let onDecide: (CodexChatApprovalDecision) -> Void
+    let onStop: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -26,7 +27,7 @@ struct CodexChatApprovalView: View {
                 .frame(maxHeight: 180)
             }
 
-            CodexChatApprovalActions(request: request, onDecide: onDecide)
+            CodexChatApprovalActions(request: request, onDecide: onDecide, onStop: onStop)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -113,11 +114,13 @@ enum CodexChatApprovalDiffPreview {
 private struct CodexChatApprovalActions: View {
     let request: CodexChatApprovalRequest
     let onDecide: (CodexChatApprovalDecision) -> Void
+    let onStop: () -> Void
 
     var body: some View {
         if request.canApprove {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
+                    stopButton
                     Spacer()
                     denyButton
                     sessionApprovalButton
@@ -125,7 +128,11 @@ private struct CodexChatApprovalActions: View {
                 }
 
                 VStack(alignment: .trailing, spacing: 8) {
-                    sessionApprovalButton
+                    HStack {
+                        stopButton
+                        Spacer()
+                        sessionApprovalButton
+                    }
                     HStack(spacing: 8) {
                         denyButton
                         allowOnceButton
@@ -135,10 +142,20 @@ private struct CodexChatApprovalActions: View {
             }
         } else {
             HStack {
+                stopButton
                 Spacer()
                 denyButton
             }
         }
+    }
+
+    private var stopButton: some View {
+        CodexChatActionButton(
+            label: L10n.stopGenerating,
+            systemImage: "stop.fill",
+            isEnabled: true,
+            action: onStop
+        )
     }
 
     private var denyButton: some View {

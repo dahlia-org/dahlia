@@ -82,9 +82,11 @@ struct CodexChatView: View {
             }
 
             if let pendingApproval = session.pendingApproval {
-                CodexChatApprovalView(request: pendingApproval) { decision in
-                    session.respondToPendingApproval(decision)
-                }
+                CodexChatApprovalView(
+                    request: pendingApproval,
+                    onDecide: session.respondToPendingApproval,
+                    onStop: session.stop
+                )
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
             } else {
