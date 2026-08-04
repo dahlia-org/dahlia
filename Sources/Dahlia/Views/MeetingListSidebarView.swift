@@ -725,6 +725,8 @@ private struct MeetingSidebarRow: View {
     let onCommitRename: () -> Void
     let onCancelRename: () -> Void
 
+    @State private var isHovered = false
+
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .none
@@ -744,8 +746,10 @@ private struct MeetingSidebarRow: View {
                         .onSubmit(onCommitRename)
                         .onExitCommand(perform: onCancelRename)
                 } else {
-                    highlightedText(displayTitle)
-                        .lineLimit(1)
+                    MeetingTitleMarquee(
+                        isHovered: isHovered,
+                        title: highlightedText(displayTitle)
+                    )
                 }
 
                 HStack(spacing: 6) {
@@ -770,8 +774,19 @@ private struct MeetingSidebarRow: View {
                     searchMatchRow(matchContext)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 3)
+        .padding(.horizontal, 5)
+        .background {
+            if isHovered {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(isSelected ? 0.08 : 0.06))
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .accessibilityLabel(accessibilityLabel)
     }
 
