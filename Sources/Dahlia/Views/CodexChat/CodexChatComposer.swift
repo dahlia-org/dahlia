@@ -12,6 +12,7 @@ struct CodexChatComposer: View {
     @State private var isImageImporterPresented = false
     @State private var isImageDropTargeted = false
     @State private var showsAddPanel = false
+    @FocusState private var isComposerFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -36,6 +37,7 @@ struct CodexChatComposer: View {
 
             CodexChatComposerInputRow(
                 session: session,
+                isComposerFocused: $isComposerFocused,
                 showsAddPanel: showsAddPanel,
                 showsMeetingPicker: showsMeetingPicker,
                 suggestions: suggestions,
@@ -55,6 +57,7 @@ struct CodexChatComposer: View {
         .background {
             CodexChatComposerBackground(isDropTargeted: isImageDropTargeted)
         }
+        .codexChatDismissOnOutsideClick(perform: dismissComposerFocus)
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         .onChange(of: session.draft, handleDraftChange)
         .onChange(of: session.availableMeetingReferences) {
@@ -74,6 +77,17 @@ struct CodexChatComposer: View {
         }
         .onDropSessionUpdated(updateDropTarget)
         .pasteDestination(for: CodexChatTransferImage.self, action: addTransferImages)
+    }
+
+    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザーの矩形外に描画される。
+    /// 表示中は候補のクリックが外側クリックに見えるため、フォーカスを保持して参照挿入後の入力を続けられるようにする。
+    static func dismissesComposerFocus(showsAddPanel: Bool) -> Bool {
+        !showsAddPanel
+    }
+
+    private func dismissComposerFocus() {
+        guard Self.dismissesComposerFocus(showsAddPanel: showsAddPanel) else { return }
+        isComposerFocused = false
     }
 
     private func showImageImporter() {
