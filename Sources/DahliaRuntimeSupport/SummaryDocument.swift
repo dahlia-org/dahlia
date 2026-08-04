@@ -55,11 +55,18 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         try JSONDecoder().decode(SummaryDocument.self, from: Data(databaseJSON.utf8))
     }
 
-    public var referencedScreenshotIds: Set<UUID> {
-        Set(sections.flatMap(\.blocks).compactMap { block in
-            guard case let .image(screenshotId, _) = block.content else { return nil }
+    /// 本文の出現順。重複した参照は最初の出現位置だけ残す。
+    public var orderedScreenshotIds: [UUID] {
+        var seen = Set<UUID>()
+        return sections.flatMap(\.blocks).compactMap { block in
+            guard case let .image(screenshotId, _) = block.content,
+                  seen.insert(screenshotId).inserted else { return nil }
             return screenshotId
-        })
+        }
+    }
+
+    public var referencedScreenshotIds: Set<UUID> {
+        Set(orderedScreenshotIds)
     }
 
     public func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {

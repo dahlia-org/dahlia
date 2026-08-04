@@ -129,6 +129,37 @@ import Foundation
         }
 
         @Test
+        func ordersScreenshotIdsByFirstAppearanceAcrossSections() {
+            let firstImageId = UUID.v7()
+            let secondImageId = UUID.v7()
+            let thirdImageId = UUID.v7()
+            let document = SummaryDocument(
+                title: "Summary",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Design",
+                        blocks: [
+                            .image(screenshotId: secondImageId, caption: "Second"),
+                            .paragraph("Notes"),
+                            .image(screenshotId: firstImageId, caption: "First"),
+                        ]
+                    ),
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Follow-up",
+                        blocks: [
+                            .image(screenshotId: secondImageId, caption: "Duplicate"),
+                            .image(screenshotId: thirdImageId, caption: "Third"),
+                        ]
+                    ),
+                ]
+            )
+
+            #expect(document.orderedScreenshotIds == [secondImageId, firstImageId, thirdImageId])
+        }
+
+        @Test
         func removingScreenshotReferencesPreservesCaptionsAsParagraphs() {
             let removedImageId = UUID.v7()
             let retainedImageId = UUID.v7()
