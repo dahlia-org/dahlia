@@ -928,8 +928,9 @@
 "Some older live transcript was skipped because the chat backlog was too large." = "Some older live transcript was skipped because the chat backlog was too large.";
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";
-"Allow" = "Allow";
+"Allow once" = "Allow once";
 "Always allow in this chat" = "Always allow in this chat";
+"Allow similar commands" = "Allow similar commands";
 "Deny" = "Deny";
 "Open AI Connection Settings" = "Open AI Connection Settings";
 "Loading models…" = "Loading models…";

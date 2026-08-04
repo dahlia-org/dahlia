@@ -60,12 +60,6 @@ struct CodexChatView: View {
                 )
             }
 
-            if let pendingApproval = session.pendingApproval {
-                CodexChatApprovalView(request: pendingApproval) { decision in
-                    session.respondToPendingApproval(decision)
-                }
-            }
-
             if let errorMessage = session.errorMessage {
                 CodexChatErrorView(
                     message: errorMessage,
@@ -87,16 +81,24 @@ struct CodexChatView: View {
                     .padding(.vertical, 6)
             }
 
-            CodexChatLiveModeStatusView(
-                isEnabled: $session.liveModeEnabled,
-                isAvailable: session.isBoundToCurrentVault
-            )
-            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-            .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
-
-            CodexChatComposer(session: session)
+            if let pendingApproval = session.pendingApproval {
+                CodexChatApprovalView(request: pendingApproval) { decision in
+                    session.respondToPendingApproval(decision)
+                }
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
+            } else {
+                CodexChatLiveModeStatusView(
+                    isEnabled: $session.liveModeEnabled,
+                    isAvailable: session.isBoundToCurrentVault
+                )
+                .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+
+                CodexChatComposer(session: session)
+                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
+            }
         }
         .background(.background)
         .task(id: session.id) { await prepare() }

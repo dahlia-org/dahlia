@@ -2573,8 +2573,9 @@ enum L10n {
         String(localized: "The assistant wants to change files.", bundle: bundle)
     }
 
-    static var chatApprovalAllow: String { String(localized: "Allow", bundle: bundle) }
+    static var chatApprovalAllowOnce: String { String(localized: "Allow once", bundle: bundle) }
     static var chatApprovalAlwaysAllow: String { String(localized: "Always allow in this chat", bundle: bundle) }
+    static var chatApprovalAllowSimilarCommands: String { String(localized: "Allow similar commands", bundle: bundle) }
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
 
     static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }
