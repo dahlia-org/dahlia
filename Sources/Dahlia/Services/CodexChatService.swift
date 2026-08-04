@@ -425,6 +425,7 @@ private extension CodexChatService {
             kind: kind,
             command: params["command"]?.stringValue?.nilIfBlank,
             cwd: params["cwd"]?.stringValue?.nilIfBlank,
+            grantRoot: params["grantRoot"]?.stringValue?.nilIfBlank,
             reason: params["reason"]?.stringValue?.nilIfBlank
         ))
     }

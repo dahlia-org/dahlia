@@ -284,6 +284,16 @@ import Foundation
                 ]),
             ]))
             await transport.sendFromServer(.object([
+                "id": .string("approval-2"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "grantRoot": .string("/tmp/outside-workspace"),
+                    "itemId": .string("item-2"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
                 "method": .string("turn/completed"),
                 "params": .object([
                     "threadId": .string("thread-1"),
@@ -302,6 +312,11 @@ import Foundation
                     command: "ls -la",
                     cwd: "/tmp/dahlia-chat-approval",
                     reason: "Needs the workspace listing"
+                )),
+                .approvalRequested(CodexChatApprovalRequest(
+                    id: "s:approval-2",
+                    kind: .fileChange,
+                    grantRoot: "/tmp/outside-workspace"
                 )),
                 .completed(itemID: nil, text: nil),
             ])

@@ -10,6 +10,7 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     let kind: Kind
     let command: String?
     let cwd: String?
+    let grantRoot: String?
     let reason: String?
 
     init(
@@ -17,12 +18,14 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         kind: Kind,
         command: String? = nil,
         cwd: String? = nil,
+        grantRoot: String? = nil,
         reason: String? = nil
     ) {
         self.id = id
         self.kind = kind
         self.command = command
         self.cwd = cwd
+        self.grantRoot = grantRoot
         self.reason = reason
     }
 }

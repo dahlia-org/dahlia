@@ -47,7 +47,7 @@ struct CodexChatApprovalView: View {
         case .commandExecution:
             [request.command, request.cwd].compactMap(\.self).joined(separator: "\n").nilIfBlank
         case .fileChange:
-            request.cwd
+            request.grantRoot
         }
     }
 }

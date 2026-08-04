@@ -5,6 +5,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     enum Mode: Equatable {
         case models
         case blockInitialize
+        case blockTurnStart
         case blockFirstModelList
         case blockRequests
         case outOfOrder
@@ -235,6 +236,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     private func enqueueTurnStartResponse(requestID: Int, threadID: String) {
         turnStartCount += 1
+        guard mode != .blockTurnStart else { return }
         let turnID = "turn-\(turnStartCount)"
         enqueue(response(id: requestID, result: .object([
             "turn": .object([

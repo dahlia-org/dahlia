@@ -48,6 +48,7 @@ actor CodexAppServerService {
     private struct PendingApproval {
         let requestID: JSONValue
         let key: TurnKey
+        let pendingStartID: UUID?
     }
 
     private struct GenerationContext {
@@ -90,7 +91,8 @@ actor CodexAppServerService {
     private var generationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var activeCodexOperations: Set<UUID> = []
     private var codexOperationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
-    private var pendingChatTurnStarts: Set<UUID> = []
+    private var pendingChatTurnStarts: [UUID: String] = [:]
+    private var bufferedChatTurnKeysByStart: [UUID: Set<TurnKey>] = [:]
     private var chatTurnDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var configurationReloadWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var cachedModels: [CodexModel]?
@@ -415,23 +417,29 @@ actor CodexAppServerService {
         // turn/start response is still recognized as a chat thread.
         chatThreadIDs.insert(threadID)
         let startID = UUID()
-        pendingChatTurnStarts.insert(startID)
+        pendingChatTurnStarts[startID] = threadID
         defer {
-            pendingChatTurnStarts.remove(startID)
+            pendingChatTurnStarts.removeValue(forKey: startID)
             resumeChatTurnDrainWaitersIfIdle()
         }
-        try await start()
-        let generation = connectionGeneration
-        let result = try await requestOnCurrentConnection(
-            method: "turn/start",
-            params: params,
-            timeout: transportTimeout
-        )
-        guard generation == connectionGeneration else { throw CancellationError() }
-        guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
-            throw CodexAppServerError.invalidProtocolResponse
+        do {
+            try await start()
+            let generation = connectionGeneration
+            let result = try await requestOnCurrentConnection(
+                method: "turn/start",
+                params: params,
+                timeout: transportTimeout
+            )
+            guard generation == connectionGeneration else { throw CancellationError() }
+            guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
+                throw CodexAppServerError.invalidProtocolResponse
+            }
+            bufferedChatTurnKeysByStart.removeValue(forKey: startID)
+            return (turnID, notifications(threadID: threadID, turnID: turnID))
+        } catch {
+            await cleanUpFailedChatTurnStart(startID)
+            throw error
         }
-        return (turnID, notifications(threadID: threadID, turnID: turnID))
     }
 
     // swiftformat:disable:next modifierOrder
@@ -1030,7 +1038,8 @@ private extension CodexAppServerService {
         else { return false }
         pendingApprovals[approvalID] = PendingApproval(
             requestID: id,
-            key: TurnKey(threadID: threadID, turnID: turnID)
+            key: TurnKey(threadID: threadID, turnID: turnID),
+            pendingStartID: pendingStartID(for: threadID)
         )
         await routeTurnMessage(message)
         return true
@@ -1042,6 +1051,23 @@ private extension CodexAppServerService {
         for approvalID in expired.keys {
             await respondToApproval(id: approvalID, decision: CodexChatApprovalDecision.decline.rawValue)
         }
+    }
+
+    private func cleanUpFailedChatTurnStart(_ startID: UUID) async {
+        let approvalIDs = pendingApprovals.compactMap { approvalID, approval in
+            approval.pendingStartID == startID ? approvalID : nil
+        }
+        for approvalID in approvalIDs {
+            await respondToApproval(id: approvalID, decision: CodexChatApprovalDecision.decline.rawValue)
+        }
+        let bufferedKeys = bufferedChatTurnKeysByStart.removeValue(forKey: startID) ?? []
+        for key in bufferedKeys {
+            bufferedTurnMessages.removeValue(forKey: key)
+        }
+    }
+
+    private func pendingStartID(for threadID: String) -> UUID? {
+        pendingChatTurnStarts.first { $0.value == threadID }?.key
     }
 
     private func routeTurnMessage(_ message: JSONValue) async {
@@ -1064,6 +1090,9 @@ private extension CodexAppServerService {
             processTurnMessage(message, for: key)
         } else if !hasSubscribers {
             bufferTurnMessage(message, for: key)
+            if let startID = pendingStartID(for: threadID) {
+                bufferedChatTurnKeysByStart[startID, default: []].insert(key)
+            }
         }
         if method == "turn/completed" {
             await finishTurnSubscribers(for: key)
@@ -1604,6 +1633,17 @@ private extension CodexAppServerService {
             if !chatTurnDrainWaiters.isEmpty { return }
             await withCheckedContinuation { continuation in
                 chatTurnDrainTestWaiters.append(continuation)
+            }
+        }
+
+        func waitUntilPendingApprovalForTesting(_ approvalID: String) async throws {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(10))
+            while pendingApprovals[approvalID] == nil {
+                guard clock.now < deadline else {
+                    throw CodexAppServerError.requestTimedOut("pending approval test wait")
+                }
+                try await Task.sleep(for: .milliseconds(10))
             }
         }
 

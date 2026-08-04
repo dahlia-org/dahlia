@@ -855,6 +855,64 @@ import Foundation
         }
 
         @Test
+        func cancelledTurnStartDeclinesEarlyApprovalAndDiscardsBufferedMessages() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "grantRoot": .string("/tmp/outside-workspace"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            try await service.waitUntilPendingApprovalForTesting("s:approval-1")
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.waitUntilResponded(to: "approval-1")
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("decline"))
+
+            let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
+            let collected = Task {
+                var methods: [String] = []
+                for try await message in notifications {
+                    if let method = message.objectValue?["method"]?.stringValue {
+                        methods.append(method)
+                    }
+                }
+                return methods
+            }
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+            #expect(try await collected.value == ["turn/completed"])
+            await service.shutdown()
+        }
+
+        @Test
         func turnNotificationSubscriptionReceivesMessagesAndFinishes() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
