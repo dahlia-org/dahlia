@@ -17,11 +17,13 @@ struct MainNavigationSidebar: View {
                     .tag(MainNavigationRoute.schedule)
                 Label(L10n.meetings, systemImage: "waveform")
                     .tag(MainNavigationRoute.meetings)
-            }
 
-            Section(L10n.projects) {
-                ForEach(visibleProjects) { project in
-                    projectRow(project)
+                if showsOrganizations {
+                    Label(L10n.organizations, systemImage: "building.2")
+                        .tag(MainNavigationRoute.organizations)
+                        .contextMenu {
+                            Button(L10n.openOrganizationWorkspace, systemImage: "macwindow", action: openOrganizationWindow)
+                        }
                 }
 
                 Button(L10n.manageProjects, systemImage: "slider.horizontal.3", action: openProjectManager)
@@ -29,13 +31,9 @@ struct MainNavigationSidebar: View {
                     .foregroundStyle(.secondary)
             }
 
-            if showsOrganizations {
-                Section {
-                    Label(L10n.organizations, systemImage: "building.2")
-                        .tag(MainNavigationRoute.organizations)
-                        .contextMenu {
-                            Button(L10n.openOrganizationWorkspace, systemImage: "macwindow", action: openOrganizationWindow)
-                        }
+            Section(L10n.projects) {
+                ForEach(visibleProjects) { project in
+                    projectRow(project)
                 }
             }
         }
