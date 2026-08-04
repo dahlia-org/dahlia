@@ -594,7 +594,15 @@ public final class DahliaMCPServer {
         }
     }
 
-    private func queryMeetings(_ arguments: [String: Any]) throws -> MeetingQueryPage {
+    private func queryMeetings(_ rawArguments: [String: Any]) throws -> MeetingQueryPage {
+        let optionalStringKeys: Set = [
+            "query", "project", "project_id", "organization_id", "topic_id", "ical_uid",
+            "created_from", "created_before", "cursor",
+        ]
+        let arguments = rawArguments.filter { key, value in
+            guard optionalStringKeys.contains(key), let string = value as? String else { return true }
+            return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         let limit = try integer(arguments, key: "limit") ?? 25
         return try store.queryMeetings(MeetingQuery(
             query: string(arguments, key: "query"),
@@ -2444,7 +2452,8 @@ private extension DahliaMCPServer {
             "description": "Find recent meetings in the configured vault by meeting name, AI description, "
                 + "calendar title, project, or tag. Use ical_uid to find past meetings for the same calendar event, "
                 + "or exact project_id to find related meetings across different calendar events. Summary and transcript "
-                + "bodies are not searched.",
+                + "bodies are not searched. All parameters are optional filters. Omit unused properties entirely; do not "
+                + "send empty strings.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
