@@ -2595,6 +2595,8 @@ import ImageIO
             let tools = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             let queryDefinition = try #require(definitions.first { $0["name"] as? String == "query_meetings" })
+            let queryDescription = try #require(queryDefinition["description"] as? String)
+            #expect(queryDescription.contains("Omit unused properties entirely; do not send empty strings"))
             let inputSchema = try #require(queryDefinition["inputSchema"] as? [String: Any])
             let inputProperties = try #require(inputSchema["properties"] as? [String: Any])
             #expect(inputProperties["ical_uid"] != nil)
@@ -2646,10 +2648,23 @@ import ImageIO
             """#))
             #expect((invalidProjectID["error"] as? [String: Any])?["code"] as? Int == -32602)
 
-            let blankIcalUID = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"ical_uid":"   "}}}
+            let blankFilters = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{
+                "created_before":"","created_from":" ","cursor":"","ical_uid":"   ",
+                "include_descendants":true,"limit":50,"organization_id":"","project":"","project_id":"",
+                "query":"","topic_id":""
+            }}}
             """#))
-            #expect((blankIcalUID["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect(blankFilters["error"] == nil)
+            let blankFilterContent = (blankFilters["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            #expect((blankFilterContent?["meetings"] as? [[String: Any]])?.count == 3)
+
+            for invalidTypedArguments in [#"{"limit":""}"#, #"{"include_descendants":" "}"#] {
+                let invalidTypedValue = try Self.json(server.handleLine(#"""
+                {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"query_meetings","arguments":\#(invalidTypedArguments)}}
+                """#))
+                #expect((invalidTypedValue["error"] as? [String: Any])?["code"] as? Int == -32602)
+            }
         }
 
         private static func json(_ line: String?) throws -> [String: Any] {
