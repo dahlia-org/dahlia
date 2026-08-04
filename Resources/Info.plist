@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.dahlia.app</string>
     <key>CFBundleVersion</key>
-    <string>41</string>
+    <string>42</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.8.3</string>
+    <string>0.8.4</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
@@ -39,7 +39,7 @@
     <key>SUEnableAutomaticChecks</key>
     <true/>
     <key>SUScheduledCheckInterval</key>
-    <integer>86400</integer>
+    <integer>3600</integer>
     <key>SUAutomaticallyUpdate</key>
     <false/>
     <key>SUPublicEDKey</key>
