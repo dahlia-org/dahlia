@@ -139,7 +139,7 @@ import Foundation
         }
 
         @Test
-        func staleSendCannotReplaceNewPreparationState() async {
+        func replacementWaitsForCancelledSendCleanup() async {
             let service = TestCodexChatService(mode: .delayFirstSendIgnoringCancellation)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
@@ -160,9 +160,13 @@ import Foundation
             contextProvider.block()
             session.draft = "New question"
             session.sendDraft()
-            await waitUntil { contextProvider.requestCount == 2 }
+            #expect(session.pendingManualInputs.count == 1)
+            #expect(contextProvider.requestCount == 1)
+            #expect(await service.sentTextBlocks == [["Old question"]])
+
             await service.resumeDelayedSend()
             await waitUntilAsync { await service.returnedSendCount == 1 }
+            await waitUntil { contextProvider.requestCount == 2 }
 
             #expect(session.isPreparingTurn)
             #expect(!session.showsStandaloneThinking)

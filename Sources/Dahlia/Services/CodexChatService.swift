@@ -205,10 +205,14 @@ actor CodexChatService: CodexChatServicing {
                         if let update = try Self.parseFileChangeUpdate(notification) {
                             fileChangesByItemID[update.itemID] = update.changes
                         }
-                        if let event = try Self.parseTurnEvent(
+                        let event = try Self.parseTurnEvent(
                             notification,
                             fileChangesByItemID: fileChangesByItemID
-                        ) {
+                        )
+                        if let itemID = Self.fileChangeCacheReleaseItemID(notification) {
+                            fileChangesByItemID.removeValue(forKey: itemID)
+                        }
+                        if let event {
                             continuation.yield(event)
                         }
                     }
@@ -271,6 +275,24 @@ actor CodexChatService: CodexChatServicing {
             method: "thread/unsubscribe",
             params: .object(["threadId": .string(threadID)])
         )
+    }
+
+    nonisolated static func fileChangeCacheReleaseItemID(_ value: JSONValue) -> String? {
+        guard let object = value.objectValue,
+              let method = object["method"]?.stringValue,
+              let params = object["params"]?.objectValue
+        else { return nil }
+
+        switch method {
+        case "item/fileChange/requestApproval":
+            return params["itemId"]?.stringValue
+        case "item/completed":
+            guard let item = params["item"]?.objectValue,
+                  item["type"]?.stringValue == "fileChange" else { return nil }
+            return item["id"]?.stringValue
+        default:
+            return nil
+        }
     }
 
     private func resolvedMCPExecutableURL() throws -> URL {

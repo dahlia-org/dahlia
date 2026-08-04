@@ -367,6 +367,36 @@ import Foundation
             ).canApprove)
         }
 
+        @Test
+        func fileChangeCacheEntriesAreReleasedAfterApprovalOrCompletion() {
+            let approval = JSONValue.object([
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object(["itemId": .string("approval-item")]),
+            ])
+            let completion = JSONValue.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("completed-item"),
+                        "type": .string("fileChange"),
+                    ]),
+                ]),
+            ])
+            let unrelatedCompletion = JSONValue.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("message-item"),
+                        "type": .string("agentMessage"),
+                    ]),
+                ]),
+            ])
+
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(approval) == "approval-item")
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(completion) == "completed-item")
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(unrelatedCompletion) == nil)
+        }
+
         private func events(
             for outcome: TestCodexChatAppServerTransport.TurnOutcome
         ) async throws -> [CodexChatTurnEvent] {

@@ -57,6 +57,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored private var isStopRequested = false
+    @ObservationIgnored private var isTurnCleanupPending = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
     @ObservationIgnored private var pendingLiveTranscript: String?
@@ -179,7 +180,7 @@ final class CodexChatSessionModel: Identifiable {
             images: imagesSnapshot,
             composerSnapshot: composerSnapshot
         )
-        if isGenerating {
+        if isGenerating || isTurnCleanupPending {
             let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
                 || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
                 || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
@@ -221,15 +222,20 @@ final class CodexChatSessionModel: Identifiable {
         let activeTask = turnTask
         let threadID = backendThreadID
         let turnID = activeTurnID
+        isTurnCleanupPending = true
         pendingApprovals.removeAll()
         Task {
             for approval in approvals {
                 await service.respondToApproval(id: approval.id, decision: .cancel)
             }
             activeTask?.cancel()
+            await activeTask?.value
             if let threadID, let turnID {
                 await service.interrupt(threadID: threadID, turnID: turnID)
             }
+            isTurnCleanupPending = false
+            unsubscribeIfPossible()
+            processPendingInputIfPossible()
         }
         finalizeActiveResponseForCancellation()
         finishGeneration(submissionID: activeSubmissionID)
@@ -690,6 +696,7 @@ extension CodexChatSessionModel {
     private func unsubscribeIfPossible() {
         guard isReleased,
               !isGenerating,
+              !isTurnCleanupPending,
               !isLoading,
               !didUnsubscribe,
               let backendThreadID
@@ -744,6 +751,7 @@ extension CodexChatSessionModel {
     func processPendingInputIfPossible() {
         guard !isReleased,
               isBoundToCurrentVault,
+              !isTurnCleanupPending,
               steerTask == nil,
               errorMessage == nil else { return }
         if isGenerating {
