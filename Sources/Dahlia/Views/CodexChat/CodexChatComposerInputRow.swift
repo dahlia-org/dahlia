@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
+    @FocusState.Binding var isComposerFocused: Bool
     let showsAddPanel: Bool
     let showsMeetingPicker: Bool
     let suggestions: [CodexChatMeetingReference]
@@ -49,6 +50,7 @@ struct CodexChatComposerInputRow: View {
 
             CodexChatComposerTextEditor(
                 text: $session.draft,
+                isFocused: $isComposerFocused,
                 onSubmit: onSubmit,
                 onMoveCommand: onMoveCommand,
                 onExitCommand: onExitCommand,
@@ -86,7 +88,7 @@ struct CodexChatComposerInputRow: View {
 
 struct CodexChatComposerTextEditor: View {
     @Binding var text: String
-    @FocusState private var isFocused: Bool
+    @FocusState.Binding var isFocused: Bool
     let onSubmit: () -> Void
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void

@@ -136,9 +136,12 @@ import SwiftUI
         @Binding var text: String
         let onSubmit: () -> Void
 
+        @FocusState private var isFocused: Bool
+
         var body: some View {
             CodexChatComposerTextEditor(
                 text: $text,
+                isFocused: $isFocused,
                 onSubmit: onSubmit,
                 onMoveCommand: { _ in },
                 onExitCommand: {},
