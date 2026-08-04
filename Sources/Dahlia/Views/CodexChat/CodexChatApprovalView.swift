@@ -76,18 +76,23 @@ struct CodexChatApprovalView: View {
             }
         case .fileChange:
             if !request.fileChanges.isEmpty || request.grantRoot != nil {
+                let preview = CodexChatApprovalDiffPreview.projection(for: request.fileChanges)
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(request.fileChanges.indices, id: \.self) { index in
-                        let change = request.fileChanges[index]
+                    ForEach(preview.items.indices, id: \.self) { index in
+                        let item = preview.items[index]
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(change.path)
+                            Text(item.path)
                                 .font(.system(.caption, design: .monospaced).weight(.medium))
-                            if let diff = change.diff.nilIfBlank {
-                                Text(CodexChatApprovalDiffPreview.text(for: diff))
+                            if let diff = item.diff {
+                                Text(diff)
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
                         }
+                    }
+                    if preview.isTruncated {
+                        Text("…")
+                            .foregroundStyle(.secondary)
                     }
                     if let grantRoot = request.grantRoot {
                         Text(grantRoot)
@@ -102,12 +107,67 @@ struct CodexChatApprovalView: View {
 }
 
 enum CodexChatApprovalDiffPreview {
-    static let byteLimit = 20000
+    struct Item: Equatable {
+        let path: String
+        let diff: String?
+    }
 
-    static func text(for diff: String) -> String {
-        let prefix = diff.utf8.prefix(byteLimit + 1)
-        guard prefix.count > byteLimit else { return diff }
-        return String(decoding: prefix.dropLast(), as: UTF8.self) + "\n…"
+    struct Projection: Equatable {
+        let items: [Item]
+        let isTruncated: Bool
+    }
+
+    static let byteLimit = 20000
+    static let fileLimit = 50
+
+    static func projection(for changes: [CodexChatApprovalRequest.FileChange]) -> Projection {
+        var items: [Item] = []
+        var remainingBytes = byteLimit
+        var isTruncated = changes.count > fileLimit
+
+        for change in changes.prefix(fileLimit) {
+            let path = bounded(change.path, byteLimit: remainingBytes)
+            guard !path.text.isEmpty else {
+                isTruncated = true
+                break
+            }
+            remainingBytes -= path.byteCount
+
+            var diff: String?
+            if let rawDiff = change.diff.nilIfBlank {
+                let boundedDiff = bounded(rawDiff, byteLimit: remainingBytes)
+                diff = boundedDiff.text.nilIfBlank
+                remainingBytes -= boundedDiff.byteCount
+                isTruncated = isTruncated || boundedDiff.isTruncated
+            }
+            items.append(Item(path: path.text, diff: diff))
+            isTruncated = isTruncated || path.isTruncated
+
+            if remainingBytes == 0, items.count < changes.count {
+                isTruncated = true
+                break
+            }
+        }
+
+        return Projection(items: items, isTruncated: isTruncated)
+    }
+
+    private static func bounded(_ text: String, byteLimit: Int) -> (text: String, byteCount: Int, isTruncated: Bool) {
+        guard text.utf8.count > byteLimit else { return (text, text.utf8.count, false) }
+        guard byteLimit >= 3 else { return ("", 0, true) }
+
+        let contentLimit = byteLimit - 3
+        let scalars = text.unicodeScalars
+        var end = scalars.startIndex
+        var byteCount = 0
+        while end < scalars.endIndex {
+            let scalar = scalars[end]
+            guard byteCount + scalar.utf8.count <= contentLimit else { break }
+            byteCount += scalar.utf8.count
+            end = scalars.index(after: end)
+        }
+        let truncated = String(scalars[..<end]) + "…"
+        return (truncated, byteCount + 3, true)
     }
 }
 

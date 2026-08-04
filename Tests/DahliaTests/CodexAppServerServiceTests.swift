@@ -802,6 +802,44 @@ import Foundation
         }
 
         @Test
+        func cancellingTurnSubscriptionCancelsUnconsumedApproval() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-1")
+            })
+
+            collected.cancel()
+            _ = try? await collected.value
+            await transport.waitUntilResponded(to: "approval-1")
+
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("cancel"))
+            await service.shutdown()
+        }
+
+        @Test
         func chatApprovalDecisionUsesTheOriginalRequestIdentifier() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
@@ -811,7 +849,7 @@ import Foundation
                 params: .object(["threadId": .string("thread-1")])
             )
             // Responds from inside the subscription so the stream is never abandoned early,
-            // which would decline the request before the decision is sent.
+            // which would cancel the request before the decision is sent.
             let responded = Task {
                 for try await message in turn.notifications {
                     guard message.objectValue?["method"]?.stringValue == "item/fileChange/requestApproval",

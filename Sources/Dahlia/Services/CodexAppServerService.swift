@@ -1063,10 +1063,13 @@ private extension CodexAppServerService {
         return true
     }
 
-    private func declinePendingApprovals(for key: TurnKey) async {
+    private func resolvePendingApprovals(
+        for key: TurnKey,
+        decision: CodexChatApprovalDecision
+    ) async {
         let expired = pendingApprovals.filter { $0.value.key == key }
         for approvalID in expired.keys {
-            await respondToApproval(id: approvalID, decision: .decline)
+            await respondToApproval(id: approvalID, decision: decision)
         }
     }
 
@@ -1346,13 +1349,13 @@ private extension CodexAppServerService {
         turnSubscribers[key]?.removeValue(forKey: subscriberID)
         if turnSubscribers[key]?.isEmpty == true {
             turnSubscribers.removeValue(forKey: key)
-            await declinePendingApprovals(for: key)
+            await resolvePendingApprovals(for: key, decision: .cancel)
         }
         resumeChatTurnDrainWaitersIfIdle()
     }
 
     private func finishTurnSubscribers(for key: TurnKey) async {
-        await declinePendingApprovals(for: key)
+        await resolvePendingApprovals(for: key, decision: .decline)
         guard let subscribers = turnSubscribers.removeValue(forKey: key)?.values else { return }
         subscribers.forEach { $0.finish() }
         resumeChatTurnDrainWaitersIfIdle()

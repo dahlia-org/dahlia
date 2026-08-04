@@ -5,19 +5,46 @@
 
     struct CodexChatApprovalDiffPreviewTests {
         @Test
-        func preservesDiffsAtTheByteLimit() {
-            let diff = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit)
+        func preservesPreviewAtTheAggregateByteLimit() {
+            let path = "file.swift"
+            let diff = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit - path.utf8.count)
+            let changes = [CodexChatApprovalRequest.FileChange(path: path, diff: diff)]
 
-            #expect(CodexChatApprovalDiffPreview.text(for: diff) == diff)
+            let preview = CodexChatApprovalDiffPreview.projection(for: changes)
+
+            #expect(preview.items == [.init(path: path, diff: diff)])
+            #expect(!preview.isTruncated)
         }
 
         @Test
-        func truncatesRenderedPreviewWithoutChangingTheRawDiff() {
-            let visible = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit)
-            let diff = visible + "bc"
+        func boundsAggregateBytesWithoutChangingRawChanges() {
+            let diff = String(repeating: "a", count: CodexChatApprovalDiffPreview.byteLimit)
+            let changes = [
+                CodexChatApprovalRequest.FileChange(path: "first.swift", diff: diff),
+                CodexChatApprovalRequest.FileChange(path: "second.swift", diff: diff),
+            ]
 
-            #expect(CodexChatApprovalDiffPreview.text(for: diff) == visible + "\n…")
-            #expect(diff == visible + "bc")
+            let preview = CodexChatApprovalDiffPreview.projection(for: changes)
+            let displayedBytes = preview.items.reduce(0) { result, item in
+                result + item.path.utf8.count + (item.diff?.utf8.count ?? 0)
+            }
+
+            #expect(displayedBytes <= CodexChatApprovalDiffPreview.byteLimit)
+            #expect(preview.isTruncated)
+            #expect(changes[0].diff == diff)
+            #expect(changes[1].diff == diff)
+        }
+
+        @Test
+        func limitsDisplayedFileCount() {
+            let changes = (0 ... CodexChatApprovalDiffPreview.fileLimit).map { index in
+                CodexChatApprovalRequest.FileChange(path: "file-\(index).swift", diff: "+change")
+            }
+
+            let preview = CodexChatApprovalDiffPreview.projection(for: changes)
+
+            #expect(preview.items.count == CodexChatApprovalDiffPreview.fileLimit)
+            #expect(preview.isTruncated)
         }
     }
 #endif
