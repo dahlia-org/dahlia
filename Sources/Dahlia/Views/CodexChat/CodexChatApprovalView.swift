@@ -12,19 +12,7 @@ struct CodexChatApprovalView: View {
                 .foregroundStyle(.secondary)
 
             if hasDetails {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let reason = request.reason {
-                            Text(reason)
-                                .font(.body)
-                        }
-
-                        requestDetails
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                }
-                .frame(maxHeight: 180)
+                CodexChatApprovalDetails(request: request)
             }
 
             CodexChatApprovalActions(request: request, onDecide: onDecide, onStop: onStop)
@@ -56,47 +44,56 @@ struct CodexChatApprovalView: View {
             || request.grantRoot != nil
     }
 
-    @ViewBuilder
-    private var requestDetails: some View {
-        switch request.kind {
-        case .commandExecution:
-            if request.command != nil || request.cwd != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let command = request.command {
-                        Text(command)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    if let cwd = request.cwd {
-                        Text(cwd)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .detailRegionStyle()
-            }
-        case .fileChange:
-            if !request.fileChanges.isEmpty || request.grantRoot != nil {
-                CodexChatApprovalFileChangeDetails(request: request)
-            }
-        }
-    }
 }
 
-enum CodexChatApprovalDiffPreview {
+enum CodexChatApprovalDetailsProjection {
     struct Item: Equatable, Sendable {
         let path: String
         let diff: String?
     }
 
     struct Projection: Equatable, Sendable {
-        let items: [Item]
-        let isTruncated: Bool
+        let reason: String?
+        let command: String?
+        let cwd: String?
+        let fileChanges: [Item]
+        let areFileChangesTruncated: Bool
+        let grantRoot: String?
     }
 
     static let byteLimit = 20000
     static let fileLimit = 50
 
-    static func projection(for changes: [CodexChatApprovalRequest.FileChange]) -> Projection {
+    static func projection(for request: CodexChatApprovalRequest) -> Projection {
+        let sectionCount = [
+            request.reason != nil,
+            request.command != nil,
+            request.cwd != nil,
+            !request.fileChanges.isEmpty,
+            request.grantRoot != nil,
+        ].count(where: { $0 })
+        let sectionByteLimit = sectionCount > 0 ? byteLimit / sectionCount : byteLimit
+        let fileChanges = fileChangeProjection(for: request.fileChanges, byteLimit: sectionByteLimit)
+
+        return Projection(
+            reason: textProjection(for: request.reason, byteLimit: sectionByteLimit),
+            command: textProjection(for: request.command, byteLimit: sectionByteLimit),
+            cwd: textProjection(for: request.cwd, byteLimit: sectionByteLimit),
+            fileChanges: fileChanges.items,
+            areFileChangesTruncated: fileChanges.isTruncated,
+            grantRoot: textProjection(for: request.grantRoot, byteLimit: sectionByteLimit)
+        )
+    }
+
+    private static func textProjection(for text: String?, byteLimit: Int) -> String? {
+        guard let text else { return nil }
+        return bounded(text, byteLimit: byteLimit).text.nilIfBlank
+    }
+
+    private static func fileChangeProjection(
+        for changes: [CodexChatApprovalRequest.FileChange],
+        byteLimit: Int
+    ) -> (items: [Item], isTruncated: Bool) {
         var items: [Item] = []
         var remainingBytes = byteLimit
         var isTruncated = changes.count > fileLimit
@@ -123,7 +120,7 @@ enum CodexChatApprovalDiffPreview {
             }
         }
 
-        return Projection(items: items, isTruncated: isTruncated)
+        return (items, isTruncated)
     }
 
     private static func bounded(_ text: String, byteLimit: Int) -> (text: String, byteCount: Int, isTruncated: Bool) {
@@ -146,55 +143,87 @@ enum CodexChatApprovalDiffPreview {
     }
 }
 
-private struct CodexChatApprovalFileChangeDetails: View {
+private struct CodexChatApprovalDetails: View {
     let request: CodexChatApprovalRequest
 
-    @State private var preview: CodexChatApprovalDiffPreview.Projection?
+    @State private var projection: CodexChatApprovalDetailsProjection.Projection?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let preview {
-                ForEach(preview.items.indices, id: \.self) { index in
-                    let item = preview.items[index]
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.path)
-                            .font(.system(.caption, design: .monospaced).weight(.medium))
-                        if let diff = item.diff {
-                            Text(diff)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
+        ScrollView {
+            if let projection {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let reason = projection.reason {
+                        Text(reason)
+                            .font(.body)
                     }
+
+                    requestDetails(projection)
                 }
-                if preview.isTruncated {
-                    Text("…")
-                        .foregroundStyle(.secondary)
-                }
-            } else if !request.fileChanges.isEmpty {
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            } else {
                 ProgressView()
                     .controlSize(.small)
-            }
-
-            if let grantRoot = request.grantRoot {
-                Text(grantRoot)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .detailRegionStyle()
+        .frame(maxHeight: 180)
         .task(id: request.id) {
-            preview = nil
-            let fileChanges = request.fileChanges
-            guard !fileChanges.isEmpty else {
-                preview = .init(items: [], isTruncated: false)
-                return
-            }
-
+            projection = nil
+            let request = request
             let projection = await Task.detached(priority: .userInitiated) {
-                CodexChatApprovalDiffPreview.projection(for: fileChanges)
+                CodexChatApprovalDetailsProjection.projection(for: request)
             }.value
             guard !Task.isCancelled else { return }
-            preview = projection
+            self.projection = projection
+        }
+    }
+
+    @ViewBuilder
+    private func requestDetails(_ projection: CodexChatApprovalDetailsProjection.Projection) -> some View {
+        switch request.kind {
+        case .commandExecution:
+            if projection.command != nil || projection.cwd != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let command = projection.command {
+                        Text(command)
+                            .font(.system(.body, design: .monospaced))
+                    }
+                    if let cwd = projection.cwd {
+                        Text(cwd)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .detailRegionStyle()
+            }
+        case .fileChange:
+            if !projection.fileChanges.isEmpty || projection.grantRoot != nil {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(projection.fileChanges.indices, id: \.self) { index in
+                        let item = projection.fileChanges[index]
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.path)
+                                .font(.system(.caption, design: .monospaced).weight(.medium))
+                            if let diff = item.diff {
+                                Text(diff)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if projection.areFileChangesTruncated {
+                        Text("…")
+                            .foregroundStyle(.secondary)
+                    }
+                    if let grantRoot = projection.grantRoot {
+                        Text(grantRoot)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .detailRegionStyle()
+            }
         }
     }
 }
@@ -205,7 +234,7 @@ private struct CodexChatApprovalActions: View {
     let onStop: () -> Void
 
     var body: some View {
-        if request.canApprove {
+        if hasReviewablePayload {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     stopButton
@@ -234,6 +263,15 @@ private struct CodexChatApprovalActions: View {
                 Spacer()
                 denyButton
             }
+        }
+    }
+
+    private var hasReviewablePayload: Bool {
+        switch request.kind {
+        case .commandExecution:
+            request.command != nil
+        case .fileChange:
+            !request.fileChanges.isEmpty
         }
     }
 
