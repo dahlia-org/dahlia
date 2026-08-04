@@ -1005,6 +1005,32 @@ import Foundation
         }
 
         @Test
+        func cancelledTurnStartInterruptsTurnDiscoveredFromLateResponse() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.completeBlockedTurnStart(turnID: "late-turn")
+            await transport.waitUntilSent("turn/interrupt")
+            let interrupt = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interrupt["threadId"] == .string("thread-1"))
+            #expect(interrupt["turnId"] == .string("late-turn"))
+            await service.shutdown()
+        }
+
+        @Test
         func lateApprovalAfterSubscriberClosesIsCancelled() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })

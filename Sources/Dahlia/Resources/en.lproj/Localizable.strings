@@ -932,6 +932,7 @@
 "Always allow in this chat" = "Always allow in this chat";
 "Allow similar commands" = "Allow similar commands";
 "Deny" = "Deny";
+"This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "Open AI Connection Settings" = "Open AI Connection Settings";
 "Loading models…" = "Loading models…";
 "This chat is no longer available." = "This chat is no longer available.";

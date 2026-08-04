@@ -31,7 +31,8 @@ actor CodexAppServerService {
 
     private struct PendingRequest {
         let method: String
-        let continuation: CheckedContinuation<JSONValue, any Error>
+        var continuation: CheckedContinuation<JSONValue, any Error>?
+        let lateChatTurnStartThreadID: String?
     }
 
     private struct TurnKey: Hashable {
@@ -445,13 +446,18 @@ actor CodexAppServerService {
             let result = try await requestOnCurrentConnection(
                 method: "turn/start",
                 params: params,
-                timeout: transportTimeout
+                timeout: transportTimeout,
+                lateChatTurnStartThreadID: threadID
             )
             guard generation == connectionGeneration else { throw CancellationError() }
             guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
                 throw CodexAppServerError.invalidProtocolResponse
             }
             let key = TurnKey(threadID: threadID, turnID: turnID)
+            if Task.isCancelled {
+                pendingChatTurnStarts[startID]?.bufferedKeys.insert(key)
+                throw CancellationError()
+            }
             activeChatTurnIDs[threadID] = turnID
             await reconcilePendingChatTurnStart(
                 startID,
@@ -832,7 +838,8 @@ private extension CodexAppServerService {
     private func requestOnCurrentConnection(
         method: String,
         params: JSONValue,
-        timeout: Duration
+        timeout: Duration,
+        lateChatTurnStartThreadID: String? = nil
     ) async throws -> JSONValue {
         guard transport != nil else { throw CodexAppServerError.processExited(nil) }
         let requestID = nextRequestID
@@ -840,7 +847,12 @@ private extension CodexAppServerService {
 
         return try await withThrowingTaskGroup(of: JSONValue.self) { group in
             group.addTask {
-                try await self.awaitResponse(requestID: requestID, method: method, params: params)
+                try await self.awaitResponse(
+                    requestID: requestID,
+                    method: method,
+                    params: params,
+                    lateChatTurnStartThreadID: lateChatTurnStartThreadID
+                )
             }
             group.addTask {
                 try await self.clock.sleep(for: timeout)
@@ -855,7 +867,8 @@ private extension CodexAppServerService {
     private func awaitResponse(
         requestID: Int,
         method: String,
-        params: JSONValue
+        params: JSONValue,
+        lateChatTurnStartThreadID: String?
     ) async throws -> JSONValue {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -863,7 +876,11 @@ private extension CodexAppServerService {
                     continuation.resume(throwing: CancellationError())
                     return
                 }
-                pendingRequests[requestID] = PendingRequest(method: method, continuation: continuation)
+                pendingRequests[requestID] = PendingRequest(
+                    method: method,
+                    continuation: continuation,
+                    lateChatTurnStartThreadID: lateChatTurnStartThreadID
+                )
                 Task {
                     do {
                         try await self.sendMessage(.object([
@@ -926,6 +943,12 @@ private extension CodexAppServerService {
 
         if let requestID = object["id"]?.intValue {
             guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
+            guard let continuation = pending.continuation else {
+                if let threadID = pending.lateChatTurnStartThreadID {
+                    interruptLateChatTurnStartResponse(object, threadID: threadID)
+                }
+                return
+            }
             if let error = object["error"]?.objectValue {
                 let message = error["message"]?.stringValue ?? L10n.codexUnknownError
                 let code = error["code"]?.intValue
@@ -934,17 +957,17 @@ private extension CodexAppServerService {
                     message: message,
                     method: pending.method
                 ) {
-                    pending.continuation.resume(throwing: CodexAppServerError.notLoggedIn)
+                    continuation.resume(throwing: CodexAppServerError.notLoggedIn)
                 } else {
-                    pending.continuation.resume(throwing: CodexAppServerError.rpcError(
+                    continuation.resume(throwing: CodexAppServerError.rpcError(
                         code: code,
                         message: message
                     ))
                 }
             } else if let result = object["result"] {
-                pending.continuation.resume(returning: result)
+                continuation.resume(returning: result)
             } else {
-                pending.continuation.resume(throwing: CodexAppServerError.invalidProtocolResponse)
+                continuation.resume(throwing: CodexAppServerError.invalidProtocolResponse)
             }
             return
         }
@@ -1110,6 +1133,16 @@ private extension CodexAppServerService {
             ]),
             timeout: transportTimeout
         )
+    }
+
+    private func interruptLateChatTurnStartResponse(_ object: [String: JSONValue], threadID: String) {
+        guard let turnID = object["result"]?.objectValue?["turn"]?.objectValue?["id"]?.stringValue else { return }
+        let key = TurnKey(threadID: threadID, turnID: turnID)
+        Task {
+            await self.resolvePendingApprovals(for: key, decision: .cancel)
+            await self.interruptDiscoveredChatTurn(key)
+            self.bufferedTurnMessages.removeValue(forKey: key)
+        }
     }
 
     private func reconcilePendingChatTurnStart(_ startID: UUID, with key: TurnKey) async {
@@ -1298,7 +1331,7 @@ private extension CodexAppServerService {
         let requests = pendingRequests.values
         pendingRequests.removeAll()
         for request in requests {
-            request.continuation.resume(throwing: error)
+            request.continuation?.resume(throwing: error)
         }
         let waiters = turnWaiters.values
         turnWaiters.removeAll()
@@ -1327,11 +1360,19 @@ private extension CodexAppServerService {
     }
 
     private func failRequest(_ requestID: Int, error: any Error) {
-        pendingRequests.removeValue(forKey: requestID)?.continuation.resume(throwing: error)
+        pendingRequests.removeValue(forKey: requestID)?.continuation?.resume(throwing: error)
     }
 
     private func cancelRequest(_ requestID: Int) {
-        pendingRequests.removeValue(forKey: requestID)?.continuation.resume(throwing: CancellationError())
+        guard var request = pendingRequests[requestID],
+              let continuation = request.continuation else { return }
+        if request.lateChatTurnStartThreadID != nil {
+            request.continuation = nil
+            pendingRequests[requestID] = request
+        } else {
+            pendingRequests.removeValue(forKey: requestID)
+        }
+        continuation.resume(throwing: CancellationError())
     }
 
     private func cancelTurnWaiter(_ key: TurnKey) {

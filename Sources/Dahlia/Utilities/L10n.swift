@@ -2577,6 +2577,9 @@ enum L10n {
     static var chatApprovalAlwaysAllow: String { String(localized: "Always allow in this chat", bundle: bundle) }
     static var chatApprovalAllowSimilarCommands: String { String(localized: "Allow similar commands", bundle: bundle) }
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
+    static var chatApprovalDetailsTooLarge: String {
+        String(localized: "This request is too large to review completely, so it cannot be approved.", bundle: bundle)
+    }
 
     static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }

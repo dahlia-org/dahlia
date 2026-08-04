@@ -33,6 +33,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private var modelListCount = 0
     private var threadStartCount = 0
     private var turnStartCount = 0
+    private var blockedTurnStart: (requestID: Int, threadID: String)?
     private var heldRequestID: Int?
     private var closeContinuation: CheckedContinuation<Void, Never>?
     private var didStartClosing = false
@@ -242,7 +243,10 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     private func enqueueTurnStartResponse(requestID: Int, threadID: String) {
         turnStartCount += 1
-        guard mode != .blockTurnStart else { return }
+        if mode == .blockTurnStart {
+            blockedTurnStart = (requestID, threadID)
+            return
+        }
         let turnID = "turn-\(turnStartCount)"
         enqueue(response(id: requestID, result: .object([
             "turn": .object([
@@ -423,6 +427,17 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     func sendFromServer(_ message: JSONValue) {
         enqueue(jsonValue: message)
+    }
+
+    func completeBlockedTurnStart(turnID: String = "turn-1") {
+        guard let blockedTurnStart else { return }
+        self.blockedTurnStart = nil
+        enqueue(response(id: blockedTurnStart.requestID, result: .object([
+            "turn": .object([
+                "id": .string(turnID),
+                "status": .string("inProgress"),
+            ]),
+        ])))
     }
 
     private func response(id: Int, result: JSONValue) -> Data {

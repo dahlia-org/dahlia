@@ -5,6 +5,8 @@ struct CodexChatApprovalView: View {
     let onDecide: (CodexChatApprovalDecision) -> Void
     let onStop: () -> Void
 
+    @State private var isCompleteReviewAvailable = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label(title, systemImage: "hand.raised")
@@ -12,10 +14,18 @@ struct CodexChatApprovalView: View {
                 .foregroundStyle(.secondary)
 
             if hasDetails {
-                CodexChatApprovalDetails(request: request)
+                CodexChatApprovalDetails(
+                    request: request,
+                    onReviewAvailabilityChange: { isCompleteReviewAvailable = $0 }
+                )
             }
 
-            CodexChatApprovalActions(request: request, onDecide: onDecide, onStop: onStop)
+            CodexChatApprovalActions(
+                request: request,
+                isCompleteReviewAvailable: isCompleteReviewAvailable,
+                onDecide: onDecide,
+                onStop: onStop
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -59,6 +69,7 @@ enum CodexChatApprovalDetailsProjection {
         let fileChanges: [Item]
         let areFileChangesTruncated: Bool
         let grantRoot: String?
+        let isTruncated: Bool
     }
 
     static let byteLimit = 20000
@@ -75,19 +86,30 @@ enum CodexChatApprovalDetailsProjection {
         let sectionByteLimit = sectionCount > 0 ? byteLimit / sectionCount : byteLimit
         let fileChanges = fileChangeProjection(for: request.fileChanges, byteLimit: sectionByteLimit)
 
+        let reason = textProjection(for: request.reason, byteLimit: sectionByteLimit)
+        let command = textProjection(for: request.command, byteLimit: sectionByteLimit)
+        let cwd = textProjection(for: request.cwd, byteLimit: sectionByteLimit)
+        let grantRoot = textProjection(for: request.grantRoot, byteLimit: sectionByteLimit)
+
         return Projection(
-            reason: textProjection(for: request.reason, byteLimit: sectionByteLimit),
-            command: textProjection(for: request.command, byteLimit: sectionByteLimit),
-            cwd: textProjection(for: request.cwd, byteLimit: sectionByteLimit),
+            reason: reason.text,
+            command: command.text,
+            cwd: cwd.text,
             fileChanges: fileChanges.items,
             areFileChangesTruncated: fileChanges.isTruncated,
-            grantRoot: textProjection(for: request.grantRoot, byteLimit: sectionByteLimit)
+            grantRoot: grantRoot.text,
+            isTruncated: reason.isTruncated
+                || command.isTruncated
+                || cwd.isTruncated
+                || fileChanges.isTruncated
+                || grantRoot.isTruncated
         )
     }
 
-    private static func textProjection(for text: String?, byteLimit: Int) -> String? {
-        guard let text else { return nil }
-        return bounded(text, byteLimit: byteLimit).text.nilIfBlank
+    private static func textProjection(for text: String?, byteLimit: Int) -> (text: String?, isTruncated: Bool) {
+        guard let text else { return (nil, false) }
+        let bounded = bounded(text, byteLimit: byteLimit)
+        return (bounded.text.nilIfBlank, bounded.isTruncated)
     }
 
     private static func fileChangeProjection(
@@ -145,6 +167,7 @@ enum CodexChatApprovalDetailsProjection {
 
 private struct CodexChatApprovalDetails: View {
     let request: CodexChatApprovalRequest
+    let onReviewAvailabilityChange: (Bool) -> Void
 
     @State private var projection: CodexChatApprovalDetailsProjection.Projection?
 
@@ -158,6 +181,12 @@ private struct CodexChatApprovalDetails: View {
                     }
 
                     requestDetails(projection)
+
+                    if projection.isTruncated {
+                        Text(L10n.chatApprovalDetailsTooLarge)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
@@ -170,12 +199,14 @@ private struct CodexChatApprovalDetails: View {
         .frame(maxHeight: 180)
         .task(id: request.id) {
             projection = nil
+            onReviewAvailabilityChange(false)
             let request = request
             let projection = await Task.detached(priority: .userInitiated) {
                 CodexChatApprovalDetailsProjection.projection(for: request)
             }.value
             guard !Task.isCancelled else { return }
             self.projection = projection
+            onReviewAvailabilityChange(!projection.isTruncated)
         }
     }
 
@@ -230,11 +261,12 @@ private struct CodexChatApprovalDetails: View {
 
 private struct CodexChatApprovalActions: View {
     let request: CodexChatApprovalRequest
+    let isCompleteReviewAvailable: Bool
     let onDecide: (CodexChatApprovalDecision) -> Void
     let onStop: () -> Void
 
     var body: some View {
-        if hasReviewablePayload {
+        if hasReviewablePayload, isCompleteReviewAvailable {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) {
                     stopButton

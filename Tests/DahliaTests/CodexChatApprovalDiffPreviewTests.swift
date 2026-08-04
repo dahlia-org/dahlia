@@ -18,6 +18,7 @@
 
             #expect(projection.fileChanges == [.init(path: path, diff: diff)])
             #expect(!projection.areFileChangesTruncated)
+            #expect(!projection.isTruncated)
         }
 
         @Test
@@ -44,6 +45,7 @@
 
             #expect(displayedBytes <= CodexChatApprovalDetailsProjection.byteLimit)
             #expect(projection.areFileChangesTruncated)
+            #expect(projection.isTruncated)
             #expect(request.fileChanges[0].diff == diff)
             #expect(request.fileChanges[1].diff == diff)
             #expect(request.grantRoot == diff)
@@ -61,6 +63,7 @@
 
             #expect(projection.fileChanges.count == CodexChatApprovalDetailsProjection.fileLimit)
             #expect(projection.areFileChangesTruncated)
+            #expect(projection.isTruncated)
         }
 
         @Test
@@ -80,6 +83,7 @@
                 .reduce(0) { $0 + $1.utf8.count }
 
             #expect(displayedBytes <= CodexChatApprovalDetailsProjection.byteLimit)
+            #expect(projection.isTruncated)
             #expect(request.command == text)
             #expect(request.cwd == text)
             #expect(request.reason == text)
