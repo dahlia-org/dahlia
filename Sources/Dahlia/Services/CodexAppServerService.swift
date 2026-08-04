@@ -1306,11 +1306,14 @@ private extension CodexAppServerService {
               let method = object["method"]?.stringValue,
               let params = object["params"]?.objectValue else { return false }
 
-        if method == "serverRequest/resolved", let requestID = params["requestId"] {
-            guard let approvalID = Self.approvalID(for: requestID),
+        if method == "serverRequest/resolved" {
+            guard let requestID = params["requestId"],
+                  let threadID = params["threadId"]?.stringValue,
+                  let approvalID = Self.approvalID(for: requestID),
                   let localTurnID = chatTurnRuntimes.first(where: {
-                      $0.value.pendingApprovals[approvalID] != nil
-                          || $0.value.respondedApprovalIDs.contains(approvalID)
+                      $0.value.threadID == threadID
+                          && ($0.value.pendingApprovals[approvalID] != nil
+                              || $0.value.respondedApprovalIDs.contains(approvalID))
                   })?.key else { return false }
             chatTurnRuntimes[localTurnID]?.pendingApprovals.removeValue(forKey: approvalID)
             chatTurnRuntimes[localTurnID]?.respondedApprovalIDs.remove(approvalID)
@@ -2201,6 +2204,10 @@ private extension CodexAppServerService {
 
         func hasOwnedChatApprovalForTesting(turnID: UUID, approvalID: String) -> Bool {
             chatTurnRuntimes[turnID]?.pendingApprovals[approvalID] != nil
+        }
+
+        func hasRespondedChatApprovalForTesting(turnID: UUID, approvalID: String) -> Bool {
+            chatTurnRuntimes[turnID]?.respondedApprovalIDs.contains(approvalID) == true
         }
 
         func hasBufferedTurnMessagesForTesting(threadID: String, turnID: String) -> Bool {

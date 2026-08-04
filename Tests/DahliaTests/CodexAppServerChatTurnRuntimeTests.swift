@@ -53,8 +53,30 @@ import Foundation
             )
             await transport.sendFromServer(.object([
                 "method": .string("serverRequest/resolved"),
-                "params": .object(["requestId": .string("approval-1")]),
+                "params": .object([
+                    "requestId": .string("approval-1"),
+                    "threadId": .string("thread-2"),
+                ]),
             ]))
+            #expect(await pollUntil {
+                await service.hasRespondedChatApprovalForTesting(
+                    turnID: turn.id,
+                    approvalID: "s:approval-1"
+                )
+            })
+            await transport.sendFromServer(.object([
+                "method": .string("serverRequest/resolved"),
+                "params": .object([
+                    "requestId": .string("approval-1"),
+                    "threadId": .string("thread-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await !service.hasRespondedChatApprovalForTesting(
+                    turnID: turn.id,
+                    approvalID: "s:approval-1"
+                )
+            })
             await sendTurnCompleted(turnID: "turn-1", status: "completed", to: transport)
 
             let result = try await collection.value
