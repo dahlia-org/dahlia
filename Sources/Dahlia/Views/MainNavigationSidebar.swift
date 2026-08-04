@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MainNavigationSidebar: View {
+    private static let disclosureControlSize: CGFloat = 28
+
     @Binding var selection: MainNavigationRoute
     let projects: [FlatProjectRow]
     let showsOrganizations: Bool
@@ -52,20 +54,32 @@ struct MainNavigationSidebar: View {
     }
 
     private func projectRow(_ project: FlatProjectRow) -> some View {
-        HStack(spacing: 6) {
+        let isCollapsed = collapsedProjectIDs.contains(project.id)
+
+        return HStack(spacing: 6) {
             if project.hasChildren {
-                Button(
-                    collapsedProjectIDs.contains(project.id) ? L10n.expand : L10n.collapse,
-                    systemImage: collapsedProjectIDs.contains(project.id) ? "chevron.right" : "chevron.down"
-                ) {
+                Button {
                     toggleExpansion(of: project)
+                } label: {
+                    Label(
+                        isCollapsed ? L10n.expand : L10n.collapse,
+                        systemImage: isCollapsed ? "chevron.right" : "chevron.down"
+                    )
+                    .labelStyle(.iconOnly)
+                    .frame(
+                        width: Self.disclosureControlSize,
+                        height: Self.disclosureControlSize
+                    )
+                    .contentShape(Rectangle())
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .help(collapsedProjectIDs.contains(project.id) ? L10n.expand : L10n.collapse)
+                .buttonStyle(.borderless)
+                .help(isCollapsed ? L10n.expand : L10n.collapse)
             } else {
                 Color.clear
-                    .frame(width: 10, height: 10)
+                    .frame(
+                        width: Self.disclosureControlSize,
+                        height: Self.disclosureControlSize
+                    )
             }
 
             Label(project.displayName, systemImage: "folder")
