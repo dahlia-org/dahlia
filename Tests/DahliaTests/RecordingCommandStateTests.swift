@@ -39,28 +39,7 @@ import Foundation
         }
 
         @Test
-        func detailCommandOnlyControlsTheMeetingItRepresents() {
-            let recordingMeetingID = UUID()
-
-            #expect(RecordingCommandState.showsDetailCommand(
-                isListening: false,
-                recordingMeetingID: nil,
-                currentMeetingID: nil
-            ))
-            #expect(RecordingCommandState.showsDetailCommand(
-                isListening: true,
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: recordingMeetingID
-            ))
-            #expect(!RecordingCommandState.showsDetailCommand(
-                isListening: true,
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: UUID()
-            ))
-        }
-
-        @Test
-        func sidebarStopOnlyAppearsWhenDetailCannotStopTheRecording() {
+        func sidebarStopOnlyAppearsWhenPrimaryCommandReturnsToRecording() {
             let recordingMeetingID = UUID()
 
             #expect(!RecordingCommandState.showsSidebarStop(
@@ -86,8 +65,9 @@ import Foundation
             let recordingMeetingID = UUID()
 
             for currentMeetingID in [recordingMeetingID, UUID(), nil] {
-                let showsDetail = RecordingCommandState.showsDetailCommand(
+                let primaryState = RecordingCommandState(
                     isListening: true,
+                    canStartNewMeeting: false,
                     recordingMeetingID: recordingMeetingID,
                     currentMeetingID: currentMeetingID
                 )
@@ -96,7 +76,7 @@ import Foundation
                     currentMeetingID: currentMeetingID
                 )
 
-                #expect(showsDetail != showsSidebar)
+                #expect((primaryState.action == .stop) != showsSidebar)
             }
         }
 
@@ -115,8 +95,8 @@ import Foundation
 
                     #expect(placement.hasImmediateStop)
                     let stopCommandCount = [
-                        placement.showsSidebarRecordingPanel,
-                        placement.showsDetailRecordingBar,
+                        placement.primaryCommandStopsRecording,
+                        placement.showsSidebarStop,
                         placement.showsToolbarStop,
                     ].count(where: { $0 })
                     #expect(stopCommandCount == 1)
@@ -137,7 +117,7 @@ import Foundation
         }
 
         @Test
-        func placementMakesSidebarPanelTheRecordingOwnerAcrossMeetingNavigation() {
+        func placementUsesPreRefreshSidebarStopBehavior() {
             let recordingMeetingID = UUID()
             let recordingMeetingPlacement = RecordingCommandPlacement(
                 isListening: true,
@@ -152,10 +132,14 @@ import Foundation
                 currentMeetingID: UUID()
             )
 
-            #expect(!recordingMeetingPlacement.showsDetailRecordingBar)
             #expect(recordingMeetingPlacement.showsSidebarRecordingPanel)
-            #expect(!otherMeetingPlacement.showsDetailRecordingBar)
+            #expect(recordingMeetingPlacement.primaryCommandStopsRecording)
+            #expect(!recordingMeetingPlacement.showsSidebarStop)
+
             #expect(otherMeetingPlacement.showsSidebarRecordingPanel)
+            #expect(!otherMeetingPlacement.primaryCommandStopsRecording)
+            #expect(otherMeetingPlacement.showsSidebarStop)
+            #expect(!otherMeetingPlacement.showsToolbarStop)
         }
     }
 #endif

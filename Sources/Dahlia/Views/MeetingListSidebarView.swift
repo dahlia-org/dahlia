@@ -77,7 +77,7 @@ struct MeetingListSidebarView: View {
             }
 
             if recordingPlacement.showsSidebarRecordingPanel {
-                SidebarRecordingPanel(
+                RecordingStatusBar(
                     viewModel: viewModel,
                     sidebarViewModel: sidebarViewModel,
                     recordingCoordinator: recordingCoordinator
@@ -219,7 +219,7 @@ struct MeetingListSidebarView: View {
     }
 }
 
-private struct SidebarRecordingPanel: View {
+private struct RecordingStatusBar: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
@@ -272,6 +272,13 @@ private struct SidebarRecordingPanel: View {
         }
     }
 
+    private var showsSidebarStop: Bool {
+        RecordingCommandState.showsSidebarStop(
+            recordingMeetingID: recordingMeetingId,
+            currentMeetingID: viewModel.currentMeetingId
+        )
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -285,14 +292,16 @@ private struct SidebarRecordingPanel: View {
                 .help(recordingLabels.returnToMeeting)
                 .accessibilityLabel("\(recordingLabels.activity), \(recordingTitle)")
 
-                Button(recordingLabels.stop, systemImage: "stop.fill") {
-                    recordingCoordinator.stopRecording()
+                if showsSidebarStop {
+                    Button(recordingLabels.stop, systemImage: "stop.fill") {
+                        recordingCoordinator.stopRecording()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+                    .help(recordingLabels.stop)
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.small)
-                .help(recordingLabels.stop)
             }
 
             Divider()

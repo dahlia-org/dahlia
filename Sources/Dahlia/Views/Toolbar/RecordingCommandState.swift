@@ -25,14 +25,6 @@ struct RecordingCommandState: Equatable {
         isEnabled = isListening || canStartNewMeeting
     }
 
-    static func showsDetailCommand(
-        isListening: Bool,
-        recordingMeetingID: UUID?,
-        currentMeetingID: UUID?
-    ) -> Bool {
-        !isListening || recordingMeetingID == currentMeetingID
-    }
-
     static func showsSidebarStop(
         recordingMeetingID: UUID?,
         currentMeetingID: UUID?
@@ -45,8 +37,9 @@ struct RecordingCommandState: Equatable {
 /// Pure placement policy used to keep an immediate stop command reachable as split-view columns collapse.
 struct RecordingCommandPlacement: Equatable {
     let showsSidebarRecordingPanel: Bool
-    let showsDetailRecordingBar: Bool
+    let showsSidebarStop: Bool
     let showsToolbarStop: Bool
+    let primaryCommandStopsRecording: Bool
 
     init(
         isListening: Bool,
@@ -55,14 +48,16 @@ struct RecordingCommandPlacement: Equatable {
         currentMeetingID: UUID?
     ) {
         showsSidebarRecordingPanel = isListening && isSidebarVisible
-        showsDetailRecordingBar = isListening
-            && !isSidebarVisible
-            && recordingMeetingID != nil
-            && recordingMeetingID == currentMeetingID
-        showsToolbarStop = isListening && !showsSidebarRecordingPanel && !showsDetailRecordingBar
+        primaryCommandStopsRecording = isListening
+            && !RecordingCommandState.showsSidebarStop(
+                recordingMeetingID: recordingMeetingID,
+                currentMeetingID: currentMeetingID
+            )
+        showsSidebarStop = showsSidebarRecordingPanel && !primaryCommandStopsRecording
+        showsToolbarStop = isListening && !primaryCommandStopsRecording && !showsSidebarStop
     }
 
     var hasImmediateStop: Bool {
-        showsSidebarRecordingPanel || showsDetailRecordingBar || showsToolbarStop
+        primaryCommandStopsRecording || showsSidebarStop || showsToolbarStop
     }
 }

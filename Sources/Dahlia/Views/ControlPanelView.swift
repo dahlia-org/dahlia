@@ -215,13 +215,6 @@ struct ControlPanelView: View {
                     )
                 }
 
-                if recordingPlacement.showsDetailRecordingBar {
-                    MeetingRecordingBar(
-                        viewModel: viewModel,
-                        recordingCoordinator: recordingCoordinator
-                    )
-                }
-
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
                     viewModel: viewModel,
@@ -609,15 +602,6 @@ struct ControlPanelView: View {
         selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .windowBackgroundColor)
     }
 
-    private var recordingPlacement: RecordingCommandPlacement {
-        RecordingCommandPlacement(
-            isListening: viewModel.isListening,
-            isSidebarVisible: true,
-            recordingMeetingID: viewModel.recordingMeetingId,
-            currentMeetingID: viewModel.currentMeetingId
-        )
-    }
-
     private var meetingMetadataText: String {
         let createdAt = currentMeetingItem?.createdAt ?? viewModel.store.recordingStartTime ?? Date()
         var parts = [createdAt.formatted(date: .abbreviated, time: .shortened)]
@@ -706,58 +690,4 @@ struct ControlPanelView: View {
         .summary
     }
 
-}
-
-private struct MeetingRecordingBar: View {
-    @ObservedObject var viewModel: CaptionViewModel
-    let recordingCoordinator: RecordingCoordinator
-    @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
-
-    private var activeSession: RecordingSessionTimeline? {
-        viewModel.activeTranscriptStore.recordingSessions.last(where: { $0.endedAt == nil })
-            ?? viewModel.activeTranscriptStore.recordingSessions.last
-    }
-
-    private var timelineStart: Date {
-        activeSession?.startedAt ?? viewModel.activeTranscriptStore.recordingStartTime ?? .now
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RecordingActivityIcon(mode: viewModel.activeTranscriptionMode ?? .defaultMode)
-
-            Text(viewModel.activeTranscriptionMode == .batch ? L10n.recordingNow : L10n.transcribingNow)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.red)
-
-            TimelineView(.periodic(from: timelineStart, by: 1)) { context in
-                Text(elapsed(at: context.date))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-            RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
-
-            Button(L10n.stopRecording, systemImage: "stop.fill") {
-                recordingCoordinator.stopRecording()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .help(L10n.stopRecording)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityElement(children: .contain)
-    }
-
-    private func elapsed(at date: Date) -> String {
-        let seconds = if let activeSession {
-            activeSession.offsetSeconds + date.timeIntervalSince(activeSession.startedAt)
-        } else {
-            date.timeIntervalSince(timelineStart)
-        }
-        return Formatters.elapsedHHmmss(duration: seconds)
-    }
 }
