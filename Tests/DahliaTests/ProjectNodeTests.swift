@@ -51,6 +51,34 @@ import Foundation
         }
 
         @Test
+        func collapsedProjectsHideAllDescendantsWithoutHidingSiblings() throws {
+            let rows = FlatProjectRow.buildRows(
+                fromRecords: projects(named: ["alpha", "alpha/one", "alpha/one/deep", "beta"])
+            )
+            let alpha = try #require(rows.first(where: { $0.name == "alpha" }))
+
+            let visibleRows = FlatProjectRow.visibleRows(
+                in: rows,
+                collapsedProjectIDs: [alpha.id]
+            )
+
+            #expect(visibleRows.map(\.name) == ["alpha", "beta"])
+        }
+
+        @Test
+        func descendantCheckUsesPathComponentsInsteadOfPrefixes() throws {
+            let rows = FlatProjectRow.buildRows(
+                fromRecords: projects(named: ["alpha", "alpha/one", "alpha-archive"])
+            )
+            let alpha = try #require(rows.first(where: { $0.name == "alpha" }))
+            let child = try #require(rows.first(where: { $0.name == "alpha/one" }))
+            let sibling = try #require(rows.first(where: { $0.name == "alpha-archive" }))
+
+            #expect(child.isDescendant(of: alpha))
+            #expect(!sibling.isDescendant(of: alpha))
+        }
+
+        @Test
         func projectParentCandidatesContainOnlyOtherRoots() throws {
             let records = projects(named: ["alpha", "alpha/work", "beta", "beta/work"])
             let rows = FlatProjectRow.buildRows(fromRecords: records)
@@ -261,6 +289,41 @@ import Foundation
 
             XCTAssertEqual(rows.map(\.name), ["foo/bar", "foo", "foo/baz"])
             XCTAssertEqual(rows.map(\.hasChildren), [false, true, false])
+        }
+
+        func testCollapsedProjectsHideAllDescendantsWithoutHidingSiblings() throws {
+            let rows = FlatProjectRow.buildRows(
+                fromRecords: [
+                    project(named: "alpha"),
+                    project(named: "alpha/one"),
+                    project(named: "alpha/one/deep"),
+                    project(named: "beta"),
+                ]
+            )
+            let alpha = try XCTUnwrap(rows.first(where: { $0.name == "alpha" }))
+
+            let visibleRows = FlatProjectRow.visibleRows(
+                in: rows,
+                collapsedProjectIDs: [alpha.id]
+            )
+
+            XCTAssertEqual(visibleRows.map(\.name), ["alpha", "beta"])
+        }
+
+        func testDescendantCheckUsesPathComponentsInsteadOfPrefixes() throws {
+            let rows = FlatProjectRow.buildRows(
+                fromRecords: [
+                    project(named: "alpha"),
+                    project(named: "alpha/one"),
+                    project(named: "alpha-archive"),
+                ]
+            )
+            let alpha = try XCTUnwrap(rows.first(where: { $0.name == "alpha" }))
+            let child = try XCTUnwrap(rows.first(where: { $0.name == "alpha/one" }))
+            let sibling = try XCTUnwrap(rows.first(where: { $0.name == "alpha-archive" }))
+
+            XCTAssertTrue(child.isDescendant(of: alpha))
+            XCTAssertFalse(sibling.isDescendant(of: alpha))
         }
 
         private func project(named name: String) -> ProjectRecord {

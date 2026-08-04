@@ -55,6 +55,23 @@ struct FlatProjectRow: Identifiable, Equatable {
         }
     }
 
+    func isDescendant(of project: FlatProjectRow) -> Bool {
+        parentPaths().contains(project.name)
+    }
+
+    static func visibleRows(
+        in rows: [FlatProjectRow],
+        collapsedProjectIDs: Set<UUID>
+    ) -> [FlatProjectRow] {
+        let collapsedPaths = Set(rows.lazy
+            .filter { collapsedProjectIDs.contains($0.id) }
+            .map(\.name))
+        guard !collapsedPaths.isEmpty else { return rows }
+
+        return rows.filter { row in
+            collapsedPaths.isDisjoint(with: row.parentPaths())
+        }
+    }
 }
 
 /// SwiftUI の OutlineGroup に渡すプロジェクトツリー行。

@@ -20,7 +20,7 @@ Section / Project | Active workspace
 
 Meeting and Project workspaces subdivide the active workspace into a meeting list and meeting detail. Schedule uses the full active workspace, while Organizations provides its own master-detail navigation. This avoids empty intermediate columns on destinations that do not have a list-detail relationship.
 
-Schedule, Meetings, Projects, and Organizations are first-class main-window sections. Selecting a Project scopes the meeting list and its search to that Project. Project management remains a dedicated management surface because deletion and Summary-file movement are multi-record operations. Organizations remain available in a detached window as well as the main window.
+Schedule, Meetings, Projects, and Organizations are first-class main-window sections. Selecting a Project scopes the meeting list and its search to that Project. Hierarchical Projects are expanded by default and can be collapsed from their parent row so the global sidebar remains navigable in large Vaults. Project management remains a dedicated management surface because deletion and Summary-file movement are multi-record operations. Organizations remain available in a detached window as well as the main window.
 
 Meeting body navigation contains Summary, Notes, Screenshots, Transcript, and beta-gated Conversation Analytics as peer destinations. These are alternative full-width views of one meeting, not persistent context that must remain beside the summary. A summary transcript reference selects the Transcript destination, resolves against SQLite using meeting-wide elapsed time, loads a bounded page around the resolved segment, and scrolls by segment ID. References retain their existing `HH:mm:ss` serialized form.
 
