@@ -104,6 +104,34 @@ import GRDB
         }
 
         @Test
+        func discardedFailedBatchNoLongerOffersRetranscription() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "discarded-failed-retry",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await markBatchFailed(batch)
+
+            let viewModel = CaptionViewModel()
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: batch.vaultURL
+            )
+            #expect(await waitUntil { viewModel.canRetranscribeBatchAudio })
+
+            viewModel.discardFailedBatchTranscription()
+
+            #expect(await waitUntil { viewModel.batchTranscriptionState == nil })
+            #expect(viewModel.retranscribableBatchSessionIds.isEmpty)
+            #expect(!viewModel.canRetranscribeBatchAudio)
+        }
+
+        @Test
         func failedRetranscriptionOffersRetryAndCanKeepCurrentTranscript() async throws {
             let completedAt = Date(timeIntervalSince1970: 1_776_384_002)
             let batch = try BatchAudioTestFixture(

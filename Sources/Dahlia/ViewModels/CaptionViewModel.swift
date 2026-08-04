@@ -1175,17 +1175,28 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func refreshBatchTranscriptionState(meetingId: UUID, dbQueue: DatabaseQueue) throws {
-        let sessions = try dbQueue.read { db in
-            try RecordingSessionRecord
+        let (state, retryableSessionIds) = try dbQueue.read { db in
+            let sessions = try RecordingSessionRecord
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("startedAt").asc)
                 .fetchAll(db)
+            let state = sessions
+                .reversed()
+                .compactMap { BatchTranscriptionState.derive(from: $0) }
+                .first(where: \.blocksSummaryGeneration)
+            let eligibleSessionIds = try Self.fetchEligibleBatchAudioSessionIds(meetingId: meetingId, db: db)
+            return (
+                state,
+                Self.retryableBatchSessionIds(
+                    state: state,
+                    sessions: sessions,
+                    eligibleSessionIds: eligibleSessionIds
+                )
+            )
         }
         guard currentMeetingId == meetingId else { return }
-        batchTranscriptionState = sessions
-            .reversed()
-            .compactMap { BatchTranscriptionState.derive(from: $0) }
-            .first(where: \.blocksSummaryGeneration)
+        batchTranscriptionState = state
+        retranscribableBatchSessionIds = retryableSessionIds
     }
 
     func handleBatchTranscriptionUpdate(_ update: BatchTranscriptionUpdate) async {
