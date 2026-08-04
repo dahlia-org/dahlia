@@ -66,7 +66,7 @@ import AppKit
                 Issue.record("Expected a date range token")
                 return
             }
-            #expect(calendar.dateComponents([.year, .month, .day], from: try #require(startDate)) == DateComponents(
+            #expect(try calendar.dateComponents([.year, .month, .day], from: #require(startDate)) == DateComponents(
                 year: 2026,
                 month: 7,
                 day: 23
@@ -185,6 +185,25 @@ import AppKit
             #expect(!MeetingSidebarSearchModifier.shouldUseTrailingQualifierMode(
                 overrideText: input,
                 currentText: input
+            ))
+        }
+
+        @Test
+        func fixedProjectScopeCannotBeExpandedBySearchTokens() {
+            let scopeProjectID = UUID()
+            let unrelatedProjectID = UUID()
+            let criteria = MeetingSearchCriteria(projectIDs: [unrelatedProjectID])
+
+            let scoped = MeetingSidebarSearchModifier.applyingProjectScope(scopeProjectID, to: criteria)
+
+            #expect(scoped.projectIDs == [scopeProjectID])
+            #expect(MeetingSidebarSearchModifier.projectScopeIncludes(
+                meetingProjectID: scopeProjectID,
+                scopeProjectID: scopeProjectID
+            ))
+            #expect(!MeetingSidebarSearchModifier.projectScopeIncludes(
+                meetingProjectID: unrelatedProjectID,
+                scopeProjectID: scopeProjectID
             ))
         }
     }

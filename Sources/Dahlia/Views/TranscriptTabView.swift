@@ -7,6 +7,7 @@ struct TranscriptTabView: View {
     let allowsTextSelection: Bool
     let showsTranslatedText: Bool
     let retryInitialMeetingLoad: () -> Void
+    var requestedSegmentID: TranscriptSegment.ID?
 
     @State private var scrollPosition = ScrollPosition(idType: TranscriptSegment.ID.self)
     @State private var isFollowingLatest = true
@@ -97,7 +98,14 @@ struct TranscriptTabView: View {
                 updateVisibleSegments(ids)
             }
             .onAppear {
-                scrollToLatest()
+                if let requestedSegmentID {
+                    scroll(to: requestedSegmentID)
+                } else {
+                    scrollToLatest()
+                }
+            }
+            .onChange(of: requestedSegmentID) { _, id in
+                if let id { scroll(to: id) }
             }
             .onChange(of: store.latestConfirmedID) { _, _ in
                 guard isFollowingLatest, !store.hasLaterSegments else { return }
@@ -186,6 +194,14 @@ struct TranscriptTabView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             scrollPosition.scrollTo(edge: .bottom)
+        }
+    }
+
+    private func scroll(to id: TranscriptSegment.ID) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            scrollPosition.scrollTo(id: id, anchor: .center)
         }
     }
 }

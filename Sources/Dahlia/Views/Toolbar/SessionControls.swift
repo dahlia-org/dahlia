@@ -9,7 +9,9 @@ struct RecordToolbarButton: View {
     private var state: RecordingCommandState {
         RecordingCommandState(
             isListening: viewModel.isListening,
-            canStartNewMeeting: recordingCoordinator.canStartNewMeeting
+            canStartNewMeeting: recordingCoordinator.canStartNewMeeting,
+            recordingMeetingID: viewModel.recordingMeetingId,
+            currentMeetingID: viewModel.currentMeetingId
         )
     }
 
@@ -27,24 +29,37 @@ struct RecordToolbarButton: View {
     }
 
     private func toggle() {
-        if viewModel.isListening {
+        switch state.action {
+        case .returnToRecordingMeeting:
+            guard let recordingMeetingID = viewModel.recordingMeetingId else { return }
+            sidebarViewModel.selectMeeting(recordingMeetingID)
+            viewModel.returnToRecordingMeeting()
+        case .stop:
             recordingCoordinator.stopRecording()
-            return
-        }
-
-        if let selectedMeetingId = sidebarViewModel.selectedMeetingId {
-            recordingCoordinator.startRecording(appendingTo: selectedMeetingId)
-        } else {
-            recordingCoordinator.startNewMeeting()
+        case .start:
+            if sidebarViewModel.selectedMeetingIds.count == 1,
+               let selectedMeetingId = sidebarViewModel.selectedMeetingId {
+                recordingCoordinator.startRecording(appendingTo: selectedMeetingId)
+            } else {
+                recordingCoordinator.startNewMeeting()
+            }
         }
     }
 
     private var iconName: String {
-        state.action == .stop ? "stop.fill" : "record.circle"
+        switch state.action {
+        case .start: "record.circle"
+        case .stop: "stop.fill"
+        case .returnToRecordingMeeting: "arrowshape.turn.up.left.fill"
+        }
     }
 
     private var label: String {
-        state.action == .stop ? L10n.stopRecording : L10n.startRecording
+        switch state.action {
+        case .start: L10n.startRecording
+        case .stop: L10n.stopRecording
+        case .returnToRecordingMeeting: L10n.returnToRecordingMeeting
+        }
     }
 }
 

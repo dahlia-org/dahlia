@@ -14,17 +14,23 @@ struct ContentView: View {
     private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
+    @State private var navigationState = MainNavigationState()
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
-            MeetingListSidebarView(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            MainNavigationSidebar(
+                selection: navigationRoute,
+                projects: sidebarViewModel.flatProjects,
+                showsOrganizations: isCustomerIntelligenceBetaEnabled,
+                openProjectManager: { openWindow(id: WindowID.projectManager) },
+                openOrganizationWindow: { openWindow(id: WindowID.organizationWorkspace) }
             )
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
+        } content: {
+            navigationContent
         } detail: {
-            detailView
+            routedDetailView
                 .navigationTitle("")
         }
         .toolbar(removing: .title)
@@ -37,46 +43,32 @@ struct ContentView: View {
                 .keyboardShortcut("n", modifiers: .command)
                 .help(L10n.newMeeting)
 
-                Button(L10n.showUpcomingSchedule, systemImage: "calendar", action: returnToCalendarSchedule)
-                    .labelStyle(.iconOnly)
-                    .help(L10n.showUpcomingSchedule)
+            }
 
-                Button {
-                    openWindow(id: WindowID.projectManager)
-                } label: {
-                    Label(L10n.manageProjects, systemImage: "folder")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.manageProjects)
-
-                if isCustomerIntelligenceBetaEnabled {
-                    Button {
-                        openWindow(id: WindowID.organizationWorkspace)
-                    } label: {
-                        Label(L10n.customerIntelligence, systemImage: "building.2")
-                    }
-                    .labelStyle(.iconOnly)
-                    .help(L10n.openOrganizationWorkspace)
-                }
-
-                SettingsLink {
-                    Label(L10n.settingsMenuItem, systemImage: "gearshape")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.settingsMenuItem)
-
-                Button {
-                    if chatCoordinator.isFloatingVisible {
-                        chatCoordinator.hideFloating()
-                    } else {
-                        chatCoordinator.showFloating()
-                    }
-                } label: {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Toggle(isOn: floatingChatVisibility) {
                     Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
                 }
+                .toggleStyle(.button)
                 .labelStyle(.iconOnly)
                 .help(L10n.chat)
                 .accessibilityLabel(L10n.chat)
+
+                if recordingPlacement.showsToolbarStop {
+                    Button(L10n.stopRecording, systemImage: "stop.fill") {
+                        recordingCoordinator.stopRecording()
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .help(L10n.stopRecording)
+                }
+
+                RecordToolbarButton(
+                    viewModel: viewModel,
+                    sidebarViewModel: sidebarViewModel,
+                    recordingCoordinator: recordingCoordinator
+                )
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -139,6 +131,7 @@ struct ContentView: View {
         }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
+            navigationState.selectMeetings(newValue)
             handleMeetingSelectionChange(newValue)
             syncChatContext()
         }
@@ -155,13 +148,103 @@ struct ContentView: View {
         .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
+            navigationState.resetForVaultChange()
             syncChatContext()
         }
         .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
             // MCP ヘルパーなど別プロセスが要約を書き換えた場合に Summary タブを追従させる。
             viewModel.reloadSummaryDocument()
         }
+        .onChange(of: isCustomerIntelligenceBetaEnabled) { _, isEnabled in
+            navigationState.reconcileOrganizationsAvailability(isEnabled)
+        }
         .task { syncChatContext() }
+    }
+
+    private var navigationRoute: Binding<MainNavigationRoute> {
+        Binding(
+            get: { navigationState.route },
+            set: { route in
+                navigationState.select(route)
+                if !route.showsMeetingList {
+                    sidebarViewModel.clearMeetingSelection()
+                    viewModel.clearCurrentMeeting()
+                }
+            }
+        )
+    }
+
+    private var floatingChatVisibility: Binding<Bool> {
+        Binding(
+            get: { chatCoordinator.isFloatingVisible },
+            set: { isVisible in
+                if isVisible {
+                    chatCoordinator.showFloating()
+                } else {
+                    chatCoordinator.hideFloating()
+                }
+            }
+        )
+    }
+
+    private var isMeetingListVisible: Bool {
+        navigationState.route.showsMeetingList && columnVisibility != .detailOnly
+    }
+
+    private var recordingPlacement: RecordingCommandPlacement {
+        RecordingCommandPlacement(
+            isListening: viewModel.isListening,
+            isSidebarVisible: isMeetingListVisible,
+            recordingMeetingID: viewModel.recordingMeetingId,
+            currentMeetingID: viewModel.currentMeetingId
+        )
+    }
+
+    @ViewBuilder
+    private var navigationContent: some View {
+        switch navigationState.route {
+        case .meetings, .project:
+            MeetingListSidebarView(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                recordingCoordinator: recordingCoordinator,
+                scopeProjectID: navigationState.route.projectID
+            )
+            .navigationTitle(projectScopeTitle ?? L10n.meetings)
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+        case .schedule:
+            ContentUnavailableView(L10n.calendarScheduleTitle, systemImage: "calendar")
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        case .organizations:
+            ContentUnavailableView(L10n.organizations, systemImage: "building.2")
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        }
+    }
+
+    private var projectScopeTitle: String? {
+        guard let projectID = navigationState.route.projectID else { return nil }
+        return sidebarViewModel.flatProjects.first(where: { $0.id == projectID })?.displayName
+    }
+
+    @ViewBuilder
+    private var routedDetailView: some View {
+        switch navigationState.route {
+        case .schedule:
+            CalendarScheduleView(
+                onSelectEvent: { event in
+                    navigationState.select(.meetings)
+                    recordingCoordinator.openCalendarEvent(event)
+                },
+                onCreateMeeting: recordingCoordinator.createEmptyMeeting
+            )
+        case .organizations:
+            OrganizationWorkspaceView(
+                sidebarViewModel: sidebarViewModel,
+                chatCoordinator: chatCoordinator
+            )
+        case .meetings, .project:
+            detailView
+        }
     }
 
     private func presentPermissionGuideIfNeeded() {
@@ -229,13 +312,6 @@ struct ContentView: View {
         handleMeetingSelection(meetingId)
     }
 
-    private func returnToCalendarSchedule() {
-        if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.isEmpty {
-            viewModel.clearCurrentMeeting()
-        }
-        sidebarViewModel.clearMeetingSelection()
-    }
-
     private func handleMeetingSelection(_ meetingId: UUID) {
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else { return }
@@ -243,6 +319,7 @@ struct ContentView: View {
         do {
             let repository = MeetingRepository(dbQueue: dbQueue)
             guard let meeting = try repository.fetchMeeting(id: meetingId) else { return }
+            navigationState.reconcileSelectedMeetingProject(meeting.projectId)
             let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
             viewModel.loadMeeting(
                 meetingId,

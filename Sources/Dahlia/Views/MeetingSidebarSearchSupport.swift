@@ -22,17 +22,36 @@ extension View {
     func meetingSidebarSearch(
         text: Binding<String>,
         tokens: Binding<[MeetingSearchToken]>,
-        sidebarViewModel: SidebarViewModel
+        sidebarViewModel: SidebarViewModel,
+        scopeProjectID: UUID? = nil
     ) -> some View {
         modifier(MeetingSidebarSearchModifier(
             searchText: text,
             searchTokens: tokens,
-            sidebarViewModel: sidebarViewModel
+            sidebarViewModel: sidebarViewModel,
+            scopeProjectID: scopeProjectID
         ))
     }
 }
 
 extension MeetingSidebarSearchModifier {
+    nonisolated static func applyingProjectScope(
+        _ scopeProjectID: UUID?,
+        to criteria: MeetingSearchCriteria
+    ) -> MeetingSearchCriteria {
+        guard let scopeProjectID else { return criteria }
+        var scopedCriteria = criteria
+        scopedCriteria.projectIDs = [scopeProjectID]
+        return scopedCriteria
+    }
+
+    nonisolated static func projectScopeIncludes(
+        meetingProjectID: UUID?,
+        scopeProjectID: UUID?
+    ) -> Bool {
+        scopeProjectID == nil || meetingProjectID == scopeProjectID
+    }
+
     static func shouldDismissSearch(
         eventWindow: NSWindow,
         searchField: NSSearchField,

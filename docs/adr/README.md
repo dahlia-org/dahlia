@@ -32,3 +32,4 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0019](0019-pull-codex-stdout-with-backpressure.md) | AI runtime | Codex stdout を64 KiB単位で需要駆動読み取りする | Accepted; supersedes 0013, amends 0003; amended by 0020 |
 | [0020](0020-bound-codex-output-relative-to-client-input.md) | AI runtime | Codex stdout の単一行上限をclient入力に応じて拡張する | Accepted; amends 0019 and 0003 |
 | [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003 |
+| [0022](0022-unify-main-window-navigation-and-evidence-inspector.md) | Main window / Recording UI / Transcript evidence | 3列ナビゲーション、役割別Inspector、DB-backed参照ジャンプ、録音停止配置を統合する | Accepted; builds on 0006 and 0009 |

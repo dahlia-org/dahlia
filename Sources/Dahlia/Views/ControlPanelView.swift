@@ -12,9 +12,6 @@ private enum NotesEditorLayout {
 enum DetailTab: String, CaseIterable, Identifiable {
     case summary
     case notes
-    case screenshots
-    case transcript
-    case conversationAnalytics
 
     var id: String { rawValue }
 
@@ -22,11 +19,28 @@ enum DetailTab: String, CaseIterable, Identifiable {
         switch self {
         case .summary: L10n.summary
         case .notes: L10n.notes
-        case .screenshots: L10n.screenshots
-        case .transcript: L10n.transcript
-        case .conversationAnalytics: L10n.conversationAnalytics
         }
     }
+}
+
+enum DetailInspectorMode: String, CaseIterable, Identifiable {
+    case evidence
+    case analysis
+
+    var id: Self { self }
+    var label: String { self == .evidence ? L10n.evidence : L10n.analysis }
+
+    static func availableModes(isAnalysisEnabled: Bool) -> [Self] {
+        isAnalysisEnabled ? allCases : [.evidence]
+    }
+}
+
+enum EvidenceInspectorTab: String, CaseIterable, Identifiable {
+    case transcript
+    case screenshots
+
+    var id: Self { self }
+    var label: String { self == .transcript ? L10n.transcript : L10n.screenshots }
 }
 
 private struct ExpandedScreenshotPresentation {
@@ -168,6 +182,12 @@ struct ControlPanelView: View {
     let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .summary
+    @State private var showsInspector = true
+    @State private var inspectorMode: DetailInspectorMode = .evidence
+    @State private var evidenceTab: EvidenceInspectorTab = .transcript
+    @State private var requestedTranscriptSegmentID: UUID?
+    @State private var referenceResolutionMessage: String?
+    @State private var transcriptReferenceTask: Task<Void, Never>?
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
     @State private var isSelectingScreenshots = false
@@ -208,6 +228,13 @@ struct ControlPanelView: View {
                     )
                 }
 
+                if recordingPlacement.showsDetailRecordingBar {
+                    MeetingRecordingBar(
+                        viewModel: viewModel,
+                        recordingCoordinator: recordingCoordinator
+                    )
+                }
+
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
                     viewModel: viewModel,
@@ -228,23 +255,6 @@ struct ControlPanelView: View {
                     summaryTabContent
                 case .notes:
                     notesTabContent
-                case .screenshots:
-                    screenshotsTabContent
-                case .transcript:
-                    TranscriptTabView(
-                        store: viewModel.store,
-                        allowsTextSelection: !viewModel.isListening,
-                        showsTranslatedText: appSettings.isTranscriptTranslationEffectivelyEnabled,
-                        retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
-                    )
-                case .conversationAnalytics:
-                    ConversationAnalyticsDashboardView(
-                        store: viewModel.conversationMetricsStore,
-                        meetingId: viewModel.currentMeetingId,
-                        isAnalysisPending: viewModel.isCurrentMeetingConversationAnalysisPending,
-                        hasTranscript: viewModel.currentMeetingHasTranscriptSegments,
-                        load: viewModel.loadCurrentMeetingConversationMetrics
-                    )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -267,6 +277,10 @@ struct ControlPanelView: View {
             }
         }
         .frame(minWidth: 500, minHeight: 500)
+        .inspector(isPresented: $showsInspector) {
+            detailInspector
+                .inspectorColumnWidth(min: 300, ideal: 360, max: 520)
+        }
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()
@@ -281,6 +295,7 @@ struct ControlPanelView: View {
             }
         }
         .onChange(of: displayedMeetingIdentity) { oldIdentity, newIdentity in
+            resetTranscriptReferenceState()
             if oldIdentity == nil, newIdentity != nil {
                 selectedTab = initialTabSelection
             }
@@ -289,10 +304,8 @@ struct ControlPanelView: View {
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
         }
-        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled) { _, isEnabled in
-            if !isEnabled, selectedTab == .conversationAnalytics {
-                selectedTab = .transcript
-            }
+        .onDisappear {
+            transcriptReferenceTask?.cancel()
         }
         .confirmationDialog(
             L10n.deleteCount(selectedScreenshotIds.count),
@@ -348,17 +361,16 @@ struct ControlPanelView: View {
             )
         }
 
-        if showsToolbarRecordButton {
-            ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarSpacer(.fixed, placement: .primaryAction)
 
-            ToolbarItem(placement: .primaryAction) {
-                RecordToolbarButton(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    recordingCoordinator: recordingCoordinator
-                )
+        ToolbarItem(placement: .primaryAction) {
+            Button(showsInspector ? L10n.hideInspector : L10n.showInspector, systemImage: "sidebar.trailing") {
+                showsInspector.toggle()
             }
+            .labelStyle(.iconOnly)
+            .help(showsInspector ? L10n.hideInspector : L10n.showInspector)
         }
+
     }
 
     // MARK: - Tab Contents
@@ -385,8 +397,21 @@ struct ControlPanelView: View {
             hasSummary: viewModel.hasCurrentMeetingSummary,
             allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
             openScreenshot: openSummaryScreenshot,
-            transcriptText: summaryTranscriptText
+            transcriptText: summaryTranscriptText,
+            openTranscriptReference: openTranscriptReference
         )
+    }
+
+    private var detailInspector: some View {
+        MeetingDetailInspector(
+            viewModel: viewModel,
+            mode: $inspectorMode,
+            evidenceTab: $evidenceTab,
+            requestedTranscriptSegmentID: requestedTranscriptSegmentID,
+            referenceResolutionMessage: referenceResolutionMessage
+        ) {
+            screenshotsTabContent
+        }
     }
 
     private var notesTabContent: some View {
@@ -561,6 +586,34 @@ struct ControlPanelView: View {
         }?.displayText.nilIfBlank
     }
 
+    private func openTranscriptReference(_ reference: TranscriptReference) {
+        let meetingIdentity = displayedMeetingIdentity
+        showsInspector = true
+        inspectorMode = .evidence
+        evidenceTab = .transcript
+        referenceResolutionMessage = nil
+        transcriptReferenceTask?.cancel()
+        transcriptReferenceTask = Task { @MainActor in
+            let segmentID = await viewModel.store.loadReference(time: reference.time)
+            guard !Task.isCancelled, displayedMeetingIdentity == meetingIdentity else { return }
+            if let segmentID {
+                requestedTranscriptSegmentID = nil
+                await Task.yield()
+                guard !Task.isCancelled, displayedMeetingIdentity == meetingIdentity else { return }
+                requestedTranscriptSegmentID = segmentID
+            } else {
+                referenceResolutionMessage = L10n.transcriptReferenceNotFound
+            }
+        }
+    }
+
+    private func resetTranscriptReferenceState() {
+        transcriptReferenceTask?.cancel()
+        transcriptReferenceTask = nil
+        requestedTranscriptSegmentID = nil
+        referenceResolutionMessage = nil
+    }
+
     private var displayedMeetingTitle: String? {
         if let currentMeetingItem {
             return currentMeetingItem.meetingName
@@ -591,9 +644,10 @@ struct ControlPanelView: View {
         selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .windowBackgroundColor)
     }
 
-    private var showsToolbarRecordButton: Bool {
-        RecordingCommandState.showsDetailCommand(
+    private var recordingPlacement: RecordingCommandPlacement {
+        RecordingCommandPlacement(
             isListening: viewModel.isListening,
+            isSidebarVisible: true,
             recordingMeetingID: viewModel.recordingMeetingId,
             currentMeetingID: viewModel.currentMeetingId
         )
@@ -687,4 +741,58 @@ struct ControlPanelView: View {
         .summary
     }
 
+}
+
+private struct MeetingRecordingBar: View {
+    @ObservedObject var viewModel: CaptionViewModel
+    let recordingCoordinator: RecordingCoordinator
+    @AppStorage("liveSubtitleOverlayEnabled") private var liveSubtitleOverlayEnabled = false
+
+    private var activeSession: RecordingSessionTimeline? {
+        viewModel.activeTranscriptStore.recordingSessions.last(where: { $0.endedAt == nil })
+            ?? viewModel.activeTranscriptStore.recordingSessions.last
+    }
+
+    private var timelineStart: Date {
+        activeSession?.startedAt ?? viewModel.activeTranscriptStore.recordingStartTime ?? .now
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RecordingActivityIcon(mode: viewModel.activeTranscriptionMode ?? .defaultMode)
+
+            Text(viewModel.activeTranscriptionMode == .batch ? L10n.recordingNow : L10n.transcribingNow)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.red)
+
+            TimelineView(.periodic(from: timelineStart, by: 1)) { context in
+                Text(elapsed(at: context.date))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+            RecordingLiveSubtitleToggle(isEnabled: $liveSubtitleOverlayEnabled)
+
+            Button(L10n.stopRecording, systemImage: "stop.fill") {
+                recordingCoordinator.stopRecording()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .help(L10n.stopRecording)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func elapsed(at date: Date) -> String {
+        let seconds = if let activeSession {
+            activeSession.offsetSeconds + date.timeIntervalSince(activeSession.startedAt)
+        } else {
+            date.timeIntervalSince(timelineStart)
+        }
+        return Formatters.elapsedHHmmss(duration: seconds)
+    }
 }

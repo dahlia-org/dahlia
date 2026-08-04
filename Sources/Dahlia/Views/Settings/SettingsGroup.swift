@@ -22,11 +22,11 @@ enum SettingsGroup: CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .permissions, .backups]
-        case .recording: [.transcription, .liveSubtitles, .screenshots]
+        case .app: [.general, .permissions]
+        case .recording: [.transcription, .screenshots]
         case .integrations: [.calendar, .cloudStorage]
         case .ai: [.modelProvider, .aiSummary, .mcp]
-        case .advanced: [.betaFeatures, .developer, .audioDiagnostics]
+        case .advanced: [.betaFeatures, .developer]
         }
     }
 }

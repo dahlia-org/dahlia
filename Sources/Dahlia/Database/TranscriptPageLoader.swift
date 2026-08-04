@@ -19,4 +19,18 @@ actor TranscriptPageLoader {
             limit: limit
         )
     }
+
+    func resolveReference(
+        meetingId: UUID,
+        time: String,
+        tolerance: TimeInterval = 5,
+        limit: Int = TranscriptStore.initialPageSize
+    ) throws -> TranscriptReferencePage? {
+        try repository.fetchTranscriptReferencePage(
+            forMeetingId: meetingId,
+            time: time,
+            tolerance: tolerance,
+            limit: limit
+        )
+    }
 }

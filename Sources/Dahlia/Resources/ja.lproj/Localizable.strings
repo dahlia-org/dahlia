@@ -96,6 +96,14 @@
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
 "Meetings" = "Meetings";
+"Evidence" = "根拠";
+"Analysis" = "分析";
+"Inspector" = "インスペクタ";
+"Show Inspector" = "インスペクタを表示";
+"Hide Inspector" = "インスペクタを隠す";
+"The referenced transcript could not be located." = "参照箇所を特定できません。";
+"Show all tags" = "すべてのタグを表示";
+"%lld more tags" = "他%lld件のタグ";
 "Projects" = "Projects";
 "Project Management" = "プロジェクト管理";
 "Instructions" = "Instructions";

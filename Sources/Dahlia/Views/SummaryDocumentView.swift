@@ -7,6 +7,7 @@ struct SummaryDocumentView: View {
     let screenshotProvider: (UUID) -> MeetingScreenshotRecord?
     let onOpenImage: (UUID, CGImage) -> Void
     let transcriptTextProvider: (TranscriptReference) -> String?
+    let onOpenTranscriptReference: (TranscriptReference) -> Void
     let allowsTranscriptReferencePopovers: Bool
 
     init(
@@ -14,12 +15,14 @@ struct SummaryDocumentView: View {
         screenshotProvider: @escaping (UUID) -> MeetingScreenshotRecord?,
         onOpenImage: @escaping (UUID, CGImage) -> Void,
         transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil },
+        onOpenTranscriptReference: @escaping (TranscriptReference) -> Void = { _ in },
         allowsTranscriptReferencePopovers: Bool = true
     ) {
         self.document = document
         self.screenshotProvider = screenshotProvider
         self.onOpenImage = onOpenImage
         self.transcriptTextProvider = transcriptTextProvider
+        self.onOpenTranscriptReference = onOpenTranscriptReference
         self.allowsTranscriptReferencePopovers = allowsTranscriptReferencePopovers
     }
 
@@ -245,6 +248,7 @@ struct SummaryDocumentView: View {
             TranscriptReferenceChip(
                 reference: ref,
                 transcriptText: transcriptTextProvider(ref),
+                onOpen: { onOpenTranscriptReference(ref) },
                 allowsPopover: allowsTranscriptReferencePopovers
             )
         }
@@ -335,37 +339,42 @@ struct SummaryScreenshotImageView: View {
 private struct TranscriptReferenceChip: View {
     let reference: TranscriptReference
     let transcriptText: String?
+    let onOpen: () -> Void
     let allowsPopover: Bool
 
     @State private var isTranscriptPopoverPresented = false
 
     var body: some View {
-        Text(reference.time)
-            .font(.caption2.weight(.medium))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, DahliaDesign.timestampChipHorizontalPadding)
-            .padding(.vertical, DahliaDesign.timestampChipVerticalPadding)
-            .background(Color.primary.opacity(DahliaDesign.timestampChipBackgroundOpacity), in: Capsule())
-            .onHover { isHovering in
-                isTranscriptPopoverPresented = allowsPopover
-                    && isHovering
-                    && transcriptText?.nilIfBlank != nil
+        Button(action: onOpen) {
+            Text(reference.time)
+                .font(.caption2.weight(.medium))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, DahliaDesign.timestampChipHorizontalPadding)
+                .padding(.vertical, DahliaDesign.timestampChipVerticalPadding)
+                .background(Color.primary.opacity(DahliaDesign.timestampChipBackgroundOpacity), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .onHover { isHovering in
+            isTranscriptPopoverPresented = allowsPopover
+                && isHovering
+                && transcriptText?.nilIfBlank != nil
+        }
+        .onChange(of: allowsPopover) {
+            guard !allowsPopover else { return }
+            isTranscriptPopoverPresented = false
+        }
+        .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
+            if let transcriptText = transcriptText?.nilIfBlank {
+                Text(transcriptText)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 280, alignment: .leading)
+                    .padding(10)
             }
-            .onChange(of: allowsPopover) {
-                guard !allowsPopover else { return }
-                isTranscriptPopoverPresented = false
-            }
-            .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
-                if let transcriptText = transcriptText?.nilIfBlank {
-                    Text(transcriptText)
-                        .font(.callout)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(width: 280, alignment: .leading)
-                        .padding(10)
-                }
-            }
+        }
     }
 }

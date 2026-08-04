@@ -10,19 +10,15 @@ struct SettingsDetailView: View {
         Group {
             switch selection {
             case .general:
-                GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
+                GeneralAndBackupSettingsView(
+                    captionViewModel: captionViewModel,
+                    sidebarViewModel: sidebarViewModel,
+                    onSelectVault: onSelectVault
+                )
             case .permissions:
                 PermissionSettingsView()
-            case .backups:
-                BackupSettingsView(
-                    dbQueue: sidebarViewModel.dbQueue,
-                    captionViewModel: captionViewModel,
-                    sidebarViewModel: sidebarViewModel
-                )
             case .transcription:
-                TranscriptionSettingsView()
-            case .liveSubtitles:
-                LiveSubtitleSettingsView()
+                TranscriptionAndSubtitleSettingsView()
             case .screenshots:
                 ScreenshotSettingsView()
             case .calendar:
@@ -35,14 +31,10 @@ struct SettingsDetailView: View {
                 AISummarySettingsView()
             case .mcp:
                 MCPSettingsView()
-            case .instructions:
-                InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
             case .betaFeatures:
                 BetaFeaturesSettingsView()
             case .developer:
-                DeveloperSettingsView()
-            case .audioDiagnostics:
-                DebugSettingsView()
+                DeveloperAndDiagnosticsSettingsView()
             }
         }
         .navigationTitle(selection.label)

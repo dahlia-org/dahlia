@@ -22,6 +22,11 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         case latest
     }
 
+    private struct PendingReferenceRequest {
+        let time: String
+        let continuation: CheckedContinuation<UUID?, Never>
+    }
+
     @Published private(set) var segments: [TranscriptSegment] = []
     @Published private(set) var recordingSessions: [RecordingSessionTimeline] = []
     @Published private(set) var hasEarlierSegments = false
@@ -53,6 +58,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     private var isFollowingLatest = true
     private var failedPageLoad: FailedPageLoad?
     private var pendingLatestReloadWaiters: [CheckedContinuation<Bool, Never>] = []
+    private var pendingReferenceRequest: PendingReferenceRequest?
     private var deferredConfirmedSegments: [UUID: TranscriptSegment] = [:]
 
     // MARK: - Unconfirmed Segment Throttle (per source)
@@ -64,6 +70,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     func prepareForMeetingLoading(meetingId: UUID, loader: TranscriptPageLoader) {
         cancelPendingLatestReloads()
+        cancelPendingReferenceRequest()
         pagingGeneration &+= 1
         self.meetingId = meetingId
         self.pageLoader = loader
@@ -83,6 +90,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     func attachPagingContext(meetingId: UUID, loader: TranscriptPageLoader) {
         let meetingChanged = self.meetingId != meetingId
         cancelPendingLatestReloads()
+        cancelPendingReferenceRequest()
         pagingGeneration &+= 1
         self.meetingId = meetingId
         self.pageLoader = loader
@@ -94,6 +102,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     }
 
     func failInitialMeetingLoad(_ error: Error) {
+        cancelPendingReferenceRequest()
         isLoadingPage = false
         isLoadingInitialPage = false
         pageLoadError = error.localizedDescription
@@ -107,6 +116,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         initialPage: TranscriptPage
     ) {
         cancelPendingLatestReloads()
+        cancelPendingReferenceRequest()
         pagingGeneration &+= 1
         self.meetingId = meetingId
         self.pageLoader = loader
@@ -152,6 +162,60 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     func reloadLatestAfterUICompaction() async -> Bool {
         clearAllUnconfirmedSegmentsImmediately()
         return await requestLatestReload()
+    }
+
+    func loadReference(time: String) async -> UUID? {
+        guard meetingId != nil, pageLoader != nil else { return nil }
+        if isLoadingPage {
+            return await withCheckedContinuation { continuation in
+                pendingReferenceRequest?.continuation.resume(returning: nil)
+                pendingReferenceRequest = PendingReferenceRequest(time: time, continuation: continuation)
+            }
+        }
+        return await loadReferenceNow(time: time)
+    }
+
+    private func loadReferenceNow(time: String) async -> UUID? {
+        guard !isLoadingPage,
+              let meetingId,
+              let pageLoader else { return nil }
+        let generation = pagingGeneration
+        let confirmedAtStart = Dictionary(uniqueKeysWithValues: confirmedSegments.map { ($0.id, $0) })
+        isLoadingPage = true
+        pageLoadError = nil
+        let targetSegmentID: UUID?
+        do {
+            let result = try await pageLoader.resolveReference(meetingId: meetingId, time: time)
+            if generation == pagingGeneration, self.meetingId == meetingId, let result {
+                for segment in segments where segment.isConfirmed && confirmedAtStart[segment.id] != segment {
+                    deferredConfirmedSegments[segment.id] = segment
+                }
+                trimDeferredConfirmedSegments()
+                projectionRevision &+= 1
+                segments = result.page.segments
+                hasEarlierSegments = result.page.hasEarlier
+                hasNewerSegments = !deferredConfirmedSegments.isEmpty
+                hasLaterSegments = result.page.hasLater || hasNewerSegments
+                isFollowingLatest = !hasLaterSegments
+                targetSegmentID = result.targetSegmentID
+            } else {
+                targetSegmentID = nil
+            }
+        } catch is CancellationError {
+            targetSegmentID = nil
+        } catch {
+            if generation == pagingGeneration {
+                pageLoadError = error.localizedDescription
+            }
+            targetSegmentID = nil
+        }
+
+        if generation == pagingGeneration {
+            isLoadingPage = false
+            await performPendingReferenceRequestIfNeeded()
+            await performPendingLatestReloadIfNeeded()
+        }
+        return targetSegmentID
     }
 
     @discardableResult
@@ -260,6 +324,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
 
     func clear() {
         cancelPendingLatestReloads()
+        cancelPendingReferenceRequest()
         pagingGeneration &+= 1
         projectionRevision &+= 1
         meetingId = nil
@@ -355,6 +420,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         if generation == pagingGeneration {
             isLoadingPage = false
             isLoadingInitialPage = false
+            await performPendingReferenceRequestIfNeeded()
             await performPendingLatestReloadIfNeeded()
         }
         return didLoad
@@ -432,6 +498,18 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         let waiters = pendingLatestReloadWaiters
         pendingLatestReloadWaiters.removeAll()
         waiters.forEach { $0.resume(returning: false) }
+    }
+
+    private func performPendingReferenceRequestIfNeeded() async {
+        guard let request = pendingReferenceRequest else { return }
+        pendingReferenceRequest = nil
+        let result = await loadReferenceNow(time: request.time)
+        request.continuation.resume(returning: result)
+    }
+
+    private func cancelPendingReferenceRequest() {
+        pendingReferenceRequest?.continuation.resume(returning: nil)
+        pendingReferenceRequest = nil
     }
 
     private func trimDeferredConfirmedSegments() {

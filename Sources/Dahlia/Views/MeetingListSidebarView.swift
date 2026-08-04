@@ -6,6 +6,7 @@ struct MeetingListSidebarView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    var scopeProjectID: UUID?
 
     @State private var searchText = ""
     @State private var searchTokens: [MeetingSearchToken] = []
@@ -28,7 +29,11 @@ struct MeetingListSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: meetingSelection) {
-                if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
+                if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems,
+                   MeetingSidebarSearchModifier.projectScopeIncludes(
+                       meetingProjectID: selectedMeeting.projectId,
+                       scopeProjectID: scopeProjectID
+                   ) {
                     Section(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting) {
                         meetingRow(selectedMeeting)
                     }
@@ -83,7 +88,8 @@ struct MeetingListSidebarView: View {
         .meetingSidebarSearch(
             text: $searchText,
             tokens: $searchTokens,
-            sidebarViewModel: sidebarViewModel
+            sidebarViewModel: sidebarViewModel,
+            scopeProjectID: scopeProjectID
         )
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
@@ -124,7 +130,10 @@ struct MeetingListSidebarView: View {
     private func clearSearch() {
         searchText = ""
         searchTokens.removeAll()
-        sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
+        sidebarViewModel.updateMeetingSearchCriteria(MeetingSidebarSearchModifier.applyingProjectScope(
+            scopeProjectID,
+            to: MeetingSearchCriteria()
+        ))
     }
 
     @ViewBuilder
@@ -254,13 +263,6 @@ private struct RecordingStatusBar: View {
         }
     }
 
-    private var showsSidebarStop: Bool {
-        RecordingCommandState.showsSidebarStop(
-            recordingMeetingID: recordingMeetingId,
-            currentMeetingID: viewModel.currentMeetingId
-        )
-    }
-
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -274,16 +276,14 @@ private struct RecordingStatusBar: View {
                 .help(recordingLabels.returnToMeeting)
                 .accessibilityLabel("\(recordingLabels.activity), \(recordingTitle)")
 
-                if showsSidebarStop {
-                    Button(recordingLabels.stop, systemImage: "stop.fill") {
-                        recordingCoordinator.stopRecording()
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.small)
-                    .help(recordingLabels.stop)
+                Button(recordingLabels.stop, systemImage: "stop.fill") {
+                    recordingCoordinator.stopRecording()
                 }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.small)
+                .help(recordingLabels.stop)
             }
 
             Divider()

@@ -8,6 +8,7 @@ struct MeetingMetadataBar: View {
     let calendarEvent: CalendarEventDisplayInfo?
 
     @State private var showTagPopover = false
+    @State private var showAllTagsPopover = false
     @State private var tagInput = ""
 
     private var tags: [TagInfo] {
@@ -16,6 +17,9 @@ struct MeetingMetadataBar: View {
               item.meetingId == meetingId else { return [] }
         return item.tags
     }
+
+    private var visibleTags: ArraySlice<TagInfo> { tags.prefix(3) }
+    private var hiddenTagCount: Int { max(0, tags.count - visibleTags.count) }
 
     private var trimmedTagInput: String {
         tagInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -49,10 +53,33 @@ struct MeetingMetadataBar: View {
                 style: .regular
             )
 
-            ForEach(tags, id: \.name) { tag in
-                TagChip(tag: tag) {
-                    guard let meetingId = viewModel.currentMeetingId else { return }
-                    sidebarViewModel.removeTagFromMeeting(id: meetingId, tag: tag.name)
+            ForEach(visibleTags, id: \.name) { tag in
+                TagChip(tag: tag) { removeTag(tag) }
+            }
+
+            if hiddenTagCount > 0 {
+                Button("+\(hiddenTagCount)") {
+                    showAllTagsPopover.toggle()
+                }
+                .font(.caption.weight(.medium))
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .dahliaChipSurface()
+                .help(L10n.hiddenTagsCount(hiddenTagCount))
+                .accessibilityLabel(L10n.hiddenTagsCount(hiddenTagCount))
+                .accessibilityHint(L10n.showAllTags)
+                .popover(isPresented: $showAllTagsPopover, arrowEdge: .bottom) {
+                    ScrollView {
+                        FlowLayout(spacing: DahliaDesign.chipSpacing, rowSpacing: DahliaDesign.chipRowSpacing) {
+                            ForEach(tags, id: \.name) { tag in
+                                TagChip(tag: tag) { removeTag(tag) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                    }
+                    .frame(width: 320)
+                    .frame(maxHeight: 300)
                 }
             }
 
@@ -161,6 +188,11 @@ struct MeetingMetadataBar: View {
         sidebarViewModel.addTagToMeeting(id: meetingId, tag: trimmedTagInput.localizedLowercase)
         sidebarViewModel.selectMeeting(meetingId)
         tagInput = ""
+    }
+
+    private func removeTag(_ tag: TagInfo) {
+        guard let meetingId = viewModel.currentMeetingId else { return }
+        sidebarViewModel.removeTagFromMeeting(id: meetingId, tag: tag.name)
     }
 
     private func ensureMeetingId() -> UUID? {

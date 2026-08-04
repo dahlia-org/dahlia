@@ -160,6 +160,20 @@ enum L10n {
     static var goodAfternoon: String { String(localized: "Good afternoon", bundle: bundle) }
     static var goodEvening: String { String(localized: "Good evening", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
+    static var evidence: String { String(localized: "Evidence", bundle: bundle) }
+    static var analysis: String { String(localized: "Analysis", bundle: bundle) }
+    static var inspector: String { String(localized: "Inspector", bundle: bundle) }
+    static var showInspector: String { String(localized: "Show Inspector", bundle: bundle) }
+    static var hideInspector: String { String(localized: "Hide Inspector", bundle: bundle) }
+    static var transcriptReferenceNotFound: String {
+        String(localized: "The referenced transcript could not be located.", bundle: bundle)
+    }
+
+    static var showAllTags: String { String(localized: "Show all tags", bundle: bundle) }
+    static func hiddenTagsCount(_ count: Int) -> String {
+        String(localized: "\(count) more tags", bundle: bundle)
+    }
+
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
     static var organizations: String { String(localized: "Organizations", bundle: bundle) }

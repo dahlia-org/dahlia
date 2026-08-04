@@ -5,6 +5,7 @@ struct MeetingSidebarSearchModifier: ViewModifier {
     @Binding var searchText: String
     @Binding var searchTokens: [MeetingSearchToken]
     var sidebarViewModel: SidebarViewModel
+    var scopeProjectID: UUID?
 
     @State private var customDateStart = Calendar.current.startOfDay(for: .now)
     @State private var customDateEnd = Calendar.current.startOfDay(for: .now)
@@ -67,6 +68,9 @@ struct MeetingSidebarSearchModifier: ViewModifier {
             .onChange(of: sidebarViewModel.areSearchTagsLoaded, searchCatalogLoaded)
             .onChange(of: sidebarViewModel.currentVault?.id) {
                 clearSearch()
+            }
+            .onChange(of: scopeProjectID) {
+                updateSearch()
             }
             .onAppear {
                 startMonitoringPasteCommands()
@@ -311,7 +315,7 @@ private extension MeetingSidebarSearchModifier {
             text: searchTextExcludingTrailingQualifier,
             tokens: searchTokens
         )
-        sidebarViewModel.updateMeetingSearchCriteria(criteria)
+        sidebarViewModel.updateMeetingSearchCriteria(Self.applyingProjectScope(scopeProjectID, to: criteria))
     }
 
     private var searchTextExcludingTrailingQualifier: String {
@@ -343,7 +347,10 @@ private extension MeetingSidebarSearchModifier {
         parserProducedSearchText = nil
         pasteCommandTracker.cancel()
         activeSuggestionMode = .overview
-        sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
+        sidebarViewModel.updateMeetingSearchCriteria(Self.applyingProjectScope(
+            scopeProjectID,
+            to: MeetingSearchCriteria()
+        ))
     }
 
     private func clearSearchAfterSuggestionInteraction() {

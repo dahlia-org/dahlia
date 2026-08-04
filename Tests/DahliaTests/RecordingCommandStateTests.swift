@@ -25,6 +25,20 @@ import Foundation
         }
 
         @Test
+        func primaryCommandReturnsToRecordingMeetingWhenAnotherMeetingIsVisible() {
+            let recordingMeetingID = UUID()
+            let state = RecordingCommandState(
+                isListening: true,
+                canStartNewMeeting: false,
+                recordingMeetingID: recordingMeetingID,
+                currentMeetingID: UUID()
+            )
+
+            #expect(state.action == .returnToRecordingMeeting)
+            #expect(state.isEnabled)
+        }
+
+        @Test
         func detailCommandOnlyControlsTheMeetingItRepresents() {
             let recordingMeetingID = UUID()
 
@@ -84,6 +98,37 @@ import Foundation
 
                 #expect(showsDetail != showsSidebar)
             }
+        }
+
+        @Test
+        func placementAlwaysKeepsAnImmediateStopReachable() {
+            let recordingMeetingID = UUID()
+
+            for isSidebarVisible in [false, true] {
+                for currentMeetingID in [recordingMeetingID, UUID(), nil] {
+                    let placement = RecordingCommandPlacement(
+                        isListening: true,
+                        isSidebarVisible: isSidebarVisible,
+                        recordingMeetingID: recordingMeetingID,
+                        currentMeetingID: currentMeetingID
+                    )
+
+                    #expect(placement.hasImmediateStop)
+                    #expect(placement.showsToolbarStop == !isSidebarVisible)
+                }
+            }
+        }
+
+        @Test
+        func placementShowsNoRecordingControlsWhileIdle() {
+            let placement = RecordingCommandPlacement(
+                isListening: false,
+                isSidebarVisible: false,
+                recordingMeetingID: nil,
+                currentMeetingID: nil
+            )
+
+            #expect(!placement.hasImmediateStop)
         }
     }
 #endif

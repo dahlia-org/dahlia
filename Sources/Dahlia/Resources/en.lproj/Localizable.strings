@@ -96,6 +96,14 @@
 "Good afternoon" = "Good afternoon";
 "Good evening" = "Good evening";
 "Meetings" = "Meetings";
+"Evidence" = "Evidence";
+"Analysis" = "Analysis";
+"Inspector" = "Inspector";
+"Show Inspector" = "Show Inspector";
+"Hide Inspector" = "Hide Inspector";
+"The referenced transcript could not be located." = "The referenced transcript could not be located.";
+"Show all tags" = "Show all tags";
+"%lld more tags" = "%lld more tags";
 "Projects" = "Projects";
 "Project Management" = "Project Management";
 "Instructions" = "Instructions";
