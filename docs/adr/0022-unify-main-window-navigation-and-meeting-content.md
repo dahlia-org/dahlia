@@ -24,7 +24,7 @@ Schedule, Meetings, Projects, and Organizations are first-class main-window sect
 
 Meeting body navigation contains Summary, Notes, Screenshots, Transcript, and beta-gated Conversation Analytics as peer destinations. These are alternative full-width views of one meeting, not persistent context that must remain beside the summary. A summary transcript reference selects the Transcript destination, resolves against SQLite using meeting-wide elapsed time, loads a bounded page around the resolved segment, and scrolls by segment ID. References retain their existing `HH:mm:ss` serialized form.
 
-The window toolbar contains global commands, including Settings and Organization history navigation. Summary generation and sharing stay beside the meeting tabs because they act on the selected meeting rather than the application as a whole.
+The window toolbar contains global commands, including Settings and back/forward navigation. Its history spans main destinations and meeting selections; while Organizations is active, the same controls consume its internal resource history before leaving the workspace. Summary generation and sharing stay beside the meeting tabs because they act on the selected meeting rather than the application as a whole.
 
 Recording actions follow one pure state and placement model. The primary toolbar position is stable. While a different meeting is displayed it returns to the recording meeting, and a separate stop action remains reachable. If the sidebar is hidden, the toolbar owns that stop action.
 

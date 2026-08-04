@@ -16,6 +16,7 @@ struct ContentView: View {
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
     @State private var navigationState = MainNavigationState()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var organizationNavigationHistory = CustomerIntelligenceNavigationHistoryBridge()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -34,6 +35,18 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
+                Button(L10n.back, systemImage: "chevron.backward", action: goBack)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canGoBack)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help(L10n.back)
+
+                Button(L10n.forward, systemImage: "chevron.forward", action: goForward)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canGoForward)
+                    .keyboardShortcut("]", modifiers: .command)
+                    .help(L10n.forward)
+
                 Button(L10n.newMeeting, systemImage: "square.and.pencil") {
                     recordingCoordinator.createEmptyMeeting()
                 }
@@ -194,6 +207,20 @@ struct ContentView: View {
         navigationState.route.showsMeetingList
     }
 
+    private var canGoBack: Bool {
+        if navigationState.route == .organizations, organizationNavigationHistory.canGoBack {
+            return true
+        }
+        return navigationState.canGoBack
+    }
+
+    private var canGoForward: Bool {
+        if navigationState.route == .organizations, organizationNavigationHistory.canGoForward {
+            return true
+        }
+        return navigationState.canGoForward
+    }
+
     private var recordingPlacement: RecordingCommandPlacement {
         RecordingCommandPlacement(
             isListening: viewModel.isListening,
@@ -222,7 +249,8 @@ struct ContentView: View {
         case .organizations:
             OrganizationWorkspaceView(
                 sidebarViewModel: sidebarViewModel,
-                chatCoordinator: chatCoordinator
+                chatCoordinator: chatCoordinator,
+                navigationHistory: organizationNavigationHistory
             )
         case .meetings, .project:
             meetingWorkspace
@@ -335,6 +363,30 @@ struct ContentView: View {
             )
         } catch {
             viewModel.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func goBack() {
+        if navigationState.route == .organizations, organizationNavigationHistory.canGoBack {
+            organizationNavigationHistory.goBack()
+        } else if navigationState.goBack() {
+            restoreMainNavigationLocation()
+        }
+    }
+
+    private func goForward() {
+        if navigationState.route == .organizations, organizationNavigationHistory.canGoForward {
+            organizationNavigationHistory.goForward()
+        } else if navigationState.goForward() {
+            restoreMainNavigationLocation()
+        }
+    }
+
+    private func restoreMainNavigationLocation() {
+        guard sidebarViewModel.selectedMeetingIds != navigationState.meetingSelection else { return }
+        sidebarViewModel.selectedMeetingIds = navigationState.meetingSelection
+        if navigationState.meetingSelection.isEmpty {
+            viewModel.clearCurrentMeeting()
         }
     }
 }

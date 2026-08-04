@@ -10,20 +10,23 @@ struct CustomerIntelligenceToolbar: ToolbarContent {
     let canGoForward: Bool
     let onGoBack: () -> Void
     let onGoForward: () -> Void
+    let showsNavigationHistory: Bool
     let onSelectScope: (CustomerIntelligenceScope) -> Void
     let onCreate: (CustomerIntelligenceCreationRequest) -> Void
     let onOrganizeWithAI: () -> Void
 
     var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .navigation) {
-            Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
-                .labelStyle(.iconOnly)
-                .disabled(!canGoBack)
-                .help(L10n.back)
-            Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
-                .labelStyle(.iconOnly)
-                .disabled(!canGoForward)
-                .help(L10n.forward)
+        if showsNavigationHistory {
+            ToolbarItemGroup(placement: .navigation) {
+                Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canGoBack)
+                    .help(L10n.back)
+                Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
+                    .labelStyle(.iconOnly)
+                    .disabled(!canGoForward)
+                    .help(L10n.forward)
+            }
         }
 
         ToolbarItem(placement: .principal) {

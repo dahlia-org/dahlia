@@ -6,15 +6,21 @@ struct OrganizationWorkspaceView: View {
 
     var sidebarViewModel: SidebarViewModel
     var chatCoordinator: CodexChatCoordinator
+    var navigationHistory: CustomerIntelligenceNavigationHistoryBridge?
 
     @State private var model: CustomerIntelligenceWorkspaceViewModel
     @State private var showsInspector = true
     @State private var showsAIScope = false
     @State private var creationRequest: CustomerIntelligenceCreationRequest?
 
-    init(sidebarViewModel: SidebarViewModel, chatCoordinator: CodexChatCoordinator) {
+    init(
+        sidebarViewModel: SidebarViewModel,
+        chatCoordinator: CodexChatCoordinator,
+        navigationHistory: CustomerIntelligenceNavigationHistoryBridge? = nil
+    ) {
         self.sidebarViewModel = sidebarViewModel
         self.chatCoordinator = chatCoordinator
+        self.navigationHistory = navigationHistory
         _model = State(initialValue: CustomerIntelligenceWorkspaceViewModel(
             dbQueue: sidebarViewModel.dbQueue,
             vaultID: sidebarViewModel.currentVault?.id
@@ -46,6 +52,7 @@ struct OrganizationWorkspaceView: View {
                 canGoForward: model.canGoForward,
                 onGoBack: { Task { await model.goBack() } },
                 onGoForward: { Task { await model.goForward() } },
+                showsNavigationHistory: navigationHistory == nil,
                 onSelectScope: { scope in
                     Task { await model.selectScope(scope) }
                 },
@@ -54,6 +61,18 @@ struct OrganizationWorkspaceView: View {
             )
         }
         .task { await model.load() }
+        .onAppear {
+            navigationHistory?.connect(model)
+        }
+        .onChange(of: model.canGoBack) { _, _ in
+            navigationHistory?.refresh()
+        }
+        .onChange(of: model.canGoForward) { _, _ in
+            navigationHistory?.refresh()
+        }
+        .onDisappear {
+            navigationHistory?.disconnect(model)
+        }
         .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultID in
             creationRequest = nil
             showsAIScope = false
