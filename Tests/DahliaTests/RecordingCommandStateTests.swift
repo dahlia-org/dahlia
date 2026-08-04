@@ -114,7 +114,12 @@ import Foundation
                     )
 
                     #expect(placement.hasImmediateStop)
-                    #expect(placement.showsToolbarStop == !isSidebarVisible)
+                    let stopCommandCount = [
+                        placement.showsSidebarRecordingPanel,
+                        placement.showsDetailRecordingBar,
+                        placement.showsToolbarStop,
+                    ].count(where: { $0 })
+                    #expect(stopCommandCount == 1)
                 }
             }
         }
@@ -132,7 +137,7 @@ import Foundation
         }
 
         @Test
-        func placementUsesSidebarIndicatorOnlyOutsideTheRecordingMeeting() {
+        func placementMakesSidebarPanelTheRecordingOwnerAcrossMeetingNavigation() {
             let recordingMeetingID = UUID()
             let recordingMeetingPlacement = RecordingCommandPlacement(
                 isListening: true,
@@ -147,10 +152,10 @@ import Foundation
                 currentMeetingID: UUID()
             )
 
-            #expect(recordingMeetingPlacement.showsDetailRecordingBar)
-            #expect(!recordingMeetingPlacement.showsSidebarIndicator)
+            #expect(!recordingMeetingPlacement.showsDetailRecordingBar)
+            #expect(recordingMeetingPlacement.showsSidebarRecordingPanel)
             #expect(!otherMeetingPlacement.showsDetailRecordingBar)
-            #expect(otherMeetingPlacement.showsSidebarIndicator)
+            #expect(otherMeetingPlacement.showsSidebarRecordingPanel)
         }
     }
 #endif

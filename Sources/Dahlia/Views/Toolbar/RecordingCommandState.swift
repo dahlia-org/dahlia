@@ -44,7 +44,7 @@ struct RecordingCommandState: Equatable {
 
 /// Pure placement policy used to keep an immediate stop command reachable as split-view columns collapse.
 struct RecordingCommandPlacement: Equatable {
-    let showsSidebarIndicator: Bool
+    let showsSidebarRecordingPanel: Bool
     let showsDetailRecordingBar: Bool
     let showsToolbarStop: Bool
 
@@ -54,17 +54,15 @@ struct RecordingCommandPlacement: Equatable {
         recordingMeetingID: UUID?,
         currentMeetingID: UUID?
     ) {
-        showsSidebarIndicator = isListening
-            && isSidebarVisible
-            && RecordingCommandState.showsSidebarStop(
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: currentMeetingID
-            )
-        showsDetailRecordingBar = isListening && recordingMeetingID != nil && recordingMeetingID == currentMeetingID
-        showsToolbarStop = isListening && !isSidebarVisible
+        showsSidebarRecordingPanel = isListening && isSidebarVisible
+        showsDetailRecordingBar = isListening
+            && !isSidebarVisible
+            && recordingMeetingID != nil
+            && recordingMeetingID == currentMeetingID
+        showsToolbarStop = isListening && !showsSidebarRecordingPanel && !showsDetailRecordingBar
     }
 
     var hasImmediateStop: Bool {
-        showsSidebarIndicator || showsDetailRecordingBar || showsToolbarStop
+        showsSidebarRecordingPanel || showsDetailRecordingBar || showsToolbarStop
     }
 }

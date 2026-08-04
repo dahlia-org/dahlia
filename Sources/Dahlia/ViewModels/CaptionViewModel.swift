@@ -511,6 +511,7 @@ final class CaptionViewModel: ObservableObject {
     private var transcriptionLocaleCancellable: AnyCancellable?
     private var liveSubtitleSettingsCancellable: AnyCancellable?
     private var automaticScreenshotSettingsCancellables: Set<AnyCancellable> = []
+    private var availableWindowsRefreshTask: Task<Void, Never>?
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
     private var summaryReloadTask: Task<Void, Never>?
@@ -3641,9 +3642,12 @@ final class CaptionViewModel: ObservableObject {
 
     /// キャプチャ対象のウィンドウ一覧を更新する。
     func refreshAvailableWindows() {
-        Task {
+        availableWindowsRefreshTask?.cancel()
+        availableWindowsRefreshTask = Task { [weak self] in
+            guard let self else { return }
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+                guard !Task.isCancelled else { return }
                 let myBundleID = Bundle.main.bundleIdentifier
                 let newWindows = ScreenshotWindowOption.build(
                     from: content.windows.map(ScreenshotWindowOption.Snapshot.init(window:)),
@@ -3658,7 +3662,8 @@ final class CaptionViewModel: ObservableObject {
                     screenshotCaptureSource = .none
                 }
             } catch {
-                self.availableWindows = []
+                guard !Task.isCancelled else { return }
+                availableWindows = []
             }
         }
     }
