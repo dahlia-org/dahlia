@@ -284,6 +284,25 @@ import Foundation
                 ]),
             ]))
             await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "changes": .array([
+                            .object([
+                                "diff": .string("@@ -1 +1 @@\n-old\n+new"),
+                                "kind": .object(["type": .string("update"), "move_path": .null]),
+                                "path": .string("Sources/Example.swift"),
+                            ]),
+                        ]),
+                        "id": .string("item-2"),
+                        "status": .string("inProgress"),
+                        "type": .string("fileChange"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
                 "id": .string("approval-2"),
                 "method": .string("item/fileChange/requestApproval"),
                 "params": .object([
@@ -316,11 +335,36 @@ import Foundation
                 .approvalRequested(CodexChatApprovalRequest(
                     id: "s:approval-2",
                     kind: .fileChange,
+                    fileChanges: [
+                        CodexChatApprovalRequest.FileChange(
+                            path: "Sources/Example.swift",
+                            diff: "@@ -1 +1 @@\n-old\n+new"
+                        ),
+                    ],
                     grantRoot: "/tmp/outside-workspace"
                 )),
                 .completed(itemID: nil, text: nil),
             ])
             await appServer.shutdown()
+        }
+
+        @Test
+        func approvalsWithoutReviewableDetailsCannotBeAccepted() {
+            #expect(!CodexChatApprovalRequest(
+                id: "file",
+                kind: .fileChange,
+                grantRoot: "/tmp/outside-workspace"
+            ).canApprove)
+            #expect(!CodexChatApprovalRequest(
+                id: "command",
+                kind: .commandExecution,
+                cwd: "/tmp"
+            ).canApprove)
+            #expect(CodexChatApprovalRequest(
+                id: "file-with-diff",
+                kind: .fileChange,
+                fileChanges: [.init(path: "Example.swift", diff: "+change")]
+            ).canApprove)
         }
 
         private func events(

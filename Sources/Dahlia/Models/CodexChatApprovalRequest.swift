@@ -1,6 +1,11 @@
 import Foundation
 
 struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
+    struct FileChange: Equatable, Sendable {
+        let path: String
+        let diff: String
+    }
+
     enum Kind: Equatable, Sendable {
         case commandExecution
         case fileChange
@@ -10,6 +15,7 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     let kind: Kind
     let command: String?
     let cwd: String?
+    let fileChanges: [FileChange]
     let grantRoot: String?
     let reason: String?
 
@@ -18,6 +24,7 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         kind: Kind,
         command: String? = nil,
         cwd: String? = nil,
+        fileChanges: [FileChange] = [],
         grantRoot: String? = nil,
         reason: String? = nil
     ) {
@@ -25,7 +32,17 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         self.kind = kind
         self.command = command
         self.cwd = cwd
+        self.fileChanges = fileChanges
         self.grantRoot = grantRoot
         self.reason = reason
+    }
+
+    var canApprove: Bool {
+        switch kind {
+        case .commandExecution:
+            command?.nilIfBlank != nil
+        case .fileChange:
+            !fileChanges.isEmpty
+        }
     }
 }

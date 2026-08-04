@@ -818,10 +818,7 @@ import Foundation
                           let requestID = message.objectValue?["id"],
                           let approvalID = CodexAppServerService.approvalID(for: requestID)
                     else { continue }
-                    await service.respondToApproval(
-                        id: approvalID,
-                        decision: CodexChatApprovalDecision.acceptForSession.rawValue
-                    )
+                    await service.respondToApproval(id: approvalID, decision: .acceptForSession)
                 }
             }
 
@@ -875,7 +872,9 @@ import Foundation
                     "turnId": .string("turn-1"),
                 ]),
             ]))
-            try await service.waitUntilPendingApprovalForTesting("s:approval-1")
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-1")
+            })
 
             start.cancel()
             await #expect(throws: CancellationError.self) {
@@ -887,6 +886,22 @@ import Foundation
                     && $0.objectValue?["method"] == nil
             }?.objectValue)
             #expect(approval["result"]?.objectValue?["decision"] == .string("decline"))
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-late"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "itemId": .string("item-late"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-late")
+            let lateApproval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-late")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(lateApproval["result"]?.objectValue?["decision"] == .string("cancel"))
 
             let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
             let collected = Task {
@@ -909,6 +924,86 @@ import Foundation
                 ]),
             ]))
             #expect(try await collected.value == ["turn/completed"])
+            await service.shutdown()
+        }
+
+        @Test
+        func lateApprovalAfterSubscriberClosesIsCancelled() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+            #expect(await pollUntil {
+                await service.hasTurnSubscriberForTesting(
+                    threadID: "thread-1",
+                    turnID: turn.turnID
+                )
+            })
+            collected.cancel()
+            _ = try? await collected.value
+            #expect(await pollUntil {
+                await !(service.hasTurnSubscriberForTesting(
+                    threadID: "thread-1",
+                    turnID: turn.turnID
+                ))
+            })
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-late"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("touch late"),
+                    "itemId": .string("item-late"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-late")
+
+            let response = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-late")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(response["result"]?.objectValue?["decision"] == .string("cancel"))
+            #expect(await !(service.hasPendingApprovalForTesting("s:approval-late")))
+            await service.shutdown()
+        }
+
+        @Test
+        func approvalResponseWriteFailureStopsConnection() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models, failsApprovalResponses: true)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+            await transport.sendFromServer(.object([
+                "id": .string("approval-write-fails"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-write-fails")
+            })
+
+            await service.respondToApproval(id: "s:approval-write-fails", decision: .accept)
+
+            #expect(await transport.isClosed)
+            #expect(await !(service.hasPendingApprovalForTesting("s:approval-write-fails")))
+            _ = try? await collected.value
             await service.shutdown()
         }
 

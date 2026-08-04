@@ -214,26 +214,22 @@ final class CodexChatSessionModel: Identifiable {
         Task { await service.respondToApproval(id: request.id, decision: decision) }
     }
 
-    private func cancelPendingApprovals() {
-        let requests = pendingApprovals
-        guard !requests.isEmpty else { return }
-        pendingApprovals.removeAll()
-        Task {
-            for request in requests {
-                await service.respondToApproval(id: request.id, decision: .cancel)
-            }
-        }
-    }
-
     func stop() {
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
-        // The server cannot complete the turn while an approval is outstanding, so cancel
-        // them before interrupting.
-        cancelPendingApprovals()
-        turnTask?.cancel()
-        if let backendThreadID, let activeTurnID {
-            Task { await service.interrupt(threadID: backendThreadID, turnID: activeTurnID) }
+        let approvals = pendingApprovals
+        let activeTask = turnTask
+        let threadID = backendThreadID
+        let turnID = activeTurnID
+        pendingApprovals.removeAll()
+        Task {
+            for approval in approvals {
+                await service.respondToApproval(id: approval.id, decision: .cancel)
+            }
+            activeTask?.cancel()
+            if let threadID, let turnID {
+                await service.interrupt(threadID: threadID, turnID: turnID)
+            }
         }
         finalizeActiveResponseForCancellation()
         finishGeneration(submissionID: activeSubmissionID)

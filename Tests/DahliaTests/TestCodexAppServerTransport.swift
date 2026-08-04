@@ -25,6 +25,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     }
 
     private let mode: Mode
+    private let failsApprovalResponses: Bool
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
@@ -38,13 +39,18 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private var isAuthenticated: Bool
     private(set) var isClosed = false
 
-    init(mode: Mode) {
+    init(mode: Mode, failsApprovalResponses: Bool = false) {
         self.mode = mode
+        self.failsApprovalResponses = failsApprovalResponses
         isAuthenticated = mode != .signedOut && mode != .loginCompletes && mode != .loginBlocks
     }
 
     func sendLine(_ data: Data) throws {
         let message = try JSONDecoder().decode(JSONValue.self, from: data)
+        if failsApprovalResponses,
+           message.objectValue?["result"]?.objectValue?["decision"] != nil {
+            throw CancellationError()
+        }
         sentMessages.append(message)
         if let responseKey = responseKey(message.objectValue?["id"]) {
             resumeMethodWaiters(responseKey)

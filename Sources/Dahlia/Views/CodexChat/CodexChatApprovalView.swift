@@ -5,25 +5,34 @@ struct CodexChatApprovalView: View {
     let onDecide: (CodexChatApprovalDecision) -> Void
 
     var body: some View {
+        let approvalDetail = detail
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: "hand.raised.fill")
                 .font(.callout)
                 .foregroundStyle(.primary)
-            if let detail {
-                Text(detail)
-                    .font(.system(.caption, design: .monospaced))
+            if approvalDetail != nil || request.reason != nil {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let approvalDetail {
+                            Text(approvalDetail)
+                                .font(.system(.caption, design: .monospaced))
+                        }
+                        if let reason = request.reason {
+                            Text(reason)
+                                .font(.caption)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
-                    .lineLimit(4)
                     .foregroundStyle(.secondary)
-            }
-            if let reason = request.reason {
-                Text(reason)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                }
+                .frame(maxHeight: 180)
             }
             HStack {
-                Button(L10n.chatApprovalAllow) { onDecide(.accept) }
-                Button(L10n.chatApprovalAlwaysAllow) { onDecide(.acceptForSession) }
+                if request.canApprove {
+                    Button(L10n.chatApprovalAllow) { onDecide(.accept) }
+                    Button(L10n.chatApprovalAlwaysAllow) { onDecide(.acceptForSession) }
+                }
                 Button(L10n.chatApprovalDeny) { onDecide(.decline) }
             }
             .controlSize(.small)
@@ -47,7 +56,16 @@ struct CodexChatApprovalView: View {
         case .commandExecution:
             [request.command, request.cwd].compactMap(\.self).joined(separator: "\n").nilIfBlank
         case .fileChange:
-            request.grantRoot
+            fileChangeDetail
         }
+    }
+
+    private var fileChangeDetail: String? {
+        let changes = request.fileChanges.flatMap { change in
+            [change.path, change.diff.nilIfBlank].compactMap(\.self)
+        }
+        return (changes + [request.grantRoot].compactMap(\.self))
+            .joined(separator: "\n\n")
+            .nilIfBlank
     }
 }

@@ -301,7 +301,7 @@ import Foundation
         }
 
         @Test
-        func stopCancelsAnOutstandingApproval() async {
+        func stopCancelsAllApprovalsBeforeInterrupting() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
@@ -319,15 +319,25 @@ import Foundation
                 id: "s:approval-1",
                 kind: .fileChange
             )))
-            await waitUntil { session.pendingApproval != nil }
+            await service.yieldBlockedEvent(.approvalRequested(CodexChatApprovalRequest(
+                id: "s:approval-2",
+                kind: .commandExecution
+            )))
+            await waitUntil { session.pendingApprovals.count == 2 }
 
             session.stop()
             await waitUntil { !session.isGenerating }
-            await waitUntilAsync { await service.approvalDecisions.count == 1 }
+            await waitUntilAsync { await service.lifecycleEvents.count == 3 }
 
             #expect(session.pendingApproval == nil)
             #expect(await service.approvalDecisions == [
                 TestCodexChatService.ApprovalDecision(id: "s:approval-1", decision: .cancel),
+                TestCodexChatService.ApprovalDecision(id: "s:approval-2", decision: .cancel),
+            ])
+            #expect(await service.lifecycleEvents == [
+                .approval("s:approval-1", .cancel),
+                .approval("s:approval-2", .cancel),
+                .interrupt,
             ])
         }
 
@@ -777,6 +787,7 @@ import Foundation
         private(set) var threadNames: [String] = []
         private(set) var interruptCount = 0
         private(set) var approvalDecisions: [ApprovalDecision] = []
+        private(set) var lifecycleEvents: [LifecycleEvent] = []
         private(set) var unsubscribedThreadIDs: [String] = []
         private(set) var returnedSendCount = 0
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
@@ -935,6 +946,7 @@ import Foundation
 
         func interrupt(threadID _: String, turnID _: String) async {
             interruptCount += 1
+            lifecycleEvents.append(.interrupt)
             blockedContinuation?.yield(.interrupted)
             blockedContinuation?.finish()
             blockedContinuation = nil
@@ -942,6 +954,12 @@ import Foundation
 
         func respondToApproval(id: String, decision: CodexChatApprovalDecision) async {
             approvalDecisions.append(ApprovalDecision(id: id, decision: decision))
+            lifecycleEvents.append(.approval(id, decision))
+        }
+
+        enum LifecycleEvent: Equatable {
+            case approval(String, CodexChatApprovalDecision)
+            case interrupt
         }
 
         func steer(threadID _: String, turnID _: String, inputs: [CodexAppServerInput]) async throws {
