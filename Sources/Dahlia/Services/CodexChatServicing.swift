@@ -16,5 +16,13 @@ protocol CodexChatServicing: Sendable {
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) async
     func steer(threadID: String, turnID: String, inputs: [CodexAppServerInput]) async throws
     func interrupt(threadID: String, turnID: String) async
+    func interruptActiveTurn(threadID: String, turnID: String?) async
     func unsubscribe(threadID: String) async
+}
+
+extension CodexChatServicing {
+    func interruptActiveTurn(threadID: String, turnID: String?) async {
+        guard let turnID else { return }
+        await interrupt(threadID: threadID, turnID: turnID)
+    }
 }

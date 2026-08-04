@@ -230,8 +230,8 @@ final class CodexChatSessionModel: Identifiable {
             }
             activeTask?.cancel()
             await activeTask?.value
-            if let threadID, let turnID {
-                await service.interrupt(threadID: threadID, turnID: turnID)
+            if let threadID {
+                await service.interruptActiveTurn(threadID: threadID, turnID: turnID)
             }
             isTurnCleanupPending = false
             unsubscribeIfPossible()

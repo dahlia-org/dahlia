@@ -349,6 +349,34 @@ import Foundation
         }
 
         @Test
+        func interruptRecoversAcceptedTurnBeforeStartedEventIsConsumed() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-interrupt", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Stop before started")],
+                model: "default-model",
+                effort: "medium"
+            )
+
+            await service.interruptActiveTurn(threadID: "thread-1", turnID: nil)
+
+            let interruptParams = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interruptParams["threadId"] == .string("thread-1"))
+            #expect(interruptParams["turnId"] == .string("turn-1"))
+            withExtendedLifetime(stream) {}
+            await appServer.shutdown()
+        }
+
+        @Test
         func approvalsWithoutReviewableDetailsCannotBeAccepted() {
             #expect(!CodexChatApprovalRequest(
                 id: "file",

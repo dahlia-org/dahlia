@@ -265,6 +265,14 @@ actor CodexChatService: CodexChatServicing {
         )
     }
 
+    func interruptActiveTurn(threadID: String, turnID: String?) async {
+        guard let turnID = await appServer.prepareChatTurnForInterrupt(
+            threadID: threadID,
+            turnID: turnID
+        ) else { return }
+        await interrupt(threadID: threadID, turnID: turnID)
+    }
+
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) async {
         await appServer.respondToApproval(id: id, decision: decision)
     }

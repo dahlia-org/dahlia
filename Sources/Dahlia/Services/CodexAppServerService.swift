@@ -89,6 +89,7 @@ actor CodexAppServerService {
     private var pendingRequests: [Int: PendingRequest] = [:]
     private var turnWaiters: [TurnKey: TurnWaiter] = [:]
     private var turnSubscribers: [TurnKey: [UUID: AsyncThrowingStream<JSONValue, any Error>.Continuation]] = [:]
+    private var activeChatTurnIDs: [String: String] = [:]
     private var bufferedTurnMessages: [TurnKey: [JSONValue]] = [:]
     private var chatThreadIDs: Set<String> = []
     private var pendingApprovals: [String: PendingApproval] = [:]
@@ -413,6 +414,19 @@ actor CodexAppServerService {
         }
     }
 
+    func prepareChatTurnForInterrupt(threadID: String, turnID: String?) async -> String? {
+        let key: TurnKey
+        if let turnID {
+            key = TurnKey(threadID: threadID, turnID: turnID)
+        } else if let activeTurnID = activeChatTurnIDs[threadID] {
+            key = TurnKey(threadID: threadID, turnID: activeTurnID)
+        } else {
+            return nil
+        }
+        await resolvePendingApprovals(for: key, decision: .cancel)
+        return key.turnID
+    }
+
     func forgetChatThread(_ threadID: String) {
         chatThreadIDs.remove(threadID)
     }
@@ -443,9 +457,11 @@ actor CodexAppServerService {
             guard let turnID = result.objectValue?["turn"]?.objectValue?["id"]?.stringValue else {
                 throw CodexAppServerError.invalidProtocolResponse
             }
+            let key = TurnKey(threadID: threadID, turnID: turnID)
+            activeChatTurnIDs[threadID] = turnID
             await reconcilePendingChatTurnStart(
                 startID,
-                with: TurnKey(threadID: threadID, turnID: turnID)
+                with: key
             )
             return (turnID, notifications(threadID: threadID, turnID: turnID))
         } catch {
@@ -1140,6 +1156,9 @@ private extension CodexAppServerService {
         }
         if method == "turn/completed" {
             await finishTurnSubscribers(for: key)
+            if activeChatTurnIDs[threadID] == turnID {
+                activeChatTurnIDs.removeValue(forKey: threadID)
+            }
         }
     }
 
@@ -1288,6 +1307,7 @@ private extension CodexAppServerService {
         }
         let subscribers = turnSubscribers.values.flatMap(\.values)
         turnSubscribers.removeAll()
+        activeChatTurnIDs.removeAll()
         subscribers.forEach { $0.finish(throwing: error) }
         // The transport is gone, so outstanding approvals cannot be answered.
         pendingApprovals.removeAll()
