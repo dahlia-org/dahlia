@@ -30,9 +30,18 @@ enum DetailTab: String, CaseIterable, Identifiable {
 }
 
 private struct ExpandedScreenshotPresentation {
+    /// 前後送りの対象範囲。開いた画面の文脈をそのまま保つ。
+    enum Scope {
+        /// スクリーンショット一覧タブ。ミーティングの全スクリーンショットを撮影順にたどる。
+        case allScreenshots
+        /// 要約タブ。要約本文に埋め込まれた画像だけを出現順にたどる。
+        case summary
+    }
+
     let screenshot: MeetingScreenshotRecord
     let previewImage: CGImage?
     let requestedAt: ContinuousClock.Instant
+    let scope: Scope
 }
 
 /// ミーティング詳細のタイトル。クリックでインライン編集できる。
@@ -308,6 +317,10 @@ struct ControlPanelView: View {
                     screenshot: presentation.screenshot,
                     previewImage: presentation.previewImage,
                     requestedAt: presentation.requestedAt,
+                    canGoPrevious: canStepExpandedScreenshot(by: -1),
+                    canGoNext: canStepExpandedScreenshot(by: 1),
+                    onPrevious: { stepExpandedScreenshot(by: -1) },
+                    onNext: { stepExpandedScreenshot(by: 1) },
                     onDismiss: dismissExpandedScreenshot
                 )
                 .transition(.opacity)
@@ -426,18 +439,23 @@ struct ControlPanelView: View {
             selectedScreenshotIDs: $selectedScreenshotIds,
             referencedScreenshotIDs: referencedScreenshotIds,
             isDeletionDisabled: viewModel.isSummaryGenerating || viewModel.isDeletingScreenshots,
-            open: openScreenshot,
+            open: { openScreenshot($0, previewImage: $1, scope: .allScreenshots) },
             download: viewModel.downloadScreenshot,
             delete: viewModel.deleteScreenshot,
             deleteSelected: deleteSelectedScreenshots
         )
     }
 
-    private func openScreenshot(_ screenshot: MeetingScreenshotRecord, previewImage: CGImage?) {
+    private func openScreenshot(
+        _ screenshot: MeetingScreenshotRecord,
+        previewImage: CGImage?,
+        scope: ExpandedScreenshotPresentation.Scope
+    ) {
         let presentation = ExpandedScreenshotPresentation(
             screenshot: screenshot,
             previewImage: previewImage,
-            requestedAt: .now
+            requestedAt: .now,
+            scope: scope
         )
         withAnimation(.easeOut(duration: 0.15)) {
             expandedScreenshot = presentation
@@ -446,11 +464,47 @@ struct ControlPanelView: View {
 
     private func openSummaryScreenshot(_ screenshotID: UUID, previewImage: CGImage) {
         guard let screenshot = screenshotRecord(withID: screenshotID) else { return }
-        openScreenshot(screenshot, previewImage: previewImage)
+        openScreenshot(screenshot, previewImage: previewImage, scope: .summary)
     }
 
     private func screenshotRecord(withID id: UUID) -> MeetingScreenshotRecord? {
         viewModel.screenshotStore.records.first { $0.id == id }
+    }
+
+    /// 拡大表示中に削除や再生成が起きても追従できるよう、移動対象は都度現在の state から組み立てる。
+    private func expandedScreenshotNavigationIDs(for scope: ExpandedScreenshotPresentation.Scope) -> [UUID] {
+        switch scope {
+        case .allScreenshots:
+            viewModel.screenshotStore.records.map(\.id)
+        case .summary:
+            (viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [])
+                .filter { screenshotRecord(withID: $0) != nil }
+        }
+    }
+
+    private func neighborExpandedScreenshot(by offset: Int) -> MeetingScreenshotRecord? {
+        guard let presentation = expandedScreenshot else { return nil }
+        guard let neighborID = ScreenshotOverlayNavigation.neighborID(
+            in: expandedScreenshotNavigationIDs(for: presentation.scope),
+            from: presentation.screenshot.id,
+            offset: offset
+        ) else { return nil }
+        return screenshotRecord(withID: neighborID)
+    }
+
+    private func canStepExpandedScreenshot(by offset: Int) -> Bool {
+        neighborExpandedScreenshot(by: offset) != nil
+    }
+
+    private func stepExpandedScreenshot(by offset: Int) {
+        guard let presentation = expandedScreenshot,
+              let neighbor = neighborExpandedScreenshot(by: offset) else { return }
+        expandedScreenshot = ExpandedScreenshotPresentation(
+            screenshot: neighbor,
+            previewImage: nil,
+            requestedAt: .now,
+            scope: presentation.scope
+        )
     }
 
     private func dismissExpandedScreenshot() {

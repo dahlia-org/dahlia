@@ -3,9 +3,11 @@ import SwiftUI
 
 struct ScreenshotOverlayInputMonitor: NSViewRepresentable {
     let onDismiss: () -> Void
+    var onPrevious: () -> Void = {}
+    var onNext: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onDismiss: onDismiss)
+        Coordinator(onDismiss: onDismiss, onPrevious: onPrevious, onNext: onNext)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -16,6 +18,8 @@ struct ScreenshotOverlayInputMonitor: NSViewRepresentable {
 
     func updateNSView(_: NSView, context: Context) {
         context.coordinator.onDismiss = onDismiss
+        context.coordinator.onPrevious = onPrevious
+        context.coordinator.onNext = onNext
     }
 
     static func dismantleNSView(_: NSView, coordinator: Coordinator) {
@@ -25,13 +29,23 @@ struct ScreenshotOverlayInputMonitor: NSViewRepresentable {
     @MainActor
     final class Coordinator {
         private static let escapeKeyCode: UInt16 = 53
+        private static let leftArrowKeyCode: UInt16 = 123
+        private static let rightArrowKeyCode: UInt16 = 124
 
         var onDismiss: () -> Void
+        var onPrevious: () -> Void
+        var onNext: () -> Void
 
         private var eventMonitor: Any?
 
-        init(onDismiss: @escaping () -> Void) {
+        init(
+            onDismiss: @escaping () -> Void,
+            onPrevious: @escaping () -> Void = {},
+            onNext: @escaping () -> Void = {}
+        ) {
             self.onDismiss = onDismiss
+            self.onPrevious = onPrevious
+            self.onNext = onNext
         }
 
         func startMonitoring(view: NSView) {
@@ -48,8 +62,17 @@ struct ScreenshotOverlayInputMonitor: NSViewRepresentable {
 
             switch event.type {
             case .keyDown:
-                guard event.keyCode == Self.escapeKeyCode else { return event }
-                onDismiss()
+                switch event.keyCode {
+                case Self.escapeKeyCode:
+                    onDismiss()
+                case Self.leftArrowKeyCode:
+                    onPrevious()
+                case Self.rightArrowKeyCode:
+                    onNext()
+                default:
+                    return event
+                }
+                // 端で移動できない場合も、背後の一覧へ矢印キーを漏らさない。
                 return nil
             case .leftMouseDown, .rightMouseDown, .otherMouseDown:
                 break

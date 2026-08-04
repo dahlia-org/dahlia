@@ -49,7 +49,11 @@ struct ScreenshotOverlayViewTests {
         let view = ScreenshotOverlayView(
             screenshot: screenshot,
             previewImage: nil,
-            requestedAt: .now
+            requestedAt: .now,
+            canGoPrevious: false,
+            canGoNext: false,
+            onPrevious: {},
+            onNext: {}
         ) {
             dismissCount += 1
         }
@@ -166,6 +170,83 @@ struct ScreenshotOverlayViewTests {
 
         #expect(handledEvent === fixture.event)
         #expect(dismissCount == 0)
+    }
+
+    @Test
+    func arrowKeysInOverlayWindowAreConsumedAndNavigate() throws {
+        let cases: [(keyCode: UInt16, expectedPrevious: Int, expectedNext: Int)] = [
+            (123, 1, 0),
+            (124, 0, 1),
+        ]
+
+        for testCase in cases {
+            let fixture = try makeKeyFixture(keyCode: testCase.keyCode)
+            var dismissCount = 0
+            var previousCount = 0
+            var nextCount = 0
+            let coordinator = ScreenshotOverlayInputMonitor.Coordinator(
+                onDismiss: { dismissCount += 1 },
+                onPrevious: { previousCount += 1 },
+                onNext: { nextCount += 1 }
+            )
+
+            let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
+
+            #expect(handledEvent == nil)
+            #expect(previousCount == testCase.expectedPrevious)
+            #expect(nextCount == testCase.expectedNext)
+            #expect(dismissCount == 0)
+        }
+    }
+
+    @Test
+    func arrowKeyInAnotherWindowIsForwardedWithoutNavigating() throws {
+        let fixture = try makeKeyFixture(keyCode: 124)
+        let otherWindow = makeWindow()
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: otherWindow.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: 124
+        ))
+        var nextCount = 0
+        let coordinator = ScreenshotOverlayInputMonitor.Coordinator(
+            onDismiss: {},
+            onPrevious: {},
+            onNext: { nextCount += 1 }
+        )
+
+        let handledEvent = coordinator.handle(event, in: fixture.view)
+
+        #expect(handledEvent === event)
+        #expect(nextCount == 0)
+    }
+
+    @Test
+    func neighborIDStopsAtBothEndsWithoutWrapping() {
+        let ids = [UUID.v7(), UUID.v7(), UUID.v7()]
+
+        #expect(ScreenshotOverlayNavigation.neighborID(in: ids, from: ids[1], offset: -1) == ids[0])
+        #expect(ScreenshotOverlayNavigation.neighborID(in: ids, from: ids[1], offset: 1) == ids[2])
+        #expect(ScreenshotOverlayNavigation.neighborID(in: ids, from: ids[0], offset: -1) == nil)
+        #expect(ScreenshotOverlayNavigation.neighborID(in: ids, from: ids[2], offset: 1) == nil)
+    }
+
+    @Test
+    func neighborIDReturnsNilForSingleEntryOrUnlistedCurrentID() {
+        let single = UUID.v7()
+
+        #expect(ScreenshotOverlayNavigation.neighborID(in: [single], from: single, offset: 1) == nil)
+        #expect(ScreenshotOverlayNavigation.neighborID(in: [single], from: single, offset: -1) == nil)
+        // 拡大表示中に対象が削除された場合。
+        #expect(ScreenshotOverlayNavigation.neighborID(in: [single], from: .v7(), offset: 1) == nil)
+        #expect(ScreenshotOverlayNavigation.neighborID(in: [], from: single, offset: 1) == nil)
     }
 
     @Test
