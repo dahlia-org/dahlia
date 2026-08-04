@@ -1092,8 +1092,24 @@ private extension CodexAppServerService {
         }
         let bufferedKeys = pendingChatTurnStarts[startID]?.bufferedKeys ?? []
         for key in bufferedKeys {
+            // Failed-start cleanup can run in an already-cancelled task. Use a fresh task so
+            // the interrupt request is sent before the recovered turn buffer is discarded.
+            let interrupt = Task { await self.interruptDiscoveredChatTurn(key) }
+            await interrupt.value
             bufferedTurnMessages.removeValue(forKey: key)
         }
+    }
+
+    private func interruptDiscoveredChatTurn(_ key: TurnKey) async {
+        guard !isShuttingDown, isInitialized, transport != nil else { return }
+        _ = try? await requestOnCurrentConnection(
+            method: "turn/interrupt",
+            params: .object([
+                "threadId": .string(key.threadID),
+                "turnId": .string(key.turnID),
+            ]),
+            timeout: transportTimeout
+        )
     }
 
     private func reconcilePendingChatTurnStart(_ startID: UUID, with key: TurnKey) async {
@@ -1696,6 +1712,10 @@ private extension CodexAppServerService {
 
         func hasPendingApprovalForTesting(_ approvalID: String) -> Bool {
             pendingApprovals[approvalID] != nil
+        }
+
+        func hasBufferedTurnMessagesForTesting(threadID: String, turnID: String) -> Bool {
+            bufferedTurnMessages[TurnKey(threadID: threadID, turnID: turnID)]?.isEmpty == false
         }
 
         func hasTurnSubscriberForTesting(threadID: String, turnID: String) -> Bool {
