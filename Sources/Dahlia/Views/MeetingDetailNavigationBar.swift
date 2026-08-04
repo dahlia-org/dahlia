@@ -42,6 +42,7 @@ private struct MeetingActionsMenu: View {
 struct MeetingDetailNavigationBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    var sidebarViewModel: SidebarViewModel
     let onRename: () -> Void
     let onDelete: () -> Void
 
@@ -56,6 +57,17 @@ struct MeetingDetailNavigationBar: View {
             Spacer(minLength: 0)
 
             if showsActions {
+                if selection == .summary {
+                    HStack(spacing: 8) {
+                        GenerateSummaryToolbarButton(
+                            viewModel: viewModel,
+                            sidebarViewModel: sidebarViewModel
+                        )
+                        ShareSummaryToolbarButton(viewModel: viewModel)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+
                 MeetingActionsMenu(
                     viewModel: viewModel,
                     onRename: onRename,

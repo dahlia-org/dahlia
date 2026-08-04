@@ -5,6 +5,9 @@ private extension DetailTab {
         switch self {
         case .summary: "1"
         case .notes: "2"
+        case .screenshots: "3"
+        case .transcript: "4"
+        case .conversationAnalytics: "5"
         }
     }
 }
@@ -13,6 +16,7 @@ private extension DetailTab {
 struct DetailTabBar: View {
     @Binding var selection: DetailTab
     @ObservedObject var viewModel: CaptionViewModel
+    @ObservedObject private var settings = AppSettings.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selectionIndicator
     @State private var hoveredTab: DetailTab?
@@ -21,7 +25,9 @@ struct DetailTabBar: View {
         viewModel.currentMeetingId == nil && !viewModel.isListening && !viewModel.hasDraftMeeting
     }
 
-    private var availableTabs: [DetailTab] { DetailTab.allCases }
+    private var availableTabs: [DetailTab] {
+        DetailTab.availableTabs(isConversationAnalysisEnabled: settings.isConversationAnalyticsBetaEnabled)
+    }
 
     var body: some View {
         ScrollView(.horizontal) {

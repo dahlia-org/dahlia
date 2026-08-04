@@ -12,6 +12,9 @@ private enum NotesEditorLayout {
 enum DetailTab: String, CaseIterable, Identifiable {
     case summary
     case notes
+    case screenshots
+    case transcript
+    case conversationAnalytics
 
     var id: String { rawValue }
 
@@ -19,28 +22,15 @@ enum DetailTab: String, CaseIterable, Identifiable {
         switch self {
         case .summary: L10n.summary
         case .notes: L10n.notes
+        case .screenshots: L10n.screenshots
+        case .transcript: L10n.transcript
+        case .conversationAnalytics: L10n.conversationAnalytics
         }
     }
-}
 
-enum DetailInspectorMode: String, CaseIterable, Identifiable {
-    case evidence
-    case analysis
-
-    var id: Self { self }
-    var label: String { self == .evidence ? L10n.evidence : L10n.analysis }
-
-    static func availableModes(isAnalysisEnabled: Bool) -> [Self] {
-        isAnalysisEnabled ? allCases : [.evidence]
+    static func availableTabs(isConversationAnalysisEnabled: Bool) -> [Self] {
+        allCases.filter { $0 != .conversationAnalytics || isConversationAnalysisEnabled }
     }
-}
-
-enum EvidenceInspectorTab: String, CaseIterable, Identifiable {
-    case transcript
-    case screenshots
-
-    var id: Self { self }
-    var label: String { self == .transcript ? L10n.transcript : L10n.screenshots }
 }
 
 private struct ExpandedScreenshotPresentation {
@@ -182,9 +172,6 @@ struct ControlPanelView: View {
     let allowsTranscriptReferencePopovers: Bool
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .summary
-    @State private var showsInspector = true
-    @State private var inspectorMode: DetailInspectorMode = .evidence
-    @State private var evidenceTab: EvidenceInspectorTab = .transcript
     @State private var requestedTranscriptSegmentID: UUID?
     @State private var referenceResolutionMessage: String?
     @State private var transcriptReferenceTask: Task<Void, Never>?
@@ -238,6 +225,7 @@ struct ControlPanelView: View {
                 MeetingDetailNavigationBar(
                     selection: $selectedTab,
                     viewModel: viewModel,
+                    sidebarViewModel: sidebarViewModel,
                     onRename: beginMeetingRename,
                     onDelete: requestCurrentMeetingDeletion
                 )
@@ -255,6 +243,24 @@ struct ControlPanelView: View {
                     summaryTabContent
                 case .notes:
                     notesTabContent
+                case .screenshots:
+                    screenshotsTabContent
+                case .transcript:
+                    TranscriptTabView(
+                        store: viewModel.store,
+                        allowsTextSelection: !viewModel.isListening,
+                        showsTranslatedText: appSettings.isTranscriptTranslationEffectivelyEnabled,
+                        retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad,
+                        requestedSegmentID: requestedTranscriptSegmentID
+                    )
+                case .conversationAnalytics:
+                    ConversationAnalyticsDashboardView(
+                        store: viewModel.conversationMetricsStore,
+                        meetingId: viewModel.currentMeetingId,
+                        isAnalysisPending: viewModel.isCurrentMeetingConversationAnalysisPending,
+                        hasTranscript: viewModel.currentMeetingHasTranscriptSegments,
+                        load: viewModel.loadCurrentMeetingConversationMetrics
+                    )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -275,12 +281,12 @@ struct ControlPanelView: View {
             if let googleDocsExportError = viewModel.googleDocsExportError {
                 detailErrorBanner(message: googleDocsExportError, tint: .orange)
             }
+
+            if let referenceResolutionMessage {
+                detailErrorBanner(message: referenceResolutionMessage, tint: .secondary)
+            }
         }
         .frame(minWidth: 500, minHeight: 500)
-        .inspector(isPresented: $showsInspector) {
-            detailInspector
-                .inspectorColumnWidth(min: 300, ideal: 360, max: 520)
-        }
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()
@@ -303,6 +309,11 @@ struct ControlPanelView: View {
             cancelMeetingRename()
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
+        }
+        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled) { _, isEnabled in
+            if !isEnabled, selectedTab == .conversationAnalytics {
+                selectedTab = .transcript
+            }
         }
         .onDisappear {
             transcriptReferenceTask?.cancel()
@@ -339,38 +350,6 @@ struct ControlPanelView: View {
                 .transition(.opacity)
             }
         }
-        .toolbar {
-            detailToolbar
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var detailToolbar: some ToolbarContent {
-        ToolbarSpacer(.flexible, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            ShareSummaryToolbarButton(viewModel: viewModel)
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            GenerateSummaryToolbarButton(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel
-            )
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            Button(showsInspector ? L10n.hideInspector : L10n.showInspector, systemImage: "sidebar.trailing") {
-                showsInspector.toggle()
-            }
-            .labelStyle(.iconOnly)
-            .help(showsInspector ? L10n.hideInspector : L10n.showInspector)
-        }
-
     }
 
     // MARK: - Tab Contents
@@ -400,18 +379,6 @@ struct ControlPanelView: View {
             transcriptText: summaryTranscriptText,
             openTranscriptReference: openTranscriptReference
         )
-    }
-
-    private var detailInspector: some View {
-        MeetingDetailInspector(
-            viewModel: viewModel,
-            mode: $inspectorMode,
-            evidenceTab: $evidenceTab,
-            requestedTranscriptSegmentID: requestedTranscriptSegmentID,
-            referenceResolutionMessage: referenceResolutionMessage
-        ) {
-            screenshotsTabContent
-        }
     }
 
     private var notesTabContent: some View {
@@ -588,9 +555,7 @@ struct ControlPanelView: View {
 
     private func openTranscriptReference(_ reference: TranscriptReference) {
         let meetingIdentity = displayedMeetingIdentity
-        showsInspector = true
-        inspectorMode = .evidence
-        evidenceTab = .transcript
+        selectedTab = .transcript
         referenceResolutionMessage = nil
         transcriptReferenceTask?.cancel()
         transcriptReferenceTask = Task { @MainActor in

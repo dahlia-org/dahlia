@@ -27,8 +27,6 @@ struct ContentView: View {
                 openOrganizationWindow: { openWindow(id: WindowID.organizationWorkspace) }
             )
             .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
-        } content: {
-            navigationContent
         } detail: {
             routedDetailView
                 .navigationTitle("")
@@ -43,6 +41,11 @@ struct ContentView: View {
                 .keyboardShortcut("n", modifiers: .command)
                 .help(L10n.newMeeting)
 
+                SettingsLink {
+                    Label(L10n.settingsMenuItem, systemImage: "gearshape")
+                }
+                .labelStyle(.iconOnly)
+                .help(L10n.settingsMenuItem)
             }
 
             ToolbarItemGroup(placement: .primaryAction) {
@@ -188,7 +191,7 @@ struct ContentView: View {
     }
 
     private var isMeetingListVisible: Bool {
-        navigationState.route.showsMeetingList && columnVisibility != .detailOnly
+        navigationState.route.showsMeetingList
     }
 
     private var recordingPlacement: RecordingCommandPlacement {
@@ -198,27 +201,6 @@ struct ContentView: View {
             recordingMeetingID: viewModel.recordingMeetingId,
             currentMeetingID: viewModel.currentMeetingId
         )
-    }
-
-    @ViewBuilder
-    private var navigationContent: some View {
-        switch navigationState.route {
-        case .meetings, .project:
-            MeetingListSidebarView(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator,
-                scopeProjectID: navigationState.route.projectID
-            )
-            .navigationTitle(projectScopeTitle ?? L10n.meetings)
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
-        case .schedule:
-            ContentUnavailableView(L10n.calendarScheduleTitle, systemImage: "calendar")
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-        case .organizations:
-            ContentUnavailableView(L10n.organizations, systemImage: "building.2")
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-        }
     }
 
     private var projectScopeTitle: String? {
@@ -243,7 +225,23 @@ struct ContentView: View {
                 chatCoordinator: chatCoordinator
             )
         case .meetings, .project:
+            meetingWorkspace
+        }
+    }
+
+    private var meetingWorkspace: some View {
+        HSplitView {
+            MeetingListSidebarView(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                recordingCoordinator: recordingCoordinator,
+                scopeProjectID: navigationState.route.projectID
+            )
+            .navigationTitle(projectScopeTitle ?? L10n.meetings)
+            .frame(minWidth: 240, idealWidth: 300, maxWidth: 420, maxHeight: .infinity)
+
             detailView
+                .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -295,10 +293,16 @@ struct ContentView: View {
                 allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible
             )
         } else {
-            CalendarScheduleView(
-                onSelectEvent: recordingCoordinator.openCalendarEvent,
-                onCreateMeeting: recordingCoordinator.createEmptyMeeting
-            )
+            ContentUnavailableView {
+                Label(L10n.noMeetingSelected, systemImage: "waveform")
+            } description: {
+                Text(L10n.selectMeetingDescription)
+            } actions: {
+                Button(L10n.newMeeting, systemImage: "square.and.pencil") {
+                    recordingCoordinator.createEmptyMeeting()
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
     }
 

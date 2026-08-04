@@ -28,11 +28,7 @@ struct OrganizationWorkspaceView: View {
                     get: { model.section },
                     set: { model.selectSection($0) }
                 ),
-                unacceptedInsightCount: model.counts.unacceptedInsights,
-                canGoBack: model.canGoBack,
-                canGoForward: model.canGoForward,
-                onGoBack: { Task { await model.goBack() } },
-                onGoForward: { Task { await model.goForward() } }
+                unacceptedInsightCount: model.counts.unacceptedInsights
             )
             .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
         } detail: {
@@ -46,6 +42,10 @@ struct OrganizationWorkspaceView: View {
                 selectedOrganizationID: model.selection.organizationID,
                 roots: model.roots,
                 showsInspector: $showsInspector,
+                canGoBack: model.canGoBack,
+                canGoForward: model.canGoForward,
+                onGoBack: { Task { await model.goBack() } },
+                onGoForward: { Task { await model.goForward() } },
                 onSelectScope: { scope in
                     Task { await model.selectScope(scope) }
                 },

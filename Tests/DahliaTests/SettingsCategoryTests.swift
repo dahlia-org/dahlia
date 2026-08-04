@@ -58,13 +58,18 @@
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer])
             #expect(!AppSettings.defaultCustomerIntelligenceBetaEnabled)
             #expect(!AppSettings.defaultConversationAnalyticsBetaEnabled)
-            #expect(DetailTab.allCases == [.summary, .notes])
+            #expect(DetailTab.allCases == [.summary, .notes, .screenshots, .transcript, .conversationAnalytics])
         }
 
         @Test
-        func conversationAnalysisInspectorRemainsBehindItsBetaSetting() {
-            #expect(DetailInspectorMode.availableModes(isAnalysisEnabled: false) == [.evidence])
-            #expect(DetailInspectorMode.availableModes(isAnalysisEnabled: true) == [.evidence, .analysis])
+        func conversationAnalysisTabRemainsBehindItsBetaSetting() {
+            #expect(DetailTab.availableTabs(isConversationAnalysisEnabled: false) == [
+                .summary,
+                .notes,
+                .screenshots,
+                .transcript,
+            ])
+            #expect(DetailTab.availableTabs(isConversationAnalysisEnabled: true) == DetailTab.allCases)
         }
 
         @Test

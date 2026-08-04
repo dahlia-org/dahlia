@@ -6,11 +6,26 @@ struct CustomerIntelligenceToolbar: ToolbarContent {
     let selectedOrganizationID: UUID?
     let roots: [OrganizationWorkspaceNode]
     @Binding var showsInspector: Bool
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let onGoBack: () -> Void
+    let onGoForward: () -> Void
     let onSelectScope: (CustomerIntelligenceScope) -> Void
     let onCreate: (CustomerIntelligenceCreationRequest) -> Void
     let onOrganizeWithAI: () -> Void
 
     var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
+                .labelStyle(.iconOnly)
+                .disabled(!canGoBack)
+                .help(L10n.back)
+            Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
+                .labelStyle(.iconOnly)
+                .disabled(!canGoForward)
+                .help(L10n.forward)
+        }
+
         ToolbarItem(placement: .principal) {
             CustomerIntelligenceScopePicker(
                 scope: scope,
