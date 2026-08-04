@@ -14,41 +14,34 @@ struct MeetingTitleMarquee: View {
 
     var body: some View {
         TimelineView(.animation(paused: !isScrolling)) { timeline in
-            ScrollView(.horizontal) {
-                HStack(spacing: 0) {
+            Group {
+                if isScrolling {
+                    scrollingTitle(at: timeline.date)
+                } else {
                     title
                         .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .onGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.size.width
-                        } action: { width in
-                            titleWidth = width
-                            updateScrollStart()
-                        }
-
-                    Text(verbatim: " ")
-                        .fixedSize(horizontal: true, vertical: false)
-                        .onGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.size.width
-                        } action: { separatorWidth = $0 }
-
-                    title
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .opacity(isScrolling ? 1 : 0)
-                        .accessibilityHidden(true)
+                        .truncationMode(.tail)
                 }
-                .offset(x: horizontalOffset(at: timeline.date))
             }
-            .scrollIndicators(.hidden)
-            .scrollDisabled(true)
-            .allowsHitTesting(false)
             .onGeometryChange(for: CGFloat.self) { geometry in
                 geometry.size.width
             } action: { width in
                 viewportWidth = width
                 updateScrollStart()
             }
+        }
+        .background {
+            title
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .hidden()
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.width
+                } action: { width in
+                    titleWidth = width
+                    updateScrollStart()
+                }
         }
         .onChange(of: isHovered) { _, _ in
             updateScrollStart()
@@ -69,6 +62,31 @@ struct MeetingTitleMarquee: View {
 
     private func updateScrollStart() {
         scrollStartedAt = isScrolling ? Date() : nil
+    }
+
+    private func scrollingTitle(at date: Date) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 0) {
+                title
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Text(verbatim: " ")
+                    .fixedSize(horizontal: true, vertical: false)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.width
+                    } action: { separatorWidth = $0 }
+
+                title
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityHidden(true)
+            }
+            .offset(x: horizontalOffset(at: date))
+        }
+        .scrollIndicators(.hidden)
+        .scrollDisabled(true)
+        .allowsHitTesting(false)
     }
 
     private func horizontalOffset(at date: Date) -> CGFloat {
