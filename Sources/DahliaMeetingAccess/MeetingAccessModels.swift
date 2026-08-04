@@ -343,7 +343,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .screenshotNotFound:
             "The screenshot was not found in the configured meeting and vault."
         case .screenshotEncodingFailed:
-            "The screenshot could not be resized for MCP access."
+            "The screenshot could not be prepared for MCP access."
         case .writeAccessRequired:
             "This dahlia-mcp process is read-only. Restart it with --write to use update tools."
         case .projectNotFound:

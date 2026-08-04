@@ -117,6 +117,10 @@ Read tools:
 - `get_meeting_transcript`
 - `get_meeting_screenshots`
 
+`get_meeting_screenshots` uses `image_size: "preview"` by default. Set `image_size` to `"original"` only when an
+external agent needs the original resolution, such as when preparing a document that must preserve screenshot detail.
+Original-size requests return one screenshot per call; use individual IDs or range pagination to retrieve more.
+
 Write tools:
 
 - `create_project`
