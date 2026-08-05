@@ -344,24 +344,7 @@ struct ControlPanelView: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        ToolbarSpacer(.flexible, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            ShareSummaryToolbarButton(viewModel: viewModel)
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            GenerateSummaryToolbarButton(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel
-            )
-        }
-
         if showsToolbarRecordButton {
-            ToolbarSpacer(.fixed, placement: .primaryAction)
-
             ToolbarItem(placement: .primaryAction) {
                 RecordToolbarButton(
                     viewModel: viewModel,
@@ -390,14 +373,27 @@ struct ControlPanelView: View {
     }
 
     private var summaryTabContent: some View {
-        SummaryTabContentView(
-            screenshotStore: viewModel.screenshotStore,
-            document: viewModel.currentSummaryDocument,
-            hasSummary: viewModel.hasCurrentMeetingSummary,
-            allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
-            openScreenshot: openSummaryScreenshot,
-            transcriptText: summaryTranscriptText
-        )
+        ZStack(alignment: .topTrailing) {
+            SummaryTabContentView(
+                screenshotStore: viewModel.screenshotStore,
+                document: viewModel.currentSummaryDocument,
+                hasSummary: viewModel.hasCurrentMeetingSummary,
+                allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
+                openScreenshot: openSummaryScreenshot,
+                transcriptText: summaryTranscriptText
+            )
+            .padding(.trailing, 56)
+
+            VStack(spacing: 8) {
+                ShareSummaryFloatingButton(viewModel: viewModel)
+                GenerateSummaryFloatingButton(
+                    viewModel: viewModel,
+                    sidebarViewModel: sidebarViewModel
+                )
+            }
+            .padding(.top, 12)
+            .padding(.trailing, 16)
+        }
     }
 
     private var notesTabContent: some View {

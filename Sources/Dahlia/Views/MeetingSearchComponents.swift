@@ -64,7 +64,7 @@ struct MeetingSearchTokenLabel: View {
     }
 }
 
-struct MeetingSearchDateRangePopover: View {
+struct MeetingSearchDateRangeView: View {
     @Binding var startDate: Date
     @Binding var endDate: Date
     let onCancel: () -> Void
