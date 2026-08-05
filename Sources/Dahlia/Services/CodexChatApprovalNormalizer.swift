@@ -14,25 +14,21 @@ enum CodexChatApprovalNormalizer {
         sourceWasTruncated: Bool = false
     ) throws -> CodexChatApprovalRequest {
         let itemID = params["itemId"]?.stringValue
-        let rawReason = params["reason"]?.stringValue?.nilIfBlank
-        let rawCommand = params["command"]?.stringValue?.nilIfBlank
-        let rawCWD = params["cwd"]?.stringValue?.nilIfBlank
-        let rawGrantRoot = params["grantRoot"]?.stringValue?.nilIfBlank
-        let unsupportedScope = rawGrantRoot != nil
+        let rawCommand = params["command"]?.stringValue
+        var budget = ByteBudget(limit: byteLimit)
+        let reason = budget.consume(params["reason"]?.stringValue)?.nilIfBlank
+        let command = budget.consume(rawCommand)?.nilIfBlank
+        let cwd = budget.consume(params["cwd"]?.stringValue)?.nilIfBlank
+        let boundedChanges = boundedFileChanges(fileChanges, budget: &budget)
+        let grantRoot = budget.consume(params["grantRoot"]?.stringValue)?.nilIfBlank
+        let unsupportedScope = grantRoot != nil
             || nonNullValue(params["additionalPermissions"])
             || nonNullValue(params["networkApprovalContext"])
             || nonEmptyArray(params["proposedNetworkPolicyAmendments"])
-
-        var budget = ByteBudget(limit: byteLimit)
-        let reason = budget.consume(rawReason)
-        let command = budget.consume(rawCommand)
-        let cwd = budget.consume(rawCWD)
-        let boundedChanges = boundedFileChanges(fileChanges, budget: &budget)
-        let grantRoot = budget.consume(rawGrantRoot)
         let isTooLarge = sourceWasTruncated || budget.didTruncate || fileChanges.count > fileLimit
         let hasExactPayload = switch kind {
         case .commandExecution:
-            rawCommand != nil
+            hasBoundedNonBlankText(rawCommand)
         case .fileChange:
             !fileChanges.isEmpty
         }
@@ -174,6 +170,11 @@ enum CodexChatApprovalNormalizer {
     private static func nonNullValue(_ value: JSONValue?) -> Bool {
         guard let value else { return false }
         return value != .null
+    }
+
+    private static func hasBoundedNonBlankText(_ text: String?) -> Bool {
+        var budget = ByteBudget(limit: byteLimit)
+        return budget.consume(text)?.nilIfBlank != nil
     }
 
     private static func nonEmptyArray(_ value: JSONValue?) -> Bool {

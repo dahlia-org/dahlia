@@ -7,6 +7,25 @@ import Foundation
     @MainActor
     struct CodexAppServerChatTurnRuntimeTests {
         @Test
+        func failedTurnStartWriteResetsConnectionAfterRequestMayHaveBeenDelivered() async {
+            let transport = TestCodexAppServerTransport(
+                mode: .blockTurnStart,
+                failsTurnStartWrites: true
+            )
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+
+            await #expect(throws: CancellationError.self) {
+                try await service.beginChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+
+            #expect(await transport.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
         func beginReturnsLocalHandleBeforeServerStartResponseAndOwnsEarlyApproval() async throws {
             let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
             let service = makeTestCodexAppServerService(transportFactory: { transport })

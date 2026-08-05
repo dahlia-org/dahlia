@@ -47,6 +47,22 @@
         }
 
         @Test
+        func blankNormalizationOnlyExaminesBoundedApprovalText() throws {
+            let text = String(repeating: " ", count: CodexChatApprovalNormalizer.byteLimit * 100)
+                + "command"
+            let request = try CodexChatApprovalNormalizer.request(
+                id: "s:approval",
+                params: ["command": .string(text)],
+                kind: .commandExecution,
+                fileChanges: []
+            )
+
+            #expect((request.command?.utf8.count ?? 0) <= CodexChatApprovalNormalizer.byteLimit)
+            #expect(request.reviewability == .tooLarge)
+            #expect(request.actions == [.deny])
+        }
+
+        @Test
         func unsupportedPermissionScopeCannotBeApproved() throws {
             let request = try CodexChatApprovalNormalizer.request(
                 id: "s:approval",

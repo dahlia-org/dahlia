@@ -27,6 +27,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private let mode: Mode
     private let failsApprovalResponses: Bool
     private let blocksApprovalResponses: Bool
+    private let failsTurnStartWrites: Bool
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
@@ -45,11 +46,13 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     init(
         mode: Mode,
         failsApprovalResponses: Bool = false,
-        blocksApprovalResponses: Bool = false
+        blocksApprovalResponses: Bool = false,
+        failsTurnStartWrites: Bool = false
     ) {
         self.mode = mode
         self.failsApprovalResponses = failsApprovalResponses
         self.blocksApprovalResponses = blocksApprovalResponses
+        self.failsTurnStartWrites = failsTurnStartWrites
         isAuthenticated = mode != .signedOut && mode != .loginCompletes && mode != .loginBlocks
     }
 
@@ -72,6 +75,9 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
               let method = object["method"]?.stringValue
         else { return }
         resumeMethodWaiters(method)
+        if failsTurnStartWrites, method == "turn/start" {
+            throw CancellationError()
+        }
 
         guard let requestID = object["id"]?.intValue else { return }
         enqueueResponse(to: requestID, method: method, request: object)

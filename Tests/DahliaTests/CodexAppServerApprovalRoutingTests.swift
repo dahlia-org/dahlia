@@ -111,6 +111,13 @@ import Foundation
             service: CodexAppServerService,
             transport: TestCodexAppServerTransport
         ) async throws {
+            await transport.waitUntilSent("turn/interrupt")
+            let interrupt = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interrupt["threadId"] == .string("thread-1"))
+            #expect(interrupt["turnId"] == .string("turn-1"))
+
             let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
             let collection = collectMethods(from: notifications)
             await sendTurnCompleted(turnID: "turn-1", status: "interrupted", to: transport)
