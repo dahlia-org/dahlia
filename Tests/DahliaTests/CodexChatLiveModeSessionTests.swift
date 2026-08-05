@@ -98,8 +98,14 @@ import Foundation
             session.disableLiveMode()
             session.toggleLiveMode()
             session.receiveFinalizedLiveTranscript("New session")
-            await waitUntilAsync { await service.sentTextBlocks.count == 2 }
+            await Task.yield()
+            await Task.yield()
+
+            #expect(await service.sentTextBlocks.count == 1)
+
             await service.resumeDelayedSend()
+            await waitUntilAsync { await service.interruptCount == 1 }
+            await waitUntilAsync { await service.sentTextBlocks.count == 2 }
             await waitUntil { !session.isGenerating }
 
             let sentTextBlocks = await service.sentTextBlocks
