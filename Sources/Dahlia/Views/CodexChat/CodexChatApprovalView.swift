@@ -4,7 +4,6 @@ struct CodexChatApprovalView: View {
     let request: CodexChatApprovalRequest
     let isDecisionEnabled: Bool
     let onDecide: (String, CodexChatApprovalDecision) -> Void
-    let onStop: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -17,8 +16,7 @@ struct CodexChatApprovalView: View {
             CodexChatApprovalActions(
                 request: request,
                 isDecisionEnabled: isDecisionEnabled,
-                onDecide: onDecide,
-                onStop: onStop
+                onDecide: onDecide
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)

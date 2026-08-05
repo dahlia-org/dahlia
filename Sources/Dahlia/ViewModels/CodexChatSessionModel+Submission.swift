@@ -47,6 +47,7 @@ extension CodexChatSessionModel {
     ) {
         guard isBoundToCurrentVault,
               !isGenerating,
+              !isTurnCleanupPending,
               text.nilIfBlank != nil || !images.isEmpty || liveTranscript?.nilIfBlank != nil else { return }
         guard images.isEmpty || models.isEmpty || selectedModelSupportsImages else {
             noticeMessage = L10n.chatModelDoesNotSupportImages

@@ -66,7 +66,8 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored private var isStopRequested = false
-    @ObservationIgnored private var isTurnCleanupPending = false
+    @ObservationIgnored var isTurnCleanupPending = false
+    @ObservationIgnored private var isRequestingTurnHandle = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
     @ObservationIgnored private var threadLeaseID: UUID?
@@ -252,6 +253,7 @@ final class CodexChatSessionModel: Identifiable {
         let approvals = pendingApprovals
         let activeTask = turnTask
         let localTurnID = activeTurnHandleID
+        let mustDrainActiveTask = localTurnID != nil || isRequestingTurnHandle
         let submissionID = activeSubmissionID
         isTurnCleanupPending = true
         activeTask?.cancel()
@@ -262,11 +264,13 @@ final class CodexChatSessionModel: Identifiable {
                 for approval in approvals {
                     await service.respondToApproval(id: approval.id, decision: .cancel)
                 }
+            }
+            guard mustDrainActiveTask else {
                 isTurnCleanupPending = false
                 finishGeneration(submissionID: submissionID)
+                return
             }
             await activeTask?.value
-            guard localTurnID != nil else { return }
             pendingApprovals.removeAll()
             isTurnCleanupPending = false
             unsubscribeIfPossible()
@@ -405,7 +409,7 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 images: images
             )
-            let turn = try await service.beginTurn(
+            let turn = try await requestTurnHandle(
                 threadID: backendThreadID,
                 inputs: inputs,
                 model: selectedModelID.nilIfBlank,
@@ -448,8 +452,14 @@ extension CodexChatSessionModel {
                 didSendLiveModeContext = true
             }
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
-            let turnCompleted = try await consumeTurnEvents(
-                turn.events,
+            let turnCompleted = try await consumeTurnEventsRecoveringMissingThread(
+                turn,
+                retry: MissingThreadRetry(
+                    threadID: backendThreadID,
+                    inputs: inputs,
+                    model: selectedModelID.nilIfBlank,
+                    effort: selectedEffort
+                ),
                 accumulator: accumulator,
                 updateLimiter: updateLimiter,
                 submissionID: submissionID,
@@ -690,6 +700,68 @@ extension CodexChatSessionModel {
     }
 
     private static let maximumEventsBetweenYields = 64
+
+    private struct MissingThreadRetry {
+        let threadID: String
+        let inputs: [CodexAppServerInput]
+        let model: String?
+        let effort: String
+    }
+
+    private func consumeTurnEventsRecoveringMissingThread(
+        _ turn: CodexChatTurnHandle,
+        retry: MissingThreadRetry,
+        accumulator: CodexChatTurnAccumulator,
+        updateLimiter: CodexChatStreamingUpdateLimiter,
+        submissionID: UUID,
+        liveTranscript: String?
+    ) async throws -> Bool {
+        do {
+            return try await consumeTurnEvents(
+                turn.events,
+                accumulator: accumulator,
+                updateLimiter: updateLimiter,
+                submissionID: submissionID,
+                liveTranscript: liveTranscript
+            )
+        } catch let error as CodexAppServerError where error.isThreadNotFound {
+            guard let vaultID else { throw error }
+            let thread = try await service.resumeThread(id: retry.threadID, vaultID: vaultID)
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            apply(thread, preservingPendingMessages: true)
+            let retryTurn = try await requestTurnHandle(
+                threadID: thread.id,
+                inputs: retry.inputs,
+                model: retry.model,
+                effort: retry.effort
+            )
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            activeTurnHandleID = retryTurn.id
+            return try await consumeTurnEvents(
+                retryTurn.events,
+                accumulator: accumulator,
+                updateLimiter: updateLimiter,
+                submissionID: submissionID,
+                liveTranscript: liveTranscript
+            )
+        }
+    }
+
+    private func requestTurnHandle(
+        threadID: String,
+        inputs: [CodexAppServerInput],
+        model: String?,
+        effort: String
+    ) async throws -> CodexChatTurnHandle {
+        isRequestingTurnHandle = true
+        defer { isRequestingTurnHandle = false }
+        return try await service.beginTurn(
+            threadID: threadID,
+            inputs: inputs,
+            model: model,
+            effort: effort
+        )
+    }
 
     func ensureBackendThread(
         text: String?,

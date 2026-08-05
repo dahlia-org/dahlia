@@ -4,46 +4,51 @@ struct CodexChatApprovalActions: View {
     let request: CodexChatApprovalRequest
     let isDecisionEnabled: Bool
     let onDecide: (String, CodexChatApprovalDecision) -> Void
-    let onStop: () -> Void
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 8) {
-                stopButton
+                denyButton
                 Spacer()
-                decisionButtons
+                approvalButtons
             }
 
             VStack(alignment: .trailing, spacing: 8) {
                 HStack {
-                    stopButton
+                    denyButton
                     Spacer()
                 }
-                decisionButtons
+                approvalButtons
             }
         }
     }
 
-    private var stopButton: some View {
-        CodexChatActionButton(
-            label: L10n.stopGenerating,
-            systemImage: "stop.fill",
-            isEnabled: true,
-            action: onStop
+    private var denyButton: some View {
+        CodexChatApprovalButton(
+            title: L10n.chatApprovalDeny,
+            prominence: .secondary,
+            isEnabled: isDecisionEnabled,
+            action: { onDecide(request.id, request.rejectionDecision) }
         )
     }
 
-    private var decisionButtons: some View {
+    private var approvalButtons: some View {
         HStack(spacing: 8) {
-            ForEach(request.actions) { action in
+            ForEach(approvalActions) { action in
                 CodexChatApprovalButton(
                     title: title(for: action),
+                    helpText: helpText(for: action),
                     prominence: action == .allowOnce ? .primary : .secondary,
                     isEnabled: isDecisionEnabled,
                     action: { onDecide(request.id, action.decision) }
                 )
             }
         }
+    }
+
+    private var approvalActions: [CodexChatApprovalAction] {
+        let actions = request.actions.filter { $0 != .deny }
+        return actions.filter { $0 != .allowOnce } + actions.filter { $0 == .allowOnce }
     }
 
     private func title(for action: CodexChatApprovalAction) -> String {
@@ -53,5 +58,10 @@ struct CodexChatApprovalActions: View {
         case .allowSimilarCommands: L10n.chatApprovalAllowSimilarCommands
         case .deny: L10n.chatApprovalDeny
         }
+    }
+
+    private func helpText(for action: CodexChatApprovalAction) -> String? {
+        guard case let .allowSimilarCommands(amendment) = action else { return nil }
+        return "\(L10n.chatApprovalSimilarCommandScope)\n\(amendment.joined(separator: " "))"
     }
 }

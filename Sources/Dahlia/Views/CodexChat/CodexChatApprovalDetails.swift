@@ -58,16 +58,6 @@ private struct CodexChatCommandApprovalDetails: View {
             .approvalDetailRegion()
         }
 
-        if let amendment = request.actions.compactMap(\.execpolicyAmendment).first {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.chatApprovalSimilarCommandScope)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(amendment.joined(separator: "\n"))
-                    .font(.system(.caption, design: .monospaced))
-            }
-            .approvalDetailRegion()
-        }
     }
 }
 
@@ -109,13 +99,6 @@ private struct CodexChatFileApprovalDetails: View {
         case .update(movePath: nil):
             L10n.chatApprovalUpdateFile(change.path)
         }
-    }
-}
-
-private extension CodexChatApprovalAction {
-    var execpolicyAmendment: [String]? {
-        guard case let .allowSimilarCommands(amendment) = self else { return nil }
-        return amendment
     }
 }
 

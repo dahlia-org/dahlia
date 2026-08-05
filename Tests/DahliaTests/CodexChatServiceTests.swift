@@ -456,6 +456,22 @@ import Foundation
         }
 
         @Test
+        func rejectionUsesTheLeastDisruptiveAvailableDecision() {
+            #expect(CodexChatApprovalRequest(
+                id: "declinable",
+                kind: .commandExecution,
+                command: "pwd",
+                actions: [.allowOnce, .deny]
+            ).rejectionDecision == .decline)
+            #expect(CodexChatApprovalRequest(
+                id: "cancellable",
+                kind: .commandExecution,
+                command: "pwd",
+                actions: [.allowOnce]
+            ).rejectionDecision == .cancel)
+        }
+
+        @Test
         func fileChangeCacheEntriesAreReleasedAfterApprovalOrCompletion() {
             let approval = JSONValue.object([
                 "method": .string("item/fileChange/requestApproval"),

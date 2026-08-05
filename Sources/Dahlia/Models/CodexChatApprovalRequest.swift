@@ -51,6 +51,10 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         }
     }
 
+    var rejectionDecision: CodexChatApprovalDecision {
+        actions.contains(.deny) ? .decline : .cancel
+    }
+
     init(
         id: String,
         itemID: String? = nil,

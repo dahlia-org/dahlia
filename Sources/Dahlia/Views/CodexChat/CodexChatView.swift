@@ -85,8 +85,7 @@ struct CodexChatView: View {
                 CodexChatApprovalView(
                     request: pendingApproval,
                     isDecisionEnabled: session.canDecidePendingApproval,
-                    onDecide: session.respondToApproval,
-                    onStop: session.stop
+                    onDecide: session.respondToApproval
                 )
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)

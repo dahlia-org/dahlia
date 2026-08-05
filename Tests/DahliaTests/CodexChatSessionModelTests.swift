@@ -80,6 +80,37 @@ import Foundation
         }
 
         @Test
+        func missingThreadIsResumedBeforeRetryingFollowUp() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            await service.failNextTurn(with: .rpcError(
+                code: -32600,
+                message: "thread not found: thread-1"
+            ))
+
+            session.draft = "Follow up"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+
+            #expect(session.backendThreadID == "thread-1")
+            #expect(session.errorMessage == nil)
+            #expect(await service.resumedThreadIDs == ["thread-1"])
+            #expect(await service.sentTextBlocks == [["Question"], ["Follow up"], ["Follow up"]])
+            #expect(session.messages.map(\.text) == ["Question", "Final answer", "Follow up", "Final answer"])
+        }
+
+        @Test
         func stopWhileTurnHandleIsReturningStopsTheOwnedRuntime() async {
             let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
             let settings = AppSettings()
@@ -101,6 +132,39 @@ import Foundation
             #expect(!session.isGenerating)
             #expect(session.messages.isEmpty)
             #expect(session.draft == "Question")
+        }
+
+        @Test
+        func stopBeforeTurnHandleReturnsWaitsBeforeStartingQueuedInput() async {
+            let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntilAsync { await service.isSendWaiting }
+
+            session.stop()
+            session.draft = "Follow up"
+            session.sendDraft()
+            await Task.yield()
+            await Task.yield()
+
+            #expect(await service.sentTextBlocks == [["Question"]])
+
+            await service.resumeDelayedSend()
+            await waitUntilAsync { await service.interruptCount == 1 }
+            await waitUntilAsync { await service.sentTextBlocks.count == 2 }
+
+            #expect(await service.sentTextBlocks == [["Question"], ["Follow up"]])
+
+            session.stop()
+            await waitUntil { !session.isGenerating }
         }
 
         @Test
@@ -900,7 +964,9 @@ import Foundation
         private(set) var approvalDecisions: [ApprovalDecision] = []
         private(set) var lifecycleEvents: [LifecycleEvent] = []
         private(set) var unsubscribedThreadIDs: [String] = []
+        private(set) var resumedThreadIDs: [String] = []
         private(set) var returnedSendCount = 0
+        private var turnErrors: [CodexAppServerError] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
         private var delayedSendContinuation: CheckedContinuation<Void, Never>?
         private var delayedLoadContinuation: CheckedContinuation<Void, Never>?
@@ -972,7 +1038,8 @@ import Foundation
         }
 
         func resumeThread(id: String, vaultID _: UUID) async throws -> CodexChatThread {
-            try await loadThread(id: id)
+            resumedThreadIDs.append(id)
+            return try await loadThread(id: id)
         }
 
         func startThread(model _: String?, effort: String, vaultID _: UUID) async throws -> CodexChatThread {
@@ -1003,6 +1070,12 @@ import Foundation
                 }
             }
             returnedSendCount += 1
+            if !turnErrors.isEmpty {
+                let error = turnErrors.removeFirst()
+                return AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: error)
+                }
+            }
             if mode == .failThenComplete, sentTextBlocks.count == 1 {
                 throw CodexAppServerError.invalidProtocolResponse
             }
@@ -1073,12 +1146,16 @@ import Foundation
             )
             let id = UUID.v7()
             activeLocalTurnID = id
-            if mode == .delayTurnHandleIgnoringCancellation {
+            if mode == .delayTurnHandleIgnoringCancellation, returnedSendCount == 1 {
                 await withCheckedContinuation { continuation in
                     delayedSendContinuation = continuation
                 }
             }
             return CodexChatTurnHandle(id: id, events: stream)
+        }
+
+        func failNextTurn(with error: CodexAppServerError) {
+            turnErrors.append(error)
         }
 
         func decideApproval(turnID: UUID, id: String, decision: CodexChatApprovalDecision) async throws {
