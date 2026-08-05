@@ -64,12 +64,13 @@ section と block の平坦な配列を維持し、list item に `indent`、bloc
 
 ### DTO と AST の名称対応
 
-LLM DTO と永続 AST は目的が異なるため、table の field 名と cell 型を次のように変換する。
+LLM DTO と永続 AST は目的が異なるため、table と list item の field を次のように変換する。
 
 | LLM DTO | 正準 AST | 変換 |
 | --- | --- | --- |
 | `columns: [String]` | `headers: [SummaryText]` | 各 string を `SummaryText(value, transcriptRef: nil)` で包む |
 | `rows: [[String]]` | `rows: [[SummaryText]]` | 各 string を `SummaryText(value, transcriptRef: nil)` で包む |
+| `items[].indent` | `SummaryListItem.indent` / `ChecklistItem.indent` | 空 item の破棄後に正規化し、0...2 の整数として保持する |
 
 LLM DTO の table cell は `transcript_ref` を持たず、DTO から生成する AST の cell も参照を nil にする。表は情報を
 俯瞰する用途であり、cell ごとの参照を要求すると schema と出力の token 量が大きくなって生成安定性が落ちるためである。
@@ -529,6 +530,25 @@ version 4 の各 list / checklist item 列には、さらに次の構造不変�
 新規生成経路が空 item の破棄後に indent を正規化して常に version 4 を付けることと、MCP 書き込み境界が version、
 全 indent、各 item 列の構造を検証することで強制する。
 
+### schema version の判定源
+
+実装時は、新規生成に使う現行 schema version と MCP 書き込みで受理する version 集合を
+`DahliaRuntimeSupport` の共有定数へ一元化する。名称は実装時に既存 API と揃えるが、意味上は次の 2 値を公開する。
+
+```swift
+public enum SummaryDocumentSchemaVersion {
+    public static let current = 4
+    public static let acceptedMCPWriteVersions: Set<Int> = [3, 4]
+}
+```
+
+- アプリターゲットは `SummaryDocument` の新規生成既定値と DTO-to-AST 変換で `current` を使い、常に version 4 を生成する。
+- MCP ヘルパーは `MeetingSummaryWriteStore` の受理判定で `acceptedMCPWriteVersions` を使う。version 3 / 4 のリテラルを
+  各ターゲットへ重複させない。
+- この集合は**書き込み境界だけ**の契約である。field 単位の寛容な decoder と `get_meeting` の共有 schema は整数一般を
+  引き続き読み取り、version 2 などの legacy 文書を拒否しない。
+- version ごとの indent、blank item、item 列構造の不変条件も、この共有された version 判定結果を基準に適用する。
+
 DTO 例を変換した正準 AST JSON は次のようになる。正準形なので indent 0 は省略している。table の header と cell は
 AST の既存型に合わせて `SummaryText` object だが、すべて `transcript_ref` を持たない。
 
@@ -815,6 +835,29 @@ MCP 入力はユーザーの保存済み文書を全置換するため、LLM DTO
 これにより未知 field、欠落した required field、型不一致は引き続き拒否され、明示 0 だけが正準化による差分として
 許可される。非ゼロ indent を round-trip の都合で失ったり、version 3 の文書へ紛れ込ませたりしない。
 
+擬似コードでは次の順になる。`canonicalToolInput` は任意の object から `indent` を消すのではなく、list / checklist
+block の `items[]` だけを対象にする。
+
+```text
+canonicalToolInput(input):
+    normalized = addingLegacyDefaults(input)
+    for block in normalized.sections[].blocks[]:
+        if block.type in {bulleted_list, numbered_list, checklist}:
+            for item in block.items[]:
+                if item.indent == 0:
+                    remove item.indent
+    return normalized
+
+decodeForMCPWrite(input):
+    canonical = canonicalToolInput(input)
+    document = decode(rewriteToolKeysToDatabaseKeys(input))
+    require acceptedMCPWriteVersions.contains(document.schemaVersion)
+    require versionedListInvariantsAreValid(document)
+    require transcriptReferencesAreValid(document)
+    require canonical == toolJSONValue(document)
+    return document
+```
+
 ## Compatibility and Migration
 
 DB migration は行わない。`summaries.document` は引き続き TEXT の JSON column であり、新しい field と
@@ -844,8 +887,9 @@ DB migration は行わない。`summaries.document` は引き続き TEXT の JSO
   downgrade 後にネストを保持した編集や更新は保証しない。
 
 DB migration が不要で既存文書を読み取れる変更ではあるが、LLM output schema と MCP contract が変わる。
-したがって、次回のリリース準備では marketing version の minor を上げて patch を 0 に戻す。実際の
-`CFBundleShortVersionString` と `CFBundleVersion` は本 ADR の追加時ではなく、リリース準備時に更新する。
+したがって、[AGENTS.md](../../AGENTS.md) の Release Versioning に従い、次回のリリース準備では marketing version の
+minor を上げて patch を 0 に戻す。実際の `CFBundleShortVersionString` と `CFBundleVersion` は本 ADR の追加時ではなく、
+リリース準備時に更新する。
 
 ## Consequences
 
@@ -856,6 +900,8 @@ DB migration が不要で既存文書を読み取れる変更ではあるが、L
 - LLM DTO の table cell を plain string に限定し、生成 token と schema の複雑さを抑えられる。
 - LLM 生成 table を 1 block あたり最大 612、1 document あたり合計 1,200 描画 cells に制限し、非 lazy な SwiftUI
   `Grid` と各 renderer の workload を有界にできる。既存 AST / MCP table の参照形式と保存内容は変更しない。
+- 新規生成の現行 version と MCP 書き込みの受理集合を `DahliaRuntimeSupport` に一元化し、アプリと MCP ヘルパーの
+  version 判定が target ごとのリテラル重複でずれることを防げる。
 - version 3 の既存文書は移行処理なしで読み取れ、indent 0 の省略により不要な CAS hash 差分を避けられる。
 - LLM 出力と MCP 書き込みの信頼境界を分け、前者は正規化、後者は厳格拒否にできる。
 
@@ -879,6 +925,8 @@ DB migration が不要で既存文書を読み取れる変更ではあるが、L
   収まらない後続 table を破棄すること。
 - `get_meeting` が version 2 の保存済み文書を返せる一方、`update_meeting_summary` は 3 / 4 以外、version 4 の
   blank list item、孤児または飛び越し indent を拒否すること。version 3 の blank item は legacy 互換のため受理すること。
+- アプリと MCP ヘルパーが `DahliaRuntimeSupport` の同じ `current = 4` と受理集合 `{3, 4}` を参照し、target 内に
+  schema version の判定リテラルを重複させないこと。
 - Slack 向け share の HTML flavor と plain-text flavor の両方で擬似 indent が保持されること。
 
 ## Alternatives Considered
