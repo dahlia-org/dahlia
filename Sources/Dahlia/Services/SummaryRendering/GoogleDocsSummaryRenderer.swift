@@ -201,10 +201,10 @@ enum GoogleDocsSummaryRenderer {
 
     private static func table(headers: [SummaryText], rows: [[SummaryText]]) -> String {
         guard !headers.isEmpty else { return "" }
-        let header = headers.compactMap { normalizedText($0.text) }.map(inlineRTF).joined(separator: "\\tab ")
+        let header = headers.map { inlineRTF(normalizedText($0.text) ?? "") }.joined(separator: "\\tab ")
         let renderedHeader = "\\pard\\plain\\sa80\\b\\fs22 \(header)\\par\n"
         let renderedRows: String = rows.map { row in
-            let cells = row.compactMap { normalizedText($0.text) }.map(inlineRTF).joined(separator: "\\tab ")
+            let cells = row.map { inlineRTF(normalizedText($0.text) ?? "") }.joined(separator: "\\tab ")
             return "\\pard\\plain\\sa80\\fs22 \(cells)\\par\n"
         }
         .joined()

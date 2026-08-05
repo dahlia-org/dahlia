@@ -168,6 +168,42 @@ import Foundation
             #expect(rtf.contains("1.\\tab {E}"))
         }
 
+        @Test
+        func preservesEmptyTableCells() throws {
+            let document = SummaryDocument(
+                title: "Table",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .table(
+                                headers: ["First", "Second", "Third"],
+                                rows: [["A", "", "C"]]
+                            ),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = GoogleDocsSummaryRenderer.render(
+                document: document,
+                context: SummaryRenderContext(meetingId: .v7(), createdAt: .now),
+                actionItemsHeading: "Action Items",
+                imageUnavailableText: "Image unavailable"
+            )
+            let rtf = try #require(String(data: rendered.data, encoding: .utf8))
+
+            #expect(rtf.contains(#"{A}\tab \tab {C}"#))
+
+            let attributed = try NSAttributedString(
+                data: rendered.data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            )
+            #expect(attributed.string.contains("A\t\tC"))
+        }
+
         private func makePNGData() throws -> Data {
             let bitmap = try #require(NSBitmapImageRep(
                 bitmapDataPlanes: nil,
