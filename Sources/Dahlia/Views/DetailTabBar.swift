@@ -47,18 +47,18 @@ struct DetailTabBar: View {
                             Text(tab.label)
                                 .font(.body.weight(isSelected ? .semibold : .regular))
                         }
+                        .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
+                        .padding(.vertical, DahliaDesign.tabVerticalPadding)
+                        .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(isSelected ? .primary : .secondary)
-                    .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
-                    .padding(.vertical, DahliaDesign.tabVerticalPadding)
                     .background {
                         if !isFolderOnly, hoveredTab == tab {
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(Color.primary.opacity(0.05))
                         }
                     }
-                    .contentShape(.rect)
                     .overlay(alignment: .bottom) {
                         if isSelected {
                             Capsule()
