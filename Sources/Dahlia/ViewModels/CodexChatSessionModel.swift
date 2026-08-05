@@ -50,6 +50,13 @@ final class CodexChatSessionModel: Identifiable {
         pendingApprovals.first
     }
 
+    var canDecidePendingApproval: Bool {
+        guard let pendingApproval else { return false }
+        return approvalDecisionReadyID == pendingApproval.id
+            && respondingApprovalID == nil
+            && !isStopRequested
+    }
+
     var showsStandaloneThinking: Bool {
         isGenerating && (isAwaitingTurnOutput || isFinalizingTurn)
     }
@@ -63,6 +70,8 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
     @ObservationIgnored private var threadLeaseID: UUID?
+    @ObservationIgnored private var approvalDecisionReadyID: String?
+    @ObservationIgnored private var approvalRearmTask: Task<Void, Never>?
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
     @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
@@ -215,6 +224,7 @@ final class CodexChatSessionModel: Identifiable {
 
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) {
         guard respondingApprovalID == nil,
+              approvalDecisionReadyID == id,
               pendingApprovals.contains(where: { $0.id == id }),
               let activeTurnHandleID else { return }
         respondingApprovalID = id
@@ -225,6 +235,8 @@ final class CodexChatSessionModel: Identifiable {
                     id: id,
                     decision: decision
                 )
+            } catch CodexAppServerError.approvalNoLongerPending {
+                resolvePendingApproval(id)
             } catch {
                 errorMessage = error.localizedDescription
                 if respondingApprovalID == id {
@@ -399,8 +411,13 @@ extension CodexChatSessionModel {
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
+            do {
+                try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            } catch {
+                await service.stopTurn(turn.id)
+                throw error
+            }
             activeTurnHandleID = turn.id
-            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
             var replacementTitleText: String?
             if liveTranscript == nil {
                 let submission = CodexChatManualSubmission(text: text ?? "", images: images)
@@ -524,12 +541,12 @@ extension CodexChatSessionModel {
             updateLimiter.submit(force: true)
             if !pendingApprovals.contains(where: { $0.id == request.id }) {
                 pendingApprovals.append(request)
+                if pendingApprovals.count == 1 {
+                    approvalDecisionReadyID = request.id
+                }
             }
         case let .approvalResolved(id):
-            pendingApprovals.removeAll { $0.id == id }
-            if respondingApprovalID == id {
-                respondingApprovalID = nil
-            }
+            resolvePendingApproval(id)
         case .interrupted:
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
@@ -624,6 +641,9 @@ extension CodexChatSessionModel {
         isGenerating = false
         isPreparingTurn = false
         pendingApprovals.removeAll()
+        approvalDecisionReadyID = nil
+        approvalRearmTask?.cancel()
+        approvalRearmTask = nil
         preparingManualComposerSnapshot = nil
         activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false
@@ -639,6 +659,34 @@ extension CodexChatSessionModel {
         turnTask = nil
         unsubscribeIfPossible()
         processPendingInputIfPossible()
+    }
+
+    private func rearmNextApprovalAfterInteractionBoundary() {
+        approvalRearmTask?.cancel()
+        guard let nextID = pendingApprovals.first?.id else {
+            approvalDecisionReadyID = nil
+            approvalRearmTask = nil
+            return
+        }
+        approvalDecisionReadyID = nil
+        approvalRearmTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled,
+                  self?.pendingApprovals.first?.id == nextID else { return }
+            self?.approvalDecisionReadyID = nextID
+            self?.approvalRearmTask = nil
+        }
+    }
+
+    private func resolvePendingApproval(_ id: String) {
+        let wasPresented = pendingApprovals.first?.id == id
+        pendingApprovals.removeAll { $0.id == id }
+        if respondingApprovalID == id {
+            respondingApprovalID = nil
+        }
+        if wasPresented {
+            rearmNextApprovalAfterInteractionBoundary()
+        }
     }
 
     private static let maximumEventsBetweenYields = 64

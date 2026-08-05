@@ -26,6 +26,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     private let mode: Mode
     private let failsApprovalResponses: Bool
+    private let blocksApprovalResponses: Bool
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
@@ -36,25 +37,36 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private var blockedTurnStart: (requestID: Int, threadID: String)?
     private var heldRequestID: Int?
     private var closeContinuation: CheckedContinuation<Void, Never>?
+    private var approvalResponseContinuation: CheckedContinuation<Void, Never>?
     private var didStartClosing = false
     private var isAuthenticated: Bool
     private(set) var isClosed = false
 
-    init(mode: Mode, failsApprovalResponses: Bool = false) {
+    init(
+        mode: Mode,
+        failsApprovalResponses: Bool = false,
+        blocksApprovalResponses: Bool = false
+    ) {
         self.mode = mode
         self.failsApprovalResponses = failsApprovalResponses
+        self.blocksApprovalResponses = blocksApprovalResponses
         isAuthenticated = mode != .signedOut && mode != .loginCompletes && mode != .loginBlocks
     }
 
-    func sendLine(_ data: Data) throws {
+    func sendLine(_ data: Data) async throws {
         let message = try JSONDecoder().decode(JSONValue.self, from: data)
-        if failsApprovalResponses,
-           message.objectValue?["result"]?.objectValue?["decision"] != nil {
+        let isApprovalResponse = message.objectValue?["result"]?.objectValue?["decision"] != nil
+        if failsApprovalResponses, isApprovalResponse {
             throw CancellationError()
         }
         sentMessages.append(message)
         if let responseKey = responseKey(message.objectValue?["id"]) {
             resumeMethodWaiters(responseKey)
+        }
+        if blocksApprovalResponses, isApprovalResponse {
+            await withCheckedContinuation { continuation in
+                approvalResponseContinuation = continuation
+            }
         }
         guard let object = message.objectValue,
               let method = object["method"]?.stringValue
@@ -418,6 +430,11 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     func finishClosing() {
         closeContinuation?.resume()
         closeContinuation = nil
+    }
+
+    func releaseBlockedApprovalResponse() {
+        approvalResponseContinuation?.resume()
+        approvalResponseContinuation = nil
     }
 
     func endOutput() {

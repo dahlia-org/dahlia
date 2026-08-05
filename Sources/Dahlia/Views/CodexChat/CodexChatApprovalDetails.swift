@@ -57,6 +57,17 @@ private struct CodexChatCommandApprovalDetails: View {
             }
             .approvalDetailRegion()
         }
+
+        if let amendment = request.actions.compactMap(\.execpolicyAmendment).first {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.chatApprovalSimilarCommandScope)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(amendment.joined(separator: "\n"))
+                    .font(.system(.caption, design: .monospaced))
+            }
+            .approvalDetailRegion()
+        }
     }
 }
 
@@ -68,7 +79,7 @@ private struct CodexChatFileApprovalDetails: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(request.fileChanges.enumerated()), id: \.offset) { _, change in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(change.path)
+                        Text(title(for: change))
                             .font(.system(.caption, design: .monospaced).weight(.medium))
                         if !change.diff.isEmpty {
                             Text(change.diff)
@@ -85,6 +96,26 @@ private struct CodexChatFileApprovalDetails: View {
             }
             .approvalDetailRegion()
         }
+    }
+
+    private func title(for change: CodexChatApprovalRequest.FileChange) -> String {
+        switch change.kind {
+        case .add:
+            L10n.chatApprovalAddFile(change.path)
+        case .delete:
+            L10n.chatApprovalDeleteFile(change.path)
+        case let .update(movePath: .some(movePath)):
+            L10n.chatApprovalMoveFile(change.path, to: movePath)
+        case .update(movePath: nil):
+            L10n.chatApprovalUpdateFile(change.path)
+        }
+    }
+}
+
+private extension CodexChatApprovalAction {
+    var execpolicyAmendment: [String]? {
+        guard case let .allowSimilarCommands(amendment) = self else { return nil }
+        return amendment
     }
 }
 

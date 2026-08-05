@@ -14,7 +14,7 @@ actor TestCodexChatAppServerTransport: CodexAppServerTransport {
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
-    private var isClosed = false
+    private(set) var isClosed = false
 
     init(turnOutcome: TurnOutcome = .completed, automaticallyRespondsToModelList: Bool = true) {
         self.turnOutcome = turnOutcome

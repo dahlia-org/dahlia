@@ -3,6 +3,8 @@ import Foundation
 enum CodexChatApprovalNormalizer {
     static let byteLimit = 20000
     static let fileLimit = 50
+    private static let decisionLimit = 16
+    private static let amendmentItemLimit = 50
 
     static func request(
         id: String,
@@ -55,7 +57,8 @@ enum CodexChatApprovalNormalizer {
             actions: actions(
                 params: params,
                 kind: kind,
-                reviewability: reviewability
+                reviewability: reviewability,
+                budget: &budget
             )
         )
     }
@@ -63,25 +66,32 @@ enum CodexChatApprovalNormalizer {
     private static func actions(
         params: [String: JSONValue],
         kind: CodexChatApprovalRequest.Kind,
-        reviewability: CodexChatApprovalRequest.Reviewability
+        reviewability: CodexChatApprovalRequest.Reviewability,
+        budget: inout ByteBudget
     ) -> [CodexChatApprovalAction] {
-        guard reviewability == .ready else { return [.deny] }
-        let available = params["availableDecisions"]?.arrayValue
+        let available = params["availableDecisions"]?.arrayValue.map {
+            Array($0.prefix(decisionLimit))
+        }
         let allows: (String) -> Bool = { decision in
             guard let available else { return true }
             return available.contains(.string(decision))
+        }
+        guard reviewability == .ready else {
+            return allows("decline") ? [.deny] : []
         }
         var result: [CodexChatApprovalAction] = []
         if allows("accept") {
             result.append(.allowOnce)
         }
-        if allows("acceptForSession") {
-            result.append(.allowForSession)
+        if kind == .fileChange, allows("acceptForSession") {
+            result.append(.allowSameFilesForSession)
         }
         if kind == .commandExecution,
-           let amendment = params["proposedExecpolicyAmendment"]?.arrayValue?.compactMap(\.stringValue),
-           !amendment.isEmpty,
-           available?.contains(where: supportsExecpolicyAmendment) == true {
+           let amendment = execpolicyAmendment(
+               params: params,
+               availableDecisions: available,
+               budget: &budget
+           ) {
             result.append(.allowSimilarCommands(amendment: amendment))
         }
         if allows("decline") {
@@ -90,9 +100,39 @@ enum CodexChatApprovalNormalizer {
         return result
     }
 
-    private static func supportsExecpolicyAmendment(_ value: JSONValue) -> Bool {
-        value == .string("acceptWithExecpolicyAmendment")
-            || value.objectValue?["acceptWithExecpolicyAmendment"] != nil
+    private static func execpolicyAmendment(
+        params: [String: JSONValue],
+        availableDecisions: [JSONValue]?,
+        budget: inout ByteBudget
+    ) -> [String]? {
+        guard let proposed = params["proposedExecpolicyAmendment"]?.arrayValue,
+              !proposed.isEmpty,
+              proposed.count <= amendmentItemLimit,
+              let availableDecisions,
+              let exact = availableDecisions.lazy.compactMap({ decision in
+                  decision.objectValue?["acceptWithExecpolicyAmendment"]?
+                      .objectValue?["execpolicy_amendment"]?.arrayValue
+              }).first(where: { matches($0, proposed) })
+        else { return nil }
+
+        var bounded: [String] = []
+        bounded.reserveCapacity(exact.count)
+        for value in exact {
+            guard let text = value.stringValue,
+                  let text = budget.consume(text),
+                  !budget.didTruncate else { return nil }
+            bounded.append(text)
+        }
+        return bounded
+    }
+
+    private static func matches(_ lhs: [JSONValue], _ rhs: [JSONValue]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            guard let left = left.stringValue,
+                  let right = right.stringValue else { return false }
+            return left == right
+        }
     }
 
     static func boundedFileChangeSnapshot(
@@ -114,8 +154,20 @@ enum CodexChatApprovalNormalizer {
         changes.prefix(fileLimit).compactMap { change in
             let path = budget.consume(change.path)
             let diff = budget.consume(change.diff)
+            let kind: CodexChatApprovalRequest.FileChange.Kind = switch change.kind {
+            case .add:
+                .add
+            case .delete:
+                .delete
+            case let .update(movePath):
+                .update(movePath: budget.consume(movePath))
+            }
             guard let path else { return nil }
-            return CodexChatApprovalRequest.FileChange(path: path, diff: diff ?? "")
+            return CodexChatApprovalRequest.FileChange(
+                path: path,
+                diff: diff ?? "",
+                kind: kind
+            )
         }
     }
 

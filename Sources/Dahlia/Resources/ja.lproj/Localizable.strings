@@ -931,8 +931,13 @@
 "The assistant wants to run a command." = "アシスタントがコマンドの実行を求めています。";
 "The assistant wants to change files." = "アシスタントがファイルの変更を求めています。";
 "Allow once" = "一度だけ許可";
-"Always allow in this chat" = "このチャットでは常に許可";
+"Allow changes to the same files in this chat" = "このチャットで同じファイルへの変更を許可";
 "Allow similar commands" = "類似コマンドを許可";
+"Commands that will be allowed without asking again" = "今後確認なしで許可されるコマンド";
+"Add file: %@" = "ファイルを追加：%@";
+"Delete file: %@" = "ファイルを削除：%@";
+"Update file: %@" = "ファイルを変更：%@";
+"Move file: %@ → %@" = "ファイルを移動：%@ → %@";
 "Deny" = "拒否";
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";

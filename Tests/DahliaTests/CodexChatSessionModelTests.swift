@@ -80,6 +80,30 @@ import Foundation
         }
 
         @Test
+        func stopWhileTurnHandleIsReturningStopsTheOwnedRuntime() async {
+            let service = TestCodexChatService(mode: .delayTurnHandleIgnoringCancellation)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntilAsync { await service.isSendWaiting }
+
+            session.stop()
+            await service.resumeDelayedSend()
+            await waitUntilAsync { await service.interruptCount == 1 }
+
+            #expect(!session.isGenerating)
+            #expect(session.messages.isEmpty)
+            #expect(session.draft == "Question")
+        }
+
+        @Test
         func sendDraftSerializesMultipleMeetingReferencesBeforeInstruction() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()
@@ -342,6 +366,46 @@ import Foundation
             ])
             await service.yieldBlockedEvent(.approvalResolved(id: first.id))
             await waitUntil { session.pendingApprovals == [second] }
+            session.respondToApproval(id: second.id, decision: .accept)
+            #expect(await service.approvalDecisions == [
+                TestCodexChatService.ApprovalDecision(id: first.id, decision: .accept),
+            ])
+            try? await Task.sleep(for: .milliseconds(600))
+            await waitUntil { session.canDecidePendingApproval }
+            session.respondToApproval(id: second.id, decision: .accept)
+            await waitUntilAsync { await service.approvalDecisions.count == 2 }
+            session.stop()
+            await waitUntil { !session.isGenerating }
+        }
+
+        @Test
+        func staleApprovalDecisionAdvancesToTheNextRequest() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { session.messages.last?.text == "Partial" }
+
+            let first = CodexChatApprovalRequest(id: "s:first", kind: .commandExecution, command: "date")
+            let second = CodexChatApprovalRequest(id: "s:second", kind: .commandExecution, command: "uname")
+            await service.yieldBlockedEvent(.approvalRequested(first))
+            await service.yieldBlockedEvent(.approvalRequested(second))
+            await waitUntil { session.pendingApprovals == [first, second] }
+            await service.expireApproval(id: first.id)
+
+            session.respondToApproval(id: first.id, decision: .accept)
+            await waitUntil { session.pendingApprovals == [second] }
+            #expect(session.respondingApprovalID == nil)
+            try? await Task.sleep(for: .milliseconds(600))
+            #expect(session.canDecidePendingApproval)
+
             session.stop()
             await waitUntil { !session.isGenerating }
         }
@@ -823,6 +887,7 @@ import Foundation
             case rolloutWithoutReasoning
             case multipleMessages
             case delayFirstSendIgnoringCancellation
+            case delayTurnHandleIgnoringCancellation
         }
 
         let mode: Mode
@@ -881,7 +946,7 @@ import Foundation
             let assistantMessages: [CodexChatMessage] = switch mode {
             case .complete, .block, .blockBeforeOutput, .burstThenBlock, .bufferedBurstThenInterrupt,
                  .finishesWithoutTerminal, .interruptedThenBlock, .failThenComplete, .alwaysFail,
-                 .delayFirstSendIgnoringCancellation:
+                 .delayFirstSendIgnoringCancellation, .delayTurnHandleIgnoringCancellation:
                 [CodexChatMessage(role: .assistant, text: "Final answer", reasoning: "Considered the question")]
             case .rolloutWithoutReasoning:
                 [CodexChatMessage(role: .assistant, text: "Final answer")]
@@ -964,6 +1029,8 @@ import Foundation
                 blockedContinuation = continuation
             case .blockBeforeOutput:
                 blockedContinuation = continuation
+            case .delayTurnHandleIgnoringCancellation:
+                blockedContinuation = continuation
             case .burstThenBlock:
                 continuation.yield(.delta(itemID: "item-1", text: "First"))
                 continuation.yield(.delta(itemID: "item-1", text: " second"))
@@ -1006,6 +1073,11 @@ import Foundation
             )
             let id = UUID.v7()
             activeLocalTurnID = id
+            if mode == .delayTurnHandleIgnoringCancellation {
+                await withCheckedContinuation { continuation in
+                    delayedSendContinuation = continuation
+                }
+            }
             return CodexChatTurnHandle(id: id, events: stream)
         }
 
@@ -1064,6 +1136,10 @@ import Foundation
                 pendingApprovalIDs.append(request.id)
             }
             blockedContinuation?.yield(event)
+        }
+
+        func expireApproval(id: String) {
+            pendingApprovalIDs.removeAll { $0 == id }
         }
 
         func resumeDelayedSend() {

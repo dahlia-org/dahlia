@@ -201,6 +201,57 @@ import Foundation
         }
 
         @Test
+        func malformedTurnEventInterruptsTheOwnedRuntimeBeforeFailing() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-malformed", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Test")],
+                model: "default-model",
+                effort: "medium"
+            )
+            let collection = Task {
+                for try await _ in stream {}
+            }
+
+            await transport.sendFromServer(.object([
+                "method": .string("item/agentMessage/delta"),
+                "params": .object([
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await transport.messages().contains {
+                    $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+                }
+            })
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+
+            await #expect(throws: CodexAppServerError.invalidProtocolResponse) {
+                try await collection.value
+            }
+            #expect(await !transport.isClosed)
+            await appServer.shutdown()
+        }
+
+        @Test
         func historyUsesExactWorkspaceAndBundledCodexSourceAndRestoresMessages() async throws {
             let transport = TestCodexChatAppServerTransport()
             let appServer = makeTestCodexAppServerService(transportFactory: { transport })
@@ -291,7 +342,10 @@ import Foundation
                         "changes": .array([
                             .object([
                                 "diff": .string("@@ -1 +1 @@\n-old\n+new"),
-                                "kind": .object(["type": .string("update"), "move_path": .null]),
+                                "kind": .object([
+                                    "type": .string("update"),
+                                    "move_path": .string("Sources/Renamed.swift"),
+                                ]),
                                 "path": .string("Sources/Example.swift"),
                             ]),
                         ]),
@@ -341,7 +395,8 @@ import Foundation
                     fileChanges: [
                         CodexChatApprovalRequest.FileChange(
                             path: "Sources/Example.swift",
-                            diff: "@@ -1 +1 @@\n-old\n+new"
+                            diff: "@@ -1 +1 @@\n-old\n+new",
+                            kind: .update(movePath: "Sources/Renamed.swift")
                         ),
                     ],
                     grantRoot: "/tmp/outside-workspace",

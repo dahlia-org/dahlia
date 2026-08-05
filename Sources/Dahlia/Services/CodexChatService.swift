@@ -180,11 +180,7 @@ actor CodexChatService: CodexChatServicing {
     }
 
     func releaseThreadLease(threadID: String, leaseID: UUID) async {
-        guard await appServer.releaseChatThreadLease(threadID, leaseID: leaseID) else { return }
-        _ = try? await appServer.request(
-            method: "thread/unsubscribe",
-            params: .object(["threadId": .string(threadID)])
-        )
+        _ = await appServer.releaseChatThreadLease(threadID, leaseID: leaseID)
     }
 
     func send(
@@ -222,17 +218,22 @@ actor CodexChatService: CodexChatServicing {
 
         let turn = try await appServer.beginChatTurn(threadID: threadID, params: .object(params))
 
-        let events = AsyncThrowingStream<CodexChatTurnEvent, any Error> { continuation in
+        let events = AsyncThrowingStream<CodexChatTurnEvent, any Error>(
+            bufferingPolicy: .bufferingNewest(64)
+        ) { continuation in
             let task = Task {
                 var fileChangeCache = CodexChatApprovalFileChangeCache()
+                var terminalEventWasDelivered = false
+                var completionError: (any Error)?
                 do {
                     for try await transportEvent in turn.events {
+                        try Task.checkCancellation()
                         switch transportEvent {
                         case let .started(turnID):
-                            continuation.yield(.started(turnID: turnID))
+                            try Self.yield(.started(turnID: turnID), to: continuation)
                             continue
                         case let .approvalResolved(id):
-                            continuation.yield(.approvalResolved(id: id))
+                            try Self.yield(.approvalResolved(id: id), to: continuation)
                             continue
                         case let .message(notification):
                             if let update = try Self.parseFileChangeUpdate(notification) {
@@ -246,18 +247,44 @@ actor CodexChatService: CodexChatServicing {
                                 fileChangeCache.removeValue(forKey: itemID)
                             }
                             if let event {
-                                continuation.yield(event)
+                                try Self.yield(event, to: continuation)
+                                if event.terminalCompletion != nil {
+                                    terminalEventWasDelivered = true
+                                }
                             }
                         }
                     }
-                    continuation.finish()
                 } catch {
-                    continuation.finish(throwing: error)
+                    completionError = error
+                }
+                if !terminalEventWasDelivered {
+                    await appServer.stopChatTurn(turn.id)
+                }
+                if let completionError {
+                    continuation.finish(throwing: completionError)
+                } else {
+                    continuation.finish()
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
         }
         return CodexChatTurnHandle(id: turn.id, events: events)
+    }
+
+    private nonisolated static func yield(
+        _ event: CodexChatTurnEvent,
+        to continuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation
+    ) throws {
+        switch continuation.yield(event) {
+        case .enqueued:
+            return
+        case .dropped:
+            throw CodexAppServerError.backendResetForSafety
+        case .terminated:
+            throw CancellationError()
+        @unknown default:
+            throw CodexAppServerError.backendResetForSafety
+        }
     }
 
     func setThreadName(threadID: String, name: String) async {
@@ -553,13 +580,41 @@ private extension CodexChatService {
         let parsedChanges = try changes.prefix(CodexChatApprovalNormalizer.fileLimit + 1).map { value in
             guard let change = value.objectValue,
                   let path = change["path"]?.stringValue?.nilIfBlank,
-                  let diff = change["diff"]?.stringValue
-            else {
+                  let diff = change["diff"]?.stringValue else {
                 throw CodexAppServerError.invalidProtocolResponse
             }
-            return CodexChatApprovalRequest.FileChange(path: path, diff: diff)
+            let kind = try parseFileChangeKind(change["kind"])
+            return CodexChatApprovalRequest.FileChange(path: path, diff: diff, kind: kind)
         }
         return (itemID, CodexChatApprovalNormalizer.boundedFileChangeSnapshot(parsedChanges))
+    }
+
+    private nonisolated static func parseFileChangeKind(
+        _ value: JSONValue?
+    ) throws -> CodexChatApprovalRequest.FileChange.Kind {
+        guard let object = value?.objectValue,
+              let type = object["type"]?.stringValue else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        switch type {
+        case "add":
+            return .add
+        case "delete":
+            return .delete
+        case "update":
+            let movePath: String?
+            if let value = object["move_path"], value != .null {
+                guard let path = value.stringValue?.nilIfBlank else {
+                    throw CodexAppServerError.invalidProtocolResponse
+                }
+                movePath = path
+            } else {
+                movePath = nil
+            }
+            return .update(movePath: movePath)
+        default:
+            throw CodexAppServerError.invalidProtocolResponse
+        }
     }
 
     nonisolated static func parseReasoningDelta(_ params: [String: JSONValue]) throws -> CodexChatTurnEvent {

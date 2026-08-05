@@ -931,8 +931,13 @@
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";
 "Allow once" = "Allow once";
-"Always allow in this chat" = "Always allow in this chat";
+"Allow changes to the same files in this chat" = "Allow changes to the same files in this chat";
 "Allow similar commands" = "Allow similar commands";
+"Commands that will be allowed without asking again" = "Commands that will be allowed without asking again";
+"Add file: %@" = "Add file: %@";
+"Delete file: %@" = "Delete file: %@";
+"Update file: %@" = "Update file: %@";
+"Move file: %@ → %@" = "Move file: %@ → %@";
 "Deny" = "Deny";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";

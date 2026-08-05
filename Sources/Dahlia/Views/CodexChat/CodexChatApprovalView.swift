@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CodexChatApprovalView: View {
     let request: CodexChatApprovalRequest
-    let isResponding: Bool
+    let isDecisionEnabled: Bool
     let onDecide: (String, CodexChatApprovalDecision) -> Void
     let onStop: () -> Void
 
@@ -16,7 +16,7 @@ struct CodexChatApprovalView: View {
 
             CodexChatApprovalActions(
                 request: request,
-                isResponding: isResponding,
+                isDecisionEnabled: isDecisionEnabled,
                 onDecide: onDecide,
                 onStop: onStop
             )

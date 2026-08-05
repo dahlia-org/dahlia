@@ -2,8 +2,21 @@ import Foundation
 
 struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     struct FileChange: Equatable, Sendable {
+        enum Kind: Equatable, Sendable {
+            case add
+            case delete
+            case update(movePath: String?)
+        }
+
         let path: String
         let diff: String
+        let kind: Kind
+
+        init(path: String, diff: String, kind: Kind = .update(movePath: nil)) {
+            self.path = path
+            self.diff = diff
+            self.kind = kind
+        }
     }
 
     enum Kind: Equatable, Sendable {
@@ -63,10 +76,12 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     }
 
     private static func defaultActions(
-        kind _: Kind,
+        kind: Kind,
         reviewability: Reviewability
     ) -> [CodexChatApprovalAction] {
         guard reviewability == .ready else { return [.deny] }
-        return [.allowOnce, .allowForSession, .deny]
+        return kind == .fileChange
+            ? [.allowOnce, .allowSameFilesForSession, .deny]
+            : [.allowOnce, .deny]
     }
 }

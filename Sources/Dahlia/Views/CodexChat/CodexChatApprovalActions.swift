@@ -2,7 +2,7 @@ import SwiftUI
 
 struct CodexChatApprovalActions: View {
     let request: CodexChatApprovalRequest
-    let isResponding: Bool
+    let isDecisionEnabled: Bool
     let onDecide: (String, CodexChatApprovalDecision) -> Void
     let onStop: () -> Void
 
@@ -39,7 +39,7 @@ struct CodexChatApprovalActions: View {
                 CodexChatApprovalButton(
                     title: title(for: action),
                     prominence: action == .allowOnce ? .primary : .secondary,
-                    isEnabled: !isResponding,
+                    isEnabled: isDecisionEnabled,
                     action: { onDecide(request.id, action.decision) }
                 )
             }
@@ -49,7 +49,7 @@ struct CodexChatApprovalActions: View {
     private func title(for action: CodexChatApprovalAction) -> String {
         switch action {
         case .allowOnce: L10n.chatApprovalAllowOnce
-        case .allowForSession: L10n.chatApprovalAlwaysAllow
+        case .allowSameFilesForSession: L10n.chatApprovalAllowSameFiles
         case .allowSimilarCommands: L10n.chatApprovalAllowSimilarCommands
         case .deny: L10n.chatApprovalDeny
         }

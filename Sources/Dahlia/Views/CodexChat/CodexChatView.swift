@@ -84,7 +84,7 @@ struct CodexChatView: View {
             if let pendingApproval = session.pendingApproval {
                 CodexChatApprovalView(
                     request: pendingApproval,
-                    isResponding: session.respondingApprovalID == pendingApproval.id,
+                    isDecisionEnabled: session.canDecidePendingApproval,
                     onDecide: session.respondToApproval,
                     onStop: session.stop
                 )

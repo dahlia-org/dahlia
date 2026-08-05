@@ -51,26 +51,14 @@ import Foundation
                 approvalID: "s:approval-1",
                 decision: .accept
             )
-            await transport.sendFromServer(.object([
-                "method": .string("serverRequest/resolved"),
-                "params": .object([
-                    "requestId": .string("approval-1"),
-                    "threadId": .string("thread-2"),
-                ]),
-            ]))
+            await sendApprovalResolved(id: "approval-1", threadID: "thread-2", to: transport)
             #expect(await pollUntil {
                 await service.hasRespondedChatApprovalForTesting(
                     turnID: turn.id,
                     approvalID: "s:approval-1"
                 )
             })
-            await transport.sendFromServer(.object([
-                "method": .string("serverRequest/resolved"),
-                "params": .object([
-                    "requestId": .string("approval-1"),
-                    "threadId": .string("thread-1"),
-                ]),
-            ]))
+            await sendApprovalResolved(id: "approval-1", threadID: "thread-1", to: transport)
             #expect(await pollUntil {
                 await !service.hasRespondedChatApprovalForTesting(
                     turnID: turn.id,
@@ -126,6 +114,49 @@ import Foundation
             await sendTurnCompleted(turnID: "turn-1", status: "interrupted", to: transport)
             await stop.value
             try await collection.value
+            await service.shutdown()
+        }
+
+        @Test
+        func terminalEventDuringApprovalCancellationDoesNotResetConnection() async throws {
+            let transport = TestCodexAppServerTransport(
+                mode: .blockTurnStart,
+                blocksApprovalResponses: true
+            )
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.beginChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collection = Task {
+                for try await _ in turn.events {}
+            }
+            await transport.sendFromServer(.object([
+                "method": .string("turn/started"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object(["id": .string("turn-1")]),
+                ]),
+            ]))
+            await sendApproval(id: "approval-1", turnID: "turn-1", to: transport)
+            #expect(await pollUntil {
+                await service.hasOwnedChatApprovalForTesting(turnID: turn.id, approvalID: "s:approval-1")
+            })
+
+            let stop = Task { await service.stopChatTurn(turn.id) }
+            await transport.waitUntilResponded(to: "approval-1")
+            await sendTurnCompleted(turnID: "turn-1", status: "interrupted", to: transport)
+            await transport.releaseBlockedApprovalResponse()
+
+            await stop.value
+            try await collection.value
+            #expect(await !transport.isClosed)
+            let responses = await transport.messages().filter {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }
+            #expect(responses.count == 1)
+            #expect(responses.first?.objectValue?["result"]?.objectValue?["decision"] == .string("cancel"))
             await service.shutdown()
         }
 
@@ -204,14 +235,19 @@ import Foundation
         }
 
         @Test
-        func chatThreadLeaseOnlyUnsubscribesAfterFinalOwnerReleases() async {
+        func chatThreadLeaseOnlyUnsubscribesAfterFinalOwnerReleases() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
+            try await service.start()
             let first = await service.acquireChatThreadLease("thread-1")
             let second = await service.acquireChatThreadLease("thread-1")
 
             #expect(await !service.releaseChatThreadLease("thread-1", leaseID: first))
+            #expect(await transport.messages().allSatisfy {
+                $0.objectValue?["method"]?.stringValue != "thread/unsubscribe"
+            })
             #expect(await service.releaseChatThreadLease("thread-1", leaseID: second))
+            await transport.waitUntilSent("thread/unsubscribe")
             await service.shutdown()
         }
 
@@ -228,6 +264,20 @@ import Foundation
                     "itemId": .string("item-1"),
                     "threadId": .string("thread-1"),
                     "turnId": .string(turnID),
+                ]),
+            ]))
+        }
+
+        private func sendApprovalResolved(
+            id: String,
+            threadID: String,
+            to transport: TestCodexAppServerTransport
+        ) async {
+            await transport.sendFromServer(.object([
+                "method": .string("serverRequest/resolved"),
+                "params": .object([
+                    "requestId": .string(id),
+                    "threadId": .string(threadID),
                 ]),
             ]))
         }

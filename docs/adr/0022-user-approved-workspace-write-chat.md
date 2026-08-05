@@ -41,25 +41,33 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
 - `item/commandExecution/requestApproval` と `item/fileChange/requestApproval` は、対象 `threadId` と `turnId` が同一のローカル
   turn handle に属する場合だけ `CodexChatSessionModel` へ配送する。ユーザーの決定は元の JSON-RPC id に返し、
   `serverRequest/resolved` で同じ承認だけを UI から除く。利用可能な操作は server の `availableDecisions` と交差させ、
-  `acceptWithExecpolicyAmendment` は server が提示した amendment を構造化 decision のまま返す。
+  `acceptWithExecpolicyAmendment` は server が構造化 decision で提示し、`proposedExecpolicyAmendment` と完全一致する規則だけを
+  UI に表示して返す。command の包括的な `acceptForSession` は、許可範囲を説明できないため表示しない。
 - 要約 thread と未知の thread からの approval request は従来どおり `decline` する。判定は「チャット thread として登録済みか」
   だけで行い、subscriber の有無では判定しない。`turn/start` の応答より approval request が先着し得るため。
 - `item/permissions/requestApproval` は fail-closed のままとする。これは sandbox 外への権限昇格要求であり、応答が
   `GrantedPermissionProfile` という別形式を必要とする。workspace-write の範囲では通常発生しない。
 - `grantRoot`、追加 filesystem permission、network permission を含む要求は、この UI で許可できる範囲外として扱う。
   workspace と temporary directory の境界は sandbox が決め、承認 UI がその境界を拡張しない。
-- UI に渡す承認 prompt は正規化時に合計 20 KB、file change 50 件へ制限する。上限を超えた要求、必要な command/diff が
-  欠ける要求、未対応の権限要求は fail-closed とし、拒否だけを表示する。未加工の巨大 payload を presentation state に保持しない。
+- UI に渡す承認 prompt は正規化時に合計 20 KB、file change 50 件、decision 16 件、exec policy rule 50 件へ制限する。
+  file change の add/delete/update/move も承認対象の説明に含める。上限を超えた要求、必要な command/diff/kind が欠ける要求、
+  未対応の権限要求は fail-closed とし、server が `decline` を許す場合だけ拒否を表示する。有効な decision がない場合でも停止操作は
+  残す。未加工の巨大 payload を presentation state に保持しない。
+- app-server から turn parser、session model までの projection stream は件数上限を持つ。overflow や protocol error では event を
+  黙って欠落させず、対象 turn を停止する。raw turn routing の overflow は承認要求を見失う可能性があるため共有接続を再起動する。
 - v1 互換の `applyPatchApproval` と `execCommandApproval` も従来どおり `denied` を返す。
 
 ## Invariants
 
 - 未応答の approval request を残さない。ユーザーの決定、turn の完了、subscriber の終了のいずれかで必ず解決する。
   transport が失われた場合は応答せず登録だけ破棄する。
+- approval への最初の応答者は、送信で actor を離れる前に JSON-RPC id の所有権を確定する。ユーザー操作、停止、terminal event が
+  競合しても同じ id へ二重応答しない。
 - 停止操作は未応答の approval を `cancel` で閉じてから `turn/interrupt` を送る。approval を待っている間 server は turn を
   完了できないため、interrupt だけでは停止しない。wire turn ID がまだ確定していない場合、または terminal event が期限内に
   届かない場合は、対象を推測せず共有 app-server 接続を再起動する。
 - 同じ thread の購読は lease で所有する。古い画面が解放されても、別画面の lease が残る限り `thread/unsubscribe` を送らない。
+  最終 lease の削除と unsubscribe の送信は app-server actor 内で連続して開始し、新しい owner の resume より後へずらさない。
 - 要約 thread の `approvalPolicy: never` と `sandbox: read-only` は変更しない。
 - 承認 UI に表示するコマンド、パス、理由を診断ログや Sentry へ送らない。
 
@@ -74,7 +82,8 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
 トレードオフ:
 
 - チャットが workspace ディレクトリへ書き込めるようになる。書き込み範囲は sandbox が制限するが、read-only ではなくなる。
-- 承認プロンプトの分だけユーザーの操作が増える。`acceptForSession` で同一セッション内の再確認は抑えられる。
+- 承認プロンプトの分だけユーザーの操作が増える。file change は同じファイル群、command は表示した exec policy rule に限って
+  同一セッション内の再確認を抑えられる。
 - Dahlia が approval の状態機械を持つことになり、未応答のまま turn が終わる経路をテストで固定する必要がある。
 - 安全な停止のため、wire turn ID を特定できない稀な競合では app-server を再起動し、同じプロセス上の他の処理も再接続する。
 

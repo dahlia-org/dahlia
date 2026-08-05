@@ -2582,8 +2582,31 @@ enum L10n {
     }
 
     static var chatApprovalAllowOnce: String { String(localized: "Allow once", bundle: bundle) }
-    static var chatApprovalAlwaysAllow: String { String(localized: "Always allow in this chat", bundle: bundle) }
+    static var chatApprovalAllowSameFiles: String {
+        String(localized: "Allow changes to the same files in this chat", bundle: bundle)
+    }
+
     static var chatApprovalAllowSimilarCommands: String { String(localized: "Allow similar commands", bundle: bundle) }
+    static var chatApprovalSimilarCommandScope: String {
+        String(localized: "Commands that will be allowed without asking again", bundle: bundle)
+    }
+
+    static func chatApprovalAddFile(_ path: String) -> String {
+        String(localized: "Add file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalDeleteFile(_ path: String) -> String {
+        String(localized: "Delete file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalUpdateFile(_ path: String) -> String {
+        String(localized: "Update file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalMoveFile(_ path: String, to destination: String) -> String {
+        String(localized: "Move file: \(path) → \(destination)", bundle: bundle)
+    }
+
     static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
     static var chatApprovalDetailsTooLarge: String {
         String(localized: "This request is too large to review completely, so it cannot be approved.", bundle: bundle)
