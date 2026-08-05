@@ -48,13 +48,17 @@ struct RecordToolbarButton: View {
     }
 }
 
-struct GenerateSummaryToolbarButton: View {
+struct GenerateSummaryFloatingButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     @State private var isConfirmationPresented = false
 
     private var isGeneratingCurrentMeeting: Bool {
         viewModel.isSummaryGenerating
+    }
+
+    private var isGenerateSummaryEnabled: Bool {
+        !isGeneratingCurrentMeeting && viewModel.canGenerateSummary
     }
 
     var body: some View {
@@ -65,14 +69,15 @@ struct GenerateSummaryToolbarButton: View {
                 if isGeneratingCurrentMeeting {
                     ProgressView()
                         .controlSize(.small)
+                        .tint(.purple)
                 } else {
                     Image(systemName: "sparkles")
+                        .foregroundStyle(viewModel.canGenerateSummary ? Color.purple : .secondary)
                 }
             }
         }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
-        .disabled(isGeneratingCurrentMeeting || !viewModel.canGenerateSummary)
+        .modifier(FloatingSummaryButtonModifier(isEnabled: isGenerateSummaryEnabled))
+        .disabled(!isGenerateSummaryEnabled)
         .help(isGeneratingCurrentMeeting ? L10n.generatingSummary : L10n.generateSummary)
         .sheet(isPresented: $isConfirmationPresented) {
             SummaryGenerationConfirmationView(
@@ -96,7 +101,7 @@ struct GenerateSummaryToolbarButton: View {
     }
 }
 
-struct ShareSummaryToolbarButton: View {
+struct ShareSummaryFloatingButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     @State private var isPopoverPresented = false
 
@@ -111,8 +116,7 @@ struct ShareSummaryToolbarButton: View {
                     .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : .secondary)
             }
         }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.bordered)
+        .modifier(FloatingSummaryButtonModifier(isEnabled: viewModel.canShareCurrentSummary))
         .disabled(!viewModel.canShareCurrentSummary)
         .help(L10n.shareSummary)
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
@@ -120,6 +124,29 @@ struct ShareSummaryToolbarButton: View {
                 isPopoverPresented = false
             }
         }
+    }
+}
+
+private struct FloatingSummaryButtonModifier: ViewModifier {
+    let isEnabled: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        let respondsToHover = isHovered && isEnabled
+
+        content
+            .labelStyle(.iconOnly)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .scaleEffect(respondsToHover ? 1.08 : 1)
+            .shadow(
+                color: .black.opacity(respondsToHover ? 0.18 : 0.06),
+                radius: respondsToHover ? 5 : 2,
+                y: respondsToHover ? 2 : 1
+            )
+            .animation(.easeOut(duration: 0.12), value: respondsToHover)
+            .onHover { isHovered = $0 }
     }
 }
 

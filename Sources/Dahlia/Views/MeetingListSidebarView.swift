@@ -6,6 +6,11 @@ struct MeetingListSidebarView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    let isShowingUpcomingSchedule: Bool
+    let onShowUpcomingSchedule: () -> Void
+    let onOpenProjectManagement: () -> Void
+    let showsCustomerIntelligence: Bool
+    let onOpenCustomerIntelligence: () -> Void
 
     @State private var searchText = ""
     @State private var searchTokens: [MeetingSearchToken] = []
@@ -27,6 +32,9 @@ struct MeetingListSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            sidebarNavigation
+            MeetingListSectionHeader()
+
             List(selection: meetingSelection) {
                 if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
                     Section(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting) {
@@ -97,6 +105,55 @@ struct MeetingListSidebarView: View {
         .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
         }
+    }
+
+    private var sidebarNavigation: some View {
+        VStack(spacing: 2) {
+            Button(action: onShowUpcomingSchedule) {
+                sidebarActionLabel(
+                    L10n.calendarScheduleTitle,
+                    systemImage: "calendar",
+                    isSelected: isShowingUpcomingSchedule
+                )
+            }
+            .buttonStyle(.plain)
+            .help(L10n.showUpcomingSchedule)
+            .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
+
+            Button(action: onOpenProjectManagement) {
+                sidebarActionLabel(L10n.projectManagement, systemImage: "folder")
+            }
+            .buttonStyle(.plain)
+            .help(L10n.manageProjects)
+
+            if showsCustomerIntelligence {
+                Button(action: onOpenCustomerIntelligence) {
+                    sidebarActionLabel(L10n.customerIntelligence, systemImage: "building.2")
+                }
+                .buttonStyle(.plain)
+                .help(L10n.openOrganizationWorkspace)
+            }
+
+            SettingsLink {
+                sidebarActionLabel(L10n.settings, systemImage: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .help(L10n.settingsMenuItem)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func sidebarActionLabel(
+        _ title: String,
+        systemImage: String,
+        isSelected: Bool = false
+    ) -> some View {
+        Label(title, systemImage: systemImage)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+            .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
     }
 
     private var meetingListLimitMessage: String? {

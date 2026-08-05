@@ -20,7 +20,12 @@ struct ContentView: View {
             MeetingListSidebarView(
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator
+                recordingCoordinator: recordingCoordinator,
+                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                onShowUpcomingSchedule: returnToCalendarSchedule,
+                onOpenProjectManagement: { openWindow(id: WindowID.projectManager) },
+                showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
             )
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
         } detail: {
@@ -29,42 +34,18 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
+            ToolbarItem(placement: .navigation) {
                 Button(L10n.newMeeting, systemImage: "square.and.pencil") {
                     recordingCoordinator.createEmptyMeeting()
                 }
                 .labelStyle(.iconOnly)
                 .keyboardShortcut("n", modifiers: .command)
                 .help(L10n.newMeeting)
+            }
 
-                Button(L10n.showUpcomingSchedule, systemImage: "calendar", action: returnToCalendarSchedule)
-                    .labelStyle(.iconOnly)
-                    .help(L10n.showUpcomingSchedule)
+            ToolbarSpacer(.fixed, placement: .navigation)
 
-                Button {
-                    openWindow(id: WindowID.projectManager)
-                } label: {
-                    Label(L10n.manageProjects, systemImage: "folder")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.manageProjects)
-
-                if isCustomerIntelligenceBetaEnabled {
-                    Button {
-                        openWindow(id: WindowID.organizationWorkspace)
-                    } label: {
-                        Label(L10n.customerIntelligence, systemImage: "building.2")
-                    }
-                    .labelStyle(.iconOnly)
-                    .help(L10n.openOrganizationWorkspace)
-                }
-
-                SettingsLink {
-                    Label(L10n.settingsMenuItem, systemImage: "gearshape")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.settingsMenuItem)
-
+            ToolbarItem(placement: .navigation) {
                 Button {
                     if chatCoordinator.isFloatingVisible {
                         chatCoordinator.hideFloating()
@@ -195,6 +176,12 @@ struct ContentView: View {
             draftMeeting: draftMeeting,
             dbQueue: sidebarViewModel.dbQueue
         )
+    }
+
+    private var isShowingUpcomingSchedule: Bool {
+        sidebarViewModel.selectedMeetingIds.isEmpty
+            && !viewModel.hasDraftMeeting
+            && viewModel.currentMeetingId == nil
     }
 
     @ViewBuilder

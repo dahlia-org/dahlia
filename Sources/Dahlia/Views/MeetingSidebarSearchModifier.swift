@@ -8,7 +8,7 @@ struct MeetingSidebarSearchModifier: ViewModifier {
 
     @State private var customDateStart = Calendar.current.startOfDay(for: .now)
     @State private var customDateEnd = Calendar.current.startOfDay(for: .now)
-    @State private var showsCustomDatePopover = false
+    @State private var isCustomDateRangePresented = false
     @State private var isSearchInputTruncated = false
     @State private var committedTrailingQualifierText: String?
     @State private var suggestionModeOverrideText: String?
@@ -26,7 +26,7 @@ struct MeetingSidebarSearchModifier: ViewModifier {
             .searchable(
                 text: boundedSearchText,
                 tokens: $searchTokens,
-                placement: .sidebar,
+                placement: .toolbar,
                 prompt: L10n.searchMeetings
             ) { token in
                 MeetingSearchTokenLabel(
@@ -39,17 +39,13 @@ struct MeetingSidebarSearchModifier: ViewModifier {
             .searchSuggestions {
                 searchSuggestions
             }
-            .overlay(alignment: .top) {
-                Color.clear
-                    .frame(width: 1, height: 1)
-                    .popover(isPresented: $showsCustomDatePopover, arrowEdge: .top) {
-                        MeetingSearchDateRangePopover(
-                            startDate: $customDateStart,
-                            endDate: $customDateEnd,
-                            onCancel: dismissCustomDateRange,
-                            onApply: applyCustomDateRange
-                        )
-                    }
+            .sheet(isPresented: $isCustomDateRangePresented) {
+                MeetingSearchDateRangeView(
+                    startDate: $customDateStart,
+                    endDate: $customDateEnd,
+                    onCancel: dismissCustomDateRange,
+                    onApply: applyCustomDateRange
+                )
             }
             .onSubmit(of: .search) {
                 submitSearch()
@@ -58,7 +54,7 @@ struct MeetingSidebarSearchModifier: ViewModifier {
             .onChange(of: searchTokens) { _, newTokens in
                 if newTokens.isEmpty, searchText.isEmpty {
                     isSearchInputTruncated = false
-                    showsCustomDatePopover = false
+                    isCustomDateRangePresented = false
                 }
                 updateSearch()
             }
@@ -240,12 +236,12 @@ private extension MeetingSidebarSearchModifier {
             prepareCustomDateRange()
             removeTrailingQualifier()
             activeSuggestionMode = .overview
-            showsCustomDatePopover = true
+            isCustomDateRangePresented = true
         }
     }
 
     private func dismissCustomDateRange() {
-        showsCustomDatePopover = false
+        isCustomDateRangePresented = false
     }
 
     private func applyCustomDateRange() {
@@ -261,7 +257,7 @@ private extension MeetingSidebarSearchModifier {
         removeTrailingQualifier()
         activeSuggestionMode = .overview
         isSearchFocused = true
-        showsCustomDatePopover = false
+        isCustomDateRangePresented = false
     }
 
     private func replaceDateToken(_ token: MeetingSearchToken) {
@@ -335,7 +331,7 @@ private extension MeetingSidebarSearchModifier {
     private func clearSearch() {
         searchText = ""
         searchTokens.removeAll()
-        showsCustomDatePopover = false
+        isCustomDateRangePresented = false
         isSearchInputTruncated = false
         committedTrailingQualifierText = nil
         suggestionModeOverrideText = nil
