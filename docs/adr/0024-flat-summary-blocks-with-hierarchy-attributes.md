@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed; amends 0001 and 0018
+Accepted; amends 0001 and 0018
 
 ## Date
 
-2026-08-05
+2026-08-06
 
 ## Context
 
