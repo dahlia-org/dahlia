@@ -6,6 +6,7 @@ enum DahliaDesign {
 
     static let paragraphLineSpacing: CGFloat = 3
     static let listItemSpacing: CGFloat = 6
+    static let listIndentStep: CGFloat = 20
     static let blockSpacing: CGFloat = 14
     static let sectionHeadingTopPadding: CGFloat = 12
 

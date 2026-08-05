@@ -70,27 +70,30 @@ struct SummaryDocumentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
                                 .foregroundStyle(.secondary)
-                            summaryTextView(item)
+                            summaryTextView(item.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
+                        .padding(.leading, CGFloat(item.indent) * DahliaDesign.listIndentStep)
                     }
                 }
                 .padding(.leading, 8)
             case let .numberedList(items):
+                let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("\(index + 1).")
+                            Text("\(numbers[index]).")
                                 .monospacedDigit()
-                            summaryTextView(item)
+                            summaryTextView(item.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
+                        .padding(.leading, CGFloat(item.indent) * DahliaDesign.listIndentStep)
                     }
                 }
                 .padding(.leading, 8)
@@ -106,6 +109,7 @@ struct SummaryDocumentView: View {
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
                         .font(.body)
+                        .padding(.leading, CGFloat(item.indent) * DahliaDesign.listIndentStep)
                     }
                 }
                 .padding(.leading, 8)

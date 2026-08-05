@@ -66,7 +66,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Ship it", "transcript_ref": "00:10:00"},
                   "items": [],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
                 {
                   "type": "image",
@@ -74,7 +76,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Architecture", "transcript_ref": "00:11:00"},
                   "items": [],
                   "language": "",
-                  "image_id": "\(screenshotId.uuidString)"
+                  "image_id": "\(screenshotId.uuidString)",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -112,21 +116,25 @@ struct SummaryServiceTests {
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
                   "items": [
-                    {"text": "Reviewed launch", "transcript_ref": "00:10:00", "checked": false},
-                    {"text": "Skipped invalid timestamp", "transcript_ref": "10:00", "checked": false}
+                    {"text": "Reviewed launch", "transcript_ref": "00:10:00", "checked": false, "indent": 0},
+                    {"text": "Skipped invalid timestamp", "transcript_ref": "10:00", "checked": false, "indent": 0}
                   ],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
                 {
                   "type": "checklist",
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
                   "items": [
-                    {"text": "Send notes", "transcript_ref": "00:11:00", "checked": false}
+                    {"text": "Send notes", "transcript_ref": "00:11:00", "checked": false, "indent": 0}
                   ],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -166,7 +174,9 @@ struct SummaryServiceTests {
                   "content": {"text": "func f() {\\n    return foo()\\n}", "transcript_ref": "00:10:00"},
                   "items": [],
                   "language": "swift",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -212,7 +222,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Review ![[\(screenshotId.uuidString).jpeg|Dashboard]]", "transcript_ref": null},
                   "items": [],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -268,22 +280,24 @@ struct SummaryServiceTests {
             {
               "heading": "",
               "blocks": [
-                {"type": "bulleted_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""},
+                {"type": "bulleted_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []},
                 {
                   "type": "checklist",
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
-                  "items": [{"text": "", "transcript_ref": null, "checked": false}],
+                  "items": [{"text": "", "transcript_ref": null, "checked": false, "indent": 0}],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
-                {"type": "paragraph", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
+                {"type": "paragraph", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []}
               ]
             },
             {
               "heading": "Notes",
               "blocks": [
-                {"type": "numbered_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
+                {"type": "numbered_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []}
               ]
             }
           ],
@@ -297,6 +311,142 @@ struct SummaryServiceTests {
         #expect(document.sections.count == 1)
         #expect(document.sections.first?.heading == "Notes")
         #expect(document.sections.first?.blocks.isEmpty == true)
+    }
+
+    @Test
+    func decodeSummaryDocumentNormalizesListIndentAfterDroppingBlankItems() {
+        let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+        let json = """
+        {
+          "title": "Lists",
+          "description": "Hierarchy",
+          "sections": [{
+            "heading": "Items",
+            "blocks": [{
+              "type": "bulleted_list",
+              "level": 0,
+              "content": {"text": "", "transcript_ref": null},
+              "items": [
+                {"text": "Parent", "transcript_ref": null, "checked": false, "indent": 0},
+                {"text": "   ", "transcript_ref": null, "checked": false, "indent": 1},
+                {"text": "Child", "transcript_ref": null, "checked": false, "indent": 2}
+              ],
+              "language": "",
+              "image_id": "",
+              "columns": [],
+              "rows": []
+            }]
+          }],
+          "tags": [],
+          "action_items": []
+        }
+        """
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+
+        #expect(document.sections[0].blocks == [
+            .bulletedList(items: [
+                SummaryListItem(text: "Parent", indent: 0),
+                SummaryListItem(text: "Child", indent: 1),
+            ]),
+        ])
+    }
+
+    @Test
+    func decodeSummaryDocumentClampsAndRepairsListIndentJumps() {
+        let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+        let itemJSON = zip(["A", "B", "C", "D", "E"], [2, 0, 2, 2, 7]).map { text, indent in
+            "{\"text\":\"\(text)\",\"transcript_ref\":null,\"checked\":false,\"indent\":\(indent)}"
+        }
+        .joined(separator: ",")
+        let json = """
+        {
+          "title": "Lists",
+          "description": "Hierarchy",
+          "sections": [{
+            "heading": "Items",
+            "blocks": [{
+              "type": "numbered_list",
+              "level": 0,
+              "content": {"text": "", "transcript_ref": null},
+              "items": [\(itemJSON)],
+              "language": "",
+              "image_id": "",
+              "columns": [],
+              "rows": []
+            }]
+          }],
+          "tags": [],
+          "action_items": []
+        }
+        """
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+        guard case let .numberedList(items) = document.sections[0].blocks[0].content else {
+            Issue.record("Expected a numbered list")
+            return
+        }
+
+        #expect(items.map(\.indent) == [0, 0, 1, 2, 2])
+    }
+
+    @Test
+    func decodeSummaryDocumentBoundsGeneratedTablesPerBlockAndDocument() throws {
+        let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+        let columns = (0 ..< 13).map { index in
+            index == 0 ? "Header [[meeting#00:00:01|00:00:01]]" : "Header \(index)"
+        }
+        let rows = (0 ..< 51).map { row in
+            (0 ..< 13).map { column in
+                row == 0 && column == 0 ? "Cell [[meeting#00:00:02|00:00:02]]" : "R\(row)C\(column)"
+            }
+        }
+        func tableBlock(columns: [String], rows: [[String]]) -> [String: Any] {
+            [
+                "type": "table",
+                "level": 0,
+                "content": ["text": "", "transcript_ref": NSNull()],
+                "items": [],
+                "language": "",
+                "image_id": "",
+                "columns": columns,
+                "rows": rows,
+            ]
+        }
+        let response: [String: Any] = [
+            "title": "Tables",
+            "description": "Bounded tables",
+            "sections": [
+                ["heading": "First", "blocks": [tableBlock(columns: columns, rows: rows)]],
+                [
+                    "heading": "Second",
+                    "blocks": [
+                        tableBlock(columns: Array(columns.prefix(12)), rows: rows),
+                        tableBlock(columns: ["Discarded"], rows: []),
+                    ],
+                ],
+            ],
+            "tags": [],
+            "action_items": [],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: response)
+        let json = String(decoding: data, as: UTF8.self)
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+        let tables = document.sections.flatMap(\.blocks).compactMap { block -> (headers: [SummaryText], rows: [[SummaryText]])? in
+            guard case let .table(headers, rows) = block.content else { return nil }
+            return (headers, rows)
+        }
+
+        #expect(document.schemaVersion == SummaryDocumentSchemaVersion.current)
+        #expect(tables.count == 2)
+        #expect(tables[0].headers.count == 12)
+        #expect(tables[0].rows.count == 50)
+        #expect(tables[0].headers.count * (1 + tables[0].rows.count) == 612)
+        #expect(tables[1].headers.count == 12)
+        #expect(tables[1].rows.count == 48)
+        #expect(tables[1].headers.count * (1 + tables[1].rows.count) == 588)
+        #expect(tables.flatMap { $0.headers + $0.rows.flatMap { $0 } }.allSatisfy { $0.transcriptRef == nil })
     }
 
     @Test
@@ -358,6 +508,27 @@ struct SummaryServiceTests {
     func summaryPromptsKeepActionItemsOutOfBodySections() {
         #expect(AppSettings.defaultSummaryPrompt.contains("Do not add an Action Items section"))
         #expect(!AppSettings.defaultSummaryPrompt.contains("List action items if there are any"))
+    }
+
+    @Test
+    func summaryPromptsGuideListHierarchyAndTables() throws {
+        let guidance = "Use `items[].indent` only when list items have a clear parent/child relationship."
+        #expect(AppSettings.defaultSummaryPrompt.contains(guidance))
+        #expect(AppSettings.defaultSummaryPrompt.contains("Do not nest items merely for emphasis"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("Use a table for clear comparisons or mappings"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("Never put transcript links or `transcript_ref` objects in table cells"))
+
+        #expect(SummaryService.codexStructuredInstruction.contains("\"table\""))
+        #expect(SummaryService.codexStructuredInstruction.contains("\"columns\""))
+        #expect(SummaryService.codexStructuredInstruction.contains("\"rows\""))
+        #expect(SummaryService.codexStructuredInstruction.contains("\"indent\" as 0, 1, or 2"))
+        #expect(!SummaryService.codexStructuredInstruction.contains("Do not output tables"))
+
+        let customerFormat = try #require(AppSettings.presetTemplates["customer_meeting"])
+        let sharedPreamble = try #require(AppSettings.defaultSummaryPrompt.components(separatedBy: "# Output Format").first)
+        let customerPrompt = sharedPreamble + customerFormat
+        #expect(customerPrompt.contains(guidance))
+        #expect(customerPrompt.contains("### 次のステップ"))
     }
 
     @Test

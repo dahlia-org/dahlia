@@ -175,11 +175,8 @@ extension MeetingAccessStore {
     }
 
     private func validate(_ document: SummaryDocument) throws {
-        guard document.schemaVersion == 3 else {
-            throw MeetingAccessError.invalidSummaryUpdate("schema_version must be 3.")
-        }
-        guard StoredSummaryDocumentMarkdownRenderer.hasValidTranscriptReferences(document) else {
-            throw MeetingAccessError.invalidSummaryUpdate("transcript_ref must match HH:MM:SS.")
+        if let validationError = StoredSummaryDocumentMarkdownRenderer.writeValidationError(document) {
+            throw MeetingAccessError.invalidSummaryUpdate(validationError)
         }
         guard document.sections.count <= SummaryWriteLimits.sections else {
             throw MeetingAccessError.invalidSummaryUpdate(

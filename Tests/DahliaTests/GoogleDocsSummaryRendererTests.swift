@@ -123,6 +123,59 @@ import Foundation
             #expect(attributed.string.contains(code))
         }
 
+        @Test
+        func rendersNestedListsWithRTFIndentAndDerivedNumbers() throws {
+            let document = SummaryDocument(
+                title: "Nested",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Bullet parent"),
+                                SummaryListItem(text: "Bullet child", indent: 1),
+                                SummaryListItem(text: "Bullet grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                                SummaryListItem(text: "Second child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                                SummaryListItem(text: "Second"),
+                                SummaryListItem(text: "Reset child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Checklist parent", checked: false),
+                                .init(text: "Checklist child", checked: true, indent: 1),
+                                .init(text: "Checklist grandchild", checked: false, indent: 2),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = GoogleDocsSummaryRenderer.render(
+                document: document,
+                context: SummaryRenderContext(meetingId: .v7(), createdAt: .now),
+                actionItemsHeading: "Action Items",
+                imageUnavailableText: "Image unavailable"
+            )
+            let rtf = try #require(String(data: rendered.data, encoding: .utf8))
+
+            #expect(rtf.contains("\\li720\\fi-360\\tx720"))
+            #expect(rtf.contains("\\li1440\\fi-360\\tx1440"))
+            #expect(rtf.contains("\\li2160\\fi-360\\tx2160"))
+            #expect(rtf.contains("1.\\tab {First}"))
+            #expect(rtf.contains("2.\\tab {Second child}"))
+            #expect(rtf.contains("2.\\tab {Second}"))
+            #expect(rtf.contains("1.\\tab {Reset child}"))
+            #expect(rtf.contains("\\li1440\\fi-360\\tx1440\\sa80\\fs22 \\u8226 \\tab {Bullet child}"))
+            #expect(rtf.contains("\\li2160\\fi-360\\tx2160\\sa80\\fs22 \\u8226 \\tab {Bullet grandchild}"))
+            #expect(rtf.contains("\\li1440\\fi-360\\tx1440\\sa80\\fs22 \\u9745 \\tab {Checklist child}"))
+            #expect(rtf.contains("\\li2160\\fi-360\\tx2160\\sa80\\fs22 \\u9744 \\tab {Checklist grandchild}"))
+        }
+
         private func makePNGData() throws -> Data {
             let bitmap = try #require(NSBitmapImageRep(
                 bitmapDataPlanes: nil,

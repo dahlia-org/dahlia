@@ -178,6 +178,41 @@ import GRDB
             """)
         }
 
+        @Test
+        func storedDocumentRendererRendersNestedListsWithDerivedNumbers() {
+            let document = SummaryDocument(
+                title: "Nested",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Parent"),
+                                SummaryListItem(text: "Child", indent: 1),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                                SummaryListItem(text: "Second child", indent: 1),
+                                SummaryListItem(text: "Second"),
+                                SummaryListItem(text: "Reset child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Check", checked: false, indent: 2),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let markdown = StoredSummaryDocumentMarkdownRenderer.render(document)
+
+            #expect(markdown.contains("- Parent\n    - Child"))
+            #expect(markdown.contains("1. First\n    1. First child\n    2. Second child\n2. Second\n    1. Reset child"))
+            #expect(markdown.contains("        - [ ] Check"))
+        }
+
         private static func firstSummaryBlockID(
             in detail: MeetingDetail
         ) throws -> DahliaMeetingAccess.JSONValue {

@@ -4,6 +4,8 @@ import GRDB
 @testable import DahliaMeetingAccess
 @testable import DahliaRuntimeSupport
 
+// swiftlint:disable file_length
+
 #if canImport(Testing)
     import Testing
 
@@ -411,6 +413,90 @@ import GRDB
         }
 
         @Test
+        func acceptsSchemaVersionsThreeAndFourAndPreservesTheSubmittedVersion() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+
+            for schemaVersion in SummaryDocumentSchemaVersion.acceptedMCPWriteVersions.sorted() {
+                let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+                var document = Self.document(title: "Version \(schemaVersion)", body: "Body")
+                document.schemaVersion = schemaVersion
+
+                _ = try store.updateMeetingSummary(
+                    meetingID: fixture.firstMeetingID,
+                    expectedDocumentVersion: version,
+                    document: document
+                )
+
+                let stored = try SummaryDocument.decode(
+                    databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)
+                )
+                #expect(stored.schemaVersion == schemaVersion)
+            }
+        }
+
+        @Test
+        func rejectsVersionFourBlankOrStructurallyInvalidListItemsWithoutNormalizing() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
+            let invalidItems: [[SummaryListItem]] = [
+                [SummaryListItem(text: " ")],
+                [SummaryListItem(text: "Leading", indent: 1)],
+                [SummaryListItem(text: "Parent"), SummaryListItem(text: "Jump", indent: 2)],
+                [SummaryListItem(text: "Parent"), SummaryListItem(text: "Out of range", indent: 3)],
+            ]
+
+            for items in invalidItems {
+                var document = Self.document(title: "Invalid", body: "Body")
+                document.schemaVersion = SummaryDocumentSchemaVersion.current
+                document.sections[0].blocks[0].content = .bulletedList(items: items)
+
+                #expect(throws: MeetingAccessError.self) {
+                    try store.updateMeetingSummary(
+                        meetingID: fixture.firstMeetingID,
+                        expectedDocumentVersion: version,
+                        document: document
+                    )
+                }
+                #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == original)
+            }
+        }
+
+        @Test
+        func acceptsVersionThreeBlankItemsButRejectsVersionThreeNestedIndent() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            var blank = Self.document(title: "Legacy blank", body: "Body")
+            blank.sections[0].blocks[0].content = .bulletedList(items: [SummaryListItem(text: " ")])
+            let initialVersion = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+
+            _ = try store.updateMeetingSummary(
+                meetingID: fixture.firstMeetingID,
+                expectedDocumentVersion: initialVersion,
+                document: blank
+            )
+            let accepted = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
+            #expect(try SummaryDocument.decode(databaseJSON: accepted).schemaVersion == 3)
+
+            var nested = Self.document(title: "Legacy nested", body: "Body")
+            nested.sections[0].blocks[0].content = .bulletedList(items: [
+                SummaryListItem(text: "Parent"),
+                SummaryListItem(text: "Nested", indent: 1),
+            ])
+            let currentVersion = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            #expect(throws: MeetingAccessError.self) {
+                try store.updateMeetingSummary(
+                    meetingID: fixture.firstMeetingID,
+                    expectedDocumentVersion: currentVersion,
+                    document: nested
+                )
+            }
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == accepted)
+        }
+
+        @Test
         func rejectsMeetingsWithoutSummariesAndFromOtherVaults() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -483,6 +569,77 @@ import GRDB
         }
 
         @Test
+        func getMeetingReturnsVersionTwoButSummaryUpdateRejectsIt() throws {
+            let fixture = try Fixture()
+            var legacy = Self.document(title: "Legacy", body: "Body")
+            legacy.schemaVersion = 2
+            try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: legacy)
+            let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
+            let server = try Self.initializedServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            )
+            let current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
+
+            #expect(current.document["schema_version"] as? Int == 2)
+            let response = try Self.json(server.handleLine(Self.summaryUpdateRequest(
+                id: 19,
+                meetingID: fixture.firstMeetingID,
+                version: current.version,
+                document: current.document
+            )))
+            #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == original)
+        }
+
+        @Test
+        func summaryDocumentToolSchemasExposeOptionalListIndent() throws {
+            let fixture = try Fixture()
+            let server = try Self.initializedServer(store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true))
+            let response = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#))
+            let result = try #require(response["result"] as? [String: Any])
+            let tools = try #require(result["tools"] as? [[String: Any]])
+            let getMeeting = try #require(tools.first { $0["name"] as? String == "get_meeting" })
+            let updateSummary = try #require(tools.first { $0["name"] as? String == "update_meeting_summary" })
+            let getOutput = try #require(getMeeting["outputSchema"] as? [String: Any])
+            let getProperties = try #require(getOutput["properties"] as? [String: Any])
+            let getSchema = try #require(getProperties["summary_document"] as? [String: Any])
+            let updateInput = try #require(updateSummary["inputSchema"] as? [String: Any])
+            let updateProperties = try #require(updateInput["properties"] as? [String: Any])
+            let updateSchema = try #require(updateProperties["summary_document"] as? [String: Any])
+
+            let getData = try JSONSerialization.data(withJSONObject: getSchema, options: [.sortedKeys])
+            let updateData = try JSONSerialization.data(withJSONObject: updateSchema, options: [.sortedKeys])
+            #expect(getData == updateData)
+
+            let summaryProperties = try #require(getSchema["properties"] as? [String: Any])
+            let schemaVersion = try #require(summaryProperties["schema_version"] as? [String: Any])
+            #expect(schemaVersion["type"] as? String == "integer")
+            #expect(schemaVersion["enum"] == nil)
+
+            let blocks = try Self.summaryBlockSchemas(in: getSchema)
+            for type in ["bulleted_list", "numbered_list", "checklist"] {
+                let block = try #require(blocks[type])
+                let properties = try #require(block["properties"] as? [String: Any])
+                let items = try #require(properties["items"] as? [String: Any])
+                let item = try #require(items["items"] as? [String: Any])
+                let itemProperties = try #require(item["properties"] as? [String: Any])
+                let required = try #require(item["required"] as? [String])
+                let indent = try #require(itemProperties["indent"] as? [String: Any])
+                #expect(indent["type"] as? String == "integer")
+                #expect(indent["enum"] as? [Int] == [0, 1, 2])
+                #expect(indent["default"] as? Int == 0)
+                #expect(!required.contains("indent"))
+            }
+
+            let table = try #require(blocks["table"])
+            let tableProperties = try #require(table["properties"] as? [String: Any])
+            let headers = try #require(tableProperties["headers"] as? [String: Any])
+            let tableText = try #require(headers["items"] as? [String: Any])
+            let tableTextProperties = try #require(tableText["properties"] as? [String: Any])
+            #expect(tableTextProperties["indent"] == nil)
+        }
+
+        @Test
         func rejectsMalformedToolDocumentsWithoutChangingTheSummary() throws {
             let fixture = try Fixture()
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
@@ -509,6 +666,11 @@ import GRDB
                 content["transcript_ref"] = "not-a-time"
                 block["content"] = content
             }
+            let nonIntegerIndent = try Self.updatingFirstBlock(in: current.document) { block in
+                block["type"] = "bulleted_list"
+                block.removeValue(forKey: "content")
+                block["items"] = [["text": "Item", "indent": "1"]]
+            }
 
             let malformedDocuments = [
                 unknownRootKey,
@@ -516,6 +678,7 @@ import GRDB
                 unknownBlockType,
                 missingBlockContent,
                 invalidTranscriptReference,
+                nonIntegerIndent,
             ]
             for (index, document) in malformedDocuments.enumerated() {
                 let line = try Self.summaryUpdateRequest(
@@ -553,9 +716,58 @@ import GRDB
         }
 
         @Test
+        func toolRoundTripCanonicalizesExplicitZeroIndentOnlyForListItems() throws {
+            let fixture = try Fixture()
+            let rich = Self.richDocument(screenshotID: fixture.firstScreenshotID)
+            try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, document: rich)
+            let server = try Self.initializedServer(
+                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            )
+            let current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
+            let explicitZero = try Self.updatingBlock(in: current.document, at: 1) { block in
+                guard var items = block["items"] as? [[String: Any]], !items.isEmpty else { return }
+                items[0]["indent"] = 0
+                block["items"] = items
+            }
+            let acceptedResponse = try Self.json(server.handleLine(Self.summaryUpdateRequest(
+                id: 30,
+                meetingID: fixture.firstMeetingID,
+                version: current.version,
+                document: explicitZero
+            )))
+            let acceptedResult = try #require(
+                (acceptedResponse["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            )
+            #expect(acceptedResult["changed"] as? Bool == false)
+
+            let stored = try SummaryDocument.decode(
+                databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)
+            )
+            guard case let .bulletedList(items) = stored.sections[0].blocks[1].content else {
+                Issue.record("Expected the stored bulleted list")
+                return
+            }
+            #expect(items.map(\.indent) == [0, 1])
+
+            let indentOutsideList = try Self.updatingFirstBlock(in: current.document) { block in
+                guard var content = block["content"] as? [String: Any] else { return }
+                content["indent"] = 0
+                block["content"] = content
+            }
+            let rejectedResponse = try Self.json(server.handleLine(Self.summaryUpdateRequest(
+                id: 31,
+                meetingID: fixture.firstMeetingID,
+                version: current.version,
+                document: indentOutsideList
+            )))
+            #expect((rejectedResponse["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect(try fixture.storedDocument(meetingID: fixture.firstMeetingID) == rich.databaseJSONString())
+        }
+
+        @Test
         func legacyDocumentRoundTripIsUnchangedAndDoesNotRewriteVaultFile() throws {
             let fixture = try Fixture()
-            let document = Self.richDocument(screenshotID: fixture.firstScreenshotID)
+            let document = Self.legacyRichDocument(screenshotID: fixture.firstScreenshotID)
             var legacyObject = try #require(
                 JSONSerialization.jsonObject(with: Data(document.databaseJSONString().utf8)) as? [String: Any]
             )
@@ -627,6 +839,7 @@ import GRDB
 
         private static func document(title: String, body: String) -> SummaryDocument {
             SummaryDocument(
+                schemaVersion: 3,
                 title: title,
                 description: "One line description",
                 sections: [
@@ -646,6 +859,46 @@ import GRDB
 
         private static func richDocument(screenshotID: UUID) -> SummaryDocument {
             SummaryDocument(
+                schemaVersion: SummaryDocumentSchemaVersion.current,
+                title: "Rich",
+                description: "Every block type",
+                sections: [
+                    SummarySection(
+                        id: UUID(uuidString: "00000000-0000-4000-8000-000000000301")!,
+                        heading: "All blocks",
+                        blocks: [
+                            .paragraph("Body", transcriptRef: TranscriptReference(time: "00:00:01")),
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Alpha"),
+                                SummaryListItem(text: "Beta", indent: 1),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Done", checked: true),
+                                .init(text: "Nested", checked: false, indent: 1),
+                            ]),
+                            .quote("Quoted"),
+                            .code(language: "swift", code: "let value = 1"),
+                            .image(screenshotId: screenshotID, caption: "Shot"),
+                            .heading(level: 4, text: "Details"),
+                            .table(
+                                headers: [SummaryText("Name")],
+                                rows: [[SummaryText("A", transcriptRef: TranscriptReference(time: "00:00:03"))]]
+                            ),
+                        ]
+                    ),
+                ],
+                tags: ["release"],
+                actionItems: [SummaryActionItem(title: "Follow up", assignee: "Mina")]
+            )
+        }
+
+        private static func legacyRichDocument(screenshotID: UUID) -> SummaryDocument {
+            SummaryDocument(
+                schemaVersion: 3,
                 title: "Rich",
                 description: "Every block type",
                 sections: [
@@ -730,17 +983,46 @@ import GRDB
             in document: [String: Any],
             update: (inout [String: Any]) -> Void
         ) throws -> [String: Any] {
+            try updatingBlock(in: document, at: 0, update: update)
+        }
+
+        private static func updatingBlock(
+            in document: [String: Any],
+            at index: Int,
+            update: (inout [String: Any]) -> Void
+        ) throws -> [String: Any] {
             var document = document
             var sections = try #require(document["sections"] as? [[String: Any]])
             var section = try #require(sections.first)
             var blocks = try #require(section["blocks"] as? [[String: Any]])
-            var block = try #require(blocks.first)
+            var block = blocks[index]
             update(&block)
-            blocks[0] = block
+            blocks[index] = block
             section["blocks"] = blocks
             sections[0] = section
             document["sections"] = sections
             return document
+        }
+
+        private static func summaryBlockSchemas(
+            in summarySchema: [String: Any]
+        ) throws -> [String: [String: Any]] {
+            let properties = try #require(summarySchema["properties"] as? [String: Any])
+            let sections = try #require(properties["sections"] as? [String: Any])
+            let section = try #require(sections["items"] as? [String: Any])
+            let sectionProperties = try #require(section["properties"] as? [String: Any])
+            let blocks = try #require(sectionProperties["blocks"] as? [String: Any])
+            let block = try #require(blocks["items"] as? [String: Any])
+            let variants = try #require(block["oneOf"] as? [[String: Any]])
+
+            var schemas: [String: [String: Any]] = [:]
+            for variant in variants {
+                let blockProperties = try #require(variant["properties"] as? [String: Any])
+                let type = try #require(blockProperties["type"] as? [String: Any])
+                let values = try #require(type["enum"] as? [String])
+                schemas[try #require(values.first)] = variant
+            }
+            return schemas
         }
 
         private static func initializedServer(
@@ -768,3 +1050,4 @@ import GRDB
         }
     }
 #endif
+// swiftlint:enable file_length

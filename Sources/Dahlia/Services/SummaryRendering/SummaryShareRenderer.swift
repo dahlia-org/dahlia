@@ -6,24 +6,35 @@ struct SummaryShareContent {
     let markdown: String
 }
 
+private enum SummaryHTMLListKind: Equatable {
+    case bulleted
+    case numbered
+
+    var element: String {
+        switch self {
+        case .bulleted:
+            "ul"
+        case .numbered:
+            "ol"
+        }
+    }
+}
+
+private struct RenderedHTMLBlock {
+    let html: String
+    let endsInList: Bool
+}
+
+private struct RenderedHTMLListItem {
+    let html: String
+    let indent: Int
+    let value: Int?
+}
+
 enum SummaryShareRenderer {
     enum Destination {
         case googleDocs
         case slack
-    }
-
-    private enum HTMLListKind {
-        case bulleted
-        case numbered
-
-        var element: String {
-            switch self {
-            case .bulleted:
-                "ul"
-            case .numbered:
-                "ol"
-            }
-        }
     }
 
     static func render(
@@ -72,50 +83,55 @@ enum SummaryShareRenderer {
     }
 
     private static func renderMarkdownBlock(_ block: SummaryBlock) -> String? {
+        let rendered: String?
         switch block.content {
         case let .paragraph(text):
-            normalizedInlineMarkdown(text.text).nilIfBlank
+            rendered = normalizedInlineMarkdown(text.text).nilIfBlank
         case let .bulletedList(items):
-            renderMarkdownBulletList(items.map(\.text))
+            rendered = renderMarkdownBulletList(items)
         case let .numberedList(items):
-            items.enumerated()
-                .compactMap { index, item in
-                    normalizedInlineMarkdown(item.text).nilIfBlank.map { "\(index + 1). \($0)" }
+            let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
+            rendered = nonBlankPreservingWhitespace(zip(items, numbers)
+                .compactMap { item, number in
+                    let indentation = String(repeating: " ", count: item.indent * 4)
+                    return normalizedInlineMarkdown(item.text.text).nilIfBlank.map { "\(indentation)\(number). \($0)" }
                 }
-                .joined(separator: "\n")
-                .nilIfBlank
+                .joined(separator: "\n"))
         case let .checklist(items):
-            items.compactMap { item in
-                normalizedInlineMarkdown(item.text.text).nilIfBlank.map { "- [\(item.checked ? "x" : " ")] \($0)" }
+            rendered = nonBlankPreservingWhitespace(items.compactMap { item in
+                let indentation = String(repeating: " ", count: item.indent * 4)
+                return normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                    "\(indentation)- [\(item.checked ? "x" : " ")] \($0)"
+                }
             }
-            .joined(separator: "\n")
-            .nilIfBlank
+            .joined(separator: "\n"))
         case let .quote(text):
-            normalizedInlineMarkdown(text.text)
+            rendered = normalizedInlineMarkdown(text.text)
                 .components(separatedBy: .newlines)
                 .compactMap(\.nilIfBlank)
                 .map { "> \($0)" }
                 .joined(separator: "\n")
                 .nilIfBlank
         case let .code(language, content):
-            content.text.nilIfBlank.map { "```\(language)\n\($0)\n```" }
+            rendered = content.text.nilIfBlank.map { "```\(language)\n\($0)\n```" }
         case let .image(_, caption):
-            normalizedInlineMarkdown(caption.text).nilIfBlank
+            rendered = normalizedInlineMarkdown(caption.text).nilIfBlank
         case let .heading(level, content):
-            normalizedInlineMarkdown(content.text).nilIfBlank.map {
+            rendered = normalizedInlineMarkdown(content.text).nilIfBlank.map {
                 "\(String(repeating: "#", count: clampedHeadingLevel(level))) \($0)"
             }
         case let .table(headers, rows):
-            renderMarkdownTable(headers: headers, rows: rows)
+            rendered = renderMarkdownTable(headers: headers, rows: rows)
         }
+        return rendered
     }
 
-    private static func renderMarkdownBulletList(_ items: [String]) -> String? {
-        items.compactMap { item in
-            normalizedInlineMarkdown(item).nilIfBlank.map { "- \($0)" }
+    private static func renderMarkdownBulletList(_ items: [SummaryListItem]) -> String? {
+        nonBlankPreservingWhitespace(items.compactMap { item in
+            let indentation = String(repeating: " ", count: item.indent * 4)
+            return normalizedInlineMarkdown(item.text.text).nilIfBlank.map { "\(indentation)- \($0)" }
         }
-        .joined(separator: "\n")
-        .nilIfBlank
+        .joined(separator: "\n"))
     }
 
     private static func renderMarkdownTable(headers: [SummaryText], rows: [[SummaryText]]) -> String? {
@@ -153,10 +169,13 @@ enum SummaryShareRenderer {
         destination: Destination,
         screenshotsByID: [UUID: MeetingScreenshotRecord]
     ) -> String {
-        var chunks: [String] = []
+        var chunks: [RenderedHTMLBlock] = []
 
         if let title = normalizedInlineMarkdown(document.title).nilIfBlank {
-            chunks.append(renderHTMLHeading(title, level: 1, destination: destination))
+            chunks.append(RenderedHTMLBlock(
+                html: renderHTMLHeading(title, level: 1, destination: destination),
+                endsInList: false
+            ))
         }
 
         chunks.append(contentsOf: document.sections.compactMap { section in
@@ -187,11 +206,14 @@ enum SummaryShareRenderer {
         _ section: SummarySection,
         destination: Destination,
         screenshotsByID: [UUID: MeetingScreenshotRecord]
-    ) -> String? {
-        var chunks: [String] = []
+    ) -> RenderedHTMLBlock? {
+        var chunks: [RenderedHTMLBlock] = []
 
         if let heading = normalizedInlineMarkdown(section.heading).nilIfBlank {
-            chunks.append(renderHTMLHeading(heading, level: 2, destination: destination))
+            chunks.append(RenderedHTMLBlock(
+                html: renderHTMLHeading(heading, level: 2, destination: destination),
+                endsInList: false
+            ))
         }
 
         chunks.append(contentsOf: section.blocks.compactMap { block in
@@ -200,11 +222,12 @@ enum SummaryShareRenderer {
         guard !chunks.isEmpty else { return nil }
 
         let body = joinHTMLBlocks(chunks, destination: destination)
+        let endsInList = chunks.last?.endsInList ?? false
         switch destination {
         case .googleDocs:
-            return "<section>\n\(body)\n</section>"
+            return RenderedHTMLBlock(html: "<section>\n\(body)\n</section>", endsInList: endsInList)
         case .slack:
-            return body
+            return RenderedHTMLBlock(html: body, endsInList: endsInList)
         }
     }
 
@@ -212,35 +235,49 @@ enum SummaryShareRenderer {
         _ block: SummaryBlock,
         destination: Destination,
         screenshotsByID: [UUID: MeetingScreenshotRecord]
-    ) -> String? {
+    ) -> RenderedHTMLBlock? {
+        let html: String?
+        let endsInList: Bool
+
         switch block.content {
         case let .paragraph(text):
-            htmlParagraph(text.text, destination: destination)
+            html = htmlParagraph(text.text, destination: destination)
+            endsInList = false
         case let .bulletedList(items):
-            htmlList(items.map(\.text), kind: .bulleted)
+            html = htmlList(items, kind: .bulleted, destination: destination)
+            endsInList = true
         case let .numberedList(items):
-            htmlList(items.map(\.text), kind: .numbered)
+            html = htmlList(items, kind: .numbered, destination: destination)
+            endsInList = true
         case let .checklist(items):
-            htmlChecklist(items)
+            html = htmlChecklist(items, destination: destination)
+            endsInList = true
         case let .quote(text):
-            htmlParagraph(text.text, destination: destination).map { "<blockquote>\($0)</blockquote>" }
+            html = htmlParagraph(text.text, destination: destination).map { "<blockquote>\($0)</blockquote>" }
+            endsInList = false
         case let .code(_, content):
-            content.text.nilIfBlank.map { "<pre><code>\(escapeHTML($0))</code></pre>" }
+            html = content.text.nilIfBlank.map { "<pre><code>\(escapeHTML($0))</code></pre>" }
+            endsInList = false
         case let .image(screenshotID, caption):
-            renderHTMLImage(
+            html = renderHTMLImage(
                 screenshotID: screenshotID,
                 caption: caption.text,
                 destination: destination,
                 screenshotsByID: screenshotsByID
             )
+            endsInList = false
         case let .heading(level, content):
-            normalizedInlineMarkdown(content.text).nilIfBlank.map {
+            html = normalizedInlineMarkdown(content.text).nilIfBlank.map {
                 let headingLevel = destination == .googleDocs ? clampedHeadingLevel(level) : level
                 return renderHTMLHeading($0, level: headingLevel, destination: destination)
             }
+            endsInList = false
         case let .table(headers, rows):
-            renderHTMLTable(headers: headers, rows: rows, destination: destination)
+            html = renderHTMLTable(headers: headers, rows: rows, destination: destination)
+            endsInList = false
         }
+
+        return html.map { RenderedHTMLBlock(html: $0, endsInList: endsInList) }
     }
 
     private static func renderHTMLImage(
@@ -278,22 +315,93 @@ enum SummaryShareRenderer {
     }
 
     private static func htmlList(
-        _ items: [String],
-        kind: HTMLListKind
+        _ items: [SummaryListItem],
+        kind: SummaryHTMLListKind,
+        destination: Destination
     ) -> String? {
-        let renderedItems = items.compactMap { item -> String? in
-            normalizedInlineMarkdown(item).nilIfBlank.map(renderInlineHTML)
+        let visibleItems = items.compactMap { item -> (html: String, indent: Int)? in
+            normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                (html: renderInlineHTML($0), indent: item.indent)
+            }
         }
-        guard !renderedItems.isEmpty else { return nil }
-        return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: kind.element)
+        guard !visibleItems.isEmpty else { return nil }
+
+        let numbers = SummaryListNumbering.numbers(for: visibleItems.map(\.indent))
+        let renderedItems = visibleItems.enumerated().map { index, item in
+            RenderedHTMLListItem(
+                html: item.html,
+                indent: item.indent,
+                value: kind == .numbered ? numbers[index] : nil
+            )
+        }
+        return renderHTMLListItems(renderedItems, kind: kind, destination: destination)
     }
 
-    private static func htmlChecklist(_ items: [SummaryBlock.ChecklistItem]) -> String? {
-        let renderedItems = items.compactMap { item -> String? in
-            normalizedInlineMarkdown(item.text.text).nilIfBlank.map(renderInlineHTML)
+    private static func htmlChecklist(
+        _ items: [SummaryBlock.ChecklistItem],
+        destination: Destination
+    ) -> String? {
+        let renderedItems = items.compactMap { item -> RenderedHTMLListItem? in
+            normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                RenderedHTMLListItem(html: renderInlineHTML($0), indent: item.indent, value: nil)
+            }
         }
         guard !renderedItems.isEmpty else { return nil }
-        return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
+        return renderHTMLListItems(renderedItems, kind: .bulleted, destination: destination)
+    }
+
+    private static func renderHTMLListItems(
+        _ items: [RenderedHTMLListItem],
+        kind: SummaryHTMLListKind,
+        destination: Destination
+    ) -> String {
+        switch destination {
+        case .googleDocs:
+            nestedHTMLList(items, kind: kind)
+        case .slack:
+            items.map { item in
+                let indentation = String(repeating: "&nbsp;", count: item.indent * 4)
+                let marker = item.value.map { "\($0)." } ?? "•"
+                return "\(indentation)\(marker) \(item.html)"
+            }
+            .joined(separator: "<br>\n")
+        }
+    }
+
+    private static func nestedHTMLList(_ items: [RenderedHTMLListItem], kind: SummaryHTMLListKind) -> String {
+        let element = kind.element
+        var html = "<\(element)>\n"
+        var currentIndent = items[0].indent
+        html += htmlListItemOpening(items[0]) + items[0].html
+
+        for item in items.dropFirst() {
+            if item.indent == currentIndent {
+                html += "</li>\n" + htmlListItemOpening(item) + item.html
+            } else if item.indent > currentIndent {
+                for level in currentIndent ..< item.indent {
+                    let opening = level == item.indent - 1 ? htmlListItemOpening(item) : "<li>"
+                    html += "\n<\(element)>\n\(opening)"
+                }
+                html += item.html
+            } else {
+                html += "</li>"
+                for _ in item.indent ..< currentIndent {
+                    html += "\n</\(element)>\n</li>"
+                }
+                html += "\n" + htmlListItemOpening(item) + item.html
+            }
+            currentIndent = item.indent
+        }
+
+        html += "</li>"
+        for _ in 0 ..< currentIndent {
+            html += "\n</\(element)>\n</li>"
+        }
+        return html + "\n</\(element)>"
+    }
+
+    private static func htmlListItemOpening(_ item: RenderedHTMLListItem) -> String {
+        item.value.map { "<li value=\"\($0)\">" } ?? "<li>"
     }
 
     private static func wrapHTMLList(_ renderedItems: [String], element: String) -> String {
@@ -335,7 +443,7 @@ enum SummaryShareRenderer {
         _ actionItems: [SummaryActionItem],
         heading: String,
         destination: Destination
-    ) -> String? {
+    ) -> RenderedHTMLBlock? {
         let items = actionItems.compactMap(normalizedActionItem)
         guard !items.isEmpty else { return nil }
 
@@ -348,10 +456,17 @@ enum SummaryShareRenderer {
         switch destination {
         case .googleDocs:
             let list = wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
-            return "<section>\n\(heading)\n\(list)\n</section>"
+            return RenderedHTMLBlock(html: "<section>\n\(heading)\n\(list)\n</section>", endsInList: true)
         case .slack:
             let list = wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
-            return joinHTMLBlocks([heading, list], destination: destination)
+            let html = joinHTMLBlocks(
+                [
+                    RenderedHTMLBlock(html: heading, endsInList: false),
+                    RenderedHTMLBlock(html: list, endsInList: true),
+                ],
+                destination: destination
+            )
+            return RenderedHTMLBlock(html: html, endsInList: true)
         }
     }
 
@@ -375,18 +490,18 @@ enum SummaryShareRenderer {
         }
     }
 
-    private static func joinHTMLBlocks(_ blocks: [String], destination: Destination) -> String {
+    private static func joinHTMLBlocks(_ blocks: [RenderedHTMLBlock], destination: Destination) -> String {
         switch destination {
         case .googleDocs:
-            return blocks.joined(separator: "\n")
+            return blocks.map(\.html).joined(separator: "\n")
         case .slack:
             guard let first = blocks.first else { return "" }
-            var html = first
+            var html = first.html
             var previousBlock = first
             for block in blocks.dropFirst() {
-                let separator = previousBlock.hasSuffix("</ul>") || previousBlock.hasSuffix("</ol>") ? "<br>\n" : "<br><br>\n"
+                let separator = previousBlock.endsInList ? "<br>\n" : "<br><br>\n"
                 html.append(separator)
-                html.append(block)
+                html.append(block.html)
                 previousBlock = block
             }
             return html
@@ -437,6 +552,10 @@ enum SummaryShareRenderer {
             .replacing(#/!\[([^\]]*)\]\([^)]+\)/#) { match in
                 String(match.1)
             }
+    }
+
+    private static func nonBlankPreservingWhitespace(_ text: String) -> String? {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
     private static func joinedChunks(_ chunks: [String]) -> String {

@@ -68,9 +68,9 @@ enum GoogleDocsSummaryRenderer {
         case let .paragraph(text):
             return paragraph(text.text)
         case let .bulletedList(items):
-            return bulletedList(items.map(\.text), symbol: "•")
+            return bulletedList(items, symbol: "•")
         case let .numberedList(items):
-            return numberedList(items.map(\.text))
+            return numberedList(items)
         case let .checklist(items):
             return checklist(items)
         case let .quote(text):
@@ -110,17 +110,22 @@ enum GoogleDocsSummaryRenderer {
     }
 
     private static func bulletedList(_ items: [String], symbol: String) -> String {
+        bulletedList(items.map { SummaryListItem(text: $0) }, symbol: symbol)
+    }
+
+    private static func bulletedList(_ items: [SummaryListItem], symbol: String) -> String {
         items.compactMap { item -> String? in
-            guard let item = normalizedText(item) else { return nil }
-            return listItem(item, marker: symbol)
+            guard let text = normalizedText(item.text.text) else { return nil }
+            return listItem(text, marker: symbol, indent: item.indent)
         }
         .joined()
     }
 
-    private static func numberedList(_ items: [String]) -> String {
-        items.enumerated().compactMap { index, item -> String? in
-            guard let item = normalizedText(item) else { return nil }
-            return listItem(item, marker: "\(index + 1).")
+    private static func numberedList(_ items: [SummaryListItem]) -> String {
+        let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
+        return zip(items, numbers).compactMap { item, number -> String? in
+            guard let text = normalizedText(item.text.text) else { return nil }
+            return listItem(text, marker: "\(number).", indent: item.indent)
         }
         .joined()
     }
@@ -128,13 +133,15 @@ enum GoogleDocsSummaryRenderer {
     private static func checklist(_ items: [SummaryBlock.ChecklistItem]) -> String {
         items.compactMap { item -> String? in
             guard let text = normalizedText(item.text.text) else { return nil }
-            return listItem(text, marker: item.checked ? "☑" : "☐")
+            return listItem(text, marker: item.checked ? "☑" : "☐", indent: item.indent)
         }
         .joined()
     }
 
-    private static func listItem(_ text: String, marker: String) -> String {
-        "\\pard\\plain\\li720\\fi-360\\tx720\\sa80\\fs22 \(escapedRTF(marker))\\tab \(inlineRTF(text))\\par\n"
+    private static func listItem(_ text: String, marker: String, indent: Int) -> String {
+        let leftIndent = 720 * (indent + 1)
+        return "\\pard\\plain\\li\(leftIndent)\\fi-360\\tx\(leftIndent)\\sa80\\fs22 "
+            + "\(escapedRTF(marker))\\tab \(inlineRTF(text))\\par\n"
     }
 
     private static func quote(_ text: String) -> String {

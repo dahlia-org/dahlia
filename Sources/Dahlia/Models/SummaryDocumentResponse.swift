@@ -20,6 +20,8 @@ struct SummaryDocumentResponse: Decodable {
         let items: [ItemDTO]
         let language: String
         let imageId: String
+        let columns: [String]
+        let rows: [[String]]
 
         private enum CodingKeys: String, CodingKey {
             case type
@@ -28,6 +30,20 @@ struct SummaryDocumentResponse: Decodable {
             case items
             case language
             case imageId = "image_id"
+            case columns
+            case rows
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            type = try container.decode(String.self, forKey: .type)
+            level = try container.decode(Int.self, forKey: .level)
+            content = try container.decode(TextDTO.self, forKey: .content)
+            items = try container.decode([ItemDTO].self, forKey: .items)
+            language = try container.decode(String.self, forKey: .language)
+            imageId = try container.decode(String.self, forKey: .imageId)
+            columns = try container.decodeIfPresent([String].self, forKey: .columns) ?? []
+            rows = try container.decodeIfPresent([[String]].self, forKey: .rows) ?? []
         }
     }
 
@@ -45,11 +61,21 @@ struct SummaryDocumentResponse: Decodable {
         let text: String
         let transcriptRef: String?
         let checked: Bool
+        let indent: Int
 
         private enum CodingKeys: String, CodingKey {
             case text
             case transcriptRef = "transcript_ref"
             case checked
+            case indent
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            text = try container.decode(String.self, forKey: .text)
+            transcriptRef = try container.decodeIfPresent(String.self, forKey: .transcriptRef)
+            checked = try container.decode(Bool.self, forKey: .checked)
+            indent = try container.decodeIfPresent(Int.self, forKey: .indent) ?? 0
         }
     }
 
@@ -69,8 +95,12 @@ struct SummaryDocumentResponse: Decodable {
                 "text": ["type": "string"],
                 "transcript_ref": ["type": ["string", "null"]],
                 "checked": ["type": "boolean"],
+                "indent": [
+                    "type": "integer",
+                    "enum": [0, 1, 2],
+                ],
             ],
-            "required": ["text", "transcript_ref", "checked"],
+            "required": ["text", "transcript_ref", "checked", "indent"],
             "additionalProperties": false,
         ]
         let blockSchema: [String: Any] = [
@@ -87,6 +117,7 @@ struct SummaryDocumentResponse: Decodable {
                         "code",
                         "image",
                         "heading",
+                        "table",
                     ],
                 ],
                 "level": ["type": "integer"],
@@ -97,8 +128,22 @@ struct SummaryDocumentResponse: Decodable {
                 ],
                 "language": ["type": "string"],
                 "image_id": ["type": "string"],
+                "columns": [
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": ["type": "string"],
+                ],
+                "rows": [
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": [
+                        "type": "array",
+                        "maxItems": 12,
+                        "items": ["type": "string"],
+                    ],
+                ],
             ],
-            "required": ["type", "level", "content", "items", "language", "image_id"],
+            "required": ["type", "level", "content", "items", "language", "image_id", "columns", "rows"],
             "additionalProperties": false,
         ]
         let actionItemSchema: [String: Any] = [

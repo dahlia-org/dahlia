@@ -1082,19 +1082,29 @@ private extension DahliaMCPServer {
             ],
             required: ["text"]
         )
+        let listItem = objectSchema(
+            properties: [
+                "text": ["type": "string"],
+                "transcript_ref": ["type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}$"],
+                "indent": ["type": "integer", "enum": [0, 1, 2], "default": 0],
+            ],
+            required: ["text"]
+        )
         let checklistItem = objectSchema(
             properties: [
                 "text": ["type": "string"],
                 "transcript_ref": ["type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}$"],
                 "checked": ["type": "boolean"],
+                "indent": ["type": "integer", "enum": [0, 1, 2], "default": 0],
             ],
             required: ["text", "checked"]
         )
         let summaryTextItems: [String: Any] = ["type": "array", "items": summaryText]
+        let listItems: [String: Any] = ["type": "array", "items": listItem]
         let block: [String: Any] = ["oneOf": [
             summaryBlockSchema("paragraph", properties: ["content": summaryText], required: ["content"]),
-            summaryBlockSchema("bulleted_list", properties: ["items": summaryTextItems], required: ["items"]),
-            summaryBlockSchema("numbered_list", properties: ["items": summaryTextItems], required: ["items"]),
+            summaryBlockSchema("bulleted_list", properties: ["items": listItems], required: ["items"]),
+            summaryBlockSchema("numbered_list", properties: ["items": listItems], required: ["items"]),
             summaryBlockSchema(
                 "checklist",
                 properties: ["items": ["type": "array", "items": checklistItem]],

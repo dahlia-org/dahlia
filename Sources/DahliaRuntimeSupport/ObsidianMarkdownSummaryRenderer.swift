@@ -134,20 +134,28 @@ public enum ObsidianMarkdownSummaryRenderer {
         case let .paragraph(text):
             rendered = renderSummaryText(text, meetingId: meetingId, placement: .inline).summaryNilIfBlank
         case let .bulletedList(items):
-            rendered = items
-                .map { "- \(renderSummaryText($0, meetingId: meetingId, placement: .inline))" }
-                .joined(separator: "\n")
-                .summaryNilIfBlank
+            rendered = nonBlankPreservingWhitespace(items
+                .map { item in
+                    let indentation = String(repeating: " ", count: item.indent * 4)
+                    return "\(indentation)- \(renderSummaryText(item.text, meetingId: meetingId, placement: .inline))"
+                }
+                .joined(separator: "\n"))
         case let .numberedList(items):
-            rendered = items.enumerated()
-                .map { "\($0.offset + 1). \(renderSummaryText($0.element, meetingId: meetingId, placement: .inline))" }
-                .joined(separator: "\n")
-                .summaryNilIfBlank
+            let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
+            rendered = nonBlankPreservingWhitespace(zip(items, numbers)
+                .map { item, number in
+                    let indentation = String(repeating: " ", count: item.indent * 4)
+                    return "\(indentation)\(number). \(renderSummaryText(item.text, meetingId: meetingId, placement: .inline))"
+                }
+                .joined(separator: "\n"))
         case let .checklist(items):
-            rendered = items
-                .map { "- [\($0.checked ? "x" : " ")] \(renderSummaryText($0.text, meetingId: meetingId, placement: .inline))" }
-                .joined(separator: "\n")
-                .summaryNilIfBlank
+            rendered = nonBlankPreservingWhitespace(items
+                .map { item in
+                    let indentation = String(repeating: " ", count: item.indent * 4)
+                    return "\(indentation)- [\(item.checked ? "x" : " ")] "
+                        + renderSummaryText(item.text, meetingId: meetingId, placement: .inline)
+                }
+                .joined(separator: "\n"))
         case let .quote(text):
             let quoted = renderSummaryText(text, meetingId: meetingId, placement: .inline)
                 .components(separatedBy: .newlines)
@@ -177,6 +185,10 @@ public enum ObsidianMarkdownSummaryRenderer {
         }
 
         return rendered
+    }
+
+    private static func nonBlankPreservingWhitespace(_ text: String) -> String? {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
     private enum ReferencePlacement {

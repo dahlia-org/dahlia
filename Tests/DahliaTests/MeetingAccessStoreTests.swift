@@ -2916,6 +2916,7 @@ import ImageIO
                 meetingId: firstMeetingID,
                 title: "AI planning title",
                 document: SummaryDocument(
+                    schemaVersion: 3,
                     title: "AI planning title",
                     sections: [
                         SummarySection(

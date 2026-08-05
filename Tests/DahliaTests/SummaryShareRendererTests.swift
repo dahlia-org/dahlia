@@ -147,24 +147,173 @@ import Foundation
 
             #expect(content.html.contains("<strong><em>Weekly Sync</em></strong><br><br>\n<strong><u>Summary</u></strong>"))
             #expect(content.html.contains("Decision<br><br>\n<strong>Details</strong><br><br>\nMore<br><br>\nNotes"))
-            #expect(content.html.contains("Notes<br><br>\n<ul>\n<li>One</li>\n<li>Two</li>\n</ul>"))
-            #expect(content.html.contains("<ol>\n<li>First</li>\n<li>Second</li>\n</ol>"))
-            #expect(content.html.contains("<ul>\n<li>Done</li>\n<li>Pending</li>\n</ul>"))
-            #expect(content.html.contains("</ul><br>\n<ol>"))
-            #expect(content.html.contains("</ol><br>\n<ul>"))
-            #expect(content.html.contains("</ul><br>\n<strong><u>Action Items</u></strong>"))
+            #expect(content.html.contains("Notes<br><br>\n• One<br>\n• Two"))
+            #expect(content.html.contains("• Two<br>\n1. First<br>\n2. Second"))
+            #expect(content.html.contains("2. Second<br>\n• Done<br>\n• Pending"))
+            #expect(content.html.contains("• Pending<br>\n<strong><u>Action Items</u></strong>"))
             #expect(content.html.contains("<strong><u>Action Items</u></strong><br><br>\n<ul>\n<li>Send notes (Aki)</li>\n</ul>"))
             #expect(!content.html.contains("<h1>"))
             #expect(!content.html.contains("<h2>"))
             #expect(!content.html.contains("<h3>"))
             #expect(!content.html.contains("<strong>Notes</strong>"))
-            #expect(!content.html.contains("• One"))
+            #expect(content.html.contains("• One"))
             #expect(!content.html.contains("☑"))
             #expect(!content.html.contains("☐"))
             #expect(content.markdown.contains("# Weekly Sync"))
             #expect(content.markdown.contains("## Summary"))
             #expect(content.markdown.contains("### Details"))
             #expect(content.markdown.contains("#### Notes"))
+        }
+
+        @Test
+        func rendersNestedListStacksForGoogleDocsHTML() {
+            let document = SummaryDocument(
+                title: "Nested",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Bullet parent"),
+                                SummaryListItem(text: "Bullet child", indent: 1),
+                                SummaryListItem(text: "Bullet sibling", indent: 1),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                                SummaryListItem(text: "Second child", indent: 1),
+                                SummaryListItem(text: "Second"),
+                                SummaryListItem(text: "Reset child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Checklist parent", checked: false),
+                                .init(text: "Checklist child", checked: true, indent: 1),
+                                .init(text: "Checklist sibling", checked: false, indent: 1),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
+
+            #expect(content.html.contains("""
+            <ul>
+            <li>Bullet parent
+            <ul>
+            <li>Bullet child</li>
+            <li>Bullet sibling</li>
+            </ul>
+            </li>
+            </ul>
+            """))
+            #expect(content.html.contains("""
+            <ol>
+            <li value="1">First
+            <ol>
+            <li value="1">First child</li>
+            <li value="2">Second child</li>
+            </ol>
+            </li>
+            <li value="2">Second
+            <ol>
+            <li value="1">Reset child</li>
+            </ol>
+            </li>
+            </ol>
+            """))
+            #expect(content.html.contains("""
+            <ul>
+            <li>Checklist parent
+            <ul>
+            <li>Checklist child</li>
+            <li>Checklist sibling</li>
+            </ul>
+            </li>
+            </ul>
+            """))
+        }
+
+        @Test
+        func preservesSlackNestedIndentInHTMLAndPlainText() {
+            let document = SummaryDocument(
+                title: "Nested",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Parent"),
+                                SummaryListItem(text: "Child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                                SummaryListItem(text: "Second child", indent: 1),
+                                SummaryListItem(text: "Second"),
+                                SummaryListItem(text: "Reset child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Checklist parent", checked: false),
+                                .init(text: "Checklist child", checked: true, indent: 1),
+                                .init(text: "Checklist grandchild", checked: false, indent: 2),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .slack
+            )
+
+            #expect(content.html.contains("• Parent<br>\n&nbsp;&nbsp;&nbsp;&nbsp;• Child"))
+            #expect(content.html.contains("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• Grandchild"))
+            #expect(content.html.contains("1. First<br>\n&nbsp;&nbsp;&nbsp;&nbsp;1. First child"))
+            #expect(content.html.contains("&nbsp;&nbsp;&nbsp;&nbsp;2. Second child<br>\n2. Second"))
+            #expect(content.html.contains("2. Second<br>\n&nbsp;&nbsp;&nbsp;&nbsp;1. Reset child"))
+            #expect(content.html.contains("• Checklist parent<br>\n&nbsp;&nbsp;&nbsp;&nbsp;• Checklist child"))
+            #expect(content.html.contains("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• Checklist grandchild"))
+            #expect(content.markdown.contains("- Parent\n    - Child\n        - Grandchild"))
+            #expect(content.markdown.contains("1. First\n    1. First child\n    2. Second child\n2. Second\n    1. Reset child"))
+            #expect(content.markdown.contains("- [ ] Checklist parent\n    - [x] Checklist child\n        - [ ] Checklist grandchild"))
+        }
+
+        @Test
+        func shareMarkdownPreservesLeadingIndentForEveryListType() {
+            let document = SummaryDocument(
+                title: "Indented",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Lists",
+                        blocks: [
+                            .bulletedList(items: [SummaryListItem(text: "Bullet", indent: 1)]),
+                            .numberedList(items: [SummaryListItem(text: "Numbered", indent: 1)]),
+                            .checklist(items: [.init(text: "Checklist", checked: false, indent: 1)]),
+                        ]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
+
+            #expect(content.markdown.contains("\n\n    - Bullet"))
+            #expect(content.markdown.contains("\n\n    1. Numbered"))
+            #expect(content.markdown.contains("\n\n    - [ ] Checklist"))
         }
 
         @Test

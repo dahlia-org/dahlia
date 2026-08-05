@@ -123,6 +123,72 @@ import Foundation
         }
 
         @Test
+        func rendersNestedListsWithDerivedNumbers() {
+            let document = SummaryDocument(
+                title: "Nested",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Lists",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Parent"),
+                                SummaryListItem(text: "Child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "First child", indent: 1),
+                                SummaryListItem(text: "Second child", indent: 1),
+                                SummaryListItem(text: "Second"),
+                                SummaryListItem(text: "Reset child", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Check", checked: false, indent: 1),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(
+                document: document,
+                context: SummaryMarkdownRenderContext(meetingId: .v7(), createdAt: .now)
+            )
+
+            #expect(rendered.body.contains("- Parent\n    - Child\n        - Grandchild"))
+            #expect(rendered.body.contains("1. First\n    1. First child\n    2. Second child\n2. Second\n    1. Reset child"))
+            #expect(rendered.body.contains("    - [ ] Check"))
+        }
+
+        @Test
+        func preservesLeadingIndentForEveryListType() {
+            let document = SummaryDocument(
+                title: "Indented",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Lists",
+                        blocks: [
+                            .bulletedList(items: [SummaryListItem(text: "Bullet", indent: 1)]),
+                            .numberedList(items: [SummaryListItem(text: "Numbered", indent: 1)]),
+                            .checklist(items: [.init(text: "Checklist", checked: false, indent: 1)]),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(
+                document: document,
+                context: SummaryMarkdownRenderContext(meetingId: .v7(), createdAt: .now)
+            )
+
+            #expect(rendered.body.contains("\n\n    - Bullet"))
+            #expect(rendered.body.contains("\n\n    1. Numbered"))
+            #expect(rendered.body.contains("\n\n    - [ ] Checklist"))
+        }
+
+        @Test
         func legacyMarkdownParseRenderNormalizesScreenshotFilename() throws {
             let meetingId = UUID.v7()
             let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))

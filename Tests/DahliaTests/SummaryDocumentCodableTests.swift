@@ -22,14 +22,17 @@ import Foundation
                                 SummaryText("Ship", transcriptRef: TranscriptReference(time: "00:10:00"))
                             ),
                             .bulletedList(items: [
-                                SummaryText("One", transcriptRef: TranscriptReference(time: "00:11:00")),
-                                SummaryText("Two"),
+                                SummaryListItem(
+                                    text: SummaryText("One", transcriptRef: TranscriptReference(time: "00:11:00"))
+                                ),
+                                SummaryListItem(text: "Two", indent: 1),
                             ]),
-                            .numberedList(items: [SummaryText("First")]),
+                            .numberedList(items: [SummaryListItem(text: "First", indent: 1)]),
                             .checklist(items: [
                                 .init(
                                     text: SummaryText("Send notes", transcriptRef: TranscriptReference(time: "00:12:00")),
-                                    checked: false
+                                    checked: false,
+                                    indent: 2
                                 ),
                             ]),
                             .quote("Important"),
@@ -48,7 +51,60 @@ import Foundation
             let decoded = try JSONDecoder().decode(SummaryDocument.self, from: data)
 
             #expect(decoded == document)
-            #expect(decoded.schemaVersion == 3)
+            #expect(decoded.schemaVersion == SummaryDocumentSchemaVersion.current)
+        }
+
+        @Test
+        func summaryDocumentSchemaVersionContractIsShared() {
+            let document = SummaryDocument(title: "Current", sections: [])
+
+            #expect(SummaryDocumentSchemaVersion.current == 4)
+            #expect(SummaryDocumentSchemaVersion.acceptedMCPWriteVersions == [3, 4])
+            #expect(document.schemaVersion == SummaryDocumentSchemaVersion.current)
+        }
+
+        @Test
+        func summaryListItemsDecodeMissingIndentAsZeroAndOmitZeroWhenEncoded() throws {
+            let json = #"{"text":"Flat","transcript_ref":"00:01:02"}"#
+            let item = try JSONDecoder().decode(SummaryListItem.self, from: Data(json.utf8))
+            let checklistJSON = #"{"text":"Check","checked":false}"#
+            let checklist = try JSONDecoder().decode(SummaryBlock.ChecklistItem.self, from: Data(checklistJSON.utf8))
+
+            #expect(item.indent == 0)
+            #expect(checklist.indent == 0)
+            #expect(!String(decoding: try JSONEncoder().encode(item), as: UTF8.self).contains("indent"))
+            #expect(!String(decoding: try JSONEncoder().encode(checklist), as: UTF8.self).contains("indent"))
+        }
+
+        @Test
+        func summaryListItemsRoundTripNonzeroIndentAndTranscriptReferences() throws {
+            let item = SummaryListItem(
+                text: "Nested",
+                transcriptRef: TranscriptReference(time: "00:01:02"),
+                indent: 2
+            )
+            let checklist = SummaryBlock.ChecklistItem(
+                text: "Check",
+                transcriptRef: TranscriptReference(time: "00:02:03"),
+                checked: true,
+                indent: 1
+            )
+
+            #expect(try JSONDecoder().decode(SummaryListItem.self, from: JSONEncoder().encode(item)) == item)
+            #expect(try JSONDecoder().decode(SummaryBlock.ChecklistItem.self, from: JSONEncoder().encode(checklist)) == checklist)
+        }
+
+        @Test
+        func summaryListItemsRejectPresentNonIntegerIndent() {
+            let listJSON = #"{"text":"Nested","indent":"1"}"#
+            let checklistJSON = #"{"text":"Check","checked":false,"indent":true}"#
+
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(SummaryListItem.self, from: Data(listJSON.utf8))
+            }
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(SummaryBlock.ChecklistItem.self, from: Data(checklistJSON.utf8))
+            }
         }
 
         @Test

@@ -43,18 +43,19 @@ enum StoredSummaryDocumentMarkdownRenderer {
 
     /// `toolJSONValue` の逆変換。旧 DB 行向けの寛容な decoder を使う前に、MCP 入力が欠落なく往復することを検証する。
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
+        let canonicalInput = canonicalToolInput(toolJSON)
         let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
         let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
-        guard try addingLegacyDefaults(to: toolJSON) == toolJSONValue(document) else {
+        if let validationError = writeValidationError(document) {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [],
+                debugDescription: validationError
+            ))
+        }
+        guard try canonicalInput == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
-            ))
-        }
-        guard hasValidTranscriptReferences(document) else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: [],
-                debugDescription: "transcript_ref must match HH:MM:SS"
             ))
         }
         return document
@@ -67,12 +68,77 @@ enum StoredSummaryDocumentMarkdownRenderer {
             .allSatisfy { $0.wholeMatch(of: /^[0-9]{2,}:[0-9]{2}:[0-9]{2}$/) != nil }
     }
 
-    private static func addingLegacyDefaults(to value: JSONValue) -> JSONValue {
+    static func writeValidationError(_ document: SummaryDocument) -> String? {
+        let acceptedVersions = SummaryDocumentSchemaVersion.acceptedMCPWriteVersions
+        guard acceptedVersions.contains(document.schemaVersion) else {
+            let versions = acceptedVersions.sorted().map(String.init).joined(separator: ", ")
+            return "schema_version must be one of \(versions)."
+        }
+
+        let isCurrentVersion = document.schemaVersion == SummaryDocumentSchemaVersion.current
+        for block in document.sections.flatMap(\.blocks) {
+            let items: [(text: SummaryText, indent: Int)]
+            switch block.content {
+            case let .bulletedList(listItems), let .numberedList(listItems):
+                items = listItems.map { ($0.text, $0.indent) }
+            case let .checklist(checklistItems):
+                items = checklistItems.map { ($0.text, $0.indent) }
+            default:
+                continue
+            }
+
+            guard items.allSatisfy({ 0 ... 2 ~= $0.indent }) else {
+                return "List item indent must be 0, 1, or 2."
+            }
+            guard isCurrentVersion || items.allSatisfy({ $0.indent == 0 }) else {
+                return "Only schema_version \(SummaryDocumentSchemaVersion.current) may contain nested list items."
+            }
+            if isCurrentVersion, items.contains(where: { $0.text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                return "List item text must not be blank in schema_version \(SummaryDocumentSchemaVersion.current)."
+            }
+            if let first = items.first, first.indent != 0 {
+                return "The first item in each list must have indent 0."
+            }
+            for (previous, item) in zip(items, items.dropFirst()) where item.indent > previous.indent + 1 {
+                return "List item indent may increase by at most one level."
+            }
+        }
+
+        guard hasValidTranscriptReferences(document) else {
+            return "transcript_ref must match HH:MM:SS."
+        }
+        return nil
+    }
+
+    private static func canonicalToolInput(_ value: JSONValue) -> JSONValue {
         guard case var .object(object) = value else { return value }
         object["description"] = object["description"] ?? .string("")
         object["tags"] = object["tags"] ?? .array([])
         object["action_items"] = object["action_items"] ?? .array([])
+        guard case let .array(sections) = object["sections"] else { return .object(object) }
+        object["sections"] = .array(sections.map(canonicalSection))
         return .object(object)
+    }
+
+    private static func canonicalSection(_ value: JSONValue) -> JSONValue {
+        guard case var .object(section) = value,
+              case let .array(blocks) = section["blocks"] else { return value }
+        section["blocks"] = .array(blocks.map(canonicalBlock))
+        return .object(section)
+    }
+
+    private static func canonicalBlock(_ value: JSONValue) -> JSONValue {
+        guard case var .object(block) = value,
+              case let .string(type) = block["type"],
+              ["bulleted_list", "numbered_list", "checklist"].contains(type),
+              case let .array(items) = block["items"] else { return value }
+
+        block["items"] = .array(items.map { item in
+            guard case var .object(object) = item, object["indent"] == .number(0) else { return item }
+            object.removeValue(forKey: "indent")
+            return .object(object)
+        })
+        return .object(block)
     }
 
     private static func rewritingKeys(_ value: JSONValue, using mapping: [String: String]) throws -> JSONValue {
@@ -102,7 +168,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
         case let .paragraph(text), let .quote(text):
             [text]
         case let .bulletedList(items), let .numberedList(items):
-            items
+            items.map(\.text)
         case let .checklist(items):
             items.map(\.text)
         case let .code(_, text), let .image(_, text), let .heading(_, text):
@@ -127,12 +193,13 @@ enum StoredSummaryDocumentMarkdownRenderer {
         case let .paragraph(text):
             renderText(text)
         case let .bulletedList(items):
-            renderList(items, prefix: { _ in "-" })
+            renderBulletedList(items)
         case let .numberedList(items):
-            renderList(items, prefix: { "\($0 + 1)." })
+            renderNumberedList(items)
         case let .checklist(items):
             items.compactMap { item in
-                renderText(item.text).map { "- [\(item.checked ? "x" : " ")] \($0)" }
+                let indentation = String(repeating: " ", count: item.indent * 4)
+                return renderText(item.text).map { "\(indentation)- [\(item.checked ? "x" : " ")] \($0)" }
             }
             .joined(separator: "\n")
             .nonEmpty
@@ -162,9 +229,20 @@ enum StoredSummaryDocumentMarkdownRenderer {
         }
     }
 
-    private static func renderList(_ items: [SummaryText], prefix: (Int) -> String) -> String? {
-        items.enumerated().compactMap { index, item in
-            renderText(item).map { "\(prefix(index)) \($0)" }
+    private static func renderBulletedList(_ items: [SummaryListItem]) -> String? {
+        items.compactMap { item in
+            let indentation = String(repeating: " ", count: item.indent * 4)
+            return renderText(item.text).map { "\(indentation)- \($0)" }
+        }
+        .joined(separator: "\n")
+        .nonEmpty
+    }
+
+    private static func renderNumberedList(_ items: [SummaryListItem]) -> String? {
+        let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
+        return zip(items, numbers).compactMap { item, number in
+            let indentation = String(repeating: " ", count: item.indent * 4)
+            return renderText(item.text).map { "\(indentation)\(number). \($0)" }
         }
         .joined(separator: "\n")
         .nonEmpty

@@ -1,5 +1,10 @@
 import Foundation
 
+public enum SummaryDocumentSchemaVersion {
+    public static let current = 4
+    public static let acceptedMCPWriteVersions = Set([3, 4])
+}
+
 /// サマリーの正準表現。アプリと MCP ヘルパーが同じ型を共有する。
 public struct SummaryDocument: Codable, Equatable, Sendable {
     public var schemaVersion: Int
@@ -10,7 +15,7 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
     public var actionItems: [SummaryActionItem]
 
     public init(
-        schemaVersion: Int = 3,
+        schemaVersion: Int = SummaryDocumentSchemaVersion.current,
         title: String,
         description: String = "",
         sections: [SummarySection],
@@ -134,6 +139,57 @@ public struct SummaryText: Codable, Equatable, Sendable {
     }
 }
 
+public struct SummaryListItem: Codable, Equatable, Sendable {
+    public var text: SummaryText
+    public var indent: Int
+
+    public init(text: String, transcriptRef: TranscriptReference? = nil, indent: Int = 0) {
+        self.text = SummaryText(text, transcriptRef: transcriptRef)
+        self.indent = indent
+    }
+
+    public init(text: SummaryText, indent: Int = 0) {
+        self.text = text
+        self.indent = indent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case transcriptRef = "transcript_ref"
+        case indent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let value = try container.decode(String.self, forKey: .text)
+        let transcriptRef = try container.decodeIfPresent(TranscriptReference.self, forKey: .transcriptRef)
+        text = SummaryText(value, transcriptRef: transcriptRef)
+        indent = try container.decodeIfPresent(Int.self, forKey: .indent) ?? 0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text.text, forKey: .text)
+        try container.encodeIfPresent(text.transcriptRef, forKey: .transcriptRef)
+        if indent != 0 {
+            try container.encode(indent, forKey: .indent)
+        }
+    }
+}
+
+public enum SummaryListNumbering {
+    public static func numbers(for indents: [Int]) -> [Int] {
+        var counters: [Int: Int] = [:]
+
+        return indents.map { indent in
+            counters = counters.filter { $0.key <= indent }
+            let number = counters[indent, default: 0] + 1
+            counters[indent] = number
+            return number
+        }
+    }
+}
+
 public struct SummaryActionItem: Codable, Equatable, Sendable {
     public let title: String
     public let assignee: String
@@ -169,18 +225,26 @@ public struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
     }
 
     public static func bulletedList(items: [String]) -> SummaryBlock {
-        SummaryBlock(content: .bulletedList(items: items.map { SummaryText($0) }))
+        SummaryBlock(content: .bulletedList(items: items.map { SummaryListItem(text: $0) }))
     }
 
     public static func bulletedList(items: [SummaryText]) -> SummaryBlock {
+        SummaryBlock(content: .bulletedList(items: items.map { SummaryListItem(text: $0) }))
+    }
+
+    public static func bulletedList(items: [SummaryListItem]) -> SummaryBlock {
         SummaryBlock(content: .bulletedList(items: items))
     }
 
     public static func numberedList(items: [String]) -> SummaryBlock {
-        SummaryBlock(content: .numberedList(items: items.map { SummaryText($0) }))
+        SummaryBlock(content: .numberedList(items: items.map { SummaryListItem(text: $0) }))
     }
 
     public static func numberedList(items: [SummaryText]) -> SummaryBlock {
+        SummaryBlock(content: .numberedList(items: items.map { SummaryListItem(text: $0) }))
+    }
+
+    public static func numberedList(items: [SummaryListItem]) -> SummaryBlock {
         SummaryBlock(content: .numberedList(items: items))
     }
 
@@ -235,8 +299,8 @@ public struct SummaryBlock: Codable, Equatable, Identifiable, Sendable {
 
 public enum SummaryBlockContent: Equatable, Sendable {
     case paragraph(SummaryText)
-    case bulletedList(items: [SummaryText])
-    case numberedList(items: [SummaryText])
+    case bulletedList(items: [SummaryListItem])
+    case numberedList(items: [SummaryListItem])
     case checklist(items: [ChecklistItem])
     case quote(SummaryText)
     case code(language: String, content: SummaryText)
@@ -247,21 +311,25 @@ public enum SummaryBlockContent: Equatable, Sendable {
     public struct ChecklistItem: Codable, Equatable, Sendable {
         public var text: SummaryText
         public var checked: Bool
+        public var indent: Int
 
-        public init(text: String, transcriptRef: TranscriptReference? = nil, checked: Bool) {
+        public init(text: String, transcriptRef: TranscriptReference? = nil, checked: Bool, indent: Int = 0) {
             self.text = SummaryText(text, transcriptRef: transcriptRef)
             self.checked = checked
+            self.indent = indent
         }
 
-        public init(text: SummaryText, checked: Bool) {
+        public init(text: SummaryText, checked: Bool, indent: Int = 0) {
             self.text = text
             self.checked = checked
+            self.indent = indent
         }
 
         private enum CodingKeys: String, CodingKey {
             case text
             case transcriptRef = "transcript_ref"
             case checked
+            case indent
         }
 
         public init(from decoder: Decoder) throws {
@@ -270,6 +338,7 @@ public enum SummaryBlockContent: Equatable, Sendable {
             let transcriptRef = try container.decodeIfPresent(TranscriptReference.self, forKey: .transcriptRef)
             text = SummaryText(value, transcriptRef: transcriptRef)
             checked = (try? container.decode(Bool.self, forKey: .checked)) ?? false
+            indent = try container.decodeIfPresent(Int.self, forKey: .indent) ?? 0
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -277,6 +346,9 @@ public enum SummaryBlockContent: Equatable, Sendable {
             try container.encode(text.text, forKey: .text)
             try container.encodeIfPresent(text.transcriptRef, forKey: .transcriptRef)
             try container.encode(checked, forKey: .checked)
+            if indent != 0 {
+                try container.encode(indent, forKey: .indent)
+            }
         }
     }
 }
@@ -313,9 +385,9 @@ extension SummaryBlockContent: Codable {
         case .paragraph:
             self = .paragraph((try? container.decode(SummaryText.self, forKey: .content)) ?? SummaryText(""))
         case .bulletedList:
-            self = .bulletedList(items: (try? container.decode([SummaryText].self, forKey: .items)) ?? [])
+            self = .bulletedList(items: (try? container.decode([SummaryListItem].self, forKey: .items)) ?? [])
         case .numberedList:
-            self = .numberedList(items: (try? container.decode([SummaryText].self, forKey: .items)) ?? [])
+            self = .numberedList(items: (try? container.decode([SummaryListItem].self, forKey: .items)) ?? [])
         case .checklist:
             self = .checklist(items: (try? container.decode([ChecklistItem].self, forKey: .items)) ?? [])
         case .quote:
