@@ -11,7 +11,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 
 | ADR | Area | Decision | Status / relationship |
 | --- | --- | --- | --- |
-| [0001](0001-summary-document-ast.md) | Summary | `SummaryDocument` AST をサマリーの正準表現にする | Accepted |
+| [0001](0001-summary-document-ast.md) | Summary | `SummaryDocument` AST をサマリーの正準表現にする | Accepted; amended by 0024 |
 | [0002](0002-isolate-recording-critical-path-from-main-actor.md) | Recording / Concurrency | 録音と確定データの保存を MainActor の UI projection から分離する | Accepted; partially superseded by 0006 and 0009 |
 | [0003](0003-use-a-shared-codex-app-server.md) | AI runtime | Codex app-server をアプリ共有の長寿命 backend として使う | Accepted; amended by 0013, 0015, 0019, 0020, 0021, and 0022 |
 | [0004](0004-protect-recordings-with-segmented-immutable-storage.md) | Recording storage | 録音データを分割された immutable segment として保全する | Accepted |
@@ -28,9 +28,10 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0015](0015-preset-projects-optimizer-skill.md) | AI runtime / Project workspace | Projects Optimizer skill をアプリ内チャットへプリセットする | Accepted; partially superseded by 0021, amends 0003, builds on 0010 |
 | [0016](0016-shared-organization-domains.md) | Customer intelligence / Identity | 同じメールドメインを複数のルート組織で共有可能にする | Accepted; amends 0011 and 0014 |
 | [0017](0017-preset-customer-intelligence-skills.md) | AI runtime / Customer intelligence | 顧客インテリジェンスの curator skill を層ごとに分けてプリセットする | Accepted; amends 0015, builds on 0011 and 0012 |
-| [0018](0018-mcp-meeting-summary-update.md) | Summary / Meeting access | サマリーの訂正を MCP のドキュメント全体置換で行う | Accepted; amends 0005 and 0010, builds on 0001 |
+| [0018](0018-mcp-meeting-summary-update.md) | Summary / Meeting access | サマリーの訂正を MCP のドキュメント全体置換で行う | Accepted; amends 0005 and 0010, builds on 0001; amended by 0024 |
 | [0019](0019-pull-codex-stdout-with-backpressure.md) | AI runtime | Codex stdout を64 KiB単位で需要駆動読み取りする | Accepted; supersedes 0013, amends 0003; amended by 0020 |
 | [0020](0020-bound-codex-output-relative-to-client-input.md) | AI runtime | Codex stdout の単一行上限をclient入力に応じて拡張する | Accepted; amends 0019 and 0003 |
 | [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003 |
 | [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023 |
 | [0023](0023-review-vault-mcp-writes-in-chat.md) | AI runtime / Chat / MCP | Vault MCP の書き込みを追加権限なしの単一 tool call として承認する | Accepted; amends 0022 |
+| [0024](0024-flat-summary-blocks-with-hierarchy-attributes.md) | Summary / Meeting access | 平坦な階層属性でサマリーのネストリストと表を表現する | Accepted; amends 0001 and 0018 |
