@@ -968,7 +968,11 @@ import Foundation
         @Test
         func cancelledTurnStartInterruptsTurnDiscoveredFromBufferedNotification() async throws {
             let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
-            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let clock = DiscoveredChatTurnStopTestClock()
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                clock: clock
+            )
             let start = Task {
                 try await service.startChatTurn(
                     threadID: "thread-1",
@@ -1001,6 +1005,70 @@ import Foundation
             }?.objectValue?["params"]?.objectValue)
             #expect(interrupt["threadId"] == .string("thread-1"))
             #expect(interrupt["turnId"] == .string("turn-1"))
+            #expect(await service.hasDiscoveredChatTurnStopForTesting(
+                threadID: "thread-1",
+                turnID: "turn-1"
+            ))
+
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await !(service.hasDiscoveredChatTurnStopForTesting(
+                    threadID: "thread-1",
+                    turnID: "turn-1"
+                ))
+            })
+            await clock.fireAllSleeps()
+            #expect(await !transport.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func discoveredTurnInterruptTimeoutResetsConnection() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let clock = DiscoveredChatTurnStopTestClock()
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                clock: clock
+            )
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+            await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("item-1"),
+                        "type": .string("agentMessage"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasBufferedTurnMessagesForTesting(threadID: "thread-1", turnID: "turn-1")
+            })
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.waitUntilSent("turn/interrupt")
+            await clock.fireAllSleeps()
+
+            #expect(await pollUntil { await transport.isClosed })
             await service.shutdown()
         }
 
@@ -1598,6 +1666,38 @@ import Foundation
 
         private func methodsSent(to transport: TestCodexAppServerTransport) async -> [String] {
             await transport.messages().compactMap { $0.objectValue?["method"]?.stringValue }
+        }
+    }
+
+    private actor DiscoveredChatTurnStopTestClock: CodexAppServerClock {
+        private var firesImmediately = false
+        private var sleeps: [UUID: CheckedContinuation<Void, any Error>] = [:]
+
+        func sleep(for _: Duration) async throws {
+            if firesImmediately { return }
+            let id = UUID.v7()
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if firesImmediately {
+                        continuation.resume()
+                    } else {
+                        sleeps[id] = continuation
+                    }
+                }
+            } onCancel: {
+                Task { await self.cancelSleep(id) }
+            }
+        }
+
+        func fireAllSleeps() {
+            firesImmediately = true
+            let continuations = sleeps.values
+            sleeps.removeAll()
+            continuations.forEach { $0.resume() }
+        }
+
+        private func cancelSleep(_ id: UUID) {
+            sleeps.removeValue(forKey: id)?.resume(throwing: CancellationError())
         }
     }
 #endif

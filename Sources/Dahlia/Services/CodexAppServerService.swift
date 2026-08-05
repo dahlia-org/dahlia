@@ -78,6 +78,11 @@ actor CodexAppServerService {
         var stopWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     }
 
+    private struct DiscoveredChatTurnStop {
+        let generation: Int
+        let timeoutTask: Task<Void, Never>
+    }
+
     private struct GenerationContext {
         var threadID: String?
         var key: TurnKey?
@@ -123,6 +128,7 @@ actor CodexAppServerService {
     private var codexOperationDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private var pendingChatTurnStarts: [UUID: PendingChatTurnStart] = [:]
     private var chatTurnRuntimes: [UUID: ChatTurnRuntime] = [:]
+    private var discoveredChatTurnStops: [TurnKey: DiscoveredChatTurnStop] = [:]
     private var retiredChatTurnKeys: Set<TurnKey> = []
     private var retiredChatTurnOrder: [TurnKey] = []
     private var chatTurnDrainWaiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
@@ -486,6 +492,9 @@ actor CodexAppServerService {
         params: JSONValue
     ) async throws -> (turnID: String, notifications: AsyncThrowingStream<JSONValue, any Error>) {
         try await waitForConfigurationReloadToFinish()
+        guard discoveredChatTurnStops.keys.allSatisfy({ $0.threadID != threadID }) else {
+            throw CodexAppServerError.rpcError(code: nil, message: "A chat turn is already stopping for this thread")
+        }
         // Registered before the request so an approval request that arrives ahead of the
         // turn/start response is still recognized as a chat thread.
         chatThreadIDs.insert(threadID)
@@ -531,7 +540,9 @@ actor CodexAppServerService {
     ) async throws -> CodexAppServerChatTurn {
         try await waitForConfigurationReloadToFinish()
         try await start()
-        guard chatTurnRuntimes.values.allSatisfy({ $0.threadID != threadID }) else {
+        guard chatTurnRuntimes.values.allSatisfy({ $0.threadID != threadID }),
+              discoveredChatTurnStops.keys.allSatisfy({ $0.threadID != threadID })
+        else {
             throw CodexAppServerError.rpcError(code: nil, message: "A chat turn is already active for this thread")
         }
 
@@ -1126,7 +1137,7 @@ private extension CodexAppServerService {
             guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
             guard let continuation = pending.continuation else {
                 if let threadID = pending.lateChatTurnStartThreadID {
-                    interruptLateChatTurnStartResponse(object, threadID: threadID)
+                    await interruptLateChatTurnStartResponse(object, threadID: threadID)
                 }
                 return
             }
@@ -1433,13 +1444,17 @@ private extension CodexAppServerService {
         runtime: ChatTurnRuntime,
         turnID: String
     ) async throws {
+        try await sendTurnInterrupt(threadID: runtime.threadID, turnID: turnID)
+    }
+
+    private func sendTurnInterrupt(threadID: String, turnID: String) async throws {
         let requestID = nextRequestID
         nextRequestID += 1
         try await sendMessage(.object([
             "id": .number(Double(requestID)),
             "method": .string("turn/interrupt"),
             "params": .object([
-                "threadId": .string(runtime.threadID),
+                "threadId": .string(threadID),
                 "turnId": .string(turnID),
             ]),
         ]))
@@ -1523,38 +1538,66 @@ private extension CodexAppServerService {
         }
         let bufferedKeys = pendingChatTurnStarts[startID]?.bufferedKeys ?? []
         for key in bufferedKeys {
-            // Failed-start cleanup can run in an already-cancelled task. Use a fresh task so
-            // the interrupt request is sent before the recovered turn buffer is discarded.
             rememberRetiredChatTurn(key)
-            let interrupt = Task { await self.interruptDiscoveredChatTurn(key) }
-            await interrupt.value
+            await interruptDiscoveredChatTurn(key)
             bufferedTurnMessages.removeValue(forKey: key)
         }
     }
 
     private func interruptDiscoveredChatTurn(_ key: TurnKey) async {
-        guard !isShuttingDown, isInitialized, transport != nil else { return }
-        _ = try? await requestOnCurrentConnection(
-            method: "turn/interrupt",
-            params: .object([
-                "threadId": .string(key.threadID),
-                "turnId": .string(key.turnID),
-            ]),
-            timeout: transportTimeout
+        guard !isShuttingDown,
+              isInitialized,
+              transport != nil,
+              discoveredChatTurnStops[key] == nil,
+              bufferedTurnMessages[key]?.contains(where: Self.isTurnCompletionMessage) != true
+        else { return }
+
+        let generation = connectionGeneration
+        let timeoutTask = Task { [weak self, clock, transportTimeout] in
+            do {
+                try await clock.sleep(for: transportTimeout)
+                guard let self else { return }
+                await self.resetConnectionForDiscoveredChatTurnTimeout(key, generation: generation)
+            } catch {
+                // Terminal completion cancels the owned timeout.
+            }
+        }
+        discoveredChatTurnStops[key] = DiscoveredChatTurnStop(
+            generation: generation,
+            timeoutTask: timeoutTask
         )
+
+        // Failed-start cleanup can run in an already-cancelled task. A fresh task ensures
+        // the interrupt write is attempted after stop tracking has been installed.
+        let interrupt = Task {
+            try await self.sendTurnInterrupt(threadID: key.threadID, turnID: key.turnID)
+        }
+        do {
+            try await interrupt.value
+        } catch {
+            guard let stop = discoveredChatTurnStops.removeValue(forKey: key),
+                  stop.generation == generation
+            else { return }
+            stop.timeoutTask.cancel()
+            resumeChatTurnDrainWaitersIfIdle()
+            if generation == connectionGeneration {
+                await stopConnection(error: CodexAppServerError.backendResetForSafety)
+            }
+        }
     }
 
-    private func interruptLateChatTurnStartResponse(_ object: [String: JSONValue], threadID: String) {
+    private func interruptLateChatTurnStartResponse(
+        _ object: [String: JSONValue],
+        threadID: String
+    ) async {
         guard let turnID = object["result"]?.objectValue?["turn"]?.objectValue?["id"]?.stringValue else { return }
         let key = TurnKey(threadID: threadID, turnID: turnID)
         let shouldInterrupt = rememberRetiredChatTurn(key)
-        Task {
-            await self.resolvePendingApprovals(for: key, decision: .cancel)
-            if shouldInterrupt {
-                await self.interruptDiscoveredChatTurn(key)
-            }
-            self.bufferedTurnMessages.removeValue(forKey: key)
+        await resolvePendingApprovals(for: key, decision: .cancel)
+        if shouldInterrupt {
+            await interruptDiscoveredChatTurn(key)
         }
+        bufferedTurnMessages.removeValue(forKey: key)
     }
 
     private func reconcilePendingChatTurnStart(_ startID: UUID, with key: TurnKey) async {
@@ -1602,12 +1645,15 @@ private extension CodexAppServerService {
         }
         guard let turnID else { return }
         let key = TurnKey(threadID: threadID, turnID: turnID)
+        if method == "turn/completed" {
+            finishDiscoveredChatTurnStop(key)
+        }
         let hasSubscribers = turnSubscribers[key]?.isEmpty == false
         turnSubscribers[key]?.values.forEach { $0.yield(message) }
         if turnWaiters[key] != nil {
             processTurnMessage(message, for: key)
         } else if !hasSubscribers {
-            routeUnsubscribedTurnMessage(message, method: method, key: key)
+            await routeUnsubscribedTurnMessage(message, method: method, key: key)
         }
         if method == "turn/completed" {
             await finishTurnSubscribers(for: key)
@@ -1617,15 +1663,18 @@ private extension CodexAppServerService {
         }
     }
 
-    private func routeUnsubscribedTurnMessage(_ message: JSONValue, method: String, key: TurnKey) {
+    private func routeUnsubscribedTurnMessage(
+        _ message: JSONValue,
+        method: String,
+        key: TurnKey
+    ) async {
         if let startID = pendingStartID(for: key) {
             bufferTurnMessage(message, for: key)
             pendingChatTurnStarts[startID]?.bufferedKeys.insert(key)
         } else if hasUnownedChatTurnStartRequest(for: key.threadID) {
             let shouldInterrupt = rememberRetiredChatTurn(key)
             if method != "turn/completed", shouldInterrupt {
-                // The reader must remain available for the interrupt response.
-                Task { await self.interruptDiscoveredChatTurn(key) }
+                await interruptDiscoveredChatTurn(key)
             }
         } else if !chatThreadIDs.contains(key.threadID) {
             // Summary turns can emit notifications before their waiter is installed.
@@ -1787,6 +1836,9 @@ private extension CodexAppServerService {
         for localTurnID in localTurnIDs {
             finishChatTurn(localTurnID, throwing: error)
         }
+        let discoveredStops = discoveredChatTurnStops.values
+        discoveredChatTurnStops.removeAll()
+        discoveredStops.forEach { $0.timeoutTask.cancel() }
         retiredChatTurnKeys.removeAll()
         retiredChatTurnOrder.removeAll()
         resumeChatTurnDrainWaiters(throwing: error)
@@ -1843,6 +1895,17 @@ private extension CodexAppServerService {
         guard chatTurnRuntimes[localTurnID]?.generation == generation,
               generation == connectionGeneration else { return }
         await stopConnection(error: CodexAppServerError.backendResetForSafety)
+    }
+
+    private func resetConnectionForDiscoveredChatTurnTimeout(_ key: TurnKey, generation: Int) async {
+        guard discoveredChatTurnStops[key]?.generation == generation,
+              generation == connectionGeneration else { return }
+        await stopConnection(error: CodexAppServerError.backendResetForSafety)
+    }
+
+    private func finishDiscoveredChatTurnStop(_ key: TurnKey) {
+        discoveredChatTurnStops.removeValue(forKey: key)?.timeoutTask.cancel()
+        resumeChatTurnDrainWaitersIfIdle()
     }
 
     private func waitForChatTurnToFinish(_ localTurnID: UUID) async {
@@ -2045,13 +2108,20 @@ private extension CodexAppServerService {
     }
 
     private func waitForChatTurnsToFinish() async throws {
-        guard !pendingChatTurnStarts.isEmpty || !turnSubscribers.isEmpty || !chatTurnRuntimes.isEmpty else { return }
+        guard !pendingChatTurnStarts.isEmpty
+            || !turnSubscribers.isEmpty
+            || !chatTurnRuntimes.isEmpty
+            || !discoveredChatTurnStops.isEmpty
+        else { return }
         let waiterID = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 if Task.isCancelled {
                     continuation.resume(throwing: CancellationError())
-                } else if pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty, chatTurnRuntimes.isEmpty {
+                } else if pendingChatTurnStarts.isEmpty,
+                          turnSubscribers.isEmpty,
+                          chatTurnRuntimes.isEmpty,
+                          discoveredChatTurnStops.isEmpty {
                     continuation.resume()
                 } else {
                     chatTurnDrainWaiters[waiterID] = continuation
@@ -2072,7 +2142,11 @@ private extension CodexAppServerService {
     }
 
     private func resumeChatTurnDrainWaitersIfIdle() {
-        guard pendingChatTurnStarts.isEmpty, turnSubscribers.isEmpty, chatTurnRuntimes.isEmpty else { return }
+        guard pendingChatTurnStarts.isEmpty,
+              turnSubscribers.isEmpty,
+              chatTurnRuntimes.isEmpty,
+              discoveredChatTurnStops.isEmpty
+        else { return }
         resumeChatTurnDrainWaiters()
     }
 
@@ -2278,6 +2352,10 @@ private extension CodexAppServerService {
 
         func hasTurnSubscriberForTesting(threadID: String, turnID: String) -> Bool {
             turnSubscribers[TurnKey(threadID: threadID, turnID: turnID)]?.isEmpty == false
+        }
+
+        func hasDiscoveredChatTurnStopForTesting(threadID: String, turnID: String) -> Bool {
+            discoveredChatTurnStops[TurnKey(threadID: threadID, turnID: turnID)] != nil
         }
 
         var providerAuthenticationWaiterCountForTesting: Int {
