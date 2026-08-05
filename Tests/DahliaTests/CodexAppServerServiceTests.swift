@@ -749,6 +749,473 @@ import Foundation
         }
 
         @Test
+        func chatApprovalRequestsReachSubscribersAndAreDeclinedWhenTheTurnCompletes() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            try await service.start()
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                var methods: [String] = []
+                for try await message in turn.notifications {
+                    if let method = message.objectValue?["method"]?.stringValue {
+                        methods.append(method)
+                    }
+                }
+                return methods
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string(turn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-1")
+
+            #expect(try await collected.value == [
+                "item/commandExecution/requestApproval",
+                "turn/completed",
+            ])
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("decline"))
+            await service.shutdown()
+        }
+
+        @Test
+        func cancellingTurnSubscriptionCancelsUnconsumedApproval() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-1")
+            })
+
+            collected.cancel()
+            _ = try? await collected.value
+            await transport.waitUntilResponded(to: "approval-1")
+
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("cancel"))
+            await service.shutdown()
+        }
+
+        @Test
+        func chatApprovalDecisionUsesTheOriginalRequestIdentifier() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            try await service.start()
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            // Responds from inside the subscription so the stream is never abandoned early,
+            // which would cancel the request before the decision is sent.
+            let responded = Task {
+                for try await message in turn.notifications {
+                    guard message.objectValue?["method"]?.stringValue == "item/fileChange/requestApproval",
+                          let requestID = message.objectValue?["id"],
+                          let approvalID = CodexAppServerService.approvalID(for: requestID)
+                    else { continue }
+                    await service.respondToApproval(id: approvalID, decision: .acceptForSession)
+                }
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .number(41),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "41")
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string(turn.turnID),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+            try await responded.value
+
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .number(41) && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("acceptForSession"))
+            await service.shutdown()
+        }
+
+        @Test
+        func cancelledTurnStartCancelsEarlyApprovalAndDiscardsBufferedMessages() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "grantRoot": .string("/tmp/outside-workspace"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-1")
+            })
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.waitUntilResponded(to: "approval-1")
+            let approval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-1")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(approval["result"]?.objectValue?["decision"] == .string("cancel"))
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-late"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "itemId": .string("item-late"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-late")
+            let lateApproval = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-late")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(lateApproval["result"]?.objectValue?["decision"] == .string("cancel"))
+
+            let notifications = await service.notifications(threadID: "thread-1", turnID: "turn-1")
+            let collected = Task {
+                var methods: [String] = []
+                for try await message in notifications {
+                    if let method = message.objectValue?["method"]?.stringValue {
+                        methods.append(method)
+                    }
+                }
+                return methods
+            }
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+            #expect(try await collected.value == ["turn/completed"])
+            await service.shutdown()
+        }
+
+        @Test
+        func cancelledTurnStartInterruptsTurnDiscoveredFromBufferedNotification() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let clock = DiscoveredChatTurnStopTestClock()
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                clock: clock
+            )
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+            await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("item-1"),
+                        "type": .string("agentMessage"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasBufferedTurnMessagesForTesting(threadID: "thread-1", turnID: "turn-1")
+            })
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.waitUntilSent("turn/interrupt")
+            let interrupt = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interrupt["threadId"] == .string("thread-1"))
+            #expect(interrupt["turnId"] == .string("turn-1"))
+            #expect(await service.hasDiscoveredChatTurnStopForTesting(
+                threadID: "thread-1",
+                turnID: "turn-1"
+            ))
+
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await !(service.hasDiscoveredChatTurnStopForTesting(
+                    threadID: "thread-1",
+                    turnID: "turn-1"
+                ))
+            })
+            await clock.fireAllSleeps()
+            #expect(await !transport.isClosed)
+            await service.shutdown()
+        }
+
+        @Test
+        func discoveredTurnInterruptTimeoutResetsConnection() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let clock = DiscoveredChatTurnStopTestClock()
+            let service = makeTestCodexAppServerService(
+                transportFactory: { transport },
+                clock: clock
+            )
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+            await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("item-1"),
+                        "type": .string("agentMessage"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasBufferedTurnMessagesForTesting(threadID: "thread-1", turnID: "turn-1")
+            })
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.waitUntilSent("turn/interrupt")
+            await clock.fireAllSleeps()
+
+            #expect(await pollUntil { await transport.isClosed })
+            await service.shutdown()
+        }
+
+        @Test
+        func cancelledTurnStartInterruptsTurnDiscoveredFromLateResponse() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.completeBlockedTurnStart(turnID: "late-turn")
+            await transport.waitUntilSent("turn/interrupt")
+            let interrupt = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interrupt["threadId"] == .string("thread-1"))
+            #expect(interrupt["turnId"] == .string("late-turn"))
+            await service.shutdown()
+        }
+
+        @Test
+        func cancelledTurnStartInterruptsTurnDiscoveredFromLateNotification() async throws {
+            let transport = TestCodexAppServerTransport(mode: .blockTurnStart)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let start = Task {
+                try await service.startChatTurn(
+                    threadID: "thread-1",
+                    params: .object(["threadId": .string("thread-1")])
+                )
+            }
+            await transport.waitUntilSent("turn/start")
+
+            start.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await start.value
+            }
+            await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("item-late"),
+                        "type": .string("agentMessage"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("late-turn"),
+                ]),
+            ]))
+
+            await transport.waitUntilSent("turn/interrupt")
+            let interrupt = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interrupt["threadId"] == .string("thread-1"))
+            #expect(interrupt["turnId"] == .string("late-turn"))
+            await service.shutdown()
+        }
+
+        @Test
+        func lateApprovalAfterSubscriberClosesIsCancelled() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+            #expect(await pollUntil {
+                await service.hasTurnSubscriberForTesting(
+                    threadID: "thread-1",
+                    turnID: turn.turnID
+                )
+            })
+            collected.cancel()
+            _ = try? await collected.value
+            #expect(await pollUntil {
+                await !(service.hasTurnSubscriberForTesting(
+                    threadID: "thread-1",
+                    turnID: turn.turnID
+                ))
+            })
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-late"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("touch late"),
+                    "itemId": .string("item-late"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            await transport.waitUntilResponded(to: "approval-late")
+
+            let response = try #require(await transport.messages().first {
+                $0.objectValue?["id"] == .string("approval-late")
+                    && $0.objectValue?["method"] == nil
+            }?.objectValue)
+            #expect(response["result"]?.objectValue?["decision"] == .string("cancel"))
+            #expect(await !(service.hasPendingApprovalForTesting("s:approval-late")))
+            await service.shutdown()
+        }
+
+        @Test
+        func approvalResponseWriteFailureStopsConnection() async throws {
+            let transport = TestCodexAppServerTransport(mode: .models, failsApprovalResponses: true)
+            let service = makeTestCodexAppServerService(transportFactory: { transport })
+            let turn = try await service.startChatTurn(
+                threadID: "thread-1",
+                params: .object(["threadId": .string("thread-1")])
+            )
+            let collected = Task {
+                for try await _ in turn.notifications {}
+            }
+            await transport.sendFromServer(.object([
+                "id": .string("approval-write-fails"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls"),
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string(turn.turnID),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await service.hasPendingApprovalForTesting("s:approval-write-fails")
+            })
+
+            await service.respondToApproval(id: "s:approval-write-fails", decision: .accept)
+
+            #expect(await transport.isClosed)
+            #expect(await !(service.hasPendingApprovalForTesting("s:approval-write-fails")))
+            _ = try? await collected.value
+            await service.shutdown()
+        }
+
+        @Test
         func turnNotificationSubscriptionReceivesMessagesAndFinishes() async throws {
             let transport = TestCodexAppServerTransport(mode: .models)
             let service = makeTestCodexAppServerService(transportFactory: { transport })
@@ -1199,6 +1666,38 @@ import Foundation
 
         private func methodsSent(to transport: TestCodexAppServerTransport) async -> [String] {
             await transport.messages().compactMap { $0.objectValue?["method"]?.stringValue }
+        }
+    }
+
+    private actor DiscoveredChatTurnStopTestClock: CodexAppServerClock {
+        private var firesImmediately = false
+        private var sleeps: [UUID: CheckedContinuation<Void, any Error>] = [:]
+
+        func sleep(for _: Duration) async throws {
+            if firesImmediately { return }
+            let id = UUID.v7()
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if firesImmediately {
+                        continuation.resume()
+                    } else {
+                        sleeps[id] = continuation
+                    }
+                }
+            } onCancel: {
+                Task { await self.cancelSleep(id) }
+            }
+        }
+
+        func fireAllSleeps() {
+            firesImmediately = true
+            let continuations = sleeps.values
+            sleeps.removeAll()
+            continuations.forEach { $0.resume() }
+        }
+
+        private func cancelSleep(_ id: UUID) {
+            sleeps.removeValue(forKey: id)?.resume(throwing: CancellationError())
         }
     }
 #endif

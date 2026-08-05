@@ -5,6 +5,7 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     enum Mode: Equatable {
         case models
         case blockInitialize
+        case blockTurnStart
         case blockFirstModelList
         case blockRequests
         case outOfOrder
@@ -24,6 +25,9 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     }
 
     private let mode: Mode
+    private let failsApprovalResponses: Bool
+    private let blocksApprovalResponses: Bool
+    private let failsTurnStartWrites: Bool
     private var responses: [Data] = []
     private var sentMessages: [JSONValue] = []
     private var receiveContinuation: CheckedContinuation<Data?, Never>?
@@ -31,27 +35,49 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
     private var modelListCount = 0
     private var threadStartCount = 0
     private var turnStartCount = 0
+    private var blockedTurnStart: (requestID: Int, threadID: String)?
     private var heldRequestID: Int?
     private var closeContinuation: CheckedContinuation<Void, Never>?
+    private var approvalResponseContinuation: CheckedContinuation<Void, Never>?
     private var didStartClosing = false
     private var isAuthenticated: Bool
     private(set) var isClosed = false
 
-    init(mode: Mode) {
+    init(
+        mode: Mode,
+        failsApprovalResponses: Bool = false,
+        blocksApprovalResponses: Bool = false,
+        failsTurnStartWrites: Bool = false
+    ) {
         self.mode = mode
+        self.failsApprovalResponses = failsApprovalResponses
+        self.blocksApprovalResponses = blocksApprovalResponses
+        self.failsTurnStartWrites = failsTurnStartWrites
         isAuthenticated = mode != .signedOut && mode != .loginCompletes && mode != .loginBlocks
     }
 
-    func sendLine(_ data: Data) throws {
+    func sendLine(_ data: Data) async throws {
         let message = try JSONDecoder().decode(JSONValue.self, from: data)
+        let isApprovalResponse = message.objectValue?["result"]?.objectValue?["decision"] != nil
+        if failsApprovalResponses, isApprovalResponse {
+            throw CancellationError()
+        }
         sentMessages.append(message)
         if let responseKey = responseKey(message.objectValue?["id"]) {
             resumeMethodWaiters(responseKey)
+        }
+        if blocksApprovalResponses, isApprovalResponse {
+            await withCheckedContinuation { continuation in
+                approvalResponseContinuation = continuation
+            }
         }
         guard let object = message.objectValue,
               let method = object["method"]?.stringValue
         else { return }
         resumeMethodWaiters(method)
+        if failsTurnStartWrites, method == "turn/start" {
+            throw CancellationError()
+        }
 
         guard let requestID = object["id"]?.intValue else { return }
         enqueueResponse(to: requestID, method: method, request: object)
@@ -235,6 +261,10 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     private func enqueueTurnStartResponse(requestID: Int, threadID: String) {
         turnStartCount += 1
+        if mode == .blockTurnStart {
+            blockedTurnStart = (requestID, threadID)
+            return
+        }
         let turnID = "turn-\(turnStartCount)"
         enqueue(response(id: requestID, result: .object([
             "turn": .object([
@@ -408,6 +438,11 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
         closeContinuation = nil
     }
 
+    func releaseBlockedApprovalResponse() {
+        approvalResponseContinuation?.resume()
+        approvalResponseContinuation = nil
+    }
+
     func endOutput() {
         receiveContinuation?.resume(returning: nil)
         receiveContinuation = nil
@@ -415,6 +450,17 @@ actor TestCodexAppServerTransport: CodexAppServerTransport {
 
     func sendFromServer(_ message: JSONValue) {
         enqueue(jsonValue: message)
+    }
+
+    func completeBlockedTurnStart(turnID: String = "turn-1") {
+        guard let blockedTurnStart else { return }
+        self.blockedTurnStart = nil
+        enqueue(response(id: blockedTurnStart.requestID, result: .object([
+            "turn": .object([
+                "id": .string(turnID),
+                "status": .string("inProgress"),
+            ]),
+        ])))
     }
 
     private func response(id: Int, result: JSONValue) -> Data {

@@ -2096,6 +2096,14 @@ enum L10n {
     ) }
     static var codexTurnFailed: String { String(localized: "Codex could not complete the request.", bundle: bundle) }
     static var codexTurnInterrupted: String { String(localized: "Codex generation was interrupted.", bundle: bundle) }
+    static var codexBackendResetForSafety: String {
+        String(localized: "The AI backend was restarted to stop an unconfirmed operation safely.", bundle: bundle)
+    }
+
+    static var codexApprovalNoLongerPending: String {
+        String(localized: "This approval request is no longer pending.", bundle: bundle)
+    }
+
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
@@ -2563,6 +2571,49 @@ enum L10n {
     static var chatLiveModeOff: String { String(localized: "Live mode off", bundle: bundle) }
     static var chatLiveTranscriptBacklogTruncated: String {
         String(localized: "Some older live transcript was skipped because the chat backlog was too large.", bundle: bundle)
+    }
+
+    static var chatApprovalCommandTitle: String {
+        String(localized: "The assistant wants to run a command.", bundle: bundle)
+    }
+
+    static var chatApprovalFileChangeTitle: String {
+        String(localized: "The assistant wants to change files.", bundle: bundle)
+    }
+
+    static var chatApprovalAllowOnce: String { String(localized: "Allow once", bundle: bundle) }
+    static var chatApprovalAllowSameFiles: String {
+        String(localized: "Allow changes to the same files in this chat", bundle: bundle)
+    }
+
+    static var chatApprovalAllowSimilarCommands: String { String(localized: "Allow similar commands", bundle: bundle) }
+    static var chatApprovalSimilarCommandScope: String {
+        String(localized: "Commands that will be allowed without asking again", bundle: bundle)
+    }
+
+    static func chatApprovalAddFile(_ path: String) -> String {
+        String(localized: "Add file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalDeleteFile(_ path: String) -> String {
+        String(localized: "Delete file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalUpdateFile(_ path: String) -> String {
+        String(localized: "Update file: \(path)", bundle: bundle)
+    }
+
+    static func chatApprovalMoveFile(_ path: String, to destination: String) -> String {
+        String(localized: "Move file: \(path) → \(destination)", bundle: bundle)
+    }
+
+    static var chatApprovalDeny: String { String(localized: "Deny", bundle: bundle) }
+    static var chatApprovalDetailsTooLarge: String {
+        String(localized: "This request is too large to review completely, so it cannot be approved.", bundle: bundle)
+    }
+
+    static var chatApprovalUnsupportedScope: String {
+        String(localized: "This request asks for permissions outside the allowed workspace and cannot be approved.", bundle: bundle)
     }
 
     static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }

@@ -404,6 +404,7 @@ import Foundation
             return stream
         }
 
+        func respondToApproval(id _: String, decision _: CodexChatApprovalDecision) async {}
         func steer(threadID _: String, turnID _: String, inputs: [CodexAppServerInput]) async throws {
             steeredInputs.append(inputs)
             if sendBehavior == .blockSteer {

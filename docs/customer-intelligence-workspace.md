@@ -79,8 +79,8 @@ AI は書き込み前に `query_*` または `get_*` で現在値と revision �
 
 一回の呼び出しが変更するのは一つのレコードまたは一つの関係だけです。一件が失敗しても、それまでの成功分は
 維持され、独立した後続処理を続けられます。失敗した対象だけを再取得し、最新 revision で再試行します。
-proposal、import、batch、永続 idempotency staging は使いません。Codex の対話的な `on-request`
-承認ポリシーから `auto_review` へ各 MCP 書き込みを送り、危険度を判定します。
+proposal、import、batch、永続 idempotency staging は使いません。Codex は対話的な `on-request`
+承認ポリシーで動作し、承認が必要な操作はチャット内の承認プロンプトとしてユーザーへ提示されます。
 
 暫定人物はメールがない Contact です。メールだけで Contact を作る場合、表示名にはメールの `@` より前を
 使用します。未使用メールが判明した場合は `update_contact`、既存 Contact と同一人物だと判明した場合は

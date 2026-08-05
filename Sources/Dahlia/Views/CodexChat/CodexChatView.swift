@@ -81,16 +81,26 @@ struct CodexChatView: View {
                     .padding(.vertical, 6)
             }
 
-            CodexChatLiveModeStatusView(
-                isEnabled: $session.liveModeEnabled,
-                isAvailable: session.isBoundToCurrentVault
-            )
-            .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-            .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
-
-            CodexChatComposer(session: session)
+            if let pendingApproval = session.pendingApproval {
+                CodexChatApprovalView(
+                    request: pendingApproval,
+                    isDecisionEnabled: session.canDecidePendingApproval,
+                    onDecide: session.respondToApproval
+                )
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
+            } else {
+                CodexChatLiveModeStatusView(
+                    isEnabled: $session.liveModeEnabled,
+                    isAvailable: session.isBoundToCurrentVault
+                )
+                .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+
+                CodexChatComposer(session: session)
+                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
+            }
         }
         .background(.background)
         .task(id: session.id) { await prepare() }

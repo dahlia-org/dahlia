@@ -25,6 +25,9 @@ final class CodexChatSessionModel: Identifiable {
     var errorMessage: String?
     var noticeMessage: String?
     private(set) var activeTurnID: String?
+    private(set) var activeTurnHandleID: UUID?
+    private(set) var pendingApprovals: [CodexChatApprovalRequest] = []
+    private(set) var respondingApprovalID: String?
     var isPreparingTurn = false
     var isAwaitingTurnOutput = false
     var isFinalizingTurn = false
@@ -43,6 +46,17 @@ final class CodexChatSessionModel: Identifiable {
         set { setLiveModeEnabled(newValue) }
     }
 
+    var pendingApproval: CodexChatApprovalRequest? {
+        pendingApprovals.first
+    }
+
+    var canDecidePendingApproval: Bool {
+        guard let pendingApproval else { return false }
+        return approvalDecisionReadyID == pendingApproval.id
+            && respondingApprovalID == nil
+            && !isStopRequested
+    }
+
     var showsStandaloneThinking: Bool {
         isGenerating && (isAwaitingTurnOutput || isFinalizingTurn)
     }
@@ -52,8 +66,13 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private let streamingUpdateInterval: Duration
     @ObservationIgnored private var isStopRequested = false
+    @ObservationIgnored var isTurnCleanupPending = false
+    @ObservationIgnored private var isRequestingTurnHandle = false
     @ObservationIgnored var isReleased = false
     @ObservationIgnored private var didUnsubscribe = false
+    @ObservationIgnored private var threadLeaseID: UUID?
+    @ObservationIgnored private var approvalDecisionReadyID: String?
+    @ObservationIgnored private var approvalRearmTask: Task<Void, Never>?
     @ObservationIgnored private var pendingLiveTranscript: String?
     @ObservationIgnored private var didTruncatePendingLiveTranscript = false
     @ObservationIgnored var pendingManualInputs: [CodexChatManualSubmission] = []
@@ -135,6 +154,7 @@ final class CodexChatSessionModel: Identifiable {
             guard let vaultID else { throw CodexAppServerError.invalidProtocolResponse }
             async let restoredThread = service.resumeThread(id: backendThreadID, vaultID: vaultID)
             let (models, thread) = try await (availableModels, restoredThread)
+            try await ensureThreadLease(thread.id)
             self.models = models
             apply(thread)
             resolveSelections()
@@ -174,7 +194,7 @@ final class CodexChatSessionModel: Identifiable {
             images: imagesSnapshot,
             composerSnapshot: composerSnapshot
         )
-        if isGenerating {
+        if isGenerating || isTurnCleanupPending {
             let isDuplicate = preparingManualComposerSnapshot == composerSnapshot
                 || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
                 || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
@@ -203,15 +223,60 @@ final class CodexChatSessionModel: Identifiable {
         }
     }
 
+    func respondToApproval(id: String, decision: CodexChatApprovalDecision) {
+        guard respondingApprovalID == nil,
+              approvalDecisionReadyID == id,
+              pendingApprovals.contains(where: { $0.id == id }),
+              let activeTurnHandleID else { return }
+        respondingApprovalID = id
+        Task {
+            do {
+                try await service.decideApproval(
+                    turnID: activeTurnHandleID,
+                    id: id,
+                    decision: decision
+                )
+            } catch CodexAppServerError.approvalNoLongerPending {
+                resolvePendingApproval(id)
+            } catch {
+                errorMessage = error.localizedDescription
+                if respondingApprovalID == id {
+                    respondingApprovalID = nil
+                }
+            }
+        }
+    }
+
     func stop() {
         guard isGenerating, !isStopRequested else { return }
         isStopRequested = true
-        turnTask?.cancel()
-        if let backendThreadID, let activeTurnID {
-            Task { await service.interrupt(threadID: backendThreadID, turnID: activeTurnID) }
+        let approvals = pendingApprovals
+        let activeTask = turnTask
+        let localTurnID = activeTurnHandleID
+        let mustDrainActiveTask = localTurnID != nil || isRequestingTurnHandle
+        let submissionID = activeSubmissionID
+        isTurnCleanupPending = true
+        activeTask?.cancel()
+        Task {
+            if let localTurnID {
+                await service.stopTurn(localTurnID)
+            } else {
+                for approval in approvals {
+                    await service.respondToApproval(id: approval.id, decision: .cancel)
+                }
+            }
+            guard mustDrainActiveTask else {
+                isTurnCleanupPending = false
+                finishGeneration(submissionID: submissionID)
+                return
+            }
+            await activeTask?.value
+            pendingApprovals.removeAll()
+            isTurnCleanupPending = false
+            unsubscribeIfPossible()
+            processPendingInputIfPossible()
         }
         finalizeActiveResponseForCancellation()
-        finishGeneration(submissionID: activeSubmissionID)
     }
 
     func toggleLiveMode() {
@@ -327,6 +392,7 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 submissionID: submissionID
             )
+            try await ensureThreadLease(backendThreadID)
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
 
             let promptContext = liveModeState.isEnabled && !liveModeState.includesContext ? nil : context
@@ -343,13 +409,19 @@ extension CodexChatSessionModel {
                 liveTranscript: liveTranscript,
                 images: images
             )
-            let stream = try await service.send(
+            let turn = try await requestTurnHandle(
                 threadID: backendThreadID,
                 inputs: inputs,
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort
             )
-            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            do {
+                try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            } catch {
+                await service.stopTurn(turn.id)
+                throw error
+            }
+            activeTurnHandleID = turn.id
             var replacementTitleText: String?
             if liveTranscript == nil {
                 let submission = CodexChatManualSubmission(text: text ?? "", images: images)
@@ -380,8 +452,14 @@ extension CodexChatSessionModel {
                 didSendLiveModeContext = true
             }
             try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
-            let turnCompleted = try await consumeTurnEvents(
-                stream,
+            let turnCompleted = try await consumeTurnEventsRecoveringMissingThread(
+                turn,
+                retry: MissingThreadRetry(
+                    threadID: backendThreadID,
+                    inputs: inputs,
+                    model: selectedModelID.nilIfBlank,
+                    effort: selectedEffort
+                ),
                 accumulator: accumulator,
                 updateLimiter: updateLimiter,
                 submissionID: submissionID,
@@ -469,6 +547,16 @@ extension CodexChatSessionModel {
         case let .reasoningCompleted(itemID, text):
             accumulator.completeReasoning(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
+        case let .approvalRequested(request):
+            updateLimiter.submit(force: true)
+            if !pendingApprovals.contains(where: { $0.id == request.id }) {
+                pendingApprovals.append(request)
+                if pendingApprovals.count == 1 {
+                    approvalDecisionReadyID = request.id
+                }
+            }
+        case let .approvalResolved(id):
+            resolvePendingApproval(id)
         case .interrupted:
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
@@ -562,11 +650,17 @@ extension CodexChatSessionModel {
         guard activeSubmissionID == submissionID else { return }
         isGenerating = false
         isPreparingTurn = false
+        pendingApprovals.removeAll()
+        approvalDecisionReadyID = nil
+        approvalRearmTask?.cancel()
+        approvalRearmTask = nil
         preparingManualComposerSnapshot = nil
         activeOutputItemIDs.removeAll()
         isAwaitingTurnOutput = false
         isFinalizingTurn = false
         activeTurnID = nil
+        activeTurnHandleID = nil
+        respondingApprovalID = nil
         isStopRequested = false
         isActiveTurnLiveTranscript = false
         activeTurnSupportsImages = nil
@@ -577,7 +671,97 @@ extension CodexChatSessionModel {
         processPendingInputIfPossible()
     }
 
+    private func rearmNextApprovalAfterInteractionBoundary() {
+        approvalRearmTask?.cancel()
+        guard let nextID = pendingApprovals.first?.id else {
+            approvalDecisionReadyID = nil
+            approvalRearmTask = nil
+            return
+        }
+        approvalDecisionReadyID = nil
+        approvalRearmTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled,
+                  self?.pendingApprovals.first?.id == nextID else { return }
+            self?.approvalDecisionReadyID = nextID
+            self?.approvalRearmTask = nil
+        }
+    }
+
+    private func resolvePendingApproval(_ id: String) {
+        let wasPresented = pendingApprovals.first?.id == id
+        pendingApprovals.removeAll { $0.id == id }
+        if respondingApprovalID == id {
+            respondingApprovalID = nil
+        }
+        if wasPresented {
+            rearmNextApprovalAfterInteractionBoundary()
+        }
+    }
+
     private static let maximumEventsBetweenYields = 64
+
+    private struct MissingThreadRetry {
+        let threadID: String
+        let inputs: [CodexAppServerInput]
+        let model: String?
+        let effort: String
+    }
+
+    private func consumeTurnEventsRecoveringMissingThread(
+        _ turn: CodexChatTurnHandle,
+        retry: MissingThreadRetry,
+        accumulator: CodexChatTurnAccumulator,
+        updateLimiter: CodexChatStreamingUpdateLimiter,
+        submissionID: UUID,
+        liveTranscript: String?
+    ) async throws -> Bool {
+        do {
+            return try await consumeTurnEvents(
+                turn.events,
+                accumulator: accumulator,
+                updateLimiter: updateLimiter,
+                submissionID: submissionID,
+                liveTranscript: liveTranscript
+            )
+        } catch let error as CodexAppServerError where error.isThreadNotFound {
+            guard let vaultID else { throw error }
+            let thread = try await service.resumeThread(id: retry.threadID, vaultID: vaultID)
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            apply(thread, preservingPendingMessages: true)
+            let retryTurn = try await requestTurnHandle(
+                threadID: thread.id,
+                inputs: retry.inputs,
+                model: retry.model,
+                effort: retry.effort
+            )
+            try ensureSubmissionCanContinue(submissionID, liveTranscript: liveTranscript)
+            activeTurnHandleID = retryTurn.id
+            return try await consumeTurnEvents(
+                retryTurn.events,
+                accumulator: accumulator,
+                updateLimiter: updateLimiter,
+                submissionID: submissionID,
+                liveTranscript: liveTranscript
+            )
+        }
+    }
+
+    private func requestTurnHandle(
+        threadID: String,
+        inputs: [CodexAppServerInput],
+        model: String?,
+        effort: String
+    ) async throws -> CodexChatTurnHandle {
+        isRequestingTurnHandle = true
+        defer { isRequestingTurnHandle = false }
+        return try await service.beginTurn(
+            threadID: threadID,
+            inputs: inputs,
+            model: model,
+            effort: effort
+        )
+    }
 
     func ensureBackendThread(
         text: String?,
@@ -663,12 +847,27 @@ extension CodexChatSessionModel {
     private func unsubscribeIfPossible() {
         guard isReleased,
               !isGenerating,
+              !isTurnCleanupPending,
               !isLoading,
               !didUnsubscribe,
-              let backendThreadID
+              let backendThreadID,
+              let threadLeaseID
         else { return }
         didUnsubscribe = true
-        Task { await service.unsubscribe(threadID: backendThreadID) }
+        self.threadLeaseID = nil
+        Task {
+            await service.releaseThreadLease(threadID: backendThreadID, leaseID: threadLeaseID)
+        }
+    }
+
+    private func ensureThreadLease(_ threadID: String) async throws {
+        guard threadLeaseID == nil else { return }
+        let leaseID = await service.acquireThreadLease(threadID: threadID)
+        guard !isReleased else {
+            await service.releaseThreadLease(threadID: threadID, leaseID: leaseID)
+            throw CancellationError()
+        }
+        threadLeaseID = leaseID
     }
 
     private func resolveSelections() {
@@ -717,6 +916,7 @@ extension CodexChatSessionModel {
     func processPendingInputIfPossible() {
         guard !isReleased,
               isBoundToCurrentVault,
+              !isTurnCleanupPending,
               steerTask == nil,
               errorMessage == nil else { return }
         if isGenerating {

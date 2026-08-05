@@ -34,7 +34,8 @@ import Foundation
             #expect(events == [
                 .started(turnID: "turn-1"),
                 .reasoningDelta(itemID: "reasoning-1", summaryIndex: 0, text: "Checked the request"),
-                .delta(itemID: "item-1", text: "Hello"),
+                .delta(itemID: "item-1", text: "Hel"),
+                .delta(itemID: "item-1", text: "lo"),
                 .reasoningCompleted(itemID: "reasoning-1", text: "Checked the request"),
                 .completed(itemID: "item-1", text: "Hello"),
                 .completed(itemID: nil, text: nil),
@@ -46,7 +47,7 @@ import Foundation
             }?.objectValue?["params"]?.objectValue)
             #expect(threadParams["ephemeral"] == .bool(false))
             #expect(threadParams["approvalPolicy"] == .string("on-request"))
-            #expect(threadParams["sandbox"] == .string("read-only"))
+            #expect(threadParams["sandbox"] == .string("workspace-write"))
             #expect(threadParams["cwd"] == .string(workspace.appending(path: vaultID.uuidString.lowercased()).path))
             let config = try #require(threadParams["config"]?.objectValue)
             expectChatConfiguration(config, vaultID: vaultID)
@@ -56,7 +57,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "turn/start"
             }?.objectValue?["params"]?.objectValue)
             #expect(turnParams["outputSchema"] == nil)
-            #expect(turnParams["approvalsReviewer"] == .string("auto_review"))
+            #expect(turnParams["approvalsReviewer"] == .string("user"))
             #expect(turnParams["effort"] == .string("high"))
             #expect(turnParams["summary"] == .string("auto"))
             #expect(turnParams["input"] == .array([
@@ -200,6 +201,57 @@ import Foundation
         }
 
         @Test
+        func malformedTurnEventInterruptsTheOwnedRuntimeBeforeFailing() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-malformed", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Test")],
+                model: "default-model",
+                effort: "medium"
+            )
+            let collection = Task {
+                for try await _ in stream {}
+            }
+
+            await transport.sendFromServer(.object([
+                "method": .string("item/agentMessage/delta"),
+                "params": .object([
+                    "itemId": .string("item-1"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            #expect(await pollUntil {
+                await transport.messages().contains {
+                    $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+                }
+            })
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("interrupted"),
+                    ]),
+                ]),
+            ]))
+
+            await #expect(throws: CodexAppServerError.invalidProtocolResponse) {
+                try await collection.value
+            }
+            #expect(await !transport.isClosed)
+            await appServer.shutdown()
+        }
+
+        @Test
         func historyUsesExactWorkspaceAndBundledCodexSourceAndRestoresMessages() async throws {
             let transport = TestCodexChatAppServerTransport()
             let appServer = makeTestCodexAppServerService(transportFactory: { transport })
@@ -243,7 +295,210 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "thread/resume"
             }?.objectValue?["params"]?.objectValue)
             #expect(resumeParams["approvalPolicy"] == .string("on-request"))
+            #expect(resumeParams["sandbox"] == .string("workspace-write"))
             await appServer.shutdown()
+        }
+
+        @Test
+        func approvalRequestsBecomeTurnEvents() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-approval", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Test")],
+                model: "default-model",
+                effort: "medium"
+            )
+            let collected = Task {
+                var events: [CodexChatTurnEvent] = []
+                for try await event in stream {
+                    events.append(event)
+                }
+                return events
+            }
+
+            await transport.sendFromServer(.object([
+                "id": .string("approval-1"),
+                "method": .string("item/commandExecution/requestApproval"),
+                "params": .object([
+                    "command": .string("ls -la"),
+                    "cwd": .string("/tmp/dahlia-chat-approval"),
+                    "itemId": .string("item-1"),
+                    "reason": .string("Needs the workspace listing"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "changes": .array([
+                            .object([
+                                "diff": .string("@@ -1 +1 @@\n-old\n+new"),
+                                "kind": .object([
+                                    "type": .string("update"),
+                                    "move_path": .string("Sources/Renamed.swift"),
+                                ]),
+                                "path": .string("Sources/Example.swift"),
+                            ]),
+                        ]),
+                        "id": .string("item-2"),
+                        "status": .string("inProgress"),
+                        "type": .string("fileChange"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "id": .string("approval-2"),
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object([
+                    "grantRoot": .string("/tmp/outside-workspace"),
+                    "itemId": .string("item-2"),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "method": .string("turn/completed"),
+                "params": .object([
+                    "threadId": .string("thread-1"),
+                    "turn": .object([
+                        "id": .string("turn-1"),
+                        "status": .string("completed"),
+                    ]),
+                ]),
+            ]))
+
+            #expect(try await collected.value == [
+                .started(turnID: "turn-1"),
+                .approvalRequested(CodexChatApprovalRequest(
+                    id: "s:approval-1",
+                    itemID: "item-1",
+                    kind: .commandExecution,
+                    command: "ls -la",
+                    cwd: "/tmp/dahlia-chat-approval",
+                    reason: "Needs the workspace listing"
+                )),
+                .approvalRequested(CodexChatApprovalRequest(
+                    id: "s:approval-2",
+                    itemID: "item-2",
+                    kind: .fileChange,
+                    fileChanges: [
+                        CodexChatApprovalRequest.FileChange(
+                            path: "Sources/Example.swift",
+                            diff: "@@ -1 +1 @@\n-old\n+new",
+                            kind: .update(movePath: "Sources/Renamed.swift")
+                        ),
+                    ],
+                    grantRoot: "/tmp/outside-workspace",
+                    reviewability: .unsupported,
+                    actions: [.deny]
+                )),
+                .completed(itemID: nil, text: nil),
+            ])
+            await appServer.shutdown()
+        }
+
+        @Test
+        func interruptRecoversAcceptedTurnBeforeStartedEventIsConsumed() async throws {
+            let transport = TestCodexChatAppServerTransport(turnOutcome: .disconnected)
+            let appServer = makeTestCodexAppServerService(transportFactory: { transport })
+            let service = CodexChatService(
+                appServer: appServer,
+                workspaceLocator: TestCodexChatWorkspaceLocator(
+                    url: URL(filePath: "/tmp/dahlia-chat-interrupt", directoryHint: .isDirectory)
+                )
+            )
+            let stream = try await service.send(
+                threadID: "thread-1",
+                inputs: [.text("Stop before started")],
+                model: "default-model",
+                effort: "medium"
+            )
+
+            await service.interruptActiveTurn(threadID: "thread-1", turnID: nil)
+
+            let interruptParams = try #require(await transport.messages().first {
+                $0.objectValue?["method"]?.stringValue == "turn/interrupt"
+            }?.objectValue?["params"]?.objectValue)
+            #expect(interruptParams["threadId"] == .string("thread-1"))
+            #expect(interruptParams["turnId"] == .string("turn-1"))
+            withExtendedLifetime(stream) {}
+            await appServer.shutdown()
+        }
+
+        @Test
+        func approvalsWithoutReviewableDetailsCannotBeAccepted() {
+            #expect(!CodexChatApprovalRequest(
+                id: "file",
+                kind: .fileChange,
+                grantRoot: "/tmp/outside-workspace"
+            ).canApprove)
+            #expect(!CodexChatApprovalRequest(
+                id: "command",
+                kind: .commandExecution,
+                cwd: "/tmp"
+            ).canApprove)
+            #expect(CodexChatApprovalRequest(
+                id: "file-with-diff",
+                kind: .fileChange,
+                fileChanges: [.init(path: "Example.swift", diff: "+change")]
+            ).canApprove)
+        }
+
+        @Test
+        func rejectionUsesTheLeastDisruptiveAvailableDecision() {
+            #expect(CodexChatApprovalRequest(
+                id: "declinable",
+                kind: .commandExecution,
+                command: "pwd",
+                actions: [.allowOnce, .deny]
+            ).rejectionDecision == .decline)
+            #expect(CodexChatApprovalRequest(
+                id: "cancellable",
+                kind: .commandExecution,
+                command: "pwd",
+                actions: [.allowOnce]
+            ).rejectionDecision == .cancel)
+        }
+
+        @Test
+        func fileChangeCacheEntriesAreReleasedAfterApprovalOrCompletion() {
+            let approval = JSONValue.object([
+                "method": .string("item/fileChange/requestApproval"),
+                "params": .object(["itemId": .string("approval-item")]),
+            ])
+            let completion = JSONValue.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("completed-item"),
+                        "type": .string("fileChange"),
+                    ]),
+                ]),
+            ])
+            let unrelatedCompletion = JSONValue.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("message-item"),
+                        "type": .string("agentMessage"),
+                    ]),
+                ]),
+            ])
+
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(approval) == "approval-item")
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(completion) == "completed-item")
+            #expect(CodexChatService.fileChangeCacheReleaseItemID(unrelatedCompletion) == nil)
         }
 
         private func events(
@@ -303,7 +558,8 @@ import Foundation
             #expect(instructions?.contains("cite the sources") == true)
             #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
             #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
-            #expect(instructions?.contains("Do not execute any other commands or access any other files.") == true)
+            #expect(instructions?.contains("unless the user's request cannot be completed without them") == true)
+            #expect(instructions?.contains("asked of the user as an approval prompt") == true)
             #expect(instructions?.contains("Do not use external services other than web search or request permissions.") == true)
         }
     }
