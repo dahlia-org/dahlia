@@ -628,6 +628,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     </citation_policy>
 
     <rendering_rules>
+    <lists>
+    - Use `items[].indent` only when the parent-child relationship is clear.
+    - Use indent levels 0, 1, and 2. Do not nest a list only for emphasis or because it has few items.
+    </lists>
     <transcript_links>
     - Do not put transcript links inside text fields.
     - When referencing the transcript for paragraph/quote/heading/code/image caption text, set that block's `content.transcript_ref`.
@@ -642,7 +646,9 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     - Use the screenshot whose timestamp is closest to the referenced point.
     </screenshot_embeds>
     <tables>
-    - Do not output tables. Express tabular information as concise lists.
+    - Use a table for comparisons and mappings that are clearer in rows and columns.
+    - Keep only the rows and columns needed for the comparison. Do not split one comparison into many small tables.
+    - Table cells must not contain transcript links or transcript references.
     </tables>
     </rendering_rules>
     """

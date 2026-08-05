@@ -22,14 +22,17 @@ import Foundation
                                 SummaryText("Ship", transcriptRef: TranscriptReference(time: "00:10:00"))
                             ),
                             .bulletedList(items: [
-                                SummaryText("One", transcriptRef: TranscriptReference(time: "00:11:00")),
-                                SummaryText("Two"),
+                                SummaryListItem(
+                                    text: SummaryText("One", transcriptRef: TranscriptReference(time: "00:11:00"))
+                                ),
+                                SummaryListItem(text: "Two", indent: 1),
                             ]),
-                            .numberedList(items: [SummaryText("First")]),
+                            .numberedList(items: [SummaryListItem(text: "First", indent: 2)]),
                             .checklist(items: [
                                 .init(
                                     text: SummaryText("Send notes", transcriptRef: TranscriptReference(time: "00:12:00")),
-                                    checked: false
+                                    checked: false,
+                                    indent: 1
                                 ),
                             ]),
                             .quote("Important"),
@@ -48,7 +51,9 @@ import Foundation
             let decoded = try JSONDecoder().decode(SummaryDocument.self, from: data)
 
             #expect(decoded == document)
-            #expect(decoded.schemaVersion == 3)
+            #expect(decoded.schemaVersion == SummaryDocumentSchemaVersion.current)
+            #expect(decoded.schemaVersion == 4)
+            #expect(SummaryDocumentSchemaVersion.acceptedMCPWriteVersions == [3, 4])
         }
 
         @Test

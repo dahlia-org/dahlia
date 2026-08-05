@@ -550,7 +550,7 @@ import ImageIO
                 return
             }
             #expect(content["transcript_ref"] == .string("00:00:15"))
-            #expect(document["schema_version"] == .number(3))
+            #expect(document["schema_version"] == .number(4))
             #expect(document["schemaVersion"] == nil)
             #expect(section["id"] != nil)
             #expect(paragraph["id"] != nil)
@@ -1006,7 +1006,7 @@ import ImageIO
             let meetingContent = (meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
             #expect((meetingContent?["summary"] as? String)?.contains("[Transcript 00:00:15]") == true)
             let summaryDocument = try #require(meetingContent?["summary_document"] as? [String: Any])
-            #expect(summaryDocument["schema_version"] as? Int == 3)
+            #expect(summaryDocument["schema_version"] as? Int == 4)
             #expect(summaryDocument["schemaVersion"] == nil)
             let sections = try #require(summaryDocument["sections"] as? [[String: Any]])
             let blocks = try #require(sections.first?["blocks"] as? [[String: Any]])

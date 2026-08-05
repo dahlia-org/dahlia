@@ -65,6 +65,11 @@ import GRDB
             }
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
 
+            guard case let .object(summaryDocument)? = try store.meeting(id: fixture.firstMeetingID).summaryDocument else {
+                Issue.record("Expected a version 2 summary document")
+                return
+            }
+            #expect(summaryDocument["schema_version"] == .number(2))
             let firstID = try Self.firstSummaryBlockID(in: store.meeting(id: fixture.firstMeetingID))
             let secondID = try Self.firstSummaryBlockID(in: store.meeting(id: fixture.firstMeetingID))
             #expect(firstID == secondID)
@@ -114,11 +119,16 @@ import GRDB
                         heading: "Decision",
                         blocks: [
                             .paragraph("Ship it", transcriptRef: TranscriptReference(time: "00:00:01")),
-                            .bulletedList(items: ["Alpha", "Beta"]),
-                            .numberedList(items: ["First", "Second"]),
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Alpha"),
+                                SummaryListItem(text: "Beta", indent: 1),
+                            ]),
+                            .numberedList(items: zip(["First", "Child", "Sibling", "Second", "Nested"], [0, 1, 1, 0, 1]).map {
+                                SummaryListItem(text: $0, indent: $1)
+                            }),
                             .checklist(items: [
                                 .init(text: "Done", checked: true),
-                                .init(text: "Pending", checked: false),
+                                .init(text: "Pending", checked: false, indent: 1),
                             ]),
                             .quote("Quoted"),
                             .code(
@@ -146,13 +156,16 @@ import GRDB
             Ship it [Transcript 00:00:01]
 
             - Alpha
-            - Beta
+                - Beta
 
             1. First
+                1. Child
+                2. Sibling
             2. Second
+                1. Nested
 
             - [x] Done
-            - [ ] Pending
+                - [ ] Pending
 
             > Quoted
 

@@ -123,6 +123,40 @@ import Foundation
         }
 
         @Test
+        func rendersNestedListsWithPerLevelNumbering() {
+            let document = SummaryDocument(
+                title: "Hierarchy",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Items",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Root"),
+                                SummaryListItem(text: "Child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: zip(["A", "B", "C", "D", "E"], [0, 1, 1, 0, 1]).map {
+                                SummaryListItem(text: $0, indent: $1)
+                            }),
+                            .checklist(items: [
+                                .init(text: "Task", checked: false),
+                                .init(text: "Subtask", checked: true, indent: 1),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+            let context = SummaryRenderContext(meetingId: .v7(), createdAt: .now)
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(document: document, context: context)
+
+            #expect(rendered.body.contains("- Root\n    - Child\n        - Grandchild"))
+            #expect(rendered.body.contains("1. A\n    1. B\n    2. C\n2. D\n    1. E"))
+            #expect(rendered.body.contains("- [ ] Task\n    - [x] Subtask"))
+        }
+
+        @Test
         func legacyMarkdownParseRenderNormalizesScreenshotFilename() throws {
             let meetingId = UUID.v7()
             let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))

@@ -44,19 +44,24 @@ extension SummaryService {
       - "assignee": who owns it, or an empty string if unclear
 
     Each block MUST be one object with all of these keys:
-    - "type": one of "paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading"
+    - "type": one of "paragraph", "bulleted_list", "numbered_list", "checklist", "quote", "code", "image", "heading", "table"
     - "level": heading level for "heading"; otherwise 0
     - "content": paragraph/quote/heading text, code body, or image caption; otherwise {"text":"","transcript_ref":null}
       - "content.text": the actual text
       - "content.transcript_ref": the most relevant HH:MM:SS timestamp for this text, or null
     - "items": list/checklist items; otherwise []
-      - Each item has "text", "transcript_ref" as HH:MM:SS or null, and "checked" as true/false.
+      - Each item has "text", "transcript_ref" as HH:MM:SS or null, "checked" as true/false, and "indent" as 0, 1, or 2.
       - Use "checked": false for bulleted_list and numbered_list items.
+      - Use indent only for clear parent-child relationships; do not nest for emphasis.
     - "language": code language for "code"; otherwise empty string
     - "image_id": screenshot UUID for "image"; otherwise empty string
+    - "columns": table header strings for "table"; otherwise []
+    - "rows": table body rows as arrays of strings for "table"; otherwise []
 
     Do not put transcript links inside text fields. Use content.transcript_ref or item.transcript_ref instead.
-    Use inline Markdown only for emphasis and ordinary links inside text fields. Do not output tables; express them as lists.
+    Use inline Markdown only for emphasis and ordinary links inside text fields.
+    Use tables for comparisons and mappings when they are clearer than lists. Keep only necessary rows and columns, do not split one comparison into
+    many small tables, and do not put transcript links or transcript references in table cells.
     """
 
     @MainActor

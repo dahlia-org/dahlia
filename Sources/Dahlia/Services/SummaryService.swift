@@ -3,6 +3,10 @@ import Foundation
 
 /// Codex app-server で文字起こしを要約し、Obsidian 互換の Markdown を生成するサービス。
 enum SummaryService {
+    private static let maximumTableColumns = 12
+    private static let maximumTableRows = 50
+    private static let maximumDocumentTableCells = 1200
+
     struct GeneratedSummary {
         let document: SummaryDocument
         let fileName: String
@@ -108,17 +112,29 @@ enum SummaryService {
     }
 
     private static func document(from response: SummaryDocumentResponse, context: SummaryRenderContext) -> SummaryDocument {
-        let sections = response.sections
-            .map { sectionDTO in
-                SummarySection(
-                    id: .v7(),
-                    heading: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(sectionDTO.heading),
-                    blocks: sectionDTO.blocks.flatMap { blocks(from: $0, context: context) }
-                )
+        var remainingTableCells = maximumDocumentTableCells
+        var sections: [SummarySection] = []
+        for sectionDTO in response.sections {
+            var sectionBlocks: [SummaryBlock] = []
+            for blockDTO in sectionDTO.blocks {
+                sectionBlocks.append(contentsOf: blocks(
+                    from: blockDTO,
+                    context: context,
+                    remainingTableCells: &remainingTableCells
+                ))
             }
-            .filter { !$0.heading.isEmpty || !$0.blocks.isEmpty }
+            let section = SummarySection(
+                id: .v7(),
+                heading: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(sectionDTO.heading),
+                blocks: sectionBlocks
+            )
+            if !section.heading.isEmpty || !section.blocks.isEmpty {
+                sections.append(section)
+            }
+        }
 
         return SummaryDocument(
+            schemaVersion: SummaryDocumentSchemaVersion.current,
             title: LegacyMarkdownSummaryParser.normalizeInlineMarkdown(response.title),
             description: normalizedDescription(response.description),
             sections: sections,
@@ -135,20 +151,30 @@ enum SummaryService {
         return String(oneLine.prefix(240))
     }
 
-    private static func blocks(from dto: SummaryDocumentResponse.BlockDTO, context: SummaryRenderContext) -> [SummaryBlock] {
+    private static func blocks(
+        from dto: SummaryDocumentResponse.BlockDTO,
+        context: SummaryRenderContext,
+        remainingTableCells: inout Int
+    ) -> [SummaryBlock] {
         let content = normalizedText(dto.content)
 
         switch dto.type {
         case "paragraph":
             return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
         case "bulleted_list":
-            let items = normalizedItemTexts(dto.items)
+            let items = normalizedListItems(dto.items).map { item in
+                SummaryListItem(text: item.text, indent: item.indent)
+            }
             return items.isEmpty ? [] : [.bulletedList(items: items)]
         case "numbered_list":
-            let items = normalizedItemTexts(dto.items)
+            let items = normalizedListItems(dto.items).map { item in
+                SummaryListItem(text: item.text, indent: item.indent)
+            }
             return items.isEmpty ? [] : [.numberedList(items: items)]
         case "checklist":
-            let items = normalizedChecklistItems(dto.items)
+            let items = normalizedListItems(dto.items).map { item in
+                SummaryBlock.ChecklistItem(text: item.text, checked: item.checked, indent: item.indent)
+            }
             return items.isEmpty ? [] : [.checklist(items: items)]
         case "quote":
             return content.text.isEmpty ? [] : [.quote(content)]
@@ -176,6 +202,9 @@ enum SummaryService {
                     content: content
                 ),
             ]
+        case "table":
+            guard let table = normalizedTableBlock(dto, remainingTableCells: &remainingTableCells) else { return [] }
+            return [table]
         default:
             return blocksByAttaching(content.transcriptRef, to: LegacyMarkdownSummaryParser.parseInlineBlocks(content.text, context: context))
         }
@@ -194,12 +223,16 @@ enum SummaryService {
         case let .paragraph(text):
             .paragraph(text.withFallbackTranscriptRef(ref))
         case let .bulletedList(items):
-            .bulletedList(items: items.map { $0.withFallbackTranscriptRef(ref) })
+            .bulletedList(items: items.map { item in
+                SummaryListItem(text: item.text.withFallbackTranscriptRef(ref), indent: item.indent)
+            })
         case let .numberedList(items):
-            .numberedList(items: items.map { $0.withFallbackTranscriptRef(ref) })
+            .numberedList(items: items.map { item in
+                SummaryListItem(text: item.text.withFallbackTranscriptRef(ref), indent: item.indent)
+            })
         case let .checklist(items):
             .checklist(items: items.map { item in
-                .init(text: item.text.withFallbackTranscriptRef(ref), checked: item.checked)
+                .init(text: item.text.withFallbackTranscriptRef(ref), checked: item.checked, indent: item.indent)
             })
         case let .quote(text):
             .quote(text.withFallbackTranscriptRef(ref))
@@ -217,18 +250,44 @@ enum SummaryService {
         }
     }
 
-    private static func normalizedItemTexts(_ items: [SummaryDocumentResponse.ItemDTO]) -> [SummaryText] {
-        items.compactMap(normalizedItemText)
+    private static func normalizedListItems(
+        _ items: [SummaryDocumentResponse.ItemDTO]
+    ) -> [(text: SummaryText, checked: Bool, indent: Int)] {
+        var result: [(text: SummaryText, checked: Bool, indent: Int)] = []
+        for item in items {
+            guard let text = normalizedItemText(item) else { continue }
+            var indent = min(max(item.indent, 0), 2)
+            if result.isEmpty {
+                indent = 0
+            } else if let previousIndent = result.last?.indent {
+                indent = min(indent, previousIndent + 1)
+            }
+            result.append((text: text, checked: item.checked, indent: indent))
+        }
+        return result
     }
 
-    private static func normalizedChecklistItems(_ items: [SummaryDocumentResponse.ItemDTO]) -> [SummaryBlock.ChecklistItem] {
-        items.compactMap { item -> SummaryBlock.ChecklistItem? in
-            guard let text = normalizedItemText(item) else { return nil }
-            return SummaryBlock.ChecklistItem(
-                text: text,
-                checked: item.checked
-            )
+    private static func normalizedTableBlock(
+        _ dto: SummaryDocumentResponse.BlockDTO,
+        remainingTableCells: inout Int
+    ) -> SummaryBlock? {
+        let columns = Array(dto.columns.prefix(maximumTableColumns))
+        guard !columns.isEmpty, columns.count <= remainingTableCells else { return nil }
+
+        let rowLimit = min(maximumTableRows, (remainingTableCells - columns.count) / columns.count)
+        let rows = dto.rows.prefix(rowLimit).map { row in
+            Array(row.prefix(columns.count)) + Array(repeating: "", count: max(0, columns.count - row.count))
         }
+        remainingTableCells -= columns.count + rows.count * columns.count
+
+        return .table(
+            headers: columns.map(normalizedTableText),
+            rows: rows.map { $0.map(normalizedTableText) }
+        )
+    }
+
+    private static func normalizedTableText(_ text: String) -> SummaryText {
+        SummaryText(LegacyMarkdownSummaryParser.normalizeInlineMarkdown(text))
     }
 
     private static func normalizedItemText(_ item: SummaryDocumentResponse.ItemDTO) -> SummaryText? {

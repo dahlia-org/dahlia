@@ -135,17 +135,24 @@ public enum ObsidianMarkdownSummaryRenderer {
             rendered = renderSummaryText(text, meetingId: meetingId, placement: .inline).summaryNilIfBlank
         case let .bulletedList(items):
             rendered = items
-                .map { "- \(renderSummaryText($0, meetingId: meetingId, placement: .inline))" }
+                .map {
+                    "\(listIndent($0.indent))- \(renderSummaryText($0.text, meetingId: meetingId, placement: .inline))"
+                }
                 .joined(separator: "\n")
                 .summaryNilIfBlank
         case let .numberedList(items):
-            rendered = items.enumerated()
-                .map { "\($0.offset + 1). \(renderSummaryText($0.element, meetingId: meetingId, placement: .inline))" }
+            rendered = zip(items, SummaryListNumbering.numbers(for: items))
+                .map { item, number in
+                    "\(listIndent(item.indent))\(number). \(renderSummaryText(item.text, meetingId: meetingId, placement: .inline))"
+                }
                 .joined(separator: "\n")
                 .summaryNilIfBlank
         case let .checklist(items):
             rendered = items
-                .map { "- [\($0.checked ? "x" : " ")] \(renderSummaryText($0.text, meetingId: meetingId, placement: .inline))" }
+                .map {
+                    "\(listIndent($0.indent))- [\($0.checked ? "x" : " ")] "
+                        + renderSummaryText($0.text, meetingId: meetingId, placement: .inline)
+                }
                 .joined(separator: "\n")
                 .summaryNilIfBlank
         case let .quote(text):
@@ -191,6 +198,10 @@ public enum ObsidianMarkdownSummaryRenderer {
         let separator = "| " + headers.map { _ in "---" }.joined(separator: " | ") + " |"
         let rowLines = rows.map { renderTableRow($0, meetingId: meetingId) }
         return ([header, separator] + rowLines).joined(separator: "\n")
+    }
+
+    private static func listIndent(_ indent: Int) -> String {
+        String(repeating: " ", count: indent * 4)
     }
 
     private static func renderTableRow(_ cells: [SummaryText], meetingId: UUID) -> String {

@@ -550,6 +550,10 @@ import GRDB
             #expect(result["changed"] as? Bool == false)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(stored == (try rich.databaseJSONString()))
+            let current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
+            let items = try Self.firstListItems(in: current.document)
+            #expect(items[0]["indent"] == nil)
+            #expect(items[1]["indent"] as? Int == 1)
         }
 
         @Test
@@ -654,9 +658,18 @@ import GRDB
                         heading: "All blocks",
                         blocks: [
                             .paragraph("Body", transcriptRef: TranscriptReference(time: "00:00:01")),
-                            .bulletedList(items: ["Alpha", "Beta"]),
-                            .numberedList(items: ["First"]),
-                            .checklist(items: [.init(text: "Done", checked: true)]),
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Alpha"),
+                                SummaryListItem(text: "Beta", indent: 1),
+                            ]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: "Nested", indent: 1),
+                            ]),
+                            .checklist(items: [
+                                .init(text: "Done", checked: true),
+                                .init(text: "Nested task", checked: false, indent: 1),
+                            ]),
                             .quote("Quoted"),
                             .code(language: "swift", code: "let value = 1"),
                             .image(screenshotId: screenshotID, caption: "Shot"),
@@ -741,6 +754,16 @@ import GRDB
             sections[0] = section
             document["sections"] = sections
             return document
+        }
+
+        private static func firstListItems(in document: [String: Any]) throws -> [[String: Any]] {
+            let sections = try #require(document["sections"] as? [[String: Any]])
+            let section = try #require(sections.first)
+            let blocks = try #require(section["blocks"] as? [[String: Any]])
+            let list = try #require(blocks.first { block in
+                block["type"] as? String == "bulleted_list"
+            })
+            return try #require(list["items"] as? [[String: Any]])
         }
 
         private static func initializedServer(

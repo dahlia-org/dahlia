@@ -31,6 +31,7 @@ import Foundation
                             ]),
                             .quote(SummaryText("Keep launch small")),
                             .code(language: "swift", content: SummaryText("let enabled = true")),
+                            .table(headers: ["Name", "State"], rows: [["Alpha", "Ready"]]),
                         ]
                     ),
                 ]
@@ -51,6 +52,7 @@ import Foundation
             #expect(content.markdown.contains("- [ ] Follow up"))
             #expect(content.markdown.contains("> Keep launch small"))
             #expect(content.markdown.contains("```swift\nlet enabled = true\n```"))
+            #expect(content.markdown.contains("| Name | State |\n| --- | --- |\n| Alpha | Ready |"))
 
             #expect(content.html.contains("<h1>Weekly Sync</h1>"))
             #expect(content.html.contains("<h2>Summary</h2>"))
@@ -61,6 +63,8 @@ import Foundation
             #expect(content.html.contains("<li>Follow up</li>"))
             #expect(content.html.contains("<blockquote><p>Keep launch small</p></blockquote>"))
             #expect(content.html.contains("<pre><code>let enabled = true</code></pre>"))
+            #expect(content.html.contains("<table>"))
+            #expect(content.html.contains("<th>Name</th><th>State</th>"))
             #expect(!content.html.contains("☑"))
             #expect(!content.html.contains("☐"))
 
@@ -147,24 +151,107 @@ import Foundation
 
             #expect(content.html.contains("<strong><em>Weekly Sync</em></strong><br><br>\n<strong><u>Summary</u></strong>"))
             #expect(content.html.contains("Decision<br><br>\n<strong>Details</strong><br><br>\nMore<br><br>\nNotes"))
-            #expect(content.html.contains("Notes<br><br>\n<ul>\n<li>One</li>\n<li>Two</li>\n</ul>"))
-            #expect(content.html.contains("<ol>\n<li>First</li>\n<li>Second</li>\n</ol>"))
-            #expect(content.html.contains("<ul>\n<li>Done</li>\n<li>Pending</li>\n</ul>"))
-            #expect(content.html.contains("</ul><br>\n<ol>"))
-            #expect(content.html.contains("</ol><br>\n<ul>"))
-            #expect(content.html.contains("</ul><br>\n<strong><u>Action Items</u></strong>"))
+            #expect(content.html.contains("Notes<br><br>\n• One<br>\n• Two"))
+            #expect(content.html.contains("1. First<br>\n2. Second"))
+            #expect(content.html.contains("• Done<br>\n• Pending"))
+            #expect(content.html.contains("• Two<br><br>\n1. First"))
+            #expect(content.html.contains("2. Second<br><br>\n• Done"))
+            #expect(content.html.contains("• Pending<br><br>\n<strong><u>Action Items</u></strong>"))
             #expect(content.html.contains("<strong><u>Action Items</u></strong><br><br>\n<ul>\n<li>Send notes (Aki)</li>\n</ul>"))
             #expect(!content.html.contains("<h1>"))
             #expect(!content.html.contains("<h2>"))
             #expect(!content.html.contains("<h3>"))
             #expect(!content.html.contains("<strong>Notes</strong>"))
-            #expect(!content.html.contains("• One"))
+            #expect(content.html.contains("• One"))
             #expect(!content.html.contains("☑"))
             #expect(!content.html.contains("☐"))
             #expect(content.markdown.contains("# Weekly Sync"))
             #expect(content.markdown.contains("## Summary"))
             #expect(content.markdown.contains("### Details"))
             #expect(content.markdown.contains("#### Notes"))
+        }
+
+        @Test
+        func preservesHierarchyAcrossMarkdownGoogleDocsAndSlack() {
+            let numberedItems = zip(["A", "B", "C", "D", "E"], [0, 1, 1, 0, 1]).map { text, indent in
+                SummaryListItem(text: text, indent: indent)
+            }
+            let document = SummaryDocument(
+                title: "Hierarchy",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "Items",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Root"),
+                                SummaryListItem(text: "Child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: numberedItems),
+                            .checklist(items: [
+                                .init(text: "Task", checked: false),
+                                .init(text: "Subtask", checked: true, indent: 1),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let googleDocs = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
+            let slack = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .slack
+            )
+
+            #expect(googleDocs.markdown.contains("- Root\n    - Child\n        - Grandchild"))
+            #expect(googleDocs.markdown.contains("1. A\n    1. B\n    2. C\n2. D\n    1. E"))
+            #expect(googleDocs.markdown.contains("- [ ] Task\n    - [x] Subtask"))
+            #expect(slack.markdown.contains("- Root\n    - Child\n        - Grandchild"))
+            #expect(slack.markdown.contains("1. A\n    1. B\n    2. C\n2. D\n    1. E"))
+            #expect(slack.markdown.contains("- [ ] Task\n    - [x] Subtask"))
+            #expect(googleDocs.html.contains("<li>Root\n<ul>\n<li>Child\n<ul>\n<li>Grandchild</li>"))
+            #expect(googleDocs.html.contains("<li>A\n<ol>\n<li>B</li>\n<li>C</li>"))
+            #expect(slack.html.contains("• Root<br>\n&nbsp;&nbsp;&nbsp;&nbsp;• Child"))
+            #expect(slack.html.contains("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• Grandchild"))
+            #expect(slack.html.contains("1. A<br>\n&nbsp;&nbsp;&nbsp;&nbsp;1. B<br>\n&nbsp;&nbsp;&nbsp;&nbsp;2. C"))
+            #expect(slack.html.contains("2. D<br>\n&nbsp;&nbsp;&nbsp;&nbsp;1. E"))
+            #expect(slack.html.contains("• Task<br>\n&nbsp;&nbsp;&nbsp;&nbsp;• Subtask"))
+        }
+
+        @Test
+        func slackNumberedHTMLIgnoresLegacyBlankItemsWhenNumbering() {
+            let document = SummaryDocument(
+                schemaVersion: 3,
+                title: "Legacy",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .numberedList(items: [
+                                SummaryListItem(text: "  "),
+                                SummaryListItem(text: "Visible"),
+                                SummaryListItem(text: ""),
+                                SummaryListItem(text: "Next"),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .slack
+            )
+
+            #expect(content.html.contains("1. Visible<br>\n2. Next"))
         }
 
         @Test

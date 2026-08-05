@@ -43,18 +43,14 @@ enum StoredSummaryDocumentMarkdownRenderer {
 
     /// `toolJSONValue` の逆変換。旧 DB 行向けの寛容な decoder を使う前に、MCP 入力が欠落なく往復することを検証する。
     static func decode(toolJSON: JSONValue) throws -> SummaryDocument {
-        let databaseShaped = try rewritingKeys(toolJSON, using: databaseKeyByToolKey)
+        let canonicalToolJSON = canonicalToolInput(toolJSON)
+        let databaseShaped = try rewritingKeys(canonicalToolJSON, using: databaseKeyByToolKey)
         let document = try JSONDecoder().decode(SummaryDocument.self, from: JSONEncoder().encode(databaseShaped))
-        guard try addingLegacyDefaults(to: toolJSON) == toolJSONValue(document) else {
+        try SummaryDocumentWriteValidator.validate(document)
+        guard try canonicalToolJSON == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
                 debugDescription: "summary_document contains unknown, missing, or invalid fields"
-            ))
-        }
-        guard hasValidTranscriptReferences(document) else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: [],
-                debugDescription: "transcript_ref must match HH:MM:SS"
             ))
         }
         return document
@@ -73,6 +69,40 @@ enum StoredSummaryDocumentMarkdownRenderer {
         object["tags"] = object["tags"] ?? .array([])
         object["action_items"] = object["action_items"] ?? .array([])
         return .object(object)
+    }
+
+    private static func canonicalToolInput(_ value: JSONValue) -> JSONValue {
+        let valueWithDefaults = addingLegacyDefaults(to: value)
+        guard case var .object(root) = valueWithDefaults,
+              case let .array(sections)? = root["sections"] else {
+            return valueWithDefaults
+        }
+        root["sections"] = .array(sections.map(canonicalSection))
+        return .object(root)
+    }
+
+    private static func canonicalSection(_ value: JSONValue) -> JSONValue {
+        guard case var .object(section) = value,
+              case let .array(blocks)? = section["blocks"] else { return value }
+        section["blocks"] = .array(blocks.map(canonicalBlock))
+        return .object(section)
+    }
+
+    private static func canonicalBlock(_ value: JSONValue) -> JSONValue {
+        guard case var .object(block) = value,
+              case let .string(type)? = block["type"],
+              ["bulleted_list", "numbered_list", "checklist"].contains(type),
+              case let .array(items)? = block["items"] else { return value }
+        block["items"] = .array(items.map(canonicalListItem))
+        return .object(block)
+    }
+
+    private static func canonicalListItem(_ value: JSONValue) -> JSONValue {
+        guard case var .object(item) = value else { return value }
+        if item["indent"] == .number(0) {
+            item.removeValue(forKey: "indent")
+        }
+        return .object(item)
     }
 
     private static func rewritingKeys(_ value: JSONValue, using mapping: [String: String]) throws -> JSONValue {
@@ -102,7 +132,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
         case let .paragraph(text), let .quote(text):
             [text]
         case let .bulletedList(items), let .numberedList(items):
-            items
+            items.map(\.text)
         case let .checklist(items):
             items.map(\.text)
         case let .code(_, text), let .image(_, text), let .heading(_, text):
@@ -127,12 +157,14 @@ enum StoredSummaryDocumentMarkdownRenderer {
         case let .paragraph(text):
             renderText(text)
         case let .bulletedList(items):
-            renderList(items, prefix: { _ in "-" })
+            renderList(items, markers: Array(repeating: "-", count: items.count))
         case let .numberedList(items):
-            renderList(items, prefix: { "\($0 + 1)." })
+            renderList(items, markers: SummaryListNumbering.numbers(for: items).map { "\($0)." })
         case let .checklist(items):
             items.compactMap { item in
-                renderText(item.text).map { "- [\(item.checked ? "x" : " ")] \($0)" }
+                renderText(item.text).map {
+                    "\(listIndent(item.indent))- [\(item.checked ? "x" : " ")] \($0)"
+                }
             }
             .joined(separator: "\n")
             .nonEmpty
@@ -162,12 +194,16 @@ enum StoredSummaryDocumentMarkdownRenderer {
         }
     }
 
-    private static func renderList(_ items: [SummaryText], prefix: (Int) -> String) -> String? {
-        items.enumerated().compactMap { index, item in
-            renderText(item).map { "\(prefix(index)) \($0)" }
+    private static func renderList(_ items: [SummaryListItem], markers: [String]) -> String? {
+        zip(items, markers).compactMap { item, marker in
+            renderText(item.text).map { "\(listIndent(item.indent))\(marker) \($0)" }
         }
         .joined(separator: "\n")
         .nonEmpty
+    }
+
+    private static func listIndent(_ indent: Int) -> String {
+        String(repeating: " ", count: indent * 4)
     }
 
     private static func renderTable(headers: [SummaryText], rows: [[SummaryText]]) -> String? {

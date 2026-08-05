@@ -12,20 +12,6 @@ enum SummaryShareRenderer {
         case slack
     }
 
-    private enum HTMLListKind {
-        case bulleted
-        case numbered
-
-        var element: String {
-            switch self {
-            case .bulleted:
-                "ul"
-            case .numbered:
-                "ol"
-            }
-        }
-    }
-
     static func render(
         document: SummaryDocument,
         actionItemsHeading: String,
@@ -76,17 +62,21 @@ enum SummaryShareRenderer {
         case let .paragraph(text):
             normalizedInlineMarkdown(text.text).nilIfBlank
         case let .bulletedList(items):
-            renderMarkdownBulletList(items.map(\.text))
+            renderMarkdownBulletList(items)
         case let .numberedList(items):
-            items.enumerated()
-                .compactMap { index, item in
-                    normalizedInlineMarkdown(item.text).nilIfBlank.map { "\(index + 1). \($0)" }
+            zip(items, SummaryListNumbering.numbers(for: items))
+                .compactMap { item, number in
+                    normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                        "\(markdownListIndent(item.indent))\(number). \($0)"
+                    }
                 }
                 .joined(separator: "\n")
                 .nilIfBlank
         case let .checklist(items):
             items.compactMap { item in
-                normalizedInlineMarkdown(item.text.text).nilIfBlank.map { "- [\(item.checked ? "x" : " ")] \($0)" }
+                normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                    "\(markdownListIndent(item.indent))- [\(item.checked ? "x" : " ")] \($0)"
+                }
             }
             .joined(separator: "\n")
             .nilIfBlank
@@ -110,12 +100,18 @@ enum SummaryShareRenderer {
         }
     }
 
-    private static func renderMarkdownBulletList(_ items: [String]) -> String? {
+    private static func renderMarkdownBulletList(_ items: [SummaryListItem]) -> String? {
         items.compactMap { item in
-            normalizedInlineMarkdown(item).nilIfBlank.map { "- \($0)" }
+            normalizedInlineMarkdown(item.text.text).nilIfBlank.map {
+                "\(markdownListIndent(item.indent))- \($0)"
+            }
         }
         .joined(separator: "\n")
         .nilIfBlank
+    }
+
+    private static func markdownListIndent(_ indent: Int) -> String {
+        String(repeating: " ", count: indent * 4)
     }
 
     private static func renderMarkdownTable(headers: [SummaryText], rows: [[SummaryText]]) -> String? {
@@ -217,11 +213,11 @@ enum SummaryShareRenderer {
         case let .paragraph(text):
             htmlParagraph(text.text, destination: destination)
         case let .bulletedList(items):
-            htmlList(items.map(\.text), kind: .bulleted)
+            htmlList(items, kind: .bulleted, destination: destination)
         case let .numberedList(items):
-            htmlList(items.map(\.text), kind: .numbered)
+            htmlList(items, kind: .numbered, destination: destination)
         case let .checklist(items):
-            htmlChecklist(items)
+            htmlChecklist(items, destination: destination)
         case let .quote(text):
             htmlParagraph(text.text, destination: destination).map { "<blockquote>\($0)</blockquote>" }
         case let .code(_, content):
@@ -275,25 +271,6 @@ enum SummaryShareRenderer {
         case .slack:
             return html
         }
-    }
-
-    private static func htmlList(
-        _ items: [String],
-        kind: HTMLListKind
-    ) -> String? {
-        let renderedItems = items.compactMap { item -> String? in
-            normalizedInlineMarkdown(item).nilIfBlank.map(renderInlineHTML)
-        }
-        guard !renderedItems.isEmpty else { return nil }
-        return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: kind.element)
-    }
-
-    private static func htmlChecklist(_ items: [SummaryBlock.ChecklistItem]) -> String? {
-        let renderedItems = items.compactMap { item -> String? in
-            normalizedInlineMarkdown(item.text.text).nilIfBlank.map(renderInlineHTML)
-        }
-        guard !renderedItems.isEmpty else { return nil }
-        return wrapHTMLList(renderedItems.map { "<li>\($0)</li>" }, element: "ul")
     }
 
     private static func wrapHTMLList(_ renderedItems: [String], element: String) -> String {
@@ -398,7 +375,7 @@ enum SummaryShareRenderer {
         return (title, normalizedInlineMarkdown(item.assignee).nilIfBlank)
     }
 
-    private static func renderInlineHTML(_ markdown: String) -> String {
+    static func renderInlineHTML(_ markdown: String) -> String {
         guard let attributed = try? AttributedString(
             markdown: markdown,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -432,7 +409,7 @@ enum SummaryShareRenderer {
         .joined()
     }
 
-    private static func normalizedInlineMarkdown(_ text: String) -> String {
+    static func normalizedInlineMarkdown(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacing(#/!\[([^\]]*)\]\([^)]+\)/#) { match in
                 String(match.1)

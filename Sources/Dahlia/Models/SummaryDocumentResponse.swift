@@ -20,6 +20,8 @@ struct SummaryDocumentResponse: Decodable {
         let items: [ItemDTO]
         let language: String
         let imageId: String
+        let columns: [String]
+        let rows: [[String]]
 
         private enum CodingKeys: String, CodingKey {
             case type
@@ -28,6 +30,8 @@ struct SummaryDocumentResponse: Decodable {
             case items
             case language
             case imageId = "image_id"
+            case columns
+            case rows
         }
     }
 
@@ -45,11 +49,13 @@ struct SummaryDocumentResponse: Decodable {
         let text: String
         let transcriptRef: String?
         let checked: Bool
+        let indent: Int
 
         private enum CodingKeys: String, CodingKey {
             case text
             case transcriptRef = "transcript_ref"
             case checked
+            case indent
         }
     }
 
@@ -69,8 +75,9 @@ struct SummaryDocumentResponse: Decodable {
                 "text": ["type": "string"],
                 "transcript_ref": ["type": ["string", "null"]],
                 "checked": ["type": "boolean"],
+                "indent": ["type": "integer", "enum": [0, 1, 2]],
             ],
-            "required": ["text", "transcript_ref", "checked"],
+            "required": ["text", "transcript_ref", "checked", "indent"],
             "additionalProperties": false,
         ]
         let blockSchema: [String: Any] = [
@@ -87,6 +94,7 @@ struct SummaryDocumentResponse: Decodable {
                         "code",
                         "image",
                         "heading",
+                        "table",
                     ],
                 ],
                 "level": ["type": "integer"],
@@ -97,8 +105,22 @@ struct SummaryDocumentResponse: Decodable {
                 ],
                 "language": ["type": "string"],
                 "image_id": ["type": "string"],
+                "columns": [
+                    "type": "array",
+                    "maxItems": 12,
+                    "items": ["type": "string"],
+                ],
+                "rows": [
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": [
+                        "type": "array",
+                        "maxItems": 12,
+                        "items": ["type": "string"],
+                    ],
+                ],
             ],
-            "required": ["type", "level", "content", "items", "language", "image_id"],
+            "required": ["type", "level", "content", "items", "language", "image_id", "columns", "rows"],
             "additionalProperties": false,
         ]
         let actionItemSchema: [String: Any] = [

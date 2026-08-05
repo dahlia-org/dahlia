@@ -123,6 +123,51 @@ import Foundation
             #expect(attributed.string.contains(code))
         }
 
+        @Test
+        func rendersNestedListIndentAndPerLevelNumbering() throws {
+            let numberedItems = zip(["A", "B", "C", "D", "E"], [0, 1, 1, 0, 1]).map { text, indent in
+                SummaryListItem(text: text, indent: indent)
+            }
+            let document = SummaryDocument(
+                title: "Hierarchy",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Root"),
+                                SummaryListItem(text: "Child", indent: 1),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                            ]),
+                            .numberedList(items: numberedItems),
+                            .checklist(items: [
+                                .init(text: "Task", checked: false),
+                                .init(text: "Subtask", checked: true, indent: 1),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = GoogleDocsSummaryRenderer.render(
+                document: document,
+                context: SummaryRenderContext(meetingId: .v7(), createdAt: .now),
+                actionItemsHeading: "Action Items",
+                imageUnavailableText: "Image unavailable"
+            )
+            let rtf = try #require(String(data: rendered.data, encoding: .utf8))
+
+            #expect(rtf.contains(#"\li720\fi-360\tx720"#))
+            #expect(rtf.contains(#"\li1440\fi-360\tx1440"#))
+            #expect(rtf.contains(#"\li2160\fi-360\tx2160"#))
+            #expect(rtf.contains("1.\\tab {A}"))
+            #expect(rtf.contains("1.\\tab {B}"))
+            #expect(rtf.contains("2.\\tab {C}"))
+            #expect(rtf.contains("2.\\tab {D}"))
+            #expect(rtf.contains("1.\\tab {E}"))
+        }
+
         private func makePNGData() throws -> Data {
             let bitmap = try #require(NSBitmapImageRep(
                 bitmapDataPlanes: nil,

@@ -66,7 +66,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Ship it", "transcript_ref": "00:10:00"},
                   "items": [],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
                 {
                   "type": "image",
@@ -74,7 +76,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Architecture", "transcript_ref": "00:11:00"},
                   "items": [],
                   "language": "",
-                  "image_id": "\(screenshotId.uuidString)"
+                  "image_id": "\(screenshotId.uuidString)",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -112,21 +116,25 @@ struct SummaryServiceTests {
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
                   "items": [
-                    {"text": "Reviewed launch", "transcript_ref": "00:10:00", "checked": false},
-                    {"text": "Skipped invalid timestamp", "transcript_ref": "10:00", "checked": false}
+                    {"text": "Reviewed launch", "transcript_ref": "00:10:00", "checked": false, "indent": 0},
+                    {"text": "Skipped invalid timestamp", "transcript_ref": "10:00", "checked": false, "indent": 1}
                   ],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
                 {
                   "type": "checklist",
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
                   "items": [
-                    {"text": "Send notes", "transcript_ref": "00:11:00", "checked": false}
+                    {"text": "Send notes", "transcript_ref": "00:11:00", "checked": false, "indent": 0}
                   ],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -140,13 +148,114 @@ struct SummaryServiceTests {
 
         #expect(document.sections.first?.blocks == [
             .bulletedList(items: [
-                SummaryText("Reviewed launch", transcriptRef: TranscriptReference(time: "00:10:00")),
-                SummaryText("Skipped invalid timestamp"),
+                SummaryListItem(
+                    text: SummaryText("Reviewed launch", transcriptRef: TranscriptReference(time: "00:10:00"))
+                ),
+                SummaryListItem(text: "Skipped invalid timestamp", indent: 1),
             ]),
             .checklist(items: [
                 .init(text: SummaryText("Send notes", transcriptRef: TranscriptReference(time: "00:11:00")), checked: false),
             ]),
         ])
+    }
+
+    @Test
+    func decodeSummaryDocumentNormalizesListIndentAfterDroppingBlankItems() throws {
+        let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: Date(timeIntervalSince1970: 0))
+        let json = """
+        {
+          "title": "Lists",
+          "description": "Indent normalization",
+          "sections": [
+            {
+              "heading": "Hierarchy",
+              "blocks": [
+                {
+                  "type": "numbered_list",
+                  "level": 0,
+                  "content": {"text": "", "transcript_ref": null},
+                  "items": [
+                    {"text": "  ", "transcript_ref": null, "checked": false, "indent": 0},
+                    {"text": "Root", "transcript_ref": null, "checked": false, "indent": 2},
+                    {"text": "Child", "transcript_ref": null, "checked": false, "indent": 2},
+                    {"text": "Grandchild", "transcript_ref": null, "checked": false, "indent": 8},
+                    {"text": "Root two", "transcript_ref": null, "checked": false, "indent": 0},
+                    {"text": "Clamped low", "transcript_ref": null, "checked": false, "indent": -1}
+                  ],
+                  "language": "",
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
+                }
+              ]
+            }
+          ],
+          "tags": [],
+          "action_items": []
+        }
+        """
+
+        let document = SummaryService.decodeSummaryDocument(from: json, context: context)
+        let block = try #require(document.sections.first?.blocks.first)
+        guard case let .numberedList(items) = block.content else {
+            Issue.record("Expected a numbered list")
+            return
+        }
+
+        #expect(items.map(\.text.text) == ["Root", "Child", "Grandchild", "Root two", "Clamped low"])
+        #expect(items.map(\.indent) == [0, 1, 2, 0, 0])
+    }
+
+    @Test
+    func decodeSummaryDocumentNormalizesTablesWithinDocumentCellBudget() throws {
+        let columns = (0..<13).map { "Column \($0)" }
+        var rows = (0..<51).map { row in
+            (0..<13).map { column in "R\(row)C\(column)" }
+        }
+        rows[0] = ["Short"]
+        let table: [String: Any] = [
+            "type": "table",
+            "level": 0,
+            "content": ["text": "", "transcript_ref": NSNull()],
+            "items": [],
+            "language": "",
+            "image_id": "",
+            "columns": columns,
+            "rows": rows,
+        ]
+        let response: [String: Any] = [
+            "title": "Tables",
+            "description": "Budget",
+            "sections": [["heading": "Data", "blocks": [table, table, table]]],
+            "tags": [],
+            "action_items": [],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: response)
+        let context = SummaryRenderContext(meetingId: UUID.v7(), createdAt: Date(timeIntervalSince1970: 0))
+
+        let document = SummaryService.decodeSummaryDocument(
+            from: String(decoding: data, as: UTF8.self),
+            context: context
+        )
+        let tables = document.sections[0].blocks.compactMap { block -> (headers: [SummaryText], rows: [[SummaryText]])? in
+            guard case let .table(headers, rows) = block.content else { return nil }
+            return (headers, rows)
+        }
+
+        #expect(document.schemaVersion == 4)
+        #expect(tables.count == 2)
+        #expect(tables[0].headers.count == 12)
+        #expect(tables[0].rows.count == 50)
+        #expect(tables[0].rows[0].map(\.text) == ["Short"] + Array(repeating: "", count: 11))
+        #expect(tables[1].headers.count == 12)
+        #expect(tables[1].rows.count == 48)
+        #expect(tables.flatMap(\.rows).allSatisfy { $0.count == 12 })
+        #expect(tables.flatMap(\.headers).allSatisfy { $0.transcriptRef == nil })
+        #expect(tables.flatMap(\.rows).flatMap { $0 }.allSatisfy { $0.transcriptRef == nil })
+        let cellCount = tables.reduce(0) { count, table in
+            count + table.headers.count + table.rows.reduce(0) { $0 + $1.count }
+        }
+        #expect(cellCount == 1200)
     }
 
     @Test
@@ -166,7 +275,9 @@ struct SummaryServiceTests {
                   "content": {"text": "func f() {\\n    return foo()\\n}", "transcript_ref": "00:10:00"},
                   "items": [],
                   "language": "swift",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -212,7 +323,9 @@ struct SummaryServiceTests {
                   "content": {"text": "Review ![[\(screenshotId.uuidString).jpeg|Dashboard]]", "transcript_ref": null},
                   "items": [],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 }
               ]
             }
@@ -268,22 +381,24 @@ struct SummaryServiceTests {
             {
               "heading": "",
               "blocks": [
-                {"type": "bulleted_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""},
+                {"type": "bulleted_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []},
                 {
                   "type": "checklist",
                   "level": 0,
                   "content": {"text": "", "transcript_ref": null},
-                  "items": [{"text": "", "transcript_ref": null, "checked": false}],
+                  "items": [{"text": "", "transcript_ref": null, "checked": false, "indent": 1}],
                   "language": "",
-                  "image_id": ""
+                  "image_id": "",
+                  "columns": [],
+                  "rows": []
                 },
-                {"type": "paragraph", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
+                {"type": "paragraph", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []}
               ]
             },
             {
               "heading": "Notes",
               "blocks": [
-                {"type": "numbered_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": ""}
+                {"type": "numbered_list", "level": 0, "content": {"text": "", "transcript_ref": null}, "items": [], "language": "", "image_id": "", "columns": [], "rows": []}
               ]
             }
           ],
@@ -352,6 +467,8 @@ struct SummaryServiceTests {
         #expect(AppSettings.defaultSummaryPrompt.contains("create an `image` block"))
         #expect(AppSettings.defaultSummaryPrompt.contains("content.transcript_ref"))
         #expect(AppSettings.defaultSummaryPrompt.contains("items[].transcript_ref"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("items[].indent"))
+        #expect(AppSettings.defaultSummaryPrompt.contains("Use a table for comparisons and mappings"))
     }
 
     @Test
@@ -397,6 +514,9 @@ struct SummaryServiceTests {
     func structuredPromptRequiresLowercaseASCIITags() {
         #expect(SummaryService.codexStructuredInstruction.contains("lowercase ASCII letters (a-z), ASCII numbers (0-9), and \"_\""))
         #expect(!SummaryService.codexStructuredInstruction.contains("and \"-\""))
+        #expect(SummaryService.codexStructuredInstruction.contains("and \"indent\" as 0, 1, or 2"))
+        #expect(SummaryService.codexStructuredInstruction.contains("\"columns\": table header strings"))
+        #expect(SummaryService.codexStructuredInstruction.contains("\"rows\": table body rows"))
     }
 
     @Test
