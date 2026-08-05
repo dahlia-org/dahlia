@@ -930,6 +930,7 @@
 "Some older live transcript was skipped because the chat backlog was too large." = "チャットの待機量が上限を超えたため、古いライブ文字起こしの一部をスキップしました。";
 "The assistant wants to run a command." = "アシスタントがコマンドの実行を求めています。";
 "The assistant wants to change files." = "アシスタントがファイルの変更を求めています。";
+"The assistant wants to change Dahlia data." = "アシスタントが Dahlia データの変更を求めています。";
 "Allow once" = "一度だけ許可";
 "Allow changes to the same files in this chat" = "このチャットで同じファイルへの変更を許可";
 "Allow similar commands" = "類似コマンドを許可";

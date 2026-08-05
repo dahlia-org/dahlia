@@ -930,6 +930,7 @@
 "Some older live transcript was skipped because the chat backlog was too large." = "Some older live transcript was skipped because the chat backlog was too large.";
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";
+"The assistant wants to change Dahlia data." = "The assistant wants to change Dahlia data.";
 "Allow once" = "Allow once";
 "Allow changes to the same files in this chat" = "Allow changes to the same files in this chat";
 "Allow similar commands" = "Allow similar commands";

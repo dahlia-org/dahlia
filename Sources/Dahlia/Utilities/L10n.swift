@@ -2581,6 +2581,10 @@ enum L10n {
         String(localized: "The assistant wants to change files.", bundle: bundle)
     }
 
+    static var chatApprovalMCPToolTitle: String {
+        String(localized: "The assistant wants to change Dahlia data.", bundle: bundle)
+    }
+
     static var chatApprovalAllowOnce: String { String(localized: "Allow once", bundle: bundle) }
     static var chatApprovalAllowSameFiles: String {
         String(localized: "Allow changes to the same files in this chat", bundle: bundle)

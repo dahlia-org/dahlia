@@ -393,6 +393,40 @@ import Foundation
         }
 
         @Test
+        func approvalDecisionOutsidePresentedActionsIsIgnored() async {
+            let service = TestCodexChatService(mode: .block)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings
+            )
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { session.messages.last?.text == "Partial" }
+
+            let request = CodexChatApprovalRequest(
+                id: "s:mcp-approval",
+                kind: .mcpToolCall,
+                mcpServer: "dahlia",
+                mcpTool: "update_project",
+                mcpArguments: "{}"
+            )
+            await service.yieldBlockedEvent(.approvalRequested(request))
+            await waitUntil { session.pendingApproval == request }
+
+            session.respondToApproval(id: request.id, decision: .acceptForSession)
+            try? await Task.sleep(for: .milliseconds(20))
+
+            #expect(await service.approvalDecisions.isEmpty)
+            #expect(session.respondingApprovalID == nil)
+            session.stop()
+            await waitUntil { !session.isGenerating }
+        }
+
+        @Test
         func decidingOneApprovalDoesNotResolveAnotherPendingRequest() async {
             let service = TestCodexChatService(mode: .block)
             let settings = AppSettings()

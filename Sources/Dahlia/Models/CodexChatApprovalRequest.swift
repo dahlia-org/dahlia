@@ -22,6 +22,7 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case commandExecution
         case fileChange
+        case mcpToolCall
     }
 
     enum Reviewability: Equatable, Sendable {
@@ -36,6 +37,9 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
     let command: String?
     let cwd: String?
     let fileChanges: [FileChange]
+    let mcpServer: String?
+    let mcpTool: String?
+    let mcpArguments: String?
     let grantRoot: String?
     let reason: String?
     let reviewability: Reviewability
@@ -48,6 +52,10 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         return switch kind {
         case .commandExecution: command?.nilIfBlank != nil
         case .fileChange: !fileChanges.isEmpty
+        case .mcpToolCall:
+            mcpServer?.nilIfBlank != nil
+                && mcpTool?.nilIfBlank != nil
+                && mcpArguments != nil
         }
     }
 
@@ -62,6 +70,9 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         command: String? = nil,
         cwd: String? = nil,
         fileChanges: [FileChange] = [],
+        mcpServer: String? = nil,
+        mcpTool: String? = nil,
+        mcpArguments: String? = nil,
         grantRoot: String? = nil,
         reason: String? = nil,
         reviewability: Reviewability = .ready,
@@ -73,6 +84,9 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         self.command = command
         self.cwd = cwd
         self.fileChanges = fileChanges
+        self.mcpServer = mcpServer
+        self.mcpTool = mcpTool
+        self.mcpArguments = mcpArguments
         self.grantRoot = grantRoot
         self.reason = reason
         self.reviewability = reviewability
