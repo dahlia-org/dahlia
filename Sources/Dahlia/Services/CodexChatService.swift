@@ -222,7 +222,8 @@ actor CodexChatService: CodexChatServicing {
             bufferingPolicy: .bufferingNewest(64)
         ) { continuation in
             let task = Task {
-                var fileChangeCache = CodexChatApprovalFileChangeCache()
+                var fileChangeCache = CodexChatApprovalItemCache<CodexChatApprovalFileChangeSnapshot>()
+                var mcpToolCallCache = CodexChatApprovalItemCache<CodexChatMCPToolCall>()
                 var terminalEventWasDelivered = false
                 var completionError: (any Error)?
                 do {
@@ -239,12 +240,19 @@ actor CodexChatService: CodexChatServicing {
                             if let update = try Self.parseFileChangeUpdate(notification) {
                                 fileChangeCache.store(update.snapshot, for: update.itemID)
                             }
+                            if let update = try Self.parseMCPToolCallUpdate(notification) {
+                                mcpToolCallCache.store(update.toolCall, for: update.itemID)
+                            }
                             let event = try Self.parseTurnEvent(
                                 notification,
-                                fileChangesByItemID: fileChangeCache.values
+                                fileChangesByItemID: fileChangeCache.values,
+                                mcpToolCallsByItemID: mcpToolCallCache.values
                             )
                             if let itemID = Self.fileChangeCacheReleaseItemID(notification) {
                                 fileChangeCache.removeValue(forKey: itemID)
+                            }
+                            if let itemID = Self.mcpToolCallCacheReleaseItemID(notification) {
+                                mcpToolCallCache.removeValue(forKey: itemID)
                             }
                             if let event {
                                 try Self.yield(event, to: continuation)
@@ -360,21 +368,38 @@ actor CodexChatService: CodexChatServicing {
     }
 
     nonisolated static func fileChangeCacheReleaseItemID(_ value: JSONValue) -> String? {
+        approvalCacheReleaseItemID(
+            value,
+            approvalMethod: "item/fileChange/requestApproval",
+            itemType: "fileChange"
+        )
+    }
+
+    nonisolated static func mcpToolCallCacheReleaseItemID(_ value: JSONValue) -> String? {
+        approvalCacheReleaseItemID(
+            value,
+            approvalMethod: "item/tool/requestUserInput",
+            itemType: "mcpToolCall"
+        )
+    }
+
+    private nonisolated static func approvalCacheReleaseItemID(
+        _ value: JSONValue,
+        approvalMethod: String,
+        itemType: String
+    ) -> String? {
         guard let object = value.objectValue,
               let method = object["method"]?.stringValue,
               let params = object["params"]?.objectValue
         else { return nil }
 
-        switch method {
-        case "item/fileChange/requestApproval":
+        if method == approvalMethod {
             return params["itemId"]?.stringValue
-        case "item/completed":
-            guard let item = params["item"]?.objectValue,
-                  item["type"]?.stringValue == "fileChange" else { return nil }
-            return item["id"]?.stringValue
-        default:
-            return nil
         }
+        guard method == "item/completed",
+              let item = params["item"]?.objectValue,
+              item["type"]?.stringValue == itemType else { return nil }
+        return item["id"]?.stringValue
     }
 
     private func resolvedMCPExecutableURL() throws -> URL {
@@ -497,7 +522,8 @@ private extension CodexChatService {
 
     nonisolated static func parseTurnEvent(
         _ value: JSONValue,
-        fileChangesByItemID: [String: CodexChatApprovalFileChangeSnapshot] = [:]
+        fileChangesByItemID: [String: CodexChatApprovalFileChangeSnapshot] = [:],
+        mcpToolCallsByItemID: [String: CodexChatMCPToolCall] = [:]
     ) throws -> CodexChatTurnEvent? {
         guard let object = value.objectValue,
               let method = object["method"]?.stringValue,
@@ -525,6 +551,15 @@ private extension CodexChatService {
                 fileChanges: snapshot?.changes ?? [],
                 sourceWasTruncated: snapshot?.isTruncated == true
             )
+        case "item/tool/requestUserInput":
+            let prompt = CodexChatMCPApprovalPrompt(params: params)
+            let toolCall = prompt.flatMap { mcpToolCallsByItemID[$0.itemID] }
+            return try parseApprovalRequest(
+                object,
+                params: params,
+                kind: .mcpToolCall,
+                mcpToolCall: toolCall
+            )
         case "turn/completed":
             return try parseTurnCompletion(params)
         default:
@@ -537,6 +572,7 @@ private extension CodexChatService {
         params: [String: JSONValue],
         kind: CodexChatApprovalRequest.Kind,
         fileChanges: [CodexChatApprovalRequest.FileChange] = [],
+        mcpToolCall: CodexChatMCPToolCall? = nil,
         sourceWasTruncated: Bool = false
     ) throws -> CodexChatTurnEvent {
         guard let requestID = object["id"],
@@ -549,8 +585,35 @@ private extension CodexChatService {
             params: params,
             kind: kind,
             fileChanges: fileChanges,
+            mcpToolCall: mcpToolCall,
             sourceWasTruncated: sourceWasTruncated
         ))
+    }
+
+    nonisolated static func parseMCPToolCallUpdate(
+        _ value: JSONValue
+    ) throws -> (itemID: String, toolCall: CodexChatMCPToolCall)? {
+        guard let object = value.objectValue,
+              object["method"]?.stringValue == "item/started",
+              let params = object["params"]?.objectValue,
+              let item = params["item"]?.objectValue,
+              item["type"]?.stringValue == "mcpToolCall"
+        else { return nil }
+        guard let itemID = item["id"]?.stringValue,
+              let server = item["server"]?.stringValue?.nilIfBlank,
+              let tool = item["tool"]?.stringValue?.nilIfBlank,
+              let arguments = item["arguments"]
+        else {
+            throw CodexAppServerError.invalidProtocolResponse
+        }
+        return (
+            itemID,
+            CodexChatApprovalNormalizer.boundedMCPToolCall(
+                server: server,
+                tool: tool,
+                arguments: arguments
+            )
+        )
     }
 
     nonisolated static func parseFileChangeUpdate(

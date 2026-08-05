@@ -1341,6 +1341,7 @@ import Foundation
             ).objectValue)
             let server = try #require(config["mcp_servers"]?.objectValue?["dahlia"])
 
+            #expect(config["features.tool_call_mcp_elicitation"] == .bool(false))
             #expect(server == .object([
                 "args": .array([
                     .string("DAHLIA_RUNTIME_PROFILE=development"),

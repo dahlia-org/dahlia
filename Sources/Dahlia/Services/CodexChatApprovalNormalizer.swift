@@ -11,6 +11,7 @@ enum CodexChatApprovalNormalizer {
         params: [String: JSONValue],
         kind: CodexChatApprovalRequest.Kind,
         fileChanges: [CodexChatApprovalRequest.FileChange],
+        mcpToolCall: CodexChatMCPToolCall? = nil,
         sourceWasTruncated: Bool = false
     ) throws -> CodexChatApprovalRequest {
         let itemID = params["itemId"]?.stringValue
@@ -20,17 +21,26 @@ enum CodexChatApprovalNormalizer {
         let command = budget.consume(rawCommand)?.nilIfBlank
         let cwd = budget.consume(params["cwd"]?.stringValue)?.nilIfBlank
         let boundedChanges = boundedFileChanges(fileChanges, budget: &budget)
+        let mcpServer = budget.consume(mcpToolCall?.server)?.nilIfBlank
+        let mcpTool = budget.consume(mcpToolCall?.tool)?.nilIfBlank
+        let mcpArguments = budget.consume(mcpToolCall?.arguments)
         let grantRoot = budget.consume(params["grantRoot"]?.stringValue)?.nilIfBlank
         let unsupportedScope = grantRoot != nil
             || nonNullValue(params["additionalPermissions"])
             || nonNullValue(params["networkApprovalContext"])
             || nonEmptyArray(params["proposedNetworkPolicyAmendments"])
-        let isTooLarge = sourceWasTruncated || budget.didTruncate || fileChanges.count > fileLimit
+            || (kind == .mcpToolCall && mcpToolCall?.server != "dahlia")
+        let isTooLarge = sourceWasTruncated
+            || mcpToolCall?.isTruncated == true
+            || budget.didTruncate
+            || fileChanges.count > fileLimit
         let hasExactPayload = switch kind {
         case .commandExecution:
             hasBoundedNonBlankText(rawCommand)
         case .fileChange:
             !fileChanges.isEmpty
+        case .mcpToolCall:
+            hasExactMCPToolCallPayload(mcpToolCall)
         }
         let reviewability: CodexChatApprovalRequest.Reviewability = if unsupportedScope || !hasExactPayload {
             .unsupported
@@ -47,6 +57,9 @@ enum CodexChatApprovalNormalizer {
             command: command,
             cwd: cwd,
             fileChanges: boundedChanges,
+            mcpServer: mcpServer,
+            mcpTool: mcpTool,
+            mcpArguments: mcpArguments,
             grantRoot: grantRoot,
             reason: reason,
             reviewability: reviewability,
@@ -143,6 +156,24 @@ enum CodexChatApprovalNormalizer {
         )
     }
 
+    static func boundedMCPToolCall(
+        server: String,
+        tool: String,
+        arguments: JSONValue
+    ) -> CodexChatMCPToolCall {
+        var budget = ByteBudget(limit: byteLimit)
+        let boundedServer = budget.consume(server)?.nilIfBlank
+        let boundedTool = budget.consume(tool)?.nilIfBlank
+        let encodedArguments = jsonString(arguments)
+        let boundedArguments = budget.consume(encodedArguments)
+        return CodexChatMCPToolCall(
+            server: boundedServer,
+            tool: boundedTool,
+            arguments: boundedArguments,
+            isTruncated: encodedArguments == nil || budget.didTruncate
+        )
+    }
+
     private static func boundedFileChanges(
         _ changes: [CodexChatApprovalRequest.FileChange],
         budget: inout ByteBudget
@@ -177,8 +208,33 @@ enum CodexChatApprovalNormalizer {
         return budget.consume(text)?.nilIfBlank != nil
     }
 
+    private static func hasExactMCPToolCallPayload(_ toolCall: CodexChatMCPToolCall?) -> Bool {
+        guard let toolCall else { return false }
+        return hasBoundedNonBlankText(toolCall.server)
+            && hasBoundedNonBlankText(toolCall.tool)
+            && toolCall.arguments?.nilIfBlank != nil
+    }
+
     private static func nonEmptyArray(_ value: JSONValue?) -> Bool {
         value?.arrayValue?.isEmpty == false
+    }
+
+    private static func jsonString(_ value: JSONValue) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8).map(escapingBidirectionalControls)
+    }
+
+    private static func escapingBidirectionalControls(in text: String) -> String {
+        text.unicodeScalars.reduce(into: "") { result, scalar in
+            switch scalar.value {
+            case 0x061C, 0x200E ... 0x200F, 0x202A ... 0x202E, 0x2066 ... 0x2069:
+                result += String(format: "\\u%04X", scalar.value)
+            default:
+                result.unicodeScalars.append(scalar)
+            }
+        }
     }
 }
 

@@ -16,6 +16,8 @@ struct CodexChatApprovalDetails: View {
                     CodexChatCommandApprovalDetails(request: request)
                 case .fileChange:
                     CodexChatFileApprovalDetails(request: request)
+                case .mcpToolCall:
+                    CodexChatMCPApprovalDetails(request: request)
                 }
 
                 if request.reviewability != .ready {
@@ -58,6 +60,27 @@ private struct CodexChatCommandApprovalDetails: View {
             .approvalDetailRegion()
         }
 
+    }
+}
+
+private struct CodexChatMCPApprovalDetails: View {
+    let request: CodexChatApprovalRequest
+
+    var body: some View {
+        if request.mcpServer != nil || request.mcpTool != nil || request.mcpArguments != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                if let server = request.mcpServer, let tool = request.mcpTool {
+                    Text("\(server).\(tool)")
+                        .font(.system(.body, design: .monospaced).weight(.medium))
+                }
+                if let arguments = request.mcpArguments {
+                    Text(arguments)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .approvalDetailRegion()
+        }
     }
 }
 

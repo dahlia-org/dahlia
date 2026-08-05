@@ -33,6 +33,7 @@ struct CodexChatApprovalView: View {
         switch request.kind {
         case .commandExecution: L10n.chatApprovalCommandTitle
         case .fileChange: L10n.chatApprovalFileChangeTitle
+        case .mcpToolCall: L10n.chatApprovalMCPToolTitle
         }
     }
 }

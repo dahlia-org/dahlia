@@ -226,7 +226,9 @@ final class CodexChatSessionModel: Identifiable {
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) {
         guard respondingApprovalID == nil,
               approvalDecisionReadyID == id,
-              pendingApprovals.contains(where: { $0.id == id }),
+              let approval = pendingApprovals.first(where: { $0.id == id }),
+              approval.actions.contains(where: { $0.decision == decision })
+              || approval.rejectionDecision == decision,
               let activeTurnHandleID else { return }
         respondingApprovalID = id
         Task {

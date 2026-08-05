@@ -46,8 +46,19 @@ actor CodexAppServerService {
         let timeoutTask: Task<Void, Never>
     }
 
+    private enum ApprovalResponseKind {
+        case decision
+        case mcpToolCall(questionID: String)
+    }
+
+    private struct PendingApprovalResponse {
+        let requestID: JSONValue
+        let responseKind: ApprovalResponseKind
+    }
+
     private struct PendingApproval {
         let requestID: JSONValue
+        let responseKind: ApprovalResponseKind
         let key: TurnKey
         let pendingStartID: UUID?
     }
@@ -70,7 +81,7 @@ actor CodexAppServerService {
         let requestID: Int
         var turnID: String?
         var phase: Phase
-        var pendingApprovals: [String: JSONValue] = [:]
+        var pendingApprovals: [String: PendingApprovalResponse] = [:]
         var respondedApprovalIDs: Set<String> = []
         let continuation: AsyncThrowingStream<CodexAppServerChatTurnEvent, any Error>.Continuation
         var timeoutTask: Task<Void, Never>?
@@ -437,10 +448,11 @@ actor CodexAppServerService {
     func respondToApproval(id: String, decision: CodexChatApprovalDecision) async {
         guard let approval = pendingApprovals.removeValue(forKey: id) else { return }
         do {
-            try await sendMessage(.object([
-                "id": approval.requestID,
-                "result": .object(["decision": decision.jsonValue]),
-            ]))
+            try await sendApprovalResponse(
+                requestID: approval.requestID,
+                kind: approval.responseKind,
+                decision: decision
+            )
         } catch {
             await stopConnection(error: error)
         }
@@ -602,20 +614,51 @@ actor CodexAppServerService {
     ) async throws {
         guard let runtime = chatTurnRuntimes[turnID],
               runtime.generation == connectionGeneration,
-              let requestID = runtime.pendingApprovals[approvalID]
+              let approval = runtime.pendingApprovals[approvalID]
         else { throw CodexAppServerError.approvalNoLongerPending }
         chatTurnRuntimes[turnID]?.pendingApprovals.removeValue(forKey: approvalID)
         chatTurnRuntimes[turnID]?.respondedApprovalIDs.insert(approvalID)
         do {
-            try await sendMessage(.object([
-                "id": requestID,
-                "result": .object(["decision": decision.jsonValue]),
-            ]))
+            try await sendApprovalResponse(
+                requestID: approval.requestID,
+                kind: approval.responseKind,
+                decision: decision
+            )
         } catch {
             if runtime.generation == connectionGeneration {
                 await stopConnection(error: error)
             }
             throw error
+        }
+    }
+
+    private func sendApprovalResponse(
+        requestID: JSONValue,
+        kind: ApprovalResponseKind,
+        decision: CodexChatApprovalDecision
+    ) async throws {
+        switch kind {
+        case .decision:
+            try await sendMessage(.object([
+                "id": requestID,
+                "result": .object(["decision": decision.jsonValue]),
+            ]))
+        case let .mcpToolCall(questionID):
+            let answer = if decision == .accept {
+                "Allow"
+            } else {
+                "Cancel"
+            }
+            try await sendMessage(.object([
+                "id": requestID,
+                "result": .object([
+                    "answers": .object([
+                        questionID: .object([
+                            "answers": .array([.string(answer)]),
+                        ]),
+                    ]),
+                ]),
+            ]))
         }
     }
 
@@ -783,6 +826,7 @@ actor CodexAppServerService {
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
+        config["features.tool_call_mcp_elicitation"] = .bool(false)
         config["skills.include_instructions"] = .bool(true)
         config["web_search"] = .string("live")
         return .object(config)
@@ -1225,10 +1269,12 @@ private extension CodexAppServerService {
     ) async throws {
         switch method {
         case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
-            if await routeOwnedChatApprovalRequest(id: id, params: params, message: message) {
-                return
-            }
-            if await routeChatApprovalRequest(id: id, params: params, message: message) {
+            if await routeChatApprovalRequest(
+                id: id,
+                params: params,
+                message: message,
+                responseKind: .decision
+            ) {
                 return
             }
             try await sendMessage(.object([
@@ -1240,6 +1286,32 @@ private extension CodexAppServerService {
                 "id": id,
                 "result": .object(["decision": .string("denied")]),
             ]))
+        case "item/tool/requestUserInput":
+            if let params,
+               let prompt = CodexChatMCPApprovalPrompt(params: params) {
+                let responseKind = ApprovalResponseKind.mcpToolCall(
+                    questionID: prompt.questionID
+                )
+                if await routeChatApprovalRequest(
+                    id: id,
+                    params: params,
+                    message: message,
+                    responseKind: responseKind
+                ) {
+                    return
+                }
+                try await sendApprovalResponse(
+                    requestID: id,
+                    kind: responseKind,
+                    decision: .cancel
+                )
+                return
+            }
+            try await sendServerRequestError(
+                id: id,
+                code: -32000,
+                message: "User input request denied"
+            )
         case "item/permissions/requestApproval":
             try await sendServerRequestError(
                 id: id,
@@ -1263,6 +1335,28 @@ private extension CodexAppServerService {
                 "message": .string(message),
             ]),
         ]))
+    }
+
+    private func routeChatApprovalRequest(
+        id: JSONValue,
+        params: [String: JSONValue]?,
+        message: JSONValue,
+        responseKind: ApprovalResponseKind
+    ) async -> Bool {
+        if await routeOwnedChatApprovalRequest(
+            id: id,
+            params: params,
+            message: message,
+            responseKind: responseKind
+        ) {
+            return true
+        }
+        return await registerChatApprovalRequest(
+            id: id,
+            params: params,
+            message: message,
+            responseKind: responseKind
+        )
     }
 
     private func handleChatTurnStartResponse(
@@ -1301,7 +1395,8 @@ private extension CodexAppServerService {
     private func routeOwnedChatApprovalRequest(
         id: JSONValue,
         params: [String: JSONValue]?,
-        message: JSONValue
+        message: JSONValue,
+        responseKind: ApprovalResponseKind
     ) async -> Bool {
         guard let params,
               let threadID = params["threadId"]?.stringValue,
@@ -1314,14 +1409,18 @@ private extension CodexAppServerService {
             return true
         }
         guard chatTurnRuntimes[localTurnID]?.pendingApprovals.count ?? 0 < 16 else {
-            try? await sendMessage(.object([
-                "id": id,
-                "result": .object(["decision": .string("cancel")]),
-            ]))
+            try? await sendApprovalResponse(
+                requestID: id,
+                kind: responseKind,
+                decision: .cancel
+            )
             await initiateChatTurnStopFromReader(localTurnID)
             return true
         }
-        chatTurnRuntimes[localTurnID]?.pendingApprovals[approvalID] = id
+        chatTurnRuntimes[localTurnID]?.pendingApprovals[approvalID] = PendingApprovalResponse(
+            requestID: id,
+            responseKind: responseKind
+        )
         if chatTurnRuntimes[localTurnID]?.phase == .stopping {
             try? await decideChatApproval(
                 turnID: localTurnID,
@@ -1493,10 +1592,11 @@ private extension CodexAppServerService {
     /// Registers a chat-thread approval request and delivers it to the turn subscriber.
     /// Returns `false` for summary threads and unknown threads so the caller keeps the
     /// fail-closed decline.
-    private func routeChatApprovalRequest(
+    private func registerChatApprovalRequest(
         id: JSONValue,
         params: [String: JSONValue]?,
-        message: JSONValue
+        message: JSONValue,
+        responseKind: ApprovalResponseKind
     ) async -> Bool {
         guard let params,
               let threadID = params["threadId"]?.stringValue,
@@ -1508,6 +1608,7 @@ private extension CodexAppServerService {
         let pendingStartID = pendingStartID(for: key)
         pendingApprovals[approvalID] = PendingApproval(
             requestID: id,
+            responseKind: responseKind,
             key: key,
             pendingStartID: pendingStartID
         )

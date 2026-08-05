@@ -368,6 +368,51 @@ import Foundation
                 ]),
             ]))
             await transport.sendFromServer(.object([
+                "method": .string("item/started"),
+                "params": .object([
+                    "item": .object([
+                        "arguments": .object([
+                            "expected_project_id": .null,
+                            "meeting_id": .string("AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"),
+                            "project_id": .string("BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"),
+                        ]),
+                        "id": .string("item-3"),
+                        "server": .string("dahlia"),
+                        "status": .string("inProgress"),
+                        "tool": .string("set_meeting_project_assignment"),
+                        "type": .string("mcpToolCall"),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
+                "id": .string("approval-3"),
+                "method": .string("item/tool/requestUserInput"),
+                "params": .object([
+                    "itemId": .string("item-3"),
+                    "questions": .array([
+                        .object([
+                            "header": .string("Approve app tool call?"),
+                            "id": .string("mcp_tool_call_approval_item-3"),
+                            "options": .array([
+                                .object([
+                                    "description": .string("Run the tool and continue."),
+                                    "label": .string("Allow"),
+                                ]),
+                                .object([
+                                    "description": .string("Cancel this tool call."),
+                                    "label": .string("Cancel"),
+                                ]),
+                            ]),
+                            "question": .string("Allow the dahlia MCP server to run tool?"),
+                        ]),
+                    ]),
+                    "threadId": .string("thread-1"),
+                    "turnId": .string("turn-1"),
+                ]),
+            ]))
+            await transport.sendFromServer(.object([
                 "method": .string("turn/completed"),
                 "params": .object([
                     "threadId": .string("thread-1"),
@@ -402,6 +447,20 @@ import Foundation
                     grantRoot: "/tmp/outside-workspace",
                     reviewability: .unsupported,
                     actions: [.deny]
+                )),
+                .approvalRequested(CodexChatApprovalRequest(
+                    id: "s:approval-3",
+                    itemID: "item-3",
+                    kind: .mcpToolCall,
+                    mcpServer: "dahlia",
+                    mcpTool: "set_meeting_project_assignment",
+                    mcpArguments: """
+                    {
+                      "expected_project_id" : null,
+                      "meeting_id" : "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+                      "project_id" : "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
+                    }
+                    """
                 )),
                 .completed(itemID: nil, text: nil),
             ])
@@ -499,6 +558,20 @@ import Foundation
             #expect(CodexChatService.fileChangeCacheReleaseItemID(approval) == "approval-item")
             #expect(CodexChatService.fileChangeCacheReleaseItemID(completion) == "completed-item")
             #expect(CodexChatService.fileChangeCacheReleaseItemID(unrelatedCompletion) == nil)
+            #expect(CodexChatService.mcpToolCallCacheReleaseItemID(.object([
+                "method": .string("item/tool/requestUserInput"),
+                "params": .object(["itemId": .string("mcp-item")]),
+            ])) == "mcp-item")
+            #expect(CodexChatService.mcpToolCallCacheReleaseItemID(.object([
+                "method": .string("item/completed"),
+                "params": .object([
+                    "item": .object([
+                        "id": .string("completed-mcp-item"),
+                        "type": .string("mcpToolCall"),
+                    ]),
+                ]),
+            ])) == "completed-mcp-item")
+            #expect(CodexChatService.mcpToolCallCacheReleaseItemID(unrelatedCompletion) == nil)
         }
 
         private func events(
@@ -531,6 +604,7 @@ import Foundation
             #expect(config["features.codex_hooks"] == .bool(false))
             #expect(config["features.memory_tool"] == .bool(false))
             #expect(config["features.plugins"] == .bool(false))
+            #expect(config["features.tool_call_mcp_elicitation"] == .bool(false))
             #expect(config["include_apps_instructions"] == .bool(false))
             #expect(config["memories.dedicated_tools"] == .bool(false))
             #expect(config["memories.use_memories"] == .bool(false))
