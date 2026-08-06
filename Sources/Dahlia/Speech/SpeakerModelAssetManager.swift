@@ -25,6 +25,13 @@ struct SpeakerModelAssetManifest: Codable, Sendable {
         }
         return try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
     }
+
+    var assetFingerprint: String {
+        let identity = ([repository, revision] + files.sorted { $0.relativePath < $1.relativePath }.flatMap {
+            [$0.relativePath, String($0.byteCount), $0.sha256]
+        }).joined(separator: "\n")
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 struct SpeakerModelAssetProgress: Equatable, Sendable {
@@ -226,6 +233,22 @@ actor SpeakerModelAssetManager {
             }
         }
         return byteCount
+    }
+
+    func embeddingSpace() -> SpeakerEmbeddingSpace {
+        SpeakerEmbeddingSpace(
+            provider: "FluidInference",
+            modelName: manifest.repository,
+            revision: manifest.revision,
+            assetFingerprint: manifest.assetFingerprint,
+            fluidAudioVersion: "0.15.5",
+            dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
+            sampleRate: 16000,
+            preprocessing: "community-1 mono Float32",
+            excludesOverlap: true,
+            normalization: "L2 unit norm",
+            similarityDefinition: "cosine dot product"
+        )
     }
 
     static func downloadURL(for file: SpeakerModelAssetManifest.File, manifest: SpeakerModelAssetManifest) -> URL {
