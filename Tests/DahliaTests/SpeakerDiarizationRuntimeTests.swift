@@ -8,10 +8,17 @@ import os
     import Testing
 
     private let lifecycleWaitTimeout = testPollTimeout
+    private let simulatedWorkDuration: Duration = .seconds(30)
     private let cancellationObservationTimeout: Duration = .seconds(15)
 
     // swiftlint:disable:next type_body_length
     struct SpeakerDiarizationRuntimeTests {
+        @Test
+        func cancellationObservationTimeoutProtectsShutdownRaceDetection() {
+            // The shutdown-race regression check depends on observing cancellation before natural completion.
+            #expect(cancellationObservationTimeout < simulatedWorkDuration)
+        }
+
         @Test
         func concurrentExtractsQueueBehindOneLoadAndBothSucceed() async throws {
             let probe = SerialDiarizerProbe(output: SpeakerDiarizationOutput(
@@ -334,8 +341,8 @@ import os
                 try #require(await probe.waitUntilProcessStarts(), "Diarization did not start before the shutdown race")
                 let shutdown = Task { await host.shutdown() }
                 let racing = Task { try await host.process(source: source) }
-                // This loop repeats the race 30 times, so bound cancellation observation below the
-                // probe's 30-second work duration instead of spending the suite-wide timeout per race.
+                // Keep this timeout below the simulated work duration: ShutdownRaceProbe's defer restores the
+                // counter on natural completion, making the regression check below unfalsifiable (green but blind).
                 let stopped = await probe.waitUntilStopped(timeout: cancellationObservationTimeout)
                 if !stopped {
                     Issue.record("Diarization work remained active after shutdown")
@@ -345,6 +352,8 @@ import os
                 _ = try await awaitLifecycleTask(shutdown, "shutdown racing an active request")
                 try await awaitLifecycleTermination(active, "active request during shutdown")
                 try await awaitLifecycleTermination(racing, "racing request during shutdown")
+                // Issue.record above is the regression detector; this census is a secondary check that cannot
+                // fire while shutdown awaits the worker and its process defer.
                 if await probe.activeProcessCount != 0 {
                     leaks += 1
                 }
@@ -673,7 +682,7 @@ import os
             processCount += 1
             started = true
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: simulatedWorkDuration)
                 return SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
             } catch {
                 cancelled = true
@@ -686,7 +695,7 @@ import os
         }
 
         func waitUntilCancelled() async -> Bool {
-            // Cancellation must interrupt the probe's 30-second sleep; waiting longer would only hide a regression.
+            // Cancellation must interrupt the simulated work; waiting longer would only hide a regression.
             await pollUntil(timeout: cancellationObservationTimeout) { self.cancelled }
         }
     }
@@ -776,7 +785,7 @@ import os
             await Task.yield()
             defer { activeProcessCount -= 1 }
             if processCount == 1 {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: simulatedWorkDuration)
             }
             return output
         }
@@ -797,7 +806,7 @@ import os
         func process() async throws -> SpeakerDiarizationOutput {
             activeProcessCount += 1
             defer { activeProcessCount -= 1 }
-            try await Task.sleep(for: .seconds(30))
+            try await Task.sleep(for: simulatedWorkDuration)
             return emptyOutput()
         }
 
