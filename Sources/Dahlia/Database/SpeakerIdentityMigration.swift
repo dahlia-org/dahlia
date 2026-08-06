@@ -1,5 +1,7 @@
 import GRDB
 
+// The migration stays as one schema unit so its tables, indexes, and validation triggers are reviewed together.
+// swiftlint:disable:next type_body_length
 enum SpeakerIdentityMigration {
     static func migrate(in db: Database) throws {
         try createTables(in: db)
