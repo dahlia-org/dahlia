@@ -53,6 +53,7 @@ actor BatchTranscriptionCoordinator {
     }
 
     private let dbQueue: DatabaseQueue
+    private let speakerProfileRepository: MeetingRepository
     let recordingAudioStore: RecordingAudioStore?
     private let translationService = TranscriptTranslationService()
     private let languageDetector: any BatchLanguageDetecting
@@ -72,6 +73,7 @@ actor BatchTranscriptionCoordinator {
 
     init(
         dbQueue: DatabaseQueue,
+        speakerProfileCache: SpeakerProfileCache = SpeakerProfileCache(),
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         recordingAudioStore: RecordingAudioStore? = nil,
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
@@ -88,6 +90,10 @@ actor BatchTranscriptionCoordinator {
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
+        self.speakerProfileRepository = MeetingRepository(
+            dbQueue: dbQueue,
+            speakerProfileCache: speakerProfileCache
+        )
         self.recordingAudioStore = recordingAudioStore ?? (try? RecordingAudioStore(
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
@@ -186,13 +192,14 @@ actor BatchTranscriptionCoordinator {
         let job = try fetchJob(sessionId: sessionId)
         let output = try await processAudio(job: job)
         let completedAt = Date.now
-        try BatchTranscriptionPersistence.complete(
+        let cacheKeys = try BatchTranscriptionPersistence.complete(
             sessionId: job.session.id,
             meetingId: job.meeting.id,
             output: output,
             completedAt: completedAt,
             dbQueue: dbQueue
         )
+        speakerProfileRepository.invalidateSpeakerProfilesAfterCommit(cacheKeys)
         MeetingConversationMetricsRefreshService.schedule(
             meetingId: job.meeting.id,
             dbQueue: dbQueue

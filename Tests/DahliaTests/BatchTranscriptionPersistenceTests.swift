@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct BatchTranscriptionPersistenceTests {
         private typealias PersistenceState = (
             records: [TranscriptSegmentRecord],
@@ -62,7 +63,7 @@ import GRDB
                 now: now
             )
             let expectedAudioFeatures = sampleAudioFeatures
-            try BatchTranscriptionPersistence.complete(
+            _ = try BatchTranscriptionPersistence.complete(
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
                 records: [record(finalRecord, with: expectedAudioFeatures)],
@@ -78,6 +79,7 @@ import GRDB
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
         func speakerPersistenceFailureRollsBackTranscriptAndSpeakerRowsTogether() throws {
             let fixture = try BatchAudioTestFixture(
                 name: "BatchSpeakerRollback",
@@ -103,6 +105,7 @@ import GRDB
                 id: speakerId,
                 localSpeakerId: "speaker-0",
                 representative: SpeakerEmbedding(space: testSpeakerSpace, values: unitSpeakerVector),
+                representativeQuality: 1,
                 representativeSource: .diarization,
                 profileUpdateEligible: true,
                 exemplars: [],
@@ -143,6 +146,136 @@ import GRDB
             #expect(counts == (0, 0, 0, 0))
         }
 
+        @Test
+        func speakerQualityIsPersistedForRepresentativesAndExemplars() throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "BatchSpeakerQuality",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_010),
+                duration: 10
+            )
+            defer { fixture.removeFiles() }
+            let embedding = SpeakerEmbedding(space: testSpeakerSpace, values: unitSpeakerVector)
+            let speakers = [
+                makeSpeaker(localId: "high", embedding: embedding, quality: 0.75),
+                makeSpeaker(localId: "low", embedding: embedding, quality: 0.25),
+                makeSpeaker(localId: "policy-ineligible", embedding: embedding, quality: 0, profileUpdateEligible: false),
+            ]
+            let output = BatchProcessingOutput(
+                transcriptSegments: [],
+                speakerAnalysis: BatchProcessingOutput.SpeakerAnalysis(sources: [
+                    BatchProcessingOutput.SourceAnalysis(
+                        id: .v7(),
+                        audioSource: .microphone,
+                        embeddingSpace: testSpeakerSpace,
+                        speakers: speakers,
+                        failureReason: nil
+                    ),
+                ]),
+                transcriptSpeakerAssignments: [:]
+            )
+
+            _ = try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                output: output,
+                completedAt: fixture.now.addingTimeInterval(20),
+                dbQueue: fixture.database.dbQueue
+            )
+
+            let persisted = try fixture.database.dbQueue.read { db in
+                let speakers = try MeetingSpeakerRecord.order(Column("localSpeakerId")).fetchAll(db)
+                let exemplars = try MeetingSpeakerExemplarRecord.fetchAll(db)
+                return (speakers, exemplars)
+            }
+            #expect(persisted.0.map(\.localSpeakerId) == ["high", "low", "policy-ineligible"])
+            #expect(persisted.0.map(\.representativeQuality) == [0.75, 0.25, 0])
+            #expect(Set(persisted.1.map(\.quality)) == [0.75, 0.25])
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func retranscribingWithSpeakerIdentificationOffRemovesEvidenceRecomputesProfilesAndInvalidatesCache() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "BatchSpeakerOnThenOff",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_010),
+                duration: 10
+            )
+            defer { fixture.removeFiles() }
+            let speaker = makeSpeaker(
+                localId: "speaker-0",
+                embedding: SpeakerEmbedding(space: testSpeakerSpace, values: unitSpeakerVector),
+                quality: 0.75
+            )
+            let firstCompletedAt = fixture.now.addingTimeInterval(20)
+            _ = try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                output: BatchProcessingOutput(
+                    transcriptSegments: [],
+                    speakerAnalysis: BatchProcessingOutput.SpeakerAnalysis(sources: [
+                        BatchProcessingOutput.SourceAnalysis(
+                            id: .v7(),
+                            audioSource: .microphone,
+                            embeddingSpace: testSpeakerSpace,
+                            speakers: [speaker],
+                            failureReason: nil
+                        ),
+                    ]),
+                    transcriptSpeakerAssignments: [:]
+                ),
+                completedAt: firstCompletedAt,
+                dbQueue: fixture.database.dbQueue
+            )
+            let identity = try attachSpeakerToProfile(
+                speakerId: speaker.id,
+                fixture: fixture,
+                updatedAt: firstCompletedAt
+            )
+            let cache = SpeakerProfileCache()
+            let cacheKey = SpeakerProfileCacheKey(
+                vaultId: fixture.meeting.vaultId,
+                embeddingSpaceId: identity.embeddingSpaceId
+            )
+            let counter = BatchCompletionCacheLoadCounter()
+            _ = try await cache.profiles(for: cacheKey) {
+                await counter.increment()
+                return []
+            }
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastAttemptAt = ? WHERE id = ?",
+                    arguments: [firstCompletedAt.addingTimeInterval(1), fixture.session.id]
+                )
+            }
+
+            let cacheKeys = try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                records: [],
+                completedAt: firstCompletedAt.addingTimeInterval(2),
+                dbQueue: fixture.database.dbQueue
+            )
+            MeetingRepository(dbQueue: fixture.database.dbQueue, speakerProfileCache: cache)
+                .invalidateSpeakerProfilesAfterCommit(cacheKeys)
+            _ = try await cache.profiles(for: cacheKey) {
+                await counter.increment()
+                return []
+            }
+
+            let counts = try await fixture.database.dbQueue.read { db in
+                try (
+                    SpeakerAnalysisRecord.fetchCount(db),
+                    MeetingSpeakerRecord.fetchCount(db),
+                    MeetingSpeakerExemplarRecord.fetchCount(db),
+                    SpeakerDiarizationSpanRecord.fetchCount(db),
+                    SpeakerContactAssignmentRecord.fetchCount(db)
+                )
+            }
+            #expect(counts == (0, 0, 0, 0, 0))
+            #expect(try speakerProfileCount(for: identity.evidence, dbQueue: fixture.database.dbQueue) == 0)
+            #expect(await counter.value == 2)
+        }
+
         private var sampleAudioFeatures: TranscriptAudioFeatures {
             TranscriptAudioFeatures(
                 activeRmsDecibels: -16,
@@ -150,6 +283,66 @@ import GRDB
                 voicedFrameRatio: 0.8,
                 pitchSpreadHertz: 35
             )
+        }
+
+        private func makeSpeaker(
+            localId: String,
+            embedding: SpeakerEmbedding,
+            quality: Float,
+            profileUpdateEligible: Bool = true
+        ) -> BatchProcessingOutput.Speaker {
+            BatchProcessingOutput.Speaker(
+                id: .v7(),
+                localSpeakerId: localId,
+                representative: embedding,
+                representativeQuality: quality,
+                representativeSource: profileUpdateEligible ? .diarization : .speakerDatabase,
+                profileUpdateEligible: profileUpdateEligible,
+                exemplars: profileUpdateEligible
+                    ? [SpeakerEmbeddingExemplar(embedding: embedding, quality: quality)]
+                    : [],
+                spans: []
+            )
+        }
+
+        private func attachSpeakerToProfile(
+            speakerId: UUID,
+            fixture: BatchAudioTestFixture,
+            updatedAt: Date
+        ) throws -> (embeddingSpaceId: UUID, evidence: SpeakerDeletionEvidence) {
+            try fixture.database.dbQueue.write { db in
+                let analysis = try #require(try SpeakerAnalysisRecord.fetchOne(db))
+                let embeddingSpaceId = try #require(analysis.embeddingSpaceId)
+                let contactId = UUID.v7()
+                try ContactRecord(
+                    id: contactId,
+                    vaultId: fixture.meeting.vaultId,
+                    email: nil,
+                    displayName: "Speaker",
+                    revision: 1,
+                    createdAt: updatedAt,
+                    updatedAt: updatedAt
+                ).insert(db)
+                try SpeakerContactAssignmentRecord(
+                    meetingSpeakerId: speakerId,
+                    contactId: contactId,
+                    origin: .manual,
+                    createdAt: updatedAt,
+                    updatedAt: updatedAt
+                ).insert(db)
+                let space = try #require(try SpeakerEmbeddingSpaceRecord.fetchOne(db, key: embeddingSpaceId))
+                try SpeakerProfileRecalculator.recompute(
+                    contactId: contactId,
+                    vaultId: fixture.meeting.vaultId,
+                    embeddingSpace: space,
+                    now: updatedAt,
+                    in: db
+                )
+                return (
+                    embeddingSpaceId,
+                    SpeakerDeletionEvidence(contactId: contactId, embeddingSpaceId: embeddingSpaceId)
+                )
+            }
         }
 
         private func record(
@@ -196,6 +389,14 @@ import GRDB
                 isConfirmed: true,
                 speakerLabel: "mic"
             )
+        }
+    }
+
+    private actor BatchCompletionCacheLoadCounter {
+        private(set) var value = 0
+
+        func increment() {
+            value += 1
         }
     }
 #endif

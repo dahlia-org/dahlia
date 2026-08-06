@@ -19,9 +19,10 @@ struct BatchProcessingOutput: Sendable {
         let id: UUID
         let localSpeakerId: String
         let representative: SpeakerEmbedding
+        let representativeQuality: Float
         let representativeSource: SpeakerRepresentativeSource
         let profileUpdateEligible: Bool
-        let exemplars: [SpeakerEmbedding]
+        let exemplars: [SpeakerEmbeddingExemplar]
         let spans: [SpeakerDiarizationSpan]
     }
 

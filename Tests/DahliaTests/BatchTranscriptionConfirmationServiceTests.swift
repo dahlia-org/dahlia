@@ -82,7 +82,7 @@ import GRDB
                 isConfirmed: true,
                 speakerLabel: "mic"
             )
-            try BatchTranscriptionPersistence.complete(
+            _ = try BatchTranscriptionPersistence.complete(
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
                 records: [replacement],
@@ -198,7 +198,7 @@ import GRDB
             let pending = try await fixture.database.dbQueue.read { db in
                 try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
             }
-            try BatchTranscriptionPersistence.complete(
+            _ = try BatchTranscriptionPersistence.complete(
                 sessionId: fixture.session.id,
                 meetingId: fixture.meeting.id,
                 records: [],

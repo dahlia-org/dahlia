@@ -79,6 +79,8 @@ import Foundation
 
             #expect(evidence.first?.exemplars.count == 1)
             #expect(evidence.first?.representative.values == unitVector(index: 0))
+            #expect(evidence.first?.representativeQuality == 0.75)
+            #expect(evidence.first?.exemplars.first?.quality == 0.75)
         }
 
         @Test
@@ -99,7 +101,7 @@ import Foundation
             )
 
             let evidence = try await extract(output: output)
-            let exemplars = try #require(evidence.first?.exemplars.map(\.values))
+            let exemplars = try #require(evidence.first?.exemplars.map(\.embedding.values))
             let exemplarIdentities = exemplars.map { exemplar in
                 Int((atan2(Double(exemplar[1]), Double(exemplar[0])) * 180 / .pi).rounded())
             }
@@ -131,6 +133,7 @@ import Foundation
 
             #expect(evidence.first?.speakerID == "S2")
             #expect(evidence.first?.representative.values == unitVector(index: 20))
+            #expect(evidence.first?.representativeQuality == 0)
             #expect(evidence.first?.exemplars.isEmpty == true)
             #expect(evidence.first?.profileUpdateEligible == false)
         }
@@ -172,7 +175,8 @@ import Foundation
             let evidence = MeetingSpeakerEvidence(
                 speakerID: "S1",
                 representative: embedding,
-                exemplars: [embedding],
+                representativeQuality: 1,
+                exemplars: [SpeakerEmbeddingExemplar(embedding: embedding, quality: 1)],
                 profileUpdateEligible: true
             )
             let result = SpeakerMatchResult.matched(personID: personID, score: 0.765_432_1)

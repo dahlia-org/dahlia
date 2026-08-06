@@ -239,6 +239,7 @@ final class MeetingRepository {
         try await BatchTranscriptionDiscardService.discardFailedSessionSafely(
             id: id,
             dbQueue: dbQueue,
+            speakerProfileRepository: self,
             managedRootURL: managedRootURL
         )
     }
@@ -252,6 +253,7 @@ final class MeetingRepository {
         try await BatchTranscriptionDiscardService.discardUnprocessedSessionSafely(
             id: id,
             dbQueue: dbQueue,
+            speakerProfileRepository: self,
             managedRootURL: managedRootURL
         )
     }

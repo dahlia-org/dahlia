@@ -9,7 +9,7 @@ enum BatchTranscriptionPersistence {
         output: BatchProcessingOutput,
         completedAt: Date,
         dbQueue: DatabaseQueue
-    ) throws {
+    ) throws -> Set<SpeakerProfileCacheKey> {
         let records = output.transcriptSegments.map { segment in
             var record = TranscriptSegmentRecord(
                 from: segment,
@@ -19,7 +19,7 @@ enum BatchTranscriptionPersistence {
             record.meetingSpeakerId = output.transcriptSpeakerAssignments[segment.id]
             return record
         }
-        try complete(
+        return try complete(
             sessionId: sessionId,
             meetingId: meetingId,
             records: records,
@@ -35,7 +35,7 @@ enum BatchTranscriptionPersistence {
         records: [TranscriptSegmentRecord],
         completedAt: Date,
         dbQueue: DatabaseQueue
-    ) throws {
+    ) throws -> Set<SpeakerProfileCacheKey> {
         try complete(
             sessionId: sessionId,
             meetingId: meetingId,
@@ -53,7 +53,7 @@ enum BatchTranscriptionPersistence {
         speakerAnalysis: BatchProcessingOutput.SpeakerAnalysis?,
         completedAt: Date,
         dbQueue: DatabaseQueue
-    ) throws {
+    ) throws -> Set<SpeakerProfileCacheKey> {
         try dbQueue.write { db in
             guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
                   session.meetingId == meetingId,
@@ -68,23 +68,20 @@ enum BatchTranscriptionPersistence {
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == sessionId)
                 .deleteAll(db)
-            let profileTargets = if speakerAnalysis == nil {
-                Set<MeetingRepository.SpeakerProfileRecalculationTarget>()
-            } else {
-                try MeetingRepository.speakerProfileTargets(meetingIds: [meetingId], in: db)
-            }
-            if speakerAnalysis != nil {
-                _ = try SpeakerAnalysisRecord
-                    .filter(Column("recordingSessionId") == sessionId)
-                    .deleteAll(db)
-            }
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [meetingId], in: db)
+            _ = try SpeakerAnalysisRecord
+                .filter(Column("recordingSessionId") == sessionId)
+                .deleteAll(db)
             if let speakerAnalysis {
-                try persist(speakerAnalysis, sessionId: sessionId, completedAt: completedAt, in: db)
+                try persistSpeakers(speakerAnalysis, sessionId: sessionId, completedAt: completedAt, in: db)
             }
             for record in records {
                 try record.insert(db)
             }
-            _ = try MeetingRepository.recomputeSpeakerProfiles(
+            if let speakerAnalysis {
+                try persistSpans(speakerAnalysis, completedAt: completedAt, in: db)
+            }
+            let cacheKeys = try MeetingRepository.recomputeSpeakerProfiles(
                 profileTargets,
                 now: completedAt,
                 in: db
@@ -102,10 +99,11 @@ enum BatchTranscriptionPersistence {
                 sql: "UPDATE meetings SET status = ?, updatedAt = ? WHERE id = ?",
                 arguments: [MeetingStatus.ready.rawValue, persistedCompletedAt, meetingId]
             )
+            return cacheKeys
         }
     }
 
-    private static func persist(
+    private static func persistSpeakers(
         _ analysis: BatchProcessingOutput.SpeakerAnalysis,
         sessionId: UUID,
         completedAt: Date,
@@ -137,7 +135,7 @@ enum BatchTranscriptionPersistence {
                         speaker.representative.values,
                         dimensionCount: dimensionCount
                     ),
-                    representativeQuality: 1,
+                    representativeQuality: Double(speaker.representativeQuality),
                     representativeSource: speaker.representativeSource,
                     profileUpdateEligible: speaker.profileUpdateEligible,
                     revision: 1,
@@ -149,21 +147,30 @@ enum BatchTranscriptionPersistence {
                         meetingSpeakerId: speaker.id,
                         ordinal: ordinal,
                         embedding: SpeakerEmbeddingBlobCodec.encode(
-                            exemplar.values,
+                            exemplar.embedding.values,
                             dimensionCount: dimensionCount
                         ),
-                        quality: 1
+                        quality: Double(exemplar.quality)
                     ).insert(db)
                 }
-                for span in speaker.spans {
-                    try SpeakerDiarizationSpanRecord(
-                        id: .v7(),
-                        meetingSpeakerId: speaker.id,
-                        startSeconds: span.startTimeSeconds,
-                        endSeconds: span.endTimeSeconds,
-                        createdAt: completedAt
-                    ).insert(db)
-                }
+            }
+        }
+    }
+
+    private static func persistSpans(
+        _ analysis: BatchProcessingOutput.SpeakerAnalysis,
+        completedAt: Date,
+        in db: Database
+    ) throws {
+        for speaker in analysis.sources.flatMap(\.speakers) {
+            for span in speaker.spans {
+                try SpeakerDiarizationSpanRecord(
+                    id: .v7(),
+                    meetingSpeakerId: speaker.id,
+                    startSeconds: span.startTimeSeconds,
+                    endSeconds: span.endTimeSeconds,
+                    createdAt: completedAt
+                ).insert(db)
             }
         }
     }

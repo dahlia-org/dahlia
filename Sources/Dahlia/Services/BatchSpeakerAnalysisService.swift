@@ -4,29 +4,35 @@ protocol BatchSpeakerAnalyzing: Sendable {
     func analyze(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         recordingStartTime: Date
-    ) async -> BatchProcessingOutput.SpeakerAnalysis
+    ) async throws -> BatchProcessingOutput.SpeakerAnalysis
 }
 
 actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
     typealias ExtractorFactory = @Sendable () throws -> any SpeakerEmbeddingExtractor
+    typealias ErrorReporter = @Sendable (any Error, [String: String]) -> Void
 
     private let converter: SpeakerAudioSampleSourceConverter
     private let extractorFactory: ExtractorFactory
+    private let errorReporter: ErrorReporter
 
     init(
         converter: SpeakerAudioSampleSourceConverter = SpeakerAudioSampleSourceConverter(),
         extractorFactory: @escaping ExtractorFactory = {
             try SpeakerDiarizationRuntime(assetManager: SpeakerModelAssetManager())
+        },
+        errorReporter: @escaping ErrorReporter = { error, context in
+            ErrorReportingService.capture(error, context: context)
         }
     ) {
         self.converter = converter
         self.extractorFactory = extractorFactory
+        self.errorReporter = errorReporter
     }
 
     func analyze(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         recordingStartTime _: Date
-    ) async -> BatchProcessingOutput.SpeakerAnalysis {
+    ) async throws -> BatchProcessingOutput.SpeakerAnalysis {
         let audioSources = Set(verifiedSegments.map(\.segment.source))
         let slices = verifiedSegments.flatMap { verified in
             verified.ranges.compactMap { range -> SpeakerAudioFileSlice? in
@@ -44,7 +50,10 @@ actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
         let sampleSources: [RecordingAudioSource: MemoryMappedAudioSampleSource]
         do {
             sampleSources = try await converter.convert(slices)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            report(error, stage: "audioConversion")
             return failedAnalysis(for: audioSources, reason: .analysisFailed)
         }
         defer {
@@ -53,11 +62,9 @@ actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
             }
         }
 
-        let extractor: any SpeakerEmbeddingExtractor
-        do {
-            extractor = try extractorFactory()
-        } catch {
-            return failedAnalysis(for: audioSources, reason: .analysisFailed)
+        let extractorResult = try makeExtractor()
+        guard let extractor = extractorResult.extractor else {
+            return failedAnalysis(for: audioSources, reason: extractorResult.failureReason)
         }
 
         var analyses: [BatchProcessingOutput.SourceAnalysis] = []
@@ -79,9 +86,10 @@ actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
                     embeddingSpace: embeddingSpace
                 ))
             } catch is CancellationError {
-                analyses.append(failedSource(audioSource, reason: .analysisFailed))
+                throw CancellationError()
             } catch {
-                analyses.append(failedSource(audioSource, reason: .analysisFailed))
+                report(error, stage: "extraction", audioSource: audioSource)
+                analyses.append(failedSource(audioSource, reason: failureReason(for: error)))
             }
         }
         return BatchProcessingOutput.SpeakerAnalysis(sources: analyses)
@@ -108,6 +116,7 @@ actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
                 id: .v7(),
                 localSpeakerId: evidence.speakerID,
                 representative: evidence.representative,
+                representativeQuality: evidence.representativeQuality,
                 representativeSource: evidence.representativeSource,
                 profileUpdateEligible: evidence.profileUpdateEligible,
                 exemplars: Array(evidence.exemplars.prefix(3)),
@@ -145,5 +154,36 @@ actor BatchSpeakerAnalysisService: BatchSpeakerAnalyzing {
             speakers: [],
             failureReason: reason
         )
+    }
+
+    private func failureReason(for error: any Error) -> SpeakerMatchUnknownReason {
+        error is SpeakerModelAssetError ? .modelAssetsUnavailable : .analysisFailed
+    }
+
+    private func makeExtractor() throws -> (
+        extractor: (any SpeakerEmbeddingExtractor)?,
+        failureReason: SpeakerMatchUnknownReason
+    ) {
+        do {
+            return try (extractorFactory(), .analysisFailed)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            report(error, stage: "extractorInitialization")
+            return (nil, failureReason(for: error))
+        }
+    }
+
+    private func report(
+        _ error: any Error,
+        stage: String,
+        audioSource: RecordingAudioSource? = nil
+    ) {
+        var context = [
+            "source": "batchSpeakerAnalysis",
+            "stage": stage,
+        ]
+        context["audioSource"] = audioSource?.rawValue
+        errorReporter(error, context)
     }
 }

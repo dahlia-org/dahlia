@@ -26,7 +26,7 @@ extension BatchTranscriptionCoordinator {
                     transcriptSpeakerAssignments: [:]
                 )
             }
-            let speakerAnalysis = await self.speakerAnalyzerFactory().analyze(
+            let speakerAnalysis = try await self.speakerAnalyzerFactory().analyze(
                 verifiedSegments: verified,
                 recordingStartTime: job.session.startedAt
             )

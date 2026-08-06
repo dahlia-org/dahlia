@@ -181,6 +181,7 @@ enum MeetingSpeakerEvidenceBuilder {
                 return MeetingSpeakerEvidence(
                     speakerID: speakerID,
                     representative: SpeakerEmbedding(space: space, values: fallback),
+                    representativeQuality: 0,
                     exemplars: [],
                     profileUpdateEligible: false,
                     representativeSource: .speakerDatabase
@@ -192,6 +193,7 @@ enum MeetingSpeakerEvidenceBuilder {
                 return MeetingSpeakerEvidence(
                     speakerID: speakerID,
                     representative: SpeakerEmbedding(space: space, values: representative),
+                    representativeQuality: validChunks.reduce(0) { $0 + $1.weight },
                     exemplars: [],
                     profileUpdateEligible: false
                 )
@@ -207,11 +209,17 @@ enum MeetingSpeakerEvidenceBuilder {
                     return lhsSimilarity > rhsSimilarity
                 }
                 .prefix(maximumExemplarCount)
-                .map { SpeakerEmbedding(space: space, values: $0.embedding) }
+                .map {
+                    SpeakerEmbeddingExemplar(
+                        embedding: SpeakerEmbedding(space: space, values: $0.embedding),
+                        quality: $0.weight
+                    )
+                }
 
             return MeetingSpeakerEvidence(
                 speakerID: speakerID,
                 representative: SpeakerEmbedding(space: space, values: representative),
+                representativeQuality: validChunks.reduce(0) { $0 + $1.weight },
                 exemplars: exemplars,
                 profileUpdateEligible: true
             )

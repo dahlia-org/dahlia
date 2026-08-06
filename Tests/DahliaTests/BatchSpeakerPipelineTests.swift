@@ -103,7 +103,7 @@ import os
         }
 
         @Test
-        func missingSpeakerAssetsDegradeToAnalysisFailedWithoutThrowing() async throws {
+        func missingSpeakerAssetsHaveActionableFailureReasonAndDiagnosticStage() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "SpeakerAssetsMissing",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -116,18 +116,54 @@ import os
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL
             )
-            let analyzer = BatchSpeakerAnalysisService(extractorFactory: {
-                MissingAssetsSpeakerExtractor()
-            })
+            let diagnostics = SpeakerAnalysisDiagnosticProbe()
+            let analyzer = BatchSpeakerAnalysisService(
+                extractorFactory: {
+                    throw SpeakerModelAssetError.missingFile("segmentation.mlmodelc")
+                },
+                errorReporter: { _, context in
+                    diagnostics.record(context)
+                }
+            )
 
             let analysis = try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { verified in
-                await analyzer.analyze(verifiedSegments: verified, recordingStartTime: fixture.session.startedAt)
+                try await analyzer.analyze(verifiedSegments: verified, recordingStartTime: fixture.session.startedAt)
             }
 
             #expect(analysis.sources.count == 1)
             #expect(analysis.sources.first?.audioSource == .microphone)
-            #expect(analysis.sources.first?.failureReason == .analysisFailed)
+            #expect(analysis.sources.first?.failureReason == .modelAssetsUnavailable)
             #expect(analysis.sources.first?.speakers.isEmpty == true)
+            #expect(diagnostics.context?["source"] == "batchSpeakerAnalysis")
+            #expect(diagnostics.context?["stage"] == "extractorInitialization")
+        }
+
+        @Test
+        func cancellationDoesNotProduceFailedSpeakerAnalysis() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "SpeakerAnalysisCancellation",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 0.01,
+                retainAudioAfterBatch: true
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL
+            )
+            let analyzer = BatchSpeakerAnalysisService(extractorFactory: {
+                CancelledSpeakerExtractor()
+            })
+
+            await #expect(throws: CancellationError.self) {
+                try await store.withVerifiedTranscribableSegments(sessionId: fixture.session.id) { verified in
+                    try await analyzer.analyze(
+                        verifiedSegments: verified,
+                        recordingStartTime: fixture.session.startedAt
+                    )
+                }
+            }
         }
 
         private func waitForCompletion(_ fixture: BatchAudioTestFixture) async throws {
@@ -160,12 +196,13 @@ import os
         func analyze(
             verifiedSegments _: [RecordingAudioStore.VerifiedSegment],
             recordingStartTime _: Date
-        ) async -> BatchProcessingOutput.SpeakerAnalysis {
+        ) async throws -> BatchProcessingOutput.SpeakerAnalysis {
             probe.recordAnalysisCall()
             let speaker = BatchProcessingOutput.Speaker(
                 id: .v7(),
                 localSpeakerId: "speaker-0",
                 representative: SpeakerEmbedding(space: testSpeakerSpace, values: unitSpeakerVector),
+                representativeQuality: 1,
                 representativeSource: .diarization,
                 profileUpdateEligible: true,
                 exemplars: [],
@@ -183,9 +220,19 @@ import os
         }
     }
 
-    private struct MissingAssetsSpeakerExtractor: SpeakerEmbeddingExtractor {
+    private struct CancelledSpeakerExtractor: SpeakerEmbeddingExtractor {
         func extract(from _: MemoryMappedAudioSampleSource) async throws -> [MeetingSpeakerEvidence] {
-            throw SpeakerModelAssetError.missingFile("segmentation.mlmodelc")
+            throw CancellationError()
+        }
+    }
+
+    private final class SpeakerAnalysisDiagnosticProbe: Sendable {
+        private let state = OSAllocatedUnfairLock<[String: String]?>(initialState: nil)
+
+        var context: [String: String]? { state.withLock(\.self) }
+
+        func record(_ context: [String: String]) {
+            state.withLock { $0 = context }
         }
     }
 

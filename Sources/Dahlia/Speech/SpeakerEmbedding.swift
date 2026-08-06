@@ -39,22 +39,30 @@ struct SpeakerEmbedding: Codable, Equatable, Sendable, CustomStringConvertible, 
     }
 }
 
+struct SpeakerEmbeddingExemplar: Equatable, Sendable {
+    let embedding: SpeakerEmbedding
+    let quality: Float
+}
+
 struct MeetingSpeakerEvidence: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let speakerID: String
     let representative: SpeakerEmbedding
-    let exemplars: [SpeakerEmbedding]
+    let representativeQuality: Float
+    let exemplars: [SpeakerEmbeddingExemplar]
     let profileUpdateEligible: Bool
     let representativeSource: SpeakerRepresentativeSource
 
     init(
         speakerID: String,
         representative: SpeakerEmbedding,
-        exemplars: [SpeakerEmbedding],
+        representativeQuality: Float,
+        exemplars: [SpeakerEmbeddingExemplar],
         profileUpdateEligible: Bool,
         representativeSource: SpeakerRepresentativeSource = .diarization
     ) {
         self.speakerID = speakerID
         self.representative = representative
+        self.representativeQuality = representativeQuality
         self.exemplars = exemplars
         self.profileUpdateEligible = profileUpdateEligible
         self.representativeSource = representativeSource
@@ -91,6 +99,7 @@ enum SpeakerMatchUnknownReason: String, Codable, DatabaseValueConvertible, Equat
     case incompatibleEmbeddingSpace
     case insufficientEvidence
     case invalidEmbedding
+    case modelAssetsUnavailable
     case belowThreshold
 }
 
