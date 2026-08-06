@@ -191,6 +191,7 @@ actor BatchTranscriptionCoordinator {
             }
         }
         if let firstError {
+            isShuttingDown = false
             throw firstError
         }
     }

@@ -124,6 +124,8 @@ import GRDB
             try await batch.database.dbQueue.write { db in
                 try db.execute(sql: "DROP TRIGGER fail_batch_interruption_persistence")
             }
+            await coordinator.enqueue(sessionId: batch.session.id)
+            #expect(await pollUntil { await recognizer.startCount == 2 })
             #expect(await viewModel.prepareForTermination() == nil)
             let session = try await batch.database.dbQueue.read { db in
                 try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
@@ -268,7 +270,8 @@ import GRDB
 
     private actor ShutdownSpeechRecognizer: BatchSpeechRecognizing {
         private var continuation: CheckedContinuation<[BatchSpeechRecognition], Error>?
-        private(set) var didStart = false
+        private(set) var startCount = 0
+        var didStart: Bool { startCount > 0 }
 
         func recognize(audioURL _: URL, locale _: Locale) async throws -> [BatchSpeechRecognition] {
             try await suspendUntilCancelled()
@@ -279,7 +282,7 @@ import GRDB
         }
 
         private func suspendUntilCancelled() async throws -> [BatchSpeechRecognition] {
-            didStart = true
+            startCount += 1
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     if Task.isCancelled {
