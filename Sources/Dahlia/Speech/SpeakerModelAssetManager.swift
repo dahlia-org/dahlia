@@ -1,0 +1,293 @@
+import CryptoKit
+import DahliaRuntimeSupport
+import Foundation
+
+struct SpeakerModelAssetManifest: Codable, Sendable {
+    struct File: Codable, Hashable, Sendable {
+        let relativePath: String
+        let byteCount: Int64
+        let sha256: String
+    }
+
+    let repository: String
+    let revision: String
+    let license: String
+    let totalByteCount: Int64
+    let files: [File]
+
+    static func bundled() throws -> Self {
+        guard let url = Bundle.module.url(
+            forResource: "SpeakerDiarizationModelManifest",
+            withExtension: "json"
+        ) else {
+            throw SpeakerModelAssetError.manifestUnavailable
+        }
+        return try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+    }
+}
+
+struct SpeakerModelAssetProgress: Equatable, Sendable {
+    let completedByteCount: Int64
+    let totalByteCount: Int64
+    let currentFile: String?
+}
+
+enum SpeakerModelAssetError: Error, Equatable {
+    case manifestUnavailable
+    case invalidResponse(URL)
+    case missingFile(String)
+    case unexpectedFiles(Set<String>)
+    case byteCountMismatch(path: String, expected: Int64, actual: Int64)
+    case checksumMismatch(path: String)
+    case totalByteCountMismatch(expected: Int64, actual: Int64)
+}
+
+protocol SpeakerModelAssetFetching: Sendable {
+    func data(from url: URL) async throws -> Data
+}
+
+struct URLSessionSpeakerModelAssetFetcher: SpeakerModelAssetFetching {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func data(from url: URL) async throws -> Data {
+        let (data, response) = try await session.data(from: url)
+        guard let response = response as? HTTPURLResponse,
+              (200 ..< 300).contains(response.statusCode) else {
+            throw SpeakerModelAssetError.invalidResponse(url)
+        }
+        return data
+    }
+}
+
+actor SpeakerModelAssetManager {
+    static let repositoryFolderName = "speaker-diarization-coreml"
+
+    private let manifest: SpeakerModelAssetManifest
+    private let managedRootURL: URL
+    private let fetcher: any SpeakerModelAssetFetching
+    private let fileManager: FileManager
+    private let disableFeature: @Sendable () -> Void
+
+    init(
+        managedRootURL: URL = DahliaApplicationSupport.currentDirectoryURL
+            .appending(path: "Models/SpeakerDiarization", directoryHint: .isDirectory),
+        manifest: SpeakerModelAssetManifest? = nil,
+        fetcher: any SpeakerModelAssetFetching = URLSessionSpeakerModelAssetFetcher(),
+        fileManager: FileManager = .default,
+        disableFeature: @escaping @Sendable () -> Void = {
+            UserDefaults.standard.set(false, forKey: AppSettings.speakerDiarizationEnabledUserDefaultsKey)
+        }
+    ) throws {
+        self.managedRootURL = managedRootURL
+        self.manifest = try manifest ?? .bundled()
+        self.fetcher = fetcher
+        self.fileManager = fileManager
+        self.disableFeature = disableFeature
+    }
+
+    func acquisition() -> AsyncThrowingStream<SpeakerModelAssetProgress, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    _ = try await acquire { continuation.yield($0) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    @discardableResult
+    func acquire(
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void = { _ in }
+    ) async throws -> URL {
+        let repositoryURL = installedRepositoryURL
+        do {
+            if (try? verifyRepository(at: repositoryURL)) == true {
+                progress(.init(
+                    completedByteCount: manifest.totalByteCount,
+                    totalByteCount: manifest.totalByteCount,
+                    currentFile: nil
+                ))
+                return repositoryURL
+            }
+
+            try fileManager.createDirectory(at: revisionRootURL, withIntermediateDirectories: true)
+            let temporaryURL = revisionRootURL.appending(
+                path: "." + Self.repositoryFolderName + "-" + UUID.v7().uuidString + ".temporary",
+                directoryHint: .isDirectory
+            )
+            try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: true)
+
+            do {
+                let receivedByteCount = try await downloadAssets(to: temporaryURL, progress: progress)
+                guard receivedByteCount == manifest.totalByteCount else {
+                    throw SpeakerModelAssetError.totalByteCountMismatch(
+                        expected: manifest.totalByteCount,
+                        actual: receivedByteCount
+                    )
+                }
+                _ = try verifyRepository(at: temporaryURL)
+                try Task.checkCancellation()
+                if fileManager.fileExists(atPath: repositoryURL.path) {
+                    try fileManager.removeItem(at: repositoryURL)
+                }
+                try fileManager.moveItem(at: temporaryURL, to: repositoryURL)
+                return repositoryURL
+            } catch {
+                try? fileManager.removeItem(at: temporaryURL)
+                throw error
+            }
+        } catch {
+            disableFeature()
+            throw error
+        }
+    }
+
+    private func downloadAssets(
+        to temporaryURL: URL,
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void
+    ) async throws -> Int64 {
+        var receivedByteCount: Int64 = 0
+        progress(.init(completedByteCount: 0, totalByteCount: manifest.totalByteCount, currentFile: nil))
+        for file in manifest.files {
+            try Task.checkCancellation()
+            let data = try await fetcher.data(from: Self.downloadURL(for: file, manifest: manifest))
+            let byteCount = Int64(data.count)
+            guard byteCount == file.byteCount else {
+                throw SpeakerModelAssetError.byteCountMismatch(
+                    path: file.relativePath,
+                    expected: file.byteCount,
+                    actual: byteCount
+                )
+            }
+            guard Self.sha256(of: data) == file.sha256 else {
+                throw SpeakerModelAssetError.checksumMismatch(path: file.relativePath)
+            }
+            let destinationURL = temporaryURL.appending(path: file.relativePath)
+            try fileManager.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: destinationURL, options: .atomic)
+            receivedByteCount += byteCount
+            progress(.init(
+                completedByteCount: receivedByteCount,
+                totalByteCount: manifest.totalByteCount,
+                currentFile: file.relativePath
+            ))
+        }
+        return receivedByteCount
+    }
+
+    func verifiedRevisionRootURL() throws -> URL {
+        do {
+            guard try verifyRepository(at: installedRepositoryURL) else {
+                throw SpeakerModelAssetError.missingFile(manifest.files[0].relativePath)
+            }
+            return revisionRootURL
+        } catch {
+            disableFeature()
+            throw error
+        }
+    }
+
+    func onDiskUsage() throws -> Int64 {
+        guard let enumerator = fileManager.enumerator(
+            at: managedRootURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]
+        ) else { return 0 }
+
+        var byteCount: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            if values.isRegularFile == true {
+                byteCount += Int64(values.fileSize ?? 0)
+            }
+        }
+        return byteCount
+    }
+
+    static func downloadURL(for file: SpeakerModelAssetManifest.File, manifest: SpeakerModelAssetManifest) -> URL {
+        URL(string: "https://huggingface.co")!
+            .appending(path: manifest.repository)
+            .appending(path: "resolve")
+            .appending(path: manifest.revision)
+            .appending(path: file.relativePath)
+    }
+
+    private var revisionRootURL: URL {
+        managedRootURL.appending(path: manifest.revision, directoryHint: .isDirectory)
+    }
+
+    private var installedRepositoryURL: URL {
+        revisionRootURL.appending(path: Self.repositoryFolderName, directoryHint: .isDirectory)
+    }
+
+    private func verifyRepository(at repositoryURL: URL) throws -> Bool {
+        guard fileManager.fileExists(atPath: repositoryURL.path) else { return false }
+
+        var totalByteCount: Int64 = 0
+        for file in manifest.files {
+            let fileURL = repositoryURL.appending(path: file.relativePath)
+            guard fileManager.fileExists(atPath: fileURL.path) else {
+                throw SpeakerModelAssetError.missingFile(file.relativePath)
+            }
+            let data = try Data(contentsOf: fileURL)
+            let byteCount = Int64(data.count)
+            guard byteCount == file.byteCount else {
+                throw SpeakerModelAssetError.byteCountMismatch(
+                    path: file.relativePath,
+                    expected: file.byteCount,
+                    actual: byteCount
+                )
+            }
+            guard Self.sha256(of: data) == file.sha256 else {
+                throw SpeakerModelAssetError.checksumMismatch(path: file.relativePath)
+            }
+            totalByteCount += byteCount
+        }
+
+        let expectedPaths = Set(manifest.files.map(\.relativePath))
+        let actualPaths = try regularFilePaths(in: repositoryURL)
+        guard expectedPaths == actualPaths else {
+            throw SpeakerModelAssetError.unexpectedFiles(actualPaths.subtracting(expectedPaths))
+        }
+        guard totalByteCount == manifest.totalByteCount else {
+            throw SpeakerModelAssetError.totalByteCountMismatch(
+                expected: manifest.totalByteCount,
+                actual: totalByteCount
+            )
+        }
+        return true
+    }
+
+    private func regularFilePaths(in directoryURL: URL) throws -> Set<String> {
+        guard let enumerator = fileManager.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey]
+        ) else { return [] }
+
+        let directoryComponentCount = directoryURL.resolvingSymlinksInPath().pathComponents.count
+        var paths: Set<String> = []
+        for case let fileURL as URL in enumerator
+            where try fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+            paths.insert(
+                fileURL.resolvingSymlinksInPath().pathComponents
+                    .dropFirst(directoryComponentCount)
+                    .joined(separator: "/")
+            )
+        }
+        return paths
+    }
+
+    private static func sha256(of data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}

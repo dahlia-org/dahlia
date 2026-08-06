@@ -47,7 +47,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
-- The app has exactly four SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- The app has exactly five SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, Sparkle, WhisperKit, and FluidAudio. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
 - Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
 
 ## Code Review Rules

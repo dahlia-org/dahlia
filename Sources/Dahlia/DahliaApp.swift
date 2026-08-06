@@ -397,6 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var processLock: AdvisoryFileLock?
 
     func applicationWillFinishLaunching(_: Notification) {
+        SpeakerDiarizationBootstrap.startProcess()
         do {
             processLock = try AdvisoryFileLock.acquire(
                 at: AppDatabaseManager.databaseURL

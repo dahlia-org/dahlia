@@ -1,0 +1,11 @@
+FluidAudio
+Copyright FluidInference contributors
+https://github.com/FluidInference/FluidAudio
+Licensed under the Apache License, Version 2.0.
+
+FluidInference speaker-diarization-coreml model assets
+Revision: 1ed7a662fdc7109e36d822db793ee6eebdaf8594
+https://huggingface.co/FluidInference/speaker-diarization-coreml
+Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).
+Derived from pyannote/speaker-diarization-community-1:
+https://huggingface.co/pyannote/speaker-diarization-community-1
