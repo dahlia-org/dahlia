@@ -10,6 +10,9 @@ enum SpeakerDiarizationBootstrap {
 
 final class SerialDiarizerHost: Sendable {
     typealias LoadHook = @Sendable () async throws -> Void
+    typealias ProcessingTaskFactory = @Sendable (
+        @escaping @Sendable () async throws -> SpeakerDiarizationOutput
+    ) -> Task<SpeakerDiarizationOutput, any Error>
 
     struct Request {
         let source: MemoryMappedAudioSampleSource
@@ -229,23 +232,7 @@ final class SerialDiarizerHost: Sendable {
         ) async {
             while !Task.isCancelled, let request = await nextRequest(generation: generation) {
                 guard !request.ticket.isCompleted else { continue }
-                let processing = Task {
-                    try Task.checkCancellation()
-                    return try await operation(request)
-                }
-                guard request.ticket.installCancellation({ processing.cancel() }) else {
-                    continue
-                }
-                let result: Result<SpeakerDiarizationOutput, any Error>
-                do {
-                    result = try await withTaskCancellationHandler {
-                        try await .success(processing.value)
-                    } onCancel: {
-                        processing.cancel()
-                    }
-                } catch {
-                    result = .failure(error)
-                }
+                guard let result = await SerialDiarizerHost.processRequest(request, operation: operation) else { continue }
                 request.ticket.complete(result)
             }
         }

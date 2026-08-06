@@ -1,10 +1,13 @@
 import FluidAudio
 import Foundation
+import os
 @testable import Dahlia
 
 // swiftlint:disable file_length
 #if canImport(Testing)
     import Testing
+
+    private let lifecycleWaitTimeout = Duration.seconds(5)
 
     // swiftlint:disable:next type_body_length
     struct SpeakerDiarizationRuntimeTests {
@@ -23,18 +26,18 @@ import Foundation
             defer { try? source.cleanup() }
 
             let first = Task { try await extractor.extract(from: source) }
-            await probe.waitUntilFirstProcessStarts()
+            try #require(await probe.waitUntilFirstProcessStarts(), "The first diarization request did not start")
             let second = Task { try await extractor.extract(from: source) }
             await Task.yield()
             await probe.releaseFirstProcess()
 
-            #expect(try await first.value.count == 1)
-            #expect(try await second.value.count == 1)
+            #expect(try await awaitLifecycleTask(first, "first concurrent request").count == 1)
+            #expect(try await awaitLifecycleTask(second, "second concurrent request").count == 1)
             let counts = await probe.counts()
             #expect(counts.load == 1)
             #expect(counts.process == 2)
             #expect(counts.maximumConcurrent == 1)
-            await extractor.shutdown()
+            _ = try await awaitLifecycleTask(Task { await extractor.shutdown() }, "concurrent extractor shutdown")
         }
 
         @Test
@@ -44,7 +47,10 @@ import Foundation
             defer { try? source.cleanup() }
 
             let weakProcessor = try await runScopedExtractor(source: source, releaseProbe: releaseProbe)
-            await releaseProbe.waitUntilReleased()
+            try #require(
+                await releaseProbe.waitUntilReleased(),
+                "Processor leaked after its extractor left scope"
+            )
 
             #expect(weakProcessor.value == nil)
         }
@@ -66,8 +72,11 @@ import Foundation
                 "shutdownRace": shutdownRace,
             ]
 
-            for path in paths.values {
-                await path.releaseProbe.waitUntilReleased()
+            for (name, path) in paths {
+                #expect(
+                    await path.releaseProbe.waitUntilReleased(),
+                    "Processor leaked after the \(name) teardown path"
+                )
                 #expect(path.processor.value == nil)
             }
             print(
@@ -94,15 +103,42 @@ import Foundation
                 try await extractor.extract(from: source)
             }
             let retry = Task { try await extractor.extract(from: source) }
-            await probe.waitUntilFirstProcessStarts()
+            try #require(await probe.waitUntilFirstProcessStarts(), "The retry diarization request did not start")
             await probe.releaseFirstProcess()
-            let evidence = try await retry.value
+            let evidence = try await awaitLifecycleTask(retry, "request after a failed load")
 
             #expect(evidence.count == 1)
             let counts = await probe.counts()
             #expect(counts.load == 2)
             #expect(counts.process == 1)
-            await extractor.shutdown()
+            _ = try await awaitLifecycleTask(Task { await extractor.shutdown() }, "extractor shutdown after load retry")
+        }
+
+        @Test
+        func completedTicketDoesNotStartDiarizationWork() async throws {
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let ticket = RequestTicket()
+            ticket.cancel()
+            let request = SerialDiarizerHost.Request(source: source, ticket: ticket)
+            let probe = CompletionProbe()
+            let taskCreationProbe = TaskCreationProbe()
+
+            _ = await SerialDiarizerHost.processRequest(
+                request,
+                operation: { _ in await probe.process() },
+                makeTask: { operation in
+                    taskCreationProbe.markCreated()
+                    return Task { try await operation() }
+                }
+            )
+
+            #expect(taskCreationProbe.createdCount == 0, "A diarization task was created for an already-completed ticket")
+            #expect(
+                !(await probe.waitUntilCompleted(timeout: .seconds(1))),
+                "Diarization work ran to completion after its request ticket had already completed"
+            )
+            #expect(await probe.completedCount == 0)
         }
 
         @Test
@@ -130,16 +166,24 @@ import Foundation
                         }
                     }
                 }
-                await probe.waitUntilFirstLoadStarts()
+                try #require(
+                    await probe.waitUntilFirstLoadStarts(),
+                    "The first diarizer load did not start"
+                )
                 for _ in 0 ..< callerCount * 4 {
                     await Task.yield()
                 }
                 await probe.releaseFirstLoad()
 
                 for caller in callers {
-                    #expect(await caller.value)
+                    #expect(try await awaitLifecycleTask(caller, "caller waiting for the failed load"))
                 }
-                _ = try await host.process(source: source)
+                let retries = (0 ..< callerCount).map { _ in
+                    Task { try await host.process(source: source) }
+                }
+                for retry in retries {
+                    _ = try await awaitLifecycleTask(retry, "caller waiting for serialized diarization")
+                }
                 let counts = await probe.counts()
                 #expect(counts.loads == 2)
                 #expect(counts.maximumLiveLoadedWorkers == 1)
@@ -149,7 +193,7 @@ import Foundation
                         + "maxLiveLoadedWorkers=\(counts.maximumLiveLoadedWorkers) "
                         + "maxConcurrentProcesses=\(counts.maximumConcurrentProcesses)"
                 )
-                await host.shutdown()
+                _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "host shutdown after transient load failure")
             }
         }
 
@@ -165,17 +209,17 @@ import Foundation
             let clock = ContinuousClock()
             let startedAt = clock.now
             let extraction = Task { try await extractor.extract(from: source) }
-            await probe.waitUntilStarted()
+            try #require(await probe.waitUntilStarted(), "Diarization did not start")
 
             extraction.cancel()
             await #expect(throws: CancellationError.self) {
-                try await extraction.value
+                try await awaitLifecycleTask(extraction, "cancelled in-flight extraction")
             }
-            await probe.waitUntilCancelled()
+            try #require(await probe.waitUntilCancelled(), "Cancelled diarization work did not stop")
 
             #expect(startedAt.duration(to: clock.now) < .seconds(1))
             #expect(await probe.processCount == 1)
-            await extractor.shutdown()
+            _ = try await awaitLifecycleTask(Task { await extractor.shutdown() }, "extractor shutdown after cancellation")
         }
 
         @Test
@@ -192,20 +236,20 @@ import Foundation
             let source = try sampleSource(samples: [], sampleRate: 16000)
             defer { try? source.cleanup() }
             let active = Task { try await extractor.extract(from: source) }
-            await probe.waitUntilFirstProcessStarts()
+            try #require(await probe.waitUntilFirstProcessStarts(), "The active diarization request did not start")
             let queued = Task { try await extractor.extract(from: source) }
             await Task.yield()
 
             queued.cancel()
             await #expect(throws: CancellationError.self) {
-                try await queued.value
+                try await awaitLifecycleTask(queued, "cancelled queued extraction")
             }
             await probe.releaseFirstProcess()
-            #expect(try await active.value.count == 1)
+            #expect(try await awaitLifecycleTask(active, "active extraction after queued cancellation").count == 1)
 
             let counts = await probe.counts()
             #expect(counts.process == 1)
-            await extractor.shutdown()
+            _ = try await awaitLifecycleTask(Task { await extractor.shutdown() }, "extractor shutdown after queued cancellation")
         }
 
         @Test
@@ -215,7 +259,7 @@ import Foundation
             let source = try sampleSource(samples: [], sampleRate: 16000)
             defer { try? source.cleanup() }
             let active = Task { try await host.process(source: source) }
-            await probe.waitUntilFirstProcessStarts()
+            try #require(await probe.waitUntilFirstProcessStarts(), "The active diarization request did not start")
             let queued = (0 ..< 3).map { _ in
                 Task { try await host.process(source: source) }
             }
@@ -225,12 +269,12 @@ import Foundation
 
             active.cancel()
             await #expect(throws: CancellationError.self) {
-                try await active.value
+                try await awaitLifecycleTask(active, "cancelled active request")
             }
             var outcomes: [String] = []
             for caller in queued {
                 do {
-                    _ = try await caller.value
+                    _ = try await awaitLifecycleTask(caller, "queued request after active cancellation")
                     outcomes.append("success")
                 } catch {
                     outcomes.append(String(describing: type(of: error)))
@@ -241,7 +285,7 @@ import Foundation
             #expect(await probe.processCount == 4)
             #expect(await probe.maximumConcurrentProcessCount == 1)
             print("DIARIZER_ACTIVE_CANCEL queuedOutcomes=\(outcomes)")
-            await host.shutdown()
+            _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "host shutdown after active cancellation")
         }
 
         @Test
@@ -257,12 +301,18 @@ import Foundation
                     loadHook: { await probe.load() }
                 )
                 let active = Task { try await host.process(source: source) }
-                await probe.waitUntilProcessStarts()
+                try #require(await probe.waitUntilProcessStarts(), "Diarization did not start before the shutdown race")
                 let shutdown = Task { await host.shutdown() }
                 let racing = Task { try await host.process(source: source) }
-                await shutdown.value
-                _ = try? await active.value
-                _ = try? await racing.value
+                let stopped = await probe.waitUntilStopped()
+                if !stopped {
+                    Issue.record("Diarization work remained active after shutdown")
+                    active.cancel()
+                    racing.cancel()
+                }
+                _ = try await awaitLifecycleTask(shutdown, "shutdown racing an active request")
+                _ = try? await awaitLifecycleTask(active, "active request during shutdown")
+                _ = try? await awaitLifecycleTask(racing, "racing request during shutdown")
                 if await probe.activeProcessCount != 0 {
                     leaks += 1
                 }
@@ -271,6 +321,7 @@ import Foundation
                     try await host.process(source: source)
                 }
                 #expect(await probe.loadCount == loadsBeforeRejectedRequest)
+                if !stopped { return }
             }
 
             #expect(leaks == 0)
@@ -503,51 +554,93 @@ import Foundation
 
     private actor ReleaseProbe {
         private var released = false
-        private var waiter: CheckedContinuation<Void, Never>?
 
         func markReleased() {
             released = true
-            waiter?.resume()
-            waiter = nil
         }
 
-        func waitUntilReleased() async {
-            guard !released else { return }
-            await withCheckedContinuation { waiter = $0 }
+        func waitUntilReleased() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.released }
         }
+    }
+
+    private actor CompletionProbe {
+        private(set) var completedCount = 0
+
+        func process() -> SpeakerDiarizationOutput {
+            completedCount += 1
+            return emptyOutput()
+        }
+
+        func waitUntilCompleted(timeout: Duration) async -> Bool {
+            await pollUntil(timeout: timeout) { self.completedCount > 0 }
+        }
+    }
+
+    private final class TaskCreationProbe: Sendable {
+        private let count = OSAllocatedUnfairLock(initialState: 0)
+
+        var createdCount: Int {
+            count.withLock { $0 }
+        }
+
+        func markCreated() {
+            count.withLock { $0 += 1 }
+        }
+    }
+
+    private final class LifecycleTaskProbe<Success: Sendable, Failure: Error & Sendable>: Sendable {
+        private let storedResult = OSAllocatedUnfairLock<Result<Success, Failure>?>(initialState: nil)
+
+        var result: Result<Success, Failure>? {
+            storedResult.withLock { $0 }
+        }
+
+        func complete(with result: Result<Success, Failure>) {
+            storedResult.withLock { $0 = result }
+        }
+    }
+
+    private struct LifecycleTaskTimeout: Error {}
+
+    private func awaitLifecycleTask<Success: Sendable, Failure: Error & Sendable>(
+        _ task: Task<Success, Failure>,
+        _ description: String
+    ) async throws -> Success {
+        let probe = LifecycleTaskProbe<Success, Failure>()
+        Task { probe.complete(with: await task.result) }
+        guard await pollUntil(timeout: lifecycleWaitTimeout, { probe.result != nil }) else {
+            task.cancel()
+            Issue.record("Timed out waiting for \(description)")
+            throw LifecycleTaskTimeout()
+        }
+        guard let result = probe.result else { throw LifecycleTaskTimeout() }
+        return try result.get()
     }
 
     private actor CancellationProbe {
         private(set) var processCount = 0
         private var started = false
         private var cancelled = false
-        private var startWaiter: CheckedContinuation<Void, Never>?
-        private var cancellationWaiter: CheckedContinuation<Void, Never>?
 
         func process() async throws -> SpeakerDiarizationOutput {
             processCount += 1
             started = true
-            startWaiter?.resume()
-            startWaiter = nil
             do {
                 try await Task.sleep(for: .seconds(30))
                 return SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
             } catch {
                 cancelled = true
-                cancellationWaiter?.resume()
-                cancellationWaiter = nil
                 throw error
             }
         }
 
-        func waitUntilStarted() async {
-            guard !started else { return }
-            await withCheckedContinuation { startWaiter = $0 }
+        func waitUntilStarted() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.started }
         }
 
-        func waitUntilCancelled() async {
-            guard !cancelled else { return }
-            await withCheckedContinuation { cancellationWaiter = $0 }
+        func waitUntilCancelled() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.cancelled }
         }
     }
 
@@ -579,7 +672,6 @@ import Foundation
         private var maximumLiveLoadedWorkerCount = 0
         private var activeProcessCount = 0
         private var maximumConcurrentProcessCount = 0
-        private var firstLoadStarted: CheckedContinuation<Void, Never>?
         private var firstLoadRelease: CheckedContinuation<Void, Never>?
 
         init(output: SpeakerDiarizationOutput) {
@@ -589,8 +681,6 @@ import Foundation
         func load() async throws {
             loadCount += 1
             if loadCount == 1 {
-                firstLoadStarted?.resume()
-                firstLoadStarted = nil
                 await withCheckedContinuation { firstLoadRelease = $0 }
                 throw LoadBoom()
             }
@@ -598,16 +688,18 @@ import Foundation
             maximumLiveLoadedWorkerCount = max(maximumLiveLoadedWorkerCount, liveLoadedWorkerCount)
         }
 
-        func process() -> SpeakerDiarizationOutput {
+        func process() async -> SpeakerDiarizationOutput {
             activeProcessCount += 1
             maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
-            activeProcessCount -= 1
+            defer { activeProcessCount -= 1 }
+            for _ in 0 ..< 10 {
+                await Task.yield()
+            }
             return output
         }
 
-        func waitUntilFirstLoadStarts() async {
-            guard loadCount == 0 else { return }
-            await withCheckedContinuation { firstLoadStarted = $0 }
+        func waitUntilFirstLoadStarts() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.loadCount > 0 }
         }
 
         func releaseFirstLoad() {
@@ -625,7 +717,6 @@ import Foundation
         private(set) var processCount = 0
         private(set) var maximumConcurrentProcessCount = 0
         private var activeProcessCount = 0
-        private var firstProcessStarted: CheckedContinuation<Void, Never>?
 
         init(output: SpeakerDiarizationOutput) {
             self.output = output
@@ -637,23 +728,19 @@ import Foundation
             maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
             defer { activeProcessCount -= 1 }
             if processCount == 1 {
-                firstProcessStarted?.resume()
-                firstProcessStarted = nil
                 try await Task.sleep(for: .seconds(30))
             }
             return output
         }
 
-        func waitUntilFirstProcessStarts() async {
-            guard processCount == 0 else { return }
-            await withCheckedContinuation { firstProcessStarted = $0 }
+        func waitUntilFirstProcessStarts() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.processCount > 0 }
         }
     }
 
     private actor ShutdownRaceProbe {
         private(set) var loadCount = 0
         private(set) var activeProcessCount = 0
-        private var processStarted: CheckedContinuation<Void, Never>?
 
         func load() {
             loadCount += 1
@@ -661,16 +748,17 @@ import Foundation
 
         func process() async throws -> SpeakerDiarizationOutput {
             activeProcessCount += 1
-            processStarted?.resume()
-            processStarted = nil
             defer { activeProcessCount -= 1 }
             try await Task.sleep(for: .seconds(30))
             return emptyOutput()
         }
 
-        func waitUntilProcessStarts() async {
-            guard activeProcessCount == 0 else { return }
-            await withCheckedContinuation { processStarted = $0 }
+        func waitUntilProcessStarts() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.activeProcessCount > 0 }
+        }
+
+        func waitUntilStopped() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.activeProcessCount == 0 }
         }
     }
 
@@ -680,7 +768,6 @@ import Foundation
         private var processCount = 0
         private var activeProcessCount = 0
         private var maximumConcurrentProcessCount = 0
-        private var firstProcessStarted: CheckedContinuation<Void, Never>?
         private var firstProcessRelease: CheckedContinuation<Void, Never>?
 
         init(output: SpeakerDiarizationOutput) {
@@ -703,8 +790,6 @@ import Foundation
             activeProcessCount += 1
             maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
             if processCount == 1 {
-                firstProcessStarted?.resume()
-                firstProcessStarted = nil
                 await withCheckedContinuation { continuation in
                     firstProcessRelease = continuation
                 }
@@ -713,11 +798,8 @@ import Foundation
             return output
         }
 
-        func waitUntilFirstProcessStarts() async {
-            guard processCount == 0 else { return }
-            await withCheckedContinuation { continuation in
-                firstProcessStarted = continuation
-            }
+        func waitUntilFirstProcessStarts() async -> Bool {
+            await pollUntil(timeout: lifecycleWaitTimeout) { self.processCount > 0 }
         }
 
         func releaseFirstProcess() {
@@ -782,23 +864,35 @@ import Foundation
             _ = try await host.process(source: source)
         case .explicitShutdown:
             _ = try await host.process(source: source)
-            await host.shutdown()
+            _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "explicit teardown shutdown")
         case .loadFailure:
             _ = try? await host.process(source: source)
         case .cancellation:
             let request = Task { try await host.process(source: source) }
-            await cancellationProbe.waitUntilStarted()
+            #expect(
+                await cancellationProbe.waitUntilStarted(),
+                "Diarization did not start before request cancellation"
+            )
             request.cancel()
-            _ = try? await request.value
-            await host.shutdown()
+            _ = try? await awaitLifecycleTask(request, "cancelled teardown request")
+            _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "shutdown after request cancellation")
         case .shutdownRace:
             let active = Task { try await host.process(source: source) }
-            await cancellationProbe.waitUntilStarted()
-            async let shutdown: Void = host.shutdown()
+            #expect(
+                await cancellationProbe.waitUntilStarted(),
+                "Diarization did not start before the shutdown teardown race"
+            )
+            let shutdown = Task { await host.shutdown() }
             let racing = Task { try await host.process(source: source) }
-            await shutdown
-            _ = try? await active.value
-            _ = try? await racing.value
+            let stopped = await cancellationProbe.waitUntilCancelled()
+            if !stopped {
+                Issue.record("Diarization work leaked after the shutdown teardown race")
+                active.cancel()
+                racing.cancel()
+            }
+            _ = try await awaitLifecycleTask(shutdown, "shutdown teardown race")
+            _ = try? await awaitLifecycleTask(active, "active shutdown teardown request")
+            _ = try? await awaitLifecycleTask(racing, "racing shutdown teardown request")
         }
         return (weakProcessor, releaseProbe)
     }
