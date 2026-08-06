@@ -269,7 +269,10 @@ actor SpeakerModelAssetManager {
     }
 
     static func pipelineFingerprint(configuration: OfflineDiarizerConfig) -> String {
-        let descriptor = CanonicalConfigurationEncoder.encode(configuration)
+        let descriptor = CanonicalConfigurationEncoder.encode(
+            configuration,
+            excludingPaths: ["embeddingsPath", "exposeChunkEmbeddings"]
+        )
         return SHA256.hash(data: Data(descriptor.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -328,33 +331,46 @@ actor SpeakerModelAssetManager {
 }
 
 private enum CanonicalConfigurationEncoder {
-    static func encode(_ value: Any) -> String {
+    static func encode(
+        _ value: Any,
+        excludingPaths: Set<String> = [],
+        path: String = ""
+    ) -> String {
+        if let scalar = encodeScalar(value) { return scalar }
+
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let child = mirror.children.first else { return "optional:nil" }
+            return "optional:(\(encode(child.value, excludingPaths: excludingPaths, path: path)))"
+        }
+        if mirror.displayStyle == .enum {
+            let caseName = String(describing: value).prefix { $0 != "(" }
+            let payload = mirror.children.map { child in
+                "\(child.label ?? "_")=\(encode(child.value, excludingPaths: excludingPaths, path: path))"
+            }.sorted().joined(separator: ",")
+            return "enum:\(caseName){\(payload)}"
+        }
+
+        let children = Array(mirror.children)
+        let fields = children.compactMap { child -> String? in
+            let label = child.label ?? "_"
+            let childPath = path.isEmpty ? label : "\(path).\(label)"
+            guard !excludingPaths.contains(label), !excludingPaths.contains(childPath) else { return nil }
+            return "\(label)=\(encode(child.value, excludingPaths: excludingPaths, path: childPath))"
+        }.sorted().joined(separator: ",")
+        if children.isEmpty {
+            return "leaf:\(String(reflecting: type(of: value))):\(String(reflecting: value))"
+        }
+        return "object:{\(fields)}"
+    }
+
+    private static func encodeScalar(_ value: Any) -> String? {
         if let value = value as? Bool { return value ? "bool:1" : "bool:0" }
         if let value = value as? Int { return "int:\(value)" }
         if let value = value as? UInt { return "uint:\(value)" }
         if let value = value as? Float { return "float32:\(String(value.bitPattern, radix: 16))" }
         if let value = value as? Double { return "float64:\(String(value.bitPattern, radix: 16))" }
         if let value = value as? String { return "string:\(value.utf8.count):\(value)" }
-
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .optional {
-            guard let child = mirror.children.first else { return "optional:nil" }
-            return "optional:(\(encode(child.value)))"
-        }
-        if mirror.displayStyle == .enum {
-            let caseName = String(describing: value).prefix { $0 != "(" }
-            let payload = mirror.children.map { child in
-                "\(child.label ?? "_")=\(encode(child.value))"
-            }.sorted().joined(separator: ",")
-            return "enum:\(caseName){\(payload)}"
-        }
-
-        let fields = mirror.children.map { child in
-            "\(child.label ?? "_")=\(encode(child.value))"
-        }.sorted().joined(separator: ",")
-        if fields.isEmpty {
-            return "leaf:\(String(reflecting: type(of: value))):\(String(reflecting: value))"
-        }
-        return "object:{\(fields)}"
+        return nil
     }
 }

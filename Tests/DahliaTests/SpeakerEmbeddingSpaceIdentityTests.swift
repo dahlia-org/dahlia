@@ -76,7 +76,7 @@ import Foundation
             #expect(Data(first.utf8) == Data(second.utf8))
             #expect(
                 first == "community-1 mono Float32 16000Hz "
-                    + "pipeline-sha256:429c47465d55e0c101b3c7010869b58148a758c00045e4ce16d5e693fa35f310"
+                    + "pipeline-sha256:940b0cc57514e75db9733e5ba3fce2699974b7815cdcc3781fd9d90ad813f300"
             )
         }
 

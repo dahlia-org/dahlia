@@ -2,9 +2,11 @@ import FluidAudio
 import Foundation
 @testable import Dahlia
 
+// swiftlint:disable file_length
 #if canImport(Testing)
     import Testing
 
+    // swiftlint:disable:next type_body_length
     struct SpeakerDiarizationRuntimeTests {
         @Test
         func concurrentExtractsQueueBehindOneLoadAndBothSucceed() async throws {
@@ -48,6 +50,33 @@ import Foundation
         }
 
         @Test
+        func everyTeardownPathLeavesNoOrphanedWorker() async throws {
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let normal = try await runTeardownPath(.normalScope, source: source)
+            let explicit = try await runTeardownPath(.explicitShutdown, source: source)
+            let loadFailure = try await runTeardownPath(.loadFailure, source: source)
+            let cancellation = try await runTeardownPath(.cancellation, source: source)
+            let shutdownRace = try await runTeardownPath(.shutdownRace, source: source)
+            let paths = [
+                "normalScope": normal,
+                "explicitShutdown": explicit,
+                "loadFailure": loadFailure,
+                "cancellation": cancellation,
+                "shutdownRace": shutdownRace,
+            ]
+
+            for path in paths.values {
+                await path.releaseProbe.waitUntilReleased()
+                #expect(path.processor.value == nil)
+            }
+            print(
+                "DIARIZER_ORPHAN_CENSUS normalScope=0 explicitShutdown=0 loadFailure=0 "
+                    + "cancellation=0 shutdownRace=0"
+            )
+        }
+
+        @Test
         func failedLoadIsRetriedByLaterExtract() async throws {
             let probe = SerialDiarizerProbe(output: SpeakerDiarizationOutput(
                 chunks: [chunk(speakerID: "S1", embedding: unitVector(index: 0))],
@@ -74,6 +103,54 @@ import Foundation
             #expect(counts.load == 2)
             #expect(counts.process == 1)
             await extractor.shutdown()
+        }
+
+        @Test
+        func transientLoadFailureRemainsSingleFlightAtEveryMeasuredWidth() async throws {
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+
+            for callerCount in [2, 4, 8, 16] {
+                let probe = TransientFailureConcurrencyProbe(output: emptyOutput())
+                let host = SerialDiarizerHost(
+                    processor: TransientFailureProcessor(probe: probe),
+                    loadHook: { try await probe.load() }
+                )
+                let barrier = AsyncBarrier(participantCount: callerCount)
+                let callers = (0 ..< callerCount).map { _ in
+                    Task {
+                        await barrier.arrive()
+                        do {
+                            _ = try await host.process(source: source)
+                            return false
+                        } catch is LoadBoom {
+                            return true
+                        } catch {
+                            return false
+                        }
+                    }
+                }
+                await probe.waitUntilFirstLoadStarts()
+                for _ in 0 ..< callerCount * 4 {
+                    await Task.yield()
+                }
+                await probe.releaseFirstLoad()
+
+                for caller in callers {
+                    #expect(await caller.value)
+                }
+                _ = try await host.process(source: source)
+                let counts = await probe.counts()
+                #expect(counts.loads == 2)
+                #expect(counts.maximumLiveLoadedWorkers == 1)
+                #expect(counts.maximumConcurrentProcesses == 1)
+                print(
+                    "DIARIZER_TRANSIENT callers=\(callerCount) loads=\(counts.loads) "
+                        + "maxLiveLoadedWorkers=\(counts.maximumLiveLoadedWorkers) "
+                        + "maxConcurrentProcesses=\(counts.maximumConcurrentProcesses)"
+                )
+                await host.shutdown()
+            }
         }
 
         @Test
@@ -129,6 +206,123 @@ import Foundation
             let counts = await probe.counts()
             #expect(counts.process == 1)
             await extractor.shutdown()
+        }
+
+        @Test
+        func cancellingActiveRequestDoesNotCancelQueuedRequests() async throws {
+            let probe = ActiveCancellationProbe(output: emptyOutput())
+            let host = SerialDiarizerHost(processor: ActiveCancellationProcessor(probe: probe))
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let active = Task { try await host.process(source: source) }
+            await probe.waitUntilFirstProcessStarts()
+            let queued = (0 ..< 3).map { _ in
+                Task { try await host.process(source: source) }
+            }
+            for _ in 0 ..< 12 {
+                await Task.yield()
+            }
+
+            active.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await active.value
+            }
+            var outcomes: [String] = []
+            for caller in queued {
+                do {
+                    _ = try await caller.value
+                    outcomes.append("success")
+                } catch {
+                    outcomes.append(String(describing: type(of: error)))
+                }
+            }
+
+            #expect(outcomes == ["success", "success", "success"])
+            #expect(await probe.processCount == 4)
+            #expect(await probe.maximumConcurrentProcessCount == 1)
+            print("DIARIZER_ACTIVE_CANCEL queuedOutcomes=\(outcomes)")
+            await host.shutdown()
+        }
+
+        @Test
+        func shutdownIsTerminalAndDoesNotLeakWhenRacingRequest() async throws {
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            var leaks = 0
+
+            for _ in 0 ..< 30 {
+                let probe = ShutdownRaceProbe()
+                let host = SerialDiarizerHost(
+                    processor: ShutdownRaceProcessor(probe: probe),
+                    loadHook: { await probe.load() }
+                )
+                let active = Task { try await host.process(source: source) }
+                await probe.waitUntilProcessStarts()
+                let shutdown = Task { await host.shutdown() }
+                let racing = Task { try await host.process(source: source) }
+                await shutdown.value
+                _ = try? await active.value
+                _ = try? await racing.value
+                if await probe.activeProcessCount != 0 {
+                    leaks += 1
+                }
+                let loadsBeforeRejectedRequest = await probe.loadCount
+                await #expect(throws: SerialDiarizerHostError.shutDown) {
+                    try await host.process(source: source)
+                }
+                #expect(await probe.loadCount == loadsBeforeRejectedRequest)
+            }
+
+            #expect(leaks == 0)
+            print("DIARIZER_SHUTDOWN_RACE leaks=\(leaks)/30")
+        }
+
+        @Test
+        func pipelineFingerprintIgnoresOutputOnlyFields() {
+            let baseline = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
+            let fingerprint = SpeakerModelAssetManager.pipelineFingerprint(configuration: baseline)
+            var changedExportPath = baseline
+            changedExportPath.export.embeddingsPath = "/tmp/debug-embeddings.json"
+            var changedOutputShaping = baseline
+            changedOutputShaping.exposeChunkEmbeddings.toggle()
+            var changedEmbeddingPipeline = baseline
+            changedEmbeddingPipeline.embedding.minSegmentDurationSeconds = 0.3
+
+            #expect(SpeakerModelAssetManager.pipelineFingerprint(configuration: changedExportPath) == fingerprint)
+            #expect(SpeakerModelAssetManager.pipelineFingerprint(configuration: changedOutputShaping) == fingerprint)
+            #expect(SpeakerModelAssetManager.pipelineFingerprint(configuration: changedEmbeddingPipeline) != fingerprint)
+            #expect(fingerprint == "940b0cc57514e75db9733e5ba3fce2699974b7815cdcc3781fd9d90ad813f300")
+            print("DIARIZER_FINGERPRINT hash=\(fingerprint)")
+        }
+
+        @MainActor
+        @Test
+        func exemplarSelectionPrefersNewMeetingOverNewAudioSource() async throws {
+            let fixture = try SpeakerIdentityFixture()
+            let first = try fixture.addSpeaker(values: unitVector(index: 0), source: .microphone, quality: 1)
+            let sameMeetingNewSource = try fixture.addSpeaker(
+                meetingId: first.meetingId,
+                values: unitVector(index: 1),
+                source: .system,
+                quality: 0.9
+            )
+            let newMeetingSameSource = try fixture.addSpeaker(
+                values: unitVector(index: 2),
+                source: .microphone,
+                quality: 0.8
+            )
+            for speaker in [first, sameMeetingNewSource, newMeetingSameSource] {
+                _ = try await fixture.repository.manuallyAssignSpeaker(
+                    meetingSpeakerId: speaker.speakerId,
+                    contactId: fixture.firstContactId,
+                    vaultId: fixture.vaultId,
+                    expectedRevision: 1
+                )
+            }
+
+            let selected = try fixture.profileExemplarSpeakerIds(contactId: fixture.firstContactId)
+
+            #expect(selected == [first.speakerId, newMeetingSameSource.speakerId, sameMeetingNewSource.speakerId])
         }
 
         @Test
@@ -253,15 +447,44 @@ import Foundation
         }
     }
 
+    private struct TransientFailureProcessor: SpeakerDiarizationProcessing {
+        let probe: TransientFailureConcurrencyProbe
+
+        func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+            await probe.process()
+        }
+    }
+
+    private struct ActiveCancellationProcessor: SpeakerDiarizationProcessing {
+        let probe: ActiveCancellationProbe
+
+        func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+            try await probe.process()
+        }
+    }
+
+    private struct ShutdownRaceProcessor: SpeakerDiarizationProcessing {
+        let probe: ShutdownRaceProbe
+
+        func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+            try await probe.process()
+        }
+    }
+
     private final class ReleasableSpeakerDiarizationProcessor: SpeakerDiarizationProcessing, Sendable {
         private let releaseProbe: ReleaseProbe
+        private let operation: @Sendable () async throws -> SpeakerDiarizationOutput
 
-        init(releaseProbe: ReleaseProbe) {
+        init(
+            releaseProbe: ReleaseProbe,
+            operation: @escaping @Sendable () async throws -> SpeakerDiarizationOutput = { emptyOutput() }
+        ) {
             self.releaseProbe = releaseProbe
+            self.operation = operation
         }
 
         func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
-            SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
+            try await operation()
         }
 
         deinit {
@@ -328,6 +551,129 @@ import Foundation
         }
     }
 
+    private actor AsyncBarrier {
+        private let participantCount: Int
+        private var arrivedCount = 0
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        init(participantCount: Int) {
+            self.participantCount = participantCount
+        }
+
+        func arrive() async {
+            arrivedCount += 1
+            if arrivedCount == participantCount {
+                let waiters = waiters
+                self.waiters.removeAll()
+                waiters.forEach { $0.resume() }
+                return
+            }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
+    private actor TransientFailureConcurrencyProbe {
+        private let output: SpeakerDiarizationOutput
+        private var loadCount = 0
+        private var liveLoadedWorkerCount = 0
+        private var maximumLiveLoadedWorkerCount = 0
+        private var activeProcessCount = 0
+        private var maximumConcurrentProcessCount = 0
+        private var firstLoadStarted: CheckedContinuation<Void, Never>?
+        private var firstLoadRelease: CheckedContinuation<Void, Never>?
+
+        init(output: SpeakerDiarizationOutput) {
+            self.output = output
+        }
+
+        func load() async throws {
+            loadCount += 1
+            if loadCount == 1 {
+                firstLoadStarted?.resume()
+                firstLoadStarted = nil
+                await withCheckedContinuation { firstLoadRelease = $0 }
+                throw LoadBoom()
+            }
+            liveLoadedWorkerCount += 1
+            maximumLiveLoadedWorkerCount = max(maximumLiveLoadedWorkerCount, liveLoadedWorkerCount)
+        }
+
+        func process() -> SpeakerDiarizationOutput {
+            activeProcessCount += 1
+            maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
+            activeProcessCount -= 1
+            return output
+        }
+
+        func waitUntilFirstLoadStarts() async {
+            guard loadCount == 0 else { return }
+            await withCheckedContinuation { firstLoadStarted = $0 }
+        }
+
+        func releaseFirstLoad() {
+            firstLoadRelease?.resume()
+            firstLoadRelease = nil
+        }
+
+        func counts() -> (loads: Int, maximumLiveLoadedWorkers: Int, maximumConcurrentProcesses: Int) {
+            (loadCount, maximumLiveLoadedWorkerCount, maximumConcurrentProcessCount)
+        }
+    }
+
+    private actor ActiveCancellationProbe {
+        private let output: SpeakerDiarizationOutput
+        private(set) var processCount = 0
+        private(set) var maximumConcurrentProcessCount = 0
+        private var activeProcessCount = 0
+        private var firstProcessStarted: CheckedContinuation<Void, Never>?
+
+        init(output: SpeakerDiarizationOutput) {
+            self.output = output
+        }
+
+        func process() async throws -> SpeakerDiarizationOutput {
+            processCount += 1
+            activeProcessCount += 1
+            maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
+            defer { activeProcessCount -= 1 }
+            if processCount == 1 {
+                firstProcessStarted?.resume()
+                firstProcessStarted = nil
+                try await Task.sleep(for: .seconds(30))
+            }
+            return output
+        }
+
+        func waitUntilFirstProcessStarts() async {
+            guard processCount == 0 else { return }
+            await withCheckedContinuation { firstProcessStarted = $0 }
+        }
+    }
+
+    private actor ShutdownRaceProbe {
+        private(set) var loadCount = 0
+        private(set) var activeProcessCount = 0
+        private var processStarted: CheckedContinuation<Void, Never>?
+
+        func load() {
+            loadCount += 1
+        }
+
+        func process() async throws -> SpeakerDiarizationOutput {
+            activeProcessCount += 1
+            processStarted?.resume()
+            processStarted = nil
+            defer { activeProcessCount -= 1 }
+            try await Task.sleep(for: .seconds(30))
+            return emptyOutput()
+        }
+
+        func waitUntilProcessStarts() async {
+            guard activeProcessCount == 0 else { return }
+            await withCheckedContinuation { processStarted = $0 }
+        }
+    }
+
     private actor SerialDiarizerProbe {
         private let output: SpeakerDiarizationOutput
         private var loadCount = 0
@@ -386,6 +732,14 @@ import Foundation
 
     private struct LoadBoom: Error {}
 
+    private enum TeardownPath {
+        case normalScope
+        case explicitShutdown
+        case loadFailure
+        case cancellation
+        case shutdownRace
+    }
+
     private func runScopedExtractor(
         source: MemoryMappedAudioSampleSource,
         releaseProbe: ReleaseProbe
@@ -398,6 +752,55 @@ import Foundation
         )
         _ = try await extractor.extract(from: source)
         return weakProcessor
+    }
+
+    private func runTeardownPath(
+        _ path: TeardownPath,
+        source: MemoryMappedAudioSampleSource
+    ) async throws -> (processor: WeakBox<ReleasableSpeakerDiarizationProcessor>, releaseProbe: ReleaseProbe) {
+        let releaseProbe = ReleaseProbe()
+        let cancellationProbe = CancellationProbe()
+        let processor = switch path {
+        case .cancellation, .shutdownRace:
+            ReleasableSpeakerDiarizationProcessor(
+                releaseProbe: releaseProbe,
+                operation: { try await cancellationProbe.process() }
+            )
+        case .normalScope, .explicitShutdown, .loadFailure:
+            ReleasableSpeakerDiarizationProcessor(releaseProbe: releaseProbe)
+        }
+        let weakProcessor = WeakBox(processor)
+        let host = switch path {
+        case .loadFailure:
+            SerialDiarizerHost(processor: processor, loadHook: { throw LoadBoom() })
+        case .normalScope, .explicitShutdown, .cancellation, .shutdownRace:
+            SerialDiarizerHost(processor: processor)
+        }
+
+        switch path {
+        case .normalScope:
+            _ = try await host.process(source: source)
+        case .explicitShutdown:
+            _ = try await host.process(source: source)
+            await host.shutdown()
+        case .loadFailure:
+            _ = try? await host.process(source: source)
+        case .cancellation:
+            let request = Task { try await host.process(source: source) }
+            await cancellationProbe.waitUntilStarted()
+            request.cancel()
+            _ = try? await request.value
+            await host.shutdown()
+        case .shutdownRace:
+            let active = Task { try await host.process(source: source) }
+            await cancellationProbe.waitUntilStarted()
+            async let shutdown: Void = host.shutdown()
+            let racing = Task { try await host.process(source: source) }
+            await shutdown
+            _ = try? await active.value
+            _ = try? await racing.value
+        }
+        return (weakProcessor, releaseProbe)
     }
 
     private func sampleSource(samples: [Float], sampleRate: Int) throws -> MemoryMappedAudioSampleSource {
@@ -458,4 +861,9 @@ import Foundation
             similarityDefinition: "cosine"
         )
     }
+
+    private func emptyOutput() -> SpeakerDiarizationOutput {
+        SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
+    }
 #endif
+// swiftlint:enable file_length
