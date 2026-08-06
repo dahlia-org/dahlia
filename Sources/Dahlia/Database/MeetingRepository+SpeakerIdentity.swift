@@ -211,7 +211,7 @@ extension MeetingRepository {
         let profiles = try await speakerProfileCache.profiles(for: key) {
             try await Self.loadProfiles(vaultId: vaultId, embeddingSpace: space, dbQueue: dbQueue)
         }
-        let ranking = SpeakerMatcher.rank(embedding: input.1, profiles: profiles, policy: input.2)
+        let cachedRanking = SpeakerMatcher.rank(embedding: input.1, profiles: profiles, policy: input.2)
         return try await dbQueue.write { db in
             let current = try Self.speakerContext(
                 meetingSpeakerId: meetingSpeakerId,
@@ -221,7 +221,17 @@ extension MeetingRepository {
             guard current.revision == expectedRevision else {
                 throw SpeakerIdentityError.revisionConflict
             }
+            let currentProfiles = try Self.loadProfiles(
+                vaultId: vaultId,
+                embeddingSpace: space,
+                in: db
+            )
+            let currentPolicy = try SpeakerMatchPolicyRecord.fetchOne(db, key: 1)?.policy ?? .calibrationRequired
+            let ranking = currentProfiles == profiles && currentPolicy == input.2
+                ? cachedRanking
+                : SpeakerMatcher.rank(embedding: input.1, profiles: currentProfiles, policy: currentPolicy)
             let existing = try SpeakerMatchObservationRecord.fetchOne(db, key: meetingSpeakerId)
+            let state = existing?.state == .rejected ? SpeakerMatchObservationState.rejected : ranking.state
             try SpeakerMatchObservationRecord(
                 meetingSpeakerId: meetingSpeakerId,
                 embeddingSpaceId: space.id,
@@ -230,8 +240,8 @@ extension MeetingRepository {
                 top2ContactId: ranking.top2ContactId,
                 top2Score: ranking.top2Score.map(Double.init),
                 margin: ranking.margin.map(Double.init),
-                state: ranking.state,
-                unknownReason: ranking.unknownReason,
+                state: state,
+                unknownReason: state == .rejected ? nil : ranking.unknownReason,
                 revision: (existing?.revision ?? 0) + 1,
                 createdAt: existing?.createdAt ?? now,
                 updatedAt: now
@@ -262,6 +272,10 @@ extension MeetingRepository {
             else {
                 throw SpeakerIdentityError.contactNotFound
             }
+            let existing = try SpeakerContactAssignmentRecord.fetchOne(db, key: meetingSpeakerId)
+            if existing?.contactId == contactId, existing?.origin == origin {
+                return try (Self.fetchSpeakerCandidate(id: meetingSpeakerId, vaultId: vaultId, in: db), [])
+            }
             if requiresSuggestion {
                 guard let observation = try SpeakerMatchObservationRecord.fetchOne(db, key: meetingSpeakerId),
                       observation.state == .suggested,
@@ -269,10 +283,6 @@ extension MeetingRepository {
                 else {
                     throw SpeakerIdentityError.invalidSuggestion
                 }
-            }
-            let existing = try SpeakerContactAssignmentRecord.fetchOne(db, key: meetingSpeakerId)
-            if existing?.contactId == contactId, existing?.origin == origin {
-                return try (Self.fetchSpeakerCandidate(id: meetingSpeakerId, vaultId: vaultId, in: db), [])
             }
             guard context.revision == expectedRevision else {
                 throw SpeakerIdentityError.revisionConflict
@@ -284,6 +294,14 @@ extension MeetingRepository {
                 createdAt: existing?.createdAt ?? now,
                 updatedAt: now
             ).save(db)
+            if requiresSuggestion,
+               var observation = try SpeakerMatchObservationRecord.fetchOne(db, key: meetingSpeakerId) {
+                observation.state = .referenceOnly
+                observation.unknownReason = nil
+                observation.revision += 1
+                observation.updatedAt = now
+                try observation.update(db)
+            }
             try Self.incrementSpeakerRevision(id: meetingSpeakerId, now: now, in: db)
             let affectedContactIds = Set([existing?.contactId, contactId].compactMap(\.self))
             for affectedContactId in affectedContactIds {
@@ -437,22 +455,30 @@ extension MeetingRepository {
         dbQueue: DatabaseQueue
     ) async throws -> [CachedSpeakerProfile] {
         try await dbQueue.read { db in
-            try SpeakerProfileRecord
-                .filter(Column("vaultId") == vaultId && Column("embeddingSpaceId") == embeddingSpace.id)
-                .order(Column("contactId"))
-                .fetchAll(db)
-                .map { profile in
-                    try CachedSpeakerProfile(
-                        contactId: profile.contactId,
-                        embedding: SpeakerEmbedding(
-                            space: embeddingSpace.space,
-                            values: SpeakerEmbeddingBlobCodec.decode(
-                                profile.representative,
-                                dimensionCount: embeddingSpace.dimensionCount
-                            )
+            try loadProfiles(vaultId: vaultId, embeddingSpace: embeddingSpace, in: db)
+        }
+    }
+
+    private nonisolated static func loadProfiles(
+        vaultId: UUID,
+        embeddingSpace: SpeakerEmbeddingSpaceRecord,
+        in db: Database
+    ) throws -> [CachedSpeakerProfile] {
+        try SpeakerProfileRecord
+            .filter(Column("vaultId") == vaultId && Column("embeddingSpaceId") == embeddingSpace.id)
+            .order(Column("contactId"))
+            .fetchAll(db)
+            .map { profile in
+                try CachedSpeakerProfile(
+                    contactId: profile.contactId,
+                    embedding: SpeakerEmbedding(
+                        space: embeddingSpace.space,
+                        values: SpeakerEmbeddingBlobCodec.decode(
+                            profile.representative,
+                            dimensionCount: embeddingSpace.dimensionCount
                         )
                     )
-                }
-        }
+                )
+            }
     }
 }

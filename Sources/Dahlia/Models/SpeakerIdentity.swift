@@ -38,7 +38,7 @@ struct SpeakerMatchPolicy: Equatable, Sendable {
     let minimumMargin: Float?
 }
 
-struct SpeakerCandidate: Equatable, Sendable {
+struct SpeakerCandidate: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let meetingSpeakerId: UUID
     let meetingId: UUID
     let audioSource: RecordingAudioSource
@@ -53,6 +53,12 @@ struct SpeakerCandidate: Equatable, Sendable {
     let margin: Float?
     let matchState: SpeakerMatchObservationState?
     let unknownReason: SpeakerMatchUnknownReason?
+
+    var description: String {
+        "SpeakerCandidate(meetingSpeakerId: \(meetingSpeakerId), meetingId: \(meetingId), audioSource: \(audioSource), localSpeakerId: \(localSpeakerId), revision: \(revision), assignmentOrigin: \(String(describing: assignmentOrigin)), matchState: \(String(describing: matchState)), unknownReason: \(String(describing: unknownReason)), contactIdsAndScores: <redacted>)"
+    }
+
+    var debugDescription: String { description }
 }
 
 enum SpeakerIdentityError: Error, Equatable {
@@ -65,7 +71,7 @@ enum SpeakerIdentityError: Error, Equatable {
     case vaultNotFound
 }
 
-struct SpeakerMatchRanking: Equatable, Sendable {
+struct SpeakerMatchRanking: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let top1ContactId: UUID?
     let top1Score: Float?
     let top2ContactId: UUID?
@@ -73,4 +79,10 @@ struct SpeakerMatchRanking: Equatable, Sendable {
     let margin: Float?
     let state: SpeakerMatchObservationState
     let unknownReason: SpeakerMatchUnknownReason?
+
+    var description: String {
+        "SpeakerMatchRanking(state: \(state), unknownReason: \(String(describing: unknownReason)), contactIdsAndScores: <redacted>)"
+    }
+
+    var debugDescription: String { description }
 }

@@ -91,9 +91,9 @@ enum SpeakerIdentityMigration {
         CREATE TABLE IF NOT EXISTS speaker_match_observations (
             meetingSpeakerId BLOB PRIMARY KEY NOT NULL REFERENCES meeting_speakers(id) ON DELETE CASCADE,
             embeddingSpaceId BLOB NOT NULL REFERENCES speaker_embedding_spaces(id),
-            top1ContactId BLOB REFERENCES contacts(id) ON DELETE CASCADE,
+            top1ContactId BLOB REFERENCES contacts(id) ON DELETE SET NULL,
             top1Score DOUBLE,
-            top2ContactId BLOB REFERENCES contacts(id) ON DELETE CASCADE,
+            top2ContactId BLOB REFERENCES contacts(id) ON DELETE SET NULL,
             top2Score DOUBLE,
             margin DOUBLE,
             state TEXT NOT NULL CHECK (state IN ('referenceOnly', 'suggested', 'rejected', 'undeterminable')),
@@ -258,6 +258,21 @@ enum SpeakerIdentityMigration {
                       SELECT 1 FROM contacts WHERE id = NEW.top2ContactId AND vaultId = meetings.vaultId
                   ))
             );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS contacts_clear_speaker_match_candidates
+        BEFORE DELETE ON contacts
+        BEGIN
+            UPDATE speaker_match_observations
+            SET top1ContactId = CASE WHEN top1ContactId = OLD.id THEN NULL ELSE top1ContactId END,
+                top1Score = CASE WHEN top1ContactId = OLD.id THEN NULL ELSE top1Score END,
+                top2ContactId = CASE WHEN top2ContactId = OLD.id THEN NULL ELSE top2ContactId END,
+                top2Score = CASE WHEN top2ContactId = OLD.id THEN NULL ELSE top2Score END,
+                margin = CASE
+                    WHEN top1ContactId = OLD.id OR top2ContactId = OLD.id THEN NULL
+                    ELSE margin
+                END
+            WHERE top1ContactId = OLD.id OR top2ContactId = OLD.id;
         END;
         """)
     }

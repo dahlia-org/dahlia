@@ -167,6 +167,47 @@ import GRDB
             }
         }
 
+        @Test
+        func deletingTop2CandidatePreservesRejectedObservation() throws {
+            let fixture = try MigrationFixture()
+            let top2ContactId = UUID.v7()
+            try fixture.database.dbQueue.write { db in
+                try ContactRecord(
+                    id: top2ContactId,
+                    vaultId: fixture.vaultId,
+                    email: "top2@example.com",
+                    displayName: "Top 2",
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try SpeakerMatchObservationRecord(
+                    meetingSpeakerId: fixture.meetingSpeakerId,
+                    embeddingSpaceId: fixture.spaceId,
+                    top1ContactId: fixture.contactId,
+                    top1Score: 0.91,
+                    top2ContactId: top2ContactId,
+                    top2Score: 0.55,
+                    margin: 0.36,
+                    state: .rejected,
+                    unknownReason: nil,
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+
+                _ = try ContactRecord.deleteOne(db, key: top2ContactId)
+                let fetched = try SpeakerMatchObservationRecord.fetchOne(db, key: fixture.meetingSpeakerId)
+                let observation = try #require(fetched)
+                #expect(observation.state == .rejected)
+                #expect(observation.top1ContactId == fixture.contactId)
+                #expect(observation.top1Score == 0.91)
+                #expect(observation.top2ContactId == nil)
+                #expect(observation.top2Score == nil)
+                #expect(observation.margin == nil)
+            }
+        }
+
         private func insertLegacyRows(in queue: DatabaseQueue) throws -> (meetingId: UUID, transcriptId: UUID, contactId: UUID) {
             let vaultId = UUID.v7()
             let meetingId = UUID.v7()

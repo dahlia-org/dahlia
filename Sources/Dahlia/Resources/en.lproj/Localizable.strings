@@ -1047,7 +1047,7 @@
 "Delete Organization" = "Delete Organization";
 "Deletes this organization and all departments below it. Memberships and related references are detached. This cannot be undone." = "Deletes this organization and all departments below it. Memberships and related references are detached. This cannot be undone.";
 "Delete Topic?" = "Delete Topic?";
-"%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached." = "%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached.";
+"%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached. %lld speaker profiles and %lld speaker assignments will be deleted." = "%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached. %lld speaker profiles and %lld speaker assignments will be deleted.";
 "This deletes %lld organization nodes and detaches %lld memberships, %lld Projects, %lld Topics, and %lld insights." = "This deletes %lld organization nodes and detaches %lld memberships, %lld Projects, %lld Topics, and %lld insights.";
 "This removes %lld Meeting references and %lld related resources. The source records are preserved." = "This removes %lld Meeting references and %lld related resources. The source records are preserved.";
 "Topic Meeting Evidence" = "Topic Meeting Evidence";

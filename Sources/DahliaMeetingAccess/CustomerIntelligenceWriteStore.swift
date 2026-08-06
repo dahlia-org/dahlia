@@ -624,6 +624,16 @@ public extension MeetingAccessStore {
                     arguments: [id],
                     in: db
                 )),
+                ("speaker_profiles", countRows(
+                    "SELECT COUNT(*) FROM speaker_profiles WHERE contactId = ?",
+                    arguments: [id],
+                    in: db
+                )),
+                ("speaker_assignments", countRows(
+                    "SELECT COUNT(*) FROM speaker_contact_assignments WHERE contactId = ?",
+                    arguments: [id],
+                    in: db
+                )),
             ]
             try ensureNoDeletionBlockers(resource: "Contact", blockers: blockers)
             try deleteRecord(

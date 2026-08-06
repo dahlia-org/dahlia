@@ -70,13 +70,15 @@ enum SpeakerEmbeddingBlobCodec {
     }
 
     private static func readUInt16(_ data: Data, offset: Int) -> UInt16 {
-        UInt16(data[offset]) | UInt16(data[offset + 1]) << 8
+        let index = data.startIndex + offset
+        return UInt16(data[index]) | UInt16(data[index + 1]) << 8
     }
 
     private static func readUInt32(_ data: Data, offset: Int) -> UInt32 {
-        UInt32(data[offset])
-            | UInt32(data[offset + 1]) << 8
-            | UInt32(data[offset + 2]) << 16
-            | UInt32(data[offset + 3]) << 24
+        let index = data.startIndex + offset
+        return UInt32(data[index])
+            | UInt32(data[index + 1]) << 8
+            | UInt32(data[index + 2]) << 16
+            | UInt32(data[index + 3]) << 24
     }
 }

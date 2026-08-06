@@ -43,6 +43,11 @@ import Foundation
             #expect(throws: SpeakerEmbeddingBlobCodecError.invalidFormat) {
                 try SpeakerEmbeddingBlobCodec.decode(wrongMagic, dimensionCount: values.count)
             }
+            let prefixedWrongVersion = Data(repeating: 0, count: 16) + wrongVersion
+            let slicedWrongVersion = prefixedWrongVersion.dropFirst(16)
+            #expect(throws: SpeakerEmbeddingBlobCodecError.unsupportedVersion) {
+                try SpeakerEmbeddingBlobCodec.decode(slicedWrongVersion, dimensionCount: values.count)
+            }
         }
 
         private func unitVector(index: Int) -> [Float] {

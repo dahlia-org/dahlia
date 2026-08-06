@@ -641,7 +641,7 @@ enum L10n {
 
     static func contactDeletionImpact(_ impact: ProvisionalContactDeletionImpact) -> String {
         String(
-            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, and \(impact.topics) Topics will be detached.",
+            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, and \(impact.topics) Topics will be detached. \(impact.speakerProfiles) speaker profiles and \(impact.speakerAssignments) speaker assignments will be deleted.",
             bundle: bundle
         )
     }

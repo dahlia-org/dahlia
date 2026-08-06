@@ -59,7 +59,15 @@ import GRDB
                 expectedRevision: 2
             )
             #expect(approved.assignmentOrigin == .suggestionApproved)
+            #expect(approved.matchState == .referenceOnly)
             #expect(try fixture.profile(contactId: fixture.firstContactId).contributingMeetingCount == 3)
+            let repeatedApproval = try await fixture.repository.approveSpeakerSuggestion(
+                meetingSpeakerId: referenceOnly.speakerId,
+                contactId: fixture.firstContactId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 2
+            )
+            #expect(repeatedApproval == approved)
         }
 
         @Test
@@ -142,6 +150,12 @@ import GRDB
                 vaultId: fixture.vaultId,
                 expectedRevision: 1
             )
+            let impact = try fixture.repository.provisionalContactDeletionImpact(
+                id: fixture.firstContactId,
+                vaultId: fixture.vaultId
+            )
+            #expect(impact.speakerProfiles == 1)
+            #expect(impact.speakerAssignments == 1)
             try fixture.repository.deleteProvisionalContact(
                 id: fixture.firstContactId,
                 vaultId: fixture.vaultId,
@@ -151,12 +165,13 @@ import GRDB
                 try (
                     SpeakerProfileRecord.filter(Column("contactId") == fixture.firstContactId).fetchCount(db),
                     SpeakerContactAssignmentRecord.filter(Column("contactId") == fixture.firstContactId).fetchCount(db),
-                    SpeakerMatchObservationRecord.fetchCount(db)
+                    SpeakerMatchObservationRecord.fetchOne(db, key: reference.speakerId)
                 )
             }
             #expect(afterContactDelete.0 == 0)
             #expect(afterContactDelete.1 == 0)
-            #expect(afterContactDelete.2 == 0)
+            #expect(afterContactDelete.2?.state == .referenceOnly)
+            #expect(afterContactDelete.2?.top1ContactId == nil)
 
             let remaining = try fixture.addSpeaker(values: unitVector(1), source: .system)
             _ = try await fixture.repository.manuallyAssignSpeaker(
@@ -253,10 +268,17 @@ import GRDB
             )
             #expect(rejected.matchState == .rejected)
             #expect(repeatedRejection == rejected)
+
+            let reevaluated = try await fixture.repository.evaluateSpeakerMatch(
+                meetingSpeakerId: suggested.speakerId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 2
+            )
+            #expect(reevaluated.matchState == .rejected)
         }
 
         @Test
-        func assignmentInvalidatesCachedProfilesOnlyAfterCommit() async throws {
+        func assignmentInvalidationReloadsActualDatabaseProfiles() async throws {
             let fixture = try SpeakerIdentityFixture()
             let key = SpeakerProfileCacheKey(vaultId: fixture.vaultId, embeddingSpaceId: fixture.spaceId)
             _ = try await fixture.cache.profiles(for: key) { [] }
@@ -267,9 +289,74 @@ import GRDB
                 vaultId: fixture.vaultId,
                 expectedRevision: 1
             )
-            let expected = try fixture.cachedProfile(contactId: fixture.firstContactId)
-            let loaded = try await fixture.cache.profiles(for: key) { [expected] }
-            #expect(loaded == [expected])
+            let query = try fixture.addSpeaker(values: unitVector(0), source: .system)
+            let evaluated = try await fixture.repository.evaluateSpeakerMatch(
+                meetingSpeakerId: query.speakerId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+
+            #expect(evaluated.top1ContactId == fixture.firstContactId)
+            #expect(evaluated.top1Score == 1)
+        }
+
+        @Test
+        func evaluationRevalidatesCachedProfilesInsideWriteTransaction() async throws {
+            let fixture = try SpeakerIdentityFixture()
+            let speaker = try fixture.addSpeaker(values: unitVector(0), source: .microphone)
+            _ = try await fixture.repository.manuallyAssignSpeaker(
+                meetingSpeakerId: speaker.speakerId,
+                contactId: fixture.firstContactId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+            let key = SpeakerProfileCacheKey(vaultId: fixture.vaultId, embeddingSpaceId: fixture.spaceId)
+            let actual = try fixture.cachedProfile(contactId: fixture.firstContactId)
+            _ = try await fixture.cache.profiles(for: key) {
+                [CachedSpeakerProfile(contactId: fixture.secondContactId, embedding: actual.embedding)]
+            }
+            let query = try fixture.addSpeaker(values: unitVector(0), source: .system)
+
+            let evaluated = try await fixture.repository.evaluateSpeakerMatch(
+                meetingSpeakerId: query.speakerId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+
+            #expect(evaluated.top1ContactId == fixture.firstContactId)
+            #expect(evaluated.top1ContactId != fixture.secondContactId)
+        }
+
+        @Test
+        func provisionalResolutionMovesManualAssignmentAndRecomputesProfiles() async throws {
+            let fixture = try SpeakerIdentityFixture()
+            try fixture.identifySecondContact(email: "identified@example.com")
+            let speaker = try fixture.addSpeaker(values: unitVector(0), source: .microphone)
+            _ = try await fixture.repository.manuallyAssignSpeaker(
+                meetingSpeakerId: speaker.speakerId,
+                contactId: fixture.firstContactId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+
+            let resolved = try fixture.repository.resolveProvisionalContact(
+                id: fixture.firstContactId,
+                vaultId: fixture.vaultId,
+                email: "identified@example.com",
+                displayName: "First",
+                expectedRevision: 1,
+                expectedExistingContactID: fixture.secondContactId,
+                expectedExistingRevision: 1
+            )
+            let assignment = try await fixture.database.dbQueue.read { db in
+                try SpeakerContactAssignmentRecord.fetchOne(db, key: speaker.speakerId)
+            }
+
+            #expect(resolved.id == fixture.secondContactId)
+            #expect(assignment?.contactId == fixture.secondContactId)
+            #expect(assignment?.origin == .manual)
+            #expect(try fixture.profileIfPresent(contactId: fixture.firstContactId) == nil)
+            #expect(try fixture.profile(contactId: fixture.secondContactId).contributingMeetingCount == 1)
         }
 
         private func unitVector(_ index: Int) -> [Float] {
@@ -418,6 +505,15 @@ import GRDB
                     createdAt: now,
                     updatedAt: now
                 ).save(db)
+            }
+        }
+
+        func identifySecondContact(email: String) throws {
+            try database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE contacts SET email = ? WHERE id = ?",
+                    arguments: [email, secondContactId]
+                )
             }
         }
 

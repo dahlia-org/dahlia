@@ -1047,7 +1047,7 @@
 "Delete Organization" = "組織を削除";
 "Deletes this organization and all departments below it. Memberships and related references are detached. This cannot be undone." = "この組織と配下のすべての部門を削除し、所属と関連付けを解除します。この操作は取り消せません。";
 "Delete Topic?" = "トピックを削除しますか？";
-"%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached." = "所属 %lld 件、Project %lld 件、Insight %lld 件、トピック %lld 件との参照を解除します。";
+"%lld memberships, %lld Projects, %lld insights, and %lld Topics will be detached. %lld speaker profiles and %lld speaker assignments will be deleted." = "所属 %lld 件、Project %lld 件、Insight %lld 件、トピック %lld 件との参照を解除します。話者プロファイル %lld 件と話者割り当て %lld 件を削除します。";
 "This deletes %lld organization nodes and detaches %lld memberships, %lld Projects, %lld Topics, and %lld insights." = "組織ノード %lld 件を削除し、所属 %lld 件、Project %lld 件、トピック %lld 件、インサイト %lld 件との参照を解除します。";
 "This removes %lld Meeting references and %lld related resources. The source records are preserved." = "会議参照 %lld 件と関係先 %lld 件を解除します。参照先の正準データは残ります。";
 "Topic Meeting Evidence" = "トピックの根拠会議";

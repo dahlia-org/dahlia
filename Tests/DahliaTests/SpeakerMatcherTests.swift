@@ -48,6 +48,83 @@ import Foundation
             #expect(ranking.top1ContactId == nil)
         }
 
+        @Test
+        func calibratedPolicySuggestsAtSimilarityAndMarginBoundaries() {
+            let space = makeSpace(revision: "one")
+            let first = UUID.v7()
+            let ranking = SpeakerMatcher.rank(
+                embedding: SpeakerEmbedding(space: space, values: unitVector(0)),
+                profiles: [
+                    CachedSpeakerProfile(contactId: first, embedding: SpeakerEmbedding(space: space, values: unitVector(0))),
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(1))),
+                ],
+                policy: calibrated(minimumSimilarity: 1, minimumMargin: 1)
+            )
+
+            #expect(ranking.top1ContactId == first)
+            #expect(ranking.top1Score == 1)
+            #expect(ranking.margin == 1)
+            #expect(ranking.state == .suggested)
+        }
+
+        @Test
+        func calibratedPolicyRejectsBelowMinimumSimilarity() {
+            let space = makeSpace(revision: "one")
+            let ranking = SpeakerMatcher.rank(
+                embedding: SpeakerEmbedding(space: space, values: normalized([0.8, 0.6])),
+                profiles: [
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(0))),
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(1))),
+                ],
+                policy: calibrated(minimumSimilarity: 0.81, minimumMargin: 0)
+            )
+
+            #expect(ranking.state == .undeterminable)
+            #expect(ranking.unknownReason == .belowThreshold)
+        }
+
+        @Test
+        func calibratedPolicyRequiresMinimumMargin() {
+            let space = makeSpace(revision: "one")
+            let ranking = SpeakerMatcher.rank(
+                embedding: SpeakerEmbedding(space: space, values: normalized([0.8, 0.6])),
+                profiles: [
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(0))),
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(1))),
+                ],
+                policy: calibrated(minimumSimilarity: 0.8, minimumMargin: 0.21)
+            )
+
+            #expect(ranking.state == .undeterminable)
+            #expect(ranking.unknownReason == .insufficientEvidence)
+        }
+
+        @Test
+        func calibratedPolicyRequiresTwoProfilesToSuggest() {
+            let space = makeSpace(revision: "one")
+            let ranking = SpeakerMatcher.rank(
+                embedding: SpeakerEmbedding(space: space, values: unitVector(0)),
+                profiles: [
+                    CachedSpeakerProfile(contactId: .v7(), embedding: SpeakerEmbedding(space: space, values: unitVector(0))),
+                ],
+                policy: calibrated(minimumSimilarity: 1, minimumMargin: 0)
+            )
+
+            // A suggestion requires a measured separation from a runner-up; one profile has no margin.
+            #expect(ranking.state == .undeterminable)
+            #expect(ranking.unknownReason == .insufficientEvidence)
+            #expect(ranking.margin == nil)
+        }
+
+        private func calibrated(minimumSimilarity: Float, minimumMargin: Float) -> SpeakerMatchPolicy {
+            SpeakerMatchPolicy(
+                formatVersion: SpeakerMatchPolicy.formatVersion,
+                state: .calibrated,
+                minimumSimilarity: minimumSimilarity,
+                minimumMargin: minimumMargin
+            )
+        }
+
         private func makeSpace(revision: String) -> SpeakerEmbeddingSpace {
             SpeakerEmbeddingSpace(
                 provider: "FluidAudio",
