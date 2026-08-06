@@ -189,6 +189,27 @@ import Foundation
         }
 
         @Test
+        func preservesIndentAtDocumentStart() {
+            let document = SummaryDocument(
+                title: "",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [.bulletedList(items: [SummaryListItem(text: "First", indent: 1)])]
+                    ),
+                ]
+            )
+
+            let rendered = ObsidianMarkdownSummaryRenderer.render(
+                document: document,
+                context: SummaryMarkdownRenderContext(meetingId: .v7(), createdAt: .now)
+            )
+
+            #expect(rendered.body == "    - First")
+        }
+
+        @Test
         func legacyMarkdownParseRenderNormalizesScreenshotFilename() throws {
             let meetingId = UUID.v7()
             let screenshotId = try #require(UUID(uuidString: "019E61FD-B5D6-7A04-AC25-4B820FE951E6"))

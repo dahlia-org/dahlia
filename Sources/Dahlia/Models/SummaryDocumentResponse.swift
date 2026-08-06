@@ -1,6 +1,13 @@
 import DahliaRuntimeSupport
 import Foundation
 
+enum SummaryTableRenderLimits {
+    static let maximumTableColumns = 12
+    static let maximumTableRows = 50
+    static let maximumTableRenderCells = maximumTableColumns * (maximumTableRows + 1)
+    static let maximumDocumentTableCells = 1200
+}
+
 struct SummaryDocumentResponse: Decodable {
     let title: String
     let description: String
@@ -130,15 +137,15 @@ struct SummaryDocumentResponse: Decodable {
                 "image_id": ["type": "string"],
                 "columns": [
                     "type": "array",
-                    "maxItems": 12,
+                    "maxItems": SummaryTableRenderLimits.maximumTableColumns,
                     "items": ["type": "string"],
                 ],
                 "rows": [
                     "type": "array",
-                    "maxItems": 50,
+                    "maxItems": SummaryTableRenderLimits.maximumTableRows,
                     "items": [
                         "type": "array",
-                        "maxItems": 12,
+                        "maxItems": SummaryTableRenderLimits.maximumTableColumns,
                         "items": ["type": "string"],
                     ],
                 ],

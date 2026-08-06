@@ -114,26 +114,23 @@ enum GoogleDocsSummaryRenderer {
     }
 
     private static func bulletedList(_ items: [SummaryListItem], symbol: String) -> String {
-        items.compactMap { item -> String? in
-            guard let text = normalizedText(item.text.text) else { return nil }
-            return listItem(text, marker: symbol, indent: item.indent)
+        items.map { item in
+            listItem(normalizedText(item.text.text) ?? "", marker: symbol, indent: item.indent)
         }
         .joined()
     }
 
     private static func numberedList(_ items: [SummaryListItem]) -> String {
         let numbers = SummaryListNumbering.numbers(for: items.map(\.indent))
-        return zip(items, numbers).compactMap { item, number -> String? in
-            guard let text = normalizedText(item.text.text) else { return nil }
-            return listItem(text, marker: "\(number).", indent: item.indent)
+        return zip(items, numbers).map { item, number in
+            listItem(normalizedText(item.text.text) ?? "", marker: "\(number).", indent: item.indent)
         }
         .joined()
     }
 
     private static func checklist(_ items: [SummaryBlock.ChecklistItem]) -> String {
-        items.compactMap { item -> String? in
-            guard let text = normalizedText(item.text.text) else { return nil }
-            return listItem(text, marker: item.checked ? "☑" : "☐", indent: item.indent)
+        items.map { item in
+            listItem(normalizedText(item.text.text) ?? "", marker: item.checked ? "☑" : "☐", indent: item.indent)
         }
         .joined()
     }
@@ -198,10 +195,10 @@ enum GoogleDocsSummaryRenderer {
 
     private static func table(headers: [SummaryText], rows: [[SummaryText]]) -> String {
         guard !headers.isEmpty else { return "" }
-        let header = headers.compactMap { normalizedText($0.text) }.map(inlineRTF).joined(separator: "\\tab ")
+        let header = headers.map { normalizedText($0.text) ?? "" }.map(inlineRTF).joined(separator: "\\tab ")
         let renderedHeader = "\\pard\\plain\\sa80\\b\\fs22 \(header)\\par\n"
         let renderedRows: String = rows.map { row in
-            let cells = row.compactMap { normalizedText($0.text) }.map(inlineRTF).joined(separator: "\\tab ")
+            let cells = row.map { normalizedText($0.text) ?? "" }.map(inlineRTF).joined(separator: "\\tab ")
             return "\\pard\\plain\\sa80\\fs22 \(cells)\\par\n"
         }
         .joined()

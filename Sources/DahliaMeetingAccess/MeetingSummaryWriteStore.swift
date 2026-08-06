@@ -175,7 +175,7 @@ extension MeetingAccessStore {
     }
 
     private func validate(_ document: SummaryDocument) throws {
-        if let validationError = StoredSummaryDocumentMarkdownRenderer.writeValidationError(document) {
+        if let validationError = SummaryDocumentWriteValidator.writeValidationError(document) {
             throw MeetingAccessError.invalidSummaryUpdate(validationError)
         }
         guard document.sections.count <= SummaryWriteLimits.sections else {

@@ -421,7 +421,10 @@ struct SummaryServiceTests {
                 [
                     "heading": "Second",
                     "blocks": [
-                        tableBlock(columns: Array(columns.prefix(12)), rows: rows),
+                        tableBlock(
+                            columns: Array(columns.prefix(SummaryTableRenderLimits.maximumTableColumns)),
+                            rows: rows
+                        ),
                         tableBlock(columns: ["Discarded"], rows: []),
                     ],
                 ],
@@ -440,12 +443,18 @@ struct SummaryServiceTests {
 
         #expect(document.schemaVersion == SummaryDocumentSchemaVersion.current)
         #expect(tables.count == 2)
-        #expect(tables[0].headers.count == 12)
-        #expect(tables[0].rows.count == 50)
-        #expect(tables[0].headers.count * (1 + tables[0].rows.count) == 612)
-        #expect(tables[1].headers.count == 12)
+        #expect(tables[0].headers.count == SummaryTableRenderLimits.maximumTableColumns)
+        #expect(tables[0].rows.count == SummaryTableRenderLimits.maximumTableRows)
+        #expect(
+            tables[0].headers.count * (1 + tables[0].rows.count)
+                == SummaryTableRenderLimits.maximumTableRenderCells
+        )
+        #expect(tables[1].headers.count == SummaryTableRenderLimits.maximumTableColumns)
         #expect(tables[1].rows.count == 48)
-        #expect(tables[1].headers.count * (1 + tables[1].rows.count) == 588)
+        #expect(
+            tables.flatMap { [$0.headers] + $0.rows }.flatMap { $0 }.count
+                == SummaryTableRenderLimits.maximumDocumentTableCells
+        )
         #expect(tables.flatMap { $0.headers + $0.rows.flatMap { $0 } }.allSatisfy { $0.transcriptRef == nil })
     }
 

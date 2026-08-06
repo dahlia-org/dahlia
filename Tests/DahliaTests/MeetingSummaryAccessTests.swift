@@ -213,6 +213,24 @@ import GRDB
             #expect(markdown.contains("        - [ ] Check"))
         }
 
+        @Test
+        func storedDocumentRendererPreservesIndentAtDocumentStart() {
+            let document = SummaryDocument(
+                title: "",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [.bulletedList(items: [SummaryListItem(text: "First", indent: 1)])]
+                    ),
+                ]
+            )
+
+            let markdown = StoredSummaryDocumentMarkdownRenderer.render(document)
+
+            #expect(markdown == "    - First")
+        }
+
         private static func firstSummaryBlockID(
             in detail: MeetingDetail
         ) throws -> DahliaMeetingAccess.JSONValue {

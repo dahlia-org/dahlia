@@ -176,6 +176,72 @@ import Foundation
             #expect(rtf.contains("\\li2160\\fi-360\\tx2160\\sa80\\fs22 \\u9744 \\tab {Checklist grandchild}"))
         }
 
+        @Test
+        func preservesEmptyTableCellsInRTF() throws {
+            let document = SummaryDocument(
+                title: "Table",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .table(
+                                headers: ["Header A", "", "Header C"],
+                                rows: [["Cell A", "", "Cell C"]]
+                            ),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = GoogleDocsSummaryRenderer.render(
+                document: document,
+                context: SummaryRenderContext(meetingId: .v7(), createdAt: .now),
+                actionItemsHeading: "Action Items",
+                imageUnavailableText: "Image unavailable"
+            )
+            let rtf = try #require(String(data: rendered.data, encoding: .utf8))
+
+            #expect(rtf.contains("{Header A}\\tab \\tab {Header C}"))
+            #expect(rtf.contains("{Cell A}\\tab \\tab {Cell C}"))
+        }
+
+        @Test
+        func preservesLegacyBlankListItemsInRTF() throws {
+            let document = SummaryDocument(
+                schemaVersion: 3,
+                title: "Legacy lists",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [SummaryListItem(text: "")]),
+                            .numberedList(items: [
+                                SummaryListItem(text: "First"),
+                                SummaryListItem(text: ""),
+                                SummaryListItem(text: "Third"),
+                            ]),
+                            .checklist(items: [.init(text: "", checked: false)]),
+                        ]
+                    ),
+                ]
+            )
+
+            let rendered = GoogleDocsSummaryRenderer.render(
+                document: document,
+                context: SummaryRenderContext(meetingId: .v7(), createdAt: .now),
+                actionItemsHeading: "Action Items",
+                imageUnavailableText: "Image unavailable"
+            )
+            let rtf = try #require(String(data: rendered.data, encoding: .utf8))
+
+            #expect(rtf.contains("\\u8226 \\tab \\par"))
+            #expect(rtf.contains("2.\\tab \\par"))
+            #expect(rtf.contains("3.\\tab {Third}"))
+            #expect(rtf.contains("\\u9744 \\tab \\par"))
+        }
+
         private func makePNGData() throws -> Data {
             let bitmap = try #require(NSBitmapImageRep(
                 bitmapDataPlanes: nil,

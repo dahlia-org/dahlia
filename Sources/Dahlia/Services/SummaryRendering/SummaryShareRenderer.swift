@@ -79,7 +79,7 @@ enum SummaryShareRenderer {
         }
 
         chunks.append(contentsOf: section.blocks.compactMap(renderMarkdownBlock))
-        return joinedChunks(chunks).nilIfBlank
+        return nonBlankPreservingWhitespace(joinedChunks(chunks))
     }
 
     private static func renderMarkdownBlock(_ block: SummaryBlock) -> String? {
@@ -368,42 +368,6 @@ enum SummaryShareRenderer {
         }
     }
 
-    private static func nestedHTMLList(_ items: [RenderedHTMLListItem], kind: SummaryHTMLListKind) -> String {
-        let element = kind.element
-        var html = "<\(element)>\n"
-        var currentIndent = items[0].indent
-        html += htmlListItemOpening(items[0]) + items[0].html
-
-        for item in items.dropFirst() {
-            if item.indent == currentIndent {
-                html += "</li>\n" + htmlListItemOpening(item) + item.html
-            } else if item.indent > currentIndent {
-                for level in currentIndent ..< item.indent {
-                    let opening = level == item.indent - 1 ? htmlListItemOpening(item) : "<li>"
-                    html += "\n<\(element)>\n\(opening)"
-                }
-                html += item.html
-            } else {
-                html += "</li>"
-                for _ in item.indent ..< currentIndent {
-                    html += "\n</\(element)>\n</li>"
-                }
-                html += "\n" + htmlListItemOpening(item) + item.html
-            }
-            currentIndent = item.indent
-        }
-
-        html += "</li>"
-        for _ in 0 ..< currentIndent {
-            html += "\n</\(element)>\n</li>"
-        }
-        return html + "\n</\(element)>"
-    }
-
-    private static func htmlListItemOpening(_ item: RenderedHTMLListItem) -> String {
-        item.value.map { "<li value=\"\($0)\">" } ?? "<li>"
-    }
-
     private static func wrapHTMLList(_ renderedItems: [String], element: String) -> String {
         "<\(element)>\n\(renderedItems.joined(separator: "\n"))\n</\(element)>"
     }
@@ -559,9 +523,12 @@ enum SummaryShareRenderer {
     }
 
     private static func joinedChunks(_ chunks: [String]) -> String {
-        chunks
-            .joined(separator: "\n\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        trimmingDocumentBoundaries(chunks.joined(separator: "\n\n"))
+    }
+
+    private static func trimmingDocumentBoundaries(_ text: String) -> String {
+        let withoutLeadingNewlines = text.drop(while: { $0.isNewline })
+        return String(withoutLeadingNewlines.reversed().drop(while: { $0.isWhitespace }).reversed())
     }
 
     private static func clampedHeadingLevel(_ level: Int) -> Int {
@@ -586,5 +553,55 @@ enum SummaryShareRenderer {
             .replacing("&", with: "&amp;")
             .replacing("<", with: "&lt;")
             .replacing(">", with: "&gt;")
+    }
+}
+
+private extension SummaryShareRenderer {
+    static func nestedHTMLList(_ items: [RenderedHTMLListItem], kind: SummaryHTMLListKind) -> String {
+        let element = kind.element
+        var html = "<\(element)>\n"
+        var currentIndent = 0
+        var nestedListClosesParentItem: [Bool] = []
+        for _ in 0 ..< items[0].indent {
+            html += "<\(element)>\n"
+            nestedListClosesParentItem.append(false)
+        }
+        html += htmlListItemOpening(items[0]) + items[0].html
+        currentIndent = items[0].indent
+
+        for item in items.dropFirst() {
+            if item.indent == currentIndent {
+                html += "</li>\n" + htmlListItemOpening(item) + item.html
+            } else if item.indent > currentIndent {
+                for level in currentIndent ..< item.indent {
+                    html += "\n<\(element)>"
+                    nestedListClosesParentItem.append(level == currentIndent)
+                }
+                html += "\n" + htmlListItemOpening(item) + item.html
+            } else {
+                html += "</li>"
+                for _ in item.indent ..< currentIndent {
+                    html += "\n</\(element)>"
+                    if nestedListClosesParentItem.removeLast() {
+                        html += "\n</li>"
+                    }
+                }
+                html += "\n" + htmlListItemOpening(item) + item.html
+            }
+            currentIndent = item.indent
+        }
+
+        html += "</li>"
+        while let closesParentItem = nestedListClosesParentItem.popLast() {
+            html += "\n</\(element)>"
+            if closesParentItem {
+                html += "\n</li>"
+            }
+        }
+        return html + "\n</\(element)>"
+    }
+
+    static func htmlListItemOpening(_ item: RenderedHTMLListItem) -> String {
+        item.value.map { "<li value=\"\($0)\">" } ?? "<li>"
     }
 }

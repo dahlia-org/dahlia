@@ -240,6 +240,45 @@ import Foundation
         }
 
         @Test
+        func googleDocsHTMLDoesNotCreateEmptyListItemsForIndentJumps() {
+            let document = SummaryDocument(
+                title: "Jump",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [
+                            .bulletedList(items: [
+                                SummaryListItem(text: "Parent"),
+                                SummaryListItem(text: "Grandchild", indent: 2),
+                                SummaryListItem(text: "Sibling"),
+                            ]),
+                        ]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
+
+            #expect(content.html.contains("""
+            <ul>
+            <li>Parent
+            <ul>
+            <ul>
+            <li>Grandchild</li>
+            </ul>
+            </ul>
+            </li>
+            <li>Sibling</li>
+            </ul>
+            """))
+        }
+
+        @Test
         func preservesSlackNestedIndentInHTMLAndPlainText() {
             let document = SummaryDocument(
                 title: "Nested",
@@ -314,6 +353,28 @@ import Foundation
             #expect(content.markdown.contains("\n\n    - Bullet"))
             #expect(content.markdown.contains("\n\n    1. Numbered"))
             #expect(content.markdown.contains("\n\n    - [ ] Checklist"))
+        }
+
+        @Test
+        func shareMarkdownPreservesIndentAtDocumentStart() {
+            let document = SummaryDocument(
+                title: "",
+                sections: [
+                    SummarySection(
+                        id: .v7(),
+                        heading: "",
+                        blocks: [.bulletedList(items: [SummaryListItem(text: "First", indent: 1)])]
+                    ),
+                ]
+            )
+
+            let content = SummaryShareRenderer.render(
+                document: document,
+                actionItemsHeading: "Action Items",
+                for: .googleDocs
+            )
+
+            #expect(content.markdown == "    - First")
         }
 
         @Test

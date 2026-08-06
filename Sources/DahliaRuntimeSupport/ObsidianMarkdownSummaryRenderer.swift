@@ -113,7 +113,12 @@ public enum ObsidianMarkdownSummaryRenderer {
             chunks.append(actionItems)
         }
 
-        return chunks.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmingDocumentBoundaries(chunks.joined(separator: "\n\n"))
+    }
+
+    private static func trimmingDocumentBoundaries(_ text: String) -> String {
+        let withoutLeadingNewlines = text.drop(while: { $0.isNewline })
+        return String(withoutLeadingNewlines.reversed().drop(while: { $0.isWhitespace }).reversed())
     }
 
     private static func renderActionItems(_ actionItems: [SummaryActionItem], heading: String) -> String? {

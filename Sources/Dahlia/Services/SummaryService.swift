@@ -108,7 +108,7 @@ enum SummaryService {
     }
 
     private static func document(from response: SummaryDocumentResponse, context: SummaryRenderContext) -> SummaryDocument {
-        var remainingTableRenderCells = 1200
+        var remainingTableRenderCells = SummaryTableRenderLimits.maximumDocumentTableCells
         var sections: [SummarySection] = []
 
         for sectionDTO in response.sections {
@@ -201,13 +201,13 @@ enum SummaryService {
                 ),
             ]
         case "table":
-            let columns = Array(dto.columns.prefix(12)).map { value in
+            let columns = Array(dto.columns.prefix(SummaryTableRenderLimits.maximumTableColumns)).map { value in
                 SummaryText(normalizedText(text: value, transcriptRef: nil).text)
             }
             guard !columns.isEmpty, remainingTableRenderCells >= columns.count else { return [] }
 
             let width = columns.count
-            let rows = dto.rows.prefix(50).map { row -> [SummaryText] in
+            let rows = dto.rows.prefix(SummaryTableRenderLimits.maximumTableRows).map { row -> [SummaryText] in
                 var values = Array(row.prefix(width))
                 values.append(contentsOf: repeatElement("", count: max(0, width - values.count)))
                 return values.map { value in
