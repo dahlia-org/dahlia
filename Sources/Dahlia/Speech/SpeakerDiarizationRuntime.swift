@@ -10,9 +10,9 @@ enum SpeakerDiarizationBootstrap {
 actor SerialDiarizerHost {
     typealias LoadHook = @Sendable () async throws -> Void
 
-    private struct Request {
+    struct Request {
         let source: MemoryMappedAudioSampleSource
-        let continuation: CheckedContinuation<SpeakerDiarizationOutput, any Error>
+        let ticket: RequestTicket
     }
 
     private enum Backend: Sendable {
@@ -22,8 +22,10 @@ actor SerialDiarizerHost {
 
     private let backend: Backend
     private let configuration: OfflineDiarizerConfig
-    private var continuation: AsyncStream<Request>.Continuation?
+    private let termination = TerminationHandle()
+    private var streamContinuation: AsyncStream<Request>.Continuation?
     private var worker: Task<Void, Never>?
+    private var workerStatus: WorkerStatus?
 
     init(
         assetManager: SpeakerModelAssetManager,
@@ -42,64 +44,125 @@ actor SerialDiarizerHost {
     }
 
     func process(source: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
-        startIfNeeded()
-        guard let continuation else {
-            throw SpeakerMatchUnknownReason.analysisFailed
+        try Task.checkCancellation()
+        let ticket = RequestTicket()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { requestContinuation in
+                ticket.install(continuation: requestContinuation)
+                Task { await self.enqueue(Request(source: source, ticket: ticket)) }
+            }
+        } onCancel: {
+            ticket.cancel()
         }
-        return try await withCheckedThrowingContinuation { requestContinuation in
-            continuation.yield(Request(source: source, continuation: requestContinuation))
+    }
+
+    func shutdown() async {
+        let worker = termination.shutdown()
+        await worker?.value
+        clearWorker()
+    }
+
+    private func enqueue(_ request: Request) async {
+        while !request.ticket.isCompleted {
+            if workerStatus?.hasFinished == true {
+                clearWorker()
+            }
+            startIfNeeded()
+            guard let streamContinuation else {
+                request.ticket.complete(.failure(SpeakerMatchUnknownReason.analysisFailed))
+                return
+            }
+            switch streamContinuation.yield(request) {
+            case .enqueued:
+                return
+            case .dropped:
+                request.ticket.complete(.failure(SpeakerMatchUnknownReason.analysisFailed))
+                return
+            case .terminated:
+                await worker?.value
+                clearWorker()
+            @unknown default:
+                request.ticket.complete(.failure(SpeakerMatchUnknownReason.analysisFailed))
+                return
+            }
         }
     }
 
     private func startIfNeeded() {
         guard worker == nil else { return }
         let (stream, continuation) = AsyncStream<Request>.makeStream()
-        self.continuation = continuation
+        streamContinuation = continuation
         let backend = backend
         let configuration = configuration
-        worker = Task {
+        let status = WorkerStatus()
+        let control = WorkerControl()
+        workerStatus = status
+        let worker = Task {
+            defer {
+                control.clear()
+                status.markFinished()
+            }
             switch backend {
             case let .fluidAudio(assetManager):
                 await Self.runFluidAudioWorker(
                     assetManager: assetManager,
                     configuration: configuration,
-                    stream: stream
+                    stream: stream,
+                    continuation: continuation,
+                    control: control
                 )
             case let .injected(processor, loadHook):
                 await Self.runInjectedWorker(
                     processor: processor,
                     loadHook: loadHook,
-                    stream: stream
+                    stream: stream,
+                    continuation: continuation,
+                    control: control
                 )
             }
         }
+        control.install(worker: worker)
+        self.worker = worker
+        termination.install(continuation: continuation, worker: worker)
+    }
+
+    private func clearWorker() {
+        streamContinuation = nil
+        worker = nil
+        workerStatus = nil
+        termination.clear()
     }
 
     private static func runFluidAudioWorker(
         assetManager: SpeakerModelAssetManager,
         configuration: OfflineDiarizerConfig,
-        stream: AsyncStream<Request>
+        stream: AsyncStream<Request>,
+        continuation: AsyncStream<Request>.Continuation,
+        control: WorkerControl
     ) async {
         do {
             let models = try await FluidAudioSpeakerEmbeddingExtractor.loadVerifiedModels(from: assetManager)
             let manager = OfflineDiarizerManager(config: configuration)
             manager.initialize(models: models)
             for await request in stream {
-                do {
+                await process(request: request, control: control) {
                     let result = try await manager.process(
                         audioSource: request.source,
                         audioLoadingSeconds: 0
                     )
-                    let output = try FluidAudioSpeakerEmbeddingExtractor.makeOutput(
+                    return try FluidAudioSpeakerEmbeddingExtractor.makeOutput(
                         from: result,
                         source: request.source
                     )
-                    request.continuation.resume(returning: output)
-                } catch {
-                    request.continuation.resume(throwing: error)
+                }
+                if Task.isCancelled {
+                    continuation.finish()
+                    await failRequests(in: stream, error: CancellationError())
+                    return
                 }
             }
         } catch {
+            continuation.finish()
             await failRequests(in: stream, error: error)
         }
     }
@@ -107,19 +170,24 @@ actor SerialDiarizerHost {
     private static func runInjectedWorker(
         processor: any SpeakerDiarizationProcessing,
         loadHook: LoadHook,
-        stream: AsyncStream<Request>
+        stream: AsyncStream<Request>,
+        continuation: AsyncStream<Request>.Continuation,
+        control: WorkerControl
     ) async {
         do {
             try await loadHook()
             for await request in stream {
-                do {
-                    let output = try await processor.process(source: request.source)
-                    request.continuation.resume(returning: output)
-                } catch {
-                    request.continuation.resume(throwing: error)
+                await process(request: request, control: control) {
+                    try await processor.process(source: request.source)
+                }
+                if Task.isCancelled {
+                    continuation.finish()
+                    await failRequests(in: stream, error: CancellationError())
+                    return
                 }
             }
         } catch {
+            continuation.finish()
             await failRequests(in: stream, error: error)
         }
     }
@@ -129,8 +197,27 @@ actor SerialDiarizerHost {
         error: any Error
     ) async {
         for await request in stream {
-            request.continuation.resume(throwing: error)
+            request.ticket.complete(.failure(error))
         }
+    }
+
+    private static func process(
+        request: Request,
+        control: WorkerControl,
+        operation: () async throws -> SpeakerDiarizationOutput
+    ) async {
+        guard !request.ticket.isCompleted else { return }
+        let installed = request.ticket.installCancellation {
+            control.cancel()
+        }
+        guard installed else { return }
+        let result: Result<SpeakerDiarizationOutput, any Error>
+        do {
+            result = try await .success(operation())
+        } catch {
+            result = .failure(error)
+        }
+        request.ticket.complete(result)
     }
 }
 
@@ -184,6 +271,10 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
             space: space,
             qualityPolicy: qualityPolicy
         )
+    }
+
+    func shutdown() async {
+        await host.shutdown()
     }
 
     static func diarizationConfiguration() -> OfflineDiarizerConfig {

@@ -1,3 +1,4 @@
+import FluidAudio
 import Foundation
 @testable import Dahlia
 
@@ -26,6 +27,56 @@ import Foundation
             #expect(
                 SpeakerModelAssetManager.preprocessingDescriptor(configuration: changedConfiguration)
                     != space.preprocessing
+            )
+        }
+
+        @Test
+        func everyEmbeddingPipelineKnobChangesSpaceIdentity() async throws {
+            let rootURL = FileManager.default.temporaryDirectory.appending(
+                path: "dahlia-speaker-space-knobs-\(UUID.v7().uuidString)",
+                directoryHint: .isDirectory
+            )
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            let manager = try SpeakerModelAssetManager(managedRootURL: rootURL)
+            let baselineConfiguration = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
+            let baseline = await manager.embeddingSpace(configuration: baselineConfiguration)
+
+            var stepRatio = baselineConfiguration
+            stepRatio.segmentation.stepRatio = 0.05
+            var windowDuration = baselineConfiguration
+            windowDuration.segmentation.windowDurationSeconds = 5
+            var minimumOnDuration = baselineConfiguration
+            minimumOnDuration.segmentation.minDurationOn = 0.5
+            var minimumSegmentDuration = baselineConfiguration
+            minimumSegmentDuration.embedding.minSegmentDurationSeconds = 0.3
+            var skipStrategy = baselineConfiguration
+            skipStrategy.embedding.skipStrategy = .maskSimilarity(threshold: 0.95)
+            var clusteringThreshold = baselineConfiguration
+            clusteringThreshold.clustering.threshold = 0.3
+
+            let changedSpaces = await [
+                manager.embeddingSpace(configuration: stepRatio),
+                manager.embeddingSpace(configuration: windowDuration),
+                manager.embeddingSpace(configuration: minimumOnDuration),
+                manager.embeddingSpace(configuration: minimumSegmentDuration),
+                manager.embeddingSpace(configuration: skipStrategy),
+                manager.embeddingSpace(configuration: clusteringThreshold),
+            ]
+            #expect(changedSpaces.allSatisfy { $0 != baseline })
+            #expect(Set(changedSpaces).count == changedSpaces.count)
+        }
+
+        @Test
+        func pipelineDescriptorIsByteStableForSameConfiguration() {
+            let configuration = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
+
+            let first = SpeakerModelAssetManager.preprocessingDescriptor(configuration: configuration)
+            let second = SpeakerModelAssetManager.preprocessingDescriptor(configuration: configuration)
+
+            #expect(Data(first.utf8) == Data(second.utf8))
+            #expect(
+                first == "community-1 mono Float32 16000Hz "
+                    + "pipeline-sha256:429c47465d55e0c101b3c7010869b58148a758c00045e4ce16d5e693fa35f310"
             )
         }
 

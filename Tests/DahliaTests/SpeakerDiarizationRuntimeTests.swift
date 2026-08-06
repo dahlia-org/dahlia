@@ -32,6 +32,103 @@ import Foundation
             #expect(counts.load == 1)
             #expect(counts.process == 2)
             #expect(counts.maximumConcurrent == 1)
+            await extractor.shutdown()
+        }
+
+        @Test
+        func scopedExtractorStopsWorkerAndReleasesProcessor() async throws {
+            let releaseProbe = ReleaseProbe()
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+
+            let weakProcessor = try await runScopedExtractor(source: source, releaseProbe: releaseProbe)
+            await releaseProbe.waitUntilReleased()
+
+            #expect(weakProcessor.value == nil)
+        }
+
+        @Test
+        func failedLoadIsRetriedByLaterExtract() async throws {
+            let probe = SerialDiarizerProbe(output: SpeakerDiarizationOutput(
+                chunks: [chunk(speakerID: "S1", embedding: unitVector(index: 0))],
+                speakerDatabase: [:]
+            ))
+            let extractor = FluidAudioSpeakerEmbeddingExtractor(
+                processor: ProbedSpeakerDiarizationProcessor(probe: probe),
+                space: space(),
+                loadHook: { try await probe.loadFailingFirstAttempt() }
+            )
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+
+            await #expect(throws: LoadBoom.self) {
+                try await extractor.extract(from: source)
+            }
+            let retry = Task { try await extractor.extract(from: source) }
+            await probe.waitUntilFirstProcessStarts()
+            await probe.releaseFirstProcess()
+            let evidence = try await retry.value
+
+            #expect(evidence.count == 1)
+            let counts = await probe.counts()
+            #expect(counts.load == 2)
+            #expect(counts.process == 1)
+            await extractor.shutdown()
+        }
+
+        @Test
+        func cancellingInFlightExtractStopsProcessorPromptly() async throws {
+            let probe = CancellationProbe()
+            let extractor = FluidAudioSpeakerEmbeddingExtractor(
+                processor: CancellableSpeakerDiarizationProcessor(probe: probe),
+                space: space()
+            )
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let clock = ContinuousClock()
+            let startedAt = clock.now
+            let extraction = Task { try await extractor.extract(from: source) }
+            await probe.waitUntilStarted()
+
+            extraction.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await extraction.value
+            }
+            await probe.waitUntilCancelled()
+
+            #expect(startedAt.duration(to: clock.now) < .seconds(1))
+            #expect(await probe.processCount == 1)
+            await extractor.shutdown()
+        }
+
+        @Test
+        func cancellingQueuedExtractRemovesItWithoutInterruptingActiveWork() async throws {
+            let probe = SerialDiarizerProbe(output: SpeakerDiarizationOutput(
+                chunks: [chunk(speakerID: "S1", embedding: unitVector(index: 0))],
+                speakerDatabase: [:]
+            ))
+            let extractor = FluidAudioSpeakerEmbeddingExtractor(
+                processor: ProbedSpeakerDiarizationProcessor(probe: probe),
+                space: space(),
+                loadHook: { try await probe.load() }
+            )
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let active = Task { try await extractor.extract(from: source) }
+            await probe.waitUntilFirstProcessStarts()
+            let queued = Task { try await extractor.extract(from: source) }
+            await Task.yield()
+
+            queued.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await queued.value
+            }
+            await probe.releaseFirstProcess()
+            #expect(try await active.value.count == 1)
+
+            let counts = await probe.counts()
+            #expect(counts.process == 1)
+            await extractor.shutdown()
         }
 
         @Test
@@ -58,7 +155,7 @@ import Foundation
                         endTimeSeconds: 0.85,
                         embedding256: embedding
                     ),
-                ],
+                ]
             )
 
             let output = try FluidAudioSpeakerEmbeddingExtractor.makeOutput(from: result, source: source)
@@ -87,7 +184,7 @@ import Foundation
                         endTimeSeconds: 0.2,
                         embedding256: unitVector(index: 0)
                     ),
-                ],
+                ]
             )
 
             let output = try FluidAudioSpeakerEmbeddingExtractor.makeOutput(from: result, source: source)
@@ -148,6 +245,89 @@ import Foundation
         }
     }
 
+    private struct CancellableSpeakerDiarizationProcessor: SpeakerDiarizationProcessing {
+        let probe: CancellationProbe
+
+        func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+            try await probe.process()
+        }
+    }
+
+    private final class ReleasableSpeakerDiarizationProcessor: SpeakerDiarizationProcessing, Sendable {
+        private let releaseProbe: ReleaseProbe
+
+        init(releaseProbe: ReleaseProbe) {
+            self.releaseProbe = releaseProbe
+        }
+
+        func process(source _: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+            SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
+        }
+
+        deinit {
+            let releaseProbe = releaseProbe
+            Task { await releaseProbe.markReleased() }
+        }
+    }
+
+    private final class WeakBox<Value: AnyObject>: @unchecked Sendable {
+        weak var value: Value?
+
+        init(_ value: Value) {
+            self.value = value
+        }
+    }
+
+    private actor ReleaseProbe {
+        private var released = false
+        private var waiter: CheckedContinuation<Void, Never>?
+
+        func markReleased() {
+            released = true
+            waiter?.resume()
+            waiter = nil
+        }
+
+        func waitUntilReleased() async {
+            guard !released else { return }
+            await withCheckedContinuation { waiter = $0 }
+        }
+    }
+
+    private actor CancellationProbe {
+        private(set) var processCount = 0
+        private var started = false
+        private var cancelled = false
+        private var startWaiter: CheckedContinuation<Void, Never>?
+        private var cancellationWaiter: CheckedContinuation<Void, Never>?
+
+        func process() async throws -> SpeakerDiarizationOutput {
+            processCount += 1
+            started = true
+            startWaiter?.resume()
+            startWaiter = nil
+            do {
+                try await Task.sleep(for: .seconds(30))
+                return SpeakerDiarizationOutput(chunks: [], speakerDatabase: [:])
+            } catch {
+                cancelled = true
+                cancellationWaiter?.resume()
+                cancellationWaiter = nil
+                throw error
+            }
+        }
+
+        func waitUntilStarted() async {
+            guard !started else { return }
+            await withCheckedContinuation { startWaiter = $0 }
+        }
+
+        func waitUntilCancelled() async {
+            guard !cancelled else { return }
+            await withCheckedContinuation { cancellationWaiter = $0 }
+        }
+    }
+
     private actor SerialDiarizerProbe {
         private let output: SpeakerDiarizationOutput
         private var loadCount = 0
@@ -163,6 +343,13 @@ import Foundation
 
         func load() throws {
             loadCount += 1
+        }
+
+        func loadFailingFirstAttempt() throws {
+            loadCount += 1
+            if loadCount == 1 {
+                throw LoadBoom()
+            }
         }
 
         func process() async throws -> SpeakerDiarizationOutput {
@@ -195,6 +382,22 @@ import Foundation
         func counts() -> (load: Int, process: Int, maximumConcurrent: Int) {
             (loadCount, processCount, maximumConcurrentProcessCount)
         }
+    }
+
+    private struct LoadBoom: Error {}
+
+    private func runScopedExtractor(
+        source: MemoryMappedAudioSampleSource,
+        releaseProbe: ReleaseProbe
+    ) async throws -> WeakBox<ReleasableSpeakerDiarizationProcessor> {
+        let processor = ReleasableSpeakerDiarizationProcessor(releaseProbe: releaseProbe)
+        let weakProcessor = WeakBox(processor)
+        let extractor = FluidAudioSpeakerEmbeddingExtractor(
+            processor: processor,
+            space: space()
+        )
+        _ = try await extractor.extract(from: source)
+        return weakProcessor
     }
 
     private func sampleSource(samples: [Float], sampleRate: Int) throws -> MemoryMappedAudioSampleSource {

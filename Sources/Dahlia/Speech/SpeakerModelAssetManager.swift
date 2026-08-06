@@ -240,7 +240,11 @@ actor SpeakerModelAssetManager {
 
     func embeddingSpace() -> SpeakerEmbeddingSpace {
         let configuration = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
-        return SpeakerEmbeddingSpace(
+        return embeddingSpace(configuration: configuration)
+    }
+
+    func embeddingSpace(configuration: OfflineDiarizerConfig) -> SpeakerEmbeddingSpace {
+        SpeakerEmbeddingSpace(
             provider: "FluidInference",
             modelName: manifest.repository,
             revision: manifest.revision,
@@ -260,7 +264,13 @@ actor SpeakerModelAssetManager {
             ? "mono"
             : "\(MemoryMappedAudioSampleSource.channelCount)-channel"
         return "community-1 \(channelDescription) \(MemoryMappedAudioSampleSource.sampleEncoding) "
-            + "\(configuration.segmentation.sampleRate)Hz"
+            + "\(configuration.segmentation.sampleRate)Hz pipeline-sha256:"
+            + pipelineFingerprint(configuration: configuration)
+    }
+
+    static func pipelineFingerprint(configuration: OfflineDiarizerConfig) -> String {
+        let descriptor = CanonicalConfigurationEncoder.encode(configuration)
+        return SHA256.hash(data: Data(descriptor.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     static func downloadURL(for file: SpeakerModelAssetManifest.File, manifest: SpeakerModelAssetManifest) -> URL {
@@ -314,5 +324,37 @@ actor SpeakerModelAssetManager {
 
     private static func sha256(of data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private enum CanonicalConfigurationEncoder {
+    static func encode(_ value: Any) -> String {
+        if let value = value as? Bool { return value ? "bool:1" : "bool:0" }
+        if let value = value as? Int { return "int:\(value)" }
+        if let value = value as? UInt { return "uint:\(value)" }
+        if let value = value as? Float { return "float32:\(String(value.bitPattern, radix: 16))" }
+        if let value = value as? Double { return "float64:\(String(value.bitPattern, radix: 16))" }
+        if let value = value as? String { return "string:\(value.utf8.count):\(value)" }
+
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let child = mirror.children.first else { return "optional:nil" }
+            return "optional:(\(encode(child.value)))"
+        }
+        if mirror.displayStyle == .enum {
+            let caseName = String(describing: value).prefix { $0 != "(" }
+            let payload = mirror.children.map { child in
+                "\(child.label ?? "_")=\(encode(child.value))"
+            }.sorted().joined(separator: ",")
+            return "enum:\(caseName){\(payload)}"
+        }
+
+        let fields = mirror.children.map { child in
+            "\(child.label ?? "_")=\(encode(child.value))"
+        }.sorted().joined(separator: ",")
+        if fields.isEmpty {
+            return "leaf:\(String(reflecting: type(of: value))):\(String(reflecting: value))"
+        }
+        return "object:{\(fields)}"
     }
 }

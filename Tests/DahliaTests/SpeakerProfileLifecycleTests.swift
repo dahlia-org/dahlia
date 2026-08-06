@@ -338,7 +338,8 @@ import GRDB
             values: [Float],
             source: RecordingAudioSource,
             representativeSource: SpeakerRepresentativeSource = .diarization,
-            profileUpdateEligible: Bool = true
+            profileUpdateEligible: Bool = true,
+            quality: Double = 1
         ) throws -> (meetingId: UUID, speakerId: UUID) {
             let meetingId = requestedMeetingId ?? UUID.v7()
             let sessionId = UUID.v7()
@@ -381,7 +382,7 @@ import GRDB
                     analysisId: analysisId,
                     localSpeakerId: "speaker-\(speakerId)",
                     representative: SpeakerEmbeddingBlobCodec.encode(values, dimensionCount: values.count),
-                    representativeQuality: 1,
+                    representativeQuality: quality,
                     representativeSource: representativeSource,
                     profileUpdateEligible: profileUpdateEligible,
                     revision: 1,
@@ -404,6 +405,17 @@ import GRDB
                 try SpeakerProfileRecord
                     .filter(Column("contactId") == contactId && Column("embeddingSpaceId") == spaceId)
                     .fetchOne(db)
+            }
+        }
+
+        func profileExemplarSpeakerIds(contactId: UUID) throws -> [UUID] {
+            let profile = try profile(contactId: contactId)
+            return try database.dbQueue.read { db in
+                try UUID.fetchAll(
+                    db,
+                    sql: "SELECT meetingSpeakerId FROM speaker_profile_exemplars WHERE profileId = ? ORDER BY ordinal",
+                    arguments: [profile.id]
+                )
             }
         }
 
