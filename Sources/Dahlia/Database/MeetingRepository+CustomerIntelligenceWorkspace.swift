@@ -604,7 +604,7 @@ extension MeetingRepository {
         expectedImpact: ProvisionalContactDeletionImpact? = nil,
         now: Date = .now
     ) throws {
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
             guard let contact = try ContactRecord
                 .filter(Column("id") == id && Column("vaultId") == vaultId)
                 .fetchOne(db), contact.isProvisional
@@ -625,9 +625,18 @@ extension MeetingRepository {
                 resourceIDs: [id],
                 in: db
             )
+            let embeddingSpaceIDs = try UUID.fetchAll(
+                db,
+                sql: "SELECT embeddingSpaceId FROM speaker_profiles WHERE contactId = ?",
+                arguments: [id]
+            )
             _ = try ContactRecord.deleteOne(db, key: id)
             try Self.incrementReferenceOwnerRevisions(owners, now: now, in: db)
+            return Set(embeddingSpaceIDs.map {
+                SpeakerProfileCacheKey(vaultId: vaultId, embeddingSpaceId: $0)
+            })
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     // MARK: - Contact correction and deletion
@@ -642,7 +651,7 @@ extension MeetingRepository {
         expectedExistingRevision: Int?,
         now: Date = .now
     ) throws -> ContactRecord {
-        try dbQueue.write { db in
+        let result = try dbQueue.write { db in
             guard let email = CustomerIdentityNormalizer.email(rawEmail),
                   var provisional = try ContactRecord
                   .filter(Column("id") == id && Column("vaultId") == vaultId)
@@ -669,14 +678,25 @@ extension MeetingRepository {
                 provisional.updatedAt = now
                 try provisional.update(db)
             }
-            return try Self.resolveProvisionalContact(
+            let embeddingSpaceIDs = try UUID.fetchAll(
+                db,
+                sql: "SELECT embeddingSpaceId FROM speaker_profiles WHERE contactId = ?",
+                arguments: [id]
+            )
+            let contact = try Self.resolveProvisionalContact(
                 id: id,
                 vaultId: vaultId,
                 email: email,
                 now: now,
                 in: db
             )
+            let cacheKeys = Set(embeddingSpaceIDs.map {
+                SpeakerProfileCacheKey(vaultId: vaultId, embeddingSpaceId: $0)
+            })
+            return (contact, cacheKeys)
         }
+        invalidateSpeakerProfilesAfterCommit(result.1)
+        return result.0
     }
 
     private nonisolated static func resolveProvisionalContact(

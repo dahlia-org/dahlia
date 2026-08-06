@@ -181,6 +181,10 @@ final class AppDatabaseManager: Sendable {
             try SharedOrganizationDomainsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v34_speakerIdentity") { db in
+            try SpeakerIdentityMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

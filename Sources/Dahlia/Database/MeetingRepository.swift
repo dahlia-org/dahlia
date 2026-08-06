@@ -51,9 +51,14 @@ final class MeetingRepository {
     private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
     nonisolated let dbQueue: DatabaseQueue
+    nonisolated let speakerProfileCache: SpeakerProfileCache
 
-    nonisolated init(dbQueue: DatabaseQueue) {
+    nonisolated init(
+        dbQueue: DatabaseQueue,
+        speakerProfileCache: SpeakerProfileCache = SpeakerProfileCache()
+    ) {
         self.dbQueue = dbQueue
+        self.speakerProfileCache = speakerProfileCache
     }
 
     // MARK: - Vaults
@@ -94,6 +99,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             try Self.deleteVaultRows(id: id, in: db)
         }
+        speakerProfileCache.invalidateVaultAfterCommit(id)
     }
 
     private static func deleteVaultRows(id: UUID, in db: Database) throws {
@@ -208,9 +214,12 @@ final class MeetingRepository {
         try ensureNoLiveSegmentedAudio(meetingIds: [id])
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
+            let targets = try Self.speakerProfileTargets(meetingIds: [id], in: db)
             _ = try MeetingRecord.deleteOne(db, key: id)
+            return try Self.recomputeSpeakerProfiles(targets, now: .now, in: db)
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     func deleteMeetingSafely(
@@ -253,9 +262,12 @@ final class MeetingRepository {
         try ensureNoLiveSegmentedAudio(meetingIds: ids)
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
+            let targets = try Self.speakerProfileTargets(meetingIds: ids, in: db)
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
+            return try Self.recomputeSpeakerProfiles(targets, now: .now, in: db)
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     func deleteMeetingsSafely(

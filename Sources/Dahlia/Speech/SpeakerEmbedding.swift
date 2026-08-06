@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 struct SpeakerEmbeddingSpace: Codable, Hashable, Sendable {
     let provider: String
@@ -70,7 +71,7 @@ enum SpeakerMatchResult: Equatable, Sendable, CustomStringConvertible, CustomDeb
     var debugDescription: String { description }
 }
 
-enum SpeakerMatchUnknownReason: String, Codable, Equatable, Error, Sendable {
+enum SpeakerMatchUnknownReason: String, Codable, DatabaseValueConvertible, Equatable, Error, Sendable {
     case analysisFailed
     case incompatibleEmbeddingSpace
     case insufficientEvidence
@@ -78,7 +79,7 @@ enum SpeakerMatchUnknownReason: String, Codable, Equatable, Error, Sendable {
     case belowThreshold
 }
 
-enum SpeakerAssignmentOrigin: String, Codable, Equatable, Sendable {
+enum SpeakerAssignmentOrigin: String, Codable, DatabaseValueConvertible, Equatable, Sendable {
     case manual
     case suggestionApproved
     case ownerChannelConfirmation
