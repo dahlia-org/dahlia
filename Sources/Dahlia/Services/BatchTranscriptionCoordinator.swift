@@ -66,6 +66,8 @@ actor BatchTranscriptionCoordinator {
     private var progressNotificationTask: Task<Void, Never>?
     private var isShuttingDown = false
     private var shutdownInterruptionSessionIds: Set<UUID> = []
+    private var activeConfirmationCount = 0
+    private var confirmationDrainWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         dbQueue: DatabaseQueue,
@@ -105,7 +107,7 @@ actor BatchTranscriptionCoordinator {
 
     func enqueue(sessionId: UUID) async {
         guard !isShuttingDown else {
-            await persistInterruptedIfPossible(sessionId: sessionId)
+            shutdownInterruptionSessionIds.insert(sessionId)
             return
         }
         guard runningSessionId != sessionId, !pendingSessionIds.contains(sessionId) else { return }
@@ -116,7 +118,7 @@ actor BatchTranscriptionCoordinator {
             return
         }
         guard !isShuttingDown else {
-            await persistInterruptedIfPossible(sessionId: sessionId)
+            shutdownInterruptionSessionIds.insert(sessionId)
             return
         }
         pendingSessionIds.append(sessionId)
@@ -172,6 +174,7 @@ actor BatchTranscriptionCoordinator {
 
     func shutdown() async throws {
         isShuttingDown = true
+        await waitForConfirmationDrain()
         shutdownInterruptionSessionIds.formUnion(pendingSessionIds)
         if let runningSessionId {
             shutdownInterruptionSessionIds.insert(runningSessionId)
@@ -195,6 +198,12 @@ actor BatchTranscriptionCoordinator {
             throw firstError
         }
     }
+
+    #if DEBUG
+        func isWaitingForConfirmationDrainForTesting() -> Bool {
+            isShuttingDown && activeConfirmationCount > 0
+        }
+    #endif
 
     private func markPreviouslyQueuedSessionsInterrupted() async throws {
         let sessionIds = try await dbQueue.write { db -> [UUID] in
@@ -244,14 +253,25 @@ actor BatchTranscriptionCoordinator {
         )
     }
 
-    private func persistInterruptedIfPossible(sessionId: UUID) async {
-        do {
-            try await persistInterrupted(sessionId: sessionId)
-        } catch {
-            ErrorReportingService.capture(
-                error,
-                context: ["source": "batchTranscriptionInterruptionPersistence"]
-            )
+    private func waitForConfirmationDrain() async {
+        guard activeConfirmationCount > 0 else { return }
+        await withCheckedContinuation { continuation in
+            confirmationDrainWaiters.append(continuation)
+        }
+    }
+
+    private func beginConfirmation() throws {
+        guard !isShuttingDown else { throw CancellationError() }
+        activeConfirmationCount += 1
+    }
+
+    private func finishConfirmation() {
+        activeConfirmationCount -= 1
+        guard activeConfirmationCount == 0 else { return }
+        let waiters = confirmationDrainWaiters
+        confirmationDrainWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
         }
     }
 
@@ -828,6 +848,8 @@ extension BatchTranscriptionCoordinator {
         retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
+        try beginConfirmation()
+        defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
             languageSelection: languageSelection,
@@ -849,6 +871,8 @@ extension BatchTranscriptionCoordinator {
         retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
+        try beginConfirmation()
+        defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
             sessionIds: sessionIds,
             languageSelection: languageSelection,

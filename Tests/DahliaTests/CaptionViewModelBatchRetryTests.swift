@@ -108,6 +108,51 @@ import GRDB
         }
 
         @Test
+        func manualBatchTranscriptionCannotStartWhileRecording() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "manual-batch-during-recording",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
+
+            viewModel.isListening = true
+            await viewModel.presentManualBatchTranscription(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                dbQueue: batch.database.dbQueue
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation == nil)
+
+            viewModel.isListening = false
+            await viewModel.presentManualBatchTranscription(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                dbQueue: batch.database.dbQueue
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation != nil)
+
+            viewModel.isListening = true
+            viewModel.confirmBatchTranscription(
+                languageSelection: .manual(localeIdentifier: "ja_JP"),
+                retainAudioAfterBatch: false,
+                summaryGenerationOptions: nil
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation != nil)
+            let session = try await batch.database.dbQueue.read { db in
+                try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
+            }
+            #expect(session.batchLastAttemptAt == nil)
+        }
+
+        @Test
         func failedAutomaticBatchRetryPresentsLanguageSelection() async throws {
             let batch = try BatchAudioTestFixture(
                 name: "failed-auto-retry-selection",

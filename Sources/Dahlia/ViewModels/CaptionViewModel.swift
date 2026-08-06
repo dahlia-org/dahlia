@@ -817,6 +817,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func presentAvailableBatchRetranscription() {
+        guard !isListening else { return }
         switch batchTranscriptionState {
         case .awaitingConfirmation:
             presentBatchTranscriptionConfirmation()
@@ -999,7 +1000,8 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func presentBatchTranscriptionConfirmation() {
-        guard case let .awaitingConfirmation(sessionId) = batchTranscriptionState,
+        guard !isListening,
+              case let .awaitingConfirmation(sessionId) = batchTranscriptionState,
               let meetingId = currentMeetingId else { return }
         presentBatchTranscriptionConfirmation(
             sessionId: sessionId,
@@ -1023,6 +1025,7 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         dbQueue: DatabaseQueue
     ) async {
+        guard !isListening else { return }
         do {
             let snapshot = try await dbQueue.read { db -> (
                 session: RecordingSessionRecord?,
@@ -1041,6 +1044,7 @@ final class CaptionViewModel: ObservableObject {
                     .url
                 return (session, pendingRetranscriptionIds, vaultURL)
             }
+            guard !isListening else { return }
             if snapshot.session?.isBatchRetranscriptionPending == true,
                !snapshot.pendingRetranscriptionIds.isEmpty {
                 presentBatchRetranscriptionConfirmation(
@@ -1073,7 +1077,8 @@ final class CaptionViewModel: ObservableObject {
         retainAudioAfterBatch: Bool,
         summaryGenerationOptions: SummaryGenerationOptions?
     ) {
-        guard let confirmation = pendingBatchTranscriptionConfirmation,
+        guard !isListening,
+              let confirmation = pendingBatchTranscriptionConfirmation,
               let coordinator = batchTranscriptionCoordinator else { return }
         let automaticLanguageCandidates = batchTranscriptionAutomaticLanguageCandidates(
             snapshot: confirmation.automaticLanguageCandidateSnapshot

@@ -161,9 +161,13 @@ import GRDB
             }
             #expect(await pollUntil { await confirmationGate.isWaiting })
 
-            try await coordinator.shutdown()
+            let shutdownTask = Task {
+                try await coordinator.shutdown()
+            }
+            #expect(await pollUntil { await coordinator.isWaitingForConfirmationDrainForTesting() })
             await confirmationGate.release()
             try await confirmationTask.value
+            try await shutdownTask.value
 
             let session = try await batch.database.dbQueue.read { db in
                 try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
