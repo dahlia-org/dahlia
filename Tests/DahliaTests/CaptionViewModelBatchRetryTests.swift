@@ -8,6 +8,38 @@ import GRDB
     @MainActor
     struct CaptionViewModelBatchRetryTests {
         @Test
+        func startupRecoveryRefreshesOffscreenUnprocessedRecordings() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "offscreen-startup-recovery",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await batch.database.dbQueue.write { db in
+                guard var session = try RecordingSessionRecord.fetchOne(db, key: batch.session.id) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                session.batchLastAttemptAt = batch.now
+                try session.update(db)
+            }
+            var recoveredState: BackupPreflightItem.State?
+            let viewModel = CaptionViewModel()
+
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL
+            ) {
+                recoveredState = try? await BackupService(dbQueue: batch.database.dbQueue)
+                    .preflightItems(vaultId: batch.meeting.vaultId)
+                    .first?
+                    .state
+            }
+
+            #expect(await waitUntil { recoveredState == .interrupted })
+        }
+
+        @Test
         func retainedCompletedAudioOffersRetranscription() async throws {
             let batch = try BatchAudioTestFixture(
                 name: "retained-completed-audio",
@@ -232,6 +264,11 @@ import GRDB
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
             #expect(confirmation.isRetranscription)
             #expect(confirmation.sessionId == batch.session.id)
+            viewModel.pendingBatchTranscriptionConfirmation = nil
+
+            viewModel.cancelFailedBatchRetranscription()
+
+            #expect(await waitUntil { viewModel.batchTranscriptionState == nil })
         }
 
         @Test

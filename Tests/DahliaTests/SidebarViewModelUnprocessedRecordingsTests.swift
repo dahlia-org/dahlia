@@ -31,19 +31,46 @@ import GRDB
             let settings = AppSettings()
             settings.currentVault = fixture.vault
             let gate = SidebarDiscardGate()
-            let viewModel = SidebarViewModel(settings: settings) { _, _ in
+            let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
                 await gate.wait()
                 throw SidebarDiscardTestError.failed
             }
             viewModel.setAppDatabase(fixture.manager)
             defer { viewModel.setAppDatabase(nil) }
 
-            let discardTask = Task { await viewModel.discardUnprocessedRecording(Self.discardItem) }
+            let discardTask = Task {
+                await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
+            }
             #expect(await gate.waitUntilBlocked())
             settings.currentVault = nil
             viewModel.setAppDatabase(nil)
             await gate.release()
             await discardTask.value
+
+            #expect(viewModel.unprocessedRecordingsError == nil)
+        }
+
+        @Test
+        func staleVaultItemIsRejectedBeforeDiscardStarts() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            let settings = AppSettings()
+            settings.currentVault = fixture.vault
+            let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
+                Issue.record("Discard must not start for an item from another Vault")
+                return true
+            }
+            viewModel.setAppDatabase(fixture.manager)
+            defer { viewModel.setAppDatabase(nil) }
+            settings.currentVault = VaultRecord(
+                id: .v7(),
+                path: fixture.vault.path,
+                name: "Other",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+
+            await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
 
             #expect(viewModel.unprocessedRecordingsError == nil)
         }
@@ -55,14 +82,16 @@ import GRDB
             let settings = AppSettings()
             settings.currentVault = fixture.vault
             let gate = SidebarDiscardGate()
-            let viewModel = SidebarViewModel(settings: settings) { _, _ in
+            let viewModel = SidebarViewModel(settings: settings) { _, _, _ in
                 await gate.wait()
                 return true
             }
             viewModel.setAppDatabase(fixture.manager)
             defer { viewModel.setAppDatabase(nil) }
 
-            let discardTask = Task { await viewModel.discardUnprocessedRecording(Self.discardItem) }
+            let discardTask = Task {
+                await viewModel.discardUnprocessedRecording(Self.discardItem(vaultId: fixture.vault.id))
+            }
             #expect(await gate.waitUntilBlocked())
             await viewModel.refreshUnprocessedRecordings()
             try await fixture.manager.dbQueue.write { db in
@@ -74,15 +103,18 @@ import GRDB
             #expect(viewModel.unprocessedRecordingsError != nil)
         }
 
-        private static let discardItem = BackupPreflightItem(
-            sessionId: .v7(),
-            meetingId: .v7(),
-            meetingName: "Discard",
-            startedAt: .now,
-            state: .failed,
-            failureMessage: "damaged",
-            canTranscribe: false
-        )
+        private static func discardItem(vaultId: UUID) -> BackupPreflightItem {
+            BackupPreflightItem(
+                sessionId: .v7(),
+                meetingId: .v7(),
+                vaultId: vaultId,
+                meetingName: "Discard",
+                startedAt: .now,
+                state: .failed,
+                failureMessage: "damaged",
+                canTranscribe: false
+            )
+        }
     }
 
     private enum SidebarDiscardTestError: Error {

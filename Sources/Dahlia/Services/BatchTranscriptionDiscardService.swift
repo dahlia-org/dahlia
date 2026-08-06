@@ -5,12 +5,15 @@ import GRDB
 enum BatchTranscriptionDiscardService {
     static func discardUnprocessedSessionSafely(
         id: UUID,
+        expectedVaultId: UUID,
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: managedRootURL)
         let claimed = try await dbQueue.write { db in
             guard var session = try RecordingSessionRecord.fetchOne(db, key: id),
+                  let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId),
+                  meeting.vaultId == expectedVaultId,
                   isDiscardable(session),
                   try RecordingAudioSegmentRecord
                   .filter(Column("recordingSessionId") == id)

@@ -44,6 +44,7 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
 
     let sessionId: UUID
     let meetingId: UUID
+    let vaultId: UUID
     let meetingName: String
     let startedAt: Date
     let state: State

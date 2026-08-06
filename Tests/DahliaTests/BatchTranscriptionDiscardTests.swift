@@ -25,7 +25,7 @@ import GRDB
                 state: .ready,
                 partialRelativePath: "session/mic/0.partial.caf",
                 finalRelativePath: "session/mic/0.caf",
-                sampleRate: 16_000,
+                sampleRate: 16000,
                 channelCount: 1,
                 sealedFrameCount: 160,
                 sessionStartOffsetSeconds: 0,
@@ -49,6 +49,7 @@ import GRDB
             let discarded = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
                 .discardUnprocessedBatchSessionSafely(
                     id: fixture.session.id,
+                    expectedVaultId: fixture.meeting.vaultId,
                     managedRootURL: fixture.managedRootURL
                 )
 
@@ -63,6 +64,30 @@ import GRDB
             #expect(result.0?.batchDiscardedAt != nil)
             #expect(result.1?.id == fixture.meeting.id)
             #expect(result.2?.state == .purged)
+        }
+
+        @Test
+        func discardRejectsSessionFromAnotherVault() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "DiscardVaultMismatch",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_010),
+                duration: 10
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+
+            let discarded = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
+                .discardUnprocessedBatchSessionSafely(
+                    id: fixture.session.id,
+                    expectedVaultId: .v7(),
+                    managedRootURL: fixture.managedRootURL
+                )
+
+            let session = try await fixture.database.dbQueue.read { db in
+                try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)
+            }
+            #expect(!discarded)
+            #expect(session?.batchDiscardedAt == nil)
         }
 
         @Test
@@ -97,7 +122,7 @@ import GRDB
                 targetSegmentDuration: .seconds(60),
                 maximumFinalizingSegmentCountPerSource: 2,
                 maximumActiveSegmentDuration: .seconds(600),
-                maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                 minimumAvailableCapacity: 0,
                 capacityCheckInterval: .seconds(5)
             )
@@ -174,7 +199,7 @@ import GRDB
                 state: .ready,
                 partialRelativePath: "session/mic/0.partial.caf",
                 finalRelativePath: "session/mic/0.caf",
-                sampleRate: 16_000,
+                sampleRate: 16000,
                 channelCount: 1,
                 sealedFrameCount: 160,
                 sessionStartOffsetSeconds: 0,
@@ -206,6 +231,7 @@ import GRDB
             async let enqueue: Void = coordinator.enqueue(sessionId: fixture.session.id)
             async let discard = repository.discardUnprocessedBatchSessionSafely(
                 id: fixture.session.id,
+                expectedVaultId: fixture.meeting.vaultId,
                 managedRootURL: fixture.managedRootURL
             )
             await enqueue

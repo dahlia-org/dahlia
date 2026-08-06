@@ -15,7 +15,7 @@ private struct ProjectDescriptionDraft {
 @Observable
 @MainActor
 final class SidebarViewModel {
-    typealias UnprocessedRecordingDiscarder = @MainActor @Sendable (DatabaseQueue, UUID) async throws -> Bool
+    typealias UnprocessedRecordingDiscarder = @MainActor @Sendable (DatabaseQueue, UUID, UUID) async throws -> Bool
 
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
@@ -118,8 +118,11 @@ final class SidebarViewModel {
 
     init(
         settings: AppSettings = .shared,
-        unprocessedRecordingDiscarder: @escaping UnprocessedRecordingDiscarder = { dbQueue, sessionId in
-            try await MeetingRepository(dbQueue: dbQueue).discardUnprocessedBatchSessionSafely(id: sessionId)
+        unprocessedRecordingDiscarder: @escaping UnprocessedRecordingDiscarder = { dbQueue, sessionId, vaultId in
+            try await MeetingRepository(dbQueue: dbQueue).discardUnprocessedBatchSessionSafely(
+                id: sessionId,
+                expectedVaultId: vaultId
+            )
         }
     ) {
         self.settings = settings
@@ -297,11 +300,11 @@ final class SidebarViewModel {
     }
 
     func discardUnprocessedRecording(_ item: BackupPreflightItem) async {
-        guard let dbQueue, let vaultId = currentVault?.id else { return }
+        guard let dbQueue, let vaultId = currentVault?.id, item.vaultId == vaultId else { return }
         let contextGeneration = unprocessedRecordingsContextGeneration
         unprocessedRecordingsError = nil
         do {
-            _ = try await unprocessedRecordingDiscarder(dbQueue, item.sessionId)
+            _ = try await unprocessedRecordingDiscarder(dbQueue, item.sessionId, item.vaultId)
             guard isCurrentUnprocessedRecordingsContext(contextGeneration, vaultId: vaultId) else { return }
             await refreshUnprocessedRecordings()
         } catch {

@@ -694,7 +694,8 @@ final class CaptionViewModel: ObservableObject {
     func configureBatchTranscription(
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
-        recoverExistingSessions: Bool = true
+        recoverExistingSessions: Bool = true,
+        onRecoveryCompleted: (@MainActor @Sendable () async -> Void)? = nil
     ) {
         guard batchTranscriptionCoordinator == nil else { return }
         let coordinator = BatchTranscriptionCoordinator(
@@ -707,6 +708,7 @@ final class CaptionViewModel: ObservableObject {
         guard recoverExistingSessions else { return }
         Task {
             await coordinator.recoverAndEnqueue()
+            await onRecoveryCompleted?()
         }
     }
 
@@ -1246,8 +1248,13 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func cancelFailedBatchRetranscription() {
-        guard case .retranscriptionFailed = batchTranscriptionState,
-              let meetingId = currentMeetingId,
+        switch batchTranscriptionState {
+        case .retranscriptionFailed, .interrupted(_, true):
+            break
+        default:
+            return
+        }
+        guard let meetingId = currentMeetingId,
               let dbQueue = currentDbQueue else { return }
         Task {
             do {

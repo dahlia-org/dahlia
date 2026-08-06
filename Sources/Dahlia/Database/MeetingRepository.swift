@@ -238,10 +238,12 @@ final class MeetingRepository {
     @discardableResult
     func discardUnprocessedBatchSessionSafely(
         id: UUID,
+        expectedVaultId: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         try await BatchTranscriptionDiscardService.discardUnprocessedSessionSafely(
             id: id,
+            expectedVaultId: expectedVaultId,
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
         )

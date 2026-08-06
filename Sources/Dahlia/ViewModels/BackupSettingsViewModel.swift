@@ -73,7 +73,10 @@ final class BackupSettingsViewModel {
         guard let dbQueue else { return }
         await perform {
             let discarded = try await MeetingRepository(dbQueue: dbQueue)
-                .discardUnprocessedBatchSessionSafely(id: item.sessionId)
+                .discardUnprocessedBatchSessionSafely(
+                    id: item.sessionId,
+                    expectedVaultId: item.vaultId
+                )
             guard discarded else { throw BackupServiceError.invalidBackup }
             statusMessage = L10n.unprocessedRecordingDiscarded
         }

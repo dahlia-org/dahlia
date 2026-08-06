@@ -37,15 +37,26 @@ struct BatchTranscriptionStatusBanner: View {
                 isActionEnabled: false,
                 onAction: onAction
             )
-        case .interrupted:
-            BatchTranscriptionInfoBanner(
-                message: L10n.batchTranscriptionInterrupted,
-                systemImage: "pause.circle",
-                showsProgress: false,
-                actionTitle: actionTitle,
-                isActionEnabled: canAct,
-                onAction: onAction
-            )
+        case let .interrupted(_, isRetranscription):
+            if isRetranscription {
+                BatchTranscriptionFailureBanner(
+                    message: L10n.batchTranscriptionInterrupted,
+                    canRetry: canAct,
+                    isRetranscription: true,
+                    onRetry: onAction,
+                    onDiscard: onDiscard,
+                    onKeepCurrentTranscript: onKeepCurrentTranscript
+                )
+            } else {
+                BatchTranscriptionInfoBanner(
+                    message: L10n.batchTranscriptionInterrupted,
+                    systemImage: "pause.circle",
+                    showsProgress: false,
+                    actionTitle: actionTitle,
+                    isActionEnabled: canAct,
+                    onAction: onAction
+                )
+            }
         case let .failed(_, message):
             BatchTranscriptionFailureBanner(
                 message: message,

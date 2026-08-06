@@ -204,7 +204,9 @@ struct DahliaApp: App {
         guard let db = try? AppDatabaseManager() else { return }
         appDatabase = db
         sidebarViewModel.setAppDatabase(db)
-        viewModel.configureBatchTranscription(dbQueue: db.dbQueue)
+        viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
+            await sidebarViewModel?.refreshUnprocessedRecordings()
+        }
         appDelegate.terminationHandler = { [weak viewModel] in
             await viewModel?.prepareForTermination()
         }

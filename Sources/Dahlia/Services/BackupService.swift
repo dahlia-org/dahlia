@@ -107,6 +107,7 @@ actor BackupService {
             var sql = """
             SELECT recording_sessions.id AS sessionId,
                    recording_sessions.meetingId,
+                   meetings.vaultId,
                    meetings.name AS meetingName,
                    recording_sessions.startedAt,
                    recording_sessions.endedAt,
@@ -171,6 +172,7 @@ actor BackupService {
                 return BackupPreflightItem(
                     sessionId: row["sessionId"],
                     meetingId: row["meetingId"],
+                    vaultId: row["vaultId"],
                     meetingName: (row["meetingName"] as String).nilIfBlank ?? L10n.untitledMeeting,
                     startedAt: row["startedAt"],
                     state: state,
