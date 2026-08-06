@@ -10,6 +10,12 @@ enum SpeakerIdentityMigration {
         try addTranscriptMeetingSpeakerColumn(in: db)
     }
 
+    static func refreshOwnedTriggers(in db: Database) throws {
+        try createValidationTriggers(in: db)
+        guard try db.tableExists("transcript_segments") else { return }
+        try createTranscriptValidationTriggers(in: db)
+    }
+
     // swiftlint:disable:next function_body_length
     private static func createTables(in db: Database) throws {
         try db.execute(sql: """
@@ -322,6 +328,10 @@ enum SpeakerIdentityMigration {
         CREATE INDEX IF NOT EXISTS transcript_segments_on_meetingSpeakerId_startTime_id
         ON transcript_segments(meetingSpeakerId, startTime, id)
         """)
+        try createTranscriptValidationTriggers(in: db)
+    }
+
+    private static func createTranscriptValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
         DROP TRIGGER IF EXISTS transcript_segments_validate_meetingSpeaker_insert;
         DROP TRIGGER IF EXISTS transcript_segments_validate_meetingSpeaker_update;

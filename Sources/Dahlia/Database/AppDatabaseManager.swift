@@ -185,6 +185,10 @@ final class AppDatabaseManager: Sendable {
             try SpeakerIdentityMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v34_speakerIdentityTriggerRefresh") { db in
+            try SpeakerIdentityMigration.refreshOwnedTriggers(in: db)
+        }
+
         return migrator
     }()
 

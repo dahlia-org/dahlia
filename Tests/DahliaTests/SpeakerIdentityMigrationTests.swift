@@ -44,7 +44,7 @@ import GRDB
             #expect(preserved.0?.name == "Preserved meeting")
             #expect(preserved.1 == "Preserved transcript")
             #expect(preserved.2?.email == "person@example.com")
-            #expect(preserved.3 == "v34_speakerIdentity")
+            #expect(preserved.3 == "v34_speakerIdentityTriggerRefresh")
             #expect(validation.0 == "ok")
             #expect(validation.1.isEmpty)
         }
@@ -80,17 +80,18 @@ import GRDB
         }
 
         @Test
-        func reapplyingV34ReplacesPreviouslyAppliedTriggerDefinitions() throws {
-            let upgraded = try AppDatabaseManager(path: ":memory:")
-            try upgraded.dbQueue.write { db in
+        func upgradingPreviouslyAppliedV34ReplacesTriggerDefinitions() throws {
+            let upgraded = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(upgraded, upTo: "v34_speakerIdentity")
+            try upgraded.write { db in
                 try installPreviousV34Triggers(in: db)
-                try SpeakerIdentityMigration.migrate(in: db)
             }
+            try AppDatabaseManager.migrator.migrate(upgraded)
             let fresh = try AppDatabaseManager(path: ":memory:")
 
-            let upgradedTriggers = try upgraded.dbQueue.read(v34TriggerDefinitions)
+            let upgradedTriggers = try upgraded.read(v34TriggerDefinitions)
             let freshTriggers = try fresh.dbQueue.read(v34TriggerDefinitions)
-            let appliedMigration = try upgraded.dbQueue.read { db in
+            let appliedMigration = try upgraded.read { db in
                 try String.fetchOne(
                     db,
                     sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
@@ -99,7 +100,7 @@ import GRDB
 
             #expect(upgradedTriggers == freshTriggers)
             #expect(upgradedTriggers.count == 9)
-            #expect(appliedMigration == "v34_speakerIdentity")
+            #expect(appliedMigration == "v34_speakerIdentityTriggerRefresh")
         }
 
         @Test
