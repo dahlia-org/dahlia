@@ -8,6 +8,7 @@ import os
     import Testing
 
     private let lifecycleWaitTimeout = testPollTimeout
+    private let cancellationObservationTimeout: Duration = .seconds(15)
 
     // swiftlint:disable:next type_body_length
     struct SpeakerDiarizationRuntimeTests {
@@ -320,8 +321,10 @@ import os
             let source = try sampleSource(samples: [], sampleRate: 16000)
             defer { try? source.cleanup() }
             var leaks = 0
+            var attemptedRaces = 0
 
             for _ in 0 ..< 30 {
+                attemptedRaces += 1
                 let probe = ShutdownRaceProbe()
                 let host = SerialDiarizerHost(
                     processor: ShutdownRaceProcessor(probe: probe),
@@ -331,15 +334,17 @@ import os
                 try #require(await probe.waitUntilProcessStarts(), "Diarization did not start before the shutdown race")
                 let shutdown = Task { await host.shutdown() }
                 let racing = Task { try await host.process(source: source) }
-                let stopped = await probe.waitUntilStopped()
+                // This loop repeats the race 30 times, so bound cancellation observation below the
+                // probe's 30-second work duration instead of spending the suite-wide timeout per race.
+                let stopped = await probe.waitUntilStopped(timeout: cancellationObservationTimeout)
                 if !stopped {
                     Issue.record("Diarization work remained active after shutdown")
                     active.cancel()
                     racing.cancel()
                 }
                 _ = try await awaitLifecycleTask(shutdown, "shutdown racing an active request")
-                _ = try? await awaitLifecycleTask(active, "active request during shutdown")
-                _ = try? await awaitLifecycleTask(racing, "racing request during shutdown")
+                try await awaitLifecycleTermination(active, "active request during shutdown")
+                try await awaitLifecycleTermination(racing, "racing request during shutdown")
                 if await probe.activeProcessCount != 0 {
                     leaks += 1
                 }
@@ -348,11 +353,11 @@ import os
                     try await host.process(source: source)
                 }
                 #expect(await probe.loadCount == loadsBeforeRejectedRequest)
-                if !stopped { return }
+                if !stopped { break }
             }
 
-            #expect(leaks == 0)
-            print("DIARIZER_SHUTDOWN_RACE leaks=\(leaks)/30")
+            #expect(leaks == 0, "Diarization leaked in \(leaks) of \(attemptedRaces) attempted shutdown races")
+            print("DIARIZER_SHUTDOWN_RACE leaks=\(leaks)/\(attemptedRaces)")
         }
 
         @Test
@@ -648,6 +653,17 @@ import os
         return try result.get()
     }
 
+    private func awaitLifecycleTermination<Success: Sendable, Failure: Error & Sendable>(
+        _ task: Task<Success, Failure>,
+        _ description: String
+    ) async throws {
+        do {
+            _ = try await awaitLifecycleTask(task, description)
+        } catch let error as LifecycleTaskTimeout {
+            throw error
+        } catch {}
+    }
+
     private actor CancellationProbe {
         private(set) var processCount = 0
         private var started = false
@@ -670,7 +686,8 @@ import os
         }
 
         func waitUntilCancelled() async -> Bool {
-            await pollUntil(timeout: lifecycleWaitTimeout) { self.cancelled }
+            // Cancellation must interrupt the probe's 30-second sleep; waiting longer would only hide a regression.
+            await pollUntil(timeout: cancellationObservationTimeout) { self.cancelled }
         }
     }
 
@@ -788,8 +805,8 @@ import os
             await pollUntil(timeout: lifecycleWaitTimeout) { self.activeProcessCount > 0 }
         }
 
-        func waitUntilStopped() async -> Bool {
-            await pollUntil(timeout: lifecycleWaitTimeout) { self.activeProcessCount == 0 }
+        func waitUntilStopped(timeout: Duration = lifecycleWaitTimeout) async -> Bool {
+            await pollUntil(timeout: timeout) { self.activeProcessCount == 0 }
         }
     }
 
@@ -905,7 +922,7 @@ import os
                 "Diarization did not start before request cancellation"
             )
             request.cancel()
-            _ = try? await awaitLifecycleTask(request, "cancelled teardown request")
+            try await awaitLifecycleTermination(request, "cancelled teardown request")
             _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "shutdown after request cancellation")
         case .shutdownRace:
             let active = Task { try await host.process(source: source) }
@@ -922,8 +939,8 @@ import os
                 racing.cancel()
             }
             _ = try await awaitLifecycleTask(shutdown, "shutdown teardown race")
-            _ = try? await awaitLifecycleTask(active, "active shutdown teardown request")
-            _ = try? await awaitLifecycleTask(racing, "racing shutdown teardown request")
+            try await awaitLifecycleTermination(active, "active shutdown teardown request")
+            try await awaitLifecycleTermination(racing, "racing shutdown teardown request")
         }
         return (weakProcessor, releaseProbe)
     }
