@@ -1848,7 +1848,8 @@ import ImageIO
         func contactDeletionReportsSpeakerProfileAndAssignmentBlockers() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
-            let contact = try store.createContact(email: "speaker@example.com", displayName: "Speaker")
+            let contact = try store.createContact(email: nil, displayName: "Speaker")
+            let identified = try store.createContact(email: "speaker@example.com", displayName: "Identified")
             let spaceID = UUID.v7()
             let analysisID = UUID.v7()
             let speakerID = UUID.v7()
@@ -1909,6 +1910,18 @@ import ImageIO
             do {
                 _ = try store.deleteContact(id: contact.resourceID, expectedRevision: contact.revision)
                 Issue.record("Expected speaker data to prevent Contact deletion")
+            } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
+                #expect(message.contains("speaker_profiles=1"))
+                #expect(message.contains("speaker_assignments=1"))
+            }
+            do {
+                _ = try store.resolveContact(
+                    provisionalContactID: contact.resourceID,
+                    provisionalRevision: contact.revision,
+                    identifiedContactID: identified.resourceID,
+                    identifiedRevision: identified.revision
+                )
+                Issue.record("Expected external Contact resolution to reject speaker data")
             } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
                 #expect(message.contains("speaker_profiles=1"))
                 #expect(message.contains("speaker_assignments=1"))

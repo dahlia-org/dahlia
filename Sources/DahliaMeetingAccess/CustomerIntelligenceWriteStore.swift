@@ -242,6 +242,7 @@ public extension MeetingAccessStore {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     func resolveContact(
         provisionalContactID: UUID,
         provisionalRevision: Int,
@@ -273,6 +274,19 @@ public extension MeetingAccessStore {
             else {
                 throw MeetingAccessError.customerIntelligenceRevisionConflict
             }
+            let speakerBlockers = try [
+                ("speaker_profiles", countRows(
+                    "SELECT COUNT(*) FROM speaker_profiles WHERE contactId = ?",
+                    arguments: [provisionalContactID],
+                    in: db
+                )),
+                ("speaker_assignments", countRows(
+                    "SELECT COUNT(*) FROM speaker_contact_assignments WHERE contactId = ?",
+                    arguments: [provisionalContactID],
+                    in: db
+                )),
+            ]
+            try ensureNoDeletionBlockers(resource: "Contact resolution", blockers: speakerBlockers)
             let targetName: String? = target["displayName"]
             let sourceName: String? = source["displayName"]
             let now = Date.now
@@ -575,6 +589,7 @@ public extension MeetingAccessStore {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     func deleteContact(
         id: UUID,
         expectedRevision: Int
