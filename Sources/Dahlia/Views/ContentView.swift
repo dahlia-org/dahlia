@@ -95,6 +95,17 @@ struct ContentView: View {
         .onChange(of: viewModel.batchTranscriptionState) { _, _ in
             Task { await sidebarViewModel.refreshUnprocessedRecordings() }
         }
+        .onChange(of: viewModel.offscreenBatchTranscriptionChangeToken) { _, _ in
+            Task { await sidebarViewModel.refreshUnprocessedRecordings() }
+        }
+        .alert(item: $viewModel.batchTranscriptionRecoveryAlert) { alert in
+            Alert(
+                title: Text(L10n.batchTranscriptionRecoveryFailedTitle),
+                message: Text(alert.message),
+                primaryButton: .default(Text(L10n.retry), action: viewModel.retryBatchTranscriptionRecovery),
+                secondaryButton: .cancel()
+            )
+        }
         .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
             BatchTranscriptionConfirmationView(
                 locales: viewModel.batchTranscriptionLocaleOptions(

@@ -22,6 +22,13 @@ import GRDB
                 }
                 session.batchLastAttemptAt = batch.now
                 try session.update(db)
+                try db.execute(sql: """
+                CREATE TRIGGER fail_startup_batch_recovery
+                BEFORE UPDATE OF batchLastError ON recording_sessions
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced startup recovery failure');
+                END
+                """)
             }
             var recoveredState: BackupPreflightItem.State?
             let viewModel = CaptionViewModel()
@@ -36,7 +43,16 @@ import GRDB
                     .state
             }
 
+            #expect(await waitUntil { viewModel.batchTranscriptionRecoveryAlert != nil })
+            #expect(recoveredState == nil)
+            try await batch.database.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_startup_batch_recovery")
+            }
+
+            viewModel.retryBatchTranscriptionRecovery()
+
             #expect(await waitUntil { recoveredState == .interrupted })
+            #expect(viewModel.batchTranscriptionRecoveryAlert == nil)
         }
 
         @Test

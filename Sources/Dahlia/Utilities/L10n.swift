@@ -1211,6 +1211,10 @@ enum L10n {
         localized: "Transcription was interrupted. The recording is safe and ready to resume.",
         bundle: bundle
     ) }
+    static var batchTranscriptionRecoveryFailedTitle: String {
+        String(localized: "Could not recover interrupted transcriptions", bundle: bundle)
+    }
+
     static var resumeBatchTranscription: String { String(localized: "Resume Transcription", bundle: bundle) }
     static func batchTranscriptionFileProgress(completed: Int, total: Int) -> String {
         String(localized: "Files completed: \(completed) of \(total)", bundle: bundle)

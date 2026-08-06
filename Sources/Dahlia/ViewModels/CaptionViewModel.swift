@@ -128,6 +128,8 @@ final class CaptionViewModel: ObservableObject {
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
     @Published private(set) var batchTranscriptionState: BatchTranscriptionState?
+    @Published var batchTranscriptionRecoveryAlert: BatchTranscriptionRecoveryAlert?
+    @Published private(set) var offscreenBatchTranscriptionChangeToken: UInt64 = 0
     @Published private(set) var retranscribableBatchSessionIds: [UUID] = []
     @Published private(set) var failedPersistenceMeetingId: UUID?
     @Published var pendingBatchTranscriptionConfirmation: BatchTranscriptionConfirmation?
@@ -536,6 +538,8 @@ final class CaptionViewModel: ObservableObject {
     private var liveTranscriptRelay: FinalizedLiveTranscriptRelay?
     private var isChatLiveModeEnabled = false
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
+    private var batchTranscriptionRecoveryTask: Task<Void, Never>?
+    private var onBatchTranscriptionRecoveryCompleted: (@MainActor @Sendable () async -> Void)?
     private var recordingStopTask: Task<Void, Never>?
     private var isTerminationRequested = false
     private let recordingSessionController = RecordingSessionController()
@@ -705,10 +709,28 @@ final class CaptionViewModel: ObservableObject {
             await self?.handleBatchTranscriptionUpdate(update)
         }
         batchTranscriptionCoordinator = coordinator
+        onBatchTranscriptionRecoveryCompleted = onRecoveryCompleted
         guard recoverExistingSessions else { return }
-        Task {
-            await coordinator.recoverAndEnqueue()
-            await onRecoveryCompleted?()
+        retryBatchTranscriptionRecovery()
+    }
+
+    func retryBatchTranscriptionRecovery() {
+        guard batchTranscriptionRecoveryTask == nil,
+              let coordinator = batchTranscriptionCoordinator else { return }
+        batchTranscriptionRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { batchTranscriptionRecoveryTask = nil }
+            do {
+                try await coordinator.recoverAndEnqueue()
+                guard !Task.isCancelled else { return }
+                batchTranscriptionRecoveryAlert = nil
+                await onBatchTranscriptionRecoveryCompleted?()
+            } catch {
+                ErrorReportingService.capture(error, context: ["source": "batchTranscriptionStartupRecovery"])
+                batchTranscriptionRecoveryAlert = BatchTranscriptionRecoveryAlert(
+                    message: error.localizedDescription
+                )
+            }
         }
     }
 
@@ -1306,6 +1328,9 @@ final class CaptionViewModel: ObservableObject {
 
     func handleBatchTranscriptionUpdate(_ update: BatchTranscriptionUpdate) async {
         let isVisibleMeeting = currentMeetingId == update.meetingId
+        if !isVisibleMeeting, update.state.changesUnprocessedRecordingsProjection {
+            offscreenBatchTranscriptionChangeToken &+= 1
+        }
         if isVisibleMeeting,
            !(isBatchRecording && recordingMeetingId == update.meetingId) {
             batchTranscriptionState = update.state

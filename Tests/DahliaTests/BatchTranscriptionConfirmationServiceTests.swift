@@ -211,7 +211,7 @@ import GRDB
                 managedRootURL: fixture.managedRootURL,
                 onStateChange: { _ in }
             )
-            await coordinator.recoverAndEnqueue()
+            try await coordinator.recoverAndEnqueue()
             let segmentStates = try await fixture.database.dbQueue.read { db in
                 try RecordingAudioSegmentRecord
                     .filter(Column("recordingSessionId") == fixture.session.id)

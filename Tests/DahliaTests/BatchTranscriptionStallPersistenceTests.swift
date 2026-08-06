@@ -31,7 +31,7 @@ import GRDB
                 onStateChange: { _ in }
             )
 
-            await coordinator.recoverAndEnqueue()
+            try await coordinator.recoverAndEnqueue()
 
             let session = try await batch.database.dbQueue.read { db in
                 try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
@@ -176,7 +176,7 @@ import GRDB
                 speechRecognizer: CountingBatchSpeechRecognizer(probe: retryProbe),
                 onStateChange: { _ in }
             )
-            await recoveryCoordinator.recoverAndEnqueue()
+            try await recoveryCoordinator.recoverAndEnqueue()
             #expect(await retryProbe.callCount == 0)
         }
     }

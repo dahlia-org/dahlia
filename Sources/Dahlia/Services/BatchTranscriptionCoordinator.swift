@@ -96,10 +96,10 @@ actor BatchTranscriptionCoordinator {
         self.onStateChange = onStateChange
     }
 
-    func recoverAndEnqueue() async {
+    func recoverAndEnqueue() async throws {
         _ = await recordingAudioStore?.reconcileStartup()
         await recoverCompletedAudioPurges()
-        await markPreviouslyQueuedSessionsInterrupted()
+        try await markPreviouslyQueuedSessionsInterrupted()
     }
 
     func enqueue(sessionId: UUID) async {
@@ -177,8 +177,8 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
-    private func markPreviouslyQueuedSessionsInterrupted() async {
-        let sessionIds: [UUID] = await (try? dbQueue.write { db -> [UUID] in
+    private func markPreviouslyQueuedSessionsInterrupted() async throws {
+        let sessionIds = try await dbQueue.write { db -> [UUID] in
             let ids = try UUID.fetchAll(
                 db,
                 sql: """
@@ -207,7 +207,7 @@ actor BatchTranscriptionCoordinator {
                 arguments: updateArguments
             )
             return ids
-        }) ?? []
+        }
         for sessionId in sessionIds {
             guard let context = try? failureNotificationContext(for: sessionId) else { continue }
             await notify(

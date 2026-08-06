@@ -47,6 +47,41 @@ import GRDB
         }
 
         @Test
+        func offscreenBatchUpdatesSignalProjectionChangesWithoutSignalingProgress() async {
+            let viewModel = CaptionViewModel()
+            let meetingId = UUID()
+            let sessionId = UUID()
+            let initialToken = viewModel.offscreenBatchTranscriptionChangeToken
+
+            await viewModel.handleBatchTranscriptionUpdate(
+                BatchTranscriptionUpdate(
+                    meetingId: meetingId,
+                    state: .running(sessionId: sessionId)
+                )
+            )
+            #expect(viewModel.offscreenBatchTranscriptionChangeToken == initialToken &+ 1)
+
+            await viewModel.handleBatchTranscriptionUpdate(
+                BatchTranscriptionUpdate(
+                    meetingId: meetingId,
+                    state: .running(
+                        sessionId: sessionId,
+                        progress: BatchTranscriptionProgress(completedFileCount: 1, totalFileCount: 2)
+                    )
+                )
+            )
+            #expect(viewModel.offscreenBatchTranscriptionChangeToken == initialToken &+ 1)
+
+            await viewModel.handleBatchTranscriptionUpdate(
+                BatchTranscriptionUpdate(
+                    meetingId: meetingId,
+                    state: .completed(sessionId: sessionId)
+                )
+            )
+            #expect(viewModel.offscreenBatchTranscriptionChangeToken == initialToken &+ 2)
+        }
+
+        @Test
         func completedBatchReloadsVisibleMeetingWhileAnotherMeetingIsRecording() async throws {
             let prepared = try makeFixture(name: "visible-batch")
             let batch = prepared.batch

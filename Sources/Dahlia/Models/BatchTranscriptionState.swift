@@ -34,6 +34,15 @@ enum BatchTranscriptionState: Equatable {
         }
     }
 
+    var changesUnprocessedRecordingsProjection: Bool {
+        switch self {
+        case let .running(_, progress):
+            progress == nil
+        case .recording, .awaitingConfirmation, .queued, .interrupted, .completed, .failed, .retranscriptionFailed:
+            true
+        }
+    }
+
     func preferringMoreAdvancedRunningProgress(over restoredState: Self) -> Self {
         guard sessionId == restoredState.sessionId,
               case let .running(_, currentProgress?) = self,
