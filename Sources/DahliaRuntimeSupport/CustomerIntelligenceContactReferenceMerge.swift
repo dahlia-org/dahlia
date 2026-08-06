@@ -25,6 +25,43 @@ public enum CustomerIntelligenceContactReferenceMerge {
     DELETE FROM insight_references
     WHERE resourceType = 'contact' AND resourceId = :sourceID;
 
+    UPDATE speaker_match_observations
+    SET top1ContactId = CASE
+            WHEN top1ContactId IN (:sourceID, :targetID)
+              AND top2ContactId IN (:sourceID, :targetID)
+            THEN :targetID
+            WHEN top1ContactId = :sourceID THEN :targetID
+            ELSE top1ContactId
+        END,
+        top1Score = CASE
+            WHEN top1ContactId IN (:sourceID, :targetID)
+              AND top2ContactId IN (:sourceID, :targetID)
+            THEN MAX(top1Score, top2Score)
+            ELSE top1Score
+        END,
+        top2ContactId = CASE
+            WHEN top1ContactId IN (:sourceID, :targetID)
+              AND top2ContactId IN (:sourceID, :targetID)
+            THEN NULL
+            WHEN top2ContactId = :sourceID THEN :targetID
+            ELSE top2ContactId
+        END,
+        top2Score = CASE
+            WHEN top1ContactId IN (:sourceID, :targetID)
+              AND top2ContactId IN (:sourceID, :targetID)
+            THEN NULL
+            ELSE top2Score
+        END,
+        margin = CASE
+            WHEN top1ContactId IN (:sourceID, :targetID)
+              AND top2ContactId IN (:sourceID, :targetID)
+            THEN NULL
+            ELSE margin
+        END,
+        revision = revision + 1,
+        updatedAt = :now
+    WHERE top1ContactId = :sourceID OR top2ContactId = :sourceID;
+
     INSERT OR IGNORE INTO conversation_topic_references
         (topicId, resourceType, resourceId, note, createdAt, updatedAt)
     SELECT topicId, resourceType, :targetID, note, createdAt, :now

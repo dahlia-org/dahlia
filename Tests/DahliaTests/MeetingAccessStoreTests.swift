@@ -1923,8 +1923,11 @@ import ImageIO
                 )
                 Issue.record("Expected external Contact resolution to reject speaker data")
             } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
-                #expect(message.contains("speaker_profiles=1"))
-                #expect(message.contains("speaker_assignments=1"))
+                #expect(
+                    message == "Contact cannot be resolved through MCP while it has speaker data. "
+                        + "Perform the resolution in the Dahlia app so speaker profiles can be recomputed: "
+                        + "speaker_profiles=1, speaker_assignments=1."
+                )
             }
         }
 

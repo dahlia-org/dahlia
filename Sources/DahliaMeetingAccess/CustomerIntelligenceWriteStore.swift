@@ -286,7 +286,12 @@ public extension MeetingAccessStore {
                     in: db
                 )),
             ]
-            try ensureNoDeletionBlockers(resource: "Contact resolution", blockers: speakerBlockers)
+            try ensureNoDeletionBlockers(
+                resource: "Contact",
+                blockers: speakerBlockers,
+                blockedMessage: "Contact cannot be resolved through MCP while it has speaker data. "
+                    + "Perform the resolution in the Dahlia app so speaker profiles can be recomputed"
+            )
             let targetName: String? = target["displayName"]
             let sourceName: String? = source["displayName"]
             let now = Date.now
@@ -1047,12 +1052,16 @@ private extension MeetingAccessStore {
         }
     }
 
-    func ensureNoDeletionBlockers(resource: String, blockers: [(String, Int)]) throws {
+    func ensureNoDeletionBlockers(
+        resource: String,
+        blockers: [(String, Int)],
+        blockedMessage: String? = nil
+    ) throws {
         let active = blockers.filter { $0.1 > 0 }
         guard active.isEmpty else {
             let details = active.map { "\($0.0)=\($0.1)" }.joined(separator: ", ")
             throw MeetingAccessError.customerIntelligenceResourceInUse(
-                "\(resource) cannot be deleted while it is in use: \(details)."
+                "\(blockedMessage ?? "\(resource) cannot be deleted while it is in use"): \(details)."
             )
         }
     }

@@ -33,11 +33,19 @@ import GRDB
                     )
                 )
             }
+            let validation = try migrated.dbQueue.read { db in
+                try (
+                    String.fetchOne(db, sql: "PRAGMA integrity_check"),
+                    Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
+                )
+            }
 
             #expect(preserved.0?.name == "Preserved meeting")
             #expect(preserved.1 == "Preserved transcript")
             #expect(preserved.2?.email == "person@example.com")
             #expect(preserved.3 == "v34_speakerIdentity")
+            #expect(validation.0 == "ok")
+            #expect(validation.1.isEmpty)
         }
 
         @Test
@@ -53,6 +61,12 @@ import GRDB
                     )
                 )
             }
+            let validation = try database.dbQueue.read { db in
+                try (
+                    String.fetchOne(db, sql: "PRAGMA integrity_check"),
+                    Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
+                )
+            }
 
             #expect(result.0)
             #expect(result.1?.formatVersion == SpeakerMatchPolicy.formatVersion)
@@ -60,6 +74,8 @@ import GRDB
             #expect(result.1?.minimumSimilarity == nil)
             #expect(result.1?.minimumMargin == nil)
             #expect(result.2.count == 8)
+            #expect(validation.0 == "ok")
+            #expect(validation.1.isEmpty)
         }
 
         @Test
@@ -207,7 +223,123 @@ import GRDB
                 #expect(observation.margin == nil)
             }
         }
+    }
 
+    struct SpeakerIdentityCandidateCleanupMigrationTests {
+        @Test(arguments: [false, true])
+        func deletingCandidateSurvivesStaleOrMissingAnalysisSpace(analysisSpaceIsNull: Bool) throws {
+            let fixture = try MigrationFixture()
+            try fixture.database.dbQueue.write { db in
+                try SpeakerMatchObservationRecord(
+                    meetingSpeakerId: fixture.meetingSpeakerId,
+                    embeddingSpaceId: fixture.spaceId,
+                    top1ContactId: fixture.contactId,
+                    top1Score: 0.91,
+                    top2ContactId: nil,
+                    top2Score: nil,
+                    margin: nil,
+                    state: .rejected,
+                    unknownReason: nil,
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                let replacementSpaceId: UUID?
+                if analysisSpaceIsNull {
+                    replacementSpaceId = nil
+                } else {
+                    let spaceId = UUID.v7()
+                    try SpeakerEmbeddingSpaceRecord(
+                        id: spaceId,
+                        space: MigrationFixture.embeddingSpace(assetFingerprint: "replacement-fingerprint"),
+                        createdAt: .now
+                    ).insert(db)
+                    replacementSpaceId = spaceId
+                }
+                try db.execute(
+                    sql: """
+                    UPDATE speaker_analyses
+                    SET embeddingSpaceId = ?, state = 'failed', failureReason = 'configuration changed'
+                    WHERE id = (SELECT analysisId FROM meeting_speakers WHERE id = ?)
+                    """,
+                    arguments: [replacementSpaceId, fixture.meetingSpeakerId]
+                )
+
+                _ = try ContactRecord.deleteOne(db, key: fixture.contactId)
+                let observation = try #require(
+                    try SpeakerMatchObservationRecord.fetchOne(db, key: fixture.meetingSpeakerId)
+                )
+                #expect(observation.state == .rejected)
+                #expect(observation.top1ContactId == nil)
+                #expect(observation.top1Score == nil)
+                #expect(observation.top2ContactId == nil)
+                #expect(observation.top2Score == nil)
+                #expect(observation.margin == nil)
+                #expect(try String.fetchOne(db, sql: "PRAGMA integrity_check") == "ok")
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
+        @Test
+        func scopeValidationStillRejectsNewWrongVaultCandidateAndEmbeddingSpace() throws {
+            let fixture = try MigrationFixture()
+            let otherVaultId = UUID.v7()
+            let otherContactId = UUID.v7()
+            let otherSpaceId = UUID.v7()
+            try fixture.database.dbQueue.write { db in
+                try SpeakerMatchObservationRecord(
+                    meetingSpeakerId: fixture.meetingSpeakerId,
+                    embeddingSpaceId: fixture.spaceId,
+                    top1ContactId: nil,
+                    top1Score: nil,
+                    top2ContactId: nil,
+                    top2Score: nil,
+                    margin: nil,
+                    state: .referenceOnly,
+                    unknownReason: nil,
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try VaultRecord(
+                    id: otherVaultId,
+                    path: "/tmp/speaker-other-vault",
+                    name: "Other",
+                    createdAt: .now,
+                    lastOpenedAt: .now
+                ).insert(db)
+                try ContactRecord(
+                    id: otherContactId,
+                    vaultId: otherVaultId,
+                    email: "other@example.com",
+                    displayName: "Other",
+                    revision: 1,
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+                try SpeakerEmbeddingSpaceRecord(
+                    id: otherSpaceId,
+                    space: MigrationFixture.embeddingSpace(assetFingerprint: "other-fingerprint"),
+                    createdAt: .now
+                ).insert(db)
+
+                #expect(throws: (any Error).self) {
+                    try db.execute(
+                        sql: "UPDATE speaker_match_observations SET top1ContactId = ?, top1Score = 0.9 WHERE meetingSpeakerId = ?",
+                        arguments: [otherContactId, fixture.meetingSpeakerId]
+                    )
+                }
+                #expect(throws: (any Error).self) {
+                    try db.execute(
+                        sql: "UPDATE speaker_match_observations SET embeddingSpaceId = ? WHERE meetingSpeakerId = ?",
+                        arguments: [otherSpaceId, fixture.meetingSpeakerId]
+                    )
+                }
+            }
+        }
+    }
+
+    private extension SpeakerIdentityMigrationTests {
         private func insertLegacyRows(in queue: DatabaseQueue) throws -> (meetingId: UUID, transcriptId: UUID, contactId: UUID) {
             let vaultId = UUID.v7()
             let meetingId = UUID.v7()
@@ -345,18 +477,22 @@ import GRDB
             }
         }
 
-        static let space = SpeakerEmbeddingSpace(
-            provider: "FluidAudio",
-            modelName: "speaker-diarization",
-            revision: "revision",
-            assetFingerprint: "fingerprint",
-            fluidAudioVersion: "0.15.5",
-            dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
-            sampleRate: 16000,
-            preprocessing: "mono-float32",
-            excludesOverlap: true,
-            normalization: "l2",
-            similarityDefinition: "cosine-dot-product"
-        )
+        static let space = embeddingSpace(assetFingerprint: "fingerprint")
+
+        static func embeddingSpace(assetFingerprint: String) -> SpeakerEmbeddingSpace {
+            SpeakerEmbeddingSpace(
+                provider: "FluidAudio",
+                modelName: "speaker-diarization",
+                revision: "revision",
+                assetFingerprint: assetFingerprint,
+                fluidAudioVersion: "0.15.5",
+                dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
+                sampleRate: 16000,
+                preprocessing: "mono-float32",
+                excludesOverlap: true,
+                normalization: "l2",
+                similarityDefinition: "cosine-dot-product"
+            )
+        }
     }
 #endif

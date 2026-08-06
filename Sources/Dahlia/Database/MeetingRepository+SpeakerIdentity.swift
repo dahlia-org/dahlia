@@ -231,6 +231,8 @@ extension MeetingRepository {
                 ? cachedRanking
                 : SpeakerMatcher.rank(embedding: input.1, profiles: currentProfiles, policy: currentPolicy)
             let existing = try SpeakerMatchObservationRecord.fetchOne(db, key: meetingSpeakerId)
+            // Rejection is intentionally sticky for the meeting speaker, not the rejected contact. Until calibration
+            // defines per-contact decisions, reevaluation must not reopen a suggestion the user already dismissed.
             let state = existing?.state == .rejected ? SpeakerMatchObservationState.rejected : ranking.state
             try SpeakerMatchObservationRecord(
                 meetingSpeakerId: meetingSpeakerId,

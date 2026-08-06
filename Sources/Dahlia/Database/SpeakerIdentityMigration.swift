@@ -245,20 +245,34 @@ enum SpeakerIdentityMigration {
         BEFORE UPDATE OF embeddingSpaceId, top1ContactId, top2ContactId ON speaker_match_observations
         BEGIN
             SELECT RAISE(ABORT, 'speaker match must use the analysis embedding space and meeting vault')
-            WHERE NOT EXISTS (
+            WHERE (NEW.embeddingSpaceId IS NOT OLD.embeddingSpaceId AND NOT EXISTS (
                 SELECT 1
                 FROM meeting_speakers
                 JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
-                JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
-                JOIN meetings ON meetings.id = recording_sessions.meetingId
                 WHERE meeting_speakers.id = NEW.meetingSpeakerId
                   AND speaker_analyses.embeddingSpaceId = NEW.embeddingSpaceId
-                  AND (NEW.top1ContactId IS NULL OR EXISTS (
-                      SELECT 1 FROM contacts WHERE id = NEW.top1ContactId AND vaultId = meetings.vaultId
-                  ))
-                  AND (NEW.top2ContactId IS NULL OR EXISTS (
-                      SELECT 1 FROM contacts WHERE id = NEW.top2ContactId AND vaultId = meetings.vaultId
-                  ))
+            )) OR (NEW.top1ContactId IS NOT OLD.top1ContactId
+                AND NEW.top1ContactId IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM meeting_speakers
+                    JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+                    JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    JOIN contacts ON contacts.id = NEW.top1ContactId AND contacts.vaultId = meetings.vaultId
+                    WHERE meeting_speakers.id = NEW.meetingSpeakerId
+                )
+            ) OR (NEW.top2ContactId IS NOT OLD.top2ContactId
+                AND NEW.top2ContactId IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM meeting_speakers
+                    JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+                    JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    JOIN contacts ON contacts.id = NEW.top2ContactId AND contacts.vaultId = meetings.vaultId
+                    WHERE meeting_speakers.id = NEW.meetingSpeakerId
+                )
             );
         END;
 
