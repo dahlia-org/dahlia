@@ -92,6 +92,22 @@ import Foundation
         }
 
         @Test
+        func progressFramesDoNotChangeTheUnprocessedRecordingsProjection() {
+            let sessionId = UUID.v7()
+
+            #expect(BatchTranscriptionState.running(
+                sessionId: sessionId
+            ).changesUnprocessedRecordingsProjection)
+            #expect(!BatchTranscriptionState.running(
+                sessionId: sessionId,
+                progress: BatchTranscriptionProgress(completedFileCount: 1, totalFileCount: 2)
+            ).changesUnprocessedRecordingsProjection)
+            #expect(BatchTranscriptionState.completed(
+                sessionId: sessionId
+            ).changesUnprocessedRecordingsProjection)
+        }
+
+        @Test
         func interruptedAttemptRequiresManualResume() {
             let now = Date(timeIntervalSince1970: 1_776_384_000)
             var session = RecordingSessionRecord(

@@ -747,14 +747,24 @@ final class CaptionViewModel: ObservableObject {
             isTerminationRequested = false
             return errorMessage ?? L10n.recordingPersistenceRetryFailed
         }
-        await batchTranscriptionCoordinator?.shutdown()
-        return nil
+        do {
+            try await batchTranscriptionCoordinator?.shutdown()
+            return nil
+        } catch {
+            isTerminationRequested = false
+            ErrorReportingService.capture(error, context: ["source": "batchTranscriptionTerminationPersistence"])
+            return error.localizedDescription
+        }
     }
 
     #if DEBUG
         func setFailedPersistenceServiceForTesting(_ service: MeetingPersistenceService) {
             failedPersistenceService = service
             failedPersistenceMeetingId = service.meetingId
+        }
+
+        func setBatchTranscriptionCoordinatorForTesting(_ coordinator: BatchTranscriptionCoordinator) {
+            batchTranscriptionCoordinator = coordinator
         }
     #endif
 

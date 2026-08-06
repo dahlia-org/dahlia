@@ -70,7 +70,7 @@ import GRDB
             await coordinator.enqueue(sessionId: batch.session.id)
             #expect(await pollUntil { await recognizer.didStart })
 
-            await coordinator.shutdown()
+            try await coordinator.shutdown()
 
             let session = try await batch.database.dbQueue.read { db in
                 try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
@@ -80,6 +80,55 @@ import GRDB
                 sessionId: batch.session.id,
                 isRetranscription: false
             ))
+        }
+
+        @Test
+        func terminationIsRejectedUntilBatchInterruptionPersists() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "shutdown-persistence-retry",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await batch.database.dbQueue.write { db in
+                guard var session = try RecordingSessionRecord.fetchOne(db, key: batch.session.id) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                session.batchSelectedLocaleIdentifier = "ja_JP"
+                try session.update(db)
+            }
+            let recognizer = ShutdownSpeechRecognizer()
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                speechRecognizer: recognizer,
+                onStateChange: { _ in }
+            )
+            await coordinator.enqueue(sessionId: batch.session.id)
+            #expect(await pollUntil { await recognizer.didStart })
+            try await batch.database.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_batch_interruption_persistence
+                BEFORE UPDATE OF batchLastError ON recording_sessions
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced interruption persistence failure');
+                END
+                """)
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.setBatchTranscriptionCoordinatorForTesting(coordinator)
+
+            #expect(await viewModel.prepareForTermination() != nil)
+
+            try await batch.database.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_batch_interruption_persistence")
+            }
+            #expect(await viewModel.prepareForTermination() == nil)
+            let session = try await batch.database.dbQueue.read { db in
+                try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
+            }
+            #expect(session.batchFailureKind == .transcriptionInterrupted)
         }
 
         @Test
@@ -110,7 +159,7 @@ import GRDB
             }
             #expect(await pollUntil { await confirmationGate.isWaiting })
 
-            await coordinator.shutdown()
+            try await coordinator.shutdown()
             await confirmationGate.release()
             try await confirmationTask.value
 

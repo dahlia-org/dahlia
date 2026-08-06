@@ -92,7 +92,8 @@ struct ContentView: View {
         .task(id: sidebarViewModel.currentVault?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
-        .onChange(of: viewModel.batchTranscriptionState) { _, _ in
+        .onChange(of: viewModel.batchTranscriptionState) { _, state in
+            guard state?.changesUnprocessedRecordingsProjection != false else { return }
             Task { await sidebarViewModel.refreshUnprocessedRecordings() }
         }
         .onChange(of: viewModel.offscreenBatchTranscriptionChangeToken) { _, _ in
