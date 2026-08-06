@@ -13,11 +13,11 @@ private final class SpeakerDiarizationProcessingTask: Sendable {
         operation: @escaping @Sendable () async throws -> SpeakerDiarizationOutput,
         makeTask: SerialDiarizerHost.ProcessingTaskFactory
     ) -> Task<SpeakerDiarizationOutput, any Error> {
-        state.withLock { state in
-            let task = makeTask {
-                try Task.checkCancellation()
-                return try await operation()
-            }
+        let task = makeTask {
+            try Task.checkCancellation()
+            return try await operation()
+        }
+        return state.withLock { state in
             state.task = task
             if state.isCancelled {
                 task.cancel()

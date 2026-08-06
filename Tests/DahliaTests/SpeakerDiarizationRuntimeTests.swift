@@ -7,7 +7,7 @@ import os
 #if canImport(Testing)
     import Testing
 
-    private let lifecycleWaitTimeout = Duration.seconds(5)
+    private let lifecycleWaitTimeout = testPollTimeout
 
     // swiftlint:disable:next type_body_length
     struct SpeakerDiarizationRuntimeTests {
@@ -79,10 +79,6 @@ import os
                 )
                 #expect(path.processor.value == nil)
             }
-            print(
-                "DIARIZER_ORPHAN_CENSUS normalScope=0 explicitShutdown=0 loadFailure=0 "
-                    + "cancellation=0 shutdownRace=0"
-            )
         }
 
         @Test
@@ -139,6 +135,33 @@ import os
                 "Diarization work ran to completion after its request ticket had already completed"
             )
             #expect(await probe.completedCount == 0)
+        }
+
+        @Test
+        func cancellationDuringTaskCreationCancelsTaskBeforeItStarts() async throws {
+            let source = try sampleSource(samples: [], sampleRate: 16000)
+            defer { try? source.cleanup() }
+            let ticket = RequestTicket()
+            let request = SerialDiarizerHost.Request(source: source, ticket: ticket)
+            let probe = CompletionProbe()
+
+            let result = await SerialDiarizerHost.processRequest(
+                request,
+                operation: { _ in await probe.process() },
+                makeTask: { operation in
+                    ticket.cancel()
+                    return Task { try await operation() }
+                }
+            )
+            let wasCancelled: Bool
+            if case let .failure(error)? = result {
+                wasCancelled = error is CancellationError
+            } else {
+                wasCancelled = false
+            }
+
+            #expect(wasCancelled, "A diarization task cancelled during creation did not report cancellation")
+            #expect(await probe.completedCount == 0, "Diarization work completed after cancellation during task creation")
         }
 
         @Test
@@ -283,7 +306,11 @@ import os
 
             #expect(outcomes == ["success", "success", "success"])
             #expect(await probe.processCount == 4)
-            #expect(await probe.maximumConcurrentProcessCount == 1)
+            let maximumConcurrentProcessCount = await probe.maximumConcurrentProcessCount
+            #expect(
+                maximumConcurrentProcessCount == 1,
+                "Diarization processed \(maximumConcurrentProcessCount) active requests concurrently"
+            )
             print("DIARIZER_ACTIVE_CANCEL queuedOutcomes=\(outcomes)")
             _ = try await awaitLifecycleTask(Task { await host.shutdown() }, "host shutdown after active cancellation")
         }
@@ -601,20 +628,23 @@ import os
         }
     }
 
-    private struct LifecycleTaskTimeout: Error {}
+    private struct LifecycleTaskTimeout: Error {
+        let description: String
+    }
 
     private func awaitLifecycleTask<Success: Sendable, Failure: Error & Sendable>(
         _ task: Task<Success, Failure>,
         _ description: String
     ) async throws -> Success {
         let probe = LifecycleTaskProbe<Success, Failure>()
-        Task { probe.complete(with: await task.result) }
+        let observer = Task { probe.complete(with: await task.result) }
         guard await pollUntil(timeout: lifecycleWaitTimeout, { probe.result != nil }) else {
             task.cancel()
-            Issue.record("Timed out waiting for \(description)")
-            throw LifecycleTaskTimeout()
+            observer.cancel()
+            throw LifecycleTaskTimeout(description: description)
         }
-        guard let result = probe.result else { throw LifecycleTaskTimeout() }
+        await observer.value
+        guard let result = probe.result else { throw LifecycleTaskTimeout(description: description) }
         return try result.get()
     }
 
@@ -726,6 +756,7 @@ import os
             processCount += 1
             activeProcessCount += 1
             maximumConcurrentProcessCount = max(maximumConcurrentProcessCount, activeProcessCount)
+            await Task.yield()
             defer { activeProcessCount -= 1 }
             if processCount == 1 {
                 try await Task.sleep(for: .seconds(30))

@@ -257,8 +257,8 @@ final class SerialDiarizerHost: Sendable {
         }
 
         /// FluidAudio's manager predates strict Sendable annotations. The lifecycle worker is its sole
-        /// owner and awaits each child request before starting the next, so this adapter never permits
-        /// concurrent access even when request cancellation crosses task boundaries.
+        /// owner: every child request it starts is awaited to completion before the next starts, and the
+        /// non-starting path creates no work. This prevents concurrent access across cancellation boundaries.
         private final class FluidAudioProcessor: @unchecked Sendable {
             private let manager: OfflineDiarizerManager
 
