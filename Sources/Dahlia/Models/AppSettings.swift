@@ -101,7 +101,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
-    nonisolated static let speakerDiarizationEnabledUserDefaultsKey = "speakerDiarizationEnabled"
     nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
     nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"

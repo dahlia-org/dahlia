@@ -10,8 +10,12 @@ import Foundation
     struct SpeakerModelAssetManagerTests {
         @Test
         func bundledManifestCoversEveryPinnedBundleFileWithRealDigests() throws {
+            let bundledManifestURL = Bundle.appModule.url(
+                forResource: "SpeakerDiarizationModelManifest", withExtension: "json"
+            )
+            #expect(bundledManifestURL != nil)
             let manifest = try SpeakerModelAssetManifest.bundled()
-            let expectedPaths: Set<String> = [
+            let expectedPaths = Set([
                 "Segmentation.mlmodelc/analytics/coremldata.bin",
                 "Segmentation.mlmodelc/coremldata.bin",
                 "Segmentation.mlmodelc/metadata.json",
@@ -33,7 +37,7 @@ import Foundation
                 "PldaRho.mlmodelc/model.mil",
                 "PldaRho.mlmodelc/weights/weight.bin",
                 "plda-parameters.json",
-            ]
+            ])
 
             #expect(manifest.repository == "FluidInference/speaker-diarization-coreml")
             #expect(manifest.revision == "1ed7a662fdc7109e36d822db793ee6eebdaf8594")
@@ -46,15 +50,19 @@ import Foundation
         }
 
         @Test
+        func installedFolderMatchesFluidAudioRepositoryFolder() {
+            #expect(SpeakerModelAssetManager.repositoryFolderName == Repo.diarizer.folderName)
+            #expect(SpeakerModelAssetManager.repositoryFolderName == "speaker-diarization")
+        }
+
+        @Test
         func downloadURLPinsRepositoryRevisionAndRelativePath() {
             let manifest = fixtureManifest()
 
             let url = SpeakerModelAssetManager.downloadURL(for: manifest.files[0], manifest: manifest)
 
-            #expect(
-                url.absoluteString
-                    == "https://huggingface.co/owner/model/resolve/revision/Segmentation.mlmodelc/coremldata.bin"
-            )
+            let expectedURL = "https://huggingface.co/owner/model/resolve/revision/Embedding.mlmodelc/coremldata.bin"
+            #expect(url.absoluteString == expectedURL)
         }
 
         @Test
@@ -74,7 +82,10 @@ import Foundation
                 try await manager.acquire()
                 Issue.record("Expected a partial download to fail")
             } catch let error as SpeakerModelAssetError {
-                #expect(error == .byteCountMismatch(path: firstFile.relativePath, expected: 5, actual: 1))
+                let expected = SpeakerModelAssetError.byteCountMismatch(
+                    path: firstFile.relativePath, expected: firstFile.byteCount, actual: 1
+                )
+                #expect(error == expected)
             }
 
             #expect(!FileManager.default.fileExists(atPath: fixture.repositoryURL.path))
@@ -95,9 +106,7 @@ import Foundation
                 try await manager.acquire()
             }
             await fetcher.waitUntilStarted()
-
             acquisition.cancel()
-
             do {
                 _ = try await acquisition.value
                 Issue.record("Expected acquisition cancellation")
@@ -114,7 +123,8 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
             var dataByURL = fixture.dataByURL
             let firstFile = fixture.manifest.files[0]
-            dataByURL[SpeakerModelAssetManager.downloadURL(for: firstFile, manifest: fixture.manifest)] = Data("other".utf8)
+            dataByURL[SpeakerModelAssetManager.downloadURL(for: firstFile, manifest: fixture.manifest)] =
+                Data(repeating: 0, count: Int(firstFile.byteCount))
             let manager = try SpeakerModelAssetManager(
                 managedRootURL: fixture.rootURL,
                 manifest: fixture.manifest,
@@ -174,18 +184,98 @@ import Foundation
         }
 
         @Test
+        func healthyInstallIsPreservedWithoutDownloading() async throws {
+            let fixture = makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+            try writeInstalledFixture(fixture)
+            let markerURL = fixture.repositoryURL.appending(path: ".DS_Store")
+            try Data("finder metadata".utf8).write(to: markerURL)
+            let fetcher = StaticSpeakerAssetFetcher(dataByURL: [:])
+            let manager = try SpeakerModelAssetManager(
+                managedRootURL: fixture.rootURL,
+                manifest: fixture.manifest,
+                fetcher: fetcher
+            )
+
+            let installedURL = try await manager.acquire()
+
+            #expect(installedURL == fixture.repositoryURL)
+            #expect(await fetcher.requestCount() == 0)
+            #expect(FileManager.default.fileExists(atPath: markerURL.path))
+        }
+
+        @Test
+        func concurrentAcquireUsesOneDownloadAndOneAtomicInstall() async throws {
+            let fixture = makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+            let fetcher = GatedSpeakerAssetFetcher(dataByURL: fixture.dataByURL, blockedRequestNumber: 1)
+            let manager = try SpeakerModelAssetManager(
+                managedRootURL: fixture.rootURL,
+                manifest: fixture.manifest,
+                fetcher: fetcher
+            )
+            let first = Task { try await manager.acquire() }
+            await fetcher.waitUntilBlocked()
+            let second = Task { try await manager.acquire() }
+
+            await fetcher.release()
+
+            #expect(try await first.value == fixture.repositoryURL)
+            #expect(try await second.value == fixture.repositoryURL)
+            #expect(await fetcher.receivedRequestCount() == fixture.manifest.files.count)
+            #expect(temporaryEntries(in: fixture.revisionRootURL).isEmpty)
+        }
+
+        @Test
+        func acquisitionStreamReportsProgressThroughCompletion() async throws {
+            let fixture = makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+            let manager = try SpeakerModelAssetManager(
+                managedRootURL: fixture.rootURL,
+                manifest: fixture.manifest,
+                fetcher: StaticSpeakerAssetFetcher(dataByURL: fixture.dataByURL)
+            )
+            var updates: [SpeakerModelAssetProgress] = []
+
+            for try await update in await manager.acquisition() {
+                updates.append(update)
+            }
+
+            #expect(updates.first?.completedByteCount == 0)
+            #expect(updates.last?.completedByteCount == fixture.manifest.totalByteCount)
+            #expect(updates.last?.currentFile == fixture.manifest.files.last?.relativePath)
+        }
+
+        @Test
+        func onDiskUsageExcludesCoreMLCachesOutsideManagedRoot() async throws {
+            let fixture = makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+            try writeInstalledFixture(fixture)
+            let externalCacheURL = fixture.rootURL.deletingLastPathComponent()
+                .appending(path: "com.apple.CoreML-\(UUID.v7().uuidString).cache")
+            defer { try? FileManager.default.removeItem(at: externalCacheURL) }
+            try Data(repeating: 0, count: 1024).write(to: externalCacheURL)
+            let manager = try SpeakerModelAssetManager(
+                managedRootURL: fixture.rootURL,
+                manifest: fixture.manifest,
+                fetcher: StaticSpeakerAssetFetcher(dataByURL: [:])
+            )
+
+            #expect(try await manager.onDiskUsage() == fixture.manifest.totalByteCount)
+        }
+
+        @Test
         func processBootstrapAlwaysRestoresOfflineMode() {
             ModelHub.offlineMode = false
-            SpeakerDiarizationBootstrap.startProcess()
+            AppDelegate.bootstrapProcessDependencies()
             #expect(ModelHub.offlineMode)
-
             ModelHub.offlineMode = false
-            SpeakerDiarizationBootstrap.startProcess()
+            AppDelegate.bootstrapProcessDependencies()
             #expect(ModelHub.offlineMode)
         }
 
         @Test
-        func verifiedCustomCacheLoadsOnlyAfterOfflineModeIsSet() async throws {
+        func realFluidAudioLoaderFindsLibraryNamedCustomCache() async throws {
             let fixture = makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
             try writeInstalledFixture(fixture)
@@ -194,20 +284,23 @@ import Foundation
                 manifest: fixture.manifest,
                 fetcher: StaticSpeakerAssetFetcher(dataByURL: [:])
             )
-            let probe = SpeakerLoaderProbe()
-            let runtime = SpeakerDiarizationRuntime(assetManager: manager) { directoryURL in
-                await probe.record(directoryURL: directoryURL, offlineMode: ModelHub.offlineMode)
-            }
+            let runtime = SpeakerDiarizationRuntime(assetManager: manager)
             ModelHub.offlineMode = false
-
-            try await runtime.loadVerifiedModels()
-
-            #expect(await probe.directoryURL() == fixture.revisionRootURL)
-            #expect(await probe.observedOfflineMode())
+            do {
+                try await runtime.loadVerifiedModels()
+                Issue.record("Expected fixture Core ML contents to be rejected")
+            } catch let DownloadError.modelMissing(repo, missing) {
+                Issue.record("FluidAudio did not resolve the installed directory: \(repo), missing: \(missing)")
+            } catch {
+                // Reaching Core ML layout validation proves FluidAudio found every required bundle.
+            }
+            #expect(ModelHub.offlineMode)
+            #expect(fixture.repositoryURL.lastPathComponent == Repo.diarizer.folderName)
+            #expect(FileManager.default.fileExists(atPath: fixture.repositoryURL.path))
         }
 
         @Test
-        func missingOrCorruptAssetsNeverReachFluidAudioLoader() async throws {
+        func missingOrCorruptAssetsFailDahliaVerificationWhileOffline() async throws {
             let fixture = makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
             let manager = try SpeakerModelAssetManager(
@@ -215,10 +308,7 @@ import Foundation
                 manifest: fixture.manifest,
                 fetcher: StaticSpeakerAssetFetcher(dataByURL: [:])
             )
-            let probe = SpeakerLoaderProbe()
-            let runtime = SpeakerDiarizationRuntime(assetManager: manager) { directoryURL in
-                await probe.record(directoryURL: directoryURL, offlineMode: ModelHub.offlineMode)
-            }
+            let runtime = SpeakerDiarizationRuntime(assetManager: manager)
             SpeakerDiarizationBootstrap.startProcess()
 
             do {
@@ -227,13 +317,11 @@ import Foundation
             } catch let error as SpeakerModelAssetError {
                 #expect(error == .missingFile(fixture.manifest.files[0].relativePath))
             }
-
-            #expect(await probe.callCount() == 0)
             #expect(ModelHub.offlineMode)
 
             try writeInstalledFixture(fixture)
             let corruptFileURL = fixture.repositoryURL.appending(path: fixture.manifest.files[0].relativePath)
-            try Data("other".utf8).write(to: corruptFileURL)
+            try Data(repeating: 0, count: Int(fixture.manifest.files[0].byteCount)).write(to: corruptFileURL)
 
             do {
                 try await runtime.loadVerifiedModels()
@@ -242,7 +330,6 @@ import Foundation
                 #expect(error == .checksumMismatch(path: fixture.manifest.files[0].relativePath))
             }
 
-            #expect(await probe.callCount() == 0)
             #expect(ModelHub.offlineMode)
         }
     }
@@ -256,25 +343,32 @@ import Foundation
     }
 
     private func fixtureManifest() -> SpeakerModelAssetManifest {
-        let modelData = Data("model".utf8)
+        let modelDataByPath = [
+            "Segmentation.mlmodelc/coremldata.bin": Data("segmentation".utf8),
+            "FBank.mlmodelc/coremldata.bin": Data("fbank".utf8),
+            "Embedding.mlmodelc/coremldata.bin": Data("embedding".utf8),
+            "PldaRho.mlmodelc/coremldata.bin": Data("plda rho".utf8),
+        ]
         let parametersData = Data("parameters".utf8)
+        let files = modelDataByPath.sorted { $0.key < $1.key }.map { path, data in
+            SpeakerModelAssetManifest.File(
+                relativePath: path,
+                byteCount: Int64(data.count),
+                sha256: digest(data)
+            )
+        } + [
+            .init(
+                relativePath: "plda-parameters.json",
+                byteCount: Int64(parametersData.count),
+                sha256: digest(parametersData)
+            ),
+        ]
         return SpeakerModelAssetManifest(
             repository: "owner/model",
             revision: "revision",
             license: "fixture",
-            totalByteCount: Int64(modelData.count + parametersData.count),
-            files: [
-                .init(
-                    relativePath: "Segmentation.mlmodelc/coremldata.bin",
-                    byteCount: Int64(modelData.count),
-                    sha256: digest(modelData)
-                ),
-                .init(
-                    relativePath: "plda-parameters.json",
-                    byteCount: Int64(parametersData.count),
-                    sha256: digest(parametersData)
-                ),
-            ]
+            totalByteCount: files.reduce(0) { $0 + $1.byteCount },
+            files: files
         )
     }
 
@@ -287,7 +381,7 @@ import Foundation
             path: SpeakerModelAssetManager.repositoryFolderName,
             directoryHint: .isDirectory
         )
-        let sourceData = [Data("model".utf8), Data("parameters".utf8)]
+        let sourceData = ["embedding", "fbank", "plda rho", "segmentation", "parameters"].map { Data($0.utf8) }
         let dataByURL = Dictionary(uniqueKeysWithValues: zip(manifest.files, sourceData).map { file, data in
             (SpeakerModelAssetManager.downloadURL(for: file, manifest: manifest), data)
         })
@@ -398,27 +492,9 @@ import Foundation
             releaseContinuation?.resume()
             releaseContinuation = nil
         }
-    }
 
-    private actor SpeakerLoaderProbe {
-        private var directories: [URL] = []
-        private var offlineModes: [Bool] = []
-
-        func record(directoryURL: URL, offlineMode: Bool) {
-            directories.append(directoryURL)
-            offlineModes.append(offlineMode)
-        }
-
-        func directoryURL() -> URL? {
-            directories.last
-        }
-
-        func observedOfflineMode() -> Bool {
-            offlineModes.last == true
-        }
-
-        func callCount() -> Int {
-            directories.count
+        func receivedRequestCount() -> Int {
+            requestCount
         }
     }
 #endif

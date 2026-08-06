@@ -396,8 +396,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isWaitingForCodexShutdown = false
     private var processLock: AdvisoryFileLock?
 
-    func applicationWillFinishLaunching(_: Notification) {
+    nonisolated static func bootstrapProcessDependencies() {
         SpeakerDiarizationBootstrap.startProcess()
+    }
+
+    func applicationWillFinishLaunching(_: Notification) {
+        Self.bootstrapProcessDependencies()
         do {
             processLock = try AdvisoryFileLock.acquire(
                 at: AppDatabaseManager.databaseURL

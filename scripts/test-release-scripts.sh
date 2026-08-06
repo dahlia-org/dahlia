@@ -341,6 +341,38 @@ test_whisperkit_license_embedding_validation() {
     expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
 }
 
+test_speaker_diarization_license_embedding_validation() {
+    local fake_project="${TEST_DIR}/speaker-license-project"
+    local checkout_dir="${fake_project}/.build/checkouts/FluidAudio"
+    local resource_dir="${fake_project}/Resources"
+    local source_resource_dir="${fake_project}/Sources/Dahlia/Resources"
+    local contents_dir="${TEST_DIR}/SpeakerLicenseContents"
+
+    mkdir -p "${checkout_dir}/ThirdPartyLicenses" "$resource_dir" "$source_resource_dir"
+    printf '%s' 'FluidAudio license' > "${checkout_dir}/LICENSE"
+    printf '%s' 'fastcluster license' > "${checkout_dir}/ThirdPartyLicenses/fastcluster-LICENSE.md"
+    printf '%s' 'vbx license' > "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md"
+    printf '%s' 'speaker notices' > "${source_resource_dir}/Third-Party-NOTICES.txt"
+    printf '%s' 'model license' > "${resource_dir}/SpeakerDiarizationModel-LICENSE"
+
+    embed_speaker_diarization_licenses "$fake_project" "$contents_dir"
+
+    cmp "${checkout_dir}/LICENSE" "${contents_dir}/Resources/Licenses/FluidAudio/LICENSE"
+    cmp "${checkout_dir}/ThirdPartyLicenses/fastcluster-LICENSE.md" \
+        "${contents_dir}/Resources/Licenses/FluidAudio/ThirdPartyLicenses/fastcluster-LICENSE.md"
+    cmp "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md" \
+        "${contents_dir}/Resources/Licenses/FluidAudio/ThirdPartyLicenses/vbx-LICENSE.md"
+    cmp "${source_resource_dir}/Third-Party-NOTICES.txt" \
+        "${contents_dir}/Resources/Licenses/FluidAudio/NOTICE"
+    cmp "${resource_dir}/SpeakerDiarizationModel-LICENSE" \
+        "${contents_dir}/Resources/Licenses/SpeakerDiarizationModel/LICENSE"
+    cmp "${source_resource_dir}/Third-Party-NOTICES.txt" \
+        "${contents_dir}/Resources/Licenses/SpeakerDiarizationModel/NOTICE"
+
+    rm "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md"
+    expect_failure embed_speaker_diarization_licenses "$fake_project" "$contents_dir"
+}
+
 test_codesigning_keychain_unlock() {
     local keychain_log="${TEST_DIR}/keychain.log"
     local keychain_mode="locked"
@@ -388,6 +420,7 @@ test_release_upload_arguments
 test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
+test_speaker_diarization_license_embedding_validation
 test_codesigning_keychain_unlock
 
 echo "Release script tests passed"

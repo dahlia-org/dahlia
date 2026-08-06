@@ -132,6 +132,39 @@ embed_whisperkit_licenses() {
     chmod u+w "${destination_dir}/LICENSE" "${destination_dir}/NOTICES"
 }
 
+embed_speaker_diarization_licenses() {
+    local project_dir="$1"
+    local contents_dir="$2"
+    local fluid_checkout="${project_dir}/.build/checkouts/FluidAudio"
+    local notices_source="${project_dir}/Sources/Dahlia/Resources/Third-Party-NOTICES.txt"
+    local model_license_source="${project_dir}/Resources/SpeakerDiarizationModel-LICENSE"
+    local fluid_destination="${contents_dir}/Resources/Licenses/FluidAudio"
+    local model_destination="${contents_dir}/Resources/Licenses/SpeakerDiarizationModel"
+    local required_file
+
+    for required_file in \
+        "${fluid_checkout}/LICENSE" \
+        "${fluid_checkout}/ThirdPartyLicenses/fastcluster-LICENSE.md" \
+        "${fluid_checkout}/ThirdPartyLicenses/vbx-LICENSE.md" \
+        "$notices_source" \
+        "$model_license_source"; do
+        if [ ! -f "$required_file" ]; then
+            echo "error: speaker diarization license resource was not found: ${required_file}" >&2
+            return 1
+        fi
+    done
+
+    mkdir -p "${fluid_destination}/ThirdPartyLicenses" "$model_destination"
+    cp "${fluid_checkout}/LICENSE" "${fluid_destination}/LICENSE"
+    cp "${fluid_checkout}/ThirdPartyLicenses/fastcluster-LICENSE.md" \
+        "${fluid_destination}/ThirdPartyLicenses/fastcluster-LICENSE.md"
+    cp "${fluid_checkout}/ThirdPartyLicenses/vbx-LICENSE.md" \
+        "${fluid_destination}/ThirdPartyLicenses/vbx-LICENSE.md"
+    cp "$notices_source" "${fluid_destination}/NOTICE"
+    cp "$model_license_source" "${model_destination}/LICENSE"
+    cp "$notices_source" "${model_destination}/NOTICE"
+}
+
 has_entitlements() {
     local entitlements_path="$1"
 
