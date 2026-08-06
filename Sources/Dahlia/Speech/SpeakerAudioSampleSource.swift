@@ -10,6 +10,9 @@ struct SpeakerAudioFileSlice: Equatable, Sendable {
 }
 
 struct MemoryMappedAudioSampleSource: Sendable {
+    static let channelCount = 1
+    static let sampleEncoding = "Float32"
+
     let sampleRate: Int
     let temporaryFileURL: URL
     let sampleCount: Int

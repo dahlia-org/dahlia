@@ -284,17 +284,15 @@ import Foundation
                 manifest: fixture.manifest,
                 fetcher: StaticSpeakerAssetFetcher(dataByURL: [:])
             )
-            let runtime = SpeakerDiarizationRuntime(assetManager: manager)
-            ModelHub.offlineMode = false
+            SpeakerDiarizationBootstrap.startProcess()
             do {
-                try await runtime.loadVerifiedModels()
+                _ = try await SpeakerDiarizationRuntime.loadVerifiedModels(from: manager)
                 Issue.record("Expected fixture Core ML contents to be rejected")
             } catch let DownloadError.modelMissing(repo, missing) {
                 Issue.record("FluidAudio did not resolve the installed directory: \(repo), missing: \(missing)")
             } catch {
                 // Reaching Core ML layout validation proves FluidAudio found every required bundle.
             }
-            #expect(ModelHub.offlineMode)
             #expect(fixture.repositoryURL.lastPathComponent == Repo.diarizer.folderName)
             #expect(FileManager.default.fileExists(atPath: fixture.repositoryURL.path))
         }
@@ -308,11 +306,10 @@ import Foundation
                 manifest: fixture.manifest,
                 fetcher: StaticSpeakerAssetFetcher(dataByURL: [:])
             )
-            let runtime = SpeakerDiarizationRuntime(assetManager: manager)
             SpeakerDiarizationBootstrap.startProcess()
 
             do {
-                try await runtime.loadVerifiedModels()
+                _ = try await SpeakerDiarizationRuntime.loadVerifiedModels(from: manager)
                 Issue.record("Expected missing assets to prevent loading")
             } catch let error as SpeakerModelAssetError {
                 #expect(error == .missingFile(fixture.manifest.files[0].relativePath))
@@ -324,7 +321,7 @@ import Foundation
             try Data(repeating: 0, count: Int(fixture.manifest.files[0].byteCount)).write(to: corruptFileURL)
 
             do {
-                try await runtime.loadVerifiedModels()
+                _ = try await SpeakerDiarizationRuntime.loadVerifiedModels(from: manager)
                 Issue.record("Expected corrupt assets to prevent loading")
             } catch let error as SpeakerModelAssetError {
                 #expect(error == .checksumMismatch(path: fixture.manifest.files[0].relativePath))

@@ -7,16 +7,138 @@ enum SpeakerDiarizationBootstrap {
     }
 }
 
+actor SerialDiarizerHost {
+    typealias LoadHook = @Sendable () async throws -> Void
+
+    private struct Request {
+        let source: MemoryMappedAudioSampleSource
+        let continuation: CheckedContinuation<SpeakerDiarizationOutput, any Error>
+    }
+
+    private enum Backend: Sendable {
+        case fluidAudio(assetManager: SpeakerModelAssetManager)
+        case injected(processor: any SpeakerDiarizationProcessing, loadHook: LoadHook)
+    }
+
+    private let backend: Backend
+    private let configuration: OfflineDiarizerConfig
+    private var continuation: AsyncStream<Request>.Continuation?
+    private var worker: Task<Void, Never>?
+
+    init(
+        assetManager: SpeakerModelAssetManager,
+        configuration: OfflineDiarizerConfig
+    ) {
+        backend = .fluidAudio(assetManager: assetManager)
+        self.configuration = configuration
+    }
+
+    init(
+        processor: any SpeakerDiarizationProcessing,
+        loadHook: @escaping LoadHook = {}
+    ) {
+        backend = .injected(processor: processor, loadHook: loadHook)
+        configuration = OfflineDiarizerConfig()
+    }
+
+    func process(source: MemoryMappedAudioSampleSource) async throws -> SpeakerDiarizationOutput {
+        startIfNeeded()
+        guard let continuation else {
+            throw SpeakerMatchUnknownReason.analysisFailed
+        }
+        return try await withCheckedThrowingContinuation { requestContinuation in
+            continuation.yield(Request(source: source, continuation: requestContinuation))
+        }
+    }
+
+    private func startIfNeeded() {
+        guard worker == nil else { return }
+        let (stream, continuation) = AsyncStream<Request>.makeStream()
+        self.continuation = continuation
+        let backend = backend
+        let configuration = configuration
+        worker = Task {
+            switch backend {
+            case let .fluidAudio(assetManager):
+                await Self.runFluidAudioWorker(
+                    assetManager: assetManager,
+                    configuration: configuration,
+                    stream: stream
+                )
+            case let .injected(processor, loadHook):
+                await Self.runInjectedWorker(
+                    processor: processor,
+                    loadHook: loadHook,
+                    stream: stream
+                )
+            }
+        }
+    }
+
+    private static func runFluidAudioWorker(
+        assetManager: SpeakerModelAssetManager,
+        configuration: OfflineDiarizerConfig,
+        stream: AsyncStream<Request>
+    ) async {
+        do {
+            let models = try await FluidAudioSpeakerEmbeddingExtractor.loadVerifiedModels(from: assetManager)
+            let manager = OfflineDiarizerManager(config: configuration)
+            manager.initialize(models: models)
+            for await request in stream {
+                do {
+                    let result = try await manager.process(
+                        audioSource: request.source,
+                        audioLoadingSeconds: 0
+                    )
+                    let output = try FluidAudioSpeakerEmbeddingExtractor.makeOutput(
+                        from: result,
+                        source: request.source
+                    )
+                    request.continuation.resume(returning: output)
+                } catch {
+                    request.continuation.resume(throwing: error)
+                }
+            }
+        } catch {
+            await failRequests(in: stream, error: error)
+        }
+    }
+
+    private static func runInjectedWorker(
+        processor: any SpeakerDiarizationProcessing,
+        loadHook: LoadHook,
+        stream: AsyncStream<Request>
+    ) async {
+        do {
+            try await loadHook()
+            for await request in stream {
+                do {
+                    let output = try await processor.process(source: request.source)
+                    request.continuation.resume(returning: output)
+                } catch {
+                    request.continuation.resume(throwing: error)
+                }
+            }
+        } catch {
+            await failRequests(in: stream, error: error)
+        }
+    }
+
+    private static func failRequests(
+        in stream: AsyncStream<Request>,
+        error: any Error
+    ) async {
+        for await request in stream {
+            request.continuation.resume(throwing: error)
+        }
+    }
+}
+
 actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
     private let assetManager: SpeakerModelAssetManager?
     private let qualityPolicy: SpeakerEmbeddingQualityPolicy
-    private let injectedProcessor: (any SpeakerDiarizationProcessing)?
+    private let host: SerialDiarizerHost
     private let injectedSpace: SpeakerEmbeddingSpace?
-    // FluidAudio's manager is not Sendable even though `process` is async.
-    // The actor single-flight guard serializes its Core ML access; the
-    // nonisolated helper exists only to bridge that API mismatch.
-    private nonisolated(unsafe) var manager: OfflineDiarizerManager?
-    private var isProcessing = false
 
     init(
         assetManager: SpeakerModelAssetManager,
@@ -24,51 +146,32 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
     ) {
         self.assetManager = assetManager
         self.qualityPolicy = qualityPolicy
-        injectedProcessor = nil
+        host = SerialDiarizerHost(
+            assetManager: assetManager,
+            configuration: Self.diarizationConfiguration()
+        )
         injectedSpace = nil
     }
 
     init(
         processor: any SpeakerDiarizationProcessing,
         space: SpeakerEmbeddingSpace,
-        qualityPolicy: SpeakerEmbeddingQualityPolicy = .production
+        qualityPolicy: SpeakerEmbeddingQualityPolicy = .production,
+        loadHook: @escaping SerialDiarizerHost.LoadHook = {}
     ) {
         assetManager = nil
         self.qualityPolicy = qualityPolicy
-        injectedProcessor = processor
+        host = SerialDiarizerHost(processor: processor, loadHook: loadHook)
         injectedSpace = space
     }
 
-    func loadVerifiedModels() async throws {
-        guard let assetManager else {
-            throw SpeakerMatchUnknownReason.analysisFailed
-        }
+    static func loadVerifiedModels(from assetManager: SpeakerModelAssetManager) async throws -> OfflineDiarizerModels {
         let revisionRootURL = try await assetManager.verifiedRevisionRootURL()
-        SpeakerDiarizationBootstrap.startProcess()
-
-        let models = try await OfflineDiarizerModels.load(from: revisionRootURL)
-        let manager = OfflineDiarizerManager(config: Self.diarizationConfiguration())
-        manager.initialize(models: models)
-        self.manager = manager
+        return try await OfflineDiarizerModels.load(from: revisionRootURL)
     }
 
     func extract(from source: MemoryMappedAudioSampleSource) async throws -> [MeetingSpeakerEvidence] {
-        let output: SpeakerDiarizationOutput
-        if let injectedProcessor {
-            output = try await injectedProcessor.process(source: source)
-        } else {
-            if manager == nil {
-                try await loadVerifiedModels()
-            }
-            guard !isProcessing else {
-                throw SpeakerMatchUnknownReason.analysisFailed
-            }
-            isProcessing = true
-            defer { isProcessing = false }
-            let result = try await processWithFluidAudio(source: source)
-            output = try Self.makeOutput(from: result, source: source)
-        }
-
+        let output = try await host.process(source: source)
         let space = if let injectedSpace {
             injectedSpace
         } else if let assetManager {
@@ -89,22 +192,14 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
         var configuration = OfflineDiarizerConfig()
         configuration.embedding.excludeOverlap = true
         configuration.exposeChunkEmbeddings = true
+        // Community post-processing uses exclusive segments. FluidAudio scales a
+        // segment's quality by retained/original duration while trimming overlap,
+        // so retaining under 50% fails Dahlia's 0.5 gate regardless of acoustics.
+        // Keep this behavior visible as a Phase 6 Japanese-real-data calibration target.
         return configuration
     }
 
-    private nonisolated func processWithFluidAudio(
-        source: MemoryMappedAudioSampleSource
-    ) async throws -> DiarizationResult {
-        guard let manager else {
-            throw SpeakerMatchUnknownReason.analysisFailed
-        }
-        return try await manager.process(
-            audioSource: source,
-            audioLoadingSeconds: 0
-        )
-    }
-
-    private static func makeOutput(
+    static func makeOutput(
         from result: DiarizationResult,
         source: MemoryMappedAudioSampleSource
     ) throws -> SpeakerDiarizationOutput {

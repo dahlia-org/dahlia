@@ -71,6 +71,9 @@ struct URLSessionSpeakerModelAssetFetcher: SpeakerModelAssetFetching {
 }
 
 actor SpeakerModelAssetManager {
+    /// FluidAudio does not expose its package version at runtime. A test reads
+    /// Package.swift and Package.resolved and requires this identity component to match both pins.
+    static let fluidAudioVersion = "0.15.5"
     static var repositoryFolderName: String { Repo.diarizer.folderName }
 
     private let manifest: SpeakerModelAssetManifest
@@ -236,19 +239,28 @@ actor SpeakerModelAssetManager {
     }
 
     func embeddingSpace() -> SpeakerEmbeddingSpace {
-        SpeakerEmbeddingSpace(
+        let configuration = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
+        return SpeakerEmbeddingSpace(
             provider: "FluidInference",
             modelName: manifest.repository,
             revision: manifest.revision,
             assetFingerprint: manifest.assetFingerprint,
-            fluidAudioVersion: "0.15.5",
+            fluidAudioVersion: Self.fluidAudioVersion,
             dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
-            sampleRate: 16000,
-            preprocessing: "community-1 mono Float32",
-            excludesOverlap: true,
+            sampleRate: configuration.segmentation.sampleRate,
+            preprocessing: Self.preprocessingDescriptor(configuration: configuration),
+            excludesOverlap: configuration.embedding.excludeOverlap,
             normalization: "L2 unit norm",
             similarityDefinition: "cosine dot product"
         )
+    }
+
+    static func preprocessingDescriptor(configuration: OfflineDiarizerConfig) -> String {
+        let channelDescription = MemoryMappedAudioSampleSource.channelCount == 1
+            ? "mono"
+            : "\(MemoryMappedAudioSampleSource.channelCount)-channel"
+        return "community-1 \(channelDescription) \(MemoryMappedAudioSampleSource.sampleEncoding) "
+            + "\(configuration.segmentation.sampleRate)Hz"
     }
 
     static func downloadURL(for file: SpeakerModelAssetManifest.File, manifest: SpeakerModelAssetManifest) -> URL {

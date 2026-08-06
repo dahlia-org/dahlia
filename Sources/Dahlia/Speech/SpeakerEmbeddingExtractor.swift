@@ -31,7 +31,7 @@ struct SpeakerEmbeddingQualityPolicy: Equatable, Sendable {
     }
 }
 
-struct SpeakerEmbeddingChunk: Sendable {
+struct SpeakerEmbeddingChunk: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let speakerID: String
     let startTimeSeconds: Double
     let endTimeSeconds: Double
@@ -40,11 +40,23 @@ struct SpeakerEmbeddingChunk: Sendable {
     let rms: Float
     let clippingRatio: Float
     let segmentQuality: Float
+
+    var description: String {
+        "SpeakerEmbeddingChunk(speakerID: \(speakerID), duration: \(durationSeconds), embedding: <redacted>)"
+    }
+
+    var debugDescription: String { description }
 }
 
-struct SpeakerDiarizationOutput: Sendable {
+struct SpeakerDiarizationOutput: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let chunks: [SpeakerEmbeddingChunk]
     let speakerDatabase: [String: [Float]]
+
+    var description: String {
+        "SpeakerDiarizationOutput(chunks: \(chunks.count), speakers: \(speakerDatabase.count), embeddings: <redacted>)"
+    }
+
+    var debugDescription: String { description }
 }
 
 protocol SpeakerDiarizationProcessing: Sendable {
@@ -85,8 +97,12 @@ enum SpeakerEmbeddingValidation {
         return normalize(mean, norm: norm)
     }
 
-    static func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> Float {
-        zip(lhs, rhs).reduce(Float.zero) { $0 + $1.0 * $1.1 }
+    static func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> SpeakerMatchResult {
+        guard lhs.count == dimensionCount, rhs.count == dimensionCount else {
+            return .unknown(.invalidEmbedding)
+        }
+        let score = zip(lhs, rhs).reduce(Float.zero) { $0 + $1.0 * $1.1 }
+        return score.isFinite ? .candidate(score: score) : .unknown(.invalidEmbedding)
     }
 
     private static func l2Norm(_ values: [Float]) -> Float {
@@ -100,6 +116,9 @@ enum SpeakerEmbeddingValidation {
 
 enum MeetingSpeakerEvidenceBuilder {
     private static let maximumExemplarCount = 3
+    /// This compares a weighted mean of accepted chunk embeddings with FluidAudio's
+    /// mean of cluster centroids. If it rejects a speaker, learning is disabled with
+    /// no user-visible signal. Keep 0.8 as a Phase 6 Japanese-real-data calibration target.
     private static let minimumDatabaseConsistency: Float = 0.8
 
     static func build(
@@ -119,7 +138,6 @@ enum MeetingSpeakerEvidenceBuilder {
                     guard let embedding = SpeakerEmbeddingValidation.normalizedChunk(chunk.embedding) else { return nil }
                     return (chunk, embedding, qualityPolicy.weight(for: chunk))
                 }
-                .filter { $0.weight > 0 }
 
             guard let representative = SpeakerEmbeddingValidation.normalizedMean(
                 validChunks.map { ($0.embedding, $0.weight) }
@@ -134,7 +152,7 @@ enum MeetingSpeakerEvidenceBuilder {
             }
 
             if let fluidRepresentative = database[speakerID],
-               SpeakerEmbeddingValidation.cosineSimilarity(representative, fluidRepresentative) < minimumDatabaseConsistency {
+               similarityScore(representative, fluidRepresentative) < minimumDatabaseConsistency {
                 return MeetingSpeakerEvidence(
                     speakerID: speakerID,
                     representative: SpeakerEmbedding(space: space, values: representative),
@@ -145,8 +163,8 @@ enum MeetingSpeakerEvidenceBuilder {
 
             let exemplars = validChunks
                 .sorted { lhs, rhs in
-                    let lhsSimilarity = SpeakerEmbeddingValidation.cosineSimilarity(lhs.embedding, representative)
-                    let rhsSimilarity = SpeakerEmbeddingValidation.cosineSimilarity(rhs.embedding, representative)
+                    let lhsSimilarity = similarityScore(lhs.embedding, representative)
+                    let rhsSimilarity = similarityScore(rhs.embedding, representative)
                     if lhsSimilarity == rhsSimilarity {
                         return lhs.weight > rhs.weight
                     }
@@ -162,5 +180,12 @@ enum MeetingSpeakerEvidenceBuilder {
                 profileUpdateEligible: true
             )
         }
+    }
+
+    private static func similarityScore(_ lhs: [Float], _ rhs: [Float]) -> Float {
+        guard case let .candidate(score) = SpeakerEmbeddingValidation.cosineSimilarity(lhs, rhs) else {
+            return -.infinity
+        }
+        return score
     }
 }

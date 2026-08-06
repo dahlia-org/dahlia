@@ -83,20 +83,39 @@ import Foundation
 
         @Test
         func meetingExemplarsAreCappedAtThreeClosestValidChunks() async throws {
+            let angles = [-20.0, 90.0, 10.0, -90.0, 0.0]
+            let embeddings = angles.map { angle -> [Float] in
+                var embedding = [Float](repeating: 0, count: 256)
+                let radians = angle * .pi / 180
+                embedding[0] = Float(cos(radians))
+                embedding[1] = Float(sin(radians))
+                return embedding
+            }
             let output = SpeakerDiarizationOutput(
-                chunks: (0 ..< 5).map { index in
-                    var embedding = unitVector(index: 0)
-                    embedding[0] = Float(100 - index) / 100
-                    embedding[index + 1] = sqrt(1 - embedding[0] * embedding[0])
-                    return chunk(speakerID: "S1", embedding: embedding)
+                chunks: embeddings.map { embedding in
+                    chunk(speakerID: "S1", embedding: embedding)
                 },
                 speakerDatabase: [:]
             )
 
             let evidence = try await extract(output: output)
+            let exemplars = try #require(evidence.first?.exemplars.map(\.values))
+            let exemplarIdentities = exemplars.map { exemplar in
+                Int((atan2(Double(exemplar[1]), Double(exemplar[0])) * 180 / .pi).rounded())
+            }
 
-            #expect(evidence.first?.exemplars.count == 3)
+            #expect(exemplarIdentities == [0, 10, -20])
             #expect(evidence.first?.profileUpdateEligible == true)
+        }
+
+        @Test
+        func validationRejectsCosineSimilarityAcrossDifferentDimensions() {
+            #expect(
+                SpeakerEmbeddingValidation.cosineSimilarity(
+                    unitVector(index: 0),
+                    [Float](repeating: 0, count: 255)
+                ) == .unknown(.invalidEmbedding)
+            )
         }
 
         @Test
@@ -157,6 +176,11 @@ import Foundation
                 profileUpdateEligible: true
             )
             let result = SpeakerMatchResult.matched(personID: personID, score: 0.765_432_1)
+            let chunk = chunk(speakerID: "S1", embedding: embedding.values)
+            let output = SpeakerDiarizationOutput(
+                chunks: [chunk],
+                speakerDatabase: ["S1": embedding.values]
+            )
             let payload = [
                 embedding.description,
                 String(reflecting: embedding),
@@ -165,6 +189,10 @@ import Foundation
                 String(reflecting: [evidence]),
                 result.description,
                 String(reflecting: result),
+                chunk.description,
+                String(reflecting: chunk),
+                output.description,
+                String(reflecting: output),
             ].joined(separator: " ")
 
             #expect(!payload.contains("0.1234567"))
