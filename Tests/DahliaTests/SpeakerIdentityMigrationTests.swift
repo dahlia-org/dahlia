@@ -3,6 +3,7 @@ import Foundation
 import GRDB
 @testable import Dahlia
 
+// swiftlint:disable file_length
 #if canImport(Testing)
     import Testing
 
@@ -76,6 +77,29 @@ import GRDB
             #expect(result.2.count == 8)
             #expect(validation.0 == "ok")
             #expect(validation.1.isEmpty)
+        }
+
+        @Test
+        func reapplyingV34ReplacesPreviouslyAppliedTriggerDefinitions() throws {
+            let upgraded = try AppDatabaseManager(path: ":memory:")
+            try upgraded.dbQueue.write { db in
+                try installPreviousV34Triggers(in: db)
+                try SpeakerIdentityMigration.migrate(in: db)
+            }
+            let fresh = try AppDatabaseManager(path: ":memory:")
+
+            let upgradedTriggers = try upgraded.dbQueue.read(v34TriggerDefinitions)
+            let freshTriggers = try fresh.dbQueue.read(v34TriggerDefinitions)
+            let appliedMigration = try upgraded.dbQueue.read { db in
+                try String.fetchOne(
+                    db,
+                    sql: "SELECT identifier FROM grdb_migrations ORDER BY rowid DESC LIMIT 1"
+                )
+            }
+
+            #expect(upgradedTriggers == freshTriggers)
+            #expect(upgradedTriggers.count == 9)
+            #expect(appliedMigration == "v34_speakerIdentity")
         }
 
         @Test
@@ -340,6 +364,70 @@ import GRDB
     }
 
     private extension SpeakerIdentityMigrationTests {
+        func v34TriggerDefinitions(in db: Database) throws -> [String] {
+            try String.fetchAll(
+                db,
+                sql: """
+                SELECT name || char(10) || sql
+                FROM sqlite_master
+                WHERE type = 'trigger' AND name IN (
+                    'speaker_contact_assignments_validate_vault',
+                    'speaker_contact_assignments_validate_vault_update',
+                    'speaker_profiles_validate_vault',
+                    'speaker_profiles_validate_vault_update',
+                    'speaker_match_observations_validate_scope',
+                    'speaker_match_observations_validate_scope_update',
+                    'contacts_clear_speaker_match_candidates',
+                    'transcript_segments_validate_meetingSpeaker_insert',
+                    'transcript_segments_validate_meetingSpeaker_update'
+                )
+                ORDER BY name
+                """
+            )
+        }
+
+        func installPreviousV34Triggers(in db: Database) throws {
+            try db.execute(sql: """
+            DROP TRIGGER speaker_match_observations_validate_scope_update;
+            CREATE TRIGGER speaker_match_observations_validate_scope_update
+            BEFORE UPDATE OF embeddingSpaceId, top1ContactId, top2ContactId ON speaker_match_observations
+            BEGIN
+                SELECT RAISE(ABORT, 'speaker match must use the analysis embedding space and meeting vault')
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM meeting_speakers
+                    JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+                    JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+                    JOIN meetings ON meetings.id = recording_sessions.meetingId
+                    WHERE meeting_speakers.id = NEW.meetingSpeakerId
+                      AND speaker_analyses.embeddingSpaceId = NEW.embeddingSpaceId
+                      AND (NEW.top1ContactId IS NULL OR EXISTS (
+                          SELECT 1 FROM contacts WHERE id = NEW.top1ContactId AND vaultId = meetings.vaultId
+                      ))
+                      AND (NEW.top2ContactId IS NULL OR EXISTS (
+                          SELECT 1 FROM contacts WHERE id = NEW.top2ContactId AND vaultId = meetings.vaultId
+                      ))
+                );
+            END;
+
+            DROP TRIGGER contacts_clear_speaker_match_candidates;
+            CREATE TRIGGER contacts_clear_speaker_match_candidates
+            BEFORE DELETE ON contacts
+            BEGIN
+                UPDATE speaker_match_observations
+                SET top1ContactId = CASE WHEN top1ContactId = OLD.id THEN NULL ELSE top1ContactId END,
+                    top1Score = CASE WHEN top1ContactId = OLD.id THEN NULL ELSE top1Score END,
+                    top2ContactId = CASE WHEN top2ContactId = OLD.id THEN NULL ELSE top2ContactId END,
+                    top2Score = CASE WHEN top2ContactId = OLD.id THEN NULL ELSE top2Score END,
+                    margin = CASE
+                        WHEN top1ContactId = OLD.id OR top2ContactId = OLD.id THEN NULL
+                        ELSE margin
+                    END
+                WHERE top1ContactId = OLD.id OR top2ContactId = OLD.id;
+            END;
+            """)
+        }
+
         private func insertLegacyRows(in queue: DatabaseQueue) throws -> (meetingId: UUID, transcriptId: UUID, contactId: UUID) {
             let vaultId = UUID.v7()
             let meetingId = UUID.v7()
@@ -496,3 +584,4 @@ import GRDB
         }
     }
 #endif
+// swiftlint:enable file_length

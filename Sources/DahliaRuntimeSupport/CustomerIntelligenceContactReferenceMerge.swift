@@ -25,6 +25,15 @@ public enum CustomerIntelligenceContactReferenceMerge {
     DELETE FROM insight_references
     WHERE resourceType = 'contact' AND resourceId = :sourceID;
 
+    UPDATE meeting_speakers
+    SET revision = revision + 1,
+        updatedAt = :now
+    WHERE id IN (
+        SELECT meetingSpeakerId
+        FROM speaker_match_observations
+        WHERE top1ContactId = :sourceID OR top2ContactId = :sourceID
+    );
+
     UPDATE speaker_match_observations
     SET top1ContactId = CASE
             WHEN top1ContactId IN (:sourceID, :targetID)

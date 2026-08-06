@@ -89,11 +89,17 @@ import GRDB
         }
 
         @Test
-        func provisionalResolutionRetargetsSuggestedMatchAndKeepsItApprovable() async throws {
+        func provisionalResolutionInvalidatesStaleSuggestionRevisionAndKeepsMatchApprovable() async throws {
             let fixture = try SpeakerIdentityFixture()
             try fixture.identifySecondContact(email: "identified@example.com")
             let speaker = try fixture.addSpeaker(values: unitVector(0), source: .microphone)
             try fixture.insertSuggestedMatch(speakerId: speaker.speakerId, contactId: fixture.firstContactId)
+            let revisionsBeforeMerge = try await fixture.database.dbQueue.read { db in
+                try (
+                    #require(try SpeakerMatchObservationRecord.fetchOne(db, key: speaker.speakerId)).revision,
+                    #require(try MeetingSpeakerRecord.fetchOne(db, key: speaker.speakerId)).revision
+                )
+            }
 
             _ = try fixture.repository.resolveProvisionalContact(
                 id: fixture.firstContactId,
@@ -104,18 +110,32 @@ import GRDB
                 expectedExistingContactID: fixture.secondContactId,
                 expectedExistingRevision: 1
             )
-            let observation = try await fixture.database.dbQueue.read { db in
-                try #require(try SpeakerMatchObservationRecord.fetchOne(db, key: speaker.speakerId))
+            let state = try await fixture.database.dbQueue.read { db in
+                try (
+                    #require(try SpeakerMatchObservationRecord.fetchOne(db, key: speaker.speakerId)),
+                    #require(try MeetingSpeakerRecord.fetchOne(db, key: speaker.speakerId))
+                )
             }
-            #expect(observation.state == .suggested)
-            #expect(observation.top1ContactId == fixture.secondContactId)
-            #expect(observation.top1Score == 0.9)
+            #expect(state.0.state == .suggested)
+            #expect(state.0.top1ContactId == fixture.secondContactId)
+            #expect(state.0.top1Score == 0.9)
+            #expect(state.0.revision == revisionsBeforeMerge.0 + 1)
+            #expect(state.1.revision == revisionsBeforeMerge.1 + 1)
+
+            await #expect(throws: SpeakerIdentityError.revisionConflict) {
+                try await fixture.repository.approveSpeakerSuggestion(
+                    meetingSpeakerId: speaker.speakerId,
+                    contactId: fixture.secondContactId,
+                    vaultId: fixture.vaultId,
+                    expectedRevision: revisionsBeforeMerge.1
+                )
+            }
 
             let approved = try await fixture.repository.approveSpeakerSuggestion(
                 meetingSpeakerId: speaker.speakerId,
                 contactId: fixture.secondContactId,
                 vaultId: fixture.vaultId,
-                expectedRevision: 1
+                expectedRevision: state.1.revision
             )
             #expect(approved.assignedContactId == fixture.secondContactId)
             #expect(approved.assignmentOrigin == .suggestionApproved)
@@ -218,6 +238,49 @@ import GRDB
             #expect(observation.state == .rejected)
             #expect(observation.top1ContactId == fixture.secondContactId)
             #expect(observation.top1Score == 0.9)
+        }
+
+        @Test
+        func deletingSuggestedCandidateBecomesUndeterminableWithoutClearingRejection() async throws {
+            let fixture = try SpeakerIdentityFixture()
+            let suggested = try fixture.addSpeaker(values: unitVector(0), source: .microphone)
+            let rejected = try fixture.addSpeaker(values: unitVector(1), source: .system)
+            try fixture.insertSuggestedMatch(speakerId: suggested.speakerId, contactId: fixture.firstContactId)
+            try fixture.insertSuggestedMatch(speakerId: rejected.speakerId, contactId: fixture.firstContactId)
+            _ = try await fixture.repository.rejectSpeakerSuggestion(
+                meetingSpeakerId: rejected.speakerId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+
+            try fixture.repository.deleteProvisionalContact(
+                id: fixture.firstContactId,
+                vaultId: fixture.vaultId,
+                expectedRevision: 1
+            )
+            let result = try fixture.database.dbQueue.read { db in
+                let suggestedObservation = try #require(
+                    try SpeakerMatchObservationRecord.fetchOne(db, key: suggested.speakerId)
+                )
+                let rejectedObservation = try #require(
+                    try SpeakerMatchObservationRecord.fetchOne(db, key: rejected.speakerId)
+                )
+                let integrity = try String.fetchOne(db, sql: "PRAGMA integrity_check")
+                let foreignKeyViolations = try Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
+                return (suggestedObservation, rejectedObservation, integrity, foreignKeyViolations)
+            }
+
+            #expect(result.0.state == .undeterminable)
+            #expect(result.0.unknownReason == .insufficientEvidence)
+            #expect(result.0.top1ContactId == nil)
+            #expect(result.0.top1Score == nil)
+            #expect(result.0.margin == nil)
+            #expect(result.1.state == .rejected)
+            #expect(result.1.unknownReason == nil)
+            #expect(result.1.top1ContactId == nil)
+            #expect(result.1.top1Score == nil)
+            #expect(result.2 == "ok")
+            #expect(result.3.isEmpty)
         }
 
         @Test

@@ -172,7 +172,15 @@ enum SpeakerIdentityMigration {
     // swiftlint:disable:next function_body_length
     private static func createValidationTriggers(in db: Database) throws {
         try db.execute(sql: """
-        CREATE TRIGGER IF NOT EXISTS speaker_contact_assignments_validate_vault
+        DROP TRIGGER IF EXISTS speaker_contact_assignments_validate_vault;
+        DROP TRIGGER IF EXISTS speaker_contact_assignments_validate_vault_update;
+        DROP TRIGGER IF EXISTS speaker_profiles_validate_vault;
+        DROP TRIGGER IF EXISTS speaker_profiles_validate_vault_update;
+        DROP TRIGGER IF EXISTS speaker_match_observations_validate_scope;
+        DROP TRIGGER IF EXISTS speaker_match_observations_validate_scope_update;
+        DROP TRIGGER IF EXISTS contacts_clear_speaker_match_candidates;
+
+        CREATE TRIGGER speaker_contact_assignments_validate_vault
         BEFORE INSERT ON speaker_contact_assignments
         BEGIN
             SELECT RAISE(ABORT, 'speaker assignment contact must belong to the meeting vault')
@@ -187,7 +195,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS speaker_contact_assignments_validate_vault_update
+        CREATE TRIGGER speaker_contact_assignments_validate_vault_update
         BEFORE UPDATE OF contactId ON speaker_contact_assignments
         BEGIN
             SELECT RAISE(ABORT, 'speaker assignment contact must belong to the meeting vault')
@@ -202,7 +210,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS speaker_profiles_validate_vault
+        CREATE TRIGGER speaker_profiles_validate_vault
         BEFORE INSERT ON speaker_profiles
         BEGIN
             SELECT RAISE(ABORT, 'speaker profile contact must belong to its vault')
@@ -211,7 +219,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS speaker_profiles_validate_vault_update
+        CREATE TRIGGER speaker_profiles_validate_vault_update
         BEFORE UPDATE OF vaultId, contactId ON speaker_profiles
         BEGIN
             SELECT RAISE(ABORT, 'speaker profile contact must belong to its vault')
@@ -220,7 +228,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS speaker_match_observations_validate_scope
+        CREATE TRIGGER speaker_match_observations_validate_scope
         BEFORE INSERT ON speaker_match_observations
         BEGIN
             SELECT RAISE(ABORT, 'speaker match must use the analysis embedding space and meeting vault')
@@ -241,7 +249,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS speaker_match_observations_validate_scope_update
+        CREATE TRIGGER speaker_match_observations_validate_scope_update
         BEFORE UPDATE OF embeddingSpaceId, top1ContactId, top2ContactId ON speaker_match_observations
         BEGIN
             SELECT RAISE(ABORT, 'speaker match must use the analysis embedding space and meeting vault')
@@ -276,7 +284,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS contacts_clear_speaker_match_candidates
+        CREATE TRIGGER contacts_clear_speaker_match_candidates
         BEFORE DELETE ON contacts
         BEGIN
             UPDATE speaker_match_observations
@@ -287,6 +295,14 @@ enum SpeakerIdentityMigration {
                 margin = CASE
                     WHEN top1ContactId = OLD.id OR top2ContactId = OLD.id THEN NULL
                     ELSE margin
+                END,
+                state = CASE
+                    WHEN state = 'suggested' AND top1ContactId = OLD.id THEN 'undeterminable'
+                    ELSE state
+                END,
+                unknownReason = CASE
+                    WHEN state = 'suggested' AND top1ContactId = OLD.id THEN 'insufficientEvidence'
+                    ELSE unknownReason
                 END
             WHERE top1ContactId = OLD.id OR top2ContactId = OLD.id;
         END;
@@ -307,7 +323,10 @@ enum SpeakerIdentityMigration {
         ON transcript_segments(meetingSpeakerId, startTime, id)
         """)
         try db.execute(sql: """
-        CREATE TRIGGER IF NOT EXISTS transcript_segments_validate_meetingSpeaker_insert
+        DROP TRIGGER IF EXISTS transcript_segments_validate_meetingSpeaker_insert;
+        DROP TRIGGER IF EXISTS transcript_segments_validate_meetingSpeaker_update;
+
+        CREATE TRIGGER transcript_segments_validate_meetingSpeaker_insert
         BEFORE INSERT ON transcript_segments
         WHEN NEW.meetingSpeakerId IS NOT NULL
         BEGIN
@@ -322,7 +341,7 @@ enum SpeakerIdentityMigration {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS transcript_segments_validate_meetingSpeaker_update
+        CREATE TRIGGER transcript_segments_validate_meetingSpeaker_update
         BEFORE UPDATE OF meetingId, meetingSpeakerId ON transcript_segments
         WHEN NEW.meetingSpeakerId IS NOT NULL
         BEGIN
