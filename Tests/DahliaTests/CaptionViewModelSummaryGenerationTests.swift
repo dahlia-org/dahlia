@@ -143,7 +143,7 @@ import GRDB
             try repository.upsertSummary(SummaryRecord(
                 meetingId: fixture.first.id,
                 title: "Old summary",
-                document: try SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
+                document: SummaryDocument(title: "Old summary", sections: []).databaseJSONString(),
                 createdAt: .now
             ))
             try repository.updateSummaryVaultRelativePath(
@@ -169,13 +169,13 @@ import GRDB
         }
 
         @Test
-        func batchConfirmationWithoutPersistenceContextDoesNotBlockTranscription() throws {
+        func batchConfirmationWithoutPersistenceContextDoesNotBlockTranscription() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
             let viewModel = CaptionViewModel()
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
 
-            viewModel.presentBatchTranscriptionConfirmation(
+            await viewModel.presentBatchTranscriptionConfirmation(
                 sessionId: sessionID,
                 meetingId: fixture.first.id,
                 dbQueue: fixture.database.dbQueue
@@ -624,7 +624,7 @@ import GRDB
             )
             await original.select(original.first, in: viewModel, note: "original")
             let sessionID = try original.insertRecordingSession(for: original.first, offset: 0)
-            viewModel.presentBatchTranscriptionConfirmation(
+            await viewModel.presentBatchTranscriptionConfirmation(
                 sessionId: sessionID,
                 meetingId: original.first.id,
                 dbQueue: original.database.dbQueue
@@ -667,7 +667,7 @@ import GRDB
         }
 
         private func waitUntil(
-            attempts: Int = 10_000,
+            attempts: Int = 10000,
             condition: @escaping @MainActor () -> Bool
         ) async -> Bool {
             for _ in 0 ..< attempts {

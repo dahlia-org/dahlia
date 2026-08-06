@@ -211,7 +211,7 @@ import GRDB
                 managedRootURL: fixture.managedRootURL,
                 onStateChange: { _ in }
             )
-            await coordinator.recoverAndEnqueue()
+            try await coordinator.recoverAndEnqueue()
             let segmentStates = try await fixture.database.dbQueue.read { db in
                 try RecordingAudioSegmentRecord
                     .filter(Column("recordingSessionId") == fixture.session.id)
@@ -311,7 +311,7 @@ import GRDB
 
         @Test(arguments: [
             0,
-            BatchTranscriptionCoordinator.maximumAutomaticAttemptCount,
+            3,
         ])
         func automaticConfirmationPreservesLocaleAndFailedRetryBecomesRecoverableManual(
             failedAttemptCount: Int
@@ -386,7 +386,6 @@ import GRDB
             #expect(retrySession.batchFailureKind == nil)
             #expect(retrySession.batchAttemptCount == failedAttemptCount)
             #expect(retrySession.batchLastAttemptAt != nil)
-            #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(retrySession))
             #expect(retryResult.1.map(\.localeIdentifier) == ["en_US"])
         }
 

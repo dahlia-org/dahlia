@@ -16,16 +16,13 @@ struct BackupSettingsView: View {
 
     private let dbQueue: DatabaseQueue?
     @ObservedObject private var captionViewModel: CaptionViewModel
-    private let sidebarViewModel: SidebarViewModel
 
     init(
         dbQueue: DatabaseQueue?,
-        captionViewModel: CaptionViewModel,
-        sidebarViewModel: SidebarViewModel
+        captionViewModel: CaptionViewModel
     ) {
         self.dbQueue = dbQueue
         _captionViewModel = ObservedObject(wrappedValue: captionViewModel)
-        self.sidebarViewModel = sidebarViewModel
         _model = State(initialValue: BackupSettingsViewModel(dbQueue: dbQueue))
     }
 
@@ -152,22 +149,24 @@ struct BackupSettingsView: View {
             ForEach(model.preflightItems) { item in
                 LabeledContent {
                     HStack {
-                        if item.state == .awaitingConfirmation || item.state == .failed {
+                        if item.canStartTranscription {
                             Button(L10n.transcribe) {
-                                resolveByTranscribing(item)
+                                Task { await resolveByTranscribing(item) }
                             }
+                        } else if item.isWorkInProgress {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        if item.canDiscard {
                             Button(L10n.discardRecording, role: .destructive) {
                                 pendingDiscardItem = item
                             }
-                        } else {
-                            ProgressView()
-                                .controlSize(.small)
                         }
                     }
                 } label: {
                     Text(item.meetingName)
                     Text(item.startedAt.formatted(date: .abbreviated, time: .shortened))
-                    Text(preflightStateLabel(item))
+                    Text(item.statusDescription)
                 }
             }
         } header: {
@@ -211,35 +210,14 @@ struct BackupSettingsView: View {
         }
     }
 
-    private func preflightStateLabel(_ item: BackupPreflightItem) -> String {
-        switch item.state {
-        case .recording: L10n.recordingInProgress
-        case .awaitingConfirmation: L10n.awaitingTranscription
-        case .processing: L10n.transcriptionInProgress
-        case .failed: item.failureMessage ?? L10n.transcriptionFailed
-        }
-    }
-
-    private func resolveByTranscribing(_ item: BackupPreflightItem) {
+    private func resolveByTranscribing(_ item: BackupPreflightItem) async {
         guard let dbQueue else { return }
-        sidebarViewModel.selectMeeting(item.meetingId)
         MainWindowOpener.shared.openMainWindow()
-        switch item.state {
-        case .awaitingConfirmation:
-            captionViewModel.presentBatchTranscriptionConfirmation(
-                sessionId: item.sessionId,
-                meetingId: item.meetingId,
-                dbQueue: dbQueue
-            )
-        case .failed:
-            captionViewModel.presentBatchTranscriptionConfirmation(
-                sessionId: item.sessionId,
-                meetingId: item.meetingId,
-                dbQueue: dbQueue
-            )
-        case .recording, .processing:
-            break
-        }
+        await captionViewModel.presentManualBatchTranscription(
+            sessionId: item.sessionId,
+            meetingId: item.meetingId,
+            dbQueue: dbQueue
+        )
     }
 
     private func importBackup() {

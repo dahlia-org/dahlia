@@ -15,6 +15,8 @@ private struct ProjectDescriptionDraft {
 @Observable
 @MainActor
 final class SidebarViewModel {
+    typealias UnprocessedRecordingDiscarder = @MainActor @Sendable (DatabaseQueue, UUID, UUID) async throws -> Bool
+
     nonisolated static let meetingPageSize = 50
     nonisolated static let maximumVisibleMeetings = 500
 
@@ -65,6 +67,9 @@ final class SidebarViewModel {
     private(set) var allAvailableTags: [TagInfo] = []
     var selectedInstruction: InstructionRecord?
     var lastError: String?
+    private(set) var unprocessedRecordingItems: [BackupPreflightItem] = []
+    private(set) var unprocessedRecordingsError: String?
+    private(set) var isLoadingUnprocessedRecordings = false
 
     var selectedMeetingId: UUID? {
         selectedMeetingIds.count == 1 ? selectedMeetingIds.first : nil
@@ -73,6 +78,7 @@ final class SidebarViewModel {
     // MARK: - Active Database & Vault
 
     @ObservationIgnored private let settings: AppSettings
+    @ObservationIgnored private let unprocessedRecordingDiscarder: UnprocessedRecordingDiscarder
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
     var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
@@ -87,6 +93,8 @@ final class SidebarViewModel {
     @ObservationIgnored private var allTagsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var allProjectsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectCatalogObservationTracker = ProjectCatalogObservationTracker()
+    @ObservationIgnored private var unprocessedRecordingsContextGeneration: UInt64 = 0
+    @ObservationIgnored private var unprocessedRecordingsRefreshGeneration: UInt64 = 0
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
@@ -108,8 +116,17 @@ final class SidebarViewModel {
     @ObservationIgnored private var projectObservationGeneration = 0
     @ObservationIgnored private var tagObservationGeneration = 0
 
-    init(settings: AppSettings = .shared) {
+    init(
+        settings: AppSettings = .shared,
+        unprocessedRecordingDiscarder: @escaping UnprocessedRecordingDiscarder = { dbQueue, sessionId, vaultId in
+            try await MeetingRepository(dbQueue: dbQueue).discardUnprocessedBatchSessionSafely(
+                id: sessionId,
+                expectedVaultId: vaultId
+            )
+        }
+    ) {
         self.settings = settings
+        self.unprocessedRecordingDiscarder = unprocessedRecordingDiscarder
     }
 
     /// プロジェクト名から vault 内の URL を返す。
@@ -182,6 +199,8 @@ final class SidebarViewModel {
         meetingReferencesObservationGeneration &+= 1
         projectObservationGeneration &+= 1
         tagObservationGeneration &+= 1
+        unprocessedRecordingsContextGeneration &+= 1
+        unprocessedRecordingsRefreshGeneration &+= 1
         allProjectItems.removeAll()
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
@@ -191,6 +210,9 @@ final class SidebarViewModel {
         areSearchTagsLoaded = false
         allAvailableTags.removeAll()
         selectedInstruction = nil
+        unprocessedRecordingItems.removeAll()
+        unprocessedRecordingsError = nil
+        isLoadingUnprocessedRecordings = false
         clearMeetingSelection()
 
         guard let dbQueue = database?.dbQueue else {
@@ -225,6 +247,7 @@ final class SidebarViewModel {
         startTagsObservation(dbQueue: dbQueue)
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
         startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
+        Task { await refreshUnprocessedRecordings() }
         workspaceChangeObserver = DistributedNotificationCenter.default().addObserver(
             forName: DahliaWorkspaceChangeNotification.name(vaultID: vaultId),
             object: nil,
@@ -243,9 +266,55 @@ final class SidebarViewModel {
                 self.restartMeetingSearchIfNeeded(dbQueue: dbQueue, vaultId: vaultId)
                 self.startSelectedMeetingObservationIfNeeded()
                 self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
+                await self.refreshUnprocessedRecordings()
                 self.workspaceChangeToken &+= 1
             }
         }
+    }
+
+    func refreshUnprocessedRecordings() async {
+        guard let dbQueue, let vaultId = currentVault?.id else {
+            unprocessedRecordingItems = []
+            unprocessedRecordingsError = nil
+            isLoadingUnprocessedRecordings = false
+            return
+        }
+        unprocessedRecordingsRefreshGeneration &+= 1
+        let generation = unprocessedRecordingsRefreshGeneration
+        isLoadingUnprocessedRecordings = true
+        do {
+            let items = try await BackupService(dbQueue: dbQueue).preflightItems(vaultId: vaultId)
+            guard isCurrentUnprocessedRecordingsRefresh(generation, vaultId: vaultId) else { return }
+            unprocessedRecordingItems = items
+            unprocessedRecordingsError = nil
+            isLoadingUnprocessedRecordings = false
+        } catch {
+            guard isCurrentUnprocessedRecordingsRefresh(generation, vaultId: vaultId) else { return }
+            unprocessedRecordingsError = error.localizedDescription
+            isLoadingUnprocessedRecordings = false
+        }
+    }
+
+    private func isCurrentUnprocessedRecordingsRefresh(_ generation: UInt64, vaultId: UUID) -> Bool {
+        generation == unprocessedRecordingsRefreshGeneration && currentVault?.id == vaultId
+    }
+
+    func discardUnprocessedRecording(_ item: BackupPreflightItem) async {
+        guard let dbQueue, let vaultId = currentVault?.id, item.vaultId == vaultId else { return }
+        let contextGeneration = unprocessedRecordingsContextGeneration
+        unprocessedRecordingsError = nil
+        do {
+            _ = try await unprocessedRecordingDiscarder(dbQueue, item.sessionId, item.vaultId)
+            guard isCurrentUnprocessedRecordingsContext(contextGeneration, vaultId: vaultId) else { return }
+            await refreshUnprocessedRecordings()
+        } catch {
+            guard isCurrentUnprocessedRecordingsContext(contextGeneration, vaultId: vaultId) else { return }
+            unprocessedRecordingsError = error.localizedDescription
+        }
+    }
+
+    private func isCurrentUnprocessedRecordingsContext(_ generation: UInt64, vaultId: UUID) -> Bool {
+        generation == unprocessedRecordingsContextGeneration && currentVault?.id == vaultId
     }
 
     private func startVaultObservation(dbQueue: DatabaseQueue) {

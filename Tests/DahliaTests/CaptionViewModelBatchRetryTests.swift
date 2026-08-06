@@ -8,6 +8,54 @@ import GRDB
     @MainActor
     struct CaptionViewModelBatchRetryTests {
         @Test
+        func startupRecoveryRefreshesOffscreenUnprocessedRecordings() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "offscreen-startup-recovery",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await batch.database.dbQueue.write { db in
+                guard var session = try RecordingSessionRecord.fetchOne(db, key: batch.session.id) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                session.batchLastAttemptAt = batch.now
+                try session.update(db)
+                try db.execute(sql: """
+                CREATE TRIGGER fail_startup_batch_recovery
+                BEFORE UPDATE OF batchLastError ON recording_sessions
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced startup recovery failure');
+                END
+                """)
+            }
+            var recoveredState: BackupPreflightItem.State?
+            let viewModel = CaptionViewModel()
+
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL
+            ) {
+                recoveredState = try? await BackupService(dbQueue: batch.database.dbQueue)
+                    .preflightItems(vaultId: batch.meeting.vaultId)
+                    .first?
+                    .state
+            }
+
+            #expect(await waitUntil { viewModel.batchTranscriptionRecoveryAlert != nil })
+            #expect(recoveredState == nil)
+            try await batch.database.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_startup_batch_recovery")
+            }
+
+            viewModel.retryBatchTranscriptionRecovery()
+
+            #expect(await waitUntil { recoveredState == .interrupted })
+            #expect(viewModel.batchTranscriptionRecoveryAlert == nil)
+        }
+
+        @Test
         func retainedCompletedAudioOffersRetranscription() async throws {
             let batch = try BatchAudioTestFixture(
                 name: "retained-completed-audio",
@@ -57,6 +105,51 @@ import GRDB
             )
 
             #expect(confirmation.initialLanguageSelection == .manual(localeIdentifier: "ja_JP"))
+        }
+
+        @Test
+        func manualBatchTranscriptionCannotStartWhileRecording() async throws {
+            let batch = try BatchAudioTestFixture(
+                name: "manual-batch-during-recording",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
+
+            viewModel.isListening = true
+            await viewModel.presentManualBatchTranscription(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                dbQueue: batch.database.dbQueue
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation == nil)
+
+            viewModel.isListening = false
+            await viewModel.presentManualBatchTranscription(
+                sessionId: batch.session.id,
+                meetingId: batch.meeting.id,
+                dbQueue: batch.database.dbQueue
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation != nil)
+
+            viewModel.isListening = true
+            viewModel.confirmBatchTranscription(
+                languageSelection: .manual(localeIdentifier: "ja_JP"),
+                retainAudioAfterBatch: false,
+                summaryGenerationOptions: nil
+            )
+            #expect(viewModel.pendingBatchTranscriptionConfirmation != nil)
+            let session = try await batch.database.dbQueue.read { db in
+                try #require(try RecordingSessionRecord.fetchOne(db, key: batch.session.id))
+            }
+            #expect(session.batchLastAttemptAt == nil)
         }
 
         @Test
@@ -182,6 +275,61 @@ import GRDB
             viewModel.cancelFailedBatchRetranscription()
             #expect(await waitUntil { viewModel.batchTranscriptionState == nil })
             #expect(viewModel.canRetranscribeBatchAudio)
+        }
+
+        @Test
+        func interruptedRetranscriptionOffersResumeConfirmation() async throws {
+            let completedAt = Date(timeIntervalSince1970: 1_776_384_002)
+            let batch = try BatchAudioTestFixture(
+                name: "interrupted-retranscription",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 1,
+                retainAudioAfterBatch: true,
+                batchCompletedAt: completedAt
+            )
+            defer { batch.removeFiles() }
+            try await batch.recordMicrophoneAudio()
+            try await batch.database.dbQueue.write { db in
+                guard var session = try RecordingSessionRecord.fetchOne(db, key: batch.session.id) else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                session.batchLastAttemptAt = completedAt.addingTimeInterval(1)
+                session.batchLastError = L10n.batchTranscriptionInterrupted
+                session.batchFailureKind = .transcriptionInterrupted
+                try session.update(db)
+            }
+
+            let viewModel = CaptionViewModel()
+            viewModel.configureBatchTranscription(
+                dbQueue: batch.database.dbQueue,
+                managedRootURL: batch.managedRootURL,
+                recoverExistingSessions: false
+            )
+            viewModel.loadMeeting(
+                batch.meeting.id,
+                dbQueue: batch.database.dbQueue,
+                projectURL: nil,
+                projectId: nil,
+                vaultURL: batch.vaultURL
+            )
+            #expect(await waitUntil {
+                viewModel.batchTranscriptionState == .interrupted(
+                    sessionId: batch.session.id,
+                    isRetranscription: true
+                ) && viewModel.canRetranscribeBatchAudio
+            })
+
+            viewModel.presentAvailableBatchRetranscription()
+
+            #expect(await waitUntil { viewModel.pendingBatchTranscriptionConfirmation != nil })
+            let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
+            #expect(confirmation.isRetranscription)
+            #expect(confirmation.sessionId == batch.session.id)
+            viewModel.pendingBatchTranscriptionConfirmation = nil
+
+            viewModel.cancelFailedBatchRetranscription()
+
+            #expect(await waitUntil { viewModel.batchTranscriptionState == nil })
         }
 
         @Test

@@ -9,6 +9,8 @@ struct MeetingListSidebarView: View {
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
     let onOpenProjectManagement: () -> Void
+    let isShowingUnprocessedRecordings: Bool
+    let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
 
@@ -125,6 +127,24 @@ struct MeetingListSidebarView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.manageProjects)
+
+            Button(action: onShowUnprocessedRecordings) {
+                HStack {
+                    sidebarActionLabel(
+                        L10n.unprocessedRecordings,
+                        systemImage: "waveform.badge.exclamationmark",
+                        isSelected: isShowingUnprocessedRecordings
+                    )
+                    if !sidebarViewModel.unprocessedRecordingItems.isEmpty {
+                        Text(sidebarViewModel.unprocessedRecordingItems.count, format: .number)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .help(L10n.unprocessedRecordings)
+            .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
 
             if showsCustomerIntelligence {
                 Button(action: onOpenCustomerIntelligence) {

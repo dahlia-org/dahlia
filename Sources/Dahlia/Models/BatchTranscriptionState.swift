@@ -6,6 +6,7 @@ enum BatchTranscriptionState: Equatable {
     case awaitingConfirmation(sessionId: UUID)
     case queued(sessionId: UUID)
     case running(sessionId: UUID, progress: BatchTranscriptionProgress? = nil)
+    case interrupted(sessionId: UUID, isRetranscription: Bool)
     case completed(sessionId: UUID)
     case failed(sessionId: UUID, message: String)
     case retranscriptionFailed(sessionId: UUID, message: String)
@@ -16,6 +17,7 @@ enum BatchTranscriptionState: Equatable {
              let .awaitingConfirmation(sessionId),
              let .queued(sessionId),
              let .running(sessionId, _),
+             let .interrupted(sessionId, _),
              let .completed(sessionId),
              let .failed(sessionId, _),
              let .retranscriptionFailed(sessionId, _):
@@ -25,10 +27,19 @@ enum BatchTranscriptionState: Equatable {
 
     var blocksSummaryGeneration: Bool {
         switch self {
-        case .recording, .awaitingConfirmation, .queued, .running, .failed, .retranscriptionFailed:
+        case .recording, .awaitingConfirmation, .queued, .running, .interrupted, .failed, .retranscriptionFailed:
             true
         case .completed:
             false
+        }
+    }
+
+    var changesUnprocessedRecordingsProjection: Bool {
+        switch self {
+        case let .running(_, progress):
+            progress == nil
+        case .recording, .awaitingConfirmation, .queued, .interrupted, .completed, .failed, .retranscriptionFailed:
+            true
         }
     }
 
@@ -55,6 +66,9 @@ enum BatchTranscriptionState: Equatable {
         }
         if session.batchCompletedAt != nil, !isRetranscription {
             return .completed(sessionId: session.id)
+        }
+        if session.batchFailureKind == .transcriptionInterrupted {
+            return .interrupted(sessionId: session.id, isRetranscription: isRetranscription)
         }
         if let error = session.batchLastError?.nilIfBlank {
             return isRetranscription

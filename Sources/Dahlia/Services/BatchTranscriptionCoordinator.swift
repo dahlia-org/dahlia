@@ -35,7 +35,6 @@ actor BatchTranscriptionCoordinator {
         BatchLanguageDetectionCandidateSnapshot
     ) async -> Void
 
-    static let maximumAutomaticAttemptCount = 3
     private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
 
     struct Job {
@@ -65,6 +64,10 @@ actor BatchTranscriptionCoordinator {
     private var processorTask: Task<Void, Never>?
     private var pendingProgressUpdate: BatchTranscriptionUpdate?
     private var progressNotificationTask: Task<Void, Never>?
+    private var isShuttingDown = false
+    private var shutdownInterruptionSessionIds: Set<UUID> = []
+    private var activeConfirmationCount = 0
+    private var confirmationDrainWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         dbQueue: DatabaseQueue,
@@ -96,31 +99,26 @@ actor BatchTranscriptionCoordinator {
         self.onStateChange = onStateChange
     }
 
-    func recoverAndEnqueue() async {
+    func recoverAndEnqueue() async throws {
         _ = await recordingAudioStore?.reconcileStartup()
         await recoverCompletedAudioPurges()
-        let sessionIds = await (try? dbQueue.read { db in
-            try RecordingSessionRecord
-                .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
-                .filter(sql: "batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt")
-                .filter(Column("batchDiscardedAt") == nil)
-                .order(Column("startedAt").asc)
-                .fetchAll(db)
-                .filter(Self.shouldAutomaticallyRetry)
-                .map(\.id)
-        }) ?? []
-
-        for sessionId in sessionIds {
-            await enqueue(sessionId: sessionId)
-        }
+        try await markPreviouslyQueuedSessionsInterrupted()
     }
 
     func enqueue(sessionId: UUID) async {
+        guard !isShuttingDown else {
+            shutdownInterruptionSessionIds.insert(sessionId)
+            return
+        }
         guard runningSessionId != sessionId, !pendingSessionIds.contains(sessionId) else { return }
         do {
             guard try await claimForQueue(sessionId: sessionId) else { return }
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptionQueue"])
+            return
+        }
+        guard !isShuttingDown else {
+            shutdownInterruptionSessionIds.insert(sessionId)
             return
         }
         pendingSessionIds.append(sessionId)
@@ -136,7 +134,11 @@ actor BatchTranscriptionCoordinator {
     }
 
     func recordRecordingFailure(sessionId: UUID, message: String) async {
-        await persistFailure(sessionId: sessionId, message: message, kind: .recordingStorage)
+        await persistFailureIfPossible(
+            sessionId: sessionId,
+            message: message,
+            kind: .recordingStorage
+        )
         ErrorReportingService.capture(
             BatchRecordingFailure(message: message),
             context: ["source": "batchRecording"]
@@ -145,7 +147,7 @@ actor BatchTranscriptionCoordinator {
 
     private func processQueue() async {
         repeat {
-            while !pendingSessionIds.isEmpty {
+            while !pendingSessionIds.isEmpty, !Task.isCancelled {
                 let sessionId = pendingSessionIds.removeFirst()
                 runningSessionId = sessionId
                 runningProgress = nil
@@ -156,7 +158,7 @@ actor BatchTranscriptionCoordinator {
                     try await process(sessionId: sessionId)
                     await notify(meetingId: meetingId, state: .completed(sessionId: sessionId))
                 } catch is CancellationError {
-                    // The session was completed or explicitly discarded after it was queued.
+                    // Shutdown and explicit discard persist their own terminal state.
                 } catch {
                     await recordFailure(sessionId: sessionId, error: error)
                 }
@@ -165,8 +167,112 @@ actor BatchTranscriptionCoordinator {
             }
             await languageDetector.unload()
             await speechRecognizer.unload()
+            if Task.isCancelled { break }
         } while !pendingSessionIds.isEmpty
         processorTask = nil
+    }
+
+    func shutdown() async throws {
+        isShuttingDown = true
+        await waitForConfirmationDrain()
+        shutdownInterruptionSessionIds.formUnion(pendingSessionIds)
+        if let runningSessionId {
+            shutdownInterruptionSessionIds.insert(runningSessionId)
+        }
+        pendingSessionIds.removeAll()
+        let task = processorTask
+        task?.cancel()
+        await task?.value
+
+        var firstError: (any Error)?
+        for sessionId in Array(shutdownInterruptionSessionIds) {
+            do {
+                try await persistInterrupted(sessionId: sessionId)
+                shutdownInterruptionSessionIds.remove(sessionId)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if let firstError {
+            isShuttingDown = false
+            throw firstError
+        }
+    }
+
+    #if DEBUG
+        func isWaitingForConfirmationDrainForTesting() -> Bool {
+            isShuttingDown && activeConfirmationCount > 0
+        }
+    #endif
+
+    private func markPreviouslyQueuedSessionsInterrupted() async throws {
+        let sessionIds = try await dbQueue.write { db -> [UUID] in
+            let ids = try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT id FROM recording_sessions
+                WHERE transcriptionMode = ?
+                  AND batchDiscardedAt IS NULL
+                  AND batchLastAttemptAt IS NOT NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
+                  AND batchLastError IS NULL
+                """,
+                arguments: [TranscriptionMode.batch.rawValue]
+            )
+            guard !ids.isEmpty else { return ids }
+            var updateArguments: StatementArguments = [
+                L10n.batchTranscriptionInterrupted,
+                BatchFailureKind.transcriptionInterrupted.rawValue,
+                Date.now,
+            ]
+            updateArguments += StatementArguments(ids)
+            try db.execute(
+                sql: """
+                UPDATE recording_sessions
+                SET batchLastError = ?, batchFailureKind = ?, updatedAt = ?
+                WHERE id IN (\(ids.map { _ in "?" }.joined(separator: ", ")))
+                """,
+                arguments: updateArguments
+            )
+            return ids
+        }
+        for sessionId in sessionIds {
+            guard let context = try? failureNotificationContext(for: sessionId) else { continue }
+            await notify(
+                meetingId: context.meetingId,
+                state: .interrupted(sessionId: sessionId, isRetranscription: context.isRetranscription)
+            )
+        }
+    }
+
+    private func persistInterrupted(sessionId: UUID) async throws {
+        try await persistFailure(
+            sessionId: sessionId,
+            message: L10n.batchTranscriptionInterrupted,
+            kind: .transcriptionInterrupted
+        )
+    }
+
+    private func waitForConfirmationDrain() async {
+        guard activeConfirmationCount > 0 else { return }
+        await withCheckedContinuation { continuation in
+            confirmationDrainWaiters.append(continuation)
+        }
+    }
+
+    private func beginConfirmation() throws {
+        guard !isShuttingDown else { throw CancellationError() }
+        activeConfirmationCount += 1
+    }
+
+    private func finishConfirmation() {
+        activeConfirmationCount -= 1
+        guard activeConfirmationCount == 0 else { return }
+        let waiters = confirmationDrainWaiters
+        confirmationDrainWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     private func process(sessionId: UUID) async throws {
@@ -507,7 +613,7 @@ actor BatchTranscriptionCoordinator {
                 .transcription
             }
         }
-        await persistFailure(sessionId: sessionId, message: message, kind: kind)
+        await persistFailureIfPossible(sessionId: sessionId, message: message, kind: kind)
         var context = [
             "source": "batchTranscription",
             "failureKind": kind.rawValue,
@@ -521,8 +627,8 @@ actor BatchTranscriptionCoordinator {
         ErrorReportingService.capture(error, context: context)
     }
 
-    private func persistFailure(sessionId: UUID, message: String, kind: BatchFailureKind? = nil) async {
-        let didPersist = await (try? dbQueue.write { db in
+    private func persistFailure(sessionId: UUID, message: String, kind: BatchFailureKind? = nil) async throws {
+        let didPersist = try await dbQueue.write { db in
             try db.execute(
                 sql: """
                 UPDATE recording_sessions
@@ -534,12 +640,31 @@ actor BatchTranscriptionCoordinator {
                 arguments: [message, kind, Date.now, sessionId]
             )
             return db.changesCount == 1
-        }) ?? false
+        }
         if didPersist, let result = try? failureNotificationContext(for: sessionId) {
-            let state: BatchTranscriptionState = result.isRetranscription
-                ? .retranscriptionFailed(sessionId: sessionId, message: message)
-                : .failed(sessionId: sessionId, message: message)
+            let state: BatchTranscriptionState = if kind == .transcriptionInterrupted {
+                .interrupted(sessionId: sessionId, isRetranscription: result.isRetranscription)
+            } else if result.isRetranscription {
+                .retranscriptionFailed(sessionId: sessionId, message: message)
+            } else {
+                .failed(sessionId: sessionId, message: message)
+            }
             await notify(meetingId: result.meetingId, state: state)
+        }
+    }
+
+    private func persistFailureIfPossible(
+        sessionId: UUID,
+        message: String,
+        kind: BatchFailureKind? = nil
+    ) async {
+        do {
+            try await persistFailure(sessionId: sessionId, message: message, kind: kind)
+        } catch {
+            ErrorReportingService.capture(
+                error,
+                context: ["source": "batchTranscriptionFailurePersistence"]
+            )
         }
     }
 
@@ -723,6 +848,8 @@ extension BatchTranscriptionCoordinator {
         retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
+        try beginConfirmation()
+        defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirm(
             sessionId: sessionId,
             languageSelection: languageSelection,
@@ -744,6 +871,8 @@ extension BatchTranscriptionCoordinator {
         retainAudioAfterBatch: Bool,
         onConfirmed: @Sendable (BatchTranscriptionConfirmationService.Result) async -> Void
     ) async throws {
+        try beginConfirmation()
+        defer { finishConfirmation() }
         let result = try await BatchTranscriptionConfirmationService.confirmRetranscription(
             sessionIds: sessionIds,
             languageSelection: languageSelection,

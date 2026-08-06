@@ -73,6 +73,40 @@ import GRDB
         }
 
         @Test
+        func terminationIsRejectedUntilFailedPersistenceRecovers() async throws {
+            let fixture = try makeDatabase()
+            let store = TranscriptStore()
+            store.recordingStartTime = Date(timeIntervalSince1970: 1_776_384_000)
+            let service = try await MeetingPersistenceService.createNew(
+                store: store,
+                dbQueue: fixture.database.dbQueue,
+                vaultId: fixture.vault.id,
+                projectId: nil,
+                initialName: "Termination persistence failure"
+            )
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: """
+                CREATE TRIGGER fail_termination_persistence
+                BEFORE UPDATE OF endedAt ON recording_sessions
+                BEGIN
+                    SELECT RAISE(ABORT, 'forced termination failure');
+                END
+                """)
+            }
+            let viewModel = CaptionViewModel()
+            viewModel.setFailedPersistenceServiceForTesting(service)
+
+            let failureMessage = await viewModel.prepareForTermination()
+            #expect(failureMessage != nil)
+            #expect(failureMessage == viewModel.errorMessage)
+
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(sql: "DROP TRIGGER fail_termination_persistence")
+            }
+            #expect(await viewModel.prepareForTermination() == nil)
+        }
+
+        @Test
         func appendStopDoesNotAssignLegacySegmentsToNewSession() async throws {
             let fixture = try makeDatabase()
             let meetingId = UUID.v7()

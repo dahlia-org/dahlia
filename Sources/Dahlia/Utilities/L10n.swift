@@ -1207,6 +1207,15 @@ enum L10n {
     static var reviewBatchTranscription: String { String(localized: "Review and Start", bundle: bundle) }
     static var batchTranscriptionQueued: String { String(localized: "Waiting to transcribe the recording…", bundle: bundle) }
     static var batchTranscriptionRunning: String { String(localized: "Creating a high-accuracy transcript…", bundle: bundle) }
+    static var batchTranscriptionInterrupted: String { String(
+        localized: "Transcription was interrupted. The recording is safe and ready to resume.",
+        bundle: bundle
+    ) }
+    static var batchTranscriptionRecoveryFailedTitle: String {
+        String(localized: "Could not recover interrupted transcriptions", bundle: bundle)
+    }
+
+    static var resumeBatchTranscription: String { String(localized: "Resume Transcription", bundle: bundle) }
     static func batchTranscriptionFileProgress(completed: Int, total: Int) -> String {
         String(localized: "Files completed: \(completed) of \(total)", bundle: bundle)
     }
@@ -1350,7 +1359,19 @@ enum L10n {
         String(localized: "Could not save the recording: \(reason)", bundle: bundle)
     }
 
+    static var terminationPersistenceFailedTitle: String {
+        String(localized: "Dahlia could not quit", bundle: bundle)
+    }
+
+    static var recordingPersistenceRetryFailed: String {
+        String(localized: "The recording could not be saved. Dahlia will remain open so you can try again.", bundle: bundle)
+    }
+
     static var batchAudioFormatUnavailable: String { String(localized: "No compatible audio format is available.", bundle: bundle) }
+    static var batchRecordingAudioUnavailable: String {
+        String(localized: "Recording audio is incomplete and cannot be transcribed.", bundle: bundle)
+    }
+
     static var batchAudioRangeInvalid: String { String(localized: "The recorded audio range is invalid or damaged.", bundle: bundle) }
     static var batchAnalysisDidNotAdvance: String { String(localized: "Speech analysis could not read the recorded audio.", bundle: bundle) }
 
@@ -1532,6 +1553,10 @@ enum L10n {
     static var unprocessedRecordings: String { String(localized: "Unprocessed Recordings", bundle: bundle) }
     static var unprocessedRecordingsDescription: String { String(
         localized: "Transcribe or discard every unprocessed recording before creating or restoring a backup.",
+        bundle: bundle
+    ) }
+    static var noUnprocessedRecordingsDescription: String { String(
+        localized: "Recordings that need manual transcription will appear here.",
         bundle: bundle
     ) }
     static var awaitingTranscription: String { String(localized: "Waiting for transcription", bundle: bundle) }

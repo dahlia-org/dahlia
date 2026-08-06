@@ -42,7 +42,7 @@ import GRDB
         }
 
         @Test
-        func nextLanguageDetectionOverlapsPreviousSpeechRecognition() async throws {
+        func languageDetectionAndSpeechRecognitionRunSerially() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguagePipeline",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -52,7 +52,6 @@ import GRDB
             defer { fixture.removeFiles() }
             try await createSegmentedRecording(fixture: fixture)
             let probe = BatchPipelineProbe()
-            defer { Task { await probe.releaseSecondDetection() } }
             let coordinator = BatchTranscriptionCoordinator(
                 dbQueue: fixture.database.dbQueue,
                 managedRootURL: fixture.managedRootURL,
@@ -65,10 +64,6 @@ import GRDB
             )
 
             await coordinator.enqueue(sessionId: fixture.session.id)
-            try await waitUntil { await probe.secondDetectionIsActive }
-            try await waitUntil { await probe.recognitionCallCount > 0 }
-            #expect(await probe.recognitionStartedDuringSecondDetection)
-            await probe.releaseSecondDetection()
             try await waitUntil {
                 (try? fixture.database.dbQueue.read { db in
                     try RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchCompletedAt != nil
@@ -82,6 +77,12 @@ import GRDB
                     .fetchAll(db)
             }
             #expect(transcripts.count == 2)
+            #expect(await probe.events == [
+                "detection-1",
+                "recognition-1",
+                "detection-2",
+                "recognition-2",
+            ])
         }
 
         @Test
@@ -337,7 +338,6 @@ import GRDB
             #expect(failed.0.batchLastError == L10n.batchLanguageModelPreparationFailed)
             #expect(failed.0.batchFailureKind == .transcription)
             #expect(failed.0.batchAttemptCount == 1)
-            #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(failed.0))
             #expect(failed.1 == 0)
             for segment in context.audioSegments {
                 #expect(FileManager.default.fileExists(
@@ -510,39 +510,15 @@ import GRDB
     }
 
     private actor BatchPipelineProbe {
-        private var secondDetectionContinuation: CheckedContinuation<Void, Never>?
-        private var recognitionWaiters: [CheckedContinuation<Void, Never>] = []
-        private(set) var secondDetectionIsActive = false
-        private(set) var recognitionStartedDuringSecondDetection = false
-        private(set) var recognitionCallCount = 0
+        private(set) var events: [String] = []
 
-        func holdSecondDetection() async {
-            secondDetectionIsActive = true
-            let waiters = recognitionWaiters
-            recognitionWaiters.removeAll()
-            for waiter in waiters {
-                waiter.resume()
-            }
-            await withCheckedContinuation { continuation in
-                secondDetectionContinuation = continuation
-            }
-            secondDetectionIsActive = false
+        func recordDetection(_ callCount: Int) {
+            events.append("detection-\(callCount)")
         }
 
-        func recordRecognitionStart() async {
-            recognitionCallCount += 1
-            guard recognitionCallCount == 1 else { return }
-            if !secondDetectionIsActive {
-                await withCheckedContinuation { continuation in
-                    recognitionWaiters.append(continuation)
-                }
-            }
-            recognitionStartedDuringSecondDetection = secondDetectionIsActive
-        }
-
-        func releaseSecondDetection() {
-            secondDetectionContinuation?.resume()
-            secondDetectionContinuation = nil
+        func recordRecognitionStart() {
+            let recognitionCount = events.count(where: { $0.hasPrefix("recognition-") }) + 1
+            events.append("recognition-\(recognitionCount)")
         }
     }
 
@@ -559,11 +535,8 @@ import GRDB
             allowedLanguageIdentifiers _: Set<String>?
         ) async -> BatchLanguageDetectionOutcome {
             callCount += 1
-            if callCount == 2 {
-                await probe.holdSecondDetection()
-                return .confidentDetection("en")
-            }
-            return .confidentDetection("ja")
+            await probe.recordDetection(callCount)
+            return .confidentDetection(callCount == 1 ? "ja" : "en")
         }
 
         func unload() async {}

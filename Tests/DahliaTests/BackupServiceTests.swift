@@ -128,6 +128,12 @@ import GRDB
             let items = try await service.preflightItems()
             #expect(items.count == 1)
             #expect(items.first?.state == .awaitingConfirmation)
+            #expect(items.first?.canTranscribe == false)
+            #expect(items.first?.canStartTranscription == false)
+            #expect(items.first?.isWorkInProgress == false)
+            #expect(items.first?.canDiscard == true)
+            #expect(items.first?.hasUnavailableAudio == true)
+            #expect(items.first?.statusDescription == L10n.batchRecordingAudioUnavailable)
             await #expect(throws: BackupServiceError.unresolvedAudio(1)) {
                 try await service.createGeneration()
             }
@@ -151,7 +157,7 @@ import GRDB
                     """,
                     arguments: [
                         UUID.v7(), fixture.session.id, RecordingAudioSource.microphone.rawValue,
-                        "legacy/microphone.caf", 16_000, 1, fixture.now, 160,
+                        "legacy/microphone.caf", 16000, 1, fixture.now, 160,
                         fixture.now, fixture.now, RecordingAudioStorageLocation.vault.rawValue,
                     ]
                 )
@@ -287,11 +293,11 @@ import GRDB
             let oldQueue = try DatabaseQueue(path: oldURL.path)
             try AppDatabaseManager.migrator.migrate(oldQueue, upTo: migrationIdentifier)
             let vault = makeVault(name: "Preserved old vault", path: rootURL.appending(path: "Vault").path)
-            let metadata = BackupMetadata(
+            let metadata = try BackupMetadata(
                 formatVersion: BackupMetadata.currentFormatVersion,
                 generationId: .v7(),
                 createdAt: .now,
-                schemaVersion: try #require(AppDatabaseManager.schemaVersion(from: migrationIdentifier)),
+                schemaVersion: #require(AppDatabaseManager.schemaVersion(from: migrationIdentifier)),
                 migrationIdentifier: migrationIdentifier,
                 appVersion: "0.9.0",
                 appBuild: "9",
@@ -331,10 +337,10 @@ import GRDB
                 .appending(path: marker.stagedFilename)
             let staged = try DatabaseQueue(path: stagedURL.path)
             let result = try await staged.read { db in
-                (
-                    try AppDatabaseManager.migrator.hasCompletedMigrations(db),
-                    try AppDatabaseManager.hasExpectedCurrentSchema(db),
-                    try String.fetchOne(db, sql: "SELECT name FROM vaults WHERE id = ?", arguments: [vault.id])
+                try (
+                    AppDatabaseManager.migrator.hasCompletedMigrations(db),
+                    AppDatabaseManager.hasExpectedCurrentSchema(db),
+                    String.fetchOne(db, sql: "SELECT name FROM vaults WHERE id = ?", arguments: [vault.id])
                 )
             }
             #expect(result.0)
@@ -352,7 +358,7 @@ import GRDB
                 state: .ready,
                 partialRelativePath: "session/microphone/0.partial.caf",
                 finalRelativePath: "session/microphone/0.caf",
-                sampleRate: 16_000,
+                sampleRate: 16000,
                 channelCount: 1,
                 sealedFrameCount: 160,
                 sessionStartOffsetSeconds: 0,

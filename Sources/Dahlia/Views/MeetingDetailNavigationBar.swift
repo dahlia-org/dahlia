@@ -17,7 +17,13 @@ private struct MeetingActionsMenu: View {
                 SummaryOpenMenu(viewModel: viewModel)
             }
 
-            if viewModel.canRetranscribeBatchAudio {
+            if viewModel.canStartOrResumeBatchTranscription {
+                Button(
+                    viewModel.batchTranscriptionActionTitle,
+                    systemImage: "waveform",
+                    action: viewModel.presentAvailableBatchRetranscription
+                )
+            } else if viewModel.canRetranscribeBatchAudio {
                 Button(
                     L10n.retranscribe,
                     systemImage: "arrow.clockwise",

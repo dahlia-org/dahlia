@@ -87,7 +87,7 @@ import GRDB
                 managedRootURL: fixture.managedRootURL,
                 onStateChange: { _ in }
             )
-            await coordinator.recoverAndEnqueue()
+            try await coordinator.recoverAndEnqueue()
             let segments = try await fixture.database.dbQueue.read { db in
                 try RecordingAudioSegmentRecord
                     .filter(Column("recordingSessionId") == fixture.session.id)
@@ -149,7 +149,8 @@ import GRDB
             }
             #expect(session.batchLastError == nil)
             #expect(BatchTranscriptionState.derive(from: session) == .completed(sessionId: fixture.session.id))
-            #expect(!(await updateProbe.hasFailure))
+            let hasFailure = await updateProbe.hasFailure
+            #expect(!hasFailure)
         }
 
         private func makeTranscriptRecord(

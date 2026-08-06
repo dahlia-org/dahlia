@@ -33,6 +33,7 @@
 "Restore this backup?" = "このバックアップを復元しますか？";
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "現在のデータベースを先に退避してから置き換え、Dahliaを再起動します。音声ファイルとアプリ設定は復元されません。";
 "Unprocessed Recordings" = "未処理の録音";
+"Recordings that need manual transcription will appear here." = "手動で文字起こしする必要がある録音がここに表示されます。";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "バックアップの作成または復元前に、すべての未処理録音を文字起こしするか破棄してください。";
 "Waiting for transcription" = "文字起こし待ち";
 "Transcription in progress" = "文字起こし中";
@@ -718,6 +719,9 @@
 "Review and Start" = "確認して開始";
 "Waiting to transcribe the recording…" = "録音の文字起こしを待機しています…";
 "Creating a high-accuracy transcript…" = "高精度な文字起こしを作成しています…";
+"Transcription was interrupted. The recording is safe and ready to resume." = "文字起こしは中断されました。録音は保持されており、再開できます。";
+"Could not recover interrupted transcriptions" = "中断された文字起こしを復旧できませんでした";
+"Resume Transcription" = "文字起こしを再開";
 "Files completed: %lld of %lld" = "完了ファイル: %1$lld / %2$lld";
 "High-accuracy transcription completed." = "高精度な文字起こしが完了しました。";
 "Batch transcription failed: %@" = "バッチ文字起こしに失敗しました: %@";
@@ -764,7 +768,10 @@
 "The audio writer could not keep up with the recording." = "音声ファイルへの書き込みが録音に追いつきませんでした。";
 "The audio writer was closed before the buffer was saved." = "音声バッファを保存する前に録音処理が終了しました。";
 "Could not save the recording: %@" = "録音を保存できませんでした: %@";
+"Dahlia could not quit" = "Dahliaを終了できませんでした";
+"The recording could not be saved. Dahlia will remain open so you can try again." = "録音を保存できませんでした。再試行できるよう、Dahliaを開いたままにします。";
 "No compatible audio format is available." = "互換性のある音声形式を利用できません。";
+"Recording audio is incomplete and cannot be transcribed." = "録音音声が不完全なため、文字起こしできません。";
 "The recorded audio range is invalid or damaged." = "録音音声の範囲が不正または破損しています。";
 "Speech analysis could not read the recorded audio." = "音声解析で録音データを読み取れませんでした。";
 
