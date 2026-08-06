@@ -102,40 +102,65 @@ actor BackupService {
         }
     }
 
-    func preflightItems() throws -> [BackupPreflightItem] {
+    func preflightItems(vaultId: UUID? = nil) throws -> [BackupPreflightItem] {
         try dbQueue.read { db in
+            var sql = """
+            SELECT recording_sessions.id AS sessionId,
+                   recording_sessions.meetingId,
+                   meetings.name AS meetingName,
+                   recording_sessions.startedAt,
+                   recording_sessions.endedAt,
+                   recording_sessions.batchLastAttemptAt,
+                   recording_sessions.batchLastError,
+                   recording_sessions.batchFailureKind,
+                   NOT EXISTS (
+                       SELECT 1 FROM recording_audio_segments AS candidate
+                       WHERE candidate.recordingSessionId = recording_sessions.id
+                         AND (
+                             candidate.state != ?
+                             OR candidate.purgedAt IS NOT NULL
+                             OR NOT EXISTS (
+                                 SELECT 1 FROM recording_audio_segment_ranges AS candidateRanges
+                                 WHERE candidateRanges.audioSegmentId = candidate.id
+                             )
+                         )
+                   ) AS hasCompleteAudio
+            FROM recording_sessions
+            JOIN meetings ON meetings.id = recording_sessions.meetingId
+            WHERE recording_sessions.transcriptionMode = ?
+              AND recording_sessions.batchCompletedAt IS NULL
+              AND recording_sessions.batchDiscardedAt IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM recording_audio_segments
+                  WHERE recording_audio_segments.recordingSessionId = recording_sessions.id
+                    AND recording_audio_segments.state != ?
+              )
+            """
+            var arguments: StatementArguments = [
+                RecordingAudioSegmentState.ready.rawValue,
+                TranscriptionMode.batch.rawValue,
+                RecordingAudioSegmentState.purged.rawValue,
+            ]
+            if let vaultId {
+                sql += " AND meetings.vaultId = ?"
+                arguments += [vaultId]
+            }
+            sql += " ORDER BY recording_sessions.startedAt ASC"
             let rows = try Row.fetchAll(
                 db,
-                sql: """
-                SELECT recording_sessions.id AS sessionId,
-                       recording_sessions.meetingId,
-                       meetings.name AS meetingName,
-                       recording_sessions.startedAt,
-                       recording_sessions.endedAt,
-                       recording_sessions.batchLastAttemptAt,
-                       recording_sessions.batchLastError
-                FROM recording_sessions
-                JOIN meetings ON meetings.id = recording_sessions.meetingId
-                WHERE recording_sessions.transcriptionMode = ?
-                  AND recording_sessions.batchCompletedAt IS NULL
-                  AND recording_sessions.batchDiscardedAt IS NULL
-                  AND (
-                    EXISTS (
-                        SELECT 1 FROM recording_audio_segments
-                        WHERE recording_audio_segments.recordingSessionId = recording_sessions.id
-                          AND recording_audio_segments.state != ?
-                    )
-                  )
-                ORDER BY recording_sessions.startedAt ASC
-                """,
-                arguments: [TranscriptionMode.batch.rawValue, RecordingAudioSegmentState.purged.rawValue]
+                sql: sql,
+                arguments: arguments
             )
             return rows.map { row in
                 let endedAt: Date? = row["endedAt"]
                 let attemptedAt: Date? = row["batchLastAttemptAt"]
                 let failure: String? = row["batchLastError"]
+                let failureKind: BatchFailureKind? = row["batchFailureKind"]
+                let hasCompleteAudio: Bool = row["hasCompleteAudio"]
                 let state: BackupPreflightItem.State = if endedAt == nil {
                     .recording
+                } else if failureKind == .transcriptionInterrupted {
+                    .interrupted
                 } else if failure?.nilIfBlank != nil {
                     .failed
                 } else if attemptedAt == nil {
@@ -149,7 +174,10 @@ actor BackupService {
                     meetingName: (row["meetingName"] as String).nilIfBlank ?? L10n.untitledMeeting,
                     startedAt: row["startedAt"],
                     state: state,
-                    failureMessage: failure
+                    failureMessage: failure,
+                    canTranscribe: hasCompleteAudio
+                        && failureKind != .recordingRecovery
+                        && failureKind != .recordingAudioPermanent
                 )
             }
         }

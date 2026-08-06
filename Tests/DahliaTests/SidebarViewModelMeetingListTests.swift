@@ -172,7 +172,7 @@ import GRDB
                     try insertMeeting(
                         vaultId: fixture.vault.id,
                         name: "Recent \(index)",
-                        createdAt: start.addingTimeInterval(1_000 + TimeInterval(index)),
+                        createdAt: start.addingTimeInterval(1000 + TimeInterval(index)),
                         in: db
                     )
                 }
@@ -379,7 +379,7 @@ import GRDB
     }
 
     @MainActor
-    private final class SidebarViewModelMeetingListFixture {
+    final class SidebarViewModelMeetingListFixture {
         let manager: AppDatabaseManager
         let vault: VaultRecord
 

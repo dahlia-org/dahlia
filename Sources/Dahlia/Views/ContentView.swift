@@ -14,6 +14,7 @@ struct ContentView: View {
     private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
+    @State private var isShowingUnprocessedRecordings = false
 
     var body: some View {
         NavigationSplitView {
@@ -24,6 +25,8 @@ struct ContentView: View {
                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                 onShowUpcomingSchedule: returnToCalendarSchedule,
                 onOpenProjectManagement: { openWindow(id: WindowID.projectManager) },
+                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                onShowUnprocessedRecordings: showUnprocessedRecordings,
                 showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                 onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
             )
@@ -86,6 +89,12 @@ struct ContentView: View {
         .task {
             presentPermissionGuideIfNeeded()
         }
+        .task(id: sidebarViewModel.currentVault?.id) {
+            await sidebarViewModel.refreshUnprocessedRecordings()
+        }
+        .onChange(of: viewModel.batchTranscriptionState) { _, _ in
+            Task { await sidebarViewModel.refreshUnprocessedRecordings() }
+        }
         .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
             BatchTranscriptionConfirmationView(
                 locales: viewModel.batchTranscriptionLocaleOptions(
@@ -120,6 +129,9 @@ struct ContentView: View {
         }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
+            if !newValue.isEmpty {
+                isShowingUnprocessedRecordings = false
+            }
             handleMeetingSelectionChange(newValue)
             syncChatContext()
         }
@@ -182,11 +194,18 @@ struct ContentView: View {
         sidebarViewModel.selectedMeetingIds.isEmpty
             && !viewModel.hasDraftMeeting
             && viewModel.currentMeetingId == nil
+            && !isShowingUnprocessedRecordings
     }
 
     @ViewBuilder
     private var detailView: some View {
-        if sidebarViewModel.selectedMeetingIds.count > 1 {
+        if isShowingUnprocessedRecordings {
+            UnprocessedRecordingsView(
+                items: sidebarViewModel.unprocessedRecordingItems,
+                captionViewModel: viewModel,
+                sidebarViewModel: sidebarViewModel
+            )
+        } else if sidebarViewModel.selectedMeetingIds.count > 1 {
             MultipleMeetingSelectionView(
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel
@@ -217,10 +236,18 @@ struct ContentView: View {
     }
 
     private func returnToCalendarSchedule() {
+        isShowingUnprocessedRecordings = false
         if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.isEmpty {
             viewModel.clearCurrentMeeting()
         }
         sidebarViewModel.clearMeetingSelection()
+    }
+
+    private func showUnprocessedRecordings() {
+        viewModel.clearCurrentMeeting()
+        sidebarViewModel.clearMeetingSelection()
+        isShowingUnprocessedRecordings = true
+        Task { await sidebarViewModel.refreshUnprocessedRecordings() }
     }
 
     private func handleMeetingSelection(_ meetingId: UUID) {

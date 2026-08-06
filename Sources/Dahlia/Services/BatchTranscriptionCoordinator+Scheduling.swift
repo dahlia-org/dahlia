@@ -5,17 +5,4 @@ extension BatchTranscriptionCoordinator: BatchTranscriptionScheduling {
         await onStateChange(BatchTranscriptionUpdate(meetingId: meetingId, state: state))
     }
 
-    static func shouldAutomaticallyRetry(_ session: RecordingSessionRecord) -> Bool {
-        guard session.transcriptionMode == .batch,
-              session.batchCompletedAt == nil || session.isBatchRetranscriptionPending,
-              session.batchDiscardedAt == nil else { return false }
-        guard session.batchFailureKind != .recordingRecovery,
-              session.batchFailureKind != .recordingAudioPermanent,
-              session.batchFailureKind != .transcriptionStalled else { return false }
-        guard session.batchLastAttemptAt != nil || session.batchLastError?.nilIfBlank != nil else {
-            return false
-        }
-        guard session.batchLastError?.nilIfBlank != nil else { return true }
-        return session.batchAttemptCount < maximumAutomaticAttemptCount
-    }
 }

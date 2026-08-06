@@ -233,12 +233,13 @@ sequenceDiagram
 
 固定言語では、同一音源、同一形式、同一 locale で session time が連続する verified CAF range を一つの論理 run として
 同じ `SpeechAnalyzer` へ順次供給する。ready CAF 自体は結合または変更せず、入力は一 buffer ずつ遅延読出しする。
-自動判定は CAF ごとの言語判定と認識の overlap を維持するため、CAF 単位の transcription のままとする。
+自動判定は CAF ごとの言語判定結果を使うため、CAF 単位の transcription のままとし、一つずつ処理する。
 
 各 Apple Speech 解析には無進捗 watchdog を設ける。解析開始、論理 run 内の CAF slice 消費、認識結果の受信を進捗とし、
 解析開始時に固定した設定時間（1／2／3分、既定1分）進捗がなければ `SpeechAnalyzer` をキャンセルして失敗として保存する。
-これは総処理時間の上限ではない。停止失敗では ready CAF を保持し、startup recovery の自動再試行から除外する。
-ユーザーはミーティング詳細に復元される失敗理由と再文字起こし操作から、保持音声を明示的に再処理できる。
+これは総処理時間の上限ではない。ready CAF は保持し、起動時は音声整合性の復旧だけを行って batch recognition を自動再開しない。
+前プロセスで queued／running だった処理は中断状態へ移し、ユーザーはミーティング詳細または未処理録音一覧から
+保持音声を明示的に再処理できる。複数の batch recognition は一つずつ直列実行する。
 再試行成功後は通常の `retainAudioAfterBatch` 方針に戻り、保持しない設定なら音声を purge する。
 
 認識途中の結果は正本へ部分反映しない。成功した全結果を `BatchTranscriptionPersistence.complete` が一つの transaction で
@@ -277,6 +278,8 @@ sequenceDiagram
 
 この順序により、capture 停止前に受理した callback、router、recognition、audio writer、transcript persistence を
 それぞれの owner が drain する。batch transcription の enqueue はこの停止処理に含めず、音声確定とユーザー確認の後に行う。
+アプリ終了時はこの録音停止と永続化を待ち、進行中の batch recognition をキャンセルして中断状態を保存してから終了する。
+文字起こしの永続化を完了できない場合は終了を承認せず、エラーを表示して保存の再試行を可能にする。
 
 ## Failure と recovery
 
@@ -287,7 +290,7 @@ sequenceDiagram
 | live recognition failure in realtime | 正本文字起こしを継続できない | fatal runtime failure として停止へ進む |
 | live recognition failure in batch | audio writer が健全なら正本音声を継続 | 字幕／chat を縮退し、停止後 batch を維持 |
 | realtime SQLite failure | pending event と順序を writer actor 内で保持 | exponential backoff。停止時にも flush failure を返す |
-| batch recognition failure | 旧成功 transcript と ready audio を保持 | failure state を保存し、再試行可能 |
+| batch recognition failure／アプリ終了による中断 | 旧成功 transcript と ready audio を保持 | failure／interrupted state を保存し、手動再試行を待つ |
 | Apple Speech の無進捗停止 | 旧成功 transcript と ready audio を保持 | 待機時間を含む専用 failure state を保存し、自動再試行せず手動再試行を待つ |
 | batch audio feature extraction failure | 認識済み transcript と通常の purge policy を維持 | sanitized error を報告し、該当 feature columns を `NULL` にする |
 | crash 中の partial／finalizing CAF | 既存 ready segment を変更しない | startup reconciler が DB state と file を照合 |

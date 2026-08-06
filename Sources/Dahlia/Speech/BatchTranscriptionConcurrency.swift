@@ -2,7 +2,7 @@ import Foundation
 import Speech
 
 enum BatchTranscriptionConcurrency {
-    static let appleSpeechMaximum = 4
+    static let appleSpeechMaximum = 1
 }
 
 actor BatchTranscriptionConcurrencyLimiter {
@@ -129,7 +129,7 @@ struct SerializedBatchLanguageDetector: BatchLanguageDetecting {
     }
 }
 
-/// Uses up to four Apple Speech analyzers until the framework reports resource exhaustion, then retries serially.
+/// Serializes Apple Speech analysis and retries one transient resource-exhaustion failure.
 struct AdaptiveBatchSpeechRecognizer: BatchSpeechRecognizing {
     private let recognizer: any BatchSpeechRecognizing
     private let limiter = BatchTranscriptionConcurrencyLimiter(limit: BatchTranscriptionConcurrency.appleSpeechMaximum)

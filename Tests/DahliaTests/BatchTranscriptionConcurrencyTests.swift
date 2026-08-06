@@ -57,7 +57,7 @@ import Speech
         }
 
         @Test
-        func appleRecognitionAllowsFourConcurrentRequests() async throws {
+        func appleRecognitionSerializesConcurrentRequests() async throws {
             let recognizer = SuspendingSpeechRecognizer()
             defer { Task { await recognizer.resumeAll() } }
             let adaptive = AdaptiveBatchSpeechRecognizer(recognizer: recognizer)
@@ -69,12 +69,11 @@ import Speech
             async let fourth = adaptive.recognize(audioURL: URL(fileURLWithPath: "/tmp/fourth.caf"), locale: locale)
             async let fifth = adaptive.recognize(audioURL: URL(fileURLWithPath: "/tmp/fifth.caf"), locale: locale)
 
-            try await waitUntil { await recognizer.callCount == 4 }
-            #expect(await recognizer.maximumActiveCount == 4)
-            await recognizer.resumeNext()
-            try await waitUntil { await recognizer.callCount == 5 }
-            #expect(await recognizer.maximumActiveCount == 4)
-            await recognizer.resumeAll()
+            for expectedCallCount in 1 ... 5 {
+                try await waitUntil { await recognizer.callCount == expectedCallCount }
+                #expect(await recognizer.maximumActiveCount == 1)
+                await recognizer.resumeNext()
+            }
             _ = try await (first, second, third, fourth, fifth)
         }
 
@@ -104,54 +103,6 @@ import Speech
                 )
             }
             #expect(await recognizer.callCount == 2)
-        }
-
-        @Test
-        func insufficientResourcesWaitsForInflightRecognitionThenKeepsSerialLimit() async throws {
-            let recognizer = ConcurrentResourceLimitedSpeechRecognizer()
-            defer { Task { await recognizer.resumeAll() } }
-            let adaptive = AdaptiveBatchSpeechRecognizer(recognizer: recognizer)
-            let locale = Locale(identifier: "ja_JP")
-
-            let held = Task {
-                try await adaptive.recognize(
-                    audioURL: URL(fileURLWithPath: "/tmp/held.caf"),
-                    locale: locale
-                )
-            }
-            try await waitUntil { await recognizer.activeCount == 1 }
-            let fallback = Task {
-                try await adaptive.recognize(
-                    audioURL: URL(fileURLWithPath: "/tmp/fallback.caf"),
-                    locale: locale
-                )
-            }
-            try await waitUntil { await recognizer.didReturnResourceFailure }
-            await Task.yield()
-            #expect(await recognizer.callCount == 2)
-
-            await recognizer.resumeNext()
-            _ = try await held.value
-            _ = try await fallback.value
-            #expect(await recognizer.callCount == 3)
-            #expect(await adaptive.currentConcurrencyLimit() == 1)
-
-            let nextA = Task {
-                try await adaptive.recognize(audioURL: URL(fileURLWithPath: "/tmp/next-a.caf"), locale: locale)
-            }
-            let nextB = Task {
-                try await adaptive.recognize(audioURL: URL(fileURLWithPath: "/tmp/next-b.caf"), locale: locale)
-            }
-            try await waitUntil { await recognizer.callCount == 4 }
-            #expect(await recognizer.activeCount == 1)
-            await recognizer.resumeNext()
-            try await waitUntil { await recognizer.callCount == 5 }
-            #expect(await recognizer.activeCount == 1)
-            await recognizer.resumeNext()
-            _ = try await (nextA.value, nextB.value)
-
-            await adaptive.unload()
-            #expect(await adaptive.currentConcurrencyLimit() == 4)
         }
 
         @Test

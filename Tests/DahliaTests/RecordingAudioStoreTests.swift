@@ -429,7 +429,6 @@ import GRDB
             #expect(session?.endedAt == endedAt)
             #expect(session?.batchFailureKind == .recordingRecovery)
             #expect(session?.batchLastError?.nilIfBlank != nil)
-            #expect(session.map(BatchTranscriptionCoordinator.shouldAutomaticallyRetry) == false)
         }
 
         @Test

@@ -36,6 +36,7 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
         case recording
         case awaitingConfirmation
         case processing
+        case interrupted
         case failed
     }
 
@@ -47,4 +48,38 @@ struct BackupPreflightItem: Identifiable, Equatable, Sendable {
     let startedAt: Date
     let state: State
     let failureMessage: String?
+    let canTranscribe: Bool
+
+    var canStartTranscription: Bool {
+        guard canTranscribe else { return false }
+        return switch state {
+        case .awaitingConfirmation, .interrupted, .failed:
+            true
+        case .recording, .processing:
+            false
+        }
+    }
+
+    var isWorkInProgress: Bool {
+        state == .recording || state == .processing
+    }
+
+    var canDiscard: Bool {
+        !isWorkInProgress
+    }
+
+    var hasUnavailableAudio: Bool {
+        !canTranscribe && canDiscard
+    }
+
+    var statusDescription: String {
+        if hasUnavailableAudio { return L10n.batchRecordingAudioUnavailable }
+        return switch state {
+        case .recording: L10n.recordingInProgress
+        case .awaitingConfirmation: L10n.awaitingTranscription
+        case .processing: L10n.transcriptionInProgress
+        case .interrupted: L10n.batchTranscriptionInterrupted
+        case .failed: failureMessage ?? L10n.transcriptionFailed
+        }
+    }
 }

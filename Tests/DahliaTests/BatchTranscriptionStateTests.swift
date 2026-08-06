@@ -92,7 +92,7 @@ import Foundation
         }
 
         @Test
-        func automaticRetryStopsAfterThreeRecordedFailures() {
+        func interruptedAttemptRequiresManualResume() {
             let now = Date(timeIntervalSince1970: 1_776_384_000)
             var session = RecordingSessionRecord(
                 id: .v7(),
@@ -104,30 +104,16 @@ import Foundation
                 createdAt: now,
                 updatedAt: now,
                 transcriptionMode: .batch,
-                batchLastError: "damaged",
-                batchAttemptCount: 2
+                batchLastError: L10n.batchTranscriptionInterrupted,
+                batchAttemptCount: 1
             )
-
-            #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
-
-            session.batchFailureKind = .recordingRecovery
-            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
-            session.batchFailureKind = .recordingAudioPermanent
-            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
-            session.batchFailureKind = nil
-
-            session.batchAttemptCount = BatchTranscriptionCoordinator.maximumAutomaticAttemptCount
-            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
-
-            // 実行中クラッシュでエラーが記録されなかったセッションは、回数にかかわらず復旧対象にする。
-            session.batchLastError = nil
             session.batchLastAttemptAt = now.addingTimeInterval(11)
-            #expect(BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
+            session.batchFailureKind = .transcriptionInterrupted
 
-            // 停止後にまだ確認されていないセッションは、再起動しても自動実行しない。
-            session.batchLastAttemptAt = nil
-            session.batchAttemptCount = 0
-            #expect(!BatchTranscriptionCoordinator.shouldAutomaticallyRetry(session))
+            #expect(BatchTranscriptionState.derive(from: session) == .interrupted(
+                sessionId: session.id,
+                isRetranscription: false
+            ))
         }
     }
 #endif

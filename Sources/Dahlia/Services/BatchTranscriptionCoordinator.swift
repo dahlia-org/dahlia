@@ -35,7 +35,6 @@ actor BatchTranscriptionCoordinator {
         BatchLanguageDetectionCandidateSnapshot
     ) async -> Void
 
-    static let maximumAutomaticAttemptCount = 3
     private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
 
     struct Job {
@@ -65,6 +64,7 @@ actor BatchTranscriptionCoordinator {
     private var processorTask: Task<Void, Never>?
     private var pendingProgressUpdate: BatchTranscriptionUpdate?
     private var progressNotificationTask: Task<Void, Never>?
+    private var isShuttingDown = false
 
     init(
         dbQueue: DatabaseQueue,
@@ -99,28 +99,23 @@ actor BatchTranscriptionCoordinator {
     func recoverAndEnqueue() async {
         _ = await recordingAudioStore?.reconcileStartup()
         await recoverCompletedAudioPurges()
-        let sessionIds = await (try? dbQueue.read { db in
-            try RecordingSessionRecord
-                .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
-                .filter(sql: "batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt")
-                .filter(Column("batchDiscardedAt") == nil)
-                .order(Column("startedAt").asc)
-                .fetchAll(db)
-                .filter(Self.shouldAutomaticallyRetry)
-                .map(\.id)
-        }) ?? []
-
-        for sessionId in sessionIds {
-            await enqueue(sessionId: sessionId)
-        }
+        await markPreviouslyQueuedSessionsInterrupted()
     }
 
     func enqueue(sessionId: UUID) async {
+        guard !isShuttingDown else {
+            await persistInterrupted(sessionId: sessionId)
+            return
+        }
         guard runningSessionId != sessionId, !pendingSessionIds.contains(sessionId) else { return }
         do {
             guard try await claimForQueue(sessionId: sessionId) else { return }
         } catch {
             ErrorReportingService.capture(error, context: ["source": "batchTranscriptionQueue"])
+            return
+        }
+        guard !isShuttingDown else {
+            await persistInterrupted(sessionId: sessionId)
             return
         }
         pendingSessionIds.append(sessionId)
@@ -145,7 +140,7 @@ actor BatchTranscriptionCoordinator {
 
     private func processQueue() async {
         repeat {
-            while !pendingSessionIds.isEmpty {
+            while !pendingSessionIds.isEmpty, !Task.isCancelled {
                 let sessionId = pendingSessionIds.removeFirst()
                 runningSessionId = sessionId
                 runningProgress = nil
@@ -156,7 +151,7 @@ actor BatchTranscriptionCoordinator {
                     try await process(sessionId: sessionId)
                     await notify(meetingId: meetingId, state: .completed(sessionId: sessionId))
                 } catch is CancellationError {
-                    // The session was completed or explicitly discarded after it was queued.
+                    // Shutdown and explicit discard persist their own terminal state.
                 } catch {
                     await recordFailure(sessionId: sessionId, error: error)
                 }
@@ -165,8 +160,69 @@ actor BatchTranscriptionCoordinator {
             }
             await languageDetector.unload()
             await speechRecognizer.unload()
+            if Task.isCancelled { break }
         } while !pendingSessionIds.isEmpty
         processorTask = nil
+    }
+
+    func shutdown() async {
+        isShuttingDown = true
+        let interruptedSessionIds = Array(Set(pendingSessionIds + [runningSessionId].compactMap(\.self)))
+        pendingSessionIds.removeAll()
+        let task = processorTask
+        task?.cancel()
+        await task?.value
+        for sessionId in interruptedSessionIds {
+            await persistInterrupted(sessionId: sessionId)
+        }
+    }
+
+    private func markPreviouslyQueuedSessionsInterrupted() async {
+        let sessionIds: [UUID] = await (try? dbQueue.write { db -> [UUID] in
+            let ids = try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT id FROM recording_sessions
+                WHERE transcriptionMode = ?
+                  AND batchDiscardedAt IS NULL
+                  AND batchLastAttemptAt IS NOT NULL
+                  AND (batchCompletedAt IS NULL OR batchLastAttemptAt > batchCompletedAt)
+                  AND batchLastError IS NULL
+                """,
+                arguments: [TranscriptionMode.batch.rawValue]
+            )
+            guard !ids.isEmpty else { return ids }
+            var updateArguments: StatementArguments = [
+                L10n.batchTranscriptionInterrupted,
+                BatchFailureKind.transcriptionInterrupted.rawValue,
+                Date.now,
+            ]
+            updateArguments += StatementArguments(ids)
+            try db.execute(
+                sql: """
+                UPDATE recording_sessions
+                SET batchLastError = ?, batchFailureKind = ?, updatedAt = ?
+                WHERE id IN (\(ids.map { _ in "?" }.joined(separator: ", ")))
+                """,
+                arguments: updateArguments
+            )
+            return ids
+        }) ?? []
+        for sessionId in sessionIds {
+            guard let context = try? failureNotificationContext(for: sessionId) else { continue }
+            await notify(
+                meetingId: context.meetingId,
+                state: .interrupted(sessionId: sessionId, isRetranscription: context.isRetranscription)
+            )
+        }
+    }
+
+    private func persistInterrupted(sessionId: UUID) async {
+        await persistFailure(
+            sessionId: sessionId,
+            message: L10n.batchTranscriptionInterrupted,
+            kind: .transcriptionInterrupted
+        )
     }
 
     private func process(sessionId: UUID) async throws {
@@ -536,9 +592,13 @@ actor BatchTranscriptionCoordinator {
             return db.changesCount == 1
         }) ?? false
         if didPersist, let result = try? failureNotificationContext(for: sessionId) {
-            let state: BatchTranscriptionState = result.isRetranscription
-                ? .retranscriptionFailed(sessionId: sessionId, message: message)
-                : .failed(sessionId: sessionId, message: message)
+            let state: BatchTranscriptionState = if kind == .transcriptionInterrupted {
+                .interrupted(sessionId: sessionId, isRetranscription: result.isRetranscription)
+            } else if result.isRetranscription {
+                .retranscriptionFailed(sessionId: sessionId, message: message)
+            } else {
+                .failed(sessionId: sessionId, message: message)
+            }
             await notify(meetingId: result.meetingId, state: state)
         }
     }

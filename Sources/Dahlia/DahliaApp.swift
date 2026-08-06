@@ -205,6 +205,9 @@ struct DahliaApp: App {
         appDatabase = db
         sidebarViewModel.setAppDatabase(db)
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue)
+        appDelegate.terminationHandler = { [weak viewModel] in
+            await viewModel?.prepareForTermination()
+        }
 
         let repo = MeetingRepository(dbQueue: db.dbQueue)
         if let lastVault = try? repo.fetchLastOpenedVault() {
@@ -395,6 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var isWaitingForCodexShutdown = false
     private var processLock: AdvisoryFileLock?
+    @MainActor var terminationHandler: (@MainActor () async -> String?)?
 
     func applicationWillFinishLaunching(_: Notification) {
         do {
@@ -435,6 +439,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isWaitingForCodexShutdown else { return .terminateLater }
         isWaitingForCodexShutdown = true
         Task {
+            if let failureMessage = await terminationHandler?() {
+                isWaitingForCodexShutdown = false
+                sender.reply(toApplicationShouldTerminate: false)
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = L10n.terminationPersistenceFailedTitle
+                alert.informativeText = failureMessage
+                alert.runModal()
+                return
+            }
             await CodexAppServerService.shared.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
         }

@@ -203,10 +203,35 @@ final class CaptionViewModel: ObservableObject {
     var canRetranscribeBatchAudio: Bool {
         guard !retranscribableBatchSessionIds.isEmpty, !isListening else { return false }
         return switch batchTranscriptionState {
-        case nil, .failed, .retranscriptionFailed:
+        case nil, .failed, .retranscriptionFailed, .interrupted:
             true
         default:
             false
+        }
+    }
+
+    var canStartOrResumeBatchTranscription: Bool {
+        guard !isListening else { return false }
+        return switch batchTranscriptionState {
+        case .awaitingConfirmation:
+            true
+        case .failed, .retranscriptionFailed, .interrupted:
+            !retranscribableBatchSessionIds.isEmpty
+        default:
+            false
+        }
+    }
+
+    var batchTranscriptionActionTitle: String {
+        switch batchTranscriptionState {
+        case .awaitingConfirmation:
+            L10n.reviewBatchTranscription
+        case .interrupted:
+            L10n.resumeBatchTranscription
+        case .failed, .retranscriptionFailed:
+            L10n.retryBatchTranscription
+        default:
+            L10n.transcribe
         }
     }
 
@@ -511,6 +536,8 @@ final class CaptionViewModel: ObservableObject {
     private var liveTranscriptRelay: FinalizedLiveTranscriptRelay?
     private var isChatLiveModeEnabled = false
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
+    private var recordingStopTask: Task<Void, Never>?
+    private var isTerminationRequested = false
     private let recordingSessionController = RecordingSessionController()
     private var activeTranscriptionPlan: TranscriptionSessionPlan?
     private var activeRecordingSessionId: UUID?
@@ -683,9 +710,33 @@ final class CaptionViewModel: ObservableObject {
         }
     }
 
+    func prepareForTermination() async -> String? {
+        isTerminationRequested = true
+        while case .starting = recordingLifecycle {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        if case .recording = recordingLifecycle {
+            stopListening()
+        }
+        await recordingStopTask?.value
+        guard await retryFailedPersistenceIfNeeded() else {
+            isTerminationRequested = false
+            return errorMessage ?? L10n.recordingPersistenceRetryFailed
+        }
+        await batchTranscriptionCoordinator?.shutdown()
+        return nil
+    }
+
+    #if DEBUG
+        func setFailedPersistenceServiceForTesting(_ service: MeetingPersistenceService) {
+            failedPersistenceService = service
+            failedPersistenceMeetingId = service.meetingId
+        }
+    #endif
+
     func retryBatchTranscription() {
         switch batchTranscriptionState {
-        case let .failed(sessionId, _):
+        case let .failed(sessionId, _), let .interrupted(sessionId, false):
             guard canRetranscribeBatchAudio,
                   let meetingId = currentMeetingId else { return }
             presentBatchTranscriptionConfirmation(
@@ -695,18 +746,19 @@ final class CaptionViewModel: ObservableObject {
                 dbQueue: currentDbQueue,
                 vaultURL: currentVaultURL
             )
-        case let .retranscriptionFailed(sessionId, _):
+        case let .retranscriptionFailed(sessionId, _), let .interrupted(sessionId, true):
             guard let meetingId = currentMeetingId,
                   let dbQueue = currentDbQueue else { return }
+            let expectedState = batchTranscriptionState
             Task {
                 let sessionIds = await (try? Self.fetchRetryableBatchSessionIds(
                     meetingId: meetingId,
-                    state: batchTranscriptionState,
+                    state: expectedState,
                     dbQueue: dbQueue
                 )) ?? []
                 guard !sessionIds.isEmpty,
                       currentMeetingId == meetingId,
-                      case .retranscriptionFailed = batchTranscriptionState else { return }
+                      batchTranscriptionState == expectedState else { return }
                 retranscribableBatchSessionIds = sessionIds
                 presentBatchRetranscriptionConfirmation(
                     sessionId: sessionIds.contains(sessionId) ? sessionId : sessionIds[sessionIds.count - 1],
@@ -732,7 +784,9 @@ final class CaptionViewModel: ObservableObject {
 
     func presentAvailableBatchRetranscription() {
         switch batchTranscriptionState {
-        case .failed, .retranscriptionFailed:
+        case .awaitingConfirmation:
+            presentBatchTranscriptionConfirmation()
+        case .failed, .retranscriptionFailed, .interrupted:
             retryBatchTranscription()
         default:
             presentBatchRetranscriptionConfirmation()
@@ -742,23 +796,27 @@ final class CaptionViewModel: ObservableObject {
     private func presentBatchRetranscriptionConfirmation(
         sessionId: UUID,
         sessionIds: [UUID],
-        meetingId: UUID
+        meetingId: UUID,
+        dbQueue suppliedDbQueue: DatabaseQueue? = nil,
+        vaultURL suppliedVaultURL: URL? = nil
     ) {
+        let dbQueue = suppliedDbQueue ?? currentDbQueue
+        let vaultURL = suppliedVaultURL ?? currentVaultURL
         let details = makeBatchTranscriptionConfirmationDetails(
             meetingId: meetingId,
-            dbQueue: currentDbQueue
+            dbQueue: dbQueue
         )
-        if let currentDbQueue, let currentVaultURL {
+        if let dbQueue, let vaultURL {
             batchSummaryContextsBySessionId[sessionId] = BatchSummaryContext(
-                dbQueue: currentDbQueue,
-                vaultURL: currentVaultURL,
+                dbQueue: dbQueue,
+                vaultURL: vaultURL,
                 meetingName: details.meetingName
             )
         }
         let preferences = batchConfirmationPreferences(
             sessionId: sessionId,
             suggestedLocaleIdentifier: selectedLocale,
-            dbQueue: currentDbQueue
+            dbQueue: dbQueue
         )
         pendingBatchTranscriptionConfirmation = BatchTranscriptionConfirmation(
             sessionId: sessionId,
@@ -922,14 +980,54 @@ final class CaptionViewModel: ObservableObject {
         sessionId: UUID,
         meetingId: UUID,
         dbQueue: DatabaseQueue
-    ) {
-        presentBatchTranscriptionConfirmation(
-            sessionId: sessionId,
-            meetingId: meetingId,
-            suggestedLocaleIdentifier: selectedLocale,
-            dbQueue: dbQueue,
-            vaultURL: currentVaultURL
-        )
+    ) async {
+        await presentManualBatchTranscription(sessionId: sessionId, meetingId: meetingId, dbQueue: dbQueue)
+    }
+
+    func presentManualBatchTranscription(
+        sessionId: UUID,
+        meetingId: UUID,
+        dbQueue: DatabaseQueue
+    ) async {
+        do {
+            let snapshot = try await dbQueue.read { db -> (
+                session: RecordingSessionRecord?,
+                pendingRetranscriptionIds: [UUID],
+                vaultURL: URL?
+            ) in
+                let session = try RecordingSessionRecord.fetchOne(db, key: sessionId)
+                let pendingRetranscriptionIds = try RecordingSessionRecord
+                    .filter(Column("meetingId") == meetingId)
+                    .order(Column("startedAt").asc)
+                    .fetchAll(db)
+                    .filter(\.isBatchRetranscriptionPending)
+                    .map(\.id)
+                let vaultURL = try MeetingRecord.fetchOne(db, key: meetingId)
+                    .flatMap { try VaultRecord.fetchOne(db, key: $0.vaultId) }?
+                    .url
+                return (session, pendingRetranscriptionIds, vaultURL)
+            }
+            if snapshot.session?.isBatchRetranscriptionPending == true,
+               !snapshot.pendingRetranscriptionIds.isEmpty {
+                presentBatchRetranscriptionConfirmation(
+                    sessionId: sessionId,
+                    sessionIds: snapshot.pendingRetranscriptionIds,
+                    meetingId: meetingId,
+                    dbQueue: dbQueue,
+                    vaultURL: snapshot.vaultURL
+                )
+                return
+            }
+            presentBatchTranscriptionConfirmation(
+                sessionId: sessionId,
+                meetingId: meetingId,
+                suggestedLocaleIdentifier: selectedLocale,
+                dbQueue: dbQueue,
+                vaultURL: snapshot.vaultURL
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func postponeBatchTranscription() {
@@ -1205,7 +1303,7 @@ final class CaptionViewModel: ObservableObject {
            !(isBatchRecording && recordingMeetingId == update.meetingId) {
             batchTranscriptionState = update.state
             switch update.state {
-            case .failed, .retranscriptionFailed:
+            case .failed, .retranscriptionFailed, .interrupted:
                 let sessionIds = await (try? Self.fetchRetryableBatchSessionIds(
                     meetingId: update.meetingId,
                     state: update.state,
@@ -1243,6 +1341,9 @@ final class CaptionViewModel: ObservableObject {
         case .completed:
             request.completedSessionIDs.insert(sessionID)
             progress = 1
+        case .interrupted:
+            failBatchTranscription(in: request.job, message: L10n.batchTranscriptionInterrupted)
+            return
         case let .failed(_, message), let .retranscriptionFailed(_, message):
             failBatchTranscription(in: request.job, message: message)
             return
@@ -1476,6 +1577,13 @@ final class CaptionViewModel: ObservableObject {
         switch state {
         case let .failed(sessionId, _):
             return eligibleSessionIdSet.contains(sessionId) ? [sessionId] : []
+        case let .interrupted(sessionId, false):
+            return eligibleSessionIdSet.contains(sessionId) ? [sessionId] : []
+        case .interrupted(_, true):
+            let pendingSessionIds = sessions.filter(\.isBatchRetranscriptionPending).map(\.id)
+            guard !pendingSessionIds.isEmpty,
+                  pendingSessionIds.allSatisfy(eligibleSessionIdSet.contains) else { return [] }
+            return pendingSessionIds
         case .retranscriptionFailed:
             let pendingSessionIds = sessions.filter(\.isBatchRetranscriptionPending).map(\.id)
             guard !pendingSessionIds.isEmpty,
@@ -2544,11 +2652,13 @@ final class CaptionViewModel: ObservableObject {
     ) async {
         guard recordingLifecycle == .idle,
               !isFinalizingRecording,
+              !isTerminationRequested,
               !AppDelegate.isBackupRestorePreparationActive else { return }
         guard await retryFailedPersistenceIfNeeded() else { return }
         await refreshDefaultInputDevice()
         guard recordingLifecycle == .idle,
               !isFinalizingRecording,
+              !isTerminationRequested,
               canStartRecording() else { return }
         let previousBatchTranscriptionState = batchTranscriptionState
 
@@ -2633,6 +2743,7 @@ final class CaptionViewModel: ObservableObject {
                 recordingSessionId: recordingSessionId
             )
             await transcriptionEventPipeline?.flushUI()
+            try ensureSessionIsActive(recordingSessionId)
 
             if let failure = pendingRealtimeRecognitionFailure {
                 throw RecordingPipelineFailure(message: failure.message)
@@ -2694,8 +2805,10 @@ final class CaptionViewModel: ObservableObject {
             recordingSessionId: persistenceService?.recordingSessionId
         )
 
-        Task {
-            await finishRecordingStop(stopContext)
+        recordingStopTask = Task { [weak self] in
+            guard let self else { return }
+            await self.finishRecordingStop(stopContext)
+            self.recordingStopTask = nil
         }
     }
 
@@ -4251,7 +4364,7 @@ final class CaptionViewModel: ObservableObject {
     // MARK: - Private Helpers
 
     private func ensureSessionIsActive(_ recordingSessionId: UUID) throws {
-        guard isSessionActive(recordingSessionId), !Task.isCancelled else {
+        guard isSessionActive(recordingSessionId), !isTerminationRequested, !Task.isCancelled else {
             throw CancellationError()
         }
     }
