@@ -77,6 +77,72 @@ import GRDB
             #expect(completed.meeting.status == .ready)
         }
 
+        @Test
+        func speakerPersistenceFailureRollsBackTranscriptAndSpeakerRowsTogether() throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "BatchSpeakerRollback",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_010),
+                duration: 10
+            )
+            defer { fixture.removeFiles() }
+            let segment = TranscriptSegment(
+                sessionId: fixture.session.id,
+                startTime: fixture.now,
+                endTime: fixture.now.addingTimeInterval(1),
+                text: "Atomic",
+                isConfirmed: true,
+                speakerLabel: RecordingAudioSource.microphone.speakerLabel
+            )
+            let speakerId = UUID.v7()
+            let duplicateSpan = SpeakerDiarizationSpan(
+                speakerID: "speaker-0",
+                startTimeSeconds: 0,
+                endTimeSeconds: 1
+            )
+            let speaker = BatchProcessingOutput.Speaker(
+                id: speakerId,
+                localSpeakerId: "speaker-0",
+                representative: SpeakerEmbedding(space: testSpeakerSpace, values: unitSpeakerVector),
+                representativeSource: .diarization,
+                profileUpdateEligible: true,
+                exemplars: [],
+                spans: [duplicateSpan, duplicateSpan]
+            )
+            let output = BatchProcessingOutput(
+                transcriptSegments: [segment],
+                speakerAnalysis: BatchProcessingOutput.SpeakerAnalysis(sources: [
+                    BatchProcessingOutput.SourceAnalysis(
+                        id: .v7(),
+                        audioSource: .microphone,
+                        embeddingSpace: testSpeakerSpace,
+                        speakers: [speaker],
+                        failureReason: nil
+                    ),
+                ]),
+                transcriptSpeakerAssignments: [segment.id: speakerId]
+            )
+
+            #expect(throws: (any Error).self) {
+                try BatchTranscriptionPersistence.complete(
+                    sessionId: fixture.session.id,
+                    meetingId: fixture.meeting.id,
+                    output: output,
+                    completedAt: fixture.now.addingTimeInterval(20),
+                    dbQueue: fixture.database.dbQueue
+                )
+            }
+
+            let counts = try fixture.database.dbQueue.read { db in
+                try (
+                    TranscriptSegmentRecord.fetchCount(db),
+                    SpeakerAnalysisRecord.fetchCount(db),
+                    MeetingSpeakerRecord.fetchCount(db),
+                    SpeakerDiarizationSpanRecord.fetchCount(db)
+                )
+            }
+            #expect(counts == (0, 0, 0, 0))
+        }
+
         private var sampleAudioFeatures: TranscriptAudioFeatures {
             TranscriptAudioFeatures(
                 activeRmsDecibels: -16,
@@ -133,3 +199,23 @@ import GRDB
         }
     }
 #endif
+
+private let testSpeakerSpace = SpeakerEmbeddingSpace(
+    provider: "Test",
+    modelName: "speaker",
+    revision: "1",
+    assetFingerprint: "fingerprint",
+    fluidAudioVersion: "0.15.5",
+    dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
+    sampleRate: 16_000,
+    preprocessing: "mono-float32",
+    excludesOverlap: true,
+    normalization: "L2 unit norm",
+    similarityDefinition: "cosine dot product"
+)
+
+private let unitSpeakerVector: [Float] = {
+    var values = [Float](repeating: 0, count: SpeakerEmbeddingValidation.dimensionCount)
+    values[0] = 1
+    return values
+}()

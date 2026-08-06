@@ -141,6 +141,7 @@ actor RecordingAudioStore {
     private let dbQueue: DatabaseQueue
     private let managedRootURL: URL
     private let beforeFinalizationVerification: BeforeFinalizationVerification?
+    private let onReadLeaseStateChange: (@Sendable (Bool) -> Void)?
     private var sessionLeases: [UUID: AdvisoryFileLock] = [:]
     private var readLeaseCounts: [UUID: Int] = [:]
     private var lastCapacityChecks: [String: ContinuousClock.Instant] = [:]
@@ -149,12 +150,14 @@ actor RecordingAudioStore {
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
         configuration: Configuration = .production,
-        beforeFinalizationVerification: BeforeFinalizationVerification? = nil
+        beforeFinalizationVerification: BeforeFinalizationVerification? = nil,
+        onReadLeaseStateChange: (@Sendable (Bool) -> Void)? = nil
     ) throws {
         self.dbQueue = dbQueue
         self.managedRootURL = managedRootURL.standardizedFileURL
         self.configuration = configuration
         self.beforeFinalizationVerification = beforeFinalizationVerification
+        self.onReadLeaseStateChange = onReadLeaseStateChange
         try Self.ensureDirectory(at: self.managedRootURL)
         try Self.repairManagedPermissions(rootURL: self.managedRootURL)
     }
@@ -533,7 +536,9 @@ actor RecordingAudioStore {
         defer { withExtendedLifetime(temporaryLease) {} }
         try await reconcilePendingSegmentsForReading(sessionId: sessionId)
         readLeaseCounts[sessionId, default: 0] += 1
+        onReadLeaseStateChange?(true)
         defer {
+            onReadLeaseStateChange?(false)
             let remaining = max(0, readLeaseCounts[sessionId, default: 1] - 1)
             readLeaseCounts[sessionId] = remaining == 0 ? nil : remaining
         }

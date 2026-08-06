@@ -44,6 +44,21 @@ struct MeetingSpeakerEvidence: Equatable, Sendable, CustomStringConvertible, Cus
     let representative: SpeakerEmbedding
     let exemplars: [SpeakerEmbedding]
     let profileUpdateEligible: Bool
+    let representativeSource: SpeakerRepresentativeSource
+
+    init(
+        speakerID: String,
+        representative: SpeakerEmbedding,
+        exemplars: [SpeakerEmbedding],
+        profileUpdateEligible: Bool,
+        representativeSource: SpeakerRepresentativeSource = .diarization
+    ) {
+        self.speakerID = speakerID
+        self.representative = representative
+        self.exemplars = exemplars
+        self.profileUpdateEligible = profileUpdateEligible
+        self.representativeSource = representativeSource
+    }
 
     var description: String {
         "MeetingSpeakerEvidence(speakerID: \(speakerID), exemplars: \(exemplars.count), embeddings: <redacted>)"

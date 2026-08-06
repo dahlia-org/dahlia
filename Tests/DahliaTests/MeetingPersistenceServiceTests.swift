@@ -381,6 +381,11 @@ import os
                 existingMeetingId: meetingId,
                 recordingStartDate: createdAt.addingTimeInterval(60)
             )
+            let speakerEvidence = try insertSpeakerDeletionEvidence(
+                sessionId: service.recordingSessionId,
+                dbQueue: database.dbQueue
+            )
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: database.dbQueue) == 1)
             let appendedSegment = TranscriptSegment(
                 sessionId: service.recordingSessionId,
                 startTime: createdAt.addingTimeInterval(60),
@@ -402,6 +407,7 @@ import os
             #expect(persisted.0?.text == legacySegment.text)
             #expect(persisted.1 == nil)
             #expect(persisted.2 == nil)
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: database.dbQueue) == 0)
         }
 
         @Test

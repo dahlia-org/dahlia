@@ -329,6 +329,10 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
     }
 
     func extract(from source: MemoryMappedAudioSampleSource) async throws -> [MeetingSpeakerEvidence] {
+        try await analyze(from: source).speakers
+    }
+
+    func analyze(from source: MemoryMappedAudioSampleSource) async throws -> SpeakerAnalysisExtraction {
         let output = try await host.process(source: source)
         let space = if let injectedSpace {
             injectedSpace
@@ -337,10 +341,14 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
         } else {
             throw SpeakerMatchUnknownReason.analysisFailed
         }
-        return MeetingSpeakerEvidenceBuilder.build(
-            output: output,
-            space: space,
-            qualityPolicy: qualityPolicy
+        return SpeakerAnalysisExtraction(
+            embeddingSpace: space,
+            speakers: MeetingSpeakerEvidenceBuilder.build(
+                output: output,
+                space: space,
+                qualityPolicy: qualityPolicy
+            ),
+            spans: output.spans
         )
     }
 
@@ -392,7 +400,14 @@ actor FluidAudioSpeakerEmbeddingExtractor: SpeakerEmbeddingExtractor {
         }
         return SpeakerDiarizationOutput(
             chunks: chunks,
-            speakerDatabase: result.speakerDatabase ?? [:]
+            speakerDatabase: result.speakerDatabase ?? [:],
+            spans: result.segments.map {
+                SpeakerDiarizationSpan(
+                    speakerID: $0.speakerId,
+                    startTimeSeconds: Double($0.startTimeSeconds),
+                    endTimeSeconds: Double($0.endTimeSeconds)
+                )
+            }
         )
     }
 

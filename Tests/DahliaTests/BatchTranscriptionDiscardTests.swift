@@ -45,6 +45,11 @@ import GRDB
             try await fixture.database.dbQueue.write { db in
                 try audio.insert(db)
             }
+            let speakerEvidence = try insertSpeakerDeletionEvidence(
+                sessionId: fixture.session.id,
+                dbQueue: fixture.database.dbQueue
+            )
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: fixture.database.dbQueue) == 1)
 
             let discarded = try await MeetingRepository(dbQueue: fixture.database.dbQueue)
                 .discardUnprocessedBatchSessionSafely(
@@ -63,6 +68,7 @@ import GRDB
             #expect(result.0?.batchDiscardedAt != nil)
             #expect(result.1?.id == fixture.meeting.id)
             #expect(result.2?.state == .purged)
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: fixture.database.dbQueue) == 0)
         }
 
         @Test

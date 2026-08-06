@@ -2,6 +2,30 @@ import Foundation
 
 protocol SpeakerEmbeddingExtractor: Sendable {
     func extract(from source: MemoryMappedAudioSampleSource) async throws -> [MeetingSpeakerEvidence]
+    func analyze(from source: MemoryMappedAudioSampleSource) async throws -> SpeakerAnalysisExtraction
+}
+
+extension SpeakerEmbeddingExtractor {
+    func analyze(from source: MemoryMappedAudioSampleSource) async throws -> SpeakerAnalysisExtraction {
+        let speakers = try await extract(from: source)
+        return SpeakerAnalysisExtraction(
+            embeddingSpace: speakers.first?.representative.space,
+            speakers: speakers,
+            spans: []
+        )
+    }
+}
+
+struct SpeakerDiarizationSpan: Hashable, Sendable {
+    let speakerID: String
+    let startTimeSeconds: Double
+    let endTimeSeconds: Double
+}
+
+struct SpeakerAnalysisExtraction: Equatable, Sendable {
+    let embeddingSpace: SpeakerEmbeddingSpace?
+    let speakers: [MeetingSpeakerEvidence]
+    let spans: [SpeakerDiarizationSpan]
 }
 
 struct SpeakerEmbeddingQualityPolicy: Equatable, Sendable {
@@ -51,6 +75,17 @@ struct SpeakerEmbeddingChunk: Sendable, CustomStringConvertible, CustomDebugStri
 struct SpeakerDiarizationOutput: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     let chunks: [SpeakerEmbeddingChunk]
     let speakerDatabase: [String: [Float]]
+    let spans: [SpeakerDiarizationSpan]
+
+    init(
+        chunks: [SpeakerEmbeddingChunk],
+        speakerDatabase: [String: [Float]],
+        spans: [SpeakerDiarizationSpan] = []
+    ) {
+        self.chunks = chunks
+        self.speakerDatabase = speakerDatabase
+        self.spans = spans
+    }
 
     var description: String {
         "SpeakerDiarizationOutput(chunks: \(chunks.count), speakers: \(speakerDatabase.count), embeddings: <redacted>)"
@@ -147,7 +182,8 @@ enum MeetingSpeakerEvidenceBuilder {
                     speakerID: speakerID,
                     representative: SpeakerEmbedding(space: space, values: fallback),
                     exemplars: [],
-                    profileUpdateEligible: false
+                    profileUpdateEligible: false,
+                    representativeSource: .speakerDatabase
                 )
             }
 

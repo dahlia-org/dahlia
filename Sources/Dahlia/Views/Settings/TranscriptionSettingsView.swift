@@ -40,6 +40,12 @@ struct TranscriptionSettingsView: View {
                     }
                     .toggleStyle(.switch)
 
+                    Toggle(isOn: $settings.speakerIdentificationEnabled) {
+                        Text(L10n.speakerIdentification)
+                        Text(L10n.speakerIdentificationDescription)
+                    }
+                    .toggleStyle(.switch)
+
                     Toggle(isOn: $generateSummaryAfterBatchTranscription) {
                         Text(L10n.generateSummaryAfterBatchTranscription)
                         Text(L10n.generateSummaryAfterBatchTranscriptionDescription)

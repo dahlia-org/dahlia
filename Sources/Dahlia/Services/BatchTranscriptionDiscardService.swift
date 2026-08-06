@@ -16,6 +16,7 @@ enum BatchTranscriptionDiscardService {
                   .filter(Column("recordingSessionId") == id)
                   .fetchCount(db) > 0 else { return false }
             let now = Date.now
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [session.meetingId], in: db)
             session.batchDiscardedAt = now
             session.batchLastError = nil
             session.batchFailureKind = nil
@@ -24,6 +25,10 @@ enum BatchTranscriptionDiscardService {
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
+            _ = try SpeakerAnalysisRecord
+                .filter(Column("recordingSessionId") == id)
+                .deleteAll(db)
+            _ = try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: now, in: db)
             return true
         }
         guard claimed else { return false }
@@ -51,6 +56,7 @@ enum BatchTranscriptionDiscardService {
                   session.batchDiscardedAt == nil,
                   session.batchLastError?.nilIfBlank != nil else { return false }
             let now = Date.now
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [session.meetingId], in: db)
             session.batchDiscardedAt = now
             session.batchLastError = nil
             session.batchFailureKind = nil
@@ -59,6 +65,10 @@ enum BatchTranscriptionDiscardService {
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
+            _ = try SpeakerAnalysisRecord
+                .filter(Column("recordingSessionId") == id)
+                .deleteAll(db)
+            _ = try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: now, in: db)
             return true
         }
     }

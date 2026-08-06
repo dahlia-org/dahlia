@@ -710,6 +710,8 @@
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "Record audio first, then create a higher-accuracy transcript after recording stops.";
 "Keep Audio After Transcription" = "Keep Audio After Transcription";
 "Keep the protected audio in Dahlia after batch transcription succeeds." = "Keep the protected audio in Dahlia after batch transcription succeeds.";
+"Speaker Identification" = "Speaker Identification";
+"Identify recurring speakers from protected batch audio. Speaker analysis never blocks transcription." = "Identify recurring speakers from protected batch audio. Speaker analysis never blocks transcription.";
 "No transcript yet." = "No transcript yet.";
 "Some transcript could not be loaded: %1$@" = "Some transcript could not be loaded: %1$@";
 "New transcript available" = "New transcript available";

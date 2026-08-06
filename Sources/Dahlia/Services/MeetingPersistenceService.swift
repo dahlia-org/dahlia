@@ -220,6 +220,7 @@ final class MeetingPersistenceService {
         let meetingId = meetingId
         let createsMeeting = createsMeeting
         try? await dbQueue.write { db in
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [meetingId], in: db)
             if createsMeeting {
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
@@ -228,6 +229,7 @@ final class MeetingPersistenceService {
                     .deleteAll(db)
                 _ = try RecordingSessionRecord.deleteOne(db, key: sessionId)
             }
+            _ = try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: .now, in: db)
         }
     }
 

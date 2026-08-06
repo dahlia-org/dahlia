@@ -57,7 +57,7 @@
 --header strip
 
 # 除外
---exclude .build,.swiftpm,DerivedData
+--exclude .build,.build-xc,.swiftpm,DerivedData
 
 # 無効化ルール
 --disable blankLinesAtStartOfScope

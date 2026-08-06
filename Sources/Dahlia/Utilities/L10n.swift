@@ -1635,6 +1635,11 @@ enum L10n {
         localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",
         bundle: bundle
     ) }
+    static var speakerIdentification: String { String(localized: "Speaker Identification", bundle: bundle) }
+    static var speakerIdentificationDescription: String { String(
+        localized: "Identify recurring speakers from protected batch audio. Speaker analysis never blocks transcription.",
+        bundle: bundle
+    ) }
     static var transcriptTranslation: String { String(localized: "Transcript Translation", bundle: bundle) }
     static var transcriptTranslationDescription: String { String(
         localized: "Show translated transcript lines in the selected target language when available.",

@@ -34,6 +34,8 @@ actor BatchTranscriptionCoordinator {
         [BatchLanguageFallback],
         BatchLanguageDetectionCandidateSnapshot
     ) async -> Void
+    typealias SpeakerAnalyzerFactory = @Sendable () -> any BatchSpeakerAnalyzing
+    typealias SpeakerIdentificationEnabledProvider = @Sendable () async -> Bool
 
     static let maximumAutomaticAttemptCount = 3
     private static let signposter = OSSignposter(subsystem: "com.dahlia", category: "BatchTranscription")
@@ -45,17 +47,19 @@ actor BatchTranscriptionCoordinator {
         let projectName: String
     }
 
-    private struct TranslationConfiguration: Sendable {
+    struct TranslationConfiguration: Sendable {
         let isEnabled: Bool
         let targetLanguage: String
     }
 
     private let dbQueue: DatabaseQueue
-    private let recordingAudioStore: RecordingAudioStore?
+    let recordingAudioStore: RecordingAudioStore?
     private let translationService = TranscriptTranslationService()
     private let languageDetector: any BatchLanguageDetecting
     private let speechRecognizer: any BatchSpeechRecognizing
     private let audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing
+    let speakerAnalyzerFactory: SpeakerAnalyzerFactory
+    let speakerIdentificationEnabledProvider: SpeakerIdentificationEnabledProvider
     private let supportedLocalesProvider: @Sendable () async -> [Locale]
     let languageFallbackReporter: LanguageFallbackReporter
     let onStateChange: StateHandler
@@ -69,9 +73,14 @@ actor BatchTranscriptionCoordinator {
     init(
         dbQueue: DatabaseQueue,
         managedRootURL: URL = BatchAudioStorage.managedRootURL,
+        recordingAudioStore: RecordingAudioStore? = nil,
         languageDetector: any BatchLanguageDetecting = WhisperKitBatchLanguageDetector(),
         speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
         audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
+        speakerAnalyzerFactory: @escaping SpeakerAnalyzerFactory = { BatchSpeakerAnalysisService() },
+        speakerIdentificationEnabledProvider: @escaping SpeakerIdentificationEnabledProvider = {
+            await MainActor.run { AppSettings.shared.speakerIdentificationEnabled }
+        },
         supportedLocalesProvider: @escaping @Sendable () async -> [Locale] = {
             await SpeechTranscriber.supportedLocales
         },
@@ -79,13 +88,15 @@ actor BatchTranscriptionCoordinator {
         onStateChange: @escaping StateHandler
     ) {
         self.dbQueue = dbQueue
-        recordingAudioStore = try? RecordingAudioStore(
+        self.recordingAudioStore = recordingAudioStore ?? (try? RecordingAudioStore(
             dbQueue: dbQueue,
             managedRootURL: managedRootURL
-        )
+        ))
         self.languageDetector = SerializedBatchLanguageDetector(detector: languageDetector)
         self.speechRecognizer = AdaptiveBatchSpeechRecognizer(recognizer: speechRecognizer)
         self.audioFeatureAnalyzer = audioFeatureAnalyzer
+        self.speakerAnalyzerFactory = speakerAnalyzerFactory
+        self.speakerIdentificationEnabledProvider = speakerIdentificationEnabledProvider
         self.supportedLocalesProvider = supportedLocalesProvider
         self.languageFallbackReporter = languageFallbackReporter ?? { fallbacks, candidates in
             ErrorReportingService.capture(
@@ -173,13 +184,12 @@ actor BatchTranscriptionCoordinator {
         let state = Self.signposter.beginInterval("Batch transcription")
         defer { Self.signposter.endInterval("Batch transcription", state) }
         let job = try fetchJob(sessionId: sessionId)
-        let segments = try await transcribe(job: job)
-        let records = segments.map { TranscriptSegmentRecord(from: $0, meetingId: job.meeting.id, defaultSessionId: job.session.id) }
+        let output = try await processAudio(job: job)
         let completedAt = Date.now
         try BatchTranscriptionPersistence.complete(
             sessionId: job.session.id,
             meetingId: job.meeting.id,
-            records: records,
+            output: output,
             completedAt: completedAt,
             dbQueue: dbQueue
         )
@@ -251,27 +261,7 @@ actor BatchTranscriptionCoordinator {
         }
     }
 
-    private func transcribe(job: Job) async throws -> [TranscriptSegment] {
-        let translationConfiguration = await MainActor.run {
-            TranslationConfiguration(
-                isEnabled: AppSettings.shared.transcriptTranslationEnabled,
-                targetLanguage: AppSettings.shared.transcriptTranslationTargetLanguage
-            )
-        }
-
-        guard let recordingAudioStore else {
-            throw RecordingAudioStoreError.storageUnavailable
-        }
-        return try await recordingAudioStore.withVerifiedTranscribableSegments(sessionId: job.session.id) { verified in
-            try await self.transcribe(
-                verifiedSegments: verified,
-                job: job,
-                translationConfiguration: translationConfiguration
-            )
-        }
-    }
-
-    private func transcribe(
+    func transcribe(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         job: Job,
         translationConfiguration: TranslationConfiguration
