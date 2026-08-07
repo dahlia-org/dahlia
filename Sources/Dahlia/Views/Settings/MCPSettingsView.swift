@@ -2,18 +2,19 @@ import AppKit
 import SwiftUI
 
 struct MCPSettingsView: View {
-    var sidebarViewModel: SidebarViewModel
+    let vaults: [VaultRecord]
+    let currentVault: VaultRecord?
 
-    @ObservedObject private var settings = AppSettings.shared
     @State private var selectedClient = MCPClient.codex
     @State private var selectedVaultID: UUID?
     @State private var isWriteEnabled = false
     @State private var copiedContent: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
 
-    init(sidebarViewModel: SidebarViewModel) {
-        self.sidebarViewModel = sidebarViewModel
-        _selectedVaultID = State(initialValue: sidebarViewModel.currentVault?.id ?? sidebarViewModel.allVaults.first?.id)
+    init(vaults: [VaultRecord], currentVault: VaultRecord?) {
+        self.vaults = vaults
+        self.currentVault = currentVault
+        _selectedVaultID = State(initialValue: currentVault?.id ?? vaults.first?.id)
     }
 
     var body: some View {
@@ -72,10 +73,10 @@ struct MCPSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear(perform: reconcileSelectedVault)
-        .onChange(of: sidebarViewModel.allVaults) {
+        .onChange(of: vaults) {
             reconcileSelectedVault()
         }
-        .onChange(of: settings.currentVault?.id) {
+        .onChange(of: currentVault?.id) {
             reconcileSelectedVault()
         }
         .onDisappear {
@@ -84,11 +85,11 @@ struct MCPSettingsView: View {
     }
 
     private var availableVaults: [VaultRecord] {
-        guard let currentVault = settings.currentVault,
-              !sidebarViewModel.allVaults.contains(where: { $0.id == currentVault.id }) else {
-            return sidebarViewModel.allVaults
+        guard let currentVault,
+              !vaults.contains(where: { $0.id == currentVault.id }) else {
+            return vaults
         }
-        return [currentVault] + sidebarViewModel.allVaults
+        return [currentVault] + vaults
     }
 
     private var selectedVault: VaultRecord? {
@@ -105,7 +106,7 @@ struct MCPSettingsView: View {
 
     private func reconcileSelectedVault() {
         guard selectedVault == nil else { return }
-        selectedVaultID = settings.currentVault?.id ?? availableVaults.first?.id
+        selectedVaultID = currentVault?.id ?? availableVaults.first?.id
     }
 
     private func copy(_ command: String) {

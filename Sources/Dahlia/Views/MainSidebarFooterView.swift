@@ -8,7 +8,9 @@ struct MainSidebarFooterView: View {
     let onSelectVault: (VaultRecord) -> Void
 
     @State private var isVaultHovered = false
+    @State private var isMCPHovered = false
     @State private var isSettingsHovered = false
+    @State private var isMCPPresented = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -51,6 +53,21 @@ struct MainSidebarFooterView: View {
             .help(L10n.currentVaultDescription)
             .accessibilityLabel("\(L10n.currentVault), \(currentVault?.name ?? L10n.noVaultSelected)")
 
+            Button(L10n.mcp, systemImage: "network", action: showMCP)
+                .labelStyle(.iconOnly)
+                .padding(7)
+                .background(isMCPHovered ? Color.primary.opacity(0.08) : .clear, in: Circle())
+                .contentShape(Circle())
+                .buttonStyle(.plain)
+                .help(L10n.mcp)
+                .onHover { isMCPHovered = $0 }
+                .sheet(isPresented: $isMCPPresented) {
+                    MCPModalView(
+                        vaults: vaults,
+                        currentVault: currentVault
+                    )
+                }
+
             SettingsLink {
                 Label(L10n.settings, systemImage: "gearshape")
                     .labelStyle(.iconOnly)
@@ -71,5 +88,9 @@ struct MainSidebarFooterView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, Self.verticalPadding)
+    }
+
+    private func showMCP() {
+        isMCPPresented = true
     }
 }
