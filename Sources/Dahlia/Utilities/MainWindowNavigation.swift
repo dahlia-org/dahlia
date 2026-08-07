@@ -14,9 +14,16 @@ final class MainWindowNavigation {
     private var projectVaultId: UUID?
 
     private let openMainWindow: @MainActor () -> Void
+    private let openMainWindowWithoutActivation: @MainActor () -> Void
 
-    init(openMainWindow: @escaping @MainActor () -> Void = { MainWindowOpener.shared.openMainWindow() }) {
+    init(
+        openMainWindow: @escaping @MainActor () -> Void = { MainWindowOpener.shared.openMainWindow() },
+        openMainWindowWithoutActivation: @escaping @MainActor () -> Void = {
+            MainWindowOpener.shared.openMainWindowWithoutActivation()
+        }
+    ) {
         self.openMainWindow = openMainWindow
+        self.openMainWindowWithoutActivation = openMainWindowWithoutActivation
     }
 
     func showMeetings() {
@@ -35,6 +42,11 @@ final class MainWindowNavigation {
     func openMeetings() {
         showMeetings()
         openMainWindow()
+    }
+
+    func openMeetingsWithoutActivation() {
+        showMeetings()
+        openMainWindowWithoutActivation()
     }
 
     func reconcileProjectCatalog(

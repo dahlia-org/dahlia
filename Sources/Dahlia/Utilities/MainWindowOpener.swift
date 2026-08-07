@@ -33,16 +33,27 @@ final class MainWindowOpener {
         }
     }
 
+    func openMainWindowWithoutActivation() {
+        if let openWindowAction {
+            openWindowAction(id: WindowID.main)
+        } else {
+            mainWindow()?.orderFront(nil)
+        }
+    }
+
     func focusExistingMainWindow() {
-        guard let application = NSApp else { return }
+        guard let mainWindow = mainWindow() else { return }
+        mainWindow.orderFrontRegardless()
+        mainWindow.makeKeyAndOrderFront(nil)
+    }
+
+    private func mainWindow() -> NSWindow? {
+        guard let application = NSApp else { return nil }
         // Settings などを誤って前面化しないよう、メインウィンドウの
         // 識別子を持つものだけを対象にする（SwiftUI は "main-AppWindow-1" 形式を付与する）。
-        let targetWindow = application.windows.first { window in
+        return application.windows.first { window in
             guard let identifier = window.identifier?.rawValue else { return false }
             return identifier == WindowID.main || identifier.hasPrefix("\(WindowID.main)-")
         }
-
-        targetWindow?.orderFrontRegardless()
-        targetWindow?.makeKeyAndOrderFront(nil)
     }
 }

@@ -124,7 +124,10 @@ final class CaptionViewModel: ObservableObject {
     }
 
     @Published private(set) var canBeginRecording = true
-    @Published private(set) var isRecordingStartPending = false
+    @Published private(set) var isRecordingStartPending = false {
+        didSet { updateCanBeginRecording() }
+    }
+
     @Published var analyzerReady = false
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
@@ -556,6 +559,16 @@ final class CaptionViewModel: ObservableObject {
         didSet { updateCanBeginRecording() }
     }
 
+    struct RecordingStartReservation: Equatable {
+        fileprivate let id: UUID
+    }
+
+    private var activeRecordingStartReservation: RecordingStartReservation?
+
+    var isRecordingLifecycleBusy: Bool {
+        recordingLifecycle != .idle || isRecordingStartPending || isFinalizingRecording
+    }
+
     private var recordingConfigurationTasks: [Int: Task<Void, Never>] = [:]
     private var nextRecordingConfigurationID = 0
     private var pendingRealtimeRecognitionFailure: (source: RecordingAudioSource?, message: String)?
@@ -583,6 +596,7 @@ final class CaptionViewModel: ObservableObject {
 
     private func updateCanBeginRecording() {
         let updatedValue = recordingLifecycle == .idle
+            && !isRecordingStartPending
             && !isFinalizingRecording
             && hasEnabledAudioSource
         guard canBeginRecording != updatedValue else { return }
@@ -2686,6 +2700,7 @@ final class CaptionViewModel: ObservableObject {
         case .recording:
             stopListening()
         case .idle:
+            guard let reservation = reserveRecordingStart() else { return }
             Task {
                 await startListening(
                     dbQueue: dbQueue,
@@ -2693,7 +2708,8 @@ final class CaptionViewModel: ObservableObject {
                     vaultId: vaultId,
                     projectId: projectId,
                     projectName: projectName,
-                    vaultURL: vaultURL
+                    vaultURL: vaultURL,
+                    reservation: reservation
                 )
             }
         case .starting, .stopping:
@@ -2709,15 +2725,18 @@ final class CaptionViewModel: ObservableObject {
         projectId: UUID?,
         projectName: String? = nil,
         vaultURL: URL,
-        appendingTo existingMeetingId: UUID? = nil
+        appendingTo existingMeetingId: UUID? = nil,
+        reservation: RecordingStartReservation? = nil
     ) async {
-        guard recordingLifecycle == .idle,
-              !isRecordingStartPending,
-              !isFinalizingRecording,
-              !isTerminationRequested,
-              !AppDelegate.isBackupRestorePreparationActive else { return }
-        isRecordingStartPending = true
-        defer { isRecordingStartPending = false }
+        let startReservation: RecordingStartReservation
+        if let reservation {
+            guard activeRecordingStartReservation == reservation else { return }
+            startReservation = reservation
+        } else {
+            guard let reservation = reserveRecordingStart() else { return }
+            startReservation = reservation
+        }
+        defer { releaseRecordingStart(startReservation) }
         guard await retryFailedPersistenceIfNeeded() else { return }
         await refreshDefaultInputDevice()
         guard recordingLifecycle == .idle,
@@ -2836,6 +2855,24 @@ final class CaptionViewModel: ObservableObject {
                 previousBatchTranscriptionState: previousBatchTranscriptionState
             )
         }
+    }
+
+    func reserveRecordingStart() -> RecordingStartReservation? {
+        guard recordingLifecycle == .idle,
+              !isRecordingStartPending,
+              !isFinalizingRecording,
+              !isTerminationRequested,
+              !AppDelegate.isBackupRestorePreparationActive else { return nil }
+        let reservation = RecordingStartReservation(id: .v7())
+        activeRecordingStartReservation = reservation
+        isRecordingStartPending = true
+        return reservation
+    }
+
+    private func releaseRecordingStart(_ reservation: RecordingStartReservation) {
+        guard activeRecordingStartReservation == reservation else { return }
+        activeRecordingStartReservation = nil
+        isRecordingStartPending = false
     }
 
     func stopListening() {

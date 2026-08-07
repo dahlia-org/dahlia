@@ -48,6 +48,24 @@ struct MainWindowNavigationTests {
     }
 
     @Test
+    func openingMeetingsWithoutActivationUsesTheNonactivatingPresenter() {
+        var didOpenActivating = false
+        var observedSection: MainWindowSection?
+        var navigation: MainWindowNavigation?
+        let subject = MainWindowNavigation(
+            openMainWindow: { didOpenActivating = true },
+            openMainWindowWithoutActivation: { observedSection = navigation?.section }
+        )
+        navigation = subject
+        subject.showProjects()
+
+        subject.openMeetingsWithoutActivation()
+
+        #expect(!didOpenActivating)
+        #expect(observedSection == .meetings)
+    }
+
+    @Test
     func projectPresentationStateSurvivesSectionRoundTrip() {
         let navigation = MainWindowNavigation(openMainWindow: {})
         let projectId = UUID.v7()

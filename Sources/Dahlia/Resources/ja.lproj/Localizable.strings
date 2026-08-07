@@ -465,6 +465,8 @@
 "Show events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を表示します。";
 "Upcoming schedule" = "今後の予定";
 "Show Upcoming Schedule" = "今後の予定を表示";
+"Auto-record" = "自動録音";
+"Automatically start recording when this event begins." = "この予定の開始時刻になったら自動的に録音を開始します。";
 "From calendar event" = "カレンダーイベント由来";
 "Calendar event: %@" = "カレンダーイベント: %@";
 "Select a calendar event to prepare transcription." = "カレンダーの予定を選択して、文字起こし画面を準備します。";
@@ -496,7 +498,7 @@
 "Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links." = "Google アカウントの名前とメールアドレス、カレンダー名、予定のタイトル、説明、日時、参加状態、会議リンクです。";
 "Your Google account name and email address, a Meeting Notes folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Google アカウントの名前とメールアドレス、Meeting Notes フォルダ、Dahlia が作成した Google Docs の要約です。Dahlia はその他の Drive ファイルにアクセスできません。";
 "How Dahlia Uses and Stores It" = "利用方法と保存場所";
-"OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。今後の予定を Dahlia に表示し、関連付けた予定の詳細は、その予定を参照する会議がある間、ローカル会議 DB とユーザーが作成した DB バックアップに保存します。";
+"OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。今後の予定を Dahlia に表示します。自動録音を有効にした開催回の識別子と開始・終了日時は、録音開始を試みるか予定が終了するまでローカル設定に保存します。関連付けた予定の詳細は、その予定を参照する会議がある間、ローカル会議 DB とユーザーが作成した DB バックアップに保存します。";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. The export folder and account IDs are stored in local settings. Exported document URLs and IDs are stored with the related meeting and in any database backups you create." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。書き出しフォルダとアカウント ID はローカル設定に、書き出した文書の URL と ID は関連する会議およびユーザーが作成した DB バックアップに保存します。";
 "External Sharing" = "外部への送信";
 "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models." = "要約を生成する場合、自動要約を有効にした場合、または AI チャットを使用する場合、関連付けた予定のタイトル、説明、日時を設定済み AI プロバイダーへ送信することがあります。Dahlia は Google データを汎用 AI モデルの学習に利用しません。";

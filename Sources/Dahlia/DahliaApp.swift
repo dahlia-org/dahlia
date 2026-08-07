@@ -222,6 +222,7 @@ struct DahliaApp: App {
         if let lastVault = try? repo.fetchLastOpenedVault() {
             openVault(lastVault)
         }
+        configureMeetingDetection(in: db)
     }
 
     private func openVault(_ vault: VaultRecord) {
@@ -234,7 +235,16 @@ struct DahliaApp: App {
         sidebarViewModel.setAppDatabase(db)
         sidebarViewModel.updateVaultLastOpened(vault.id)
         viewModel.prepareAnalyzer()
-        meetingDetectionService.isRecording = { [weak viewModel] in viewModel?.isListening ?? false }
+        showVaultPicker = false
+    }
+
+    private func configureMeetingDetection(in db: AppDatabaseManager) {
+        meetingDetectionService.isRecording = { [weak viewModel] in
+            viewModel?.isRecordingLifecycleBusy ?? false
+        }
+        meetingDetectionService.onAutomaticRecording = { [weak recordingCoordinator] event in
+            recordingCoordinator?.startAutomaticRecording(forCalendarEvent: event)
+        }
         MeetingNotificationService.shared.configure(
             onOpenMeeting: { meeting in
                 handleDetectedMeeting(meeting, in: db, startTranscription: false)
@@ -247,7 +257,6 @@ struct DahliaApp: App {
             }
         )
         meetingDetectionService.start()
-        showVaultPicker = false
     }
 
     private func joinAndStartRecording(_ meeting: DetectedMeeting, in db: AppDatabaseManager) {
@@ -345,6 +354,7 @@ struct DahliaApp: App {
             ErrorReportingService.capture(error, context: ["source": "meetingContext"])
             return
         }
+        guard let reservation = viewModel.reserveRecordingStart() else { return }
         Task { @MainActor in
             await viewModel.startListening(
                 dbQueue: db.dbQueue,
@@ -353,7 +363,8 @@ struct DahliaApp: App {
                 projectId: ctx.projectId,
                 projectName: ctx.projectName,
                 vaultURL: vault.url,
-                appendingTo: meetingId
+                appendingTo: meetingId,
+                reservation: reservation
             )
             if let customerIntelligenceEvent,
                viewModel.isListening,
