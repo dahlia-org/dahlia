@@ -35,6 +35,17 @@ struct MainSidebarNavigationView: View {
             .help(L10n.manageProjects)
             .accessibilityAddTraits(isShowingProjectManagement ? .isSelected : [])
 
+            if showsCustomerIntelligence {
+                Button(action: onOpenCustomerIntelligence) {
+                    MainSidebarNavigationLabel(
+                        title: L10n.customerIntelligence,
+                        systemImage: "building.2"
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(L10n.openOrganizationWorkspace)
+            }
+
             Button(action: onShowUnprocessedRecordings) {
                 MainSidebarNavigationLabel(
                     title: L10n.unprocessedRecordings,
@@ -46,17 +57,6 @@ struct MainSidebarNavigationView: View {
             .buttonStyle(.plain)
             .help(L10n.unprocessedRecordings)
             .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
-
-            if showsCustomerIntelligence {
-                Button(action: onOpenCustomerIntelligence) {
-                    MainSidebarNavigationLabel(
-                        title: L10n.customerIntelligence,
-                        systemImage: "building.2"
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(L10n.openOrganizationWorkspace)
-            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
