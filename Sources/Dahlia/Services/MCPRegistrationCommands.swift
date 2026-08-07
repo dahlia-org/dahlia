@@ -19,12 +19,13 @@ struct MCPRegistrationCommands: Equatable {
         invocation = Self.helperInvocation(helper: helper, runtimeProfile: runtimeProfile)
     }
 
-    func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String {
+    func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
+        guard let prefix = client.registrationCommandPrefix else { return nil }
         let writeArgument = writeEnabled ? " --write" : ""
-        return "\(client.registrationCommandPrefix) \(invocation) --vault-id \(vault)\(writeArgument)"
+        return "\(prefix) \(invocation) --vault-id \(vault)\(writeArgument)"
     }
 
-    func removalCommand(for client: MCPClient) -> String {
+    func removalCommand(for client: MCPClient) -> String? {
         client.removalCommand
     }
 

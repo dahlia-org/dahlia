@@ -1000,10 +1000,9 @@
 "Client" = "クライアント";
 "Allow Write Access" = "書き込みを許可";
 "Allows the agent to change Projects, meeting assignments and summaries, and customer intelligence in the selected Vault." = "Agent が選択した Vault の Project、ミーティングの所属と要約、顧客情報を変更できるようにします。";
-"Registration Command" = "登録コマンド";
-"mcp.json Sample" = "mcp.json のサンプル";
+"Configuration" = "設定内容";
+"mcp.json" = "mcp.json";
 "Copy mcp.json" = "mcp.json をコピー";
-"For clients that support mcp.json, add this server entry to the file." = "mcp.json に対応するクライアントでは、このサーバー設定をファイルに追加できます。";
 "Re-register Dahlia" = "Dahlia を再登録";
 "If Dahlia is already registered, run this remove command before the registration command." = "Dahlia がすでに登録されている場合は、登録コマンドの前にこの削除コマンドを実行してください。";
 "The MCP helper is not available in this app build." = "このアプリビルドではMCPヘルパーを利用できません。";

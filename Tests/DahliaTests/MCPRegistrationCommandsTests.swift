@@ -24,6 +24,7 @@ import Foundation
                 == "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
             #expect(commands.registrationCommand(for: .claude, writeEnabled: true)
                 == "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
+            #expect(commands.registrationCommand(for: .mcpJSON, writeEnabled: false) == nil)
         }
 
         @Test
@@ -37,6 +38,7 @@ import Foundation
 
             #expect(commands.removalCommand(for: .codex) == "codex mcp remove dahlia")
             #expect(commands.removalCommand(for: .claude) == "claude mcp remove --scope user dahlia")
+            #expect(commands.removalCommand(for: .mcpJSON) == nil)
         }
 
         @Test
@@ -73,10 +75,14 @@ import Foundation
             )
 
             let invocation = "/usr/bin/env 'DAHLIA_RUNTIME_PROFILE=development' '/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp'"
-            #expect(commands.registrationCommand(for: .codex, writeEnabled: false).contains("-- \(invocation) --vault-id"))
-            #expect(commands.registrationCommand(for: .claude, writeEnabled: false).contains("-- \(invocation) --vault-id"))
-            #expect(commands.registrationCommand(for: .codex, writeEnabled: true).hasSuffix("--write"))
-            #expect(commands.registrationCommand(for: .claude, writeEnabled: true).hasSuffix("--write"))
+            let codex = try #require(commands.registrationCommand(for: .codex, writeEnabled: false))
+            let claude = try #require(commands.registrationCommand(for: .claude, writeEnabled: false))
+            let codexWrite = try #require(commands.registrationCommand(for: .codex, writeEnabled: true))
+            let claudeWrite = try #require(commands.registrationCommand(for: .claude, writeEnabled: true))
+            #expect(codex.contains("-- \(invocation) --vault-id"))
+            #expect(claude.contains("-- \(invocation) --vault-id"))
+            #expect(codexWrite.hasSuffix("--write"))
+            #expect(claudeWrite.hasSuffix("--write"))
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: false))
             #expect(!json.contains("\"env\""))

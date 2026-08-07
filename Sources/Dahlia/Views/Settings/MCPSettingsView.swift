@@ -33,40 +33,31 @@ struct MCPSettingsView: View {
                 }
 
                 if let commands = commands(for: vault) {
-                    Section(L10n.mcpRegistrationCommand) {
-                        MCPCommandView(
-                            title: selectedClient.displayName,
-                            command: commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
-                            removalCommand: commands.removalCommand(for: selectedClient),
-                            copiedCommand: copiedContent,
-                            onCopy: copy
-                        )
-                    }
-
-                    if let sample = commands.mcpJSONSample(writeEnabled: isWriteEnabled) {
-                        Section {
-                            Text(sample)
-                                .font(.callout.monospaced())
-                                .textSelection(.enabled)
-                                .accessibilityLabel(L10n.mcpJSONSample)
-
-                            HStack {
-                                Spacer()
-                                Button(
-                                    copiedContent == sample ? L10n.copied : L10n.copyMCPJSON,
-                                    systemImage: copiedContent == sample ? "checkmark" : "doc.on.doc"
-                                ) {
-                                    copy(sample)
-                                }
+                    Section(L10n.mcpConfigurationOutput) {
+                        switch selectedClient {
+                        case .codex, .claude:
+                            if let command = commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
+                               let removalCommand = commands.removalCommand(for: selectedClient) {
+                                MCPCommandView(
+                                    title: selectedClient.displayName,
+                                    command: command,
+                                    removalCommand: removalCommand,
+                                    copiedCommand: copiedContent,
+                                    onCopy: copy
+                                )
                             }
-                        } header: {
-                            Text(L10n.mcpJSONSample)
-                        } footer: {
-                            Text(L10n.mcpJSONSampleDescription)
+                        case .mcpJSON:
+                            if let sample = commands.mcpJSONSample(writeEnabled: isWriteEnabled) {
+                                MCPJSONSampleView(
+                                    sample: sample,
+                                    isCopied: copiedContent == sample,
+                                    onCopy: copy
+                                )
+                            }
                         }
                     }
                 } else {
-                    Section(L10n.mcpRegistrationCommand) {
+                    Section(L10n.mcpConfigurationOutput) {
                         Text(L10n.mcpHelperUnavailable)
                             .foregroundStyle(.secondary)
                     }
