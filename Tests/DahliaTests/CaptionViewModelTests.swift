@@ -273,6 +273,17 @@ import GRDB
         }
 
         @Test
+        func vaultSwitchingIsDisabledWhileFinalizingRecording() {
+            let viewModel = CaptionViewModel()
+
+            #expect(viewModel.canSwitchVault)
+
+            viewModel.isFinalizingRecording = true
+
+            #expect(!viewModel.canSwitchVault)
+        }
+
+        @Test
         func canGenerateSummaryRemainsEnabledWhileAnotherMeetingSummaryIsGenerating() {
             let viewModel = summaryReadyViewModel()
             let currentMeetingID = viewModel.currentMeetingId

@@ -63,12 +63,6 @@ struct MainSidebarNavigationView: View {
                 .buttonStyle(.plain)
                 .help(L10n.openOrganizationWorkspace)
             }
-
-            SettingsLink {
-                MainSidebarNavigationLabel(title: L10n.settings, systemImage: "gearshape")
-            }
-            .buttonStyle(.plain)
-            .help(L10n.settingsMenuItem)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

@@ -4,6 +4,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     var sidebarViewModel: SidebarViewModel
     var mainWindowNavigation: MainWindowNavigation
+    let canSwitchVault: Bool
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
@@ -20,6 +21,7 @@ struct GeneralSettingsView: View {
                             }
                         }
                     }
+                    .disabled(!canSwitchVault)
                 } label: {
                     Text(L10n.currentVault)
                     Text(L10n.currentVaultDescription)

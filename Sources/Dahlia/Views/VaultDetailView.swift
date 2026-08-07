@@ -4,6 +4,7 @@ struct VaultDetailView: View {
     let vault: VaultRecord?
     let hasRegisteredVaults: Bool
     let isCurrentVault: Bool
+    let canSwitchVault: Bool
     let onOpen: () -> Void
     let onAdd: () -> Void
 
@@ -33,7 +34,7 @@ struct VaultDetailView: View {
                 Section {
                     Button(L10n.openVault, systemImage: "folder", action: onOpen)
                         .buttonStyle(.borderedProminent)
-                        .disabled(isCurrentVault)
+                        .disabled(isCurrentVault || !canSwitchVault)
                 } footer: {
                     Text(L10n.openVaultDescription)
                 }

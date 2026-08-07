@@ -13,6 +13,7 @@ struct MeetingListSidebarView: View {
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
+    let onSelectVault: (VaultRecord) -> Void
 
     @State private var searchText = ""
     @State private var searchTokens: [MeetingSearchToken] = []
@@ -20,6 +21,7 @@ struct MeetingListSidebarView: View {
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
     @State private var pendingDeletion: MeetingDeletionRequest?
+    @State private var sidebarFooterHeight: CGFloat = 0
     @FocusState private var isRenameFieldFocused: Bool
 
     private var meetingSelection: Binding<Set<UUID>> {
@@ -30,6 +32,10 @@ struct MeetingListSidebarView: View {
                 sidebarViewModel.selectedMeetingIds = selection
             }
         )
+    }
+
+    private var showsSidebarFooter: Bool {
+        viewModel.canSwitchVault
     }
 
     var body: some View {
@@ -77,6 +83,11 @@ struct MeetingListSidebarView: View {
                 )
             }
             .listStyle(.sidebar)
+            .contentMargins(
+                .bottom,
+                showsSidebarFooter ? sidebarFooterHeight : 0,
+                for: .scrollContent
+            )
             .overlay {
                 MeetingListStatusOverlay(
                     isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
@@ -91,6 +102,12 @@ struct MeetingListSidebarView: View {
                 contextMenu(for: selection)
             }
 
+            if showsSidebarFooter {
+                Color.clear
+                    .frame(height: MainSidebarFooterView.verticalPadding)
+                    .accessibilityHidden(true)
+            }
+
             if viewModel.isListening {
                 RecordingStatusBar(
                     viewModel: viewModel,
@@ -98,6 +115,21 @@ struct MeetingListSidebarView: View {
                     recordingCoordinator: recordingCoordinator
                 )
                 .padding(8)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showsSidebarFooter {
+                MainSidebarFooterView(
+                    vaults: sidebarViewModel.allVaults,
+                    currentVault: sidebarViewModel.currentVault,
+                    onSelectVault: onSelectVault
+                )
+                .frame(maxWidth: .infinity)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    sidebarFooterHeight = height
+                }
             }
         }
         .meetingSidebarSearch(
