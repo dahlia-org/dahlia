@@ -95,6 +95,12 @@ final class MainWindowNavigation {
         section = location.section
     }
 
+    func recordUpcomingScheduleIfVisible(_ isVisible: Bool) {
+        guard isVisible, section == .meetings,
+              case .meeting = currentLocation else { return }
+        recordNavigation(to: .upcomingSchedule)
+    }
+
     func resetNavigationHistory(to location: MainWindowLocation) {
         hasInitializedNavigationHistory = true
         navigationGeneration += 1

@@ -176,6 +176,9 @@ struct ContentView: View {
                 mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
             }
             handleMeetingSelectionChange(newValue)
+            if newValue.isEmpty {
+                mainWindowNavigation.recordUpcomingScheduleIfVisible(isShowingUpcomingSchedule)
+            }
             syncChatContext()
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in

@@ -17,7 +17,9 @@ struct MainWindowNavigationTests {
         navigation.showMeetings()
         #expect(navigation.section == .meetings)
     }
+}
 
+extension MainWindowNavigationTests {
     @Test
     func navigatesBackwardAndForwardThroughMainLocations() async {
         let navigation = MainWindowNavigation(openMainWindow: {})
@@ -385,6 +387,30 @@ struct MainWindowNavigationTests {
 }
 
 extension MainWindowNavigationTests {
+    @Test
+    func clearingMeetingSelectionRecordsVisibleUpcomingSchedule() async {
+        let navigation = MainWindowNavigation(openMainWindow: {})
+        let meetingId = UUID.v7()
+        navigation.recordNavigation(to: .meeting(meetingId))
+
+        navigation.recordUpcomingScheduleIfVisible(true)
+
+        #expect(navigation.currentLocation == .upcomingSchedule)
+        await navigateBack(navigation)
+        #expect(navigation.currentLocation == .meeting(meetingId))
+    }
+
+    @Test
+    func programmaticSelectionClearKeepsRecordedDestination() {
+        let navigation = MainWindowNavigation(openMainWindow: {})
+        navigation.recordNavigation(to: .meeting(.v7()))
+        navigation.recordNavigation(to: .unprocessedRecordings)
+
+        navigation.recordUpcomingScheduleIfVisible(true)
+
+        #expect(navigation.currentLocation == .unprocessedRecordings)
+    }
+
     @Test
     func deletingSelectedProjectRemovesRedundantAndUnavailableHistory() {
         let navigation = MainWindowNavigation(openMainWindow: {})
