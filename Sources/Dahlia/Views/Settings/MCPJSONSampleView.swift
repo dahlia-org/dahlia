@@ -6,22 +6,21 @@ struct MCPJSONSampleView: View {
     let onCopy: (String) -> Void
 
     var body: some View {
-        LabeledContent {
-            VStack(alignment: .trailing) {
-                Text(sample)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-                    .accessibilityLabel(L10n.mcpJSON)
+        VStack(alignment: .leading) {
+            Text(sample)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .accessibilityLabel(L10n.mcpJSON)
 
+            HStack {
+                Spacer()
                 Button(
                     isCopied ? L10n.copied : L10n.copyMCPJSON,
                     systemImage: isCopied ? "checkmark" : "doc.on.doc",
                     action: copy
                 )
             }
-        } label: {
-            Text(L10n.mcpJSON)
         }
     }
 

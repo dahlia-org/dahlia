@@ -10,40 +10,38 @@ struct MCPCommandView: View {
     @State private var isReRegistrationHelpPresented = false
 
     var body: some View {
-        LabeledContent {
-            VStack(alignment: .trailing) {
-                Text(command)
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-                    .accessibilityLabel(L10n.registrationCommand(title))
+        VStack(alignment: .leading) {
+            Text(command)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .accessibilityLabel(L10n.registrationCommand(title))
 
-                HStack {
-                    Button(
-                        L10n.mcpReRegistrationHelp,
-                        systemImage: "info.circle",
-                        action: showReRegistrationHelp
-                    )
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .help(L10n.mcpReRegistrationHelp)
-                    .popover(isPresented: $isReRegistrationHelpPresented, arrowEdge: .bottom) {
-                        MCPReRegistrationHelpView(
-                            removalCommand: removalCommand,
-                            isCopied: copiedCommand == removalCommand,
-                            onCopy: copyRemovalCommand
-                        )
-                    }
+            HStack {
+                Spacer()
 
-                    Button(
-                        copiedCommand == command ? L10n.copied : L10n.copyCommand,
-                        systemImage: copiedCommand == command ? "checkmark" : "doc.on.doc",
-                        action: copyRegistrationCommand
+                Button(
+                    L10n.mcpReRegistrationHelp,
+                    systemImage: "info.circle",
+                    action: showReRegistrationHelp
+                )
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help(L10n.mcpReRegistrationHelp)
+                .popover(isPresented: $isReRegistrationHelpPresented, arrowEdge: .bottom) {
+                    MCPReRegistrationHelpView(
+                        removalCommand: removalCommand,
+                        isCopied: copiedCommand == removalCommand,
+                        onCopy: copyRemovalCommand
                     )
                 }
+
+                Button(
+                    copiedCommand == command ? L10n.copied : L10n.copyCommand,
+                    systemImage: copiedCommand == command ? "checkmark" : "doc.on.doc",
+                    action: copyRegistrationCommand
+                )
             }
-        } label: {
-            Text(title)
         }
     }
 
