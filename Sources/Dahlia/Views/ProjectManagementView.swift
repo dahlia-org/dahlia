@@ -3,9 +3,14 @@ import SwiftUI
 
 struct ProjectManagementView: View {
     var sidebarViewModel: SidebarViewModel
+    @ObservedObject var captionViewModel: CaptionViewModel
+    let recordingCoordinator: RecordingCoordinator
+    @Bindable var mainWindowNavigation: MainWindowNavigation
+    let onShowUpcomingSchedule: () -> Void
+    let onShowUnprocessedRecordings: () -> Void
+    let showsCustomerIntelligence: Bool
+    let onOpenCustomerIntelligence: () -> Void
 
-    @State private var selectedProjectId: UUID?
-    @State private var projectSearchText = ""
     @State private var isShowingProjectCreation = false
     @State private var projectCreationParentId: UUID?
     @State private var newProjectName = ""
@@ -15,7 +20,6 @@ struct ProjectManagementView: View {
     @State private var projectParentId: UUID?
     @State private var projectType = ProjectType.undefined
     @State private var projectPendingDeletion: ProjectOverviewItem?
-    @State private var requestedExpandedProjectIds: Set<UUID> = []
     @State private var isShowingProjectOperationError = false
     @State private var projectOperationErrorMessage = ""
     @State private var projectDescription = ""
@@ -30,29 +34,68 @@ struct ProjectManagementView: View {
 
     var body: some View {
         NavigationSplitView {
-            projectSidebar
-                .navigationSplitViewColumnWidth(min: 260, ideal: sidebarWidth, max: 360)
+            VStack(spacing: 0) {
+                MainSidebarNavigationView(
+                    isShowingUpcomingSchedule: false,
+                    onShowUpcomingSchedule: onShowUpcomingSchedule,
+                    isShowingProjectManagement: true,
+                    onShowProjectManagement: {},
+                    isShowingUnprocessedRecordings: false,
+                    unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                    onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                    showsCustomerIntelligence: showsCustomerIntelligence,
+                    onOpenCustomerIntelligence: onOpenCustomerIntelligence
+                )
+                SidebarSectionHeader(title: L10n.projects)
+                ProjectManagementSidebarView(
+                    projects: sidebarViewModel.allProjectItems,
+                    hasVault: AppSettings.shared.currentVault != nil,
+                    isLoaded: sidebarViewModel.isProjectCatalogLoaded,
+                    loadFailed: sidebarViewModel.projectCatalogLoadFailed,
+                    selectedProjectId: $mainWindowNavigation.selectedProjectId,
+                    searchText: $mainWindowNavigation.projectSearchText,
+                    expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
+                    onRetry: sidebarViewModel.retryProjectCatalogLoading,
+                    onCreateTopLevelProject: presentTopLevelProjectCreation,
+                    onCreateSubproject: presentSubprojectCreation
+                )
+
+                if captionViewModel.isListening {
+                    RecordingStatusBar(
+                        viewModel: captionViewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator
+                    )
+                    .padding(8)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
         } detail: {
             selectedProjectDetail
         }
-        .frame(minWidth: 800, minHeight: 520)
         .onAppear {
-            selectInitialProjectIfNeeded()
-            loadProjectDetails(for: selectedProjectId)
+            reconcileSelection(with: sidebarViewModel.allProjectItems)
+            loadProjectDetails(for: mainWindowNavigation.selectedProjectId)
         }
         .onChange(of: sidebarViewModel.allProjectItems) { previousProjects, projects in
             reconcileSelection(with: projects)
             refreshSelectedProjectAfterExternalChange(from: previousProjects, to: projects)
         }
-        .onChange(of: selectedProjectId) { oldProjectId, newProjectId in
+        .onChange(of: mainWindowNavigation.selectedProjectId) { oldProjectId, newProjectId in
             stageProjectDescriptionDraft(for: oldProjectId)
             loadProjectDetails(for: newProjectId)
         }
         .onChange(of: projectDescription) {
-            stageProjectDescriptionDraft(for: selectedProjectId)
+            stageProjectDescriptionDraft(for: mainWindowNavigation.selectedProjectId)
         }
         .onDisappear {
-            stageProjectDescriptionDraft(for: selectedProjectId)
+            stageProjectDescriptionDraft(for: mainWindowNavigation.selectedProjectId)
+        }
+        .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultId in
+            mainWindowNavigation.reconcileProjectCatalog(
+                vaultId: vaultId,
+                projects: sidebarViewModel.allProjectItems
+            )
         }
         .sheet(item: $projectPendingDeletion) { project in
             let hierarchy = projectHierarchy(for: project)
@@ -92,130 +135,13 @@ struct ProjectManagementView: View {
         }
     }
 
-    private var projectNodes: [ProjectTreeNode] {
-        ProjectTreeNode.buildNodes(from: sidebarViewModel.allProjectItems)
-    }
-
-    private var filteredProjectNodes: [ProjectTreeNode] {
-        let query = projectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return projectNodes }
-        return projectNodes.compactMap { $0.filtered(matching: query) }
-    }
-
     private var selectedProject: ProjectOverviewItem? {
-        guard let selectedProjectId else { return nil }
+        guard let selectedProjectId = mainWindowNavigation.selectedProjectId else { return nil }
         return sidebarViewModel.allProjectItems.first(where: { $0.projectId == selectedProjectId })
     }
 
     private var trimmedNewProjectName: String {
         newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var isSearchingProjects: Bool {
-        !projectSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var emptyProjectStateTitle: String {
-        if sidebarViewModel.allProjectItems.isEmpty {
-            L10n.noProjectsYet
-        } else {
-            L10n.noResultsFound
-        }
-    }
-
-    private var emptyProjectStateDescription: String {
-        if sidebarViewModel.allProjectItems.isEmpty {
-            L10n.createFirstProjectDescription
-        } else {
-            L10n.noProjectsMatchFilter
-        }
-    }
-
-    private var emptyProjectStateSystemImage: String {
-        if sidebarViewModel.allProjectItems.isEmpty {
-            "folder.badge.plus"
-        } else {
-            "magnifyingglass"
-        }
-    }
-
-    private var projectSidebar: some View {
-        let filteredNodes = filteredProjectNodes
-
-        return List(selection: $selectedProjectId) {
-            if AppSettings.shared.currentVault == nil {
-                ContentUnavailableView {
-                    Label(L10n.noVaultSelected, systemImage: "externaldrive")
-                } description: {
-                    Text(L10n.projectManagementNoVaultDescription)
-                }
-                .listRowSeparator(.hidden)
-            } else if !sidebarViewModel.isProjectCatalogLoaded {
-                ProgressView(L10n.loadingProjects)
-                    .frame(maxWidth: .infinity)
-                    .listRowSeparator(.hidden)
-            } else if sidebarViewModel.projectCatalogLoadFailed {
-                ContentUnavailableView {
-                    Label(L10n.projectCatalogLoadFailed, systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(L10n.projectCatalogLoadFailedDescription)
-                } actions: {
-                    Button(L10n.retry, action: sidebarViewModel.retryProjectCatalogLoading)
-                }
-                .listRowSeparator(.hidden)
-            } else if filteredNodes.isEmpty {
-                ContentUnavailableView {
-                    Label(emptyProjectStateTitle, systemImage: emptyProjectStateSystemImage)
-                } description: {
-                    Text(emptyProjectStateDescription)
-                } actions: {
-                    if sidebarViewModel.allProjectItems.isEmpty {
-                        Button(L10n.newProject, systemImage: "plus", action: presentTopLevelProjectCreation)
-                    } else {
-                        Button(L10n.clearSearch, action: clearProjectSearch)
-                    }
-                }
-                .listRowSeparator(.hidden)
-            } else {
-                ForEach(filteredNodes) { node in
-                    ProjectManagementTreeRow(
-                        node: node,
-                        selectedProjectId: selectedProjectId,
-                        expandedProjectIds: $requestedExpandedProjectIds,
-                        expandsAllDescendants: isSearchingProjects
-                    )
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle(L10n.projects)
-        .searchable(text: $projectSearchText, prompt: L10n.searchProjects)
-        .toolbar {
-            ToolbarItem {
-                if let selectedProject {
-                    Menu(L10n.newProject, systemImage: "plus") {
-                        Button(
-                            L10n.newSubproject,
-                            systemImage: "folder.badge.plus",
-                            action: presentSubprojectCreation
-                        )
-                        .disabled(selectedProject.parentProjectId != nil)
-
-                        Button(
-                            L10n.newTopLevelProject,
-                            systemImage: "externaldrive.badge.plus",
-                            action: presentTopLevelProjectCreation
-                        )
-                    }
-                    .disabled(AppSettings.shared.currentVault == nil)
-                    .help(L10n.newProject)
-                } else {
-                    Button(L10n.newProject, systemImage: "plus", action: presentTopLevelProjectCreation)
-                        .disabled(AppSettings.shared.currentVault == nil)
-                        .help(L10n.newProject)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -262,23 +188,29 @@ private extension ProjectManagementView {
 
     private func projectDetailForm(for project: ProjectOverviewItem) -> some View {
         let hierarchy = projectHierarchy(for: project)
+        let vaultName = AppSettings.shared.currentVault?.name ?? L10n.vault
 
-        return Form {
-            ProjectContextSectionView(
-                vaultName: AppSettings.shared.currentVault?.name ?? L10n.vault,
-                project: project,
-                parentName: project.parentProjectId.flatMap(projectName(id:)),
-                includedSubprojectCount: max(hierarchy.count - 1, 0),
-                hierarchyMeetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount }
+        return VStack(spacing: 0) {
+            ProjectDetailHeaderView(
+                projectName: displayName(for: project.projectName),
+                projectPath: project.projectName,
+                vaultName: vaultName
             )
 
-            projectNameSection(for: project)
-            descriptionSection
-            hierarchySection(for: project)
-            destinationSection(for: project)
-            projectDeletionSection
+            Form {
+                projectNameSection(for: project)
+                descriptionSection
+                hierarchySection(for: project)
+                ProjectContextSectionView(
+                    project: project,
+                    includedSubprojectCount: max(hierarchy.count - 1, 0),
+                    hierarchyMeetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount }
+                )
+                destinationSection(for: project)
+                projectDeletionSection
+            }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
     }
 
     private func hierarchySection(for project: ProjectOverviewItem) -> some View {
@@ -408,11 +340,6 @@ private extension ProjectManagementView {
         }
     }
 
-    private func selectInitialProjectIfNeeded() {
-        guard selectedProjectId == nil else { return }
-        selectedProjectId = sidebarViewModel.allProjectItems.first?.projectId
-    }
-
     private func presentSubprojectCreation() {
         guard let selectedProject else { return }
         presentProjectCreation(parentProjectId: selectedProject.projectId)
@@ -420,10 +347,6 @@ private extension ProjectManagementView {
 
     private func presentTopLevelProjectCreation() {
         presentProjectCreation(parentProjectId: nil)
-    }
-
-    private func clearProjectSearch() {
-        projectSearchText = ""
     }
 
     private func presentProjectCreation(parentProjectId: UUID?) {
@@ -447,26 +370,26 @@ private extension ProjectManagementView {
             return
         }
 
-        projectSearchText = ""
+        mainWindowNavigation.projectSearchText = ""
         requestExpansion(toReveal: project.path)
-        selectedProjectId = project.id
+        mainWindowNavigation.selectedProjectId = project.id
         isShowingProjectCreation = false
         projectCreationParentId = nil
         projectCreationErrorMessage = ""
     }
 
     private func reconcileSelection(with projects: [ProjectOverviewItem]) {
-        if let selectedProjectId, projects.contains(where: { $0.projectId == selectedProjectId }) {
-            return
-        }
-        selectedProjectId = projects.first?.projectId
+        mainWindowNavigation.reconcileProjectCatalog(
+            vaultId: sidebarViewModel.currentVault?.id,
+            projects: projects
+        )
     }
 
     private func refreshSelectedProjectAfterExternalChange(
         from previousProjects: [ProjectOverviewItem],
         to projects: [ProjectOverviewItem]
     ) {
-        guard let selectedProjectId,
+        guard let selectedProjectId = mainWindowNavigation.selectedProjectId,
               let previous = previousProjects.first(where: { $0.projectId == selectedProjectId }),
               let current = projects.first(where: { $0.projectId == selectedProjectId }),
               previous.revision != current.revision else {
@@ -559,7 +482,7 @@ private extension ProjectManagementView {
     }
 
     private func saveProjectDescription() {
-        guard let selectedProjectId,
+        guard let selectedProjectId = mainWindowNavigation.selectedProjectId,
               projectDescription != lastSavedProjectDescription else { return }
 
         switch sidebarViewModel.updateProjectDescription(
@@ -634,7 +557,7 @@ private extension ProjectManagementView {
             previousRevision: previousRevision,
             revision: renamed.revision
         )
-        projectSearchText = ""
+        mainWindowNavigation.projectSearchText = ""
         requestExpansion(toReveal: renamed.path)
     }
 
@@ -655,9 +578,11 @@ private extension ProjectManagementView {
         ) else {
             return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
         }
-        if selectedProjectId == project.projectId
-            || projectHierarchy(for: project).contains(where: { $0.projectId == selectedProjectId }) {
-            selectedProjectId = nil
+        if mainWindowNavigation.selectedProjectId == project.projectId
+            || projectHierarchy(for: project).contains(where: {
+                $0.projectId == mainWindowNavigation.selectedProjectId
+            }) {
+            mainWindowNavigation.selectedProjectId = nil
         }
         return nil
     }
@@ -719,7 +644,7 @@ private extension ProjectManagementView {
             expectedRevision: lastLoadedProjectRevision
         ) else {
             showProjectOperationError()
-            loadProjectDetails(for: selectedProjectId)
+            loadProjectDetails(for: mainWindowNavigation.selectedProjectId)
             return
         }
         recordLocalProjectRevision(
@@ -756,7 +681,7 @@ private extension ProjectManagementView {
         let ancestorIds = sidebarViewModel.allProjectItems.compactMap { project -> UUID? in
             projectName.hasPrefix(project.projectName + "/") ? project.projectId : nil
         }
-        requestedExpandedProjectIds.formUnion(ancestorIds)
+        mainWindowNavigation.expandedProjectIds.formUnion(ancestorIds)
     }
 
     private func displayName(for projectName: String) -> String {
@@ -766,91 +691,5 @@ private extension ProjectManagementView {
     private func showProjectOperationError() {
         projectOperationErrorMessage = sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
         isShowingProjectOperationError = true
-    }
-}
-
-enum ProjectFolderStatus {
-    case available
-    case missing
-    case unsafe
-}
-
-enum ProjectFolderSafety {
-    static func status(of url: URL, inside vaultURL: URL) -> ProjectFolderStatus {
-        let fileManager = FileManager.default
-        let vault = vaultURL.standardizedFileURL
-        let candidate = url.standardizedFileURL
-        guard candidate.pathComponents.starts(with: vault.pathComponents) else { return .unsafe }
-
-        var current = vault
-        for component in candidate.pathComponents.dropFirst(vault.pathComponents.count) {
-            current.append(path: component, directoryHint: .isDirectory)
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: current.path, isDirectory: &isDirectory) else {
-                return .missing
-            }
-            guard isDirectory.boolValue,
-                  let values = try? current.resourceValues(forKeys: [.isSymbolicLinkKey]),
-                  values.isSymbolicLink != true else {
-                return .unsafe
-            }
-        }
-
-        let vaultPath = vault.resolvingSymlinksInPath().standardizedFileURL.path
-        let candidatePath = candidate.resolvingSymlinksInPath().standardizedFileURL.path
-        return candidatePath.hasPrefix(vaultPath + "/") ? .available : .unsafe
-    }
-
-    static func isSafeDirectory(_ url: URL, inside vaultURL: URL) -> Bool {
-        status(of: url, inside: vaultURL) == .available
-    }
-}
-
-private struct ProjectCreationSheet: View {
-    let parentName: String?
-    @Binding var projectName: String
-    @Binding var projectType: ProjectType
-    let errorMessage: String
-    let onCancel: () -> Void
-    let onCreate: () -> Void
-
-    var body: some View {
-        Form {
-            Section {
-                LabeledContent(L10n.parentProject, value: parentName ?? L10n.vaultRoot)
-                TextField(L10n.projectName, text: $projectName)
-                if parentName == nil {
-                    Picker(L10n.projectType, selection: $projectType) {
-                        ForEach(ProjectType.allCases, id: \.self) { type in
-                            Text(L10n.projectTypeName(type)).tag(type)
-                        }
-                    }
-                } else {
-                    Text(L10n.subprojectTypeInheritanceHelp)
-                        .foregroundStyle(.secondary)
-                }
-                if !errorMessage.isEmpty {
-                    SettingsStatusMessage(
-                        text: errorMessage,
-                        systemImage: "exclamationmark.triangle",
-                        tint: .orange
-                    )
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 220)
-        .navigationTitle(L10n.newProject)
-        .safeAreaInset(edge: .bottom) {
-            HStack {
-                Spacer()
-                Button(L10n.cancel, role: .cancel, action: onCancel)
-                Button(L10n.create, action: onCreate)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding()
-            .background(.bar)
-        }
     }
 }

@@ -5,7 +5,6 @@ import SwiftUI
 enum WindowID {
     static let main = "main"
     static let vaultManager = "vault-manager"
-    static let projectManager = "project-manager"
     static let organizationWorkspace = "organization-workspace"
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
@@ -30,6 +29,7 @@ struct DahliaApp: App {
     @State private var recordingCoordinator: RecordingCoordinator
     @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
     @State private var chatCoordinator: CodexChatCoordinator
+    private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var showVaultPicker = true
 
@@ -43,9 +43,11 @@ struct DahliaApp: App {
         let viewModel = CaptionViewModel()
         let sidebarViewModel = SidebarViewModel()
         let liveSubtitleOverlayService = LiveSubtitleOverlayService()
+        let mainWindowNavigation = MainWindowNavigation.shared
         let recordingCoordinator = RecordingCoordinator(
             viewModel: viewModel,
-            sidebarViewModel: sidebarViewModel
+            sidebarViewModel: sidebarViewModel,
+            mainWindowNavigation: mainWindowNavigation
         )
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
@@ -70,6 +72,7 @@ struct DahliaApp: App {
         _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
         _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
         _chatCoordinator = State(initialValue: chatCoordinator)
+        self.mainWindowNavigation = mainWindowNavigation
     }
 
     var body: some Scene {
@@ -85,6 +88,7 @@ struct DahliaApp: App {
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
+                        mainWindowNavigation: mainWindowNavigation,
                         onSelectVault: { vault in openVault(vault) }
                     )
                 }
@@ -138,16 +142,11 @@ struct DahliaApp: App {
         }
         .windowStyle(.automatic)
 
-        Window(L10n.projectManagement, id: WindowID.projectManager) {
-            ProjectManagementView(sidebarViewModel: sidebarViewModel)
-        }
-        .windowResizability(.contentMinSize)
-        .restorationBehavior(.disabled)
-
         Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
             OrganizationWorkspaceView(
                 sidebarViewModel: sidebarViewModel,
-                chatCoordinator: chatCoordinator
+                chatCoordinator: chatCoordinator,
+                mainWindowNavigation: mainWindowNavigation
             )
         }
         .defaultSize(width: 1380, height: 820)
@@ -179,6 +178,7 @@ struct DahliaApp: App {
             SettingsView(
                 captionViewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
+                mainWindowNavigation: mainWindowNavigation,
                 onSelectVault: { vault in openVault(vault) }
             )
         }
@@ -187,7 +187,8 @@ struct DahliaApp: App {
             MenuBarMenuView(
                 viewModel: viewModel,
                 recordingCoordinator: recordingCoordinator,
-                calendarViewModel: menuBarCalendarViewModel
+                calendarViewModel: menuBarCalendarViewModel,
+                mainWindowNavigation: mainWindowNavigation
             )
         } label: {
             MenuBarLabel(
@@ -260,7 +261,7 @@ struct DahliaApp: App {
         startTranscription: Bool
     ) {
         guard let vault = AppSettings.shared.currentVault else { return }
-        MainWindowOpener.shared.openMainWindow()
+        mainWindowNavigation.openMeetings()
 
         if let event = meeting.calendarEvent {
             let repository = MeetingRepository(dbQueue: db.dbQueue)

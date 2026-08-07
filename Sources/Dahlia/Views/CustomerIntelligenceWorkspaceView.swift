@@ -2,19 +2,23 @@ import GRDB
 import SwiftUI
 
 struct OrganizationWorkspaceView: View {
-    @Environment(\.openWindow) private var openWindow
-
     var sidebarViewModel: SidebarViewModel
     var chatCoordinator: CodexChatCoordinator
+    var mainWindowNavigation: MainWindowNavigation
 
     @State private var model: CustomerIntelligenceWorkspaceViewModel
     @State private var showsInspector = true
     @State private var showsAIScope = false
     @State private var creationRequest: CustomerIntelligenceCreationRequest?
 
-    init(sidebarViewModel: SidebarViewModel, chatCoordinator: CodexChatCoordinator) {
+    init(
+        sidebarViewModel: SidebarViewModel,
+        chatCoordinator: CodexChatCoordinator,
+        mainWindowNavigation: MainWindowNavigation
+    ) {
         self.sidebarViewModel = sidebarViewModel
         self.chatCoordinator = chatCoordinator
+        self.mainWindowNavigation = mainWindowNavigation
         _model = State(initialValue: CustomerIntelligenceWorkspaceViewModel(
             dbQueue: sidebarViewModel.dbQueue,
             vaultID: sidebarViewModel.currentVault?.id
@@ -100,7 +104,7 @@ struct OrganizationWorkspaceView: View {
                     onOpenTopic: { id in Task { await model.openTopic(id) } },
                     onOpenInsight: { id in Task { await model.openInsight(id) } },
                     onOpenMeetings: {
-                        MainWindowOpener.shared.openMainWindow()
+                        mainWindowNavigation.openMeetings()
                     },
                     onOpenMeeting: { openMeeting($0) }
                 )
@@ -134,7 +138,7 @@ struct OrganizationWorkspaceView: View {
                     onOpenResource: { openResource($0) },
                     onOpenMeeting: { openMeeting($0) },
                     onOpenProjectManager: {
-                        openWindow(id: WindowID.projectManager)
+                        mainWindowNavigation.openProjects()
                     }
                 )
                 .id("projects:\(vaultID):\(model.scope)")
@@ -218,8 +222,8 @@ private extension OrganizationWorkspaceView {
     }
 
     private func openMeeting(_ meetingID: UUID) {
+        mainWindowNavigation.openMeetings()
         sidebarViewModel.selectMeeting(meetingID)
-        MainWindowOpener.shared.openMainWindow()
     }
 
     private func createOrganization(name: String, parentID: UUID?, description: String) async -> Bool {

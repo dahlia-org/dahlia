@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuBarMenuView: View {
     let recordingCoordinator: RecordingCoordinator
     let calendarViewModel: MenuBarCalendarViewModel
+    let mainWindowNavigation: MainWindowNavigation
 
     @State private var recordingState: MenuBarRecordingState
     @ObservedObject private var settings = AppSettings.shared
@@ -11,10 +12,12 @@ struct MenuBarMenuView: View {
     init(
         viewModel: CaptionViewModel,
         recordingCoordinator: RecordingCoordinator,
-        calendarViewModel: MenuBarCalendarViewModel
+        calendarViewModel: MenuBarCalendarViewModel,
+        mainWindowNavigation: MainWindowNavigation
     ) {
         self.recordingCoordinator = recordingCoordinator
         self.calendarViewModel = calendarViewModel
+        self.mainWindowNavigation = mainWindowNavigation
         _recordingState = State(initialValue: MenuBarRecordingState(viewModel: viewModel))
     }
 
@@ -42,7 +45,7 @@ struct MenuBarMenuView: View {
 
             Divider()
 
-            MenuBarAppActionsView()
+            MenuBarAppActionsView(mainWindowNavigation: mainWindowNavigation)
         }
     }
 

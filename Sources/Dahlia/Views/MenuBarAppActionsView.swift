@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MenuBarAppActionsView: View {
+    let mainWindowNavigation: MainWindowNavigation
+
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
@@ -31,8 +33,7 @@ struct MenuBarAppActionsView: View {
     }
 
     private func openProjectManager() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: WindowID.projectManager)
+        mainWindowNavigation.openProjects()
     }
 
     private func openOrganizationWorkspace() {

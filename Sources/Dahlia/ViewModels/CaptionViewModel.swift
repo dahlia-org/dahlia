@@ -2003,6 +2003,13 @@ final class CaptionViewModel: ObservableObject {
         conversationMetricsStore.reset(for: nil)
     }
 
+    /// Project 管理へ移る際に、保存済み Meeting の表示だけを解除する。
+    /// 未保存のカレンダー下書きは、別画面を開いただけで失われないよう保持する。
+    func clearCurrentMeetingForProjectNavigation() {
+        guard !hasDraftMeeting else { return }
+        clearCurrentMeeting()
+    }
+
     /// 録音対象のトランスクリプトに表示を復帰する。
     func returnToRecordingMeeting() {
         guard let ctx = recordingContext else { return }

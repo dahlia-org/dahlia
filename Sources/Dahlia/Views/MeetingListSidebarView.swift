@@ -34,8 +34,18 @@ struct MeetingListSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            sidebarNavigation
-            MeetingListSectionHeader()
+            MainSidebarNavigationView(
+                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                onShowUpcomingSchedule: onShowUpcomingSchedule,
+                isShowingProjectManagement: false,
+                onShowProjectManagement: onOpenProjectManagement,
+                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                showsCustomerIntelligence: showsCustomerIntelligence,
+                onOpenCustomerIntelligence: onOpenCustomerIntelligence
+            )
+            SidebarSectionHeader(title: L10n.meetings)
 
             List(selection: meetingSelection) {
                 if let selectedMeeting = sidebarViewModel.selectedMeetingOutsideDisplayedItems {
@@ -107,73 +117,6 @@ struct MeetingListSidebarView: View {
         .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
         }
-    }
-
-    private var sidebarNavigation: some View {
-        VStack(spacing: 2) {
-            Button(action: onShowUpcomingSchedule) {
-                sidebarActionLabel(
-                    L10n.calendarScheduleTitle,
-                    systemImage: "calendar",
-                    isSelected: isShowingUpcomingSchedule
-                )
-            }
-            .buttonStyle(.plain)
-            .help(L10n.showUpcomingSchedule)
-            .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
-
-            Button(action: onOpenProjectManagement) {
-                sidebarActionLabel(L10n.projectManagement, systemImage: "folder")
-            }
-            .buttonStyle(.plain)
-            .help(L10n.manageProjects)
-
-            Button(action: onShowUnprocessedRecordings) {
-                HStack {
-                    sidebarActionLabel(
-                        L10n.unprocessedRecordings,
-                        systemImage: "waveform.badge.exclamationmark",
-                        isSelected: isShowingUnprocessedRecordings
-                    )
-                    if !sidebarViewModel.unprocessedRecordingItems.isEmpty {
-                        Text(sidebarViewModel.unprocessedRecordingItems.count, format: .number)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .help(L10n.unprocessedRecordings)
-            .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
-
-            if showsCustomerIntelligence {
-                Button(action: onOpenCustomerIntelligence) {
-                    sidebarActionLabel(L10n.customerIntelligence, systemImage: "building.2")
-                }
-                .buttonStyle(.plain)
-                .help(L10n.openOrganizationWorkspace)
-            }
-
-            SettingsLink {
-                sidebarActionLabel(L10n.settings, systemImage: "gearshape")
-            }
-            .buttonStyle(.plain)
-            .help(L10n.settingsMenuItem)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-
-    private func sidebarActionLabel(
-        _ title: String,
-        systemImage: String,
-        isSelected: Bool = false
-    ) -> some View {
-        Label(title, systemImage: systemImage)
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-            .padding(.horizontal, 8)
-            .contentShape(Rectangle())
-            .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
     }
 
     private var meetingListLimitMessage: String? {
@@ -278,7 +221,7 @@ struct MeetingListSidebarView: View {
     }
 }
 
-private struct RecordingStatusBar: View {
+struct RecordingStatusBar: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator

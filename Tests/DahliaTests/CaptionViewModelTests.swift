@@ -504,6 +504,36 @@ import GRDB
         }
 
         @Test
+        func projectNavigationPreservesDraftMeeting() throws {
+            let viewModel = CaptionViewModel()
+            let event = GoogleCalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "event-1",
+                title: "Design review",
+                description: "Discuss the rollout",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                conferenceURI: nil
+            )
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: try DatabaseQueue(path: ":memory:"),
+                vaultURL: testVaultURL
+            )
+            viewModel.updateDraftMeetingTitle("Edited title")
+
+            viewModel.clearCurrentMeetingForProjectNavigation()
+
+            #expect(viewModel.hasDraftMeeting)
+            #expect(viewModel.draftMeetingTitle == "Edited title")
+        }
+
+        @Test
         func materializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
