@@ -104,6 +104,7 @@ struct OrganizationWorkspaceView: View {
                     onOpenTopic: { id in Task { await model.openTopic(id) } },
                     onOpenInsight: { id in Task { await model.openInsight(id) } },
                     onOpenMeetings: {
+                        mainWindowNavigation.recordNavigation(to: .upcomingSchedule)
                         mainWindowNavigation.openMeetings()
                     },
                     onOpenMeeting: { openMeeting($0) }
