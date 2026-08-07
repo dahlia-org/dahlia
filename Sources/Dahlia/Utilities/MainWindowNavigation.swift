@@ -164,6 +164,7 @@ final class MainWindowNavigation {
         selectedProjectId = reconciledProjectId
         if section == .projects {
             currentLocation = .project(reconciledProjectId)
+            reconcileProjectHistory(with: projects)
         }
     }
 
@@ -228,5 +229,26 @@ final class MainWindowNavigation {
         if history.count > Self.historyLimit {
             history.removeFirst(history.count - Self.historyLimit)
         }
+    }
+
+    private func reconcileProjectHistory(with projects: [ProjectOverviewItem]) {
+        if !projects.isEmpty {
+            let availableProjectIds = Set(projects.map(\.projectId))
+            backHistory.removeAll { $0.referencesUnavailableProject(in: availableProjectIds) }
+            forwardHistory.removeAll { $0.referencesUnavailableProject(in: availableProjectIds) }
+        }
+        while backHistory.last == currentLocation {
+            backHistory.removeLast()
+        }
+        while forwardHistory.last == currentLocation {
+            forwardHistory.removeLast()
+        }
+    }
+}
+
+private extension MainWindowLocation {
+    func referencesUnavailableProject(in availableProjectIds: Set<UUID>) -> Bool {
+        guard case let .project(projectId?) = self else { return false }
+        return !availableProjectIds.contains(projectId)
     }
 }

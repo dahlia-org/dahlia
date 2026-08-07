@@ -384,6 +384,27 @@ struct MainWindowNavigationTests {
     }
 }
 
+extension MainWindowNavigationTests {
+    @Test
+    func deletingSelectedProjectRemovesRedundantAndUnavailableHistory() {
+        let navigation = MainWindowNavigation(openMainWindow: {})
+        let vaultId = UUID.v7()
+        let first = project(named: "First")
+        let selected = project(named: "Selected")
+        let unavailable = project(named: "Unavailable")
+        navigation.resetNavigationHistory(to: .project(first.projectId))
+        navigation.recordNavigation(to: .project(unavailable.projectId))
+        navigation.recordNavigation(to: .project(selected.projectId))
+        navigation.selectedProjectId = selected.projectId
+
+        navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [first])
+
+        #expect(navigation.currentLocation == .project(first.projectId))
+        #expect(!navigation.canGoBack)
+        #expect(!navigation.canGoForward)
+    }
+}
+
 private actor NavigationValidationGate {
     private var continuation: CheckedContinuation<Void, Never>?
     private var isReleased = false
