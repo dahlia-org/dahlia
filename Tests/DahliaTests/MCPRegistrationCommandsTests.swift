@@ -10,8 +10,7 @@ import Foundation
             let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia's App.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID,
-                runtimeProfile: .production
+                vaultID: vaultID
             )
 
             let quotedHelper = "'/Applications/Dahlia'\\''s App.app/Contents/Helpers/dahlia-mcp'"
@@ -32,8 +31,7 @@ import Foundation
             let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID,
-                runtimeProfile: .production
+                vaultID: vaultID
             )
 
             #expect(commands.removalCommand(for: .codex) == "codex mcp remove dahlia")
@@ -46,8 +44,7 @@ import Foundation
             let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID,
-                runtimeProfile: .production
+                vaultID: vaultID
             )
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: true))
@@ -66,23 +63,24 @@ import Foundation
         }
 
         @Test
-        func developmentCommandsPreserveTheDevelopmentProfileForExternalHelpers() throws {
+        func developmentCommandsInvokeTheHelperDirectly() throws {
             let vaultID = try #require(UUID(uuidString: "019F6651-CCBE-7CF2-83B0-6EF955A9FD41"))
             let commands = MCPRegistrationCommands(
                 helperURL: URL(filePath: "/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp"),
-                vaultID: vaultID,
-                runtimeProfile: .development
+                vaultID: vaultID
             )
 
-            let invocation = "/usr/bin/env 'DAHLIA_RUNTIME_PROFILE=development' '/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp'"
+            let helper = "'/Applications/Dahlia Dev.app/Contents/Helpers/dahlia-mcp'"
             let codex = try #require(commands.registrationCommand(for: .codex, writeEnabled: false))
             let claude = try #require(commands.registrationCommand(for: .claude, writeEnabled: false))
             let codexWrite = try #require(commands.registrationCommand(for: .codex, writeEnabled: true))
             let claudeWrite = try #require(commands.registrationCommand(for: .claude, writeEnabled: true))
-            #expect(codex.contains("-- \(invocation) --vault-id"))
-            #expect(claude.contains("-- \(invocation) --vault-id"))
+            #expect(codex.contains("-- \(helper) --vault-id"))
+            #expect(claude.contains("-- \(helper) --vault-id"))
             #expect(codexWrite.hasSuffix("--write"))
             #expect(claudeWrite.hasSuffix("--write"))
+            #expect(!codex.contains("DAHLIA_RUNTIME_PROFILE"))
+            #expect(!claude.contains("DAHLIA_RUNTIME_PROFILE"))
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: false))
             #expect(!json.contains("\"env\""))
