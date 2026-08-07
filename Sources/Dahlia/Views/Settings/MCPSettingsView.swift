@@ -39,7 +39,7 @@ struct MCPSettingsView: View {
                         Text(L10n.mcpAllowWriteAccess)
                         Text(L10n.mcpAllowWriteAccessDescription)
                     }
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.switch)
                 } header: {
                     Text(L10n.mcpConfiguration)
                 } footer: {
