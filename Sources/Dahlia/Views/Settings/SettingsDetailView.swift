@@ -39,7 +39,7 @@ struct SettingsDetailView: View {
             case .aiSummary:
                 AISummarySettingsView()
             case .mcp:
-                MCPSettingsView()
+                MCPSettingsView(sidebarViewModel: sidebarViewModel)
             case .instructions:
                 InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
             case .betaFeatures:

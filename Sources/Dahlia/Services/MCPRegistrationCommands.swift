@@ -2,10 +2,8 @@ import DahliaRuntimeSupport
 import Foundation
 
 struct MCPRegistrationCommands: Equatable {
-    let codex: String
-    let claude: String
-    let codexWrite: String
-    let claudeWrite: String
+    private let invocation: String
+    private let vault: String
 
     init(
         helperURL: URL,
@@ -14,23 +12,17 @@ struct MCPRegistrationCommands: Equatable {
     ) {
         let helper = Self.shellQuote(helperURL.path)
         let vault = Self.shellQuote(vaultID.uuidString)
-        let invocation = Self.helperInvocation(helper: helper, runtimeProfile: runtimeProfile)
-        codex = """
-        codex mcp remove dahlia
-        codex mcp add dahlia -- \(invocation) --vault-id \(vault)
-        """
-        codexWrite = """
-        codex mcp remove dahlia
-        codex mcp add dahlia -- \(invocation) --vault-id \(vault) --write
-        """
-        claude = """
-        claude mcp remove --scope user dahlia
-        claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault)
-        """
-        claudeWrite = """
-        claude mcp remove --scope user dahlia
-        claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault) --write
-        """
+        invocation = Self.helperInvocation(helper: helper, runtimeProfile: runtimeProfile)
+        self.vault = vault
+    }
+
+    func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String {
+        let writeArgument = writeEnabled ? " --write" : ""
+        return "\(client.registrationCommandPrefix) \(invocation) --vault-id \(vault)\(writeArgument)"
+    }
+
+    func removalCommand(for client: MCPClient) -> String {
+        client.removalCommand
     }
 
     private static func helperInvocation(helper: String, runtimeProfile: DahliaRuntimeProfile) -> String {
