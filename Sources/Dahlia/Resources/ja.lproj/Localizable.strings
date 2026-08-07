@@ -996,7 +996,7 @@
 "Copied" = "コピーしました";
 "Codex CLI" = "Codex CLI";
 "Claude Code" = "Claude Code";
-"MCP Configuration" = "MCP の設定";
+"Command Preview" = "コマンドの表示条件";
 "Client" = "クライアント";
 "Allow Write Access" = "書き込みを許可";
 "Allows the agent to change Projects, meeting assignments and summaries, and customer intelligence in the selected Vault." = "Agent が選択した Vault の Project、ミーティングの所属と要約、顧客情報を変更できるようにします。";

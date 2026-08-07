@@ -20,28 +20,14 @@ struct MCPSettingsView: View {
         Form {
             if let vault = selectedVault {
                 Section {
-                    Picker(L10n.mcpClient, selection: $selectedClient) {
-                        ForEach(MCPClient.allCases) { client in
-                            Text(client.displayName).tag(client)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    Picker(L10n.vault, selection: $selectedVaultID) {
-                        ForEach(availableVaults) { availableVault in
-                            Text(MCPVaultDisplayName.resolve(for: availableVault, among: availableVaults))
-                                .tag(Optional(availableVault.id))
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    Toggle(isOn: $isWriteEnabled) {
-                        Text(L10n.mcpAllowWriteAccess)
-                        Text(L10n.mcpAllowWriteAccessDescription)
-                    }
-                    .toggleStyle(.switch)
+                    MCPPreviewOptionsView(
+                        selectedClient: $selectedClient,
+                        selectedVaultID: $selectedVaultID,
+                        isWriteEnabled: $isWriteEnabled,
+                        availableVaults: availableVaults
+                    )
                 } header: {
-                    Text(L10n.mcpConfiguration)
+                    Text(L10n.mcpPreview)
                 } footer: {
                     Text(L10n.mcpFooter)
                 }

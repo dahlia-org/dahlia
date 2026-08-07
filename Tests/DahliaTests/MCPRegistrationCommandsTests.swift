@@ -57,7 +57,10 @@ import Foundation
 
             #expect(server.command == "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
             #expect(server.args == ["--vault-id", vaultID.uuidString, "--write"])
-            #expect(server.env == nil)
+
+            let commandRange = try #require(json.range(of: "\"command\""))
+            let argsRange = try #require(json.range(of: "\"args\""))
+            #expect(commandRange.lowerBound < argsRange.lowerBound)
         }
 
         @Test
@@ -76,11 +79,7 @@ import Foundation
             #expect(commands.registrationCommand(for: .claude, writeEnabled: true).hasSuffix("--write"))
 
             let json = try #require(commands.mcpJSONSample(writeEnabled: false))
-            let sample = try JSONDecoder().decode(
-                MCPJSONSample.self,
-                from: Data(json.utf8)
-            )
-            #expect(sample.mcpServers["dahlia"]?.env == ["DAHLIA_RUNTIME_PROFILE": "development"])
+            #expect(!json.contains("\"env\""))
         }
 
         private struct MCPJSONSample: Decodable {
@@ -90,7 +89,6 @@ import Foundation
         private struct MCPServer: Decodable {
             let command: String
             let args: [String]
-            let env: [String: String]?
         }
     }
 #endif

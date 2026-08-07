@@ -1600,7 +1600,7 @@ enum L10n {
     static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
-    static var mcpConfiguration: String { String(localized: "MCP Configuration", bundle: bundle) }
+    static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
     static var mcpClient: String { String(localized: "Client", bundle: bundle) }
     static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }
     static var mcpAllowWriteAccessDescription: String { String(

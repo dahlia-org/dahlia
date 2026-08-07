@@ -2,19 +2,8 @@ import DahliaRuntimeSupport
 import Foundation
 
 struct MCPRegistrationCommands: Equatable {
-    private struct MCPJSONConfiguration: Encodable {
-        let mcpServers: [String: MCPServer]
-    }
-
-    private struct MCPServer: Encodable {
-        let command: String
-        let args: [String]
-        let env: [String: String]?
-    }
-
     private let helperPath: String
     private let invocation: String
-    private let runtimeProfile: DahliaRuntimeProfile
     private let vault: String
     private let vaultID: String
 
@@ -28,7 +17,6 @@ struct MCPRegistrationCommands: Equatable {
         self.vaultID = vaultID.uuidString
         vault = Self.shellQuote(vaultID.uuidString)
         invocation = Self.helperInvocation(helper: helper, runtimeProfile: runtimeProfile)
-        self.runtimeProfile = runtimeProfile
     }
 
     func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String {
@@ -46,22 +34,23 @@ struct MCPRegistrationCommands: Equatable {
             args.append("--write")
         }
 
-        let environment = runtimeProfile == .development
-            ? [DahliaApplicationSupport.profileEnvironmentKey: DahliaRuntimeProfile.development.rawValue]
-            : nil
-        let configuration = MCPJSONConfiguration(
-            mcpServers: [
-                "dahlia": MCPServer(
-                    command: helperPath,
-                    args: args,
-                    env: environment
-                ),
-            ]
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? encoder.encode(configuration) else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let command = Self.jsonString(helperPath) else { return nil }
+        let arguments = args.compactMap(Self.jsonString)
+        guard arguments.count == args.count else { return nil }
+        let formattedArguments = arguments.map { "        \($0)" }.joined(separator: ",\n")
+
+        return """
+        {
+          "mcpServers": {
+            "dahlia": {
+              "command": \(command),
+              "args": [
+        \(formattedArguments)
+              ]
+            }
+          }
+        }
+        """
     }
 
     private static func helperInvocation(helper: String, runtimeProfile: DahliaRuntimeProfile) -> String {
@@ -74,5 +63,12 @@ struct MCPRegistrationCommands: Equatable {
 
     private static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func jsonString(_ value: String) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }
