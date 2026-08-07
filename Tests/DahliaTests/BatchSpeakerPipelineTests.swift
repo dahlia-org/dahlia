@@ -212,6 +212,84 @@ import os
             }
         }
 
+        @Test
+        func sameSpeakerAcrossSessionsPersistsOneMeetingSpeakerPerSession() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(name: "D24SpeakerRows")
+            #expect(fixture.sessions.map(\.offsetSeconds) == [0, 10, 20])
+            for index in fixture.sessions.indices {
+                _ = try fixture.persistSpeakerAnalysis(sessionIndex: index)
+            }
+
+            let speakerCount = try await fixture.database.dbQueue.read { db in
+                try MeetingSpeakerRecord.fetchCount(db)
+            }
+
+            // D24 characterization: これは現在の壊れた挙動を固定している。
+            // D24 の修正時、このアサーションは反転させなければならない（期待値: 1 行または1クラスタ）。
+            #expect(speakerCount == fixture.sessions.count)
+        }
+
+        @Test
+        func sameSpeakerAcrossSessionsReceivesIncreasingRepositoryOrdinals() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(name: "D24SpeakerOrdinals")
+            for index in fixture.sessions.indices {
+                _ = try fixture.persistSpeakerAnalysis(sessionIndex: index)
+            }
+
+            let page = try MeetingRepository(dbQueue: fixture.database.dbQueue).fetchTranscriptPage(
+                forMeetingId: fixture.meetingId,
+                direction: .latest,
+                limit: fixture.sessions.count
+            )
+
+            // D24 characterization: これは現在の壊れた挙動を固定している。
+            // D24 の修正時、このアサーションは反転させなければならない（期待値: 同一人物なら全 session で同一 ordinal）。
+            #expect(page.segments.compactMap(\.speakerIdentity?.ordinal) == [1, 2, 3])
+        }
+
+        @Test
+        func mapSpeakersUsesSessionRelativeTimebaseAcrossNonzeroOffsets() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(name: "D24SpeakerTimebase")
+            #expect(fixture.sessions.map(\.offsetSeconds) == [0, 10, 20])
+            var mappedSpeakerIds: [UUID] = []
+            var displayedSeconds: [TimeInterval] = []
+            for index in fixture.sessions.indices {
+                let session = fixture.sessions[index]
+                let segment = TranscriptSegment(
+                    sessionId: session.id,
+                    startTime: session.startedAt.addingTimeInterval(1.25),
+                    endTime: session.startedAt.addingTimeInterval(1.75),
+                    text: "Speaker session \(index + 1)",
+                    isConfirmed: true,
+                    speakerLabel: RecordingAudioSource.microphone.speakerLabel
+                )
+                let speakerAnalysis = fixture.makeSpeakerAnalysis(
+                    sessionIndex: index,
+                    relativeStartSeconds: 1.25,
+                    relativeEndSeconds: 1.75
+                )
+                let assignments = BatchTranscriptionCoordinator.mapSpeakers(
+                    to: [segment],
+                    analysis: speakerAnalysis.analysis,
+                    recordingStartTime: session.startedAt
+                )
+                mappedSpeakerIds.append(try #require(assignments[segment.id]))
+                displayedSeconds.append(Formatters.elapsedSeconds(
+                    at: segment.startTime,
+                    sessionId: segment.sessionId,
+                    sessions: fixture.sessions.map(RecordingSessionTimeline.init),
+                    fallbackTimeBase: fixture.recordingStartTime
+                ))
+            }
+
+            // D24 characterization: これは現在の壊れた挙動を固定している。
+            // D24 の修正時、このアサーションは反転させなければならない（期待値: 同一人物の mapped result は1行または1クラスタ）。
+            #expect(Set(mappedSpeakerIds).count == fixture.sessions.count)
+
+            // Timebase safety invariant: offsetSeconds is applied only when projecting display elapsed time.
+            #expect(displayedSeconds == [1.25, 11.25, 21.25])
+        }
+
         private func waitForCompletion(_ fixture: BatchAudioTestFixture) async throws {
             let completed = await pollUntil {
                 (try? fixture.database.dbQueue.read { db in
