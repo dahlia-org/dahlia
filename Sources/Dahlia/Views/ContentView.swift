@@ -7,6 +7,7 @@ struct ContentView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var chatCoordinator: CodexChatCoordinator
+    var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
@@ -17,33 +18,50 @@ struct ContentView: View {
     @State private var isShowingUnprocessedRecordings = false
 
     var body: some View {
-        NavigationSplitView {
-            MeetingListSidebarView(
-                viewModel: viewModel,
-                sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator,
-                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
-                onShowUpcomingSchedule: returnToCalendarSchedule,
-                onOpenProjectManagement: { openWindow(id: WindowID.projectManager) },
-                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
-                onShowUnprocessedRecordings: showUnprocessedRecordings,
-                showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
-            )
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
-        } detail: {
-            detailView
-                .navigationTitle("")
+        Group {
+            if mainWindowNavigation.section == .projects {
+                ProjectManagementView(
+                    sidebarViewModel: sidebarViewModel,
+                    captionViewModel: viewModel,
+                    recordingCoordinator: recordingCoordinator,
+                    mainWindowNavigation: mainWindowNavigation,
+                    onShowUpcomingSchedule: returnToCalendarSchedule,
+                    onShowUnprocessedRecordings: showUnprocessedRecordings,
+                    showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                    onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
+                )
+            } else {
+                NavigationSplitView {
+                    MeetingListSidebarView(
+                        viewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
+                        isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                        onShowUpcomingSchedule: returnToCalendarSchedule,
+                        onOpenProjectManagement: showProjectManagement,
+                        isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                        onShowUnprocessedRecordings: showUnprocessedRecordings,
+                        showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
+                    )
+                    .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+                } detail: {
+                    detailView
+                        .navigationTitle("")
+                }
+            }
         }
         .toolbar(removing: .title)
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button(L10n.newMeeting, systemImage: "square.and.pencil") {
-                    recordingCoordinator.createEmptyMeeting()
+                if mainWindowNavigation.section == .meetings {
+                    Button(L10n.newMeeting, systemImage: "square.and.pencil") {
+                        recordingCoordinator.createEmptyMeeting()
+                    }
+                    .labelStyle(.iconOnly)
+                    .keyboardShortcut("n", modifiers: .command)
+                    .help(L10n.newMeeting)
                 }
-                .labelStyle(.iconOnly)
-                .keyboardShortcut("n", modifiers: .command)
-                .help(L10n.newMeeting)
             }
 
             ToolbarSpacer(.fixed, placement: .navigation)
@@ -142,6 +160,7 @@ struct ContentView: View {
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
             if !newValue.isEmpty {
+                mainWindowNavigation.showMeetings()
                 isShowingUnprocessedRecordings = false
             }
             handleMeetingSelectionChange(newValue)
@@ -162,13 +181,26 @@ struct ContentView: View {
             viewModel.clearCurrentMeeting()
             syncChatContext()
         }
+        .onChange(of: mainWindowNavigation.section) { _, section in
+            if section == .projects {
+                prepareProjectManagement()
+            } else {
+                syncChatContext()
+            }
+        }
         .onChange(of: sidebarViewModel.workspaceChangeToken) { _, _ in
             // MCP ヘルパーなど別プロセスが要約を書き換えた場合に Summary タブを追従させる。
             viewModel.reloadSummaryDocument()
         }
+        .onAppear {
+            MainWindowOpener.shared.register(openWindow: openWindow)
+            prepareInitialPresentation()
+        }
         .task { syncChatContext() }
     }
+}
 
+private extension ContentView {
     private func presentPermissionGuideIfNeeded() {
         guard PermissionGuidePresentationPolicy.shouldPresent(
             storedVersion: permissionGuidePresentationVersion
@@ -181,6 +213,15 @@ struct ContentView: View {
     }
 
     private func syncChatContext() {
+        if mainWindowNavigation.section == .projects {
+            chatCoordinator.updateCurrentContext(
+                vaultID: sidebarViewModel.currentVault?.id,
+                meetingID: nil,
+                draftMeeting: nil,
+                dbQueue: sidebarViewModel.dbQueue
+            )
+            return
+        }
         guard sidebarViewModel.selectedMeetingIds.count <= 1 else {
             chatCoordinator.updateCurrentContext(
                 vaultID: sidebarViewModel.currentVault?.id,
@@ -248,6 +289,7 @@ struct ContentView: View {
     }
 
     private func returnToCalendarSchedule() {
+        mainWindowNavigation.showMeetings()
         isShowingUnprocessedRecordings = false
         if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.isEmpty {
             viewModel.clearCurrentMeeting()
@@ -256,10 +298,35 @@ struct ContentView: View {
     }
 
     private func showUnprocessedRecordings() {
+        mainWindowNavigation.showMeetings()
         viewModel.clearCurrentMeeting()
         sidebarViewModel.clearMeetingSelection()
         isShowingUnprocessedRecordings = true
         Task { await sidebarViewModel.refreshUnprocessedRecordings() }
+    }
+
+    private func showProjectManagement() {
+        mainWindowNavigation.showProjects()
+    }
+
+    private func prepareProjectManagement() {
+        isShowingUnprocessedRecordings = false
+        viewModel.clearCurrentMeetingForProjectNavigation()
+        sidebarViewModel.clearMeetingSelection()
+        syncChatContext()
+    }
+
+    private func prepareInitialPresentation() {
+        if mainWindowNavigation.section == .projects {
+            prepareProjectManagement()
+            return
+        }
+        if sidebarViewModel.selectedMeetingIds.count == 1,
+           let meetingId = sidebarViewModel.selectedMeetingId,
+           viewModel.currentMeetingId != meetingId {
+            handleMeetingSelection(meetingId)
+        }
+        syncChatContext()
     }
 
     private func handleMeetingSelection(_ meetingId: UUID) {

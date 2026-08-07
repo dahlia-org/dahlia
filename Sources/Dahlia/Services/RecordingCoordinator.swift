@@ -7,10 +7,16 @@ import GRDB
 final class RecordingCoordinator {
     private let viewModel: CaptionViewModel
     private let sidebarViewModel: SidebarViewModel
+    private let mainWindowNavigation: MainWindowNavigation
 
-    init(viewModel: CaptionViewModel, sidebarViewModel: SidebarViewModel) {
+    init(
+        viewModel: CaptionViewModel,
+        sidebarViewModel: SidebarViewModel,
+        mainWindowNavigation: MainWindowNavigation
+    ) {
         self.viewModel = viewModel
         self.sidebarViewModel = sidebarViewModel
+        self.mainWindowNavigation = mainWindowNavigation
     }
 
     var canStartNewMeeting: Bool {
@@ -20,6 +26,7 @@ final class RecordingCoordinator {
     }
 
     func startNewMeeting() {
+        mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
@@ -52,6 +59,7 @@ final class RecordingCoordinator {
     }
 
     func createEmptyMeeting() {
+        mainWindowNavigation.showMeetings()
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
             MainWindowOpener.shared.openMainWindow()
@@ -73,7 +81,7 @@ final class RecordingCoordinator {
     }
 
     func openCalendarEvent(_ event: CalendarEvent) {
-        MainWindowOpener.shared.openMainWindow()
+        mainWindowNavigation.openMeetings()
         guard let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else { return }
 
@@ -114,6 +122,7 @@ final class RecordingCoordinator {
         appendingTo meetingId: UUID,
         customerIntelligenceEvent: CalendarEvent? = nil
     ) -> Bool {
+        mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
@@ -173,6 +182,7 @@ final class RecordingCoordinator {
 
     @discardableResult
     private func startRecording(forCalendarEvent event: CalendarEvent) -> Bool {
+        mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {

@@ -1,8 +1,10 @@
 import SwiftUI
 
-struct MeetingListSectionHeader: View {
+struct SidebarSectionHeader: View {
+    let title: String
+
     var body: some View {
-        Text(L10n.meetings)
+        Text(title)
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)

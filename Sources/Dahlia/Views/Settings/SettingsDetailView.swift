@@ -4,13 +4,18 @@ struct SettingsDetailView: View {
     let selection: SettingsCategory
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void
 
     var body: some View {
         Group {
             switch selection {
             case .general:
-                GeneralSettingsView(sidebarViewModel: sidebarViewModel, onSelectVault: onSelectVault)
+                GeneralSettingsView(
+                    sidebarViewModel: sidebarViewModel,
+                    mainWindowNavigation: mainWindowNavigation,
+                    onSelectVault: onSelectVault
+                )
             case .permissions:
                 PermissionSettingsView()
             case .backups:

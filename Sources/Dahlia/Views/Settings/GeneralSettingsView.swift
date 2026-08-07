@@ -3,6 +3,7 @@ import SwiftUI
 /// 設定画面「一般」タブ。表示言語と通知設定を管理する。
 struct GeneralSettingsView: View {
     var sidebarViewModel: SidebarViewModel
+    var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
@@ -29,7 +30,7 @@ struct GeneralSettingsView: View {
                 }
 
                 Button(L10n.manageProjects) {
-                    openWindow(id: WindowID.projectManager)
+                    mainWindowNavigation.openProjects()
                 }
             }
 

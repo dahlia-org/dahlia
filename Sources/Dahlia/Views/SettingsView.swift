@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @AppStorage(SettingsNavigation.selectedCategoryDefaultsKey)
@@ -21,6 +22,7 @@ struct SettingsView: View {
                     selection: selection,
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
+                    mainWindowNavigation: mainWindowNavigation,
                     onSelectVault: onSelectVault
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
