@@ -189,7 +189,7 @@ final class MeetingRepository {
         }
     }
 
-    func fetchMeeting(id: UUID) throws -> MeetingRecord? {
+    nonisolated func fetchMeeting(id: UUID) throws -> MeetingRecord? {
         try dbQueue.read { db in
             try MeetingRecord.fetchOne(db, key: id)
         }

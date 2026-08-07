@@ -55,6 +55,13 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
+            MainWindowNavigationToolbar(
+                canGoBack: canGoBack,
+                canGoForward: canGoForward,
+                onGoBack: goBack,
+                onGoForward: goForward
+            )
+
             ToolbarItem(placement: .navigation) {
                 if mainWindowNavigation.section == .meetings {
                     Button(L10n.newMeeting, systemImage: "square.and.pencil") {
@@ -165,7 +172,13 @@ struct ContentView: View {
                 mainWindowNavigation.showMeetings()
                 isShowingUnprocessedRecordings = false
             }
+            if newValue.count == 1, let meetingID = newValue.first {
+                mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
+            }
             handleMeetingSelectionChange(newValue)
+            if newValue.isEmpty {
+                mainWindowNavigation.recordUpcomingScheduleIfVisible(isShowingUpcomingSchedule)
+            }
             syncChatContext()
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in
@@ -178,10 +191,15 @@ struct ContentView: View {
         .onChange(of: viewModel.draftMeeting) {
             syncChatContext()
         }
-        .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
+        .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultID in
             sidebarViewModel.clearMeetingSelection()
             viewModel.clearCurrentMeeting()
+            mainWindowNavigation.changeVault(to: vaultID)
             syncChatContext()
+        }
+        .onChange(of: mainWindowNavigation.selectedProjectId) { _, projectID in
+            guard mainWindowNavigation.section == .projects else { return }
+            mainWindowNavigation.recordNavigation(to: .project(projectID))
         }
         .onChange(of: mainWindowNavigation.section) { _, section in
             if section == .projects {
@@ -252,6 +270,20 @@ private extension ContentView {
             && !isShowingUnprocessedRecordings
     }
 
+    private var canGoBack: Bool {
+        mainWindowNavigation.canGoBack && canNavigateHistory
+    }
+
+    private var canGoForward: Bool {
+        mainWindowNavigation.canGoForward && canNavigateHistory
+    }
+
+    private var canNavigateHistory: Bool {
+        !viewModel.hasDraftMeeting
+            && !viewModel.isRecordingStartPending
+            && !viewModel.isFinalizingRecording
+    }
+
     @ViewBuilder
     private var detailView: some View {
         if isShowingUnprocessedRecordings {
@@ -291,6 +323,16 @@ private extension ContentView {
     }
 
     private func returnToCalendarSchedule() {
+        mainWindowNavigation.recordNavigation(to: .upcomingSchedule)
+        displayUpcomingSchedule()
+    }
+
+    private func showUnprocessedRecordings() {
+        mainWindowNavigation.recordNavigation(to: .unprocessedRecordings)
+        displayUnprocessedRecordings()
+    }
+
+    private func displayUpcomingSchedule() {
         mainWindowNavigation.showMeetings()
         isShowingUnprocessedRecordings = false
         if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.isEmpty {
@@ -299,7 +341,7 @@ private extension ContentView {
         sidebarViewModel.clearMeetingSelection()
     }
 
-    private func showUnprocessedRecordings() {
+    private func displayUnprocessedRecordings() {
         mainWindowNavigation.showMeetings()
         viewModel.clearCurrentMeeting()
         sidebarViewModel.clearMeetingSelection()
@@ -308,6 +350,7 @@ private extension ContentView {
     }
 
     private func showProjectManagement() {
+        mainWindowNavigation.recordNavigation(to: .project(mainWindowNavigation.selectedProjectId))
         mainWindowNavigation.showProjects()
     }
 
@@ -319,8 +362,15 @@ private extension ContentView {
     }
 
     private func prepareInitialPresentation() {
+        if mainWindowNavigation.hasInitializedNavigationHistory {
+            restoreCurrentPresentation()
+            return
+        }
         if mainWindowNavigation.section == .projects {
             prepareProjectManagement()
+            mainWindowNavigation.initializeNavigationHistoryIfNeeded(
+                to: .project(mainWindowNavigation.selectedProjectId)
+            )
             return
         }
         if sidebarViewModel.selectedMeetingIds.count == 1,
@@ -328,7 +378,94 @@ private extension ContentView {
            viewModel.currentMeetingId != meetingId {
             handleMeetingSelection(meetingId)
         }
+        let initialLocation = sidebarViewModel.selectedMeetingId.map(MainWindowLocation.meeting)
+            ?? .upcomingSchedule
+        mainWindowNavigation.initializeNavigationHistoryIfNeeded(to: initialLocation)
         syncChatContext()
+    }
+
+    private func restoreCurrentPresentation() {
+        if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.count > 1 {
+            mainWindowNavigation.showMeetings()
+            isShowingUnprocessedRecordings = false
+            syncChatContext()
+            return
+        }
+
+        restoreNavigation(mainWindowNavigation.currentLocation)
+        syncChatContext()
+    }
+
+    private func goBack() {
+        guard canNavigateHistory else { return }
+        Task {
+            await mainWindowNavigation.goBack(
+                validatingWith: validateNavigation,
+                restoringWith: restoreNavigation
+            )
+        }
+    }
+
+    private func goForward() {
+        guard canNavigateHistory else { return }
+        Task {
+            await mainWindowNavigation.goForward(
+                validatingWith: validateNavigation,
+                restoringWith: restoreNavigation
+            )
+        }
+    }
+
+    private func validateNavigation(_ location: MainWindowLocation) async -> Bool {
+        switch location {
+        case .upcomingSchedule, .unprocessedRecordings:
+            return true
+        case let .meeting(meetingID):
+            let selectedMeetingIds = sidebarViewModel.selectedMeetingIds
+            let draftMeeting = viewModel.draftMeeting
+            let currentMeetingID = viewModel.currentMeetingId
+            let isRecordingStartPending = viewModel.isRecordingStartPending
+            let isFinalizingRecording = viewModel.isFinalizingRecording
+            let exists = await meetingExists(meetingID)
+            guard canNavigateHistory,
+                  sidebarViewModel.selectedMeetingIds == selectedMeetingIds,
+                  viewModel.draftMeeting == draftMeeting,
+                  viewModel.currentMeetingId == currentMeetingID,
+                  viewModel.isRecordingStartPending == isRecordingStartPending,
+                  viewModel.isFinalizingRecording == isFinalizingRecording else {
+                mainWindowNavigation.cancelHistoryNavigation()
+                return false
+            }
+            return exists
+        case let .project(projectID):
+            return projectID == nil
+                || sidebarViewModel.allProjectItems.contains(where: { $0.projectId == projectID })
+        }
+    }
+
+    private func restoreNavigation(_ location: MainWindowLocation) {
+        switch location {
+        case .upcomingSchedule:
+            displayUpcomingSchedule()
+        case .unprocessedRecordings:
+            displayUnprocessedRecordings()
+        case let .meeting(meetingID):
+            mainWindowNavigation.showMeetings()
+            isShowingUnprocessedRecordings = false
+            sidebarViewModel.selectMeeting(meetingID)
+        case let .project(projectID):
+            mainWindowNavigation.showProjects()
+            mainWindowNavigation.selectedProjectId = projectID
+        }
+    }
+
+    private func meetingExists(_ meetingID: UUID) async -> Bool {
+        guard let dbQueue = sidebarViewModel.dbQueue,
+              let vaultID = sidebarViewModel.currentVault?.id else { return false }
+        let existsInVault = await Task.detached(priority: .userInitiated) {
+            try? MeetingRepository(dbQueue: dbQueue).fetchMeeting(id: meetingID)?.vaultId == vaultID
+        }.value == true
+        return existsInVault && sidebarViewModel.currentVault?.id == vaultID
     }
 
     private func handleMeetingSelection(_ meetingId: UUID) {
