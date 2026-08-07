@@ -5,6 +5,7 @@ struct CalendarScheduleView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openURL) private var openURL
 
@@ -209,7 +210,11 @@ struct CalendarScheduleView: View {
                 CalendarScheduleSectionView(
                     section: section,
                     onSelectEvent: onSelectEvent,
-                    onOpenURL: { openURL($0) }
+                    onOpenURL: { openURL($0) },
+                    isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled,
+                    onSetAutoRecording: { event, isEnabled in
+                        calendarAutoRecordingStore.setEnabled(isEnabled, for: event)
+                    }
                 )
             }
         }
@@ -357,6 +362,8 @@ private struct CalendarScheduleSectionView: View {
     let section: CalendarScheduleEventSection
     let onSelectEvent: (CalendarEvent) -> Void
     let onOpenURL: (URL) -> Void
+    let isAutoRecordingEnabled: (CalendarEvent) -> Bool
+    let onSetAutoRecording: (CalendarEvent, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -371,7 +378,9 @@ private struct CalendarScheduleSectionView: View {
                         onSelect: { onSelectEvent(event) },
                         onJoin: event.conferenceURI.map { url in
                             { onOpenURL(url) }
-                        }
+                        },
+                        isAutoRecordingEnabled: isAutoRecordingEnabled(event),
+                        onSetAutoRecording: { onSetAutoRecording(event, $0) }
                     )
                 }
             }
@@ -383,6 +392,8 @@ private struct CalendarScheduleEventRow: View {
     let event: CalendarEvent
     let onSelect: () -> Void
     let onJoin: (() -> Void)?
+    let isAutoRecordingEnabled: Bool
+    let onSetAutoRecording: (Bool) -> Void
 
     @State private var isHovered = false
 
@@ -413,11 +424,27 @@ private struct CalendarScheduleEventRow: View {
             }
             .buttonStyle(.plain)
 
-            if let onJoin {
-                Button(action: onJoin) {
-                    Label(L10n.join, systemImage: "video.fill")
+            HStack(spacing: 12) {
+                if let onJoin {
+                    Button(action: onJoin) {
+                        Label(L10n.join, systemImage: "video.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 }
-                .buttonStyle(.bordered)
+
+                if !event.isAllDay {
+                    Toggle(isOn: autoRecordingBinding) {
+                        Image(systemName: "timer")
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .accessibilityLabel(L10n.calendarAutoRecording)
+                    .help(L10n.calendarAutoRecordingHelp)
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -431,6 +458,13 @@ private struct CalendarScheduleEventRow: View {
         .contentShape(Rectangle())
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+
+    private var autoRecordingBinding: Binding<Bool> {
+        Binding(
+            get: { isAutoRecordingEnabled },
+            set: { isEnabled in onSetAutoRecording(isEnabled) }
+        )
     }
 
     private var subtitle: String {

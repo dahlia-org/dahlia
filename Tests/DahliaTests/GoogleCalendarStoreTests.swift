@@ -49,6 +49,132 @@ struct GoogleCalendarStoreTests {
     }
 
     @Test
+    func olderRefreshCannotOverwriteANewerResult() async {
+        let defaults = isolatedUserDefaults()
+        seedSelectedCalendars(["primary"], defaults: defaults)
+        let signInProvider = MockGoogleCalendarSignInProvider(
+            hasPreviousSignIn: true,
+            restoreResult: .success(fixtureSession),
+            refreshResult: .success(fixtureSession)
+        )
+        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+        let store = GoogleCalendarStore(
+            signInProvider: signInProvider,
+            apiClient: apiClient,
+            userDefaults: defaults,
+            now: { fixtureNow }
+        )
+        await store.restoreSessionIfNeeded()
+
+        let olderRefresh = Task { await store.refreshIfNeeded(force: true) }
+        await apiClient.waitForFetchEventsCallCount(2)
+        let newerRefresh = Task { await store.refreshIfNeeded(force: true) }
+        await apiClient.waitForFetchEventsCallCount(3)
+
+        let newerEvent = calendarEvent(id: "newer")
+        apiClient.resumePendingRequest(at: 1, with: [newerEvent])
+        await newerRefresh.value
+        apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "older")])
+        await olderRefresh.value
+
+        #expect(store.upcomingEvents == [newerEvent])
+        #expect(store.state == .loaded)
+    }
+
+    @Test
+    func disconnectInvalidatesAnInFlightRefresh() async {
+        let defaults = isolatedUserDefaults()
+        seedSelectedCalendars(["primary"], defaults: defaults)
+        let signInProvider = MockGoogleCalendarSignInProvider(
+            hasPreviousSignIn: true,
+            restoreResult: .success(fixtureSession),
+            refreshResult: .success(fixtureSession)
+        )
+        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+        let store = GoogleCalendarStore(
+            signInProvider: signInProvider,
+            apiClient: apiClient,
+            userDefaults: defaults,
+            now: { fixtureNow }
+        )
+        await store.restoreSessionIfNeeded()
+
+        let refresh = Task { await store.refreshIfNeeded(force: true) }
+        await apiClient.waitForFetchEventsCallCount(2)
+        await store.disconnect()
+        apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "old-account")])
+        await refresh.value
+
+        #expect(store.upcomingEvents.isEmpty)
+        #expect(store.state == .signedOut)
+    }
+
+    @Test
+    func refreshIsIgnoredWhileDisconnectIsInProgress() async {
+        let defaults = isolatedUserDefaults()
+        seedSelectedCalendars(["primary"], defaults: defaults)
+        let signInProvider = MockGoogleCalendarSignInProvider(
+            hasPreviousSignIn: true,
+            restoreResult: .success(fixtureSession),
+            refreshResult: .success(fixtureSession),
+            suspendsDisconnect: true
+        )
+        let apiClient = MockGoogleCalendarAPIClient(
+            calendars: [primaryCalendar],
+            events: [fixtureEvent]
+        )
+        let store = GoogleCalendarStore(
+            signInProvider: signInProvider,
+            apiClient: apiClient,
+            userDefaults: defaults,
+            now: { fixtureNow }
+        )
+        await store.restoreSessionIfNeeded()
+
+        let disconnect = Task { await store.disconnect() }
+        await signInProvider.waitUntilDisconnectStarts()
+        await store.refreshIfNeeded(force: true)
+
+        #expect(apiClient.fetchEventsCallCount == 1)
+        #expect(store.upcomingEvents.isEmpty)
+        signInProvider.finishDisconnect()
+        await disconnect.value
+        #expect(store.state == .signedOut)
+    }
+
+    @Test
+    func refreshIsIgnoredUntilRestoredAccountCalendarsAreLoaded() async {
+        let defaults = isolatedUserDefaults()
+        seedSelectedCalendars(["primary"], defaults: defaults)
+        let signInProvider = MockGoogleCalendarSignInProvider(
+            hasPreviousSignIn: true,
+            restoreResult: .success(fixtureSession),
+            refreshResult: .success(fixtureSession)
+        )
+        let apiClient = ControllableGoogleCalendarAPIClient(
+            initialEvents: [fixtureEvent],
+            suspendsCalendarList: true
+        )
+        let store = GoogleCalendarStore(
+            signInProvider: signInProvider,
+            apiClient: apiClient,
+            userDefaults: defaults,
+            now: { fixtureNow }
+        )
+
+        let restore = Task { await store.restoreSessionIfNeeded() }
+        await apiClient.waitUntilCalendarListFetchStarts()
+        await store.refreshIfNeeded(force: true)
+        #expect(apiClient.fetchEventsCallCount == 0)
+
+        apiClient.finishCalendarListFetch()
+        await restore.value
+        #expect(store.availableCalendars == [primaryCalendar])
+        #expect(store.upcomingEvents == [fixtureEvent])
+        #expect(store.state == .loaded)
+    }
+
+    @Test
     func restoreFailureMapsWebClientIDErrorToActionableMessage() async {
         let signInProvider = MockGoogleCalendarSignInProvider(
             hasPreviousSignIn: true,
@@ -410,6 +536,23 @@ private let fixtureEvent = GoogleCalendarEvent(
     conferenceURI: URL(string: "https://meet.google.com/test-link")
 )
 
+private func calendarEvent(id: String) -> CalendarEvent {
+    GoogleCalendarEvent(
+        id: "primary::\(id)",
+        calendarID: "primary",
+        calendarName: "Primary",
+        calendarColorHex: "#4285F4",
+        platformId: id,
+        title: id,
+        description: "",
+        icalUid: "\(id)@google.com",
+        startDate: fixtureNow.addingTimeInterval(3600),
+        endDate: fixtureNow.addingTimeInterval(7200),
+        isAllDay: false,
+        conferenceURI: nil
+    )
+}
+
 @MainActor
 private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     let isConfigured: Bool
@@ -418,6 +561,8 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     var restoreResult: Result<GoogleSession, Error>
     var signInResult: Result<GoogleSession, Error>
     var refreshResult: Result<GoogleSession?, Error>
+    private let suspendsDisconnect: Bool
+    private var disconnectContinuation: CheckedContinuation<Void, Never>?
     private(set) var restoreCallCount = 0
     private(set) var disconnectCallCount = 0
     private(set) var signInRequestedScopes: [Set<String>] = []
@@ -428,7 +573,8 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
         sessionDidChangeNotification: Notification.Name = .googleCalendarSessionDidChange,
         restoreResult: Result<GoogleSession, Error> = .success(fixtureSession),
         signInResult: Result<GoogleSession, Error> = .success(fixtureSession),
-        refreshResult: Result<GoogleSession?, Error> = .success(fixtureSession)
+        refreshResult: Result<GoogleSession?, Error> = .success(fixtureSession),
+        suspendsDisconnect: Bool = false
     ) {
         self.isConfigured = isConfigured
         self.hasPreviousSignIn = hasPreviousSignIn
@@ -436,6 +582,7 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
         self.restoreResult = restoreResult
         self.signInResult = signInResult
         self.refreshResult = refreshResult
+        self.suspendsDisconnect = suspendsDisconnect
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
@@ -454,6 +601,22 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
 
     func disconnect() async throws {
         disconnectCallCount += 1
+        if suspendsDisconnect {
+            await withCheckedContinuation { continuation in
+                disconnectContinuation = continuation
+            }
+        }
+    }
+
+    func waitUntilDisconnectStarts() async {
+        while disconnectCallCount == 0 {
+            await Task.yield()
+        }
+    }
+
+    func finishDisconnect() {
+        disconnectContinuation?.resume()
+        disconnectContinuation = nil
     }
 }
 
@@ -483,6 +646,65 @@ private final class MockGoogleCalendarAPIClient: GoogleCalendarAPIClientProvidin
     ) async throws -> [GoogleCalendarEvent] {
         fetchEventsCallCount += 1
         return try eventsResult.get()
+    }
+}
+
+@MainActor
+private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
+    private let initialEvents: [CalendarEvent]
+    private let suspendsCalendarList: Bool
+    private var calendarListContinuation: CheckedContinuation<Void, Never>?
+    private var pendingRequests: [CheckedContinuation<[CalendarEvent], any Error>] = []
+    private(set) var fetchEventsCallCount = 0
+
+    init(initialEvents: [CalendarEvent], suspendsCalendarList: Bool = false) {
+        self.initialEvents = initialEvents
+        self.suspendsCalendarList = suspendsCalendarList
+    }
+
+    func fetchCalendarList(accessToken _: String) async throws -> [CalendarListItem] {
+        if suspendsCalendarList {
+            await withCheckedContinuation { continuation in
+                calendarListContinuation = continuation
+            }
+        }
+        return [primaryCalendar]
+    }
+
+    func fetchUpcomingEvents(
+        accessToken _: String,
+        calendars _: [CalendarListItem],
+        now _: Date,
+        daysAhead _: Int
+    ) async throws -> [CalendarEvent] {
+        fetchEventsCallCount += 1
+        if fetchEventsCallCount == 1 {
+            return initialEvents
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingRequests.append(continuation)
+        }
+    }
+
+    func waitForFetchEventsCallCount(_ expectedCount: Int) async {
+        while fetchEventsCallCount < expectedCount {
+            await Task.yield()
+        }
+    }
+
+    func waitUntilCalendarListFetchStarts() async {
+        while calendarListContinuation == nil {
+            await Task.yield()
+        }
+    }
+
+    func finishCalendarListFetch() {
+        calendarListContinuation?.resume()
+        calendarListContinuation = nil
+    }
+
+    func resumePendingRequest(at index: Int, with events: [CalendarEvent]) {
+        pendingRequests.remove(at: index).resume(returning: events)
     }
 }
 

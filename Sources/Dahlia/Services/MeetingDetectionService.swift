@@ -7,6 +7,7 @@ import Foundation
 /// マイク使用・ミーティングアプリ・ウィンドウタイトルを組み合わせて会議を検出し、
 /// カレンダー予定とともに macOS の標準通知へ接続する。
 @MainActor
+// swiftlint:disable:next type_body_length
 final class MeetingDetectionService: ObservableObject {
     private static let meetingBundleIDs: Set = [
         "us.zoom.xos",
@@ -41,6 +42,7 @@ final class MeetingDetectionService: ObservableObject {
     ]
 
     var isRecording: () -> Bool = { false }
+    var onAutomaticRecording: (CalendarEvent) -> Void = { _ in }
 
     private var monitoredDeviceIDs: [AudioDeviceID] = []
     private var microphoneMonitoringID: UUID?
@@ -54,22 +56,30 @@ final class MeetingDetectionService: ObservableObject {
     private var lifecycleCancellables = Set<AnyCancellable>()
     private var windowScanTimer: Timer?
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var calendarPowerObservers: [NSObjectProtocol] = []
     private var calendarRefreshTask: Task<Void, Never>?
-    private var calendarSettingsRefreshTask: Task<Void, Never>?
+    private var calendarSourceRefreshTask: Task<Void, Never>?
+    private var calendarSourceRefreshTaskID: UUID?
+    private var calendarSourceRefreshGeneration: UInt64 = 0
     private var calendarSchedulingTask: Task<Void, Never>?
+    private var calendarAutoRecordingTask: Task<Void, Never>?
+    private var isCalendarSchedulingSuspendedForSleep = false
     private var notificationAuthorizationTask: Task<Void, Never>?
     private var microphoneDeviceRegistrationTask: Task<Void, Never>?
     private var microphoneStatusCheckTask: Task<Void, Never>?
     private var isStarted = false
     private var isMicrophoneDetectionRunning = false
     private let notificationService: MeetingNotificationService
+    private let calendarAutoRecordingStore: CalendarAutoRecordingStore
     private let now: () -> Date
 
     init(
         notificationService: MeetingNotificationService = .shared,
+        calendarAutoRecordingStore: CalendarAutoRecordingStore = .shared,
         now: @escaping () -> Date = { .now }
     ) {
         self.notificationService = notificationService
+        self.calendarAutoRecordingStore = calendarAutoRecordingStore
         self.now = now
     }
 
@@ -82,6 +92,7 @@ final class MeetingDetectionService: ObservableObject {
         isStarted = true
         observeSettings()
         observeCalendarEvents()
+        observeCalendarPowerEvents()
         startCalendarRefreshLoop()
         reconcileSettings()
     }
@@ -93,10 +104,20 @@ final class MeetingDetectionService: ObservableObject {
         stopMicrophoneDetection()
         calendarRefreshTask?.cancel()
         calendarRefreshTask = nil
-        calendarSettingsRefreshTask?.cancel()
-        calendarSettingsRefreshTask = nil
+        calendarSourceRefreshGeneration &+= 1
+        calendarSourceRefreshTask?.cancel()
+        calendarSourceRefreshTask = nil
+        calendarSourceRefreshTaskID = nil
         calendarSchedulingTask?.cancel()
         calendarSchedulingTask = nil
+        calendarAutoRecordingTask?.cancel()
+        calendarAutoRecordingTask = nil
+        isCalendarSchedulingSuspendedForSleep = false
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        for observer in calendarPowerObservers {
+            notificationCenter.removeObserver(observer)
+        }
+        calendarPowerObservers.removeAll()
         notificationAuthorizationTask?.cancel()
         notificationAuthorizationTask = nil
         notificationSettingsSignature = nil
@@ -118,14 +139,26 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private func observeCalendarEvents() {
-        Publishers.CombineLatest(
+        Publishers.CombineLatest3(
             GoogleCalendarStore.shared.$upcomingEvents,
-            MacCalendarStore.shared.$upcomingEvents
+            MacCalendarStore.shared.$upcomingEvents,
+            calendarAutoRecordingStore.$selections
         )
         .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
         .sink { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.rescheduleCalendarNotifications()
+                self?.calendarInputsDidChange()
+            }
+        }
+        .store(in: &lifecycleCancellables)
+
+        Publishers.Merge(
+            GoogleCalendarStore.shared.$state.map { _ in },
+            MacCalendarStore.shared.$state.map { _ in }
+        )
+        .sink { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.rescheduleAutomaticRecording()
             }
         }
         .store(in: &lifecycleCancellables)
@@ -168,22 +201,22 @@ final class MeetingDetectionService: ObservableObject {
             }
         }
 
-        calendarSettingsRefreshTask?.cancel()
-        if settings.meetingDetectionEnabled, settings.calendarEventMeetingNotificationsEnabled {
-            calendarSettingsRefreshTask = Task { [weak self] in
-                await self?.refreshEnabledCalendarSources()
-            }
+        if shouldRefreshCalendarSources {
+            requestCalendarSourceRefresh(force: false)
+        } else {
+            cancelCalendarSourceRefresh()
         }
 
         rescheduleCalendarNotifications()
+        rescheduleAutomaticRecording()
     }
 
     private func startCalendarRefreshLoop() {
         calendarRefreshTask?.cancel()
         calendarRefreshTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard self != nil else { return }
-                await self?.refreshEnabledCalendarSources()
+                guard let self else { return }
+                requestCalendarSourceRefresh(force: false, coalescesWithActiveRefresh: true)
 
                 do {
                     try await Task.sleep(for: .seconds(60))
@@ -194,18 +227,113 @@ final class MeetingDetectionService: ObservableObject {
         }
     }
 
-    private func refreshEnabledCalendarSources() async {
-        let settings = AppSettings.shared
-        guard settings.meetingDetectionEnabled,
-              settings.calendarEventMeetingNotificationsEnabled
-        else { return }
+    private func requestCalendarSourceRefresh(
+        force: Bool,
+        resumesAfterWake: Bool = false,
+        coalescesWithActiveRefresh: Bool = false
+    ) {
+        guard isStarted,
+              !isCalendarSchedulingSuspendedForSleep || resumesAfterWake else { return }
+        if coalescesWithActiveRefresh, calendarSourceRefreshTask != nil {
+            return
+        }
 
+        calendarSourceRefreshGeneration &+= 1
+        let generation = calendarSourceRefreshGeneration
+        let taskID = UUID()
+        let previousTask = calendarSourceRefreshTask
+        previousTask?.cancel()
+
+        let task = Task { [weak self] in
+            if let previousTask {
+                await previousTask.value
+            }
+            guard let self else { return }
+            defer { finishCalendarSourceRefresh(taskID: taskID) }
+            guard !Task.isCancelled,
+                  isStarted,
+                  generation == calendarSourceRefreshGeneration else { return }
+
+            let refreshedEvents = await refreshEnabledCalendarSources(force: force)
+            guard !Task.isCancelled,
+                  isStarted,
+                  generation == calendarSourceRefreshGeneration else { return }
+
+            finishCalendarSourceRefresh(taskID: taskID)
+            if resumesAfterWake {
+                isCalendarSchedulingSuspendedForSleep = false
+            }
+            rescheduleAutomaticRecording(events: refreshedEvents)
+        }
+        calendarSourceRefreshTaskID = taskID
+        calendarSourceRefreshTask = task
+    }
+
+    private func cancelCalendarSourceRefresh() {
+        calendarSourceRefreshGeneration &+= 1
+        calendarSourceRefreshTask?.cancel()
+    }
+
+    private func finishCalendarSourceRefresh(taskID: UUID) {
+        guard calendarSourceRefreshTaskID == taskID else { return }
+        calendarSourceRefreshTask = nil
+        calendarSourceRefreshTaskID = nil
+    }
+
+    private func refreshEnabledCalendarSources(force: Bool = false) async -> [CalendarEvent] {
+        let settings = AppSettings.shared
+        guard shouldRefreshCalendarSources else { return [] }
+        calendarAutoRecordingTask?.cancel()
+        calendarAutoRecordingTask = nil
+
+        var refreshedEvents: [CalendarEvent] = []
         if settings.isCalendarSourceEnabled(.google) {
-            await GoogleCalendarStore.shared.refreshIfNeeded()
+            await GoogleCalendarStore.shared.refreshIfNeeded(force: force)
+            if GoogleCalendarStore.shared.state == .loaded {
+                refreshedEvents.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
+            }
         }
         if settings.isCalendarSourceEnabled(.macOS) {
-            await MacCalendarStore.shared.refreshIfNeeded()
+            await MacCalendarStore.shared.refreshIfNeeded(force: force)
+            if MacCalendarStore.shared.state == .loaded {
+                refreshedEvents.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
+            }
         }
+        return refreshedEvents.deduplicatedAcrossSources()
+    }
+
+    private func observeCalendarPowerEvents() {
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        let sleepObserver = notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.prepareCalendarSchedulingForSleep()
+            }
+        }
+        let wakeObserver = notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshCalendarAfterWake()
+            }
+        }
+        calendarPowerObservers = [sleepObserver, wakeObserver]
+    }
+
+    private func prepareCalendarSchedulingForSleep() {
+        isCalendarSchedulingSuspendedForSleep = true
+        calendarAutoRecordingTask?.cancel()
+        calendarAutoRecordingTask = nil
+        cancelCalendarSourceRefresh()
+    }
+
+    private func refreshCalendarAfterWake() {
+        requestCalendarSourceRefresh(force: true, resumesAfterWake: true)
     }
 
     private func rescheduleCalendarNotifications() {
@@ -213,6 +341,59 @@ final class MeetingDetectionService: ObservableObject {
         let events = selectedUpcomingEvents
         calendarSchedulingTask = Task { [notificationService] in
             await notificationService.replaceCalendarNotifications(with: events)
+        }
+    }
+
+    private var shouldRefreshCalendarSources: Bool {
+        let settings = AppSettings.shared
+        return (settings.meetingDetectionEnabled && settings.calendarEventMeetingNotificationsEnabled)
+            || calendarAutoRecordingStore.hasSelections
+    }
+
+    private func calendarInputsDidChange() {
+        rescheduleCalendarNotifications()
+        rescheduleAutomaticRecording()
+    }
+
+    private func rescheduleAutomaticRecording(events providedEvents: [CalendarEvent]? = nil) {
+        guard !isCalendarSchedulingSuspendedForSleep,
+              calendarSourceRefreshTask == nil else { return }
+        calendarAutoRecordingTask?.cancel()
+        calendarAutoRecordingTask = nil
+
+        let currentDate = now()
+        let events = providedEvents ?? automaticRecordingEvents
+        calendarAutoRecordingStore.synchronize(with: events, now: currentDate)
+        let selections = calendarAutoRecordingStore.selections
+        let dueEvents = CalendarAutoRecordingPlanner.dueEvents(
+            events: events,
+            selections: selections,
+            now: currentDate
+        )
+
+        if let event = dueEvents.first {
+            let dueEventIDs = Set(dueEvents.map(CalendarAutoRecordingEventID.init(event:)))
+            calendarAutoRecordingStore.consume(dueEventIDs)
+            guard !isRecording() else { return }
+            onAutomaticRecording(event)
+            return
+        }
+
+        guard let evaluationDate = CalendarAutoRecordingPlanner.nextEvaluationDate(
+            events: events,
+            selections: selections,
+            now: currentDate
+        ) else { return }
+
+        let delay = evaluationDate.timeIntervalSince(currentDate)
+        calendarAutoRecordingTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.rescheduleAutomaticRecording()
         }
     }
 
@@ -489,6 +670,20 @@ final class MeetingDetectionService: ObservableObject {
             events.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
         }
         if settings.isCalendarSourceEnabled(.macOS) {
+            events.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
+        }
+
+        return events.deduplicatedAcrossSources()
+    }
+
+    private var automaticRecordingEvents: [CalendarEvent] {
+        var events: [CalendarEvent] = []
+        let settings = AppSettings.shared
+
+        if settings.isCalendarSourceEnabled(.google), GoogleCalendarStore.shared.state == .loaded {
+            events.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
+        }
+        if settings.isCalendarSourceEnabled(.macOS), MacCalendarStore.shared.state == .loaded {
             events.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
         }
 

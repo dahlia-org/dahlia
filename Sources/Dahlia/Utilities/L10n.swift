@@ -1768,6 +1768,11 @@ enum L10n {
     ) }
     static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
     static var showUpcomingSchedule: String { String(localized: "Show Upcoming Schedule", bundle: bundle) }
+    static var calendarAutoRecording: String { String(localized: "Auto-record", bundle: bundle) }
+    static var calendarAutoRecordingHelp: String { String(
+        localized: "Automatically start recording when this event begins.",
+        bundle: bundle
+    ) }
     static var calendarEventOriginTitle: String { String(localized: "From calendar event", bundle: bundle) }
 
     static func calendarEventOrigin(_ title: String) -> String {
@@ -1843,6 +1848,7 @@ enum L10n {
     static var googleCalendarOAuthDisclosureUseAndStorage: String { String(
         localized: """
         OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. \
+        Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. \
         Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them.
         """,
         bundle: bundle

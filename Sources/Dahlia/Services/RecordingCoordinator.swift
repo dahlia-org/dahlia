@@ -26,11 +26,16 @@ final class RecordingCoordinator {
     }
 
     func startNewMeeting() {
+        startNewMeeting(opensMainWindowOnFailure: true)
+    }
+
+    private func startNewMeeting(opensMainWindowOnFailure: Bool) {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
-              let vault = sidebarViewModel.currentVault else {
-            MainWindowOpener.shared.openMainWindow()
+              let vault = sidebarViewModel.currentVault,
+              let reservation = viewModel.reserveRecordingStart() else {
+            openMainWindowOnFailure(if: opensMainWindowOnFailure)
             return
         }
 
@@ -50,7 +55,8 @@ final class RecordingCoordinator {
                 vaultId: vault.id,
                 projectId: projectId,
                 projectName: projectName,
-                vaultURL: vault.url
+                vaultURL: vault.url,
+                reservation: reservation
             )
             if let newMeetingId = viewModel.currentMeetingId {
                 sidebarViewModel.selectMeeting(newMeetingId)
@@ -117,16 +123,34 @@ final class RecordingCoordinator {
         NSWorkspace.shared.open(conferenceURI)
     }
 
+    func startAutomaticRecording(forCalendarEvent event: CalendarEvent) {
+        mainWindowNavigation.openMeetingsWithoutActivation()
+        startRecording(forCalendarEvent: event, opensMainWindowOnFailure: false)
+    }
+
     @discardableResult
     func startRecording(
         appendingTo meetingId: UUID,
         customerIntelligenceEvent: CalendarEvent? = nil
     ) -> Bool {
+        startRecording(
+            appendingTo: meetingId,
+            customerIntelligenceEvent: customerIntelligenceEvent,
+            opensMainWindowOnFailure: true
+        )
+    }
+
+    @discardableResult
+    private func startRecording(
+        appendingTo meetingId: UUID,
+        customerIntelligenceEvent: CalendarEvent? = nil,
+        opensMainWindowOnFailure: Bool
+    ) -> Bool {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
-            MainWindowOpener.shared.openMainWindow()
+            openMainWindowOnFailure(if: opensMainWindowOnFailure)
             return false
         }
 
@@ -139,16 +163,18 @@ final class RecordingCoordinator {
                     in: db
                 ).first
             }) else {
-                MainWindowOpener.shared.openMainWindow()
+                openMainWindowOnFailure(if: opensMainWindowOnFailure)
                 return false
             }
             item = fetchedItem
         } catch {
             viewModel.errorMessage = error.localizedDescription
             ErrorReportingService.capture(error, context: ["source": "recordingAppendTarget"])
-            MainWindowOpener.shared.openMainWindow()
+            openMainWindowOnFailure(if: opensMainWindowOnFailure)
             return false
         }
+
+        guard let reservation = viewModel.reserveRecordingStart() else { return false }
 
         Task {
             await viewModel.startListening(
@@ -158,7 +184,8 @@ final class RecordingCoordinator {
                 projectId: item.projectId,
                 projectName: item.projectName,
                 vaultURL: vault.url,
-                appendingTo: meetingId
+                appendingTo: meetingId,
+                reservation: reservation
             )
             if let customerIntelligenceEvent,
                viewModel.isListening,
@@ -181,12 +208,15 @@ final class RecordingCoordinator {
     }
 
     @discardableResult
-    private func startRecording(forCalendarEvent event: CalendarEvent) -> Bool {
+    private func startRecording(
+        forCalendarEvent event: CalendarEvent,
+        opensMainWindowOnFailure: Bool = true
+    ) -> Bool {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
               let vault = sidebarViewModel.currentVault else {
-            MainWindowOpener.shared.openMainWindow()
+            openMainWindowOnFailure(if: opensMainWindowOnFailure)
             return false
         }
 
@@ -200,7 +230,8 @@ final class RecordingCoordinator {
                 sidebarViewModel.selectMeeting(existingMeetingId)
                 return startRecording(
                     appendingTo: existingMeetingId,
-                    customerIntelligenceEvent: event
+                    customerIntelligenceEvent: event,
+                    opensMainWindowOnFailure: opensMainWindowOnFailure
                 )
             }
         } catch {
@@ -215,7 +246,12 @@ final class RecordingCoordinator {
             dbQueue: dbQueue,
             vaultURL: vault.url
         )
-        startNewMeeting()
+        startNewMeeting(opensMainWindowOnFailure: opensMainWindowOnFailure)
         return true
+    }
+
+    private func openMainWindowOnFailure(if shouldOpen: Bool) {
+        guard shouldOpen else { return }
+        MainWindowOpener.shared.openMainWindow()
     }
 }

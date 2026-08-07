@@ -12,6 +12,17 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
+        func recordingStartReservationImmediatelyMarksTheLifecycleBusy() throws {
+            let viewModel = CaptionViewModel()
+
+            _ = try #require(viewModel.reserveRecordingStart())
+
+            #expect(viewModel.isRecordingLifecycleBusy)
+            #expect(!viewModel.canBeginRecording)
+            #expect(viewModel.reserveRecordingStart() == nil)
+        }
+
+        @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(101),
