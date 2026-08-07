@@ -16,13 +16,15 @@ import Foundation
 
             let quotedHelper = "'/Applications/Dahlia'\\''s App.app/Contents/Helpers/dahlia-mcp'"
             let quotedVault = "'019F6651-CCBE-7CF2-83B0-6EF955A9FD41'"
-            #expect(commands.codex == "codex mcp remove dahlia\ncodex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
+            #expect(commands.codex == "codex mcp remove dahlia; \\\ncodex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
             #expect(commands.codexWrite
-                == "codex mcp remove dahlia\ncodex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
-            #expect(commands
-                .claude == "claude mcp remove --scope user dahlia\nclaude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
+                == "codex mcp remove dahlia; \\\ncodex mcp add dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
+            #expect(commands.claude
+                == "claude mcp remove --scope user dahlia; \\\n"
+                + "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault)")
             #expect(commands.claudeWrite
-                == "claude mcp remove --scope user dahlia\nclaude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
+                == "claude mcp remove --scope user dahlia; \\\n"
+                + "claude mcp add --scope user dahlia -- \(quotedHelper) --vault-id \(quotedVault) --write")
         }
 
         @Test
