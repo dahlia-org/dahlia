@@ -4,12 +4,7 @@ import SwiftUI
 struct MainSidebarFooterView: View {
     static let verticalPadding: CGFloat = 8
 
-    @MainActor private static let mcpIcon: NSImage = {
-        guard let image = Bundle.module.image(forResource: "MCPLogo") else {
-            preconditionFailure("MCPLogo.svg is missing from the app bundle")
-        }
-        return image
-    }()
+    @MainActor private static let mcpIcon = Bundle.appModule.image(forResource: "MCPLogo")
 
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
@@ -65,11 +60,15 @@ struct MainSidebarFooterView: View {
                 Label {
                     Text(L10n.mcp)
                 } icon: {
-                    Image(nsImage: Self.mcpIcon)
-                        .resizable()
-                        .renderingMode(.template)
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
+                    if let mcpIcon = Self.mcpIcon {
+                        Image(nsImage: mcpIcon)
+                            .resizable()
+                            .renderingMode(.template)
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                    }
                 }
                 .labelStyle(.iconOnly)
                 .frame(width: 30, height: 30)

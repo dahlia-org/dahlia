@@ -11,7 +11,6 @@ struct MCPJSONSampleView: View {
                 .font(.callout.monospaced())
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
-                .accessibilityLabel(L10n.mcpJSON)
 
             HStack {
                 Spacer()
