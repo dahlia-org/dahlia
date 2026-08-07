@@ -35,7 +35,7 @@ struct MeetingListSidebarView: View {
     }
 
     private var showsSidebarFooter: Bool {
-        !viewModel.isListening && !viewModel.isFinalizingRecording
+        viewModel.canSwitchVault
     }
 
     var body: some View {

@@ -124,6 +124,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     @Published private(set) var canBeginRecording = true
+    @Published private(set) var isRecordingStartPending = false
     @Published var analyzerReady = false
     @Published var isPreparingAnalyzer = false
     @Published private(set) var activeTranscriptionMode: TranscriptionMode?
@@ -453,6 +454,12 @@ final class CaptionViewModel: ObservableObject {
 
     /// 少なくとも 1 つの音声ソースが有効か。
     var hasEnabledAudioSource: Bool { isMicEnabled || isSystemAudioEnabled }
+
+    var canSwitchVault: Bool {
+        !isRecordingStartPending
+            && recordingLifecycle == .idle
+            && !isFinalizingRecording
+    }
 
     private var enabledRecordingAudioSources: Set<RecordingAudioSource> {
         var sources: Set<RecordingAudioSource> = []
@@ -2705,9 +2712,12 @@ final class CaptionViewModel: ObservableObject {
         appendingTo existingMeetingId: UUID? = nil
     ) async {
         guard recordingLifecycle == .idle,
+              !isRecordingStartPending,
               !isFinalizingRecording,
               !isTerminationRequested,
               !AppDelegate.isBackupRestorePreparationActive else { return }
+        isRecordingStartPending = true
+        defer { isRecordingStartPending = false }
         guard await retryFailedPersistenceIfNeeded() else { return }
         await refreshDefaultInputDevice()
         guard recordingLifecycle == .idle,

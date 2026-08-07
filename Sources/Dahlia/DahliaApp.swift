@@ -219,11 +219,7 @@ struct DahliaApp: App {
     }
 
     private func openVault(_ vault: VaultRecord) {
-        guard let db = appDatabase else { return }
-
-        if viewModel.isListening {
-            viewModel.stopListening()
-        }
+        guard viewModel.canSwitchVault, let db = appDatabase else { return }
 
         try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
 

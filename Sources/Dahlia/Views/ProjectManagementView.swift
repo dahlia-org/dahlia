@@ -68,7 +68,7 @@ struct ProjectManagementView: View {
                         recordingCoordinator: recordingCoordinator
                     )
                     .padding(8)
-                } else if !captionViewModel.isFinalizingRecording {
+                } else if captionViewModel.canSwitchVault {
                     MainSidebarFooterView(
                         vaults: sidebarViewModel.allVaults,
                         currentVault: sidebarViewModel.currentVault,
