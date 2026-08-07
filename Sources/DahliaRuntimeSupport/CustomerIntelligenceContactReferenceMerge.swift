@@ -113,5 +113,41 @@ public enum CustomerIntelligenceContactReferenceMerge {
     WHERE contactId = :targetID
       AND meetingSpeakerId IN (SELECT meetingSpeakerId FROM dahlia_speaker_assignments_to_merge);
     DROP TABLE dahlia_speaker_assignments_to_merge;
+
+    DROP TABLE IF EXISTS temp.dahlia_speaker_cluster_assignments_to_merge;
+    CREATE TEMP TABLE dahlia_speaker_cluster_assignments_to_merge AS
+    SELECT clusterId, origin, createdAt
+    FROM speaker_cluster_contact_assignments WHERE contactId = :sourceID;
+    DELETE FROM speaker_cluster_contact_assignments WHERE contactId = :sourceID;
+    INSERT OR IGNORE INTO speaker_cluster_contact_assignments
+        (clusterId, contactId, origin, createdAt, updatedAt)
+    SELECT clusterId, :targetID, origin, createdAt, :now
+    FROM dahlia_speaker_cluster_assignments_to_merge;
+    UPDATE speaker_cluster_contact_assignments
+    SET origin = CASE
+            WHEN origin = 'manual' THEN origin
+            WHEN EXISTS (
+                SELECT 1 FROM dahlia_speaker_cluster_assignments_to_merge AS incoming
+                WHERE incoming.clusterId = speaker_cluster_contact_assignments.clusterId
+                  AND incoming.origin = 'manual'
+            ) THEN 'manual'
+            WHEN origin = 'suggestionApproved' THEN origin
+            WHEN EXISTS (
+                SELECT 1 FROM dahlia_speaker_cluster_assignments_to_merge AS incoming
+                WHERE incoming.clusterId = speaker_cluster_contact_assignments.clusterId
+                  AND incoming.origin = 'suggestionApproved'
+            ) THEN 'suggestionApproved'
+            ELSE 'ownerChannelConfirmation'
+        END,
+        createdAt = MIN(
+            createdAt,
+            (SELECT incoming.createdAt
+             FROM dahlia_speaker_cluster_assignments_to_merge AS incoming
+             WHERE incoming.clusterId = speaker_cluster_contact_assignments.clusterId)
+        ),
+        updatedAt = :now
+    WHERE contactId = :targetID
+      AND clusterId IN (SELECT clusterId FROM dahlia_speaker_cluster_assignments_to_merge);
+    DROP TABLE dahlia_speaker_cluster_assignments_to_merge;
     """
 }

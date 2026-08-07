@@ -1,6 +1,8 @@
 import Foundation
 import GRDB
 
+// swiftlint:disable file_length
+
 extension MeetingRepository {
     nonisolated func fetchSpeakerCandidates(
         vaultId: UUID,
@@ -150,16 +152,34 @@ extension MeetingRepository {
                 vaultId: vaultId,
                 in: db
             )
-            guard let assignment = try SpeakerContactAssignmentRecord.fetchOne(db, key: meetingSpeakerId) else {
+            let clusterId = try Self.speakerClusterId(for: meetingSpeakerId, in: db)
+            let clusterAssignment = try clusterId.flatMap { try SpeakerClusterContactAssignmentRecord.fetchOne(db, key: $0) }
+            let assignment = try SpeakerContactAssignmentRecord.fetchOne(db, key: meetingSpeakerId)
+            guard let assignedContactId = clusterAssignment?.contactId ?? assignment?.contactId else {
                 return try (Self.fetchSpeakerCandidate(id: meetingSpeakerId, vaultId: vaultId, in: db), [])
             }
             guard context.revision == expectedRevision else {
                 throw SpeakerIdentityError.revisionConflict
             }
-            _ = try assignment.delete(db)
+            if let clusterId, let clusterAssignment {
+                _ = try clusterAssignment.delete(db)
+                try db.execute(
+                    sql: """
+                    DELETE FROM speaker_contact_assignments
+                    WHERE meetingSpeakerId IN (
+                        SELECT meetingSpeakerId
+                        FROM meeting_speaker_cluster_members
+                        WHERE clusterId = ?
+                    )
+                    """,
+                    arguments: [clusterId]
+                )
+            } else {
+                _ = try assignment?.delete(db)
+            }
             try Self.incrementSpeakerRevision(id: meetingSpeakerId, now: now, in: db)
             try SpeakerProfileRecalculator.recompute(
-                contactId: assignment.contactId,
+                contactId: assignedContactId,
                 vaultId: vaultId,
                 embeddingSpace: context.embeddingSpace,
                 now: now,
@@ -253,6 +273,7 @@ extension MeetingRepository {
         }
     }
 
+    // swiftlint:disable:next function_body_length
     private nonisolated func assignSpeaker(
         meetingSpeakerId: UUID,
         contactId: UUID,
@@ -274,8 +295,11 @@ extension MeetingRepository {
             else {
                 throw SpeakerIdentityError.contactNotFound
             }
+            let clusterId = try Self.speakerClusterId(for: meetingSpeakerId, in: db)
+            let clusterAssignment = try clusterId.flatMap { try SpeakerClusterContactAssignmentRecord.fetchOne(db, key: $0) }
             let existing = try SpeakerContactAssignmentRecord.fetchOne(db, key: meetingSpeakerId)
-            if existing?.contactId == contactId, existing?.origin == origin {
+            let assignedContactId = clusterAssignment?.contactId ?? existing?.contactId
+            if assignedContactId == contactId, (clusterAssignment?.origin ?? existing?.origin) == origin {
                 return try (Self.fetchSpeakerCandidate(id: meetingSpeakerId, vaultId: vaultId, in: db), [])
             }
             if requiresSuggestion {
@@ -289,13 +313,24 @@ extension MeetingRepository {
             guard context.revision == expectedRevision else {
                 throw SpeakerIdentityError.revisionConflict
             }
-            try SpeakerContactAssignmentRecord(
-                meetingSpeakerId: meetingSpeakerId,
-                contactId: contactId,
-                origin: origin,
-                createdAt: existing?.createdAt ?? now,
-                updatedAt: now
-            ).save(db)
+            if let clusterId {
+                try SpeakerClusterContactAssignmentRecord(
+                    clusterId: clusterId,
+                    contactId: contactId,
+                    origin: origin,
+                    createdAt: clusterAssignment?.createdAt ?? existing?.createdAt ?? now,
+                    updatedAt: now
+                ).save(db)
+                try Self.projectClusterAssignment(clusterId: clusterId, now: now, in: db)
+            } else {
+                try SpeakerContactAssignmentRecord(
+                    meetingSpeakerId: meetingSpeakerId,
+                    contactId: contactId,
+                    origin: origin,
+                    createdAt: existing?.createdAt ?? now,
+                    updatedAt: now
+                ).save(db)
+            }
             if requiresSuggestion,
                var observation = try SpeakerMatchObservationRecord.fetchOne(db, key: meetingSpeakerId) {
                 observation.state = .referenceOnly
@@ -305,7 +340,7 @@ extension MeetingRepository {
                 try observation.update(db)
             }
             try Self.incrementSpeakerRevision(id: meetingSpeakerId, now: now, in: db)
-            let affectedContactIds = Set([existing?.contactId, contactId].compactMap(\.self))
+            let affectedContactIds = Set([assignedContactId, contactId].compactMap(\.self))
             for affectedContactId in affectedContactIds {
                 try SpeakerProfileRecalculator.recompute(
                     contactId: affectedContactId,
@@ -391,6 +426,32 @@ extension MeetingRepository {
             sql: "UPDATE meeting_speakers SET revision = revision + 1, updatedAt = ? WHERE id = ?",
             arguments: [now, id]
         )
+    }
+
+    private nonisolated static func speakerClusterId(for meetingSpeakerId: UUID, in db: Database) throws -> UUID? {
+        try UUID.fetchOne(
+            db,
+            sql: "SELECT clusterId FROM meeting_speaker_cluster_members WHERE meetingSpeakerId = ?",
+            arguments: [meetingSpeakerId]
+        )
+    }
+
+    private nonisolated static func projectClusterAssignment(clusterId: UUID, now: Date, in db: Database) throws {
+        guard let assignment = try SpeakerClusterContactAssignmentRecord.fetchOne(db, key: clusterId) else { return }
+        let memberIds = try UUID.fetchAll(
+            db,
+            sql: "SELECT meetingSpeakerId FROM meeting_speaker_cluster_members WHERE clusterId = ?",
+            arguments: [clusterId]
+        )
+        for memberId in memberIds {
+            try SpeakerContactAssignmentRecord(
+                meetingSpeakerId: memberId,
+                contactId: assignment.contactId,
+                origin: assignment.origin,
+                createdAt: assignment.createdAt,
+                updatedAt: now
+            ).save(db)
+        }
     }
 
     private nonisolated static func fetchSpeakerCandidate(

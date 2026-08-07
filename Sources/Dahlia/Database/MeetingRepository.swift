@@ -2,6 +2,8 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
+// swiftlint:disable file_length
+
 /// ミーティング・セグメント・プロジェクト・保管庫の DB クエリを集約するリポジトリ。
 @MainActor
 // Query methods share one MainActor-isolated database boundary.
@@ -588,6 +590,7 @@ final class MeetingRepository {
             db,
             sql: """
             SELECT meeting_speakers.id AS meetingSpeakerId,
+                   COALESCE(meeting_speaker_cluster_members.clusterId, meeting_speakers.id) AS identityClusterId,
                    assigned_contacts.displayName AS assignedDisplayName,
                    assigned_contacts.email AS assignedEmail,
                    reference_contacts.displayName AS referenceDisplayName,
@@ -596,6 +599,8 @@ final class MeetingRepository {
             FROM meeting_speakers
             JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
             JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+            LEFT JOIN meeting_speaker_cluster_members
+              ON meeting_speaker_cluster_members.meetingSpeakerId = meeting_speakers.id
             LEFT JOIN speaker_contact_assignments
               ON speaker_contact_assignments.meetingSpeakerId = meeting_speakers.id
             LEFT JOIN contacts AS assigned_contacts
@@ -605,12 +610,19 @@ final class MeetingRepository {
             LEFT JOIN contacts AS reference_contacts
               ON reference_contacts.id = speaker_match_observations.top1ContactId
             WHERE recording_sessions.meetingId = ?
-            ORDER BY speaker_analyses.audioSource, meeting_speakers.localSpeakerId, meeting_speakers.id
+            ORDER BY speaker_analyses.audioSource, identityClusterId, meeting_speakers.localSpeakerId, meeting_speakers.id
             """,
             arguments: [meetingId]
         )
-        let identityPairs: [(UUID, TranscriptSpeakerIdentity)] = speakerRows.enumerated().map { index, row in
+        var clusterOrdinals: [UUID: Int] = [:]
+        let identityPairs: [(UUID, TranscriptSpeakerIdentity)] = speakerRows.map { row in
             let id: UUID = row["meetingSpeakerId"]
+            let clusterId: UUID = row["identityClusterId"]
+            let ordinal = clusterOrdinals[clusterId] ?? {
+                let next = clusterOrdinals.count + 1
+                clusterOrdinals[clusterId] = next
+                return next
+            }()
             let matchState = (row["matchState"] as String?).flatMap(SpeakerMatchObservationState.init(rawValue:))
             let referenceName: String? = if matchState == .referenceOnly || matchState == .suggested {
                 (row["referenceDisplayName"] as String?)?.nilIfBlank
@@ -620,7 +632,7 @@ final class MeetingRepository {
             }
             return (id, TranscriptSpeakerIdentity(
                 meetingSpeakerId: id,
-                ordinal: index + 1,
+                ordinal: ordinal,
                 assignedContactName: (row["assignedDisplayName"] as String?)?.nilIfBlank
                     ?? (row["assignedEmail"] as String?)?.nilIfBlank,
                 referenceContactName: referenceName

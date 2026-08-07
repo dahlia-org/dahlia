@@ -2,6 +2,12 @@ import Accelerate
 import Foundation
 
 enum SpeakerMatcher {
+    static func similarity(_ lhs: [Float], _ rhs: [Float]) -> Float? {
+        guard lhs.count == rhs.count else { return nil }
+        let score = vDSP.dot(lhs, rhs)
+        return score.isFinite ? score : nil
+    }
+
     static func rank(
         embedding: SpeakerEmbedding,
         profiles: [CachedSpeakerProfile],
@@ -19,12 +25,13 @@ enum SpeakerMatcher {
             else {
                 return nil
             }
-            return (profile.contactId, vDSP.dot(embedding.values, profile.embedding.values))
-        }.filter(\.1.isFinite)
-            .sorted {
-                if $0.1 == $1.1 { return $0.0.uuidString < $1.0.uuidString }
-                return $0.1 > $1.1
-            }
+            guard let score = similarity(embedding.values, profile.embedding.values) else { return nil }
+            return (profile.contactId, score)
+        }
+        .sorted {
+            if $0.1 == $1.1 { return $0.0.uuidString < $1.0.uuidString }
+            return $0.1 > $1.1
+        }
 
         guard let top1 = scores.first else {
             let reason: SpeakerMatchUnknownReason = profiles.isEmpty ? .insufficientEvidence : .incompatibleEmbeddingSpace

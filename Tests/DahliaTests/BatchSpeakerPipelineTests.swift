@@ -4,11 +4,14 @@ import GRDB
 import os
 @testable import Dahlia
 
+// swiftlint:disable file_length
+
 #if canImport(Testing)
     import Testing
 
     @MainActor
     @Suite(.serialized)
+    // swiftlint:disable:next type_body_length
     struct BatchSpeakerPipelineTests {
         @Test
         func speakerIdentificationDefaultsOff() {
@@ -213,24 +216,26 @@ import os
         }
 
         @Test
-        func sameSpeakerAcrossSessionsPersistsOneMeetingSpeakerPerSession() async throws {
+        func sameSpeakerAcrossSessionsPersistsOneCluster() async throws {
             let fixture = try await MultiSessionSpeakerTestFixture.make(name: "D24SpeakerRows")
             #expect(fixture.sessions.map(\.offsetSeconds) == [0, 10, 20])
             for index in fixture.sessions.indices {
                 _ = try fixture.persistSpeakerAnalysis(sessionIndex: index)
             }
 
-            let speakerCount = try await fixture.database.dbQueue.read { db in
-                try MeetingSpeakerRecord.fetchCount(db)
+            let counts = try await fixture.database.dbQueue.read { db in
+                try (
+                    MeetingSpeakerRecord.fetchCount(db),
+                    MeetingSpeakerClusterRecord.fetchCount(db),
+                    MeetingSpeakerClusterMemberRecord.fetchCount(db)
+                )
             }
 
-            // D24 characterization: これは現在の壊れた挙動を固定している。
-            // D24 の修正時、このアサーションは反転させなければならない（期待値: 1 行または1クラスタ）。
-            #expect(speakerCount == fixture.sessions.count)
+            #expect(counts == (fixture.sessions.count, 1, fixture.sessions.count))
         }
 
         @Test
-        func sameSpeakerAcrossSessionsReceivesIncreasingRepositoryOrdinals() async throws {
+        func sameSpeakerAcrossSessionsReceivesOneRepositoryOrdinal() async throws {
             let fixture = try await MultiSessionSpeakerTestFixture.make(name: "D24SpeakerOrdinals")
             for index in fixture.sessions.indices {
                 _ = try fixture.persistSpeakerAnalysis(sessionIndex: index)
@@ -242,9 +247,131 @@ import os
                 limit: fixture.sessions.count
             )
 
-            // D24 characterization: これは現在の壊れた挙動を固定している。
-            // D24 の修正時、このアサーションは反転させなければならない（期待値: 同一人物なら全 session で同一 ordinal）。
-            #expect(page.segments.compactMap(\.speakerIdentity?.ordinal) == [1, 2, 3])
+            #expect(page.segments.compactMap(\.speakerIdentity?.ordinal) == [1, 1, 1])
+        }
+
+        @Test
+        func differentSpeakersAcrossSessionsRemainSeparateClusters() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(
+                name: "D24NoFalseMerge",
+                sessionDurations: [10, 10]
+            )
+            _ = try fixture.persistSpeakerAnalysis(sessionIndex: 0, representativeValues: fixture.unitVector(axis: 0))
+            _ = try fixture.persistSpeakerAnalysis(sessionIndex: 1, representativeValues: fixture.unitVector(axis: 1))
+
+            let clusterCount = try await fixture.database.dbQueue.read { db in
+                try MeetingSpeakerClusterRecord.fetchCount(db)
+            }
+
+            #expect(clusterCount == 2)
+        }
+
+        @Test
+        func differentEmbeddingSpacesRemainSeparateClusters() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(
+                name: "D24EmbeddingSpaces",
+                sessionDurations: [10, 10]
+            )
+            _ = try fixture.persistSpeakerAnalysis(
+                sessionIndex: 0,
+                embeddingSpace: fixture.embeddingSpace(assetFingerprint: "space-a")
+            )
+            _ = try fixture.persistSpeakerAnalysis(
+                sessionIndex: 1,
+                embeddingSpace: fixture.embeddingSpace(assetFingerprint: "space-b")
+            )
+
+            let state = try await fixture.database.dbQueue.read { db in
+                try (
+                    MeetingSpeakerClusterRecord.fetchCount(db),
+                    Set(MeetingSpeakerClusterRecord.fetchAll(db).map(\.embeddingSpaceId)).count
+                )
+            }
+
+            #expect(state == (2, 2))
+        }
+
+        @Test
+        func differentAudioSourcesRemainSeparateClusters() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(
+                name: "D24AudioSources",
+                sessionDurations: [10, 10]
+            )
+            _ = try fixture.persistSpeakerAnalysis(sessionIndex: 0, audioSource: .microphone)
+            _ = try fixture.persistSpeakerAnalysis(sessionIndex: 1, audioSource: .system)
+
+            let clusters = try await fixture.database.dbQueue.read { db in
+                try MeetingSpeakerClusterRecord.order(Column("audioSource")).fetchAll(db)
+            }
+
+            #expect(clusters.count == 2)
+            #expect(Set(clusters.map(\.audioSource)) == [.microphone, .system])
+        }
+
+        @Test
+        func retranscriptionPreservesClusterContactAssignment() async throws {
+            let fixture = try await MultiSessionSpeakerTestFixture.make(
+                name: "D24RetranscriptionAssignment",
+                sessionDurations: [10]
+            )
+            let first = try fixture.persistSpeakerAnalysis(sessionIndex: 0)
+            let now = fixture.sessions[0].startedAt.addingTimeInterval(20)
+            let contactId = UUID.v7()
+            let vaultId = try await fixture.database.dbQueue.write { db in
+                let meeting = try #require(try MeetingRecord.fetchOne(db, key: fixture.meetingId))
+                try ContactRecord(
+                    id: contactId,
+                    vaultId: meeting.vaultId,
+                    email: "alice@example.com",
+                    displayName: "Alice",
+                    revision: 1,
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+                return meeting.vaultId
+            }
+            _ = try await MeetingRepository(dbQueue: fixture.database.dbQueue).manuallyAssignSpeaker(
+                meetingSpeakerId: first.speakerId,
+                contactId: contactId,
+                vaultId: vaultId,
+                expectedRevision: 1,
+                now: now
+            )
+            let originalClusterId = try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE recording_sessions SET batchLastAttemptAt = ? WHERE id = ?",
+                    arguments: [now.addingTimeInterval(1), fixture.sessions[0].id]
+                )
+                return try #require(
+                    try UUID.fetchOne(
+                        db,
+                        sql: "SELECT clusterId FROM meeting_speaker_cluster_members WHERE meetingSpeakerId = ?",
+                        arguments: [first.speakerId]
+                    )
+                )
+            }
+
+            let retranscribed = try fixture.persistSpeakerAnalysis(sessionIndex: 0, identityVariant: 1)
+
+            let preserved = try await fixture.database.dbQueue.read { db in
+                let member = try #require(
+                    try MeetingSpeakerClusterMemberRecord.fetchOne(db, key: retranscribed.speakerId)
+                )
+                let stableAssignment = try #require(
+                    try SpeakerClusterContactAssignmentRecord.fetchOne(db, key: member.clusterId)
+                )
+                let projectedAssignment = try #require(
+                    try SpeakerContactAssignmentRecord.fetchOne(db, key: retranscribed.speakerId)
+                )
+                return (member.clusterId, stableAssignment, projectedAssignment)
+            }
+
+            #expect(retranscribed.speakerId != first.speakerId)
+            #expect(preserved.0 == originalClusterId)
+            #expect(preserved.1.contactId == contactId)
+            #expect(preserved.1.origin == .manual)
+            #expect(preserved.2.contactId == contactId)
+            #expect(preserved.2.origin == .manual)
         }
 
         @Test
@@ -273,7 +400,7 @@ import os
                     analysis: speakerAnalysis.analysis,
                     recordingStartTime: session.startedAt
                 )
-                mappedSpeakerIds.append(try #require(assignments[segment.id]))
+                try mappedSpeakerIds.append(#require(assignments[segment.id]))
                 displayedSeconds.append(Formatters.elapsedSeconds(
                     at: segment.startTime,
                     sessionId: segment.sessionId,
@@ -282,8 +409,7 @@ import os
                 ))
             }
 
-            // D24 characterization: これは現在の壊れた挙動を固定している。
-            // D24 の修正時、このアサーションは反転させなければならない（期待値: 同一人物の mapped result は1行または1クラスタ）。
+            // Mapping remains session-local; cross-session identity is projected later through persisted clusters.
             #expect(Set(mappedSpeakerIds).count == fixture.sessions.count)
 
             // Timebase safety invariant: offsetSeconds is applied only when projecting display elapsed time.
@@ -408,7 +534,7 @@ import os
         assetFingerprint: "fingerprint",
         fluidAudioVersion: "0.15.5",
         dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
-        sampleRate: 16_000,
+        sampleRate: 16000,
         preprocessing: "mono-float32",
         excludesOverlap: true,
         normalization: "L2 unit norm",

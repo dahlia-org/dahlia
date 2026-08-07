@@ -74,6 +74,11 @@ enum BatchTranscriptionPersistence {
                 .deleteAll(db)
             if let speakerAnalysis {
                 try persistSpeakers(speakerAnalysis, sessionId: sessionId, completedAt: completedAt, in: db)
+                try MeetingSpeakerClusterer.assignUnclusteredSpeakers(
+                    meetingId: meetingId,
+                    now: completedAt,
+                    in: db
+                )
             }
             for record in records {
                 try record.insert(db)

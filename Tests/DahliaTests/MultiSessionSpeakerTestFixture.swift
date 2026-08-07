@@ -85,7 +85,11 @@ import GRDB
         func persistSpeakerAnalysis(
             sessionIndex: Int,
             relativeStartSeconds: TimeInterval = 1,
-            relativeEndSeconds: TimeInterval = 2
+            relativeEndSeconds: TimeInterval = 2,
+            embeddingSpace: SpeakerEmbeddingSpace = multiSessionSpeakerSpace,
+            representativeValues: [Float] = multiSessionUnitVector,
+            audioSource: RecordingAudioSource = .microphone,
+            identityVariant: Int = 0
         ) throws -> PersistedSpeakerSession {
             let session = sessions[sessionIndex]
             let segment = TranscriptSegment(
@@ -99,7 +103,11 @@ import GRDB
             let speakerAnalysis = makeSpeakerAnalysis(
                 sessionIndex: sessionIndex,
                 relativeStartSeconds: relativeStartSeconds,
-                relativeEndSeconds: relativeEndSeconds
+                relativeEndSeconds: relativeEndSeconds,
+                embeddingSpace: embeddingSpace,
+                representativeValues: representativeValues,
+                audioSource: audioSource,
+                identityVariant: identityVariant
             )
             let analysis = speakerAnalysis.analysis
             let speakerId = speakerAnalysis.speakerId
@@ -126,13 +134,18 @@ import GRDB
         func makeSpeakerAnalysis(
             sessionIndex: Int,
             relativeStartSeconds: TimeInterval,
-            relativeEndSeconds: TimeInterval
+            relativeEndSeconds: TimeInterval,
+            embeddingSpace: SpeakerEmbeddingSpace = multiSessionSpeakerSpace,
+            representativeValues: [Float] = multiSessionUnitVector,
+            audioSource: RecordingAudioSource = .microphone,
+            identityVariant: Int = 0
         ) -> (analysis: BatchProcessingOutput.SpeakerAnalysis, speakerId: UUID) {
-            let speakerId = orderedUUID(ordinal: sessionIndex + 1)
+            let identityOffset = identityVariant * 1_000
+            let speakerId = orderedUUID(ordinal: identityOffset + sessionIndex + 1)
             let speaker = BatchProcessingOutput.Speaker(
                 id: speakerId,
                 localSpeakerId: "speaker-0",
-                representative: SpeakerEmbedding(space: multiSessionSpeakerSpace, values: multiSessionUnitVector),
+                representative: SpeakerEmbedding(space: embeddingSpace, values: representativeValues),
                 representativeQuality: 1,
                 representativeSource: .diarization,
                 profileUpdateEligible: true,
@@ -147,9 +160,9 @@ import GRDB
             )
             let analysis = BatchProcessingOutput.SpeakerAnalysis(sources: [
                 BatchProcessingOutput.SourceAnalysis(
-                    id: orderedUUID(ordinal: sessionIndex + 101),
-                    audioSource: .microphone,
-                    embeddingSpace: multiSessionSpeakerSpace,
+                    id: orderedUUID(ordinal: identityOffset + sessionIndex + 101),
+                    audioSource: audioSource,
+                    embeddingSpace: embeddingSpace,
                     speakers: [speaker],
                     failureReason: nil
                 ),
@@ -161,6 +174,28 @@ import GRDB
             guard case .success = await service.stop() else {
                 throw CocoaError(.fileWriteUnknown)
             }
+        }
+
+        func embeddingSpace(assetFingerprint: String) -> SpeakerEmbeddingSpace {
+            SpeakerEmbeddingSpace(
+                provider: multiSessionSpeakerSpace.provider,
+                modelName: multiSessionSpeakerSpace.modelName,
+                revision: multiSessionSpeakerSpace.revision,
+                assetFingerprint: assetFingerprint,
+                fluidAudioVersion: multiSessionSpeakerSpace.fluidAudioVersion,
+                dimensionCount: multiSessionSpeakerSpace.dimensionCount,
+                sampleRate: multiSessionSpeakerSpace.sampleRate,
+                preprocessing: multiSessionSpeakerSpace.preprocessing,
+                excludesOverlap: multiSessionSpeakerSpace.excludesOverlap,
+                normalization: multiSessionSpeakerSpace.normalization,
+                similarityDefinition: multiSessionSpeakerSpace.similarityDefinition
+            )
+        }
+
+        func unitVector(axis: Int) -> [Float] {
+            var values = [Float](repeating: 0, count: SpeakerEmbeddingValidation.dimensionCount)
+            values[axis] = 1
+            return values
         }
 
         private func orderedUUID(ordinal: Int) -> UUID {

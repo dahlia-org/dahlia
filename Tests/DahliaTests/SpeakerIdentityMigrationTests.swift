@@ -44,7 +44,7 @@ import GRDB
             #expect(preserved.0?.name == "Preserved meeting")
             #expect(preserved.1 == "Preserved transcript")
             #expect(preserved.2?.email == "person@example.com")
-            #expect(preserved.3 == "v34_speakerIdentityTriggerRefresh")
+            #expect(preserved.3 == "v35_meetingSpeakerClusters")
             #expect(validation.0 == "ok")
             #expect(validation.1.isEmpty)
         }
@@ -74,7 +74,7 @@ import GRDB
             #expect(result.1?.state == .calibrationRequired)
             #expect(result.1?.minimumSimilarity == nil)
             #expect(result.1?.minimumMargin == nil)
-            #expect(result.2.count == 8)
+            #expect(result.2.count == 9)
             #expect(validation.0 == "ok")
             #expect(validation.1.isEmpty)
         }
@@ -100,7 +100,42 @@ import GRDB
 
             #expect(upgradedTriggers == freshTriggers)
             #expect(upgradedTriggers.count == 9)
-            #expect(appliedMigration == "v34_speakerIdentityTriggerRefresh")
+            #expect(appliedMigration == "v35_meetingSpeakerClusters")
+        }
+
+        @Test
+        func upgradesV34PreservingManualAndApprovedAssignmentsInStableClusters() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v34_speakerIdentityTriggerRefresh")
+            let ids = try insertV34SpeakerRows(in: queue)
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            let result = try queue.read { db in
+                let clusterAssignments = try SpeakerClusterContactAssignmentRecord
+                    .order(Column("contactId"))
+                    .fetchAll(db)
+                let memberships = try MeetingSpeakerClusterMemberRecord.fetchAll(db)
+                let legacyAssignments = try SpeakerContactAssignmentRecord
+                    .order(Column("contactId"))
+                    .fetchAll(db)
+                return try (
+                    clusterAssignments,
+                    memberships,
+                    legacyAssignments,
+                    MeetingSpeakerRecord.fetchCount(db),
+                    String.fetchOne(db, sql: "PRAGMA integrity_check"),
+                    Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
+                )
+            }
+
+            #expect(Set(result.0.map(\.contactId)) == Set(ids.contactIds))
+            #expect(Set(result.0.map(\.origin)) == [.manual, .suggestionApproved])
+            #expect(Set(result.1.map(\.meetingSpeakerId)) == Set(ids.speakerIds))
+            #expect(Set(result.2.map(\.contactId)) == Set(ids.contactIds))
+            #expect(result.3 == 2)
+            #expect(result.4 == "ok")
+            #expect(result.5.isEmpty)
         }
 
         @Test
@@ -469,6 +504,90 @@ import GRDB
                 ).insert(db)
             }
             return (meetingId, transcriptId, contactId)
+        }
+
+        // swiftlint:disable:next function_body_length
+        private func insertV34SpeakerRows(in queue: DatabaseQueue) throws -> (speakerIds: [UUID], contactIds: [UUID]) {
+            let now = Date(timeIntervalSince1970: 1_776_384_000)
+            let vaultId = UUID.v7()
+            let meetingId = UUID.v7()
+            let spaceId = UUID.v7()
+            let sessionIds = [UUID.v7(), UUID.v7()]
+            let analysisIds = [UUID.v7(), UUID.v7()]
+            let speakerIds = [UUID.v7(), UUID.v7()]
+            let contactIds = [UUID.v7(), UUID.v7()]
+            try queue.write { db in
+                try VaultRecord(
+                    id: vaultId,
+                    path: "/tmp/speaker-v35-migration-vault",
+                    name: "Vault",
+                    createdAt: now,
+                    lastOpenedAt: now
+                ).insert(db)
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: vaultId,
+                    projectId: nil,
+                    name: "Meeting",
+                    createdAt: now,
+                    updatedAt: now
+                ).insert(db)
+                try SpeakerEmbeddingSpaceRecord(id: spaceId, space: MigrationFixture.space, createdAt: now).insert(db)
+                for index in sessionIds.indices {
+                    let startedAt = now.addingTimeInterval(Double(index * 20))
+                    try RecordingSessionRecord(
+                        id: sessionIds[index],
+                        meetingId: meetingId,
+                        startedAt: startedAt,
+                        endedAt: startedAt.addingTimeInterval(10),
+                        duration: 10,
+                        offsetSeconds: Double(index * 10),
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                    try SpeakerAnalysisRecord(
+                        id: analysisIds[index],
+                        recordingSessionId: sessionIds[index],
+                        audioSource: .microphone,
+                        embeddingSpaceId: spaceId,
+                        state: .succeeded,
+                        failureReason: nil,
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                    var values = [Float](repeating: 0, count: SpeakerEmbeddingValidation.dimensionCount)
+                    values[index] = 1
+                    try MeetingSpeakerRecord(
+                        id: speakerIds[index],
+                        analysisId: analysisIds[index],
+                        localSpeakerId: "speaker-0",
+                        representative: SpeakerEmbeddingBlobCodec.encode(values, dimensionCount: values.count),
+                        representativeQuality: 1,
+                        representativeSource: .diarization,
+                        profileUpdateEligible: true,
+                        revision: 1,
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                    try ContactRecord(
+                        id: contactIds[index],
+                        vaultId: vaultId,
+                        email: "person-\(index)@example.com",
+                        displayName: "Person \(index)",
+                        revision: 1,
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                    try SpeakerContactAssignmentRecord(
+                        meetingSpeakerId: speakerIds[index],
+                        contactId: contactIds[index],
+                        origin: index == 0 ? .manual : .suggestionApproved,
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                }
+            }
+            return (speakerIds, contactIds)
         }
     }
 
