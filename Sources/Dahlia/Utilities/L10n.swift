@@ -1595,13 +1595,22 @@ enum L10n {
     static var vault: String { String(localized: "Vault", bundle: bundle) }
     static var currentVault: String { String(localized: "Current Vault", bundle: bundle) }
     static var mcp: String { String(localized: "MCP", bundle: bundle) }
-    static var vaultID: String { String(localized: "Vault ID", bundle: bundle) }
     static var copyCommand: String { String(localized: "Copy Command", bundle: bundle) }
+    static var copyRemoveCommand: String { String(localized: "Copy Remove Command", bundle: bundle) }
     static var copied: String { String(localized: "Copied", bundle: bundle) }
     static var codexCLI: String { String(localized: "Codex CLI", bundle: bundle) }
     static var claudeCode: String { String(localized: "Claude Code", bundle: bundle) }
-    static var mcpReadOnly: String { String(localized: "Read-only", bundle: bundle) }
-    static var mcpWriteEnabled: String { String(localized: "Write enabled", bundle: bundle) }
+    static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
+    static var mcpClient: String { String(localized: "Client", bundle: bundle) }
+    static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }
+    static var mcpConfigurationOutput: String { String(localized: "Configuration", bundle: bundle) }
+    static var mcpJSON: String { String(localized: "mcp.json", bundle: bundle) }
+    static var copyMCPJSON: String { String(localized: "Copy mcp.json", bundle: bundle) }
+    static var mcpReRegistrationHelp: String { String(localized: "Re-register Dahlia", bundle: bundle) }
+    static var mcpReRegistrationHelpDescription: String { String(
+        localized: "If Dahlia is already registered, run this remove command before the registration command.",
+        bundle: bundle
+    ) }
     static var mcpHelperUnavailable: String { String(
         localized: "The MCP helper is not available in this app build.",
         bundle: bundle
@@ -1609,7 +1618,7 @@ enum L10n {
     static var selectVaultForMCP: String { String(localized: "Select a vault before configuring MCP.", bundle: bundle) }
     static var mcpFooter: String { String(
         // swiftlint:disable:next line_length
-        localized: "Choose read-only access unless the agent should reorganize Projects and meeting memberships. Both modes let the agent read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Run the selected command again after switching Vaults.",
+        localized: "The agent can read Meeting content and customer intelligence, including names and email addresses, from the selected Vault. Write access also allows creating, updating, and deleting customer intelligence, reorganizing Projects and meeting assignments, and replacing stored meeting summaries.",
         bundle: bundle
     ) }
     static func registrationCommand(_ name: String) -> String {

@@ -1,47 +1,64 @@
-import DahliaRuntimeSupport
 import Foundation
 
 struct MCPRegistrationCommands: Equatable {
-    let codex: String
-    let claude: String
-    let codexWrite: String
-    let claudeWrite: String
+    private let helper: String
+    private let helperPath: String
+    private let vault: String
+    private let vaultID: String
 
     init(
         helperURL: URL,
-        vaultID: UUID,
-        runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
+        vaultID: UUID
     ) {
-        let helper = Self.shellQuote(helperURL.path)
-        let vault = Self.shellQuote(vaultID.uuidString)
-        let invocation = Self.helperInvocation(helper: helper, runtimeProfile: runtimeProfile)
-        codex = """
-        codex mcp remove dahlia
-        codex mcp add dahlia -- \(invocation) --vault-id \(vault)
-        """
-        codexWrite = """
-        codex mcp remove dahlia
-        codex mcp add dahlia -- \(invocation) --vault-id \(vault) --write
-        """
-        claude = """
-        claude mcp remove --scope user dahlia
-        claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault)
-        """
-        claudeWrite = """
-        claude mcp remove --scope user dahlia
-        claude mcp add --scope user dahlia -- \(invocation) --vault-id \(vault) --write
-        """
+        helperPath = helperURL.path
+        helper = Self.shellQuote(helperURL.path)
+        self.vaultID = vaultID.uuidString
+        vault = Self.shellQuote(vaultID.uuidString)
     }
 
-    private static func helperInvocation(helper: String, runtimeProfile: DahliaRuntimeProfile) -> String {
-        guard runtimeProfile == .development else { return helper }
-        let assignment = shellQuote(
-            "\(DahliaApplicationSupport.profileEnvironmentKey)=\(DahliaRuntimeProfile.development.rawValue)"
-        )
-        return "/usr/bin/env \(assignment) \(helper)"
+    func registrationCommand(for client: MCPClient, writeEnabled: Bool) -> String? {
+        guard let prefix = client.registrationCommandPrefix else { return nil }
+        let writeArgument = writeEnabled ? " --write" : ""
+        return "\(prefix) \(helper) --vault-id \(vault)\(writeArgument)"
+    }
+
+    func removalCommand(for client: MCPClient) -> String? {
+        client.removalCommand
+    }
+
+    func mcpJSONSample(writeEnabled: Bool) -> String? {
+        var args = ["--vault-id", vaultID]
+        if writeEnabled {
+            args.append("--write")
+        }
+
+        guard let command = Self.jsonString(helperPath) else { return nil }
+        let arguments = args.compactMap(Self.jsonString)
+        guard arguments.count == args.count else { return nil }
+        let formattedArguments = arguments.map { "        \($0)" }.joined(separator: ",\n")
+
+        return """
+        {
+          "mcpServers": {
+            "dahlia": {
+              "command": \(command),
+              "args": [
+        \(formattedArguments)
+              ]
+            }
+          }
+        }
+        """
     }
 
     private static func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func jsonString(_ value: String) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }
