@@ -5,11 +5,9 @@ struct MainSidebarFooterView: View {
     static let verticalPadding: CGFloat = 8
 
     @MainActor private static let mcpIcon: NSImage = {
-        guard let url = Bundle.module.url(forResource: "MCPLogo", withExtension: "svg"),
-              let image = NSImage(contentsOf: url) else {
+        guard let image = Bundle.module.image(forResource: "MCPLogo") else {
             preconditionFailure("MCPLogo.svg is missing from the app bundle")
         }
-        image.isTemplate = true
         return image
     }()
 
@@ -78,7 +76,6 @@ struct MainSidebarFooterView: View {
                 .contentShape(Circle())
             }
             .background(isMCPHovered ? Color.primary.opacity(0.08) : .clear, in: Circle())
-            .contentShape(Circle())
             .buttonStyle(.plain)
             .help(L10n.mcp)
             .onHover { isMCPHovered = $0 }
