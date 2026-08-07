@@ -1,0 +1,75 @@
+import SwiftUI
+
+struct MainSidebarFooterView: View {
+    static let verticalPadding: CGFloat = 8
+
+    let vaults: [VaultRecord]
+    let currentVault: VaultRecord?
+    let onSelectVault: (VaultRecord) -> Void
+
+    @State private var isVaultHovered = false
+    @State private var isSettingsHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(vaults) { vault in
+                    Button(action: { onSelectVault(vault) }, label: {
+                        if vault.id == currentVault?.id {
+                            Label(vault.name, systemImage: "checkmark")
+                        } else {
+                            Text(vault.name)
+                        }
+                    })
+                    .disabled(vault.id == currentVault?.id)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Label(currentVault?.name ?? L10n.noVaultSelected, systemImage: "externaldrive")
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    isVaultHovered ? Color.primary.opacity(0.08) : .clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .onContinuousHover { phase in
+                    isVaultHovered = phase != .ended
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(L10n.currentVaultDescription)
+            .accessibilityLabel("\(L10n.currentVault), \(currentVault?.name ?? L10n.noVaultSelected)")
+
+            SettingsLink {
+                Label(L10n.settings, systemImage: "gearshape")
+                    .labelStyle(.iconOnly)
+                    .padding(7)
+                    .background(isSettingsHovered ? Color.primary.opacity(0.08) : .clear, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help(L10n.settingsMenuItem)
+            .accessibilityLabel(L10n.settings)
+            .onHover { isSettingsHovered = $0 }
+        }
+        .padding(2)
+        .background(Color(nsColor: .controlBackgroundColor), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, Self.verticalPadding)
+    }
+}

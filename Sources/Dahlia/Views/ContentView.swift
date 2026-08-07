@@ -28,7 +28,8 @@ struct ContentView: View {
                     onShowUpcomingSchedule: returnToCalendarSchedule,
                     onShowUnprocessedRecordings: showUnprocessedRecordings,
                     showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                    onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
+                    onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                    onSelectVault: onSelectVault
                 )
             } else {
                 NavigationSplitView {
@@ -42,7 +43,8 @@ struct ContentView: View {
                         isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) }
+                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                        onSelectVault: onSelectVault
                     )
                     .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
                 } detail: {

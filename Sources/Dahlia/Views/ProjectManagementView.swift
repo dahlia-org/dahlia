@@ -10,6 +10,7 @@ struct ProjectManagementView: View {
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
+    let onSelectVault: (VaultRecord) -> Void
 
     @State private var isShowingProjectCreation = false
     @State private var projectCreationParentId: UUID?
@@ -67,6 +68,12 @@ struct ProjectManagementView: View {
                         recordingCoordinator: recordingCoordinator
                     )
                     .padding(8)
+                } else if !captionViewModel.isFinalizingRecording {
+                    MainSidebarFooterView(
+                        vaults: sidebarViewModel.allVaults,
+                        currentVault: sidebarViewModel.currentVault,
+                        onSelectVault: onSelectVault
+                    )
                 }
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
