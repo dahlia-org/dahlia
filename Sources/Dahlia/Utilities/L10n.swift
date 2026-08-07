@@ -1608,6 +1608,12 @@ enum L10n {
         bundle: bundle
     ) }
     static var mcpRegistrationCommand: String { String(localized: "Registration Command", bundle: bundle) }
+    static var mcpJSONSample: String { String(localized: "mcp.json Sample", bundle: bundle) }
+    static var copyMCPJSON: String { String(localized: "Copy mcp.json", bundle: bundle) }
+    static var mcpJSONSampleDescription: String { String(
+        localized: "For clients that support mcp.json, add this server entry to the file.",
+        bundle: bundle
+    ) }
     static var mcpReRegistrationHelp: String { String(localized: "Re-register Dahlia", bundle: bundle) }
     static var mcpReRegistrationHelpDescription: String { String(
         localized: "If Dahlia is already registered, run this remove command before the registration command.",

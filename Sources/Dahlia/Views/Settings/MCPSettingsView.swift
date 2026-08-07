@@ -8,7 +8,7 @@ struct MCPSettingsView: View {
     @State private var selectedClient = MCPClient.codex
     @State private var selectedVaultID: UUID?
     @State private var isWriteEnabled = false
-    @State private var copiedCommand: String?
+    @State private var copiedContent: String?
     @State private var copyFeedbackTask: Task<Void, Never>?
 
     init(sidebarViewModel: SidebarViewModel) {
@@ -46,16 +46,41 @@ struct MCPSettingsView: View {
                     Text(L10n.mcpFooter)
                 }
 
-                Section(L10n.mcpRegistrationCommand) {
-                    if let commands = commands(for: vault) {
+                if let commands = commands(for: vault) {
+                    Section(L10n.mcpRegistrationCommand) {
                         MCPCommandView(
                             title: selectedClient.displayName,
                             command: commands.registrationCommand(for: selectedClient, writeEnabled: isWriteEnabled),
                             removalCommand: commands.removalCommand(for: selectedClient),
-                            copiedCommand: copiedCommand,
+                            copiedCommand: copiedContent,
                             onCopy: copy
                         )
-                    } else {
+                    }
+
+                    if let sample = commands.mcpJSONSample(writeEnabled: isWriteEnabled) {
+                        Section {
+                            Text(sample)
+                                .font(.callout.monospaced())
+                                .textSelection(.enabled)
+                                .accessibilityLabel(L10n.mcpJSONSample)
+
+                            HStack {
+                                Spacer()
+                                Button(
+                                    copiedContent == sample ? L10n.copied : L10n.copyMCPJSON,
+                                    systemImage: copiedContent == sample ? "checkmark" : "doc.on.doc"
+                                ) {
+                                    copy(sample)
+                                }
+                            }
+                        } header: {
+                            Text(L10n.mcpJSONSample)
+                        } footer: {
+                            Text(L10n.mcpJSONSampleDescription)
+                        }
+                    }
+                } else {
+                    Section(L10n.mcpRegistrationCommand) {
                         Text(L10n.mcpHelperUnavailable)
                             .foregroundStyle(.secondary)
                     }
@@ -109,7 +134,7 @@ struct MCPSettingsView: View {
     private func copy(_ command: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
-        copiedCommand = command
+        copiedContent = command
 
         copyFeedbackTask?.cancel()
         copyFeedbackTask = Task { @MainActor in
@@ -118,7 +143,7 @@ struct MCPSettingsView: View {
             } catch {
                 return
             }
-            copiedCommand = nil
+            copiedContent = nil
         }
     }
 }
