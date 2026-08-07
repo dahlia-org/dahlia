@@ -384,6 +384,8 @@ private struct CalendarScheduleEventRow: View {
     let onSelect: () -> Void
     let onJoin: (() -> Void)?
 
+    @State private var isHovered = false
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             Button(action: onSelect) {
@@ -420,11 +422,15 @@ private struct CalendarScheduleEventRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .background(Color.primary.opacity(isHovered ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 8))
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
         }
+        .contentShape(Rectangle())
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 
     private var subtitle: String {
