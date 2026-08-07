@@ -999,7 +999,6 @@
 "Command Preview" = "Command Preview";
 "Client" = "Client";
 "Allow Write Access" = "Allow Write Access";
-"Allows the agent to change Projects, meeting assignments and summaries, and customer intelligence in the selected Vault." = "Allows the agent to change Projects, meeting assignments and summaries, and customer intelligence in the selected Vault.";
 "Configuration" = "Configuration";
 "mcp.json" = "mcp.json";
 "Copy mcp.json" = "Copy mcp.json";

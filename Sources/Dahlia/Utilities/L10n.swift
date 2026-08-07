@@ -1603,10 +1603,6 @@ enum L10n {
     static var mcpPreview: String { String(localized: "Command Preview", bundle: bundle) }
     static var mcpClient: String { String(localized: "Client", bundle: bundle) }
     static var mcpAllowWriteAccess: String { String(localized: "Allow Write Access", bundle: bundle) }
-    static var mcpAllowWriteAccessDescription: String { String(
-        localized: "Allows the agent to change Projects, meeting assignments and summaries, and customer intelligence in the selected Vault.",
-        bundle: bundle
-    ) }
     static var mcpConfigurationOutput: String { String(localized: "Configuration", bundle: bundle) }
     static var mcpJSON: String { String(localized: "mcp.json", bundle: bundle) }
     static var copyMCPJSON: String { String(localized: "Copy mcp.json", bundle: bundle) }
