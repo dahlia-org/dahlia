@@ -1,7 +1,17 @@
+import AppKit
 import SwiftUI
 
 struct MainSidebarFooterView: View {
     static let verticalPadding: CGFloat = 8
+
+    @MainActor private static let mcpIcon: NSImage = {
+        guard let url = Bundle.module.url(forResource: "MCPLogo", withExtension: "svg"),
+              let image = NSImage(contentsOf: url) else {
+            preconditionFailure("MCPLogo.svg is missing from the app bundle")
+        }
+        image.isTemplate = true
+        return image
+    }()
 
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
@@ -54,18 +64,23 @@ struct MainSidebarFooterView: View {
             .accessibilityLabel("\(L10n.currentVault), \(currentVault?.name ?? L10n.noVaultSelected)")
 
             Button(action: showMCP) {
-                Image("MCPLogo", bundle: .module)
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
+                Label {
+                    Text(L10n.mcp)
+                } icon: {
+                    Image(nsImage: Self.mcpIcon)
+                        .resizable()
+                        .renderingMode(.template)
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                }
+                .labelStyle(.iconOnly)
+                .frame(width: 30, height: 30)
+                .contentShape(Circle())
             }
-            .padding(7)
             .background(isMCPHovered ? Color.primary.opacity(0.08) : .clear, in: Circle())
             .contentShape(Circle())
             .buttonStyle(.plain)
             .help(L10n.mcp)
-            .accessibilityLabel(L10n.mcp)
             .onHover { isMCPHovered = $0 }
             .sheet(isPresented: $isMCPPresented) {
                 MCPModalView(
