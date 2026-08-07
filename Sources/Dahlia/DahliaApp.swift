@@ -79,7 +79,10 @@ struct DahliaApp: App {
         Window(L10n.dahlia, id: WindowID.main) {
             Group {
                 if showVaultPicker {
-                    VaultPickerView(appDatabase: appDatabase) { vault in
+                    VaultPickerView(
+                        appDatabase: appDatabase,
+                        canSwitchVault: viewModel.canSwitchVault
+                    ) { vault in
                         openVault(vault)
                     }
                 } else {
@@ -136,7 +139,10 @@ struct DahliaApp: App {
         .restorationBehavior(.disabled)
 
         Window(L10n.vault, id: WindowID.vaultManager) {
-            VaultPickerView(appDatabase: appDatabase) { vault in
+            VaultPickerView(
+                appDatabase: appDatabase,
+                canSwitchVault: viewModel.canSwitchVault
+            ) { vault in
                 openVault(vault)
             }
         }

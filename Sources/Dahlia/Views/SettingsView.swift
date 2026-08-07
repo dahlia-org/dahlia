@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 設定画面（Cmd+, で表示）。
 struct SettingsView: View {
-    var captionViewModel: CaptionViewModel
+    @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }

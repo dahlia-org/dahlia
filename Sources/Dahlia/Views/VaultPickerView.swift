@@ -4,6 +4,7 @@ import SwiftUI
 /// 保管庫の登録・選択・登録解除を行う画面。
 struct VaultPickerView: View {
     let appDatabase: AppDatabaseManager?
+    let canSwitchVault: Bool
     let onVaultSelected: (VaultRecord) -> Void
 
     @Environment(\.dismissWindow) private var dismissWindow
@@ -42,6 +43,7 @@ struct VaultPickerView: View {
                 vault: selectedVault,
                 hasRegisteredVaults: !vaults.isEmpty,
                 isCurrentVault: selectedVault?.id == settings.currentVault?.id,
+                canSwitchVault: canSwitchVault,
                 onOpen: openSelectedVault,
                 onAdd: showFolderPicker
             )
@@ -158,6 +160,7 @@ struct VaultPickerView: View {
     }
 
     private func openVault(_ vault: VaultRecord) {
+        guard canSwitchVault else { return }
         onVaultSelected(vault)
         openWindow(id: WindowID.main)
         dismissWindow(id: WindowID.vaultManager)

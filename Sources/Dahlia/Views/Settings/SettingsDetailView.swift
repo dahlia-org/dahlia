@@ -14,6 +14,7 @@ struct SettingsDetailView: View {
                 GeneralSettingsView(
                     sidebarViewModel: sidebarViewModel,
                     mainWindowNavigation: mainWindowNavigation,
+                    canSwitchVault: captionViewModel.canSwitchVault,
                     onSelectVault: onSelectVault
                 )
             case .permissions:
