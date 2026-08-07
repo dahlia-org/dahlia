@@ -36,18 +36,12 @@ struct MainSidebarNavigationView: View {
             .accessibilityAddTraits(isShowingProjectManagement ? .isSelected : [])
 
             Button(action: onShowUnprocessedRecordings) {
-                HStack {
-                    MainSidebarNavigationLabel(
-                        title: L10n.unprocessedRecordings,
-                        systemImage: "waveform.badge.exclamationmark",
-                        isSelected: isShowingUnprocessedRecordings
-                    )
-                    if unprocessedRecordingCount > 0 {
-                        Text(unprocessedRecordingCount, format: .number)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                MainSidebarNavigationLabel(
+                    title: L10n.unprocessedRecordings,
+                    systemImage: "waveform.badge.exclamationmark",
+                    badgeCount: unprocessedRecordingCount,
+                    isSelected: isShowingUnprocessedRecordings
+                )
             }
             .buttonStyle(.plain)
             .help(L10n.unprocessedRecordings)

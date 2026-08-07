@@ -3,13 +3,28 @@ import SwiftUI
 struct MainSidebarNavigationLabel: View {
     let title: String
     let systemImage: String
+    var badgeCount = 0
     var isSelected = false
 
     var body: some View {
-        Label(title, systemImage: systemImage)
-            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-            .padding(.horizontal, 8)
-            .contentShape(Rectangle())
-            .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
+        HStack {
+            Label(title, systemImage: systemImage)
+
+            Spacer(minLength: 8)
+
+            if badgeCount > 0 {
+                Text(badgeCount, format: .number)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(.quaternary, in: Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
     }
 }
