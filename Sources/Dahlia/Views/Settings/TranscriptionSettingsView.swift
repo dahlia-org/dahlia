@@ -13,6 +13,7 @@ struct TranscriptionSettingsView: View {
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
     @State private var localeSearchText = ""
+    @StateObject private var speakerModel = SpeakerModelSettingsViewModel()
 
     var body: some View {
         Form {
@@ -37,12 +38,6 @@ struct TranscriptionSettingsView: View {
                     Toggle(isOn: $settings.retainAudioAfterBatchTranscription) {
                         Text(L10n.retainBatchAudio)
                         Text(L10n.retainBatchAudioDescription)
-                    }
-                    .toggleStyle(.switch)
-
-                    Toggle(isOn: $settings.speakerIdentificationEnabled) {
-                        Text(L10n.speakerIdentification)
-                        Text(L10n.speakerIdentificationDescription)
                     }
                     .toggleStyle(.switch)
 
@@ -72,6 +67,24 @@ struct TranscriptionSettingsView: View {
                 if !settings.isRealtimeTranscriptionEnabled {
                     Text(L10n.batchTranscriptionDescription)
                 }
+            }
+
+            // Speaker identification is batch-only, but keeping the control visible explains
+            // why it is unavailable instead of making the feature impossible to discover.
+            Section {
+                Toggle(isOn: speakerIdentificationBinding) {
+                    Text(L10n.speakerIdentification)
+                    Text(L10n.speakerIdentificationDescription)
+                }
+                .toggleStyle(.switch)
+                .disabled(settings.isRealtimeTranscriptionEnabled || speakerModel.isAcquiring)
+
+                if settings.isRealtimeTranscriptionEnabled {
+                    Text(L10n.speakerIdentificationBatchOnly)
+                        .foregroundStyle(.secondary)
+                }
+
+                speakerModelStatus
             }
 
             Section {
@@ -145,11 +158,71 @@ struct TranscriptionSettingsView: View {
         }
         .formStyle(.grouped)
         .task {
-            await loadSupportedLocales()
+            async let locales: Void = loadSupportedLocales()
+            async let assets: Void = speakerModel.inspect(settings: settings)
+            _ = await (locales, assets)
         }
     }
 
     // MARK: - Private
+
+    private var speakerIdentificationBinding: Binding<Bool> {
+        Binding {
+            settings.speakerIdentificationEnabled || speakerModel.isAcquiring
+        } set: { enabled in
+            speakerModel.setEnabled(enabled, settings: settings)
+        }
+    }
+
+    @ViewBuilder
+    private var speakerModelStatus: some View {
+        switch speakerModel.state {
+        case .checking:
+            ProgressView(L10n.checkingSpeakerModel)
+        case let .acquiring(progress):
+            ProgressView(
+                value: Double(progress.completedByteCount),
+                total: Double(max(1, progress.totalByteCount))
+            ) {
+                Text(L10n.downloadingSpeakerModel)
+            } currentValueLabel: {
+                Text(L10n.speakerModelDownloadProgress(
+                    completed: progress.completedByteCount,
+                    total: progress.totalByteCount
+                ))
+            }
+            Button(L10n.cancel) {
+                speakerModel.setEnabled(false, settings: settings)
+            }
+        case let .available(managedByteCount):
+            LabeledContent(L10n.speakerModelManagedStorage) {
+                Text(managedByteCount, format: .byteCount(style: .file))
+            }
+        case let .unavailable(managedByteCount):
+            speakerModelStorageIfNeeded(managedByteCount)
+            Button(L10n.downloadSpeakerModel) {
+                speakerModel.acquire(settings: settings)
+            }
+            .disabled(settings.isRealtimeTranscriptionEnabled)
+        case let .failed(managedByteCount):
+            Text(L10n.speakerModelDownloadFailed)
+                .foregroundStyle(.red)
+            speakerModelStorageIfNeeded(managedByteCount)
+            Button(L10n.retrySpeakerModelDownload) {
+                speakerModel.acquire(settings: settings)
+            }
+            .disabled(settings.isRealtimeTranscriptionEnabled)
+        }
+    }
+
+    @ViewBuilder
+    private func speakerModelStorageIfNeeded(_ byteCount: Int64) -> some View {
+        if byteCount > 0 {
+            LabeledContent(L10n.speakerModelManagedStorage) {
+                Text(byteCount, format: .byteCount(style: .file))
+            }
+        }
+    }
 
     @ViewBuilder
     private var localeSelectionList: some View {

@@ -139,6 +139,52 @@ import os
         }
 
         @Test
+        func missingSpeakerAssetsPersistFailureWhileTranscriptStillCompletes() async throws {
+            let fixture = try BatchAudioTestFixture(
+                name: "SpeakerAssetsMissingPersistence",
+                endedAt: Date(timeIntervalSince1970: 1_776_384_001),
+                duration: 0.01,
+                retainAudioAfterBatch: true
+            )
+            defer { fixture.removeFiles() }
+            try await fixture.recordMicrophoneAudio()
+            let store = try RecordingAudioStore(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL
+            )
+            let coordinator = BatchTranscriptionCoordinator(
+                dbQueue: fixture.database.dbQueue,
+                managedRootURL: fixture.managedRootURL,
+                recordingAudioStore: store,
+                speechRecognizer: SpeakerPipelineRecognizer(),
+                speakerAnalyzerFactory: {
+                    BatchSpeakerAnalysisService(
+                        extractorFactory: {
+                            throw SpeakerModelAssetError.missingFile("segmentation.mlmodelc")
+                        },
+                        errorReporter: { _, _ in }
+                    )
+                },
+                speakerIdentificationEnabledProvider: { true },
+                onStateChange: { _ in }
+            )
+
+            await coordinator.enqueue(sessionId: fixture.session.id)
+            try await waitForCompletion(fixture)
+
+            let persisted = try await fixture.database.dbQueue.read { db in
+                try (
+                    TranscriptSegmentRecord.fetchCount(db),
+                    SpeakerAnalysisRecord.fetchOne(db)?.failureReason,
+                    RecordingSessionRecord.fetchOne(db, key: fixture.session.id)?.batchCompletedAt
+                )
+            }
+            #expect(persisted.0 == 1)
+            #expect(persisted.1 == SpeakerMatchUnknownReason.modelAssetsUnavailable.rawValue)
+            #expect(persisted.2 != nil)
+        }
+
+        @Test
         func cancellationDoesNotProduceFailedSpeakerAnalysis() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "SpeakerAnalysisCancellation",

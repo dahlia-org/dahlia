@@ -163,6 +163,13 @@ embed_speaker_diarization_licenses() {
     cp "$notices_source" "${fluid_destination}/NOTICE"
     cp "$model_license_source" "${model_destination}/LICENSE"
     cp "$notices_source" "${model_destination}/NOTICE"
+    chmod u+w \
+        "${fluid_destination}/LICENSE" \
+        "${fluid_destination}/ThirdPartyLicenses/fastcluster-LICENSE.md" \
+        "${fluid_destination}/ThirdPartyLicenses/vbx-LICENSE.md" \
+        "${fluid_destination}/NOTICE" \
+        "${model_destination}/LICENSE" \
+        "${model_destination}/NOTICE"
 }
 
 has_entitlements() {

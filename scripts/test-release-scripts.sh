@@ -354,6 +354,10 @@ test_speaker_diarization_license_embedding_validation() {
     printf '%s' 'vbx license' > "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md"
     printf '%s' 'speaker notices' > "${source_resource_dir}/Third-Party-NOTICES.txt"
     printf '%s' 'model license' > "${resource_dir}/SpeakerDiarizationModel-LICENSE"
+    chmod a-w \
+        "${checkout_dir}/LICENSE" \
+        "${checkout_dir}/ThirdPartyLicenses/fastcluster-LICENSE.md" \
+        "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md"
 
     embed_speaker_diarization_licenses "$fake_project" "$contents_dir"
 
@@ -368,6 +372,14 @@ test_speaker_diarization_license_embedding_validation() {
         "${contents_dir}/Resources/Licenses/SpeakerDiarizationModel/LICENSE"
     cmp "${source_resource_dir}/Third-Party-NOTICES.txt" \
         "${contents_dir}/Resources/Licenses/SpeakerDiarizationModel/NOTICE"
+    [ -w "${contents_dir}/Resources/Licenses/FluidAudio/LICENSE" ] \
+        || fail "embedded FluidAudio license was not writable"
+    [ -w "${contents_dir}/Resources/Licenses/FluidAudio/ThirdPartyLicenses/fastcluster-LICENSE.md" ] \
+        || fail "embedded fastcluster license was not writable"
+    [ -w "${contents_dir}/Resources/Licenses/FluidAudio/ThirdPartyLicenses/vbx-LICENSE.md" ] \
+        || fail "embedded vbx license was not writable"
+
+    embed_speaker_diarization_licenses "$fake_project" "$contents_dir"
 
     rm "${checkout_dir}/ThirdPartyLicenses/vbx-LICENSE.md"
     expect_failure embed_speaker_diarization_licenses "$fake_project" "$contents_dir"

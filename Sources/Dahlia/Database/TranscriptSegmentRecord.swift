@@ -36,7 +36,7 @@ extension TranscriptSegmentRecord {
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
         self.speakerLabel = segment.speakerLabel
-        self.meetingSpeakerId = nil
+        self.meetingSpeakerId = segment.meetingSpeakerId
         self.audioFeatureVersion = segment.audioFeatures?.version
         self.audioActiveRmsDecibels = segment.audioFeatures?.activeRmsDecibels
         self.audioMedianPitchHertz = segment.audioFeatures?.medianPitchHertz

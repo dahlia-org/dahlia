@@ -15,16 +15,8 @@ struct TranscriptRowView: View, Equatable {
                 .foregroundStyle(.tertiary)
                 .frame(width: 56, alignment: .leading)
 
-            // 話者ラベル
-            if let speaker = segment.speakerLabel {
-                Text(speakerDisplayName(for: speaker))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(speakerColor(for: speaker), in: Capsule())
-                    .frame(width: 60, alignment: .center)
-            }
+            speakerLabels
+                .frame(width: 120, alignment: .leading)
 
             // テキスト
             VStack(alignment: .leading, spacing: 4) {
@@ -46,35 +38,54 @@ struct TranscriptRowView: View, Equatable {
         .padding(.vertical, 4)
     }
 
-    private func speakerDisplayName(for label: String) -> String {
-        switch label {
-        case "mic": L10n.mic
-        case "system": L10n.system
-        default: label
+    private var speakerLabels: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(primarySpeakerName)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .foregroundStyle(primarySpeakerColor)
+                .background(primarySpeakerColor.opacity(0.16), in: Capsule())
+                .overlay {
+                    Capsule().stroke(primarySpeakerColor.opacity(0.6))
+                }
+                .help(primarySpeakerName)
+
+            if let sourceLabel {
+                Label(sourceLabel.name, systemImage: sourceLabel.systemImage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 
-    private func speakerColor(for label: String) -> Color {
-        switch label {
+    private var primarySpeakerName: String {
+        guard let identity = segment.speakerIdentity else { return L10n.unknownSpeaker }
+        if let assignedContactName = identity.assignedContactName {
+            return assignedContactName
+        }
+        if let referenceContactName = identity.referenceContactName {
+            return L10n.referenceSpeakerCandidate(referenceContactName)
+        }
+        return L10n.meetingSpeaker(identity.ordinal)
+    }
+
+    private var primarySpeakerColor: Color {
+        guard let identity = segment.speakerIdentity else { return .secondary }
+        let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
+        return colors[identity.stableColorIndex]
+    }
+
+    private var sourceLabel: (name: String, systemImage: String)? {
+        switch segment.speakerLabel {
         case "mic":
-            return .blue
+            (L10n.mic, "mic.fill")
         case "system":
-            return .orange
+            (L10n.system, "desktopcomputer")
         default:
-            let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
-            let suffix = label.replacingOccurrences(of: "話者", with: "")
-            let index: Int = switch suffix {
-            case "A": 0
-            case "B": 1
-            case "C": 2
-            case "D": 3
-            case "E": 4
-            case "F": 5
-            case "G": 6
-            case "H": 7
-            default: (Int(suffix) ?? 1) - 1
-            }
-            return colors[index % colors.count]
+            nil
         }
     }
 }

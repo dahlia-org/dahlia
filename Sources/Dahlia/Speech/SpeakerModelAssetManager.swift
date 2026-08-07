@@ -71,6 +71,18 @@ struct URLSessionSpeakerModelAssetFetcher: SpeakerModelAssetFetching {
 }
 
 actor SpeakerModelAssetManager {
+    private struct AcquisitionWaiter {
+        let continuation: CheckedContinuation<URL, Error>
+        let progress: @Sendable (SpeakerModelAssetProgress) -> Void
+    }
+
+    private struct ActiveAcquisition {
+        let id: UUID
+        let task: Task<Void, Never>
+        var waiters: [UUID: AcquisitionWaiter]
+        var latestProgress: SpeakerModelAssetProgress?
+    }
+
     /// FluidAudio does not expose its package version at runtime. A test reads
     /// Package.swift and Package.resolved and requires this identity component to match both pins.
     static let fluidAudioVersion = "0.15.5"
@@ -80,7 +92,7 @@ actor SpeakerModelAssetManager {
     private let managedRootURL: URL
     private let fetcher: any SpeakerModelAssetFetching
     private let fileManager: FileManager
-    private var activeAcquisition: Task<URL, Error>?
+    private var activeAcquisition: ActiveAcquisition?
 
     init(
         managedRootURL: URL = DahliaApplicationSupport.currentDirectoryURL
@@ -113,27 +125,78 @@ actor SpeakerModelAssetManager {
     func acquire(
         progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void = { _ in }
     ) async throws -> URL {
-        if let activeAcquisition {
-            return try await awaitAcquisition(activeAcquisition)
-        }
-
-        let task = Task { try await performAcquisition(progress: progress) }
-        activeAcquisition = task
-        do {
-            let url = try await awaitAcquisition(task)
-            activeAcquisition = nil
-            return url
-        } catch {
-            activeAcquisition = nil
-            throw error
+        try Task.checkCancellation()
+        let requestID = UUID.v7()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                registerRequest(id: requestID, continuation: continuation, progress: progress)
+            }
+        } onCancel: {
+            Task { await self.cancelRequest(id: requestID) }
         }
     }
 
-    private func awaitAcquisition(_ task: Task<URL, Error>) async throws -> URL {
-        try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
+    private func registerRequest(
+        id: UUID,
+        continuation: CheckedContinuation<URL, Error>,
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void
+    ) {
+        let waiter = AcquisitionWaiter(continuation: continuation, progress: progress)
+        if var activeAcquisition {
+            activeAcquisition.waiters[id] = waiter
+            if let latestProgress = activeAcquisition.latestProgress {
+                progress(latestProgress)
+            }
+            self.activeAcquisition = activeAcquisition
+            return
+        }
+
+        let acquisitionID = UUID.v7()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await self.performAcquisition { update in
+                    Task { await self.reportProgress(update, acquisitionID: acquisitionID) }
+                }
+                await self.finishAcquisition(id: acquisitionID, with: .success(url))
+            } catch {
+                await self.finishAcquisition(id: acquisitionID, with: .failure(error))
+            }
+        }
+        activeAcquisition = ActiveAcquisition(
+            id: acquisitionID,
+            task: task,
+            waiters: [id: waiter],
+            latestProgress: nil
+        )
+    }
+
+    private func cancelRequest(id: UUID) {
+        guard var activeAcquisition,
+              let waiter = activeAcquisition.waiters.removeValue(forKey: id) else { return }
+        if activeAcquisition.waiters.isEmpty {
+            // The last request owns cleanup: resume it only after the shared task has removed
+            // its temporary directory. Joined request cancellation remains request-scoped.
+            activeAcquisition.waiters[id] = waiter
+            activeAcquisition.task.cancel()
+        } else {
+            waiter.continuation.resume(throwing: CancellationError())
+        }
+        self.activeAcquisition = activeAcquisition
+    }
+
+    private func reportProgress(_ update: SpeakerModelAssetProgress, acquisitionID: UUID) {
+        guard var activeAcquisition, activeAcquisition.id == acquisitionID else { return }
+        activeAcquisition.latestProgress = update
+        self.activeAcquisition = activeAcquisition
+        activeAcquisition.waiters.values.forEach { $0.progress(update) }
+    }
+
+    private func finishAcquisition(id: UUID, with result: Result<URL, Error>) {
+        guard let activeAcquisition, activeAcquisition.id == id else { return }
+        self.activeAcquisition = nil
+        for waiter in activeAcquisition.waiters.values {
+            waiter.continuation.resume(with: result)
         }
     }
 

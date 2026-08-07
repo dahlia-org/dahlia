@@ -560,11 +560,78 @@ final class MeetingRepository {
                 records = Array(fetched.prefix(pageLimit))
             }
 
-            return TranscriptPage(
-                segments: records.map(TranscriptSegment.init(from:)),
-                hasEarlier: hasEarlier,
-                hasLater: hasLater
-            )
+            return try Self.transcriptPage(records, meetingId: meetingId, hasEarlier: hasEarlier, hasLater: hasLater, in: db)
+        }
+    }
+
+    private nonisolated static func transcriptPage(
+        _ records: [TranscriptSegmentRecord],
+        meetingId: UUID,
+        hasEarlier: Bool,
+        hasLater: Bool,
+        in db: Database
+    ) throws -> TranscriptPage {
+        let segments = try transcriptSegments(records, meetingId: meetingId, in: db)
+        return TranscriptPage(
+            segments: segments,
+            hasEarlier: hasEarlier,
+            hasLater: hasLater
+        )
+    }
+
+    private nonisolated static func transcriptSegments(
+        _ records: [TranscriptSegmentRecord],
+        meetingId: UUID,
+        in db: Database
+    ) throws -> [TranscriptSegment] {
+        let speakerRows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT meeting_speakers.id AS meetingSpeakerId,
+                   assigned_contacts.displayName AS assignedDisplayName,
+                   assigned_contacts.email AS assignedEmail,
+                   reference_contacts.displayName AS referenceDisplayName,
+                   reference_contacts.email AS referenceEmail,
+                   speaker_match_observations.state AS matchState
+            FROM meeting_speakers
+            JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+            JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+            LEFT JOIN speaker_contact_assignments
+              ON speaker_contact_assignments.meetingSpeakerId = meeting_speakers.id
+            LEFT JOIN contacts AS assigned_contacts
+              ON assigned_contacts.id = speaker_contact_assignments.contactId
+            LEFT JOIN speaker_match_observations
+              ON speaker_match_observations.meetingSpeakerId = meeting_speakers.id
+            LEFT JOIN contacts AS reference_contacts
+              ON reference_contacts.id = speaker_match_observations.top1ContactId
+            WHERE recording_sessions.meetingId = ?
+            ORDER BY speaker_analyses.audioSource, meeting_speakers.localSpeakerId, meeting_speakers.id
+            """,
+            arguments: [meetingId]
+        )
+        let identityPairs: [(UUID, TranscriptSpeakerIdentity)] = speakerRows.enumerated().map { index, row in
+            let id: UUID = row["meetingSpeakerId"]
+            let matchState = (row["matchState"] as String?).flatMap(SpeakerMatchObservationState.init(rawValue:))
+            let referenceName: String? = if matchState == .referenceOnly || matchState == .suggested {
+                (row["referenceDisplayName"] as String?)?.nilIfBlank
+                    ?? (row["referenceEmail"] as String?)?.nilIfBlank
+            } else {
+                nil
+            }
+            return (id, TranscriptSpeakerIdentity(
+                meetingSpeakerId: id,
+                ordinal: index + 1,
+                assignedContactName: (row["assignedDisplayName"] as String?)?.nilIfBlank
+                    ?? (row["assignedEmail"] as String?)?.nilIfBlank,
+                referenceContactName: referenceName
+            ))
+        }
+        let identities = Dictionary(uniqueKeysWithValues: identityPairs)
+
+        return records.map { record in
+            var segment = TranscriptSegment(from: record)
+            segment.speakerIdentity = record.meetingSpeakerId.flatMap { identities[$0] }
+            return segment
         }
     }
 
