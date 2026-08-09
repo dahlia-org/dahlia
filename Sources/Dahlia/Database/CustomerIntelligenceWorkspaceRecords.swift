@@ -39,6 +39,8 @@ struct ProvisionalContactDeletionImpact: Equatable, Sendable {
     let insights: Int
     let topics: Int
     let meetingParticipants: Int
+    let speakerProfiles: Int
+    let speakerAssignments: Int
 }
 
 struct OrganizationDeletionImpact: Equatable, Sendable {

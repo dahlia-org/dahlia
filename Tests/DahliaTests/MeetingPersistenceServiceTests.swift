@@ -353,6 +353,7 @@ import os
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
         func cancellingAppendRemovesOnlyCurrentSessionSegments() async throws {
             let database = try makeDatabase()
             let meetingId = UUID.v7()
@@ -375,12 +376,28 @@ import os
                 ).insert(db)
                 try TranscriptSegmentRecord(from: legacySegment, meetingId: meetingId).insert(db)
             }
+            let cache = SpeakerProfileCache()
             let service = try await MeetingPersistenceService.createAppending(
                 store: TranscriptStore(),
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
-                recordingStartDate: createdAt.addingTimeInterval(60)
+                recordingStartDate: createdAt.addingTimeInterval(60),
+                speakerProfileCache: cache
             )
+            let speakerEvidence = try insertSpeakerDeletionEvidence(
+                sessionId: service.recordingSessionId,
+                dbQueue: database.dbQueue
+            )
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: database.dbQueue) == 1)
+            let cacheKey = SpeakerProfileCacheKey(
+                vaultId: testVault.id,
+                embeddingSpaceId: speakerEvidence.embeddingSpaceId
+            )
+            let cacheLoadCounter = MeetingCancellationCacheLoadCounter()
+            _ = try await cache.profiles(for: cacheKey) {
+                await cacheLoadCounter.increment()
+                return []
+            }
             let appendedSegment = TranscriptSegment(
                 sessionId: service.recordingSessionId,
                 startTime: createdAt.addingTimeInterval(60),
@@ -402,6 +419,12 @@ import os
             #expect(persisted.0?.text == legacySegment.text)
             #expect(persisted.1 == nil)
             #expect(persisted.2 == nil)
+            #expect(try speakerProfileCount(for: speakerEvidence, dbQueue: database.dbQueue) == 0)
+            _ = try await cache.profiles(for: cacheKey) {
+                await cacheLoadCounter.increment()
+                return []
+            }
+            #expect(await cacheLoadCounter.value == 2)
         }
 
         @Test
@@ -861,6 +884,14 @@ import os
         }
     }
 
+    private actor MeetingCancellationCacheLoadCounter {
+        private(set) var value = 0
+
+        func increment() {
+            value += 1
+        }
+    }
+
 #elseif canImport(XCTest)
     import XCTest
 
@@ -1133,6 +1164,7 @@ import os
             XCTAssertEqual(persistedCount, 0)
         }
     }
+
 #endif
 
 private let testVault = VaultRecord(

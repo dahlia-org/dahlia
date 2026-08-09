@@ -604,7 +604,7 @@ extension MeetingRepository {
         expectedImpact: ProvisionalContactDeletionImpact? = nil,
         now: Date = .now
     ) throws {
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
             guard let contact = try ContactRecord
                 .filter(Column("id") == id && Column("vaultId") == vaultId)
                 .fetchOne(db), contact.isProvisional
@@ -625,9 +625,18 @@ extension MeetingRepository {
                 resourceIDs: [id],
                 in: db
             )
+            let embeddingSpaceIDs = try UUID.fetchAll(
+                db,
+                sql: "SELECT embeddingSpaceId FROM speaker_profiles WHERE contactId = ?",
+                arguments: [id]
+            )
             _ = try ContactRecord.deleteOne(db, key: id)
             try Self.incrementReferenceOwnerRevisions(owners, now: now, in: db)
+            return Set(embeddingSpaceIDs.map {
+                SpeakerProfileCacheKey(vaultId: vaultId, embeddingSpaceId: $0)
+            })
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     // MARK: - Contact correction and deletion
@@ -642,7 +651,7 @@ extension MeetingRepository {
         expectedExistingRevision: Int?,
         now: Date = .now
     ) throws -> ContactRecord {
-        try dbQueue.write { db in
+        let result = try dbQueue.write { db in
             guard let email = CustomerIdentityNormalizer.email(rawEmail),
                   var provisional = try ContactRecord
                   .filter(Column("id") == id && Column("vaultId") == vaultId)
@@ -669,14 +678,20 @@ extension MeetingRepository {
                 provisional.updatedAt = now
                 try provisional.update(db)
             }
-            return try Self.resolveProvisionalContact(
+            let resolved = try Self.resolveProvisionalContact(
                 id: id,
                 vaultId: vaultId,
                 email: email,
                 now: now,
                 in: db
             )
+            let cacheKeys = Set(resolved.embeddingSpaceIDs.map {
+                SpeakerProfileCacheKey(vaultId: vaultId, embeddingSpaceId: $0)
+            })
+            return (resolved.contact, cacheKeys)
         }
+        invalidateSpeakerProfilesAfterCommit(result.1)
+        return result.0
     }
 
     private nonisolated static func resolveProvisionalContact(
@@ -685,7 +700,7 @@ extension MeetingRepository {
         email rawEmail: String,
         now: Date,
         in db: Database
-    ) throws -> ContactRecord {
+    ) throws -> (contact: ContactRecord, embeddingSpaceIDs: Set<UUID>) {
         guard let email = CustomerIdentityNormalizer.email(rawEmail),
               var provisional = try ContactRecord
               .filter(Column("id") == id && Column("vaultId") == vaultId)
@@ -702,7 +717,7 @@ extension MeetingRepository {
             provisional.revision += 1
             provisional.updatedAt = now
             try provisional.update(db)
-            return provisional
+            return (provisional, [])
         }
         if existing.displayName == nil, let provisionalName = provisional.displayName {
             existing.displayName = provisionalName
@@ -710,12 +725,59 @@ extension MeetingRepository {
             existing.updatedAt = now
             try existing.update(db)
         }
+        let embeddingSpaceIDs = try speakerEmbeddingSpaceIDs(
+            contactIDs: [id, existing.id],
+            in: db
+        )
         try moveContactReferences(from: id, to: existing.id, now: now, in: db)
+        for embeddingSpaceID in embeddingSpaceIDs {
+            guard let embeddingSpace = try SpeakerEmbeddingSpaceRecord.fetchOne(db, key: embeddingSpaceID) else {
+                continue
+            }
+            try SpeakerProfileRecalculator.recompute(
+                contactId: id,
+                vaultId: vaultId,
+                embeddingSpace: embeddingSpace,
+                now: now,
+                in: db
+            )
+            try SpeakerProfileRecalculator.recompute(
+                contactId: existing.id,
+                vaultId: vaultId,
+                embeddingSpace: embeddingSpace,
+                now: now,
+                in: db
+            )
+        }
         _ = try ContactRecord.deleteOne(db, key: id)
         guard let resolved = try ContactRecord.fetchOne(db, key: existing.id) else {
             throw CustomerIntelligenceError.contactNotFound
         }
-        return resolved
+        return (resolved, embeddingSpaceIDs)
+    }
+
+    private nonisolated static func speakerEmbeddingSpaceIDs(
+        contactIDs: [UUID],
+        in db: Database
+    ) throws -> Set<UUID> {
+        let placeholders = Self.placeholders(contactIDs.count)
+        let arguments = StatementArguments(contactIDs) + StatementArguments(contactIDs)
+        return try Set(UUID.fetchAll(
+            db,
+            sql: """
+            SELECT embeddingSpaceId FROM speaker_profiles
+            WHERE contactId IN (\(placeholders))
+            UNION
+            SELECT speaker_analyses.embeddingSpaceId
+            FROM speaker_contact_assignments
+            JOIN meeting_speakers
+              ON meeting_speakers.id = speaker_contact_assignments.meetingSpeakerId
+            JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+            WHERE speaker_contact_assignments.contactId IN (\(placeholders))
+              AND speaker_analyses.embeddingSpaceId IS NOT NULL
+            """,
+            arguments: arguments
+        ))
     }
 
     private nonisolated static func moveContactReferences(
@@ -802,7 +864,9 @@ extension MeetingRepository {
                 "conversation_topic_references",
                 where: "resourceType = 'contact' AND resourceId = ?"
             ),
-            meetingParticipants: count("meeting_participants", where: "contactId = ?")
+            meetingParticipants: count("meeting_participants", where: "contactId = ?"),
+            speakerProfiles: count("speaker_profiles", where: "contactId = ?"),
+            speakerAssignments: count("speaker_contact_assignments", where: "contactId = ?")
         )
     }
 

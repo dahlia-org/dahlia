@@ -1,0 +1,439 @@
+import CryptoKit
+import DahliaRuntimeSupport
+import FluidAudio
+import Foundation
+
+struct SpeakerModelAssetManifest: Codable, Sendable {
+    struct File: Codable, Hashable, Sendable {
+        let relativePath: String
+        let byteCount: Int64
+        let sha256: String
+    }
+
+    let repository: String
+    let revision: String
+    let license: String
+    let totalByteCount: Int64
+    let files: [File]
+
+    static func bundled() throws -> Self {
+        guard let url = Bundle.appModule.url(
+            forResource: "SpeakerDiarizationModelManifest",
+            withExtension: "json"
+        ) else {
+            throw SpeakerModelAssetError.manifestUnavailable
+        }
+        return try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+    }
+
+    var assetFingerprint: String {
+        let identity = ([repository, revision] + files.sorted { $0.relativePath < $1.relativePath }.flatMap {
+            [$0.relativePath, String($0.byteCount), $0.sha256]
+        }).joined(separator: "\n")
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+struct SpeakerModelAssetProgress: Equatable, Sendable {
+    let completedByteCount: Int64
+    let totalByteCount: Int64
+    let currentFile: String?
+}
+
+enum SpeakerModelAssetError: Error, Equatable {
+    case manifestUnavailable
+    case invalidResponse(URL)
+    case missingFile(String)
+    case byteCountMismatch(path: String, expected: Int64, actual: Int64)
+    case checksumMismatch(path: String)
+    case totalByteCountMismatch(expected: Int64, actual: Int64)
+}
+
+protocol SpeakerModelAssetFetching: Sendable {
+    func data(from url: URL) async throws -> Data
+}
+
+struct URLSessionSpeakerModelAssetFetcher: SpeakerModelAssetFetching {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func data(from url: URL) async throws -> Data {
+        let (data, response) = try await session.data(from: url)
+        guard let response = response as? HTTPURLResponse,
+              (200 ..< 300).contains(response.statusCode) else {
+            throw SpeakerModelAssetError.invalidResponse(url)
+        }
+        return data
+    }
+}
+
+actor SpeakerModelAssetManager {
+    private struct AcquisitionWaiter {
+        let continuation: CheckedContinuation<URL, Error>
+        let progress: @Sendable (SpeakerModelAssetProgress) -> Void
+    }
+
+    private struct ActiveAcquisition {
+        let id: UUID
+        let task: Task<Void, Never>
+        var waiters: [UUID: AcquisitionWaiter]
+        var latestProgress: SpeakerModelAssetProgress?
+    }
+
+    /// FluidAudio does not expose its package version at runtime. A test reads
+    /// Package.swift and Package.resolved and requires this identity component to match both pins.
+    static let fluidAudioVersion = "0.15.5"
+    static var repositoryFolderName: String { Repo.diarizer.folderName }
+
+    private let manifest: SpeakerModelAssetManifest
+    private let managedRootURL: URL
+    private let fetcher: any SpeakerModelAssetFetching
+    private let fileManager: FileManager
+    private var activeAcquisition: ActiveAcquisition?
+
+    init(
+        managedRootURL: URL = DahliaApplicationSupport.currentDirectoryURL
+            .appending(path: "Models/SpeakerDiarization", directoryHint: .isDirectory),
+        manifest: SpeakerModelAssetManifest? = nil,
+        fetcher: any SpeakerModelAssetFetching = URLSessionSpeakerModelAssetFetcher(),
+        fileManager: FileManager = .default
+    ) throws {
+        self.managedRootURL = managedRootURL
+        self.manifest = try manifest ?? .bundled()
+        self.fetcher = fetcher
+        self.fileManager = fileManager
+    }
+
+    func acquisition() -> AsyncThrowingStream<SpeakerModelAssetProgress, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    _ = try await acquire { continuation.yield($0) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    @discardableResult
+    func acquire(
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void = { _ in }
+    ) async throws -> URL {
+        try Task.checkCancellation()
+        let requestID = UUID.v7()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                registerRequest(id: requestID, continuation: continuation, progress: progress)
+            }
+        } onCancel: {
+            Task { await self.cancelRequest(id: requestID) }
+        }
+    }
+
+    private func registerRequest(
+        id: UUID,
+        continuation: CheckedContinuation<URL, Error>,
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void
+    ) {
+        let waiter = AcquisitionWaiter(continuation: continuation, progress: progress)
+        if var activeAcquisition {
+            activeAcquisition.waiters[id] = waiter
+            if let latestProgress = activeAcquisition.latestProgress {
+                progress(latestProgress)
+            }
+            self.activeAcquisition = activeAcquisition
+            return
+        }
+
+        let acquisitionID = UUID.v7()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await self.performAcquisition { update in
+                    Task { await self.reportProgress(update, acquisitionID: acquisitionID) }
+                }
+                await self.finishAcquisition(id: acquisitionID, with: .success(url))
+            } catch {
+                await self.finishAcquisition(id: acquisitionID, with: .failure(error))
+            }
+        }
+        activeAcquisition = ActiveAcquisition(
+            id: acquisitionID,
+            task: task,
+            waiters: [id: waiter],
+            latestProgress: nil
+        )
+    }
+
+    private func cancelRequest(id: UUID) {
+        guard var activeAcquisition,
+              let waiter = activeAcquisition.waiters.removeValue(forKey: id) else { return }
+        if activeAcquisition.waiters.isEmpty {
+            // The last request owns cleanup: resume it only after the shared task has removed
+            // its temporary directory. Joined request cancellation remains request-scoped.
+            activeAcquisition.waiters[id] = waiter
+            activeAcquisition.task.cancel()
+        } else {
+            waiter.continuation.resume(throwing: CancellationError())
+        }
+        self.activeAcquisition = activeAcquisition
+    }
+
+    private func reportProgress(_ update: SpeakerModelAssetProgress, acquisitionID: UUID) {
+        guard var activeAcquisition, activeAcquisition.id == acquisitionID else { return }
+        activeAcquisition.latestProgress = update
+        self.activeAcquisition = activeAcquisition
+        activeAcquisition.waiters.values.forEach { $0.progress(update) }
+    }
+
+    private func finishAcquisition(id: UUID, with result: Result<URL, Error>) {
+        guard let activeAcquisition, activeAcquisition.id == id else { return }
+        self.activeAcquisition = nil
+        for waiter in activeAcquisition.waiters.values {
+            waiter.continuation.resume(with: result)
+        }
+    }
+
+    private func performAcquisition(
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void
+    ) async throws -> URL {
+        let repositoryURL = installedRepositoryURL
+        if (try? verifyRepository(at: repositoryURL)) == true {
+            progress(.init(
+                completedByteCount: manifest.totalByteCount,
+                totalByteCount: manifest.totalByteCount,
+                currentFile: nil
+            ))
+            return repositoryURL
+        }
+
+        try fileManager.createDirectory(at: revisionRootURL, withIntermediateDirectories: true)
+        let temporaryURL = revisionRootURL.appending(
+            path: "." + Self.repositoryFolderName + "-" + UUID.v7().uuidString + ".temporary",
+            directoryHint: .isDirectory
+        )
+        try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: true)
+
+        do {
+            let receivedByteCount = try await downloadAssets(to: temporaryURL, progress: progress)
+            guard receivedByteCount == manifest.totalByteCount else {
+                throw SpeakerModelAssetError.totalByteCountMismatch(
+                    expected: manifest.totalByteCount,
+                    actual: receivedByteCount
+                )
+            }
+            _ = try verifyRepository(at: temporaryURL)
+            try Task.checkCancellation()
+            if fileManager.fileExists(atPath: repositoryURL.path) {
+                _ = try fileManager.replaceItemAt(repositoryURL, withItemAt: temporaryURL)
+            } else {
+                try fileManager.moveItem(at: temporaryURL, to: repositoryURL)
+            }
+            return repositoryURL
+        } catch {
+            try? fileManager.removeItem(at: temporaryURL)
+            throw error
+        }
+    }
+
+    private func downloadAssets(
+        to temporaryURL: URL,
+        progress: @escaping @Sendable (SpeakerModelAssetProgress) -> Void
+    ) async throws -> Int64 {
+        var receivedByteCount: Int64 = 0
+        progress(.init(completedByteCount: 0, totalByteCount: manifest.totalByteCount, currentFile: nil))
+        for file in manifest.files {
+            try Task.checkCancellation()
+            let data = try await fetcher.data(from: Self.downloadURL(for: file, manifest: manifest))
+            let byteCount = Int64(data.count)
+            guard byteCount == file.byteCount else {
+                throw SpeakerModelAssetError.byteCountMismatch(
+                    path: file.relativePath,
+                    expected: file.byteCount,
+                    actual: byteCount
+                )
+            }
+            guard Self.sha256(of: data) == file.sha256 else {
+                throw SpeakerModelAssetError.checksumMismatch(path: file.relativePath)
+            }
+            let destinationURL = temporaryURL.appending(path: file.relativePath)
+            try fileManager.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: destinationURL, options: .atomic)
+            receivedByteCount += byteCount
+            progress(.init(
+                completedByteCount: receivedByteCount,
+                totalByteCount: manifest.totalByteCount,
+                currentFile: file.relativePath
+            ))
+        }
+        return receivedByteCount
+    }
+
+    func verifiedRevisionRootURL() throws -> URL {
+        guard try verifyRepository(at: installedRepositoryURL) else {
+            throw SpeakerModelAssetError.missingFile(manifest.files[0].relativePath)
+        }
+        return revisionRootURL
+    }
+
+    func onDiskUsage() throws -> Int64 {
+        guard let enumerator = fileManager.enumerator(
+            at: managedRootURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]
+        ) else { return 0 }
+
+        var byteCount: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            if values.isRegularFile == true {
+                byteCount += Int64(values.fileSize ?? 0)
+            }
+        }
+        return byteCount
+    }
+
+    func embeddingSpace() -> SpeakerEmbeddingSpace {
+        let configuration = FluidAudioSpeakerEmbeddingExtractor.diarizationConfiguration()
+        return embeddingSpace(configuration: configuration)
+    }
+
+    func embeddingSpace(configuration: OfflineDiarizerConfig) -> SpeakerEmbeddingSpace {
+        SpeakerEmbeddingSpace(
+            provider: "FluidInference",
+            modelName: manifest.repository,
+            revision: manifest.revision,
+            assetFingerprint: manifest.assetFingerprint,
+            fluidAudioVersion: Self.fluidAudioVersion,
+            dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
+            sampleRate: configuration.segmentation.sampleRate,
+            preprocessing: Self.preprocessingDescriptor(configuration: configuration),
+            excludesOverlap: configuration.embedding.excludeOverlap,
+            normalization: "L2 unit norm",
+            similarityDefinition: "cosine dot product"
+        )
+    }
+
+    static func preprocessingDescriptor(configuration: OfflineDiarizerConfig) -> String {
+        let channelDescription = MemoryMappedAudioSampleSource.channelCount == 1
+            ? "mono"
+            : "\(MemoryMappedAudioSampleSource.channelCount)-channel"
+        return "community-1 \(channelDescription) \(MemoryMappedAudioSampleSource.sampleEncoding) "
+            + "\(configuration.segmentation.sampleRate)Hz pipeline-sha256:"
+            + pipelineFingerprint(configuration: configuration)
+    }
+
+    static func pipelineFingerprint(configuration: OfflineDiarizerConfig) -> String {
+        let descriptor = CanonicalConfigurationEncoder.encode(
+            configuration,
+            excludingPaths: ["embeddingsPath", "exposeChunkEmbeddings"]
+        )
+        return SHA256.hash(data: Data(descriptor.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func downloadURL(for file: SpeakerModelAssetManifest.File, manifest: SpeakerModelAssetManifest) -> URL {
+        URL(string: "https://huggingface.co")!
+            .appending(path: manifest.repository)
+            .appending(path: "resolve")
+            .appending(path: manifest.revision)
+            .appending(path: file.relativePath)
+    }
+
+    private var revisionRootURL: URL {
+        managedRootURL.appending(path: manifest.revision, directoryHint: .isDirectory)
+    }
+
+    private var installedRepositoryURL: URL {
+        revisionRootURL.appending(path: Self.repositoryFolderName, directoryHint: .isDirectory)
+    }
+
+    private func verifyRepository(at repositoryURL: URL) throws -> Bool {
+        guard fileManager.fileExists(atPath: repositoryURL.path) else { return false }
+
+        var totalByteCount: Int64 = 0
+        for file in manifest.files {
+            let fileURL = repositoryURL.appending(path: file.relativePath)
+            guard fileManager.fileExists(atPath: fileURL.path) else {
+                throw SpeakerModelAssetError.missingFile(file.relativePath)
+            }
+            let data = try Data(contentsOf: fileURL)
+            let byteCount = Int64(data.count)
+            guard byteCount == file.byteCount else {
+                throw SpeakerModelAssetError.byteCountMismatch(
+                    path: file.relativePath,
+                    expected: file.byteCount,
+                    actual: byteCount
+                )
+            }
+            guard Self.sha256(of: data) == file.sha256 else {
+                throw SpeakerModelAssetError.checksumMismatch(path: file.relativePath)
+            }
+            totalByteCount += byteCount
+        }
+
+        guard totalByteCount == manifest.totalByteCount else {
+            throw SpeakerModelAssetError.totalByteCountMismatch(
+                expected: manifest.totalByteCount,
+                actual: totalByteCount
+            )
+        }
+        return true
+    }
+
+    private static func sha256(of data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private enum CanonicalConfigurationEncoder {
+    static func encode(
+        _ value: Any,
+        excludingPaths: Set<String> = [],
+        path: String = ""
+    ) -> String {
+        if let scalar = encodeScalar(value) { return scalar }
+
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            guard let child = mirror.children.first else { return "optional:nil" }
+            return "optional:(\(encode(child.value, excludingPaths: excludingPaths, path: path)))"
+        }
+        if mirror.displayStyle == .enum {
+            let caseName = String(describing: value).prefix { $0 != "(" }
+            let payload = mirror.children.map { child in
+                "\(child.label ?? "_")=\(encode(child.value, excludingPaths: excludingPaths, path: path))"
+            }.sorted().joined(separator: ",")
+            return "enum:\(caseName){\(payload)}"
+        }
+
+        let children = Array(mirror.children)
+        let fields = children.compactMap { child -> String? in
+            let label = child.label ?? "_"
+            let childPath = path.isEmpty ? label : "\(path).\(label)"
+            guard !excludingPaths.contains(label), !excludingPaths.contains(childPath) else { return nil }
+            return "\(label)=\(encode(child.value, excludingPaths: excludingPaths, path: childPath))"
+        }.sorted().joined(separator: ",")
+        if children.isEmpty {
+            return "leaf:\(String(reflecting: type(of: value))):\(String(reflecting: value))"
+        }
+        return "object:{\(fields)}"
+    }
+
+    private static func encodeScalar(_ value: Any) -> String? {
+        if let value = value as? Bool { return value ? "bool:1" : "bool:0" }
+        if let value = value as? Int { return "int:\(value)" }
+        if let value = value as? UInt { return "uint:\(value)" }
+        if let value = value as? Float { return "float32:\(String(value.bitPattern, radix: 16))" }
+        if let value = value as? Double { return "float64:\(String(value.bitPattern, radix: 16))" }
+        if let value = value as? String { return "string:\(value.utf8.count):\(value)" }
+        return nil
+    }
+}

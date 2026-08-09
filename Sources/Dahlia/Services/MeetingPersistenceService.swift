@@ -24,6 +24,7 @@ enum MeetingPersistenceStopResult {
 final class MeetingPersistenceService {
     private let store: TranscriptStore
     private let dbQueue: DatabaseQueue
+    private let speakerProfileRepository: MeetingRepository
     nonisolated let meetingId: UUID
     nonisolated let recordingSessionId: UUID
     private(set) var projectId: UUID?
@@ -44,10 +45,15 @@ final class MeetingPersistenceService {
         createsMeeting: Bool,
         existingSegmentIds: Set<UUID>,
         persistencePolicy: TranscriptPersistencePolicy,
+        speakerProfileCache: SpeakerProfileCache,
         now: @escaping () -> Date = { .now }
     ) {
         self.store = store
         self.dbQueue = dbQueue
+        self.speakerProfileRepository = MeetingRepository(
+            dbQueue: dbQueue,
+            speakerProfileCache: speakerProfileCache
+        )
         self.meetingId = meetingId
         self.recordingSessionId = recordingSession.id
         self.projectId = projectId
@@ -79,6 +85,7 @@ final class MeetingPersistenceService {
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false,
+        speakerProfileCache: SpeakerProfileCache = SpeakerProfileCache(),
         now: @escaping () -> Date = { .now }
     ) async throws -> MeetingPersistenceService {
         let meetingId = UUID.v7()
@@ -108,6 +115,7 @@ final class MeetingPersistenceService {
             createsMeeting: true,
             existingSegmentIds: [],
             persistencePolicy: persistencePolicy,
+            speakerProfileCache: speakerProfileCache,
             now: now
         )
     }
@@ -123,6 +131,7 @@ final class MeetingPersistenceService {
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
         retainAudioAfterBatch: Bool = false,
+        speakerProfileCache: SpeakerProfileCache = SpeakerProfileCache(),
         now: @escaping () -> Date = { .now }
     ) async throws -> MeetingPersistenceService {
         let prepared = try await MeetingPersistenceStarter.createAppending(
@@ -155,6 +164,7 @@ final class MeetingPersistenceService {
             createsMeeting: false,
             existingSegmentIds: prepared.existingSegmentIds,
             persistencePolicy: persistencePolicy,
+            speakerProfileCache: speakerProfileCache,
             now: now
         )
     }
@@ -219,7 +229,8 @@ final class MeetingPersistenceService {
         let sessionId = recordingSession.id
         let meetingId = meetingId
         let createsMeeting = createsMeeting
-        try? await dbQueue.write { db in
+        let cacheKeys = try? await dbQueue.write { db in
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [meetingId], in: db)
             if createsMeeting {
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
@@ -228,6 +239,10 @@ final class MeetingPersistenceService {
                     .deleteAll(db)
                 _ = try RecordingSessionRecord.deleteOne(db, key: sessionId)
             }
+            return try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: .now, in: db)
+        }
+        if let cacheKeys {
+            speakerProfileRepository.invalidateSpeakerProfilesAfterCommit(cacheKeys)
         }
     }
 

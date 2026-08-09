@@ -219,17 +219,29 @@ sequenceDiagram
     participant Batch as BatchTranscriptionCoordinator
     participant Speech as Batch speech recognizer
     participant Features as Audio feature analyzer
+    participant Speaker as Optional speaker analyzer
     participant DB as SQLite
 
-    Batch->>Audio: ready segments の read plan
+    Batch->>Audio: ready segments の read lease
     Audio-->>Batch: verified immutable CAF + locale ranges
     Batch->>Speech: source / locale ごとの transcription run
     Speech-->>Batch: complete segment set
     Batch->>Features: recognition range + prepared audio / logical slices
     Features-->>Batch: optional per-segment numeric features
-    Batch->>DB: session の旧 transcript を置換し、batchCompletedAt と meeting status を更新
+    opt 話者識別が有効
+        Batch->>Speaker: 同じ read lease 内の verified CAF
+        Speaker-->>Batch: memory-only speaker evidence + spans
+    end
+    Batch->>Audio: read lease を解放
+    Batch->>DB: transcript・話者分析を置換し、batchCompletedAt と meeting status を更新
     DB-->>Batch: single transaction commit
 ```
+
+話者識別は既定で無効であり、無効時はモデル生成・読込、話者用音声変換、話者行の作成を行わない。有効時も文字起こしと
+話者分析は一つの `withVerifiedTranscribableSegments` read lease 内で実行し、検証済み音声を lease 外から再読込しない。
+結果は file handle や DB connection を持たない `BatchProcessingOutput` としてメモリ上に保持し、lease 解放後に transcript、
+分析、話者、exemplar、span、transcript の話者参照を一つの SQLite transaction で確定する。モデル資産がない、または検証・
+分析に失敗した場合は source ごとの失敗理由を保存して transcript-only に縮退し、文字起こしの成功を妨げない。
 
 固定言語では、同一音源、同一形式、同一 locale で session time が連続する verified CAF range を一つの論理 run として
 同じ `SpeechAnalyzer` へ順次供給する。ready CAF 自体は結合または変更せず、入力は一 buffer ずつ遅延読出しする。

@@ -16,6 +16,7 @@ let package = Package(
         .package(url: "https://github.com/getsentry/sentry-cocoa", from: "9.10.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2"),
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", exact: "1.0.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.5"),
     ],
     targets: [
         .binaryTarget(
@@ -48,6 +49,7 @@ let package = Package(
                 .product(name: "Sentry", package: "sentry-cocoa"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/Dahlia",
             exclude: [

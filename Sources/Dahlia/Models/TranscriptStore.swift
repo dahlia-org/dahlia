@@ -558,7 +558,9 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             text: segment.text,
             translatedText: segment.translatedText ?? existingSegment?.translatedText,
             isConfirmed: false,
-            speakerLabel: segment.speakerLabel
+            speakerLabel: segment.speakerLabel,
+            meetingSpeakerId: segment.meetingSpeakerId,
+            speakerIdentity: segment.speakerIdentity
         )
     }
 

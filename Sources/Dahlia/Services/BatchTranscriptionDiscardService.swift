@@ -7,18 +7,20 @@ enum BatchTranscriptionDiscardService {
         id: UUID,
         expectedVaultId: UUID,
         dbQueue: DatabaseQueue,
+        speakerProfileRepository: MeetingRepository,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: managedRootURL)
-        let claimed = try await dbQueue.write { db in
+        let cacheKeys = try await dbQueue.write { db -> Set<SpeakerProfileCacheKey>? in
             guard var session = try RecordingSessionRecord.fetchOne(db, key: id),
                   let meeting = try MeetingRecord.fetchOne(db, key: session.meetingId),
                   meeting.vaultId == expectedVaultId,
                   isDiscardable(session),
                   try RecordingAudioSegmentRecord
                   .filter(Column("recordingSessionId") == id)
-                  .fetchCount(db) > 0 else { return false }
+                  .fetchCount(db) > 0 else { return nil }
             let now = Date.now
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [session.meetingId], in: db)
             session.batchDiscardedAt = now
             session.batchLastError = nil
             session.batchFailureKind = nil
@@ -27,9 +29,13 @@ enum BatchTranscriptionDiscardService {
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
-            return true
+            _ = try SpeakerAnalysisRecord
+                .filter(Column("recordingSessionId") == id)
+                .deleteAll(db)
+            return try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: now, in: db)
         }
-        guard claimed else { return false }
+        guard let cacheKeys else { return false }
+        speakerProfileRepository.invalidateSpeakerProfilesAfterCommit(cacheKeys)
         try await store.requestPurge(sessionId: id, includeFailed: true)
         return true
     }
@@ -37,6 +43,7 @@ enum BatchTranscriptionDiscardService {
     static func discardFailedSessionSafely(
         id: UUID,
         dbQueue: DatabaseQueue,
+        speakerProfileRepository: MeetingRepository,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws -> Bool {
         let hasSegmentedAudio = try await dbQueue.read { db in
@@ -47,13 +54,14 @@ enum BatchTranscriptionDiscardService {
         guard hasSegmentedAudio else { return false }
         let store = try RecordingAudioStore(dbQueue: dbQueue, managedRootURL: managedRootURL)
         try await store.requestPurge(sessionId: id, includeFailed: true)
-        return try await dbQueue.write { db in
+        let cacheKeys = try await dbQueue.write { db -> Set<SpeakerProfileCacheKey>? in
             guard var session = try RecordingSessionRecord.fetchOne(db, key: id),
                   session.transcriptionMode == .batch,
                   session.batchCompletedAt == nil,
                   session.batchDiscardedAt == nil,
-                  session.batchLastError?.nilIfBlank != nil else { return false }
+                  session.batchLastError?.nilIfBlank != nil else { return nil }
             let now = Date.now
+            let profileTargets = try MeetingRepository.speakerProfileTargets(meetingIds: [session.meetingId], in: db)
             session.batchDiscardedAt = now
             session.batchLastError = nil
             session.batchFailureKind = nil
@@ -62,8 +70,14 @@ enum BatchTranscriptionDiscardService {
             _ = try TranscriptSegmentRecord
                 .filter(Column("sessionId") == id)
                 .deleteAll(db)
-            return true
+            _ = try SpeakerAnalysisRecord
+                .filter(Column("recordingSessionId") == id)
+                .deleteAll(db)
+            return try MeetingRepository.recomputeSpeakerProfiles(profileTargets, now: now, in: db)
         }
+        guard let cacheKeys else { return false }
+        speakerProfileRepository.invalidateSpeakerProfilesAfterCommit(cacheKeys)
+        return true
     }
 
     private static func isDiscardable(_ session: RecordingSessionRecord) -> Bool {

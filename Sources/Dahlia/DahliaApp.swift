@@ -426,7 +426,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var processLock: AdvisoryFileLock?
     @MainActor var terminationHandler: (@MainActor () async -> String?)?
 
+    nonisolated static func bootstrapProcessDependencies() {
+        SpeakerDiarizationBootstrap.startProcess()
+    }
+
     func applicationWillFinishLaunching(_: Notification) {
+        Self.bootstrapProcessDependencies()
         do {
             processLock = try AdvisoryFileLock.acquire(
                 at: AppDatabaseManager.databaseURL

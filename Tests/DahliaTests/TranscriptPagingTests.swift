@@ -108,6 +108,111 @@
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
+        func pageLoadsAssignedAndReferenceSpeakerNamesWithoutChangingSourceLabels() throws {
+            let fixture = try BatchAudioTestFixture(name: "Speaker transcript projection")
+            defer { fixture.removeFiles() }
+            let assignedSpeakerId = UUID.v7()
+            let referenceSpeakerId = UUID.v7()
+            let assignedSegment = speakerSegment(text: "Assigned", offset: 0, fixture: fixture)
+            let referenceSegment = speakerSegment(text: "Reference", offset: 1, fixture: fixture)
+            let space = transcriptSpeakerTestSpace
+            var unitVector = [Float](repeating: 0, count: space.dimensionCount)
+            unitVector[0] = 1
+            let speakers = [
+                transcriptSpeaker(id: assignedSpeakerId, localId: "speaker-0", space: space, values: unitVector),
+                transcriptSpeaker(id: referenceSpeakerId, localId: "speaker-1", space: space, values: unitVector),
+            ]
+            let output = BatchProcessingOutput(
+                transcriptSegments: [assignedSegment, referenceSegment],
+                speakerAnalysis: .init(sources: [
+                    .init(
+                        id: .v7(),
+                        audioSource: .microphone,
+                        embeddingSpace: space,
+                        speakers: speakers,
+                        failureReason: nil
+                    ),
+                ]),
+                transcriptSpeakerAssignments: [
+                    assignedSegment.id: assignedSpeakerId,
+                    referenceSegment.id: referenceSpeakerId,
+                ]
+            )
+            _ = try BatchTranscriptionPersistence.complete(
+                sessionId: fixture.session.id,
+                meetingId: fixture.meeting.id,
+                output: output,
+                completedAt: fixture.now.addingTimeInterval(10),
+                dbQueue: fixture.database.dbQueue
+            )
+
+            try fixture.database.dbQueue.write { db in
+                let assignedContactId = UUID.v7()
+                let referenceContactId = UUID.v7()
+                for contact in [
+                    ContactRecord(
+                        id: assignedContactId,
+                        vaultId: fixture.meeting.vaultId,
+                        email: "alice@example.com",
+                        displayName: "Alice",
+                        revision: 1,
+                        createdAt: fixture.now,
+                        updatedAt: fixture.now
+                    ),
+                    ContactRecord(
+                        id: referenceContactId,
+                        vaultId: fixture.meeting.vaultId,
+                        email: "bob@example.com",
+                        displayName: "Bob",
+                        revision: 1,
+                        createdAt: fixture.now,
+                        updatedAt: fixture.now
+                    ),
+                ] {
+                    try contact.insert(db)
+                }
+                try SpeakerContactAssignmentRecord(
+                    meetingSpeakerId: assignedSpeakerId,
+                    contactId: assignedContactId,
+                    origin: .manual,
+                    createdAt: fixture.now,
+                    updatedAt: fixture.now
+                ).insert(db)
+                let embeddingSpaceId = try #require(try SpeakerEmbeddingSpaceRecord.fetchOne(db)?.id)
+                try SpeakerMatchObservationRecord(
+                    meetingSpeakerId: referenceSpeakerId,
+                    embeddingSpaceId: embeddingSpaceId,
+                    top1ContactId: referenceContactId,
+                    top1Score: 0.8,
+                    top2ContactId: nil,
+                    top2Score: nil,
+                    margin: nil,
+                    state: .referenceOnly,
+                    unknownReason: nil,
+                    revision: 1,
+                    createdAt: fixture.now,
+                    updatedAt: fixture.now
+                ).insert(db)
+            }
+
+            let page = try MeetingRepository(dbQueue: fixture.database.dbQueue).fetchTranscriptPage(
+                forMeetingId: fixture.meeting.id,
+                direction: .latest,
+                limit: 10
+            )
+
+            #expect(page.segments.map(\.meetingSpeakerId) == [assignedSpeakerId, referenceSpeakerId])
+            #expect(page.segments.map(\.speakerLabel) == ["mic", "mic"])
+            #expect(page.segments[0].speakerIdentity?.assignedContactName == "Alice")
+            #expect(page.segments[0].speakerIdentity?.referenceContactName == nil)
+            #expect(page.segments[0].speakerIdentity?.ordinal == 1)
+            #expect(page.segments[1].speakerIdentity?.assignedContactName == nil)
+            #expect(page.segments[1].speakerIdentity?.referenceContactName == "Bob")
+            #expect(page.segments[1].speakerIdentity?.ordinal == 2)
+        }
+
+        @Test
         func storeKeepsAtMostThreeHundredConfirmedSegmentsAcrossPageShiftsAndLiveUpdates() async throws {
             let fixture = try makePagingFixture(segmentCount: 1_000)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
@@ -494,6 +599,39 @@
             "v20_meetingDescription",
             "v21_removeLegacySummaryColumns",
         ]
+
+        private func speakerSegment(
+            text: String,
+            offset: TimeInterval,
+            fixture: BatchAudioTestFixture
+        ) -> TranscriptSegment {
+            TranscriptSegment(
+                sessionId: fixture.session.id,
+                startTime: fixture.now.addingTimeInterval(offset),
+                endTime: fixture.now.addingTimeInterval(offset + 0.5),
+                text: text,
+                isConfirmed: true,
+                speakerLabel: "mic"
+            )
+        }
+
+        private func transcriptSpeaker(
+            id: UUID,
+            localId: String,
+            space: SpeakerEmbeddingSpace,
+            values: [Float]
+        ) -> BatchProcessingOutput.Speaker {
+            .init(
+                id: id,
+                localSpeakerId: localId,
+                representative: SpeakerEmbedding(space: space, values: values),
+                representativeQuality: 1,
+                representativeSource: .diarization,
+                profileUpdateEligible: true,
+                exemplars: [],
+                spans: []
+            )
+        }
     }
 
     private struct PagingFixture {
@@ -501,6 +639,20 @@
         let meetingId: UUID
         let orderedIds: [UUID]
     }
+
+    private let transcriptSpeakerTestSpace = SpeakerEmbeddingSpace(
+        provider: "Test",
+        modelName: "speaker",
+        revision: "1",
+        assetFingerprint: "fingerprint",
+        fluidAudioVersion: "0.15.5",
+        dimensionCount: SpeakerEmbeddingValidation.dimensionCount,
+        sampleRate: 16_000,
+        preprocessing: "mono-float32",
+        excludesOverlap: true,
+        normalization: "L2 unit norm",
+        similarityDefinition: "cosine dot product"
+    )
 
     @MainActor
     private func makePagingFixture(segmentCount: Int) throws -> PagingFixture {

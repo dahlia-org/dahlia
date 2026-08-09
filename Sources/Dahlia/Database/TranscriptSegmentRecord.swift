@@ -14,6 +14,9 @@ struct TranscriptSegmentRecord: Codable, FetchableRecord, PersistableRecord {
     var translatedText: String?
     var isConfirmed: Bool
     var speakerLabel: String?
+    // Keep the default so existing transcript construction remains source-compatible.
+    // swiftlint:disable:next implicit_optional_initialization
+    var meetingSpeakerId: UUID? = nil
     var audioFeatureVersion: Int? = nil
     var audioActiveRmsDecibels: Double? = nil
     var audioMedianPitchHertz: Double? = nil
@@ -33,6 +36,7 @@ extension TranscriptSegmentRecord {
         self.translatedText = segment.translatedText
         self.isConfirmed = segment.isConfirmed
         self.speakerLabel = segment.speakerLabel
+        self.meetingSpeakerId = segment.meetingSpeakerId
         self.audioFeatureVersion = segment.audioFeatures?.version
         self.audioActiveRmsDecibels = segment.audioFeatures?.activeRmsDecibels
         self.audioMedianPitchHertz = segment.audioFeatures?.medianPitchHertz

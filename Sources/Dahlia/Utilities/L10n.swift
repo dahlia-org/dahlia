@@ -641,7 +641,7 @@ enum L10n {
 
     static func contactDeletionImpact(_ impact: ProvisionalContactDeletionImpact) -> String {
         String(
-            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, and \(impact.topics) Topics will be detached.",
+            localized: "\(impact.memberships) memberships, \(impact.projects) Projects, \(impact.insights) insights, and \(impact.topics) Topics will be detached. \(impact.speakerProfiles) speaker profiles and \(impact.speakerAssignments) speaker assignments will be deleted.",
             bundle: bundle
         )
     }
@@ -1669,6 +1669,44 @@ enum L10n {
         localized: "Keep the protected audio in Dahlia after batch transcription succeeds.",
         bundle: bundle
     ) }
+    static var speakerIdentification: String { String(localized: "Speaker Identification", bundle: bundle) }
+    static var speakerIdentificationDescription: String { String(
+        localized: """
+        Processed locally. Downloads about 22 MB of CC BY 4.0 models and stores speaker embeddings. \
+        Applies mainly to new batch recordings after being enabled; meetings whose audio was deleted cannot be reanalyzed.
+        """,
+        bundle: bundle
+    ) }
+    static var speakerIdentificationBatchOnly: String { String(
+        localized: "Speaker identification is available only with batch transcription. Turn off real-time transcription to configure it.",
+        bundle: bundle
+    ) }
+    static var checkingSpeakerModel: String { String(localized: "Checking speaker model…", bundle: bundle) }
+    static var downloadingSpeakerModel: String { String(localized: "Downloading speaker model…", bundle: bundle) }
+
+    static func speakerModelDownloadProgress(completed: Int64, total: Int64) -> String {
+        let completedText = completed.formatted(.byteCount(style: .file))
+        let totalText = total.formatted(.byteCount(style: .file))
+        return String(format: String(localized: "%1$@ of %2$@ downloaded", bundle: bundle), completedText, totalText)
+    }
+
+    static var speakerModelManagedStorage: String { String(localized: "Dahlia-managed storage", bundle: bundle) }
+    static var downloadSpeakerModel: String { String(localized: "Download Speaker Model", bundle: bundle) }
+    static var retrySpeakerModelDownload: String { String(localized: "Download Speaker Model Again", bundle: bundle) }
+    static var speakerModelDownloadFailed: String { String(
+        localized: "The speaker model could not be downloaded or verified. Speaker identification remains off.",
+        bundle: bundle
+    ) }
+
+    static func meetingSpeaker(_ ordinal: Int) -> String {
+        String(format: String(localized: "Speaker %lld", bundle: bundle), ordinal)
+    }
+
+    static func referenceSpeakerCandidate(_ name: String) -> String {
+        String(format: String(localized: "%@ (Reference)", bundle: bundle), name)
+    }
+
+    static var unknownSpeaker: String { String(localized: "Unknown Speaker", bundle: bundle) }
     static var transcriptTranslation: String { String(localized: "Transcript Translation", bundle: bundle) }
     static var transcriptTranslationDescription: String { String(
         localized: "Show translated transcript lines in the selected target language when available.",

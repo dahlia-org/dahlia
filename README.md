@@ -161,6 +161,7 @@ Sources/Dahlia/
 - [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Crash reporting for release builds
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Secure in-app updates
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device language detection for batch transcription
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) — On-device speaker diarization
 
 ## License
 

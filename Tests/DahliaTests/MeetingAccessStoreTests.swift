@@ -1844,6 +1844,94 @@ import ImageIO
         }
 
         @Test
+        // swiftlint:disable:next function_body_length
+        func contactDeletionReportsSpeakerProfileAndAssignmentBlockers() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            let contact = try store.createContact(email: nil, displayName: "Speaker")
+            let identified = try store.createContact(email: "speaker@example.com", displayName: "Identified")
+            let spaceID = UUID.v7()
+            let analysisID = UUID.v7()
+            let speakerID = UUID.v7()
+            try fixture.manager.dbQueue.write { db in
+                let fetchedSessionID = try UUID.fetchOne(
+                    db,
+                    sql: "SELECT id FROM recording_sessions WHERE meetingId = ? LIMIT 1",
+                    arguments: [fixture.firstMeetingID]
+                )
+                let sessionID = try #require(fetchedSessionID)
+                try db.execute(
+                    sql: """
+                    INSERT INTO speaker_embedding_spaces (
+                        id, provider, modelName, revision, assetFingerprint, fluidAudioVersion,
+                        dimensionCount, sampleRate, preprocessing, excludesOverlap, normalization,
+                        similarityDefinition, createdAt
+                    ) VALUES (?, 'test', 'test', '1', 'test', '1', 256, 16000, 'test', 1, 'l2', 'cosine', ?)
+                    """,
+                    arguments: [spaceID, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO speaker_analyses (
+                        id, recordingSessionId, audioSource, embeddingSpaceId, state,
+                        failureReason, createdAt, updatedAt
+                    ) VALUES (?, ?, 'microphone', ?, 'succeeded', NULL, ?, ?)
+                    """,
+                    arguments: [analysisID, sessionID, spaceID, Date.now, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO meeting_speakers (
+                        id, analysisId, localSpeakerId, representative, representativeQuality,
+                        representativeSource, profileUpdateEligible, revision, createdAt, updatedAt
+                    ) VALUES (?, ?, 'speaker', X'00', 1, 'diarization', 1, 1, ?, ?)
+                    """,
+                    arguments: [speakerID, analysisID, Date.now, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO speaker_contact_assignments
+                        (meetingSpeakerId, contactId, origin, createdAt, updatedAt)
+                    VALUES (?, ?, 'manual', ?, ?)
+                    """,
+                    arguments: [speakerID, contact.resourceID, Date.now, Date.now]
+                )
+                try db.execute(
+                    sql: """
+                    INSERT INTO speaker_profiles (
+                        id, vaultId, contactId, embeddingSpaceId, representative,
+                        contributingMeetingCount, createdAt, updatedAt
+                    ) VALUES (?, ?, ?, ?, X'00', 1, ?, ?)
+                    """,
+                    arguments: [UUID.v7(), fixture.primaryVaultID, contact.resourceID, spaceID, Date.now, Date.now]
+                )
+            }
+
+            do {
+                _ = try store.deleteContact(id: contact.resourceID, expectedRevision: contact.revision)
+                Issue.record("Expected speaker data to prevent Contact deletion")
+            } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
+                #expect(message.contains("speaker_profiles=1"))
+                #expect(message.contains("speaker_assignments=1"))
+            }
+            do {
+                _ = try store.resolveContact(
+                    provisionalContactID: contact.resourceID,
+                    provisionalRevision: contact.revision,
+                    identifiedContactID: identified.resourceID,
+                    identifiedRevision: identified.revision
+                )
+                Issue.record("Expected external Contact resolution to reject speaker data")
+            } catch let MeetingAccessError.customerIntelligenceResourceInUse(message) {
+                #expect(
+                    message == "Contact cannot be resolved through MCP while it has speaker data. "
+                        + "Perform the resolution in the Dahlia app so speaker profiles can be recomputed: "
+                        + "speaker_profiles=1, speaker_assignments=1."
+                )
+            }
+        }
+
+        @Test
         func topicAndInsightDeletionKeepsReferencedRecords() throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)

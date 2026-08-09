@@ -69,6 +69,8 @@ struct TranscriptSegment: Identifiable, Equatable {
     var translatedText: String?
     var isConfirmed: Bool
     var speakerLabel: String?
+    var meetingSpeakerId: UUID?
+    var speakerIdentity: TranscriptSpeakerIdentity?
     var audioFeatures: TranscriptAudioFeatures?
 
     /// 表示用テキスト。
@@ -98,6 +100,8 @@ struct TranscriptSegment: Identifiable, Equatable {
         translatedText: String? = nil,
         isConfirmed: Bool = false,
         speakerLabel: String? = nil,
+        meetingSpeakerId: UUID? = nil,
+        speakerIdentity: TranscriptSpeakerIdentity? = nil,
         audioFeatures: TranscriptAudioFeatures? = nil
     ) {
         self.id = id
@@ -108,6 +112,8 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.translatedText = translatedText
         self.isConfirmed = isConfirmed
         self.speakerLabel = speakerLabel
+        self.meetingSpeakerId = meetingSpeakerId
+        self.speakerIdentity = speakerIdentity
         self.audioFeatures = audioFeatures
     }
 
@@ -121,6 +127,8 @@ struct TranscriptSegment: Identifiable, Equatable {
         self.translatedText = record.translatedText
         self.isConfirmed = record.isConfirmed
         self.speakerLabel = record.speakerLabel
+        self.meetingSpeakerId = record.meetingSpeakerId
+        self.speakerIdentity = nil
         self.audioFeatures = record.audioFeatures
     }
 }

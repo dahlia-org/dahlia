@@ -416,11 +416,13 @@ extension MeetingRepository {
         }
         defer { withExtendedLifetime(segmentedAudioLease) {} }
         let stagedAudio = try BatchAudioCleanupService.stageFiles(audioTargets)
+        let cacheKeys: Set<SpeakerProfileCacheKey>
         do {
-            try dbQueue.write { db in
+            cacheKeys = try dbQueue.write { db in
                 let hierarchy = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db)
-                guard !hierarchy.isEmpty else { return }
+                guard !hierarchy.isEmpty else { return [] }
                 let projectIds = Set(hierarchy.map(\.id))
+                var cacheKeys: Set<SpeakerProfileCacheKey> = []
 
                 switch meetingDisposition {
                 case let .move(destinationId):
@@ -438,13 +440,16 @@ extension MeetingRepository {
                     }
                 case .deleteMeetings:
                     if !meetingIds.isEmpty {
+                        let targets = try Self.speakerProfileTargets(meetingIds: meetingIds, in: db)
                         _ = try MeetingRecord.filter(meetingIds.contains(Column("id"))).deleteAll(db)
+                        cacheKeys = try Self.recomputeSpeakerProfiles(targets, now: .now, in: db)
                     }
                 }
 
                 for id in hierarchy.reversed().map(\.id) {
                     _ = try ProjectRecord.deleteOne(db, key: id)
                 }
+                return cacheKeys
             }
         } catch let operationError {
             do {
@@ -457,6 +462,7 @@ extension MeetingRepository {
             }
             throw operationError
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
         return stagedAudio
     }
 

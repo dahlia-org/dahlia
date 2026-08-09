@@ -242,6 +242,7 @@ public extension MeetingAccessStore {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     func resolveContact(
         provisionalContactID: UUID,
         provisionalRevision: Int,
@@ -273,6 +274,24 @@ public extension MeetingAccessStore {
             else {
                 throw MeetingAccessError.customerIntelligenceRevisionConflict
             }
+            let speakerBlockers = try [
+                ("speaker_profiles", countRows(
+                    "SELECT COUNT(*) FROM speaker_profiles WHERE contactId = ?",
+                    arguments: [provisionalContactID],
+                    in: db
+                )),
+                ("speaker_assignments", countRows(
+                    "SELECT COUNT(*) FROM speaker_contact_assignments WHERE contactId = ?",
+                    arguments: [provisionalContactID],
+                    in: db
+                )),
+            ]
+            try ensureNoDeletionBlockers(
+                resource: "Contact",
+                blockers: speakerBlockers,
+                blockedMessage: "Contact cannot be resolved through MCP while it has speaker data. "
+                    + "Perform the resolution in the Dahlia app so speaker profiles can be recomputed"
+            )
             let targetName: String? = target["displayName"]
             let sourceName: String? = source["displayName"]
             let now = Date.now
@@ -575,6 +594,7 @@ public extension MeetingAccessStore {
         )
     }
 
+    // swiftlint:disable:next function_body_length
     func deleteContact(
         id: UUID,
         expectedRevision: Int
@@ -621,6 +641,16 @@ public extension MeetingAccessStore {
                     SELECT COUNT(*) FROM insight_references
                     WHERE resourceType = 'contact' AND resourceId = ?
                     """,
+                    arguments: [id],
+                    in: db
+                )),
+                ("speaker_profiles", countRows(
+                    "SELECT COUNT(*) FROM speaker_profiles WHERE contactId = ?",
+                    arguments: [id],
+                    in: db
+                )),
+                ("speaker_assignments", countRows(
+                    "SELECT COUNT(*) FROM speaker_contact_assignments WHERE contactId = ?",
                     arguments: [id],
                     in: db
                 )),
@@ -1022,12 +1052,16 @@ private extension MeetingAccessStore {
         }
     }
 
-    func ensureNoDeletionBlockers(resource: String, blockers: [(String, Int)]) throws {
+    func ensureNoDeletionBlockers(
+        resource: String,
+        blockers: [(String, Int)],
+        blockedMessage: String? = nil
+    ) throws {
         let active = blockers.filter { $0.1 > 0 }
         guard active.isEmpty else {
             let details = active.map { "\($0.0)=\($0.1)" }.joined(separator: ", ")
             throw MeetingAccessError.customerIntelligenceResourceInUse(
-                "\(resource) cannot be deleted while it is in use: \(details)."
+                "\(blockedMessage ?? "\(resource) cannot be deleted while it is in use"): \(details)."
             )
         }
     }

@@ -99,6 +99,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
+    nonisolated static let speakerIdentificationEnabledUserDefaultsKey = "speakerIdentificationEnabled"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
     nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticOrganizationMembershipEnabledUserDefaultsKey = "automaticOrganizationMembershipEnabled"
@@ -108,6 +109,7 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
+    nonisolated static let defaultSpeakerIdentificationEnabled = false
     nonisolated static let summaryPreviousMeetingCountOptions = [0, 1, 2, 3, 4, 5]
     nonisolated static let defaultSummaryPreviousMeetingCount = 3
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
@@ -194,6 +196,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(TranscriptionMode.userDefaultsKey) var transcriptionModeRawValue = TranscriptionMode.defaultMode.rawValue
     @AppStorage("forceEchoCancellationForExternalMicrophone") var forceEchoCancellationForExternalMicrophone = false
     @AppStorage("retainAudioAfterBatchTranscription") var retainAudioAfterBatchTranscription = false
+    @AppStorage(AppSettings.speakerIdentificationEnabledUserDefaultsKey)
+    var speakerIdentificationEnabled = AppSettings.defaultSpeakerIdentificationEnabled
     @AppStorage(AppSettings.batchTranscriptionStallTimeoutUserDefaultsKey) private var batchTranscriptionStallTimeoutRawValue =
         BatchTranscriptionStallTimeout.defaultValue.rawValue
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false

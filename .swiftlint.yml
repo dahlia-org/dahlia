@@ -2,6 +2,7 @@
 
 excluded:
   - .build
+  - .build-xc
   - .swiftpm
   - BuildTools/.build
   - BuildTools/.swiftpm

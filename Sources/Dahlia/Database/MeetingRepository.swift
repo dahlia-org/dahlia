@@ -2,6 +2,8 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
+// swiftlint:disable file_length
+
 /// ミーティング・セグメント・プロジェクト・保管庫の DB クエリを集約するリポジトリ。
 @MainActor
 // Query methods share one MainActor-isolated database boundary.
@@ -51,9 +53,14 @@ final class MeetingRepository {
     private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
     nonisolated let dbQueue: DatabaseQueue
+    nonisolated let speakerProfileCache: SpeakerProfileCache
 
-    nonisolated init(dbQueue: DatabaseQueue) {
+    nonisolated init(
+        dbQueue: DatabaseQueue,
+        speakerProfileCache: SpeakerProfileCache = SpeakerProfileCache()
+    ) {
         self.dbQueue = dbQueue
+        self.speakerProfileCache = speakerProfileCache
     }
 
     // MARK: - Vaults
@@ -94,6 +101,7 @@ final class MeetingRepository {
         try dbQueue.write { db in
             try Self.deleteVaultRows(id: id, in: db)
         }
+        speakerProfileCache.invalidateVaultAfterCommit(id)
     }
 
     private static func deleteVaultRows(id: UUID, in db: Database) throws {
@@ -208,9 +216,12 @@ final class MeetingRepository {
         try ensureNoLiveSegmentedAudio(meetingIds: [id])
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
+            let targets = try Self.speakerProfileTargets(meetingIds: [id], in: db)
             _ = try MeetingRecord.deleteOne(db, key: id)
+            return try Self.recomputeSpeakerProfiles(targets, now: .now, in: db)
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     func deleteMeetingSafely(
@@ -230,6 +241,7 @@ final class MeetingRepository {
         try await BatchTranscriptionDiscardService.discardFailedSessionSafely(
             id: id,
             dbQueue: dbQueue,
+            speakerProfileRepository: self,
             managedRootURL: managedRootURL
         )
     }
@@ -245,6 +257,7 @@ final class MeetingRepository {
             id: id,
             expectedVaultId: expectedVaultId,
             dbQueue: dbQueue,
+            speakerProfileRepository: self,
             managedRootURL: managedRootURL
         )
     }
@@ -255,9 +268,12 @@ final class MeetingRepository {
         try ensureNoLiveSegmentedAudio(meetingIds: ids)
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
-        try dbQueue.write { db in
+        let cacheKeys = try dbQueue.write { db in
+            let targets = try Self.speakerProfileTargets(meetingIds: ids, in: db)
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
+            return try Self.recomputeSpeakerProfiles(targets, now: .now, in: db)
         }
+        invalidateSpeakerProfilesAfterCommit(cacheKeys)
     }
 
     func deleteMeetingsSafely(
@@ -548,11 +564,88 @@ final class MeetingRepository {
                 records = Array(fetched.prefix(pageLimit))
             }
 
-            return TranscriptPage(
-                segments: records.map(TranscriptSegment.init(from:)),
-                hasEarlier: hasEarlier,
-                hasLater: hasLater
-            )
+            return try Self.transcriptPage(records, meetingId: meetingId, hasEarlier: hasEarlier, hasLater: hasLater, in: db)
+        }
+    }
+
+    private nonisolated static func transcriptPage(
+        _ records: [TranscriptSegmentRecord],
+        meetingId: UUID,
+        hasEarlier: Bool,
+        hasLater: Bool,
+        in db: Database
+    ) throws -> TranscriptPage {
+        let segments = try transcriptSegments(records, meetingId: meetingId, in: db)
+        return TranscriptPage(
+            segments: segments,
+            hasEarlier: hasEarlier,
+            hasLater: hasLater
+        )
+    }
+
+    private nonisolated static func transcriptSegments(
+        _ records: [TranscriptSegmentRecord],
+        meetingId: UUID,
+        in db: Database
+    ) throws -> [TranscriptSegment] {
+        let speakerRows = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT meeting_speakers.id AS meetingSpeakerId,
+                   COALESCE(meeting_speaker_cluster_members.clusterId, meeting_speakers.id) AS identityClusterId,
+                   assigned_contacts.displayName AS assignedDisplayName,
+                   assigned_contacts.email AS assignedEmail,
+                   reference_contacts.displayName AS referenceDisplayName,
+                   reference_contacts.email AS referenceEmail,
+                   speaker_match_observations.state AS matchState
+            FROM meeting_speakers
+            JOIN speaker_analyses ON speaker_analyses.id = meeting_speakers.analysisId
+            JOIN recording_sessions ON recording_sessions.id = speaker_analyses.recordingSessionId
+            LEFT JOIN meeting_speaker_cluster_members
+              ON meeting_speaker_cluster_members.meetingSpeakerId = meeting_speakers.id
+            LEFT JOIN speaker_contact_assignments
+              ON speaker_contact_assignments.meetingSpeakerId = meeting_speakers.id
+            LEFT JOIN contacts AS assigned_contacts
+              ON assigned_contacts.id = speaker_contact_assignments.contactId
+            LEFT JOIN speaker_match_observations
+              ON speaker_match_observations.meetingSpeakerId = meeting_speakers.id
+            LEFT JOIN contacts AS reference_contacts
+              ON reference_contacts.id = speaker_match_observations.top1ContactId
+            WHERE recording_sessions.meetingId = ?
+            ORDER BY speaker_analyses.audioSource, identityClusterId, meeting_speakers.localSpeakerId, meeting_speakers.id
+            """,
+            arguments: [meetingId]
+        )
+        var clusterOrdinals: [UUID: Int] = [:]
+        let identityPairs: [(UUID, TranscriptSpeakerIdentity)] = speakerRows.map { row in
+            let id: UUID = row["meetingSpeakerId"]
+            let clusterId: UUID = row["identityClusterId"]
+            let ordinal = clusterOrdinals[clusterId] ?? {
+                let next = clusterOrdinals.count + 1
+                clusterOrdinals[clusterId] = next
+                return next
+            }()
+            let matchState = (row["matchState"] as String?).flatMap(SpeakerMatchObservationState.init(rawValue:))
+            let referenceName: String? = if matchState == .referenceOnly || matchState == .suggested {
+                (row["referenceDisplayName"] as String?)?.nilIfBlank
+                    ?? (row["referenceEmail"] as String?)?.nilIfBlank
+            } else {
+                nil
+            }
+            return (id, TranscriptSpeakerIdentity(
+                meetingSpeakerId: id,
+                ordinal: ordinal,
+                assignedContactName: (row["assignedDisplayName"] as String?)?.nilIfBlank
+                    ?? (row["assignedEmail"] as String?)?.nilIfBlank,
+                referenceContactName: referenceName
+            ))
+        }
+        let identities = Dictionary(uniqueKeysWithValues: identityPairs)
+
+        return records.map { record in
+            var segment = TranscriptSegment(from: record)
+            segment.speakerIdentity = record.meetingSpeakerId.flatMap { identities[$0] }
+            return segment
         }
     }
 
