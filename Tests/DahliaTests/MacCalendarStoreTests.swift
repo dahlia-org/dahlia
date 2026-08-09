@@ -206,23 +206,49 @@ struct MacCalendarStoreTests {
     }
 
     @Test
-    func cancellingRefreshCancelsTheInFlightRequest() async {
-        let provider = CancellationAwareMacCalendarEventStore(calendar: primaryCalendar, initialEvents: [fixtureEvent])
+    func cancellingOneCallerKeepsACoalescedRefreshAlive() async {
+        let provider = OverlappingMacCalendarEventStore(blockedFetchNumber: 2)
+        let store = MacCalendarStore(
+            eventStoreProvider: provider,
+            userDefaults: isolatedUserDefaults(),
+            now: { fixtureNow },
+            refreshInterval: 0,
+            storeChangedNotification: nil
+        )
+        await store.refreshIfNeeded(force: true)
+
+        let firstCaller = Task { await store.refreshIfNeeded() }
+        await provider.waitUntilBlockedEventFetchStarts()
+        let remainingCaller = Task { await store.refreshIfNeeded() }
+        firstCaller.cancel()
+
+        await provider.resumeBlockedEventFetch()
+        await firstCaller.value
+        await remainingCaller.value
+
+        #expect(await provider.eventFetchCount() == 2)
+        #expect(await provider.completedEventFetchCount() == 2)
+        #expect(store.state == .loaded)
+    }
+
+    @Test
+    func initialRefreshCancellationDoesNotMarkTheStoreLoaded() async {
+        let provider = MockMacCalendarEventStore(
+            authorizationStatus: .fullAccess,
+            calendars: [primaryCalendar],
+            eventsResult: .failure(CancellationError())
+        )
         let store = MacCalendarStore(
             eventStoreProvider: provider,
             userDefaults: isolatedUserDefaults(),
             now: { fixtureNow },
             storeChangedNotification: nil
         )
+
         await store.refreshIfNeeded(force: true)
 
-        let refresh = Task { await store.refreshIfNeeded(force: true) }
-        await provider.waitForFetchEventsCallCount(2)
-        refresh.cancel()
-        await refresh.value
-
-        #expect(await provider.didObserveCancellation())
-        #expect(store.state == .loaded)
+        #expect(store.state == .loading)
+        #expect(store.upcomingEvents.isEmpty)
     }
 
     @Test
@@ -371,13 +397,14 @@ private actor MockMacCalendarEventStore: MacCalendarEventStoreProviding {
         authorizationStatus: MacCalendarAuthorizationStatus,
         requestAccessResult: Result<Bool, Error> = .success(true),
         calendars: [CalendarListItem] = [],
-        events: [CalendarEvent] = []
+        events: [CalendarEvent] = [],
+        eventsResult: Result<[CalendarEvent], Error>? = nil
     ) {
         self.initialAuthorizationStatus = authorizationStatus
         self.currentAuthorizationStatus = authorizationStatus
         self.requestAccessResult = requestAccessResult
         self.calendarsResult = .success(calendars)
-        self.eventsResult = .success(events)
+        self.eventsResult = eventsResult ?? .success(events)
     }
 
     func authorizationStatus() -> MacCalendarAuthorizationStatus {
@@ -417,6 +444,7 @@ private actor OverlappingMacCalendarEventStore: MacCalendarEventStoreProviding {
     private let blockedFetchNumber: Int
     private let failedFetchNumber: Int?
     private var fetchCount = 0
+    private var completedFetchCount = 0
     private var fetchCountWaiters: [CheckedContinuation<Void, Never>] = []
     private var blockedFetchContinuation: CheckedContinuation<Void, Never>?
 
@@ -454,6 +482,8 @@ private actor OverlappingMacCalendarEventStore: MacCalendarEventStoreProviding {
                 blockedFetchContinuation = continuation
             }
         }
+        try Task.checkCancellation()
+        completedFetchCount += 1
 
         return calendars.map { calendar in
             CalendarEvent(
@@ -488,6 +518,10 @@ private actor OverlappingMacCalendarEventStore: MacCalendarEventStoreProviding {
 
     func eventFetchCount() -> Int {
         fetchCount
+    }
+
+    func completedEventFetchCount() -> Int {
+        completedFetchCount
     }
 }
 

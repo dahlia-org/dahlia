@@ -171,6 +171,9 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
+        if force {
+            refreshTask?.cancel()
+        }
         let taskID = UUID.v7()
         let task = Task { [weak self] in
             guard let self else { return }
@@ -178,11 +181,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
         refreshTaskID = taskID
         refreshTask = task
-        await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
+        await task.value
         guard refreshTaskID == taskID else { return }
         refreshTask = nil
         refreshTaskID = nil
@@ -254,7 +253,9 @@ final class GoogleCalendarStore: ObservableObject {
             recomputeState()
         } catch is CancellationError {
             guard isCurrentRefresh(generation) else { return }
-            recomputeState()
+            if lastRefreshAt != nil {
+                recomputeState()
+            }
         } catch {
             guard isCurrentRefresh(generation) else { return }
             handle(error)
@@ -412,6 +413,9 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func invalidateCurrentRefresh() {
         refreshGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshTaskID = nil
     }
 
     private func isCurrentRefresh(_ generation: UInt64) -> Bool {
