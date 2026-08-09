@@ -502,7 +502,7 @@ import Foundation
             await waitUntil { session.pendingApprovals == [second] }
             #expect(session.respondingApprovalID == nil)
             try? await Task.sleep(for: .milliseconds(600))
-            #expect(session.canDecidePendingApproval)
+            await waitUntil { session.canDecidePendingApproval }
 
             session.stop()
             await waitUntil { !session.isGenerating }

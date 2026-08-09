@@ -631,6 +631,8 @@
 "System audio capture stopped" = "System audio capture stopped";
 "Microphone capture stopped" = "Microphone capture stopped";
 "Recording" = "Recording";
+"Automatically Stop Recording When the Meeting Ends" = "Automatically Stop Recording When the Meeting Ends";
+"Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected.";
 
 /* Sidebar Footer */
 "Switch Vault" = "Switch Vault";

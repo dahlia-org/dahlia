@@ -94,6 +94,23 @@ struct AudioProcessObjectQueries: Sendable {
         runningState(for: objectID, selector: kAudioProcessPropertyIsRunningOutput)
     }
 
+    func runningInputBundleIDs(excludingPID excludedPID: pid_t) -> Result<Set<String>, QueryFailure> {
+        do {
+            let objectIDs = try processObjectIDs().get()
+            var bundleIDs = Set<String>()
+            for objectID in objectIDs {
+                guard try pid(for: objectID).get() != excludedPID,
+                      try isRunningInput(for: objectID).get(),
+                      let bundleID = try bundleID(for: objectID).get(),
+                      !bundleID.isEmpty else { continue }
+                bundleIDs.insert(bundleID)
+            }
+            return .success(bundleIDs)
+        } catch {
+            return .failure(error)
+        }
+    }
+
     private func runningState(
         for objectID: AudioObjectID,
         selector: AudioObjectPropertySelector

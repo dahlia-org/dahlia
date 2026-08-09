@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 設定画面「一般」タブ。表示言語と通知設定を管理する。
+/// 設定画面「一般」タブ。保管庫、表示言語、録音、通知の基本設定を管理する。
 struct GeneralSettingsView: View {
     var sidebarViewModel: SidebarViewModel
     var mainWindowNavigation: MainWindowNavigation
@@ -45,6 +45,14 @@ struct GeneralSettingsView: View {
                     Text(L10n.appLanguage)
                     Text(L10n.appLanguageDescription)
                 }
+            }
+
+            Section(L10n.recording) {
+                Toggle(isOn: $settings.automaticMeetingEndRecordingStopEnabled) {
+                    Text(L10n.automaticMeetingEndRecordingStop)
+                    Text(L10n.automaticMeetingEndRecordingStopDescription)
+                }
+                .toggleStyle(.switch)
             }
 
             Section {
