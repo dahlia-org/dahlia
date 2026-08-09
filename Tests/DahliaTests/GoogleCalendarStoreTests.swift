@@ -50,6 +50,35 @@ struct GoogleCalendarStoreTests {
     }
 
     @Test
+    func refreshTriggeredRestoreDoesNotCancelItsOwnerTask() async {
+        let defaults = isolatedUserDefaults()
+        seedSelectedCalendars(["primary"], defaults: defaults)
+        let apiClient = ControllableGoogleCalendarAPIClient(
+            initialEvents: [fixtureEvent],
+            suspendsCalendarList: true
+        )
+        let store = GoogleCalendarStore(
+            signInProvider: MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession),
+                refreshResult: .success(fixtureSession)
+            ),
+            apiClient: apiClient,
+            userDefaults: defaults,
+            now: { fixtureNow }
+        )
+
+        let refresh = Task { await store.refreshIfNeeded() }
+        await apiClient.waitUntilCalendarListFetchStarts()
+        apiClient.finishCalendarListFetch()
+        await refresh.value
+
+        #expect(store.availableCalendars == [primaryCalendar])
+        #expect(store.upcomingEvents == [fixtureEvent])
+        #expect(store.state == .loaded)
+    }
+
+    @Test
     func olderRefreshCannotOverwriteANewerResult() async {
         let defaults = isolatedUserDefaults()
         seedSelectedCalendars(["primary"], defaults: defaults)
@@ -796,6 +825,7 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
             await withCheckedContinuation { continuation in
                 calendarListContinuation = continuation
             }
+            try Task.checkCancellation()
         }
         return [primaryCalendar]
     }

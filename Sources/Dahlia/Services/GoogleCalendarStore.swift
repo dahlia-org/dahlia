@@ -86,6 +86,10 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func restoreSessionIfNeeded() async {
+        await restoreSessionIfNeeded(startedByRefreshTask: false)
+    }
+
+    private func restoreSessionIfNeeded(startedByRefreshTask: Bool) async {
         guard !isDisconnecting, !didAttemptRestore else { return }
         didAttemptRestore = true
 
@@ -99,12 +103,17 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        let generation = beginAccountDataLoad()
+        let generation = beginAccountDataLoad(cancelRefreshTask: !startedByRefreshTask)
         defer { isLoadingAccountData = false }
         do {
             let session = try await signInProvider.restorePreviousSignIn()
             guard isCurrentRefresh(generation) else { return }
-            try await loadAccountData(session: session, refreshEvents: true, generation: generation)
+            try await loadAccountData(
+                session: session,
+                refreshEvents: true,
+                generation: generation,
+                refreshInCurrentTask: startedByRefreshTask
+            )
         } catch GoogleSignInError.noPreviousSignIn {
             guard isCurrentRefresh(generation) else { return }
             clearRuntimeState(clearSelection: false)
@@ -164,6 +173,13 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) async {
+        if isLoadingAccountData {
+            if let refreshTask {
+                await refreshTask.value
+            }
+            return
+        }
+
         if !force, let refreshTask, !refreshTask.isCancelled {
             if lastRefreshAt == nil {
                 await refreshTask.value
@@ -196,7 +212,7 @@ final class GoogleCalendarStore: ObservableObject {
 
         guard currentSession != nil else {
             if !didAttemptRestore, signInProvider.hasPreviousSignIn {
-                await restoreSessionIfNeeded()
+                await restoreSessionIfNeeded(startedByRefreshTask: true)
                 return
             }
 
@@ -287,7 +303,8 @@ final class GoogleCalendarStore: ObservableObject {
     private func loadAccountData(
         session: GoogleSession,
         refreshEvents: Bool,
-        generation: UInt64
+        generation: UInt64,
+        refreshInCurrentTask: Bool = false
     ) async throws {
         guard isCurrentRefresh(generation) else { return }
         currentSession = session
@@ -313,6 +330,8 @@ final class GoogleCalendarStore: ObservableObject {
                 if !upcomingEvents.isEmpty { upcomingEvents = [] }
                 lastRefreshAt = nil
                 recomputeState()
+            } else if refreshInCurrentTask {
+                await performRefresh(force: true)
             } else {
                 await refreshIfNeeded(force: true)
             }
@@ -331,8 +350,8 @@ final class GoogleCalendarStore: ObservableObject {
         beginLoading()
     }
 
-    private func beginAccountDataLoad() -> UInt64 {
-        invalidateCurrentRefresh()
+    private func beginAccountDataLoad(cancelRefreshTask: Bool = true) -> UInt64 {
+        invalidateCurrentRefresh(cancelTask: cancelRefreshTask)
         isLoadingAccountData = true
         beginLoading()
         return refreshGeneration
@@ -411,8 +430,9 @@ final class GoogleCalendarStore: ObservableObject {
         updateSelectedCalendarIDs(selectedCalendarIDs, pruneUnavailable: true)
     }
 
-    private func invalidateCurrentRefresh() {
+    private func invalidateCurrentRefresh(cancelTask: Bool = true) {
         refreshGeneration &+= 1
+        guard cancelTask else { return }
         refreshTask?.cancel()
         refreshTask = nil
         refreshTaskID = nil
