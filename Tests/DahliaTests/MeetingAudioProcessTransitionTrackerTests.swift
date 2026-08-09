@@ -216,7 +216,7 @@ import Foundation
         @Test
         func detectsAllBrowserContextsFromMeetingWindows() {
             let detection = MeetingWindowDetector.detect(in: [
-                MeetingWindowInfo(owner: "Google Chrome", title: "Google Meet"),
+                MeetingWindowInfo(owner: "Google Chrome", title: "Meet - Weekly sync"),
                 MeetingWindowInfo(owner: "Microsoft Edge", title: "abc-defg-hij"),
                 MeetingWindowInfo(owner: "Example App", title: "Unrelated"),
             ])

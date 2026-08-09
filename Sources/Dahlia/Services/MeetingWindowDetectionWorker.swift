@@ -13,8 +13,6 @@ struct MeetingWindowInfo: Sendable {
 
 enum MeetingWindowDetector {
     private static let titlePatterns: [(pattern: String, appName: String)] = [
-        ("Meet - ", "Google Meet"),
-        ("Google Meet", "Google Meet"),
         ("(Meeting) | Microsoft Teams", "Microsoft Teams"),
         ("Zoom Meeting", "Zoom"),
         ("Zoom Webinar", "Zoom"),
@@ -38,7 +36,7 @@ enum MeetingWindowDetector {
 
             if let browserContext = MeetingAudioWindowCatalog.browserContext(
                 forApplicationName: window.owner
-            ), window.title.range(
+            ), window.title.hasPrefix("Meet -") || window.title.range(
                 of: "[a-z]{3}-[a-z]{4}-[a-z]{3}",
                 options: .regularExpression
             ) != nil {
