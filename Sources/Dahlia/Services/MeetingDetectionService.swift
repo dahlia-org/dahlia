@@ -1,18 +1,12 @@
 import AppKit
 import Combine
 import CoreAudio
-import CoreGraphics
 import Foundation
 
 /// 会議候補の通知、カレンダー自動録音、入力プロセスに基づく録音停止を管理する。
 @MainActor
 // swiftlint:disable:next type_body_length
 final class MeetingDetectionService: ObservableObject {
-    private struct WindowMeetingDetection: Equatable {
-        let name: String
-        let browserContexts: Set<MeetingAudioContext>
-    }
-
     private static let meetingBundleIDs: Set = [
         "us.zoom.xos",
         "com.microsoft.teams2",
@@ -22,23 +16,6 @@ final class MeetingDetectionService: ObservableObject {
         "Cisco-Systems.Spark",
         "com.apple.FaceTime",
     ]
-
-    private static let windowTitlePatterns: [(pattern: String, appName: String)] = [
-        ("Meet - ", "Google Meet"),
-        ("Google Meet", "Google Meet"),
-        ("(Meeting) | Microsoft Teams", "Microsoft Teams"),
-        ("Zoom Meeting", "Zoom"),
-        ("Zoom Webinar", "Zoom"),
-        ("Cisco Webex", "Webex"),
-    ]
-
-    private static let meetCodeRegex: NSRegularExpression = {
-        do {
-            return try NSRegularExpression(pattern: "[a-z]{3}-[a-z]{4}-[a-z]{3}")
-        } catch {
-            preconditionFailure("Invalid Google Meet code regular expression: \(error)")
-        }
-    }()
 
     var isRecording: () -> Bool = { false }
     var isActivelyRecording: () -> Bool = { false }
@@ -59,6 +36,8 @@ final class MeetingDetectionService: ObservableObject {
     private var detectionCancellables = Set<AnyCancellable>()
     private var lifecycleCancellables = Set<AnyCancellable>()
     private var windowScanTimer: Timer?
+    private var windowScanTask: Task<Void, Never>?
+    private var windowScanTaskID: UUID?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var calendarPowerObservers: [NSObjectProtocol] = []
     private var calendarRefreshTask: Task<Void, Never>?
@@ -80,17 +59,20 @@ final class MeetingDetectionService: ObservableObject {
     private let notificationService: MeetingNotificationService
     private let calendarAutoRecordingStore: CalendarAutoRecordingStore
     private let meetingAudioActivityMonitor: MeetingAudioActivityMonitor
+    private let meetingWindowDetectionWorker: MeetingWindowDetectionWorker
     private let now: () -> Date
 
     init(
         notificationService: MeetingNotificationService = .shared,
         calendarAutoRecordingStore: CalendarAutoRecordingStore = .shared,
         meetingAudioActivityMonitor: MeetingAudioActivityMonitor = MeetingAudioActivityMonitor(),
+        meetingWindowDetectionWorker: MeetingWindowDetectionWorker = MeetingWindowDetectionWorker(),
         now: @escaping () -> Date = { .now }
     ) {
         self.notificationService = notificationService
         self.calendarAutoRecordingStore = calendarAutoRecordingStore
         self.meetingAudioActivityMonitor = meetingAudioActivityMonitor
+        self.meetingWindowDetectionWorker = meetingWindowDetectionWorker
         self.now = now
     }
 
@@ -440,6 +422,9 @@ final class MeetingDetectionService: ObservableObject {
         detectionCancellables.removeAll()
         windowScanTimer?.invalidate()
         windowScanTimer = nil
+        windowScanTask?.cancel()
+        windowScanTask = nil
+        windowScanTaskID = nil
         monitoredDeviceIDs.removeAll()
         if let microphoneMonitoringID {
             Task {
@@ -578,8 +563,23 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private func scanWindowTitles() {
-        let observedAt = ContinuousClock.now
-        let detection = Self.detectMeetingFromWindowTitles()
+        guard windowScanTask == nil else { return }
+        let taskID = UUID.v7()
+        windowScanTaskID = taskID
+        windowScanTask = Task { [weak self, meetingWindowDetectionWorker] in
+            let detection = await meetingWindowDetectionWorker.detect()
+            guard let self, windowScanTaskID == taskID else { return }
+            windowScanTask = nil
+            windowScanTaskID = nil
+            guard !Task.isCancelled, isMicrophoneDetectionRunning else { return }
+            applyWindowDetection(detection, observedAt: ContinuousClock.now)
+        }
+    }
+
+    private func applyWindowDetection(
+        _ detection: MeetingWindowDetection?,
+        observedAt: ContinuousClock.Instant
+    ) {
         if windowDetectedMeetingName != detection?.name {
             windowDetectedMeetingName = detection?.name
         }
@@ -639,39 +639,6 @@ final class MeetingDetectionService: ObservableObject {
                 self.suppressed = true
             }
         }
-    }
-
-    private static func detectMeetingFromWindowTitles() -> WindowMeetingDetection? {
-        guard let windows = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else { return nil }
-
-        var meetingName: String?
-        var browserContexts = Set<MeetingAudioContext>()
-        for window in windows {
-            guard let owner = window[kCGWindowOwnerName as String] as? String,
-                  let title = window[kCGWindowName as String] as? String,
-                  !title.isEmpty
-            else { continue }
-
-            if let pattern = windowTitlePatterns.first(where: { title.contains($0.pattern) }) {
-                meetingName = meetingName ?? pattern.appName
-                if let browserContext = MeetingAudioWindowCatalog.browserContext(forApplicationName: owner) {
-                    browserContexts.insert(browserContext)
-                }
-                continue
-            }
-
-            if let browserContext = MeetingAudioWindowCatalog.browserContext(forApplicationName: owner) {
-                let range = NSRange(title.startIndex..., in: title)
-                if meetCodeRegex.firstMatch(in: title, range: range) != nil {
-                    meetingName = meetingName ?? "Google Meet"
-                    browserContexts.insert(browserContext)
-                }
-            }
-        }
-        return meetingName.map { WindowMeetingDetection(name: $0, browserContexts: browserContexts) }
     }
 
     // MARK: - 会議音声プロセスによる録音停止

@@ -110,5 +110,17 @@ import Foundation
             #expect(beforeGrace.activeContexts == [.zoom])
             #expect(afterGrace.endedContexts == [.zoom])
         }
+
+        @Test
+        func detectsAllBrowserContextsFromMeetingWindows() {
+            let detection = MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(owner: "Google Chrome", title: "Google Meet"),
+                MeetingWindowInfo(owner: "Microsoft Edge", title: "abc-defg-hij"),
+                MeetingWindowInfo(owner: "Example App", title: "Unrelated"),
+            ])
+
+            #expect(detection?.name == "Google Meet")
+            #expect(detection?.browserContexts == [.chrome, .edge])
+        }
     }
 #endif
