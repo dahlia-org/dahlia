@@ -4,6 +4,7 @@ struct CalendarSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    private let calendarSourceCoordinator = CalendarSourceCoordinator.shared
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
 
     var body: some View {
@@ -304,13 +305,7 @@ struct CalendarSettingsView: View {
     }
 
     private func refreshEnabledSources(force: Bool = false) async {
-        if settings.isCalendarSourceEnabled(.google) {
-            await googleCalendarStore.refreshIfNeeded(force: force)
-        }
-
-        if settings.isCalendarSourceEnabled(.macOS) {
-            await macCalendarStore.refreshIfNeeded(force: force)
-        }
+        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
     }
 }
 

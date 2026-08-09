@@ -9,32 +9,21 @@ struct MenuBarCalendarAgenda: Equatable {
     let hasEventsExcludedByFilter: Bool
 
     init(
-        googleEvents: [CalendarEvent],
-        macEvents: [CalendarEvent],
-        enabledSources: Set<CalendarSource>,
+        events: [CalendarEvent],
         filter: CalendarEventFilter,
         now: Date,
         calendar: Calendar = .autoupdatingCurrent
     ) {
-        var sourceEvents: [CalendarEvent] = []
-        if enabledSources.contains(.google) {
-            sourceEvents.append(contentsOf: googleEvents)
-        }
-        if enabledSources.contains(.macOS) {
-            sourceEvents.append(contentsOf: macEvents)
-        }
-
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
-        let currentEvents = sourceEvents
-            .deduplicatedAcrossSources()
+        let currentEvents = events
             .filter { $0.endDate > now && $0.startDate < tomorrow }
 
-        events = currentEvents
+        self.events = currentEvents
             .filter(filter.includes)
             .sorted(by: Self.sortEvents)
-        hasEventsExcludedByFilter = events.isEmpty && !currentEvents.isEmpty
+        hasEventsExcludedByFilter = self.events.isEmpty && !currentEvents.isEmpty
 
-        let timedEvents = events.filter { !$0.isAllDay }
+        let timedEvents = self.events.filter { !$0.isAllDay }
         if let ongoingEvent = timedEvents
             .filter({ $0.startDate <= now && $0.endDate > now })
             .max(by: Self.compareOngoingEvents) {

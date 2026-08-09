@@ -64,6 +64,8 @@ final class MacCalendarStore: ObservableObject {
     private var lastRefreshAt: Date?
     private var storeChangedTask: Task<Void, Never>?
     private var refreshGeneration: UInt64 = 0
+    private var refreshTask: Task<Void, Never>?
+    private var refreshTaskID: UUID?
 
     init(
         eventStoreProvider: any MacCalendarEventStoreProviding = EventKitMacCalendarEventStore(),
@@ -114,23 +116,47 @@ final class MacCalendarStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) async {
+        if !force, let refreshTask, !refreshTask.isCancelled {
+            if lastRefreshAt == nil {
+                await refreshTask.value
+            }
+            return
+        }
+
+        if force {
+            refreshTask?.cancel()
+        }
+        let taskID = UUID.v7()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await performRefresh(force: force)
+        }
+        refreshTaskID = taskID
+        refreshTask = task
+        await task.value
+        guard refreshTaskID == taskID else { return }
+        refreshTask = nil
+        refreshTaskID = nil
+    }
+
+    private func performRefresh(force: Bool) async {
         guard await prepareRefresh(force: force) else { return }
 
         refreshGeneration &+= 1
         let generation = refreshGeneration
-        beginLoading()
+        beginLoadingIfNeeded()
         do {
             let calendars = try await eventStoreProvider.fetchCalendarList()
             try Task.checkCancellation()
             guard isCurrentRefresh(generation) else { return }
-            availableCalendars = calendars
+            if availableCalendars != calendars { availableCalendars = calendars }
             initializeSelectionIfNeeded()
             pruneSelectedCalendars()
 
             guard !selectedCalendarIDs.isEmpty else {
                 if !upcomingEvents.isEmpty { upcomingEvents = [] }
-                lastRefreshAt = nil
-                lastErrorMessage = nil
+                lastRefreshAt = now()
+                if lastErrorMessage != nil { lastErrorMessage = nil }
                 recomputeState()
                 return
             }
@@ -143,13 +169,15 @@ final class MacCalendarStore: ObservableObject {
             )
             try Task.checkCancellation()
             guard isCurrentRefresh(generation) else { return }
-            upcomingEvents = events
+            if upcomingEvents != events { upcomingEvents = events }
             lastRefreshAt = now()
-            lastErrorMessage = nil
+            if lastErrorMessage != nil { lastErrorMessage = nil }
             recomputeState()
         } catch is CancellationError {
             guard isCurrentRefresh(generation) else { return }
-            recomputeState()
+            if lastRefreshAt != nil {
+                recomputeState()
+            }
         } catch {
             guard isCurrentRefresh(generation) else { return }
             handle(error)
@@ -160,7 +188,9 @@ final class MacCalendarStore: ObservableObject {
     private func prepareRefresh(force: Bool) async -> Bool {
         let refreshedAuthorizationStatus = await eventStoreProvider.authorizationStatus()
         guard !Task.isCancelled else { return false }
-        authorizationStatus = refreshedAuthorizationStatus
+        if authorizationStatus != refreshedAuthorizationStatus {
+            authorizationStatus = refreshedAuthorizationStatus
+        }
         guard authorizationStatus.canReadEvents else {
             invalidateCurrentRefresh()
             clearRuntimeState()
@@ -201,8 +231,13 @@ final class MacCalendarStore: ObservableObject {
     }
 
     private func beginLoading() {
-        lastErrorMessage = nil
-        state = .loading
+        if lastErrorMessage != nil { lastErrorMessage = nil }
+        if state != .loading { state = .loading }
+    }
+
+    private func beginLoadingIfNeeded() {
+        guard lastRefreshAt == nil || state == .failed else { return }
+        beginLoading()
     }
 
     private func handle(_ error: Error) {
@@ -250,6 +285,7 @@ final class MacCalendarStore: ObservableObject {
         } else {
             availableIDs.isEmpty ? ids : ids.intersection(availableIDs)
         }
+        guard selectedCalendarIDs != filtered else { return }
         selectedCalendarIDs = filtered
         Self.persistSelectedCalendarIDs(filtered, to: userDefaults)
     }
@@ -265,6 +301,9 @@ final class MacCalendarStore: ObservableObject {
 
     private func invalidateCurrentRefresh() {
         refreshGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshTaskID = nil
     }
 
     private func isCurrentRefresh(_ generation: UInt64) -> Bool {

@@ -9,45 +9,32 @@ final class MenuBarCalendarViewModel {
     private(set) var agenda: MenuBarCalendarAgenda
 
     private let settings: AppSettings
-    private let googleCalendarStore: GoogleCalendarStore
-    private let macCalendarStore: MacCalendarStore
+    private let calendarSourceCoordinator: CalendarSourceCoordinator
+    private var loadedSources: Set<CalendarSource>
     private var cancellables: Set<AnyCancellable> = []
 
     var allEnabledSourcesAreLoaded: Bool {
-        Self.allEnabledSourcesAreLoaded(
+        CalendarSourceCoordinator.allSourcesAreLoaded(
             settings.enabledCalendarSources,
-            googleIsLoaded: googleCalendarStore.state == .loaded,
-            macOSIsLoaded: macCalendarStore.state == .loaded
+            loadedSources: loadedSources
         )
     }
 
     init(
         settings: AppSettings = .shared,
-        googleCalendarStore: GoogleCalendarStore = .shared,
-        macCalendarStore: MacCalendarStore = .shared
+        calendarSourceCoordinator: CalendarSourceCoordinator = .shared
     ) {
         let now = Date.now
         self.settings = settings
-        self.googleCalendarStore = googleCalendarStore
-        self.macCalendarStore = macCalendarStore
+        self.calendarSourceCoordinator = calendarSourceCoordinator
         self.currentDate = now
+        self.loadedSources = calendarSourceCoordinator.loadedSources
         self.agenda = Self.makeAgenda(
             settings: settings,
-            googleEvents: googleCalendarStore.upcomingEvents,
-            macEvents: macCalendarStore.upcomingEvents,
+            events: calendarSourceCoordinator.events(for: settings.enabledCalendarSources),
             now: now
         )
         observeCalendarInputs()
-    }
-
-    static func allEnabledSourcesAreLoaded(
-        _ enabledSources: Set<CalendarSource>,
-        googleIsLoaded: Bool,
-        macOSIsLoaded: Bool
-    ) -> Bool {
-        guard !enabledSources.isEmpty else { return false }
-        return (!enabledSources.contains(.google) || googleIsLoaded)
-            && (!enabledSources.contains(.macOS) || macOSIsLoaded)
     }
 
     func runRefreshLoop() async {
@@ -67,13 +54,13 @@ final class MenuBarCalendarViewModel {
     }
 
     private func observeCalendarInputs() {
-        googleCalendarStore.$upcomingEvents
+        calendarSourceCoordinator.$eventsBySource
             .dropFirst()
             .sink { [weak self] _ in self?.scheduleAgendaRebuild() }
             .store(in: &cancellables)
-        macCalendarStore.$upcomingEvents
+        calendarSourceCoordinator.$loadedSources
             .dropFirst()
-            .sink { [weak self] _ in self?.scheduleAgendaRebuild() }
+            .sink { [weak self] loadedSources in self?.loadedSources = loadedSources }
             .store(in: &cancellables)
         settings.objectWillChange
             .sink { [weak self] _ in self?.scheduleAgendaRebuild() }
@@ -90,8 +77,7 @@ final class MenuBarCalendarViewModel {
     private func rebuildAgenda() {
         agenda = Self.makeAgenda(
             settings: settings,
-            googleEvents: googleCalendarStore.upcomingEvents,
-            macEvents: macCalendarStore.upcomingEvents,
+            events: calendarSourceCoordinator.events(for: settings.enabledCalendarSources),
             now: currentDate
         )
     }
@@ -107,25 +93,17 @@ final class MenuBarCalendarViewModel {
 
     private static func makeAgenda(
         settings: AppSettings,
-        googleEvents: [CalendarEvent],
-        macEvents: [CalendarEvent],
+        events: [CalendarEvent],
         now: Date
     ) -> MenuBarCalendarAgenda {
         MenuBarCalendarAgenda(
-            googleEvents: googleEvents,
-            macEvents: macEvents,
-            enabledSources: settings.enabledCalendarSources,
+            events: events,
             filter: settings.calendarEventFilter,
             now: now
         )
     }
 
     private func refreshEnabledSources() async {
-        if settings.isCalendarSourceEnabled(.google) {
-            await googleCalendarStore.refreshIfNeeded()
-        }
-        if settings.isCalendarSourceEnabled(.macOS) {
-            await macCalendarStore.refreshIfNeeded()
-        }
+        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources)
     }
 }

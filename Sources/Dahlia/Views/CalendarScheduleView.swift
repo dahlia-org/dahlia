@@ -3,9 +3,10 @@ import SwiftUI
 /// ミーティング未選択時に表示するカレンダーの予定一覧。
 struct CalendarScheduleView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
-    @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    @ObservedObject private var calendarSourceCoordinator = CalendarSourceCoordinator.shared
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
+    private let googleCalendarStore = GoogleCalendarStore.shared
+    private let macCalendarStore = MacCalendarStore.shared
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openURL) private var openURL
 
@@ -244,15 +245,7 @@ struct CalendarScheduleView: View {
     }
 
     private var upcomingEventsFromEnabledSources: [CalendarEvent] {
-        var events: [CalendarEvent] = []
-        if settings.isCalendarSourceEnabled(.google) {
-            events.append(contentsOf: googleCalendarStore.upcomingEvents)
-        }
-        if settings.isCalendarSourceEnabled(.macOS) {
-            events.append(contentsOf: macCalendarStore.upcomingEvents)
-        }
-
-        return events.deduplicatedAcrossSources()
+        calendarSourceCoordinator.events(for: settings.enabledCalendarSources)
     }
 
     private var visibleUpcomingEvents: [CalendarEvent] {
@@ -291,13 +284,7 @@ struct CalendarScheduleView: View {
     }
 
     private func refreshEnabledSources(force: Bool = false) async {
-        if settings.isCalendarSourceEnabled(.google) {
-            await googleCalendarStore.refreshIfNeeded(force: force)
-        }
-
-        if settings.isCalendarSourceEnabled(.macOS) {
-            await macCalendarStore.refreshIfNeeded(force: force)
-        }
+        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
     }
 
     private func statusCard(
