@@ -2464,6 +2464,17 @@ enum L10n {
     static var systemAudioCaptureStopped: String { String(localized: "System audio capture stopped", bundle: bundle) }
     static var microphoneCaptureStopped: String { String(localized: "Microphone capture stopped", bundle: bundle) }
     static var recording: String { String(localized: "Recording", bundle: bundle) }
+    static var automaticMeetingEndRecordingStop: String { String(
+        localized: "Automatically Stop Recording When the Meeting Ends",
+        bundle: bundle
+    ) }
+    static var automaticMeetingEndRecordingStopDescription: String { String(
+        localized: """
+        Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. \
+        Browser activity also requires a recognized meeting window. In-person meetings are not detected.
+        """,
+        bundle: bundle
+    ) }
     static var recordingSettings: String { String(localized: "Recording Settings", bundle: bundle) }
     static var recordingCommandHint: String { String(
         localized: "Starts or stops recording for the selected meeting.",

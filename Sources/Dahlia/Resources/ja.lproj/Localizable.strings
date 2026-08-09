@@ -631,6 +631,8 @@
 "System audio capture stopped" = "システム音声キャプチャが停止しました";
 "Microphone capture stopped" = "マイクのキャプチャが停止しました";
 "Recording" = "録音";
+"Automatically Stop Recording When the Meeting Ends" = "ミーティング終了時に録音を自動停止";
+"Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "録音と対応会議アプリの利用がどちらも30秒以上続いた後に終了したら、停止して保存します。ブラウザでは対応する会議ウィンドウも必要です。対面会議は検出しません。";
 
 /* Sidebar Footer */
 "Switch Vault" = "保管庫を切り替え";

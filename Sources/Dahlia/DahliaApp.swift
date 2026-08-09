@@ -23,7 +23,7 @@ struct DahliaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel: CaptionViewModel
     @State private var sidebarViewModel: SidebarViewModel
-    @StateObject private var meetingDetectionService = MeetingDetectionService()
+    @StateObject private var meetingDetectionService: MeetingDetectionService
     @StateObject private var liveSubtitleOverlayService: LiveSubtitleOverlayService
     @State private var liveSubtitleOverlayCoordinator: LiveSubtitleOverlayCoordinator
     @State private var recordingCoordinator: RecordingCoordinator
@@ -44,10 +44,12 @@ struct DahliaApp: App {
         let sidebarViewModel = SidebarViewModel()
         let liveSubtitleOverlayService = LiveSubtitleOverlayService()
         let mainWindowNavigation = MainWindowNavigation.shared
+        let meetingDetectionService = MeetingDetectionService()
         let recordingCoordinator = RecordingCoordinator(
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel,
-            mainWindowNavigation: mainWindowNavigation
+            mainWindowNavigation: mainWindowNavigation,
+            meetingDetectionService: meetingDetectionService
         )
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
@@ -67,6 +69,7 @@ struct DahliaApp: App {
 
         _viewModel = StateObject(wrappedValue: viewModel)
         _sidebarViewModel = State(initialValue: sidebarViewModel)
+        _meetingDetectionService = StateObject(wrappedValue: meetingDetectionService)
         _liveSubtitleOverlayService = StateObject(wrappedValue: liveSubtitleOverlayService)
         _recordingCoordinator = State(initialValue: recordingCoordinator)
         _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
@@ -242,8 +245,14 @@ struct DahliaApp: App {
         meetingDetectionService.isRecording = { [weak viewModel] in
             viewModel?.isRecordingLifecycleBusy ?? false
         }
+        meetingDetectionService.isActivelyRecording = { [weak viewModel] in
+            viewModel?.isListening ?? false
+        }
         meetingDetectionService.onAutomaticRecording = { [weak recordingCoordinator] event in
             recordingCoordinator?.startAutomaticRecording(forCalendarEvent: event)
+        }
+        meetingDetectionService.onAutomaticRecordingStop = { [weak recordingCoordinator] in
+            recordingCoordinator?.stopRecording()
         }
         MeetingNotificationService.shared.configure(
             onOpenMeeting: { meeting in
@@ -366,6 +375,7 @@ struct DahliaApp: App {
                 appendingTo: meetingId,
                 reservation: reservation
             )
+            recordingCoordinator.recordingDidStart()
             if let customerIntelligenceEvent,
                viewModel.isListening,
                viewModel.recordingMeetingId == meetingId {

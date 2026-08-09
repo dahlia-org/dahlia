@@ -1,0 +1,114 @@
+import Foundation
+@testable import Dahlia
+
+#if canImport(Testing)
+    import Testing
+
+    struct MeetingAudioActivityMonitorTests {
+        @Test
+        func recognizesNativeAndBrowserAudioProcesses() {
+            let contexts = MeetingAudioProcessCatalog.contexts(for: [
+                "us.zoom.caphost",
+                "com.microsoft.teams2.audio",
+                "com.tinyspeck.slackmacgap.helper",
+                "com.google.Chrome.helper.renderer",
+                "company.thebrowser.Browser.helper",
+                "org.mozilla.firefox",
+                "com.openai.atlas.web.helper",
+                "ai.perplexity.comet.helper",
+            ])
+
+            #expect(contexts == [
+                .zoom, .teams, .slack, .chrome, .arc, .firefox, .atlas, .comet,
+            ])
+        }
+
+        @Test
+        func ignoresUnrecognizedAudioProcesses() {
+            #expect(MeetingAudioProcessCatalog.contexts(for: [
+                "com.example.voice-recorder",
+                "com.apple.WebKit.GPU",
+            ]).isEmpty)
+        }
+
+        @Test
+        func recognizesOnlyBrowserSpecificMeetingWindows() {
+            #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Google Chrome") == .chrome)
+            #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Arc") == .arc)
+            #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Safari") == nil)
+            #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Example App") == nil)
+        }
+
+        @Test
+        func initialSnapshotDoesNotReportMeetingStart() {
+            let now = ContinuousClock.now
+            var tracker = MeetingAudioProcessTransitionTracker()
+
+            let snapshot = tracker.observe([.chrome], at: now)
+
+            #expect(snapshot.isInitial)
+            #expect(snapshot.activeContexts == [.chrome])
+            #expect(snapshot.startedContexts.isEmpty)
+            #expect(snapshot.endedContexts.isEmpty)
+        }
+
+        @Test
+        func multipleHelpersCollapseIntoOneBrowserContext() {
+            let contexts = MeetingAudioProcessCatalog.contexts(for: [
+                "com.google.Chrome.helper",
+                "com.google.Chrome.helper.renderer",
+                "com.google.Chrome.helper.plugin",
+            ])
+
+            #expect(contexts == [.chrome])
+        }
+
+        @Test
+        func reportsEndAfterContinuousDisappearanceGracePeriod() {
+            let now = ContinuousClock.now
+            var tracker = MeetingAudioProcessTransitionTracker(disappearanceGracePeriod: .seconds(4))
+
+            _ = tracker.observe([.zoom], at: now)
+            _ = tracker.observe([], at: now.advanced(by: .seconds(1)))
+            let beforeGrace = tracker.observe([], at: now.advanced(by: .milliseconds(4999)))
+            let afterGrace = tracker.observe([], at: now.advanced(by: .seconds(5)))
+
+            #expect(beforeGrace.activeContexts == [.zoom])
+            #expect(beforeGrace.endedContexts.isEmpty)
+            #expect(afterGrace.activeContexts.isEmpty)
+            #expect(afterGrace.endedContexts == [.zoom])
+        }
+
+        @Test
+        func reappearanceRestartsDisappearanceGracePeriod() {
+            let now = ContinuousClock.now
+            var tracker = MeetingAudioProcessTransitionTracker(disappearanceGracePeriod: .seconds(4))
+
+            _ = tracker.observe([.teams], at: now)
+            _ = tracker.observe([], at: now.advanced(by: .seconds(3)))
+            _ = tracker.observe([.teams], at: now.advanced(by: .seconds(4)))
+            let retained = tracker.observe([], at: now.advanced(by: .seconds(7)))
+            let ended = tracker.observe([], at: now.advanced(by: .seconds(11)))
+
+            #expect(retained.activeContexts == [.teams])
+            #expect(ended.endedContexts == [.teams])
+        }
+
+        @Test
+        func queryFailureRestartsDisappearanceGracePeriod() {
+            let now = ContinuousClock.now
+            var tracker = MeetingAudioProcessTransitionTracker(disappearanceGracePeriod: .seconds(4))
+
+            _ = tracker.observe([.zoom], at: now)
+            _ = tracker.observe([], at: now.advanced(by: .seconds(1)))
+            tracker.queryFailed()
+            let recovered = tracker.observe([], at: now.advanced(by: .seconds(10)))
+            let beforeGrace = tracker.observe([], at: now.advanced(by: .milliseconds(13999)))
+            let afterGrace = tracker.observe([], at: now.advanced(by: .seconds(14)))
+
+            #expect(recovered.activeContexts == [.zoom])
+            #expect(beforeGrace.activeContexts == [.zoom])
+            #expect(afterGrace.endedContexts == [.zoom])
+        }
+    }
+#endif

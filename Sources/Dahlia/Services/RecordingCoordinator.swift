@@ -8,15 +8,18 @@ final class RecordingCoordinator {
     private let viewModel: CaptionViewModel
     private let sidebarViewModel: SidebarViewModel
     private let mainWindowNavigation: MainWindowNavigation
+    private let meetingDetectionService: MeetingDetectionService
 
     init(
         viewModel: CaptionViewModel,
         sidebarViewModel: SidebarViewModel,
-        mainWindowNavigation: MainWindowNavigation
+        mainWindowNavigation: MainWindowNavigation,
+        meetingDetectionService: MeetingDetectionService
     ) {
         self.viewModel = viewModel
         self.sidebarViewModel = sidebarViewModel
         self.mainWindowNavigation = mainWindowNavigation
+        self.meetingDetectionService = meetingDetectionService
     }
 
     var canStartNewMeeting: Bool {
@@ -58,6 +61,7 @@ final class RecordingCoordinator {
                 vaultURL: vault.url,
                 reservation: reservation
             )
+            recordingDidStart()
             if let newMeetingId = viewModel.currentMeetingId {
                 sidebarViewModel.selectMeeting(newMeetingId)
             }
@@ -187,6 +191,7 @@ final class RecordingCoordinator {
                 appendingTo: meetingId,
                 reservation: reservation
             )
+            recordingDidStart()
             if let customerIntelligenceEvent,
                viewModel.isListening,
                viewModel.recordingMeetingId == meetingId {
@@ -204,7 +209,13 @@ final class RecordingCoordinator {
     }
 
     func stopRecording() {
+        meetingDetectionService.recordingDidStop()
         viewModel.stopListening()
+    }
+
+    func recordingDidStart() {
+        guard viewModel.isListening else { return }
+        meetingDetectionService.recordingDidStart()
     }
 
     @discardableResult
