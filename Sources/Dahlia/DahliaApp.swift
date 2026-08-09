@@ -104,12 +104,7 @@ struct DahliaApp: App {
                 initializeAppIfNeeded()
                 let settings = AppSettings.shared
                 async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
-                if settings.isCalendarSourceEnabled(.google) {
-                    await GoogleCalendarStore.shared.restoreSessionIfNeeded()
-                }
-                if settings.isCalendarSourceEnabled(.macOS) {
-                    await MacCalendarStore.shared.refreshIfNeeded()
-                }
+                await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
                 await driveRestore
             }
         }

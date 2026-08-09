@@ -19,7 +19,7 @@ import Foundation
             let upcoming = event(id: "upcoming", start: 3_600, end: 7_200)
             let tomorrow = event(id: "tomorrow", start: 46_800, end: 50_400)
 
-            let agenda = agenda(googleEvents: [ended, overnight, upcoming, tomorrow])
+            let agenda = agenda(events: [ended, overnight, upcoming, tomorrow])
 
             #expect(agenda.events.map(\.id) == [overnight.id, upcoming.id])
             #expect(agenda.featuredEvent?.id == overnight.id)
@@ -27,7 +27,7 @@ import Foundation
         }
 
         @Test
-        func appliesEnabledSourcesFiltersAndCrossSourceDeduplication() {
+        func appliesEventFilters() {
             let googleEvent = event(
                 id: "google",
                 platform: CalendarEventPlatform.googleCalendar,
@@ -35,19 +35,10 @@ import Foundation
                 start: 3_600,
                 end: 7_200
             )
-            let duplicateMacEvent = event(
-                id: "mac-duplicate",
-                platform: CalendarEventPlatform.macOSCalendar,
-                icalUid: "shared",
-                start: 3_600,
-                end: 7_200
-            )
             let declined = event(id: "declined", start: 7_200, end: 10_800, isDeclined: true)
 
             let agenda = MenuBarCalendarAgenda(
-                googleEvents: [googleEvent, declined],
-                macEvents: [duplicateMacEvent],
-                enabledSources: [.google, .macOS],
+                events: [googleEvent, declined],
                 filter: CalendarEventFilter(includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
@@ -61,14 +52,12 @@ import Foundation
             let declined = event(id: "declined", start: 3_600, end: 7_200, isDeclined: true)
 
             let filteredAgenda = MenuBarCalendarAgenda(
-                googleEvents: [declined],
-                macEvents: [],
-                enabledSources: [.google],
+                events: [declined],
                 filter: CalendarEventFilter(includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
-            let emptyAgenda = agenda(googleEvents: [])
+            let emptyAgenda = agenda(events: [])
 
             #expect(filteredAgenda.events.isEmpty)
             #expect(filteredAgenda.hasEventsExcludedByFilter)
@@ -80,7 +69,7 @@ import Foundation
             let attending = event(id: "attending", start: -1_800, end: 3_600, isAttending: true)
             let laterUnconfirmed = event(id: "unconfirmed", start: -600, end: 1_800)
 
-            let agenda = agenda(googleEvents: [laterUnconfirmed, attending])
+            let agenda = agenda(events: [laterUnconfirmed, attending])
 
             #expect(agenda.featuredEvent?.id == attending.id)
             #expect(agenda.featuredEventIsOngoing)
@@ -92,8 +81,8 @@ import Foundation
             let laterOngoing = event(id: "later", start: -600, end: 1_800)
             let next = event(id: "next", start: 3_600, end: 7_200)
 
-            let ongoingAgenda = agenda(googleEvents: [next, earlierOngoing, laterOngoing])
-            let upcomingAgenda = agenda(googleEvents: [next])
+            let ongoingAgenda = agenda(events: [next, earlierOngoing, laterOngoing])
+            let upcomingAgenda = agenda(events: [next])
 
             #expect(ongoingAgenda.featuredEvent?.id == laterOngoing.id)
             #expect(ongoingAgenda.featuredEventIsOngoing)
@@ -113,7 +102,7 @@ import Foundation
                 isAllDay: true
             )
 
-            let agenda = agenda(googleEvents: [allDay])
+            let agenda = agenda(events: [allDay])
 
             #expect(agenda.events == [allDay])
             #expect(agenda.featuredEvent == nil)
@@ -132,15 +121,13 @@ import Foundation
             )
             let declined = event(id: "declined", start: 3_600, end: 7_200, isDeclined: true)
             let filteredAgenda = MenuBarCalendarAgenda(
-                googleEvents: [declined],
-                macEvents: [],
-                enabledSources: [.google],
+                events: [declined],
                 filter: CalendarEventFilter(includesDeclinedEvents: false),
                 now: now,
                 calendar: calendar
             )
 
-            for emptyAgenda in [agenda(googleEvents: []), agenda(googleEvents: [allDay]), filteredAgenda] {
+            for emptyAgenda in [agenda(events: []), agenda(events: [allDay]), filteredAgenda] {
                 #expect(emptyAgenda.labelText(showsTitle: true, showsCountdown: true, now: now) == L10n.menuBarNoEvents)
                 #expect(emptyAgenda.accessibilityLabel(now: now) == L10n.menuBarNoEvents)
             }
@@ -150,14 +137,14 @@ import Foundation
         func keepsDahliaFallbackWhenAllCalendarLabelDetailsAreDisabled() {
             let upcoming = event(id: "upcoming", start: 3_600, end: 7_200)
 
-            #expect(agenda(googleEvents: [upcoming]).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
-            #expect(agenda(googleEvents: []).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
+            #expect(agenda(events: [upcoming]).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
+            #expect(agenda(events: []).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
         }
 
         @Test
         func roundsCountdownUpAndHonorsLabelSettings() {
             let upcoming = event(id: "upcoming", title: "Planning", start: 3_601, end: 7_200)
-            let agenda = agenda(googleEvents: [upcoming])
+            let agenda = agenda(events: [upcoming])
 
             #expect(MenuBarCalendarAgenda.remainingMinutes(from: now, to: upcoming.startDate) == 61)
             #expect(agenda.labelText(showsTitle: true, showsCountdown: false, now: now) == "Planning")
@@ -170,7 +157,7 @@ import Foundation
         func truncatesLongMenuBarTitlesWithoutTruncatingAccessibilityText() {
             let title = "Office Hours for Japan PS/DSA/Training [Weekly]"
             let upcoming = event(id: "upcoming", title: title, start: 3_600, end: 7_200)
-            let agenda = agenda(googleEvents: [upcoming])
+            let agenda = agenda(events: [upcoming])
 
             #expect(agenda.labelText(showsTitle: true, showsCountdown: false, now: now) == "Office Hours for Japan P…")
             #expect(agenda.accessibilityLabel(now: now)?.hasPrefix(title) == true)
@@ -181,15 +168,13 @@ import Foundation
             let startingSoon = event(id: "starting", start: 59, end: 3_600)
             let endingSoon = event(id: "ending", start: -3_600, end: 59)
 
-            #expect(agenda(googleEvents: [startingSoon]).countdownText(now: now) == L10n.menuBarStartingSoon)
-            #expect(agenda(googleEvents: [endingSoon]).countdownText(now: now) == L10n.menuBarEndingSoon)
+            #expect(agenda(events: [startingSoon]).countdownText(now: now) == L10n.menuBarStartingSoon)
+            #expect(agenda(events: [endingSoon]).countdownText(now: now) == L10n.menuBarEndingSoon)
         }
 
-        private func agenda(googleEvents: [CalendarEvent]) -> MenuBarCalendarAgenda {
+        private func agenda(events: [CalendarEvent]) -> MenuBarCalendarAgenda {
             MenuBarCalendarAgenda(
-                googleEvents: googleEvents,
-                macEvents: [],
-                enabledSources: [.google],
+                events: events,
                 filter: CalendarEventFilter(includesAllDayEvents: true),
                 now: now,
                 calendar: calendar

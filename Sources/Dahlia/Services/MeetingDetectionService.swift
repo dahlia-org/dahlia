@@ -36,6 +36,7 @@ final class MeetingDetectionService: ObservableObject {
     private var isMeetingAudioMonitoringRunning = false
     private let notificationService: MeetingNotificationService
     private let calendarAutoRecordingStore: CalendarAutoRecordingStore
+    private let calendarSourceCoordinator: CalendarSourceCoordinator
     private let meetingAudioActivityMonitor: MeetingAudioActivityMonitor
     private let meetingWindowDetectionWorker: MeetingWindowDetectionWorker
     private let now: () -> Date
@@ -43,12 +44,14 @@ final class MeetingDetectionService: ObservableObject {
     init(
         notificationService: MeetingNotificationService = .shared,
         calendarAutoRecordingStore: CalendarAutoRecordingStore = .shared,
+        calendarSourceCoordinator: CalendarSourceCoordinator = .shared,
         meetingAudioActivityMonitor: MeetingAudioActivityMonitor = MeetingAudioActivityMonitor(),
         meetingWindowDetectionWorker: MeetingWindowDetectionWorker = MeetingWindowDetectionWorker(),
         now: @escaping () -> Date = { .now }
     ) {
         self.notificationService = notificationService
         self.calendarAutoRecordingStore = calendarAutoRecordingStore
+        self.calendarSourceCoordinator = calendarSourceCoordinator
         self.meetingAudioActivityMonitor = meetingAudioActivityMonitor
         self.meetingWindowDetectionWorker = meetingWindowDetectionWorker
         self.now = now
@@ -112,9 +115,8 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private func observeCalendarEvents() {
-        Publishers.CombineLatest3(
-            GoogleCalendarStore.shared.$upcomingEvents,
-            MacCalendarStore.shared.$upcomingEvents,
+        Publishers.CombineLatest(
+            calendarSourceCoordinator.$eventsBySource,
             calendarAutoRecordingStore.$selections
         )
         .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
@@ -125,16 +127,13 @@ final class MeetingDetectionService: ObservableObject {
         }
         .store(in: &lifecycleCancellables)
 
-        Publishers.Merge(
-            GoogleCalendarStore.shared.$state.map { _ in },
-            MacCalendarStore.shared.$state.map { _ in }
-        )
-        .sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.rescheduleAutomaticRecording()
+        calendarSourceCoordinator.$loadedSources
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.rescheduleAutomaticRecording()
+                }
             }
-        }
-        .store(in: &lifecycleCancellables)
+            .store(in: &lifecycleCancellables)
     }
 
     private func reconcileSettings() {
@@ -252,20 +251,11 @@ final class MeetingDetectionService: ObservableObject {
         calendarAutoRecordingTask?.cancel()
         calendarAutoRecordingTask = nil
 
-        var refreshedEvents: [CalendarEvent] = []
-        if settings.isCalendarSourceEnabled(.google) {
-            await GoogleCalendarStore.shared.refreshIfNeeded(force: force)
-            if GoogleCalendarStore.shared.state == .loaded {
-                refreshedEvents.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
-            }
-        }
-        if settings.isCalendarSourceEnabled(.macOS) {
-            await MacCalendarStore.shared.refreshIfNeeded(force: force)
-            if MacCalendarStore.shared.state == .loaded {
-                refreshedEvents.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
-            }
-        }
-        return refreshedEvents.deduplicatedAcrossSources()
+        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
+        return calendarSourceCoordinator.events(
+            for: settings.enabledCalendarSources,
+            requiringLoadedSources: true
+        )
     }
 
     private func observeCalendarPowerEvents() {
@@ -597,30 +587,13 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private var selectedUpcomingEvents: [CalendarEvent] {
-        var events: [CalendarEvent] = []
-        let settings = AppSettings.shared
-
-        if settings.isCalendarSourceEnabled(.google) {
-            events.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
-        }
-        if settings.isCalendarSourceEnabled(.macOS) {
-            events.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
-        }
-
-        return events.deduplicatedAcrossSources()
+        calendarSourceCoordinator.events(for: AppSettings.shared.enabledCalendarSources)
     }
 
     private var automaticRecordingEvents: [CalendarEvent] {
-        var events: [CalendarEvent] = []
-        let settings = AppSettings.shared
-
-        if settings.isCalendarSourceEnabled(.google), GoogleCalendarStore.shared.state == .loaded {
-            events.append(contentsOf: GoogleCalendarStore.shared.upcomingEvents)
-        }
-        if settings.isCalendarSourceEnabled(.macOS), MacCalendarStore.shared.state == .loaded {
-            events.append(contentsOf: MacCalendarStore.shared.upcomingEvents)
-        }
-
-        return events.deduplicatedAcrossSources()
+        calendarSourceCoordinator.events(
+            for: AppSettings.shared.enabledCalendarSources,
+            requiringLoadedSources: true
+        )
     }
 }

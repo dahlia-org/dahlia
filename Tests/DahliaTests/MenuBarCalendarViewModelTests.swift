@@ -20,10 +20,12 @@ import Foundation
             google: Bool,
             macOS: Bool
         ) -> Bool {
-            MenuBarCalendarViewModel.allEnabledSourcesAreLoaded(
+            var loadedSources: Set<CalendarSource> = []
+            if google { loadedSources.insert(.google) }
+            if macOS { loadedSources.insert(.macOS) }
+            return CalendarSourceCoordinator.allSourcesAreLoaded(
                 enabledSources,
-                googleIsLoaded: google,
-                macOSIsLoaded: macOS
+                loadedSources: loadedSources
             )
         }
     }
