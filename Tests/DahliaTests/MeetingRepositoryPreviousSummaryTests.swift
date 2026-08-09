@@ -18,11 +18,13 @@ struct MeetingRepositoryPreviousSummaryTests {
             start: fixture.baseDate.addingTimeInterval(4 * 86_400),
             recordedAt: fixture.baseDate.addingTimeInterval(86_400)
         )
+        let recentRecordingStartedAt = fixture.baseDate.addingTimeInterval(3 * 86_400 + 600)
         let recent = try fixture.insertMeeting(
             name: "Recent",
             icalUid: "weekly@example.com",
             recurrenceId: "recent",
             start: fixture.baseDate.addingTimeInterval(3 * 86_400),
+            recordingStartedAt: recentRecordingStartedAt,
             summary: SummaryDocument(title: "Recent", sections: [])
         )
         _ = try fixture.insertMeeting(
@@ -67,6 +69,7 @@ struct MeetingRepositoryPreviousSummaryTests {
 
         #expect(summaries.map(\.meetingId) == [recent.id, older.id])
         #expect(summaries.map(\.name) == ["Recent", "Older"])
+        #expect(summaries.first?.recordedAt == recentRecordingStartedAt)
         #expect(summaries.allSatisfy { $0.calendarStart != nil && $0.calendarEnd != nil })
     }
 

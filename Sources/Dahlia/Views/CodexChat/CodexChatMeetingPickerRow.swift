@@ -13,7 +13,7 @@ struct CodexChatMeetingPickerRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(reference.name)
                     .lineLimit(1)
-                Text(reference.createdAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
+                Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

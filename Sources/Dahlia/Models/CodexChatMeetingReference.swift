@@ -3,7 +3,7 @@ import Foundation
 struct CodexChatMeetingReference: Identifiable, Equatable {
     let id: UUID
     let name: String
-    let createdAt: Date
+    let recordingStartedAt: Date
 
     static func suggestions(
         from references: [Self],
@@ -18,10 +18,10 @@ struct CodexChatMeetingReference: Identifiable, Equatable {
                     && (trimmedQuery.isEmpty || reference.name.localizedStandardContains(trimmedQuery))
             }
             .sorted { lhs, rhs in
-                if lhs.createdAt == rhs.createdAt {
+                if lhs.recordingStartedAt == rhs.recordingStartedAt {
                     return lhs.id.uuidString < rhs.id.uuidString
                 }
-                return lhs.createdAt > rhs.createdAt
+                return lhs.recordingStartedAt > rhs.recordingStartedAt
             }
     }
 

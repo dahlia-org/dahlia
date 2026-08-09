@@ -47,6 +47,65 @@ import GRDB
         }
 
         @Test
+        func ordersAndGroupsMeetingsByRecordingStartWithCreationFallback() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            let unrecordedID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(
+                    name: "Unrecorded",
+                    createdAt: start.addingTimeInterval(100),
+                    in: db
+                )
+            }
+            let recordedID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(
+                    name: "Recorded",
+                    createdAt: start,
+                    recordingStartedAt: start.addingTimeInterval(200),
+                    in: db
+                )
+            }
+
+            let page = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingSidebarPage(
+                    vaultId: fixture.vault.id,
+                    limit: 50,
+                    in: db
+                )
+            }
+
+            #expect(page.items.map(\.id) == [recordedID, unrecordedID])
+            #expect(page.items.map(\.effectiveRecordingStartedAt) == [
+                start.addingTimeInterval(200),
+                start.addingTimeInterval(100),
+            ])
+            #expect(page.groups.flatMap(\.meetings).map(\.id) == [recordedID, unrecordedID])
+        }
+
+        @Test
+        func sidebarQueryUsesRecordingStartIndex() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+
+            let plan = try fixture.manager.dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    EXPLAIN QUERY PLAN
+                    SELECT meetings.id
+                    FROM meetings
+                    WHERE meetings.vaultId = ?
+                    ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC,
+                             meetings.id DESC
+                    LIMIT 50
+                    """,
+                    arguments: [fixture.vault.id]
+                ).map { $0["detail"] as String }
+            }
+
+            #expect(plan.contains { $0.contains("meetings_on_vaultId_recordingStartedAt_createdAt_id") })
+        }
+
+        @Test
         func searchesSidebarMetadataButNotTranscriptText() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let expected = try fixture.insertSearchFixtures()
@@ -151,19 +210,25 @@ import GRDB
         func fetchesLightweightMeetingReferencesForOneVault() throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let start = Date(timeIntervalSince1970: 1_800_000_000)
-            let olderID = try fixture.manager.dbQueue.write { db in
-                try fixture.insertMeeting(name: "Older", createdAt: start, in: db)
+            let unrecordedID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(name: "Unrecorded", createdAt: start.addingTimeInterval(1), in: db)
             }
-            let newerID = try fixture.manager.dbQueue.write { db in
-                try fixture.insertMeeting(name: "   ", createdAt: start.addingTimeInterval(1), in: db)
+            let recordedID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(
+                    name: "   ",
+                    createdAt: start,
+                    recordingStartedAt: start.addingTimeInterval(2),
+                    in: db
+                )
             }
 
             let references = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingReferences(vaultId: fixture.vault.id, in: db)
             }
 
-            #expect(references.map(\.id) == [newerID, olderID])
-            #expect(references.map(\.name) == [L10n.newMeeting, "Older"])
+            #expect(references.map(\.id) == [recordedID, unrecordedID])
+            #expect(references.map(\.name) == [L10n.newMeeting, "Unrecorded"])
+            #expect(references.map(\.recordingStartedAt) == [start.addingTimeInterval(2), start.addingTimeInterval(1)])
         }
     }
 
@@ -312,6 +377,7 @@ import GRDB
             description: String = "",
             projectId: UUID? = nil,
             createdAt: Date = .now,
+            recordingStartedAt: Date? = nil,
             calendarKey: CalendarEventKey? = nil,
             in db: Database
         ) throws -> UUID {
@@ -324,6 +390,7 @@ import GRDB
                 description: description,
                 createdAt: createdAt,
                 updatedAt: createdAt,
+                recordingStartedAt: recordingStartedAt,
                 calendarEventIcalUid: calendarKey?.icalUid,
                 calendarEventRecurrenceId: calendarKey?.recurrenceId
             ).insert(db)

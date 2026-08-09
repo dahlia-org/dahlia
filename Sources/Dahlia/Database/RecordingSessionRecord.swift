@@ -4,6 +4,23 @@ import GRDB
 /// ひとつづきの録音セッションを表す GRDB レコード。
 struct RecordingSessionRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
     static let databaseTableName = "recording_sessions"
+    static let hasRecordingEvidenceSQL = """
+    (
+        recording_sessions.endedAt IS NOT NULL
+        OR recording_sessions.duration IS NOT NULL
+        OR EXISTS (
+            SELECT 1
+            FROM transcript_segments
+            WHERE transcript_segments.sessionId = recording_sessions.id
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM recording_audio_segments
+            WHERE recording_audio_segments.recordingSessionId = recording_sessions.id
+              AND recording_audio_segments.sealedFrameCount > 0
+        )
+    )
+    """
 
     var id: UUID
     var meetingId: UUID

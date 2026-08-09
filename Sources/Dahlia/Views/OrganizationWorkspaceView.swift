@@ -385,7 +385,7 @@ struct OrganizationHierarchyView: View {
                 } label: {
                     VStack(alignment: .leading) {
                         Text(meeting.name)
-                        Text(meeting.createdAt, style: .date)
+                        Text(meeting.effectiveRecordingStartedAt, style: .date)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -405,7 +405,7 @@ struct OrganizationHierarchyView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(evidence.meeting.name)
-                        Text(evidence.meeting.createdAt, style: .date)
+                        Text(evidence.meeting.effectiveRecordingStartedAt, style: .date)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(evidence.note)

@@ -582,7 +582,7 @@ actor BatchTranscriptionCoordinator {
             vaultURL: job.vault.url,
             meetingId: job.meeting.id,
             projectName: job.projectName,
-            createdAt: job.meeting.createdAt,
+            createdAt: job.meeting.effectiveRecordingStartedAt,
             segments: detail.0.map(TranscriptSegment.init(from:)),
             recordingSessions: detail.1.map(RecordingSessionTimeline.init)
         )

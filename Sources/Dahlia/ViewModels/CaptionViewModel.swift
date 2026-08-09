@@ -1449,7 +1449,7 @@ final class CaptionViewModel: ObservableObject {
             }.value
             guard currentMeetingId == meetingId,
                   canReloadMeetingAfterBatchCompletion(meetingId) else { return }
-            store.recordingStartTime = loaded.createdAt
+            store.recordingStartTime = loaded.recordingStartedAt
             store.loadRecordingSessions(loaded.recordingSessions)
             store.configurePaging(
                 meetingId: meetingId,
@@ -1549,7 +1549,7 @@ final class CaptionViewModel: ObservableObject {
     }()
 
     private struct LoadedMeetingData {
-        let createdAt: Date?
+        let recordingStartedAt: Date?
         let recordingSessionRecords: [RecordingSessionRecord]
         let recordingSessions: [RecordingSessionTimeline]
         let initialTranscriptPage: TranscriptPage
@@ -1593,7 +1593,7 @@ final class CaptionViewModel: ObservableObject {
         )
 
         return try LoadedMeetingData(
-            createdAt: detail.meeting?.createdAt,
+            recordingStartedAt: detail.meeting?.effectiveRecordingStartedAt,
             recordingSessionRecords: detail.recordingSessions,
             recordingSessions: recordingSessions,
             initialTranscriptPage: initialTranscriptPage,
@@ -1824,7 +1824,7 @@ final class CaptionViewModel: ObservableObject {
                   self.meetingLoadGeneration == generation,
                   self.currentMeetingId == meetingId else { return }
 
-            self.store.recordingStartTime = loaded.createdAt
+            self.store.recordingStartTime = loaded.recordingStartedAt
             self.store.loadRecordingSessions(loaded.recordingSessions)
             self.store.configurePaging(
                 meetingId: meetingId,
@@ -2531,7 +2531,6 @@ final class CaptionViewModel: ObservableObject {
                 dbQueue: request.dbQueue,
                 existingMeetingId: existingMeetingId,
                 recordingStartDate: request.recordingStartTime,
-                updatesMeetingStartWhenTranscriptIsEmpty: true,
                 recordingSessionId: request.recordingSessionId,
                 transcriptionMode: request.transcriptionMode,
                 persistencePolicy: request.persistencePolicy,
@@ -3276,7 +3275,7 @@ final class CaptionViewModel: ObservableObject {
         let projectURL: URL?
         let projectName: String
         let projectDescription: String?
-        let createdAt: Date
+        let recordingStartedAt: Date
         let vaultURL: URL
         let noteText: String?
         let recordingSessions: [RecordingSessionTimeline]
@@ -3504,7 +3503,7 @@ final class CaptionViewModel: ObservableObject {
             projectURL: currentProjectURL,
             projectName: project?.path ?? selectedProjectName ?? "",
             projectDescription: project?.description,
-            createdAt: store.timeBase,
+            recordingStartedAt: store.timeBase,
             vaultURL: vaultURL,
             noteText: noteText.nilIfBlank,
             recordingSessions: store.recordingSessions,
@@ -3599,7 +3598,7 @@ final class CaptionViewModel: ObservableObject {
             projectURL: project.map { vaultURL.appending(path: $0.path, directoryHint: .isDirectory) },
             projectName: project?.path ?? "",
             projectDescription: project?.description,
-            createdAt: meeting.createdAt,
+            recordingStartedAt: meeting.effectiveRecordingStartedAt,
             vaultURL: vaultURL,
             noteText: snapshot.2?.text.nilIfBlank,
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
@@ -3664,7 +3663,7 @@ final class CaptionViewModel: ObservableObject {
                     meetingId: request.meetingId,
                     dbQueue: request.dbQueue,
                     recordingSessions: request.recordingSessions,
-                    timeBase: request.createdAt
+                    timeBase: request.recordingStartedAt
                 )
             }.value
             guard !summaryInput.text.isEmpty else { throw SummaryGenerationPreparationError.emptyTranscript }
@@ -3700,7 +3699,7 @@ final class CaptionViewModel: ObservableObject {
         let generatedSummary = try await summaryGenerationRunner(SummaryGenerationRunnerInput(
             promptContext: SummaryPromptContext(
                 meetingId: meetingId,
-                recordedAt: request.createdAt,
+                recordedAt: request.recordingStartedAt,
                 calendarEvent: calendarEvent,
                 projectName: promptProjectName,
                 projectDescription: request.projectDescription,
@@ -3763,7 +3762,7 @@ final class CaptionViewModel: ObservableObject {
                     vaultURL: request.vaultURL,
                     meetingId: meetingId,
                     projectName: exportResult.projectName,
-                    createdAt: request.createdAt,
+                    createdAt: request.recordingStartedAt,
                     segments: summaryInput.segments,
                     recordingSessions: request.recordingSessions,
                     screenshots: screenshots
@@ -3787,7 +3786,7 @@ final class CaptionViewModel: ObservableObject {
                     document: generatedSummary.document,
                     context: SummaryRenderContext(
                         meetingId: meetingId,
-                        createdAt: request.createdAt,
+                        createdAt: request.recordingStartedAt,
                         screenshots: screenshots
                     ),
                     fileName: generatedSummary.fileName

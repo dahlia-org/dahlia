@@ -7,6 +7,7 @@ import GRDB
 
     struct MeetingConversationMetricsMigrationTests {
         @Test
+        // swiftlint:disable:next function_body_length
         func migrationFromV30PreservesExistingRowsAndAddsCascadeTables() throws {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v30_organizationDescription")
@@ -29,7 +30,16 @@ import GRDB
             let segmentID = UUID()
             try queue.write { db in
                 try vault.insert(db)
-                try meeting.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name, meeting.status,
+                        meeting.duration, meeting.createdAt, meeting.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO transcript_segments (

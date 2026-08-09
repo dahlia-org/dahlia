@@ -47,8 +47,13 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
     var duration: TimeInterval?
     var createdAt: Date
     var updatedAt: Date
+    var recordingStartedAt: Date? = nil
     var calendarEventIcalUid: String? = nil
     var calendarEventRecurrenceId: String? = nil
+
+    var effectiveRecordingStartedAt: Date {
+        recordingStartedAt ?? createdAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -60,6 +65,7 @@ struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Equatable, Se
         case duration
         case createdAt
         case updatedAt
+        case recordingStartedAt
         case calendarEventIcalUid = "calendar_event_ical_uid"
         case calendarEventRecurrenceId = "calendar_event_recurrence_id"
     }

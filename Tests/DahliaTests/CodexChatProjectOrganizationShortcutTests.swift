@@ -129,7 +129,7 @@ import Foundation
         }
 
         private static func meetingReference(name: String) -> CodexChatMeetingReference {
-            CodexChatMeetingReference(id: .v7(), name: name, createdAt: .now)
+            CodexChatMeetingReference(id: .v7(), name: name, recordingStartedAt: .now)
         }
     }
 #endif

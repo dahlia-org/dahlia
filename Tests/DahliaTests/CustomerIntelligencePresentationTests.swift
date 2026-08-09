@@ -7,6 +7,118 @@ import GRDB
     import Testing
 
     @MainActor
+    struct CustomerIntelligenceRecencyTests {
+        @Test
+        // swiftlint:disable:next function_body_length
+        func meetingRecencyUsesRecordingStartWithCreationFallback() throws {
+            let fixture = try CustomerIntelligenceFixture()
+            let project = ProjectRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                parentProjectId: nil,
+                name: "Timeline",
+                createdAt: .now,
+                description: "",
+                projectType: .customer
+            )
+            let contact = ContactRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                email: "owner@example.com",
+                displayName: "Owner",
+                revision: 1,
+                createdAt: .now,
+                updatedAt: .now
+            )
+            let baseDate = Date(timeIntervalSince1970: 1_800_000_000)
+            let recordedLater = MeetingRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                projectId: project.id,
+                name: "Recorded later",
+                status: .ready,
+                createdAt: baseDate.addingTimeInterval(100),
+                updatedAt: baseDate.addingTimeInterval(100),
+                recordingStartedAt: baseDate.addingTimeInterval(300)
+            )
+            let creationFallback = MeetingRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                projectId: project.id,
+                name: "Creation fallback",
+                status: .ready,
+                createdAt: baseDate.addingTimeInterval(200),
+                updatedAt: baseDate.addingTimeInterval(200)
+            )
+            let topic = ConversationTopicRecord(
+                id: .v7(),
+                vaultId: fixture.vault.id,
+                title: "Timeline",
+                currentState: "Active",
+                revision: 1,
+                createdAt: baseDate,
+                updatedAt: baseDate
+            )
+            try fixture.manager.dbQueue.write { db in
+                try project.insert(db)
+                try contact.insert(db)
+                for meeting in [recordedLater, creationFallback] {
+                    try meeting.insert(db)
+                    try MeetingParticipantRecord(
+                        meetingId: meeting.id,
+                        contactId: contact.id,
+                        role: .required,
+                        responseStatus: .accepted,
+                        source: "test",
+                        createdAt: meeting.createdAt,
+                        updatedAt: meeting.createdAt
+                    ).insert(db)
+                }
+                try topic.insert(db)
+                for meeting in [recordedLater, creationFallback] {
+                    try ConversationTopicReferenceRecord(
+                        topicId: topic.id,
+                        resourceType: .meeting,
+                        resourceId: meeting.id,
+                        note: "Discussed",
+                        createdAt: meeting.createdAt,
+                        updatedAt: meeting.createdAt
+                    ).insert(db)
+                }
+            }
+
+            let fetchedContactDetail = try fixture.repository.fetchCustomerIntelligenceContactDetail(
+                id: contact.id,
+                vaultId: fixture.vault.id
+            )
+            let fetchedProjectDetail = try fixture.repository.fetchCustomerIntelligenceProjectDetail(
+                id: project.id,
+                vaultId: fixture.vault.id
+            )
+            let fetchedTopicDetail = try fixture.repository.fetchCustomerIntelligenceTopicDetail(
+                id: topic.id,
+                vaultId: fixture.vault.id
+            )
+            let overview = try fixture.repository.fetchCustomerIntelligenceOverview(
+                vaultId: fixture.vault.id,
+                scope: .all
+            )
+            let contactDetail = try #require(fetchedContactDetail)
+            let projectDetail = try #require(fetchedProjectDetail)
+            let topicDetail = try #require(fetchedTopicDetail)
+            let expectedDate = recordedLater.effectiveRecordingStartedAt
+
+            #expect(contactDetail.summary.lastInteractionAt == expectedDate)
+            #expect(contactDetail.recentMeetings.map(\.id) == [recordedLater.id, creationFallback.id])
+            #expect(projectDetail.summary.latestMeetingDate == expectedDate)
+            #expect(projectDetail.meetings.map(\.id) == [recordedLater.id, creationFallback.id])
+            #expect(topicDetail.overview.lastDiscussedAt == expectedDate)
+            #expect(topicDetail.meetings.map(\.meeting.id) == [recordedLater.id, creationFallback.id])
+            #expect(overview.recentMeetings.map(\.id) == [recordedLater.id, creationFallback.id])
+        }
+    }
+
+    @MainActor
     struct CustomerIntelligencePresentationTests {
         @Test
         func customerIntelligenceProjectCreationIsAtomicWithOrganizationReference() throws {

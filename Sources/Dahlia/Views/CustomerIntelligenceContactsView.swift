@@ -236,7 +236,7 @@ struct CustomerIntelligenceContactsView: View {
                             ForEach(detail.recentMeetings, id: \.id) { meeting in
                                 CustomerIntelligenceLinkRow(
                                     title: meeting.name,
-                                    subtitle: meeting.createdAt.formatted(date: .abbreviated, time: .omitted),
+                                    subtitle: meeting.effectiveRecordingStartedAt.formatted(date: .abbreviated, time: .omitted),
                                     systemImage: "calendar",
                                     action: { onOpenMeeting(meeting.id) }
                                 )

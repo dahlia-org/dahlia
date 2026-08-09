@@ -34,7 +34,16 @@ import GRDB
             try queue.write { db in
                 try vault.insert(db)
                 try project.insert(db)
-                try meeting.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        meeting.id, meeting.vaultId, meeting.projectId, meeting.name, meeting.status,
+                        meeting.duration, meeting.createdAt, meeting.updatedAt,
+                    ]
+                )
             }
 
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v25_customerIntelligence")

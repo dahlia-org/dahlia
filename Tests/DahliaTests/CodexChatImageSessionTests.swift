@@ -205,7 +205,7 @@ import Foundation
             session.addMeetingReference(CodexChatMeetingReference(
                 id: meetingID,
                 name: "Planning",
-                createdAt: .now
+                recordingStartedAt: .now
             ))
             session.draft = "Explain these"
             await session.addImageData([png, png])

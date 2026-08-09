@@ -93,7 +93,7 @@ import GRDB
             )
             try queue.write { db in
                 try vault.insert(db)
-                try meeting.insert(db)
+                try insertLegacyMeeting(meeting, into: db)
                 try insertLegacySession(session, into: db)
                 try insertLegacyAudioRanges(for: session, at: now, into: db)
             }
@@ -134,6 +134,19 @@ import GRDB
                     ]
                 )
             }
+        }
+
+        private func insertLegacyMeeting(_ meeting: MeetingRecord, into database: Database) throws {
+            try database.execute(
+                sql: """
+                INSERT INTO meetings (id, vaultId, projectId, name, status, duration, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    meeting.id, meeting.vaultId, meeting.projectId, meeting.name, meeting.status,
+                    meeting.duration, meeting.createdAt, meeting.updatedAt,
+                ]
+            )
         }
 
         private func insertLegacySession(_ session: RecordingSessionRecord, into database: Database) throws {

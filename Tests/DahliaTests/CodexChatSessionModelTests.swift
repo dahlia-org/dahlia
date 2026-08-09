@@ -237,7 +237,11 @@ import Foundation
             let meeting = Self.meetingReference(name: "Original", offset: 0)
             session.updateAvailableMeetings([meeting], catalogVaultID: vault.id)
             session.addMeetingReference(meeting)
-            let renamed = CodexChatMeetingReference(id: meeting.id, name: "Renamed", createdAt: meeting.createdAt)
+            let renamed = CodexChatMeetingReference(
+                id: meeting.id,
+                name: "Renamed",
+                recordingStartedAt: meeting.recordingStartedAt
+            )
             session.updateAvailableMeetings([renamed], catalogVaultID: vault.id)
 
             #expect(session.meetingDisplayName(for: meeting.id) == "Renamed")
@@ -303,7 +307,7 @@ import Foundation
                 service: TestCodexChatService(mode: .complete),
                 settings: settings
             )
-            let reference = CodexChatMeetingReference(id: .v7(), name: "Cached", createdAt: .now)
+            let reference = CodexChatMeetingReference(id: .v7(), name: "Cached", recordingStartedAt: .now)
             session.addMeetingReference(reference)
 
             session.updateAvailableMeetings([], catalogVaultID: nil)
@@ -802,7 +806,7 @@ import Foundation
             CodexChatMeetingReference(
                 id: .v7(),
                 name: name,
-                createdAt: .now.addingTimeInterval(offset)
+                recordingStartedAt: .now.addingTimeInterval(offset)
             )
         }
 

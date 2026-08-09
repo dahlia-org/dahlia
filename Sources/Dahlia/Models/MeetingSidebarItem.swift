@@ -11,10 +11,15 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
     var status: MeetingStatus
     var duration: TimeInterval?
     var createdAt: Date
+    var recordingStartedAt: Date?
     var calendarEventTitle: String?
     var searchMatchContext: MeetingSearchMatchContext?
 
     var id: UUID { meetingId }
+
+    var effectiveRecordingStartedAt: Date {
+        recordingStartedAt ?? createdAt
+    }
 
     init(
         meetingId: UUID,
@@ -25,6 +30,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         status: MeetingStatus,
         duration: TimeInterval?,
         createdAt: Date,
+        recordingStartedAt: Date? = nil,
         calendarEventTitle: String?,
         searchMatchContext: MeetingSearchMatchContext? = nil
     ) {
@@ -36,6 +42,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         self.status = status
         self.duration = duration
         self.createdAt = createdAt
+        self.recordingStartedAt = recordingStartedAt
         self.calendarEventTitle = calendarEventTitle
         self.searchMatchContext = searchMatchContext
     }
@@ -50,6 +57,7 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
             status: detail.status,
             duration: detail.duration,
             createdAt: detail.createdAt,
+            recordingStartedAt: detail.recordingStartedAt,
             calendarEventTitle: detail.calendarEvent?.title
         )
     }
@@ -63,22 +71,23 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
         status = row["status"]
         duration = row["duration"]
         createdAt = row["createdAt"]
+        recordingStartedAt = row["recordingStartedAt"]
         calendarEventTitle = row["calendarEventTitle"]
         searchMatchContext = nil
     }
 }
 
 struct MeetingSidebarCursor: Equatable, Sendable {
-    let createdAt: Date
+    let effectiveRecordingStartedAt: Date
     let meetingId: UUID
 
-    init(createdAt: Date, meetingId: UUID) {
-        self.createdAt = createdAt
+    init(effectiveRecordingStartedAt: Date, meetingId: UUID) {
+        self.effectiveRecordingStartedAt = effectiveRecordingStartedAt
         self.meetingId = meetingId
     }
 
     init(item: MeetingSidebarItem) {
-        createdAt = item.createdAt
+        effectiveRecordingStartedAt = item.effectiveRecordingStartedAt
         meetingId = item.meetingId
     }
 }

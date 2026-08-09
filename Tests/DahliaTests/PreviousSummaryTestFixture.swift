@@ -28,6 +28,7 @@ struct PreviousSummaryTestFixture {
         recurrenceId: String?,
         start: Date,
         recordedAt: Date? = nil,
+        recordingStartedAt: Date? = nil,
         vaultId: UUID? = nil,
         summary: SummaryDocument? = nil,
         invalidSummary: Bool = false
@@ -49,6 +50,7 @@ struct PreviousSummaryTestFixture {
             name: name,
             createdAt: recordedAt,
             updatedAt: recordedAt,
+            recordingStartedAt: recordingStartedAt,
             calendarEventIcalUid: icalUid,
             calendarEventRecurrenceId: recurrenceId
         )

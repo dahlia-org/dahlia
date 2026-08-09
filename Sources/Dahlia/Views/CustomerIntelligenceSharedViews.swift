@@ -32,7 +32,7 @@ struct CustomerIntelligenceMeetingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(meeting.name)
-            Text(meeting.createdAt, style: .date)
+            Text(meeting.effectiveRecordingStartedAt, style: .date)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let note {
