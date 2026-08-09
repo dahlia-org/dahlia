@@ -14,14 +14,9 @@ struct MeetingRecordingActivityTracker: Sendable {
         self.minimumRuntime = minimumRuntime
     }
 
-    mutating func recordingDidStart(
-        activeContexts: Set<MeetingAudioContext>,
-        firstSeenAt: [MeetingAudioContext: ContinuousClock.Instant],
-        at instant: ContinuousClock.Instant
-    ) {
+    mutating func recordingDidStart(at instant: ContinuousClock.Instant) {
         reset()
         recordingStartedAt = instant
-        armNativeContexts(activeContexts, firstSeenAt: firstSeenAt, at: instant)
     }
 
     mutating func observeBrowserCorroboration(
@@ -49,7 +44,7 @@ struct MeetingRecordingActivityTracker: Sendable {
         guard let recordingStartedAt else { return false }
         disarmUnqualifiedBrowserContexts(notIn: snapshot.observedContexts)
         armNativeContexts(
-            snapshot.activeContexts,
+            snapshot.observedContexts,
             firstSeenAt: snapshot.firstSeenAt,
             at: snapshot.observedAt
         )

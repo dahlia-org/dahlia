@@ -53,6 +53,108 @@ import Foundation
         }
 
         @Test
+        func reportsEachContextStartOnlyOnce() {
+            let now = ContinuousClock.now
+            var tracker = MeetingAudioProcessTransitionTracker()
+
+            _ = tracker.observe([], at: now)
+            let started = tracker.observe([.chrome], at: now.advanced(by: .seconds(1)))
+            let unchanged = tracker.observe([.chrome], at: now.advanced(by: .seconds(2)))
+
+            #expect(started.startedContexts == [.chrome])
+            #expect(unchanged.startedContexts.isEmpty)
+        }
+
+        @Test
+        func startNotificationPlannerIgnoresInitialAndRecordingSnapshots() {
+            let now = ContinuousClock.now
+            let initial = snapshot(started: [.zoom], at: now, isInitial: true)
+            let whileRecording = snapshot(started: [.zoom], at: now, isInitial: false)
+
+            #expect(MeetingStartNotificationPlanner.context(for: initial, isRecording: false) == nil)
+            #expect(MeetingStartNotificationPlanner.context(for: whileRecording, isRecording: true) == nil)
+        }
+
+        @Test
+        func startNotificationPlannerSupportsNativeAppsAndBrowsers() {
+            let now = ContinuousClock.now
+
+            #expect(MeetingStartNotificationPlanner.context(
+                for: snapshot(started: [.teams], at: now, isInitial: false),
+                isRecording: false
+            ) == .teams)
+            #expect(MeetingStartNotificationPlanner.context(
+                for: snapshot(started: [.chrome], at: now, isInitial: false),
+                isRecording: false
+            ) == .chrome)
+        }
+
+        @Test
+        func startNotificationPlannerCoalescesSimultaneousStartsByStablePriority() {
+            let candidate = MeetingStartNotificationPlanner.context(
+                for: snapshot(
+                    started: [.chrome, .teams, .zoom],
+                    at: ContinuousClock.now,
+                    isInitial: false
+                ),
+                isRecording: false
+            )
+
+            #expect(candidate == .zoom)
+        }
+
+        @Test
+        func notificationMetadataIsAvailableForEverySupportedContext() {
+            for context in MeetingAudioContext.allCases {
+                let application = context.notificationApplication
+                #expect(!application.name.isEmpty)
+                #expect(!application.bundleIdentifier.isEmpty)
+            }
+        }
+
+        @Test(arguments: [
+            (startNotificationsEnabled: true, automaticStopEnabled: false, isRecording: false, expected: true),
+            (startNotificationsEnabled: true, automaticStopEnabled: false, isRecording: true, expected: false),
+            (startNotificationsEnabled: false, automaticStopEnabled: true, isRecording: true, expected: true),
+            (startNotificationsEnabled: true, automaticStopEnabled: true, isRecording: true, expected: true),
+            (startNotificationsEnabled: false, automaticStopEnabled: false, isRecording: false, expected: false),
+            (startNotificationsEnabled: false, automaticStopEnabled: true, isRecording: false, expected: false),
+        ])
+        func processMonitoringMatchesEnabledConsumers(
+            startNotificationsEnabled: Bool,
+            automaticStopEnabled: Bool,
+            isRecording: Bool,
+            expected: Bool
+        ) {
+            let policy = MeetingAudioMonitoringPolicy(
+                startNotificationsEnabled: startNotificationsEnabled,
+                automaticStopEnabled: automaticStopEnabled,
+                isRecording: isRecording
+            )
+
+            #expect(policy.shouldMonitorProcesses == expected)
+        }
+
+        @Test
+        func browserWindowScanningIsReservedForAutomaticStopDuringRecording() {
+            #expect(MeetingAudioMonitoringPolicy(
+                startNotificationsEnabled: true,
+                automaticStopEnabled: true,
+                isRecording: true
+            ).shouldScanBrowserWindows)
+            #expect(!MeetingAudioMonitoringPolicy(
+                startNotificationsEnabled: true,
+                automaticStopEnabled: true,
+                isRecording: false
+            ).shouldScanBrowserWindows)
+            #expect(!MeetingAudioMonitoringPolicy(
+                startNotificationsEnabled: true,
+                automaticStopEnabled: false,
+                isRecording: true
+            ).shouldScanBrowserWindows)
+        }
+
+        @Test
         func multipleHelpersCollapseIntoOneBrowserContext() {
             let contexts = MeetingAudioProcessCatalog.contexts(for: [
                 "com.google.Chrome.helper",
@@ -121,6 +223,23 @@ import Foundation
 
             #expect(detection?.name == "Google Meet")
             #expect(detection?.browserContexts == [.chrome, .edge])
+        }
+
+        private func snapshot(
+            started: Set<MeetingAudioContext>,
+            at instant: ContinuousClock.Instant,
+            isInitial: Bool
+        ) -> MeetingAudioActivityMonitor.Snapshot {
+            MeetingAudioActivityMonitor.Snapshot(
+                observedContexts: started,
+                activeContexts: started,
+                startedContexts: started,
+                endedContexts: [],
+                firstSeenAt: Dictionary(uniqueKeysWithValues: started.map { ($0, instant) }),
+                lastSeenAt: Dictionary(uniqueKeysWithValues: started.map { ($0, instant) }),
+                observedAt: instant,
+                isInitial: isInitial
+            )
         }
     }
 #endif

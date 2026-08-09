@@ -9,7 +9,7 @@ import Foundation
         func recordingStartedBeforeMeetingStopsAfterEligibleMeetingEnds() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             let started = snapshot(active: [.chrome], started: [.chrome], at: now.advanced(by: .seconds(1)))
             let ended = snapshot(
@@ -39,11 +39,13 @@ import Foundation
         func recordingStartedDuringMeetingUsesExistingContext() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(
-                activeContexts: [.zoom],
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.zoom],
                 firstSeenAt: [.zoom: now.advanced(by: .seconds(-10))],
+                lastSeenAt: [.zoom: now],
                 at: now
-            )
+            ))
 
             let ended = snapshot(
                 ended: [.zoom],
@@ -57,14 +59,43 @@ import Foundation
         }
 
         @Test
+        func recordingDoesNotInheritContextRetainedOnlyByDisappearanceGrace() {
+            let now = ContinuousClock.now
+            let staleStartedAt = now.advanced(by: .seconds(-60))
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+
+            let retainedResult = tracker.shouldStop(after: snapshot(
+                active: [.zoom],
+                observed: [],
+                firstSeenAt: [.zoom: staleStartedAt],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(-1))],
+                at: now
+            ))
+            let endResult = tracker.shouldStop(after: snapshot(
+                ended: [.zoom],
+                firstSeenAt: [.zoom: staleStartedAt],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(-1))],
+                at: now.advanced(by: .seconds(4))
+            ))
+            let laterResult = tracker.shouldStop(after: snapshot(at: now.advanced(by: .seconds(30))))
+
+            #expect(!retainedResult)
+            #expect(!endResult)
+            #expect(!laterResult)
+        }
+
+        @Test
         func meetingRuntimeDoesNotReplaceMinimumRecordingRuntime() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(
-                activeContexts: [.zoom],
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.zoom],
                 firstSeenAt: [.zoom: now.advanced(by: .seconds(-20))],
+                lastSeenAt: [.zoom: now],
                 at: now
-            )
+            ))
 
             let result = tracker.shouldStop(after: snapshot(
                 ended: [.zoom],
@@ -80,7 +111,7 @@ import Foundation
         func shortContextDoesNotStopRecording() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             _ = tracker.shouldStop(after: snapshot(active: [.slack], started: [.slack], at: now))
             let ended = snapshot(
@@ -98,11 +129,13 @@ import Foundation
         func disappearanceGraceDoesNotCountTowardMinimumContextRuntime() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(
-                activeContexts: [.teams],
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.teams],
                 firstSeenAt: [.teams: now],
+                lastSeenAt: [.teams: now],
                 at: now
-            )
+            ))
 
             let ended = snapshot(
                 ended: [.teams],
@@ -119,7 +152,7 @@ import Foundation
         func reappearingContextMustSatisfyMinimumRuntimeAgain() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             _ = tracker.shouldStop(after: snapshot(
                 active: [.chrome],
@@ -167,11 +200,13 @@ import Foundation
             let now = ContinuousClock.now
             let startedAt = now.advanced(by: .seconds(-30))
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(
-                activeContexts: [.zoom, .chrome],
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.zoom, .chrome],
                 firstSeenAt: [.zoom: startedAt, .chrome: startedAt],
+                lastSeenAt: [.zoom: now, .chrome: now],
                 at: now
-            )
+            ))
             tracker.observeBrowserCorroboration(
                 browserContexts: [.chrome],
                 observedAudioContexts: [.chrome],
@@ -207,7 +242,7 @@ import Foundation
         func offlineRecordingWithoutSupportedContextDoesNotStop() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             let result = tracker.shouldStop(after: snapshot(at: now.advanced(by: .seconds(300))))
             #expect(!result)
@@ -219,7 +254,7 @@ import Foundation
         func uncorroboratedBrowserActivityDoesNotStopRecording() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             _ = tracker.shouldStop(after: snapshot(active: [.chrome], started: [.chrome], at: now))
             let result = tracker.shouldStop(after: snapshot(
@@ -237,7 +272,7 @@ import Foundation
             let now = ContinuousClock.now
             let rawAudioStartedAt = now.advanced(by: .seconds(-60))
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             _ = tracker.shouldStop(after: snapshot(
                 active: [.chrome],
@@ -276,7 +311,7 @@ import Foundation
         func browserAudioInterruptionBeforeWindowScanRestartsQualification() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             _ = tracker.shouldStop(after: snapshot(
                 active: [.chrome],
@@ -325,7 +360,7 @@ import Foundation
         func staleWindowScanCannotQualifyShortBrowserAudioActivity() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             tracker.observeBrowserCorroboration(
                 browserContexts: [.chrome],
@@ -359,7 +394,7 @@ import Foundation
         func waitsForEveryCorroboratedBrowserContextToEnd() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(activeContexts: [], firstSeenAt: [:], at: now)
+            tracker.recordingDidStart(at: now)
 
             let browsers: Set<MeetingAudioContext> = [.chrome, .edge]
             _ = tracker.shouldStop(after: snapshot(

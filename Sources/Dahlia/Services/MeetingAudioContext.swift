@@ -1,4 +1,4 @@
-enum MeetingAudioContext: Hashable, Sendable {
+enum MeetingAudioContext: CaseIterable, Hashable, Sendable {
     case zoom
     case teams
     case slack
@@ -22,6 +22,27 @@ enum MeetingAudioContext: Hashable, Sendable {
             false
         case .chrome, .edge, .brave, .arc, .firefox, .chromium, .vivaldi, .opera, .atlas, .comet:
             true
+        }
+    }
+
+    var notificationApplication: (name: String, bundleIdentifier: String) {
+        switch self {
+        case .zoom: ("Zoom", "us.zoom.xos")
+        case .teams: ("Microsoft Teams", "com.microsoft.teams2")
+        case .slack: ("Slack", "com.tinyspeck.slackmacgap")
+        case .discord: ("Discord", "com.hnc.Discord")
+        case .webex: ("Webex", "Cisco-Systems.Spark")
+        case .faceTime: ("FaceTime", "com.apple.FaceTime")
+        case .chrome: ("Google Chrome", "com.google.Chrome")
+        case .edge: ("Microsoft Edge", "com.microsoft.edgemac")
+        case .brave: ("Brave Browser", "com.brave.Browser")
+        case .arc: ("Arc", "company.thebrowser.Browser")
+        case .firefox: ("Firefox", "org.mozilla.firefox")
+        case .chromium: ("Chromium", "org.chromium.Chromium")
+        case .vivaldi: ("Vivaldi", "com.vivaldi.Vivaldi")
+        case .opera: ("Opera", "com.operasoftware.Opera")
+        case .atlas: ("Atlas", "com.openai.atlas")
+        case .comet: ("Comet", "ai.perplexity.comet")
         }
     }
 }

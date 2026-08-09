@@ -1,44 +1,24 @@
 import AppKit
 import Combine
-import CoreAudio
 import Foundation
 
-/// 会議候補の通知、カレンダー自動録音、入力プロセスに基づく録音停止を管理する。
+/// 入力プロセスに基づく会議候補の通知と録音停止、およびカレンダー自動録音を管理する。
 @MainActor
 // swiftlint:disable:next type_body_length
 final class MeetingDetectionService: ObservableObject {
-    private static let meetingBundleIDs: Set = [
-        "us.zoom.xos",
-        "com.microsoft.teams2",
-        "com.microsoft.teams",
-        "com.tinyspeck.slackmacgap",
-        "com.hnc.Discord",
-        "Cisco-Systems.Spark",
-        "com.apple.FaceTime",
-    ]
-
     var isRecording: () -> Bool = { false }
     var isActivelyRecording: () -> Bool = { false }
     var onAutomaticRecording: (CalendarEvent) -> Void = { _ in }
     var onAutomaticRecordingStop: () -> Void = {}
 
-    private var monitoredDeviceIDs: [AudioDeviceID] = []
-    private var microphoneMonitoringID: UUID?
-    @Published private var isMicrophoneInUse = false
-    @Published private var activeMeetingAppName: String?
-    @Published private var windowDetectedMeetingName: String?
     private var windowDetectedBrowserContexts = Set<MeetingAudioContext>()
-    private var suppressed = false
-    private var microphoneNotificationAttemptID: UUID?
     private var meetingAudioSnapshot: MeetingAudioActivityMonitor.Snapshot?
     private var recordingActivityTracker = MeetingRecordingActivityTracker()
     private var notificationSettingsSignature: String?
-    private var detectionCancellables = Set<AnyCancellable>()
     private var lifecycleCancellables = Set<AnyCancellable>()
     private var windowScanTimer: Timer?
     private var windowScanTask: Task<Void, Never>?
     private var windowScanTaskID: UUID?
-    private var workspaceObservers: [NSObjectProtocol] = []
     private var calendarPowerObservers: [NSObjectProtocol] = []
     private var calendarRefreshTask: Task<Void, Never>?
     private var calendarSourceRefreshTask: Task<Void, Never>?
@@ -48,14 +28,12 @@ final class MeetingDetectionService: ObservableObject {
     private var calendarAutoRecordingTask: Task<Void, Never>?
     private var isCalendarSchedulingSuspendedForSleep = false
     private var notificationAuthorizationTask: Task<Void, Never>?
-    private var microphoneDeviceRegistrationTask: Task<Void, Never>?
-    private var microphoneStatusCheckTask: Task<Void, Never>?
     private var meetingAudioMonitorCommandTask: Task<Void, Never>?
     private var meetingAudioMonitorCommandID: UUID?
-    private var meetingAudioDetectionGeneration: UInt64 = 0
+    private var meetingAudioMonitoringGeneration: UInt64 = 0
     private var isStarted = false
-    private var isMicrophoneDetectionRunning = false
-    private var isMeetingAudioDetectionRunning = false
+    private var isRecordingLifecycleActive = false
+    private var isMeetingAudioMonitoringRunning = false
     private let notificationService: MeetingNotificationService
     private let calendarAutoRecordingStore: CalendarAutoRecordingStore
     private let meetingAudioActivityMonitor: MeetingAudioActivityMonitor
@@ -93,9 +71,10 @@ final class MeetingDetectionService: ObservableObject {
     func stop() {
         guard isStarted else { return }
         isStarted = false
+        isRecordingLifecycleActive = false
         lifecycleCancellables.removeAll()
-        stopMicrophoneDetection()
-        stopMeetingAudioDetection()
+        stopWindowTitleScanning()
+        stopMeetingAudioMonitoring()
         calendarRefreshTask?.cancel()
         calendarRefreshTask = nil
         calendarSourceRefreshGeneration &+= 1
@@ -161,6 +140,7 @@ final class MeetingDetectionService: ObservableObject {
     private func reconcileSettings() {
         guard isStarted else { return }
         let settings = AppSettings.shared
+        reconcileMeetingAudioMonitoring()
         let settingsSignature = [
             settings.meetingDetectionEnabled.description,
             settings.microphoneMeetingNotificationsEnabled.description,
@@ -176,28 +156,6 @@ final class MeetingDetectionService: ObservableObject {
         ].joined(separator: "|")
         guard notificationSettingsSignature != settingsSignature else { return }
         notificationSettingsSignature = settingsSignature
-
-        let shouldDetectMicrophone = (settings.meetingDetectionEnabled
-            && settings.microphoneMeetingNotificationsEnabled)
-            || (settings.automaticMeetingEndRecordingStopEnabled && isActivelyRecording())
-
-        if shouldDetectMicrophone {
-            startMicrophoneDetection()
-        } else {
-            stopMicrophoneDetection()
-        }
-
-        if settings.automaticMeetingEndRecordingStopEnabled, isActivelyRecording() {
-            startMeetingAudioDetection()
-        } else {
-            stopMeetingAudioDetection()
-        }
-
-        if settings.automaticMeetingEndRecordingStopEnabled, isActivelyRecording() {
-            armRecordingActivityIfNeeded()
-        } else if !settings.automaticMeetingEndRecordingStopEnabled {
-            recordingActivityTracker.reset()
-        }
 
         notificationService.refreshCategories()
         notificationAuthorizationTask?.cancel()
@@ -405,161 +363,25 @@ final class MeetingDetectionService: ObservableObject {
         }
     }
 
-    // MARK: - マイク利用による会議通知
-
-    private func startMicrophoneDetection() {
-        guard !isMicrophoneDetectionRunning else { return }
-        isMicrophoneDetectionRunning = true
-        startMicrophoneMonitoring()
-        startAppMonitoring()
-        startWindowTitleScanning()
-        startCombinedDetection()
-    }
-
-    private func stopMicrophoneDetection() {
-        guard isMicrophoneDetectionRunning else { return }
-        isMicrophoneDetectionRunning = false
-        detectionCancellables.removeAll()
-        windowScanTimer?.invalidate()
-        windowScanTimer = nil
-        windowScanTask?.cancel()
-        windowScanTask = nil
-        windowScanTaskID = nil
-        monitoredDeviceIDs.removeAll()
-        if let microphoneMonitoringID {
-            Task {
-                await AudioHardwareQueryService.shared.stopMonitoring(ownerID: microphoneMonitoringID)
-            }
-        }
-        microphoneMonitoringID = nil
-        for observer in workspaceObservers {
-            NSWorkspace.shared.notificationCenter.removeObserver(observer)
-        }
-        workspaceObservers.removeAll()
-        isMicrophoneInUse = false
-        activeMeetingAppName = nil
-        windowDetectedMeetingName = nil
-        windowDetectedBrowserContexts.removeAll()
-        suppressed = false
-        microphoneNotificationAttemptID = nil
-        microphoneDeviceRegistrationTask?.cancel()
-        microphoneDeviceRegistrationTask = nil
-        microphoneStatusCheckTask?.cancel()
-        microphoneStatusCheckTask = nil
-    }
-
-    private func startMicrophoneMonitoring() {
-        let monitoringID = UUID()
-        microphoneMonitoringID = monitoringID
-        let onDeviceListChange: @Sendable () -> Void = { [weak self] in
-            Task { @MainActor in
-                self?.scheduleDeviceListenerRegistration()
-            }
-        }
-        microphoneDeviceRegistrationTask = Task { [weak self] in
-            await AudioHardwareQueryService.shared.startMonitoring(
-                ownerID: monitoringID,
-                onDeviceListChange: onDeviceListChange
-            )
-            await self?.registerDeviceListeners(monitoringID: monitoringID)
-        }
-    }
-
-    private func scheduleDeviceListenerRegistration() {
-        guard let monitoringID = microphoneMonitoringID else { return }
-        microphoneDeviceRegistrationTask?.cancel()
-        microphoneDeviceRegistrationTask = Task { [weak self] in
-            await self?.registerDeviceListeners(monitoringID: monitoringID)
-        }
-    }
-
-    private func registerDeviceListeners(monitoringID: UUID) async {
-        let deviceIDs = await AudioHardwareQueryService.shared.inputDeviceIDs()
-        guard !Task.isCancelled,
-              isMicrophoneDetectionRunning,
-              microphoneMonitoringID == monitoringID else { return }
-        let onRunningStateChange: @Sendable () -> Void = { [weak self] in
-            Task { @MainActor in
-                self?.scheduleMicrophoneStatusCheck()
-            }
-        }
-        await AudioHardwareQueryService.shared.replaceRunningStateListeners(
-            ownerID: monitoringID,
-            deviceIDs: deviceIDs,
-            onRunningStateChange: onRunningStateChange
-        )
-        guard !Task.isCancelled,
-              isMicrophoneDetectionRunning,
-              microphoneMonitoringID == monitoringID else { return }
-
-        monitoredDeviceIDs = deviceIDs
-        scheduleMicrophoneStatusCheck()
-    }
-
-    private func scheduleMicrophoneStatusCheck() {
-        microphoneStatusCheckTask?.cancel()
-        let deviceIDs = monitoredDeviceIDs
-        microphoneStatusCheckTask = Task { [weak self] in
-            let running = await AudioHardwareQueryService.shared.isAnyInputDeviceRunning(in: deviceIDs)
-            guard !Task.isCancelled else { return }
-            self?.applyMicrophoneRunningState(running)
-        }
-    }
-
-    private func applyMicrophoneRunningState(_ running: Bool) {
-        guard isMicrophoneDetectionRunning else { return }
-        if isMicrophoneInUse != running {
-            isMicrophoneInUse = running
-        }
-        if !running {
-            suppressed = false
-            microphoneNotificationAttemptID = nil
-        }
-    }
-
-    private func startAppMonitoring() {
-        let notificationCenter = NSWorkspace.shared.notificationCenter
-        let launchObserver = notificationCenter.addObserver(
-            forName: NSWorkspace.didLaunchApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkRunningMeetingApps()
-            }
-        }
-        let terminateObserver = notificationCenter.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkRunningMeetingApps()
-            }
-        }
-
-        workspaceObservers = [launchObserver, terminateObserver]
-        checkRunningMeetingApps()
-    }
-
-    private func checkRunningMeetingApps() {
-        let name = NSWorkspace.shared.runningApplications.first { app in
-            guard let bundleIdentifier = app.bundleIdentifier else { return false }
-            return Self.meetingBundleIDs.contains(bundleIdentifier)
-        }?.localizedName
-
-        if activeMeetingAppName != name {
-            activeMeetingAppName = name
-        }
-    }
+    // MARK: - ブラウザ会議ウィンドウ
 
     private func startWindowTitleScanning() {
+        guard windowScanTimer == nil else { return }
         windowScanTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.scanWindowTitles()
             }
         }
         scanWindowTitles()
+    }
+
+    private func stopWindowTitleScanning() {
+        windowScanTimer?.invalidate()
+        windowScanTimer = nil
+        windowScanTask?.cancel()
+        windowScanTask = nil
+        windowScanTaskID = nil
+        windowDetectedBrowserContexts.removeAll()
     }
 
     private func scanWindowTitles() {
@@ -571,7 +393,10 @@ final class MeetingDetectionService: ObservableObject {
             guard let self, windowScanTaskID == taskID else { return }
             windowScanTask = nil
             windowScanTaskID = nil
-            guard !Task.isCancelled, isMicrophoneDetectionRunning else { return }
+            guard !Task.isCancelled,
+                  AppSettings.shared.automaticMeetingEndRecordingStopEnabled,
+                  isRecordingLifecycleActive,
+                  isActivelyRecording() else { return }
             applyWindowDetection(detection, observedAt: ContinuousClock.now)
         }
     }
@@ -580,91 +405,75 @@ final class MeetingDetectionService: ObservableObject {
         _ detection: MeetingWindowDetection?,
         observedAt: ContinuousClock.Instant
     ) {
-        if windowDetectedMeetingName != detection?.name {
-            windowDetectedMeetingName = detection?.name
-        }
         windowDetectedBrowserContexts = detection?.browserContexts ?? []
         updateBrowserCorroboration(at: observedAt)
     }
 
-    private func startCombinedDetection() {
-        Publishers.CombineLatest3(
-            $isMicrophoneInUse.removeDuplicates(),
-            $activeMeetingAppName.removeDuplicates(),
-            $windowDetectedMeetingName.removeDuplicates()
-        )
-        .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
-        .sink { [weak self] micActive, meetingApp, windowMeeting in
-            Task { @MainActor [weak self] in
-                self?.evaluateDetection(
-                    micActive: micActive,
-                    meetingApp: meetingApp,
-                    windowMeeting: windowMeeting
-                )
-            }
-        }
-        .store(in: &detectionCancellables)
-    }
+    // MARK: - 会議音声プロセスによる開始通知と録音停止
 
-    private func evaluateDetection(micActive: Bool, meetingApp: String?, windowMeeting: String?) {
+    private func deliverStartNotification(for context: MeetingAudioContext) {
         let settings = AppSettings.shared
         guard settings.meetingDetectionEnabled,
               settings.microphoneMeetingNotificationsEnabled,
-              !isRecording(),
-              !suppressed,
-              microphoneNotificationAttemptID == nil,
-              micActive,
-              meetingApp != nil || windowMeeting != nil
+              !isRecording()
         else { return }
 
-        let attemptID = UUID()
-        microphoneNotificationAttemptID = attemptID
-        let appName = windowMeeting ?? meetingApp ?? ""
-        let bundleIdentifier = NSWorkspace.shared.runningApplications.first {
-            $0.localizedName == appName
-        }?.bundleIdentifier ?? "unknown"
         let calendarEvent = recentCalendarEvent()
+        let application = context.notificationApplication
         let meeting = DetectedMeeting(
             title: calendarEvent?.resolvedMeetingTitle ?? L10n.newMeeting,
-            appName: appName,
-            bundleIdentifier: bundleIdentifier,
+            appName: application.name,
+            bundleIdentifier: application.bundleIdentifier,
             calendarEvent: calendarEvent
         )
 
-        Task { [weak self, notificationService] in
-            let wasDelivered = await notificationService.deliverMicrophoneDetection(meeting)
-            guard let self, self.microphoneNotificationAttemptID == attemptID else { return }
-            self.microphoneNotificationAttemptID = nil
-            if wasDelivered {
-                self.suppressed = true
-            }
+        Task { [notificationService] in
+            await notificationService.deliverMicrophoneDetection(meeting)
         }
     }
 
-    // MARK: - 会議音声プロセスによる録音停止
-
     func recordingDidStart() {
-        guard AppSettings.shared.automaticMeetingEndRecordingStopEnabled else {
-            recordingActivityTracker.reset()
-            return
-        }
-        startMicrophoneDetection()
-        startMeetingAudioDetection()
-        armRecordingActivity(at: ContinuousClock.now)
-        scanWindowTitles()
+        isRecordingLifecycleActive = true
+        recordingActivityTracker.reset()
+        reconcileMeetingAudioMonitoring()
     }
 
     func recordingDidStop() {
+        isRecordingLifecycleActive = false
         recordingActivityTracker.reset()
-        stopMeetingAudioDetection()
-        stopMicrophoneDetectionIfUnused()
+        reconcileMeetingAudioMonitoring()
     }
 
-    private func startMeetingAudioDetection() {
-        guard !isMeetingAudioDetectionRunning else { return }
-        isMeetingAudioDetectionRunning = true
-        meetingAudioDetectionGeneration &+= 1
-        let generation = meetingAudioDetectionGeneration
+    private func reconcileMeetingAudioMonitoring() {
+        let settings = AppSettings.shared
+        let shouldNotifyMeetingStart = settings.meetingDetectionEnabled
+            && settings.microphoneMeetingNotificationsEnabled
+        let policy = MeetingAudioMonitoringPolicy(
+            startNotificationsEnabled: shouldNotifyMeetingStart,
+            automaticStopEnabled: settings.automaticMeetingEndRecordingStopEnabled,
+            isRecording: isRecordingLifecycleActive
+        )
+
+        if policy.shouldMonitorProcesses {
+            startMeetingAudioMonitoring()
+        } else {
+            stopMeetingAudioMonitoring()
+        }
+
+        if policy.shouldScanBrowserWindows {
+            armRecordingActivityIfNeeded()
+            startWindowTitleScanning()
+        } else {
+            recordingActivityTracker.reset()
+            stopWindowTitleScanning()
+        }
+    }
+
+    private func startMeetingAudioMonitoring() {
+        guard !isMeetingAudioMonitoringRunning else { return }
+        isMeetingAudioMonitoringRunning = true
+        meetingAudioMonitoringGeneration &+= 1
+        let generation = meetingAudioMonitoringGeneration
         enqueueMeetingAudioMonitorCommand { [weak self, meetingAudioActivityMonitor] in
             await meetingAudioActivityMonitor.start(
                 onChange: { [weak self] snapshot in
@@ -677,10 +486,10 @@ final class MeetingDetectionService: ObservableObject {
         }
     }
 
-    private func stopMeetingAudioDetection() {
-        guard isMeetingAudioDetectionRunning else { return }
-        isMeetingAudioDetectionRunning = false
-        meetingAudioDetectionGeneration &+= 1
+    private func stopMeetingAudioMonitoring() {
+        guard isMeetingAudioMonitoringRunning else { return }
+        isMeetingAudioMonitoringRunning = false
+        meetingAudioMonitoringGeneration &+= 1
         meetingAudioSnapshot = nil
         recordingActivityTracker.reset()
         enqueueMeetingAudioMonitorCommand { [meetingAudioActivityMonitor] in
@@ -707,35 +516,42 @@ final class MeetingDetectionService: ObservableObject {
         _ snapshot: MeetingAudioActivityMonitor.Snapshot,
         generation: UInt64
     ) {
-        guard isMeetingAudioDetectionRunning,
-              generation == meetingAudioDetectionGeneration else { return }
+        guard isMeetingAudioMonitoringRunning,
+              generation == meetingAudioMonitoringGeneration else { return }
         meetingAudioSnapshot = snapshot
-        let recordingIsActive = isActivelyRecording()
+        let recordingIsActive = isRecordingLifecycleActive && isActivelyRecording()
+
+        if let context = MeetingStartNotificationPlanner.context(
+            for: snapshot,
+            isRecording: isRecording()
+        ) {
+            deliverStartNotification(for: context)
+        }
 
         if AppSettings.shared.automaticMeetingEndRecordingStopEnabled, recordingIsActive {
             armRecordingActivityIfNeeded(at: snapshot.observedAt)
             if recordingActivityTracker.shouldStop(after: snapshot) {
                 onAutomaticRecordingStop()
             }
-        } else if !recordingIsActive {
+        } else if isRecordingLifecycleActive, !recordingIsActive {
+            isRecordingLifecycleActive = false
             recordingActivityTracker.reset()
-            stopMeetingAudioDetection()
-            stopMicrophoneDetectionIfUnused()
+            reconcileMeetingAudioMonitoring()
         }
     }
 
     private func handleMeetingAudioQueryFailure(generation: UInt64) {
-        guard isMeetingAudioDetectionRunning,
-              generation == meetingAudioDetectionGeneration else { return }
+        guard isMeetingAudioMonitoringRunning,
+              generation == meetingAudioMonitoringGeneration else { return }
         recordingActivityTracker.observeBrowserCorroboration(
             browserContexts: [],
             observedAudioContexts: [],
             at: ContinuousClock.now
         )
-        guard !isActivelyRecording() else { return }
+        guard isRecordingLifecycleActive, !isActivelyRecording() else { return }
+        isRecordingLifecycleActive = false
         recordingActivityTracker.reset()
-        stopMeetingAudioDetection()
-        stopMicrophoneDetectionIfUnused()
+        reconcileMeetingAudioMonitoring()
     }
 
     private func armRecordingActivityIfNeeded(at instant: ContinuousClock.Instant = ContinuousClock.now) {
@@ -744,27 +560,18 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private func armRecordingActivity(at instant: ContinuousClock.Instant) {
-        recordingActivityTracker.recordingDidStart(
-            activeContexts: meetingAudioSnapshot?.activeContexts ?? [],
-            firstSeenAt: meetingAudioSnapshot?.firstSeenAt ?? [:],
-            at: instant
-        )
+        recordingActivityTracker.recordingDidStart(at: instant)
     }
 
     private func updateBrowserCorroboration(at instant: ContinuousClock.Instant) {
         guard AppSettings.shared.automaticMeetingEndRecordingStopEnabled,
+              isRecordingLifecycleActive,
               isActivelyRecording() else { return }
         recordingActivityTracker.observeBrowserCorroboration(
             browserContexts: windowDetectedBrowserContexts,
             observedAudioContexts: meetingAudioSnapshot?.observedContexts ?? [],
             at: instant
         )
-    }
-
-    private func stopMicrophoneDetectionIfUnused() {
-        let settings = AppSettings.shared
-        guard !settings.meetingDetectionEnabled || !settings.microphoneMeetingNotificationsEnabled else { return }
-        stopMicrophoneDetection()
     }
 
     private func recentCalendarEvent() -> CalendarEvent? {
