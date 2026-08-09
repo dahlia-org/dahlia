@@ -247,11 +247,16 @@ extension MeetingRepository {
                     in: db
                 )
             }
-            let meetings = try MeetingRecord
-                .filter(Column("vaultId") == vaultId && Column("projectId") == id)
-                .order(Column("createdAt").desc, Column("id").desc)
-                .limit(25)
-                .fetchAll(db)
+            let meetings = try MeetingRecord.fetchAll(
+                db,
+                sql: """
+                SELECT * FROM meetings
+                WHERE vaultId = ? AND projectId = ?
+                ORDER BY COALESCE(recordingStartedAt, createdAt) DESC, id DESC
+                LIMIT 25
+                """,
+                arguments: [vaultId, id]
+            )
             return CustomerIntelligenceWorkspaceData.ProjectDetail(
                 summary: summary,
                 references: links,
@@ -385,7 +390,7 @@ extension MeetingRepository {
                    COUNT(DISTINCT CASE WHEN meeting_participants.responseStatus <> 'declined'
                                       THEN meeting_participants.meetingId END) AS meetingCount,
                    MAX(CASE WHEN meeting_participants.responseStatus <> 'declined'
-                            THEN meetings.createdAt END) AS lastInteractionAt,
+                            THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastInteractionAt,
                    COUNT(DISTINCT organization_memberships.organizationId) AS membershipCount,
                    COUNT(DISTINCT conversation_topic_references.topicId) AS topicCount
             FROM contacts
@@ -503,7 +508,7 @@ extension MeetingRepository {
             WHERE meeting_participants.contactId = ?
               AND meetings.vaultId = ?
               AND meeting_participants.responseStatus <> 'declined'
-            ORDER BY meetings.createdAt DESC, meetings.id
+            ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id
             LIMIT 25
             """,
             arguments: [id, vaultId]
@@ -519,7 +524,8 @@ extension MeetingRepository {
             db,
             sql: """
             SELECT topics.*,
-                   MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                   MAX(CASE WHEN refs.resourceType = 'meeting'
+                            THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                        AS organizationCount
@@ -569,7 +575,8 @@ extension MeetingRepository {
             db,
             sql: """
             SELECT topics.*,
-                   MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                   MAX(CASE WHEN refs.resourceType = 'meeting'
+                            THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                        AS organizationCount
@@ -597,7 +604,8 @@ extension MeetingRepository {
             db,
             sql: """
             SELECT topics.*,
-                   MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                   MAX(CASE WHEN refs.resourceType = 'meeting'
+                            THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                    COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                        AS organizationCount
@@ -642,7 +650,7 @@ extension MeetingRepository {
               AND refs.resourceType = 'meeting'
               AND topics.vaultId = ?
               AND meetings.vaultId = topics.vaultId
-            ORDER BY meetings.createdAt DESC, meetings.id
+            ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id
             """,
             arguments: [id, vaultId]
         ).map {
@@ -819,7 +827,9 @@ extension MeetingRepository {
         let aggregateRows = try Row.fetchAll(
             db,
             sql: """
-            SELECT projectId, COUNT(*) AS meetingCount, MAX(createdAt) AS latestMeetingDate
+            SELECT projectId,
+                   COUNT(*) AS meetingCount,
+                   MAX(COALESCE(recordingStartedAt, createdAt)) AS latestMeetingDate
             FROM meetings
             WHERE vaultId = ? AND projectId IN (\(placeholders(projectIDs.count)))
             GROUP BY projectId
@@ -890,17 +900,22 @@ extension MeetingRepository {
                 WHERE meetings.vaultId = ?
                   AND meeting_participants.contactId IN (\(placeholders(scopeIDs.contacts.count)))
                   AND meeting_participants.responseStatus <> 'declined'
-                ORDER BY meetings.createdAt DESC, meetings.id DESC
+                ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id DESC
                 LIMIT ?
                 """,
                 arguments: arguments
             )
         }
-        return try MeetingRecord
-            .filter(Column("vaultId") == vaultId)
-            .order(Column("createdAt").desc, Column("id").desc)
-            .limit(limit)
-            .fetchAll(db)
+        return try MeetingRecord.fetchAll(
+            db,
+            sql: """
+            SELECT * FROM meetings
+            WHERE vaultId = ?
+            ORDER BY COALESCE(recordingStartedAt, createdAt) DESC, id DESC
+            LIMIT ?
+            """,
+            arguments: [vaultId, limit]
+        )
     }
 
     nonisolated static func scopedMeetingCount(

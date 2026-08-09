@@ -101,9 +101,9 @@ import Foundation
             let olderID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000002"))
             let newerID = try #require(UUID(uuidString: "019b6f79-18c5-7000-8000-000000000003"))
             let references = [
-                CodexChatMeetingReference(id: olderID, name: "Weekly Planning", createdAt: .now.addingTimeInterval(-60)),
-                CodexChatMeetingReference(id: selectedID, name: "Weekly Review", createdAt: .now),
-                CodexChatMeetingReference(id: newerID, name: "Weekly Planning", createdAt: .now.addingTimeInterval(-30)),
+                CodexChatMeetingReference(id: olderID, name: "Weekly Planning", recordingStartedAt: .now.addingTimeInterval(-60)),
+                CodexChatMeetingReference(id: selectedID, name: "Weekly Review", recordingStartedAt: .now),
+                CodexChatMeetingReference(id: newerID, name: "Weekly Planning", recordingStartedAt: .now.addingTimeInterval(-30)),
             ]
 
             let suggestions = CodexChatMeetingReference.suggestions(
@@ -131,8 +131,8 @@ import Foundation
 
         @Test
         func pickerSelectionMovesAndClamps() {
-            let first = CodexChatMeetingReference(id: .v7(), name: "First", createdAt: .now)
-            let second = CodexChatMeetingReference(id: .v7(), name: "Second", createdAt: .now)
+            let first = CodexChatMeetingReference(id: .v7(), name: "First", recordingStartedAt: .now)
+            let second = CodexChatMeetingReference(id: .v7(), name: "Second", recordingStartedAt: .now)
             let references = [first, second]
 
             #expect(CodexChatMeetingPickerSelection.moving(currentID: nil, in: references, by: 1) == first.id)

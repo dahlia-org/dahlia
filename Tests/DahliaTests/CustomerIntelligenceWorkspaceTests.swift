@@ -139,7 +139,21 @@ import GRDB
                 try vault.insert(db)
                 try otherVault.insert(db)
                 try project.insert(db)
-                try meeting.insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, projectId, name, status, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        meeting.id,
+                        meeting.vaultId,
+                        meeting.projectId,
+                        meeting.name,
+                        meeting.status,
+                        meeting.createdAt,
+                        meeting.updatedAt,
+                    ]
+                )
                 try db.execute(
                     sql: """
                     INSERT INTO insights
@@ -322,7 +336,11 @@ import GRDB
                 nodeKind: .organization,
                 name: "Acme"
             )
-            let meeting = try fixture.insertMeeting()
+            var meeting = try fixture.insertMeeting()
+            meeting.recordingStartedAt = meeting.createdAt.addingTimeInterval(300)
+            try fixture.manager.dbQueue.write { db in
+                try meeting.update(db)
+            }
             let topic = try fixture.repository.createConversationTopic(
                 vaultId: fixture.vault.id,
                 title: "Security review",
@@ -349,7 +367,11 @@ import GRDB
             let detail = try #require(fetchedDetail)
             #expect(detail.0.meetingCount == 1)
             #expect(detail.0.organizationCount == 1)
-            #expect(try abs(#require(detail.0.lastDiscussedAt).timeIntervalSince(meeting.createdAt)) < 0.001)
+            #expect(
+                abs(try #require(detail.0.lastDiscussedAt).timeIntervalSince(
+                    try #require(meeting.recordingStartedAt)
+                )) < 0.001
+            )
             #expect(detail.0.topic.revision > topic.revision)
             #expect(detail.1.first(where: { $0.resourceType == .meeting })?.note == "Owner assigned")
         }

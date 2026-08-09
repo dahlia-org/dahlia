@@ -139,7 +139,7 @@ struct CustomerIntelligenceOverviewView: View {
                     ForEach(overview.recentMeetings, id: \.id) { meeting in
                         overviewButton(
                             meeting.name,
-                            detail: meeting.createdAt.formatted(date: .abbreviated, time: .omitted),
+                            detail: meeting.effectiveRecordingStartedAt.formatted(date: .abbreviated, time: .omitted),
                             action: { onOpenMeeting(meeting.id) }
                         )
                     }

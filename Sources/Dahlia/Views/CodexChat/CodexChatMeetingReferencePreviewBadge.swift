@@ -20,7 +20,7 @@ struct CodexChatMeetingReferencePreviewBadge: View {
     }
 
     private var accessibilityValue: String {
-        reference?.createdAt.formatted(
+        reference?.recordingStartedAt.formatted(
             .dateTime.year().month(.abbreviated).day().hour().minute()
         ) ?? L10n.meetingUnavailable
     }

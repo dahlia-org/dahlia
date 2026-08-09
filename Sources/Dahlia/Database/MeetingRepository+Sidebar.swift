@@ -2,6 +2,8 @@ import Foundation
 import GRDB
 
 extension MeetingRepository {
+    nonisolated static let sidebarRecordingStartedAtSQL = "COALESCE(meetings.recordingStartedAt, meetings.createdAt)"
+
     nonisolated static func fetchMeetingSidebarItems(
         ids: [UUID],
         vaultId: UUID,
@@ -27,6 +29,7 @@ extension MeetingRepository {
                 meetings.status AS status,
                 meetings.duration AS duration,
                 meetings.createdAt AS createdAt,
+                meetings.recordingStartedAt AS recordingStartedAt,
                 calendar_events.title AS calendarEventTitle
             FROM meetings
             LEFT JOIN calendar_events
@@ -34,7 +37,7 @@ extension MeetingRepository {
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             WHERE meetings.vaultId = ?
               AND meetings.id IN (\(placeholders))
-            ORDER BY meetings.createdAt DESC, meetings.id DESC
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
             """,
             arguments: arguments
         )
@@ -70,6 +73,7 @@ extension MeetingRepository {
                 meetings.status AS status,
                 meetings.duration AS duration,
                 meetings.createdAt AS createdAt,
+                meetings.recordingStartedAt AS recordingStartedAt,
                 calendar_events.title AS calendarEventTitle
             FROM meetings
             LEFT JOIN calendar_events
@@ -77,7 +81,7 @@ extension MeetingRepository {
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             WHERE meetings.vaultId = ?
             \(cursorFilter.condition)
-            ORDER BY meetings.createdAt DESC, meetings.id DESC
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
             LIMIT ?
             """,
             arguments: arguments
@@ -115,6 +119,7 @@ extension MeetingRepository {
                 meetings.status AS status,
                 meetings.duration AS duration,
                 meetings.createdAt AS createdAt,
+                meetings.recordingStartedAt AS recordingStartedAt,
                 calendar_events.title AS calendarEventTitle,
                 calendar_events.description AS calendarEventDescription,
                 calendar_events.start AS calendarEventStart,
@@ -150,17 +155,17 @@ extension MeetingRepository {
         try Row.fetchAll(
             db,
             sql: """
-            SELECT id, name, createdAt
+            SELECT id, name, \(sidebarRecordingStartedAtSQL) AS recordingStartedAt
             FROM meetings
             WHERE vaultId = ?
-            ORDER BY createdAt DESC, id DESC
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, id DESC
             """,
             arguments: [vaultId]
         ).map { row in
             CodexChatMeetingReference(
                 id: row["id"],
                 name: (row["name"] as String).nilIfBlank ?? L10n.newMeeting,
-                createdAt: row["createdAt"]
+                recordingStartedAt: row["recordingStartedAt"]
             )
         }
     }

@@ -59,11 +59,11 @@ extension MeetingRepository {
         return (
             """
             AND (
-                meetings.createdAt < ?
-                OR (meetings.createdAt = ? AND meetings.id < ?)
+                \(sidebarRecordingStartedAtSQL) < ?
+                OR (\(sidebarRecordingStartedAtSQL) = ? AND meetings.id < ?)
             )
             """,
-            [cursor.createdAt, cursor.createdAt, cursor.meetingId]
+            [cursor.effectiveRecordingStartedAt, cursor.effectiveRecordingStartedAt, cursor.meetingId]
         )
     }
 
@@ -177,6 +177,7 @@ extension MeetingRepository {
                 meetings.status AS status,
                 meetings.duration AS duration,
                 meetings.createdAt AS createdAt,
+                meetings.recordingStartedAt AS recordingStartedAt,
                 calendar_events.title AS calendarEventTitle
             FROM meetings
             LEFT JOIN calendar_events
@@ -185,7 +186,7 @@ extension MeetingRepository {
             WHERE meetings.vaultId = ?
             \(metadataFilter.condition)
             \(cursorFilter.condition)
-            ORDER BY meetings.createdAt DESC, meetings.id DESC
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
             LIMIT ?
             """,
             arguments: arguments
@@ -201,11 +202,11 @@ extension MeetingRepository {
         var conditions: [String] = []
         var arguments: StatementArguments = []
         if let startDate = criteria.startDate {
-            conditions.append("meetings.createdAt >= ?")
+            conditions.append("\(sidebarRecordingStartedAtSQL) >= ?")
             arguments += [startDate]
         }
         if let endDate = criteria.endDate {
-            conditions.append("meetings.createdAt < ?")
+            conditions.append("\(sidebarRecordingStartedAtSQL) < ?")
             arguments += [endDate]
         }
         if !criteria.projectIDs.isEmpty {
@@ -281,6 +282,7 @@ private struct MeetingSidebarSearchCandidate: FetchableRecord {
     let status: MeetingStatus
     let duration: TimeInterval?
     let createdAt: Date
+    let recordingStartedAt: Date?
     let calendarEventTitle: String?
     var tags: [SearchTag]
 
@@ -293,12 +295,16 @@ private struct MeetingSidebarSearchCandidate: FetchableRecord {
         status = row["status"]
         duration = row["duration"]
         createdAt = row["createdAt"]
+        recordingStartedAt = row["recordingStartedAt"]
         calendarEventTitle = row["calendarEventTitle"]
         tags = []
     }
 
     var cursor: MeetingSidebarCursor {
-        MeetingSidebarCursor(createdAt: createdAt, meetingId: meetingId)
+        MeetingSidebarCursor(
+            effectiveRecordingStartedAt: recordingStartedAt ?? createdAt,
+            meetingId: meetingId
+        )
     }
 
     func matchContext(
@@ -340,6 +346,7 @@ private struct MeetingSidebarSearchCandidate: FetchableRecord {
             status: status,
             duration: duration,
             createdAt: createdAt,
+            recordingStartedAt: recordingStartedAt,
             calendarEventTitle: calendarEventTitle,
             searchMatchContext: matchContext
         )

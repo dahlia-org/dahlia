@@ -181,6 +181,10 @@ final class AppDatabaseManager: Sendable {
             try SharedOrganizationDomainsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v34_meetingRecordingStartedAt") { db in
+            try addMeetingRecordingStartedAt(in: db)
+        }
+
         return migrator
     }()
 
@@ -292,6 +296,50 @@ final class AppDatabaseManager: Sendable {
             ON meetings(vaultId, createdAt, id)
             """
         )
+    }
+
+    private static func addMeetingRecordingStartedAt(in db: Database) throws {
+        guard try db.tableExists("meetings") else { return }
+        try addColumnIfNeeded(
+            in: db,
+            table: "meetings",
+            column: "recordingStartedAt",
+            type: .datetime
+        )
+        let meetingColumns = try Set(db.columns(in: "meetings").map(\.name))
+        let hasRecordingEvidenceTables = try db.tableExists("recording_sessions")
+            && db.tableExists("transcript_segments")
+            && db.tableExists("recording_audio_segments")
+        if hasRecordingEvidenceTables {
+            try db.execute(
+                sql: """
+                UPDATE meetings
+                SET recordingStartedAt = (
+                    SELECT MIN(recording_sessions.startedAt)
+                    FROM recording_sessions
+                    WHERE recording_sessions.meetingId = meetings.id
+                      AND \(RecordingSessionRecord.hasRecordingEvidenceSQL)
+                )
+                WHERE recordingStartedAt IS NULL
+                """
+            )
+        }
+        if meetingColumns.isSuperset(of: ["id", "vaultId", "recordingStartedAt", "createdAt"]) {
+            try db.execute(
+                sql: """
+                CREATE INDEX IF NOT EXISTS meetings_on_vaultId_recordingStartedAt_createdAt_id
+                ON meetings(vaultId, COALESCE(recordingStartedAt, createdAt), id)
+                """
+            )
+        }
+        if meetingColumns.isSuperset(of: ["id", "projectId", "recordingStartedAt", "createdAt"]) {
+            try db.execute(
+                sql: """
+                CREATE INDEX IF NOT EXISTS meetings_on_projectId_recordingStartedAt_createdAt_id
+                ON meetings(projectId, COALESCE(recordingStartedAt, createdAt), id)
+                """
+            )
+        }
     }
 
     private static func addMeetingDescriptionColumnIfNeeded(in db: Database) throws {

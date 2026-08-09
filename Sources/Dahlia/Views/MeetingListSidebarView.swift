@@ -289,8 +289,8 @@ struct RecordingStatusBar: View {
     private var recordingTimelineStart: Date {
         activeRecordingSession?.startedAt
             ?? viewModel.activeTranscriptStore.recordingStartTime
-            ?? recordingMeetingItem?.createdAt
-            ?? Date()
+            ?? recordingMeetingItem?.effectiveRecordingStartedAt
+            ?? Date.now
     }
 
     private var transcriptionMode: TranscriptionMode {
@@ -870,7 +870,7 @@ private struct MeetingSidebarRow: View {
     }
 
     private var startTimeText: String {
-        Self.timeFormatter.string(from: item.createdAt)
+        Self.timeFormatter.string(from: item.effectiveRecordingStartedAt)
     }
 
     private var durationText: String {

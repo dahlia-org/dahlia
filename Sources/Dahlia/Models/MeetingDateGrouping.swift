@@ -14,7 +14,7 @@ enum MeetingDateGrouping {
         now: Date = Date()
     ) -> [MeetingDateGroup] {
         let grouped = Dictionary(grouping: meetings) { item in
-            calendar.startOfDay(for: item.createdAt)
+            calendar.startOfDay(for: item.effectiveRecordingStartedAt)
         }
 
         return grouped.keys.sorted(by: >).map { day in
@@ -23,8 +23,8 @@ enum MeetingDateGrouping {
                 title: title(for: day, calendar: calendar, now: now),
                 date: day,
                 meetings: grouped[day, default: []].sorted { lhs, rhs in
-                    if lhs.createdAt != rhs.createdAt {
-                        return lhs.createdAt > rhs.createdAt
+                    if lhs.effectiveRecordingStartedAt != rhs.effectiveRecordingStartedAt {
+                        return lhs.effectiveRecordingStartedAt > rhs.effectiveRecordingStartedAt
                     }
                     return lhs.meetingId.uuidString > rhs.meetingId.uuidString
                 }

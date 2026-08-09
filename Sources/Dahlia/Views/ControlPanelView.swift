@@ -607,8 +607,17 @@ struct ControlPanelView: View {
     }
 
     private var meetingMetadataText: String {
-        let createdAt = currentMeetingItem?.createdAt ?? viewModel.store.recordingStartTime ?? Date()
-        var parts = [createdAt.formatted(date: .abbreviated, time: .shortened)]
+        let activeRecordingStartedAt = viewModel.isListening
+            && viewModel.recordingMeetingId == viewModel.currentMeetingId
+            ? viewModel.store.recordingStartTime
+            : nil
+        let recordingStartedAt = currentMeetingItem?.recordingStartedAt
+            ?? activeRecordingStartedAt
+            ?? viewModel.draftMeeting?.linkedCalendarEvent?.startDate
+            ?? viewModel.store.recordingStartTime
+            ?? currentMeetingItem?.createdAt
+            ?? Date.now
+        var parts = [recordingStartedAt.formatted(date: .abbreviated, time: .shortened)]
 
         if let duration = currentMeetingItem?.duration {
             parts.append(formatDuration(duration))

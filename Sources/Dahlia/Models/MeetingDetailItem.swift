@@ -12,11 +12,16 @@ struct MeetingDetailItem: Equatable, FetchableRecord, Identifiable {
     var status: MeetingStatus
     var duration: TimeInterval?
     var createdAt: Date
+    var recordingStartedAt: Date?
     var hasSummary: Bool
     var tags: [TagInfo]
     var calendarEvent: CalendarEventDisplayInfo?
 
     var id: UUID { meetingId }
+
+    var effectiveRecordingStartedAt: Date {
+        recordingStartedAt ?? createdAt
+    }
 
     private static let fieldSeparator: Character = "\u{1E}"
     private static let recordSeparator: Character = "\u{1F}"
@@ -31,6 +36,7 @@ struct MeetingDetailItem: Equatable, FetchableRecord, Identifiable {
         status = row["status"]
         duration = row["duration"]
         createdAt = row["createdAt"]
+        recordingStartedAt = row["recordingStartedAt"]
         hasSummary = row["hasSummary"]
         tags = Self.decodeTags(row["tags"])
 

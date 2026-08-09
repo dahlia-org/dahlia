@@ -177,7 +177,10 @@ struct CustomerIntelligenceTopicsView: View {
                                 CustomerIntelligenceLinkRow(
                                     title: evidence.meeting.name,
                                     subtitle: evidence.note.nilIfBlank
-                                        ?? evidence.meeting.createdAt.formatted(date: .abbreviated, time: .omitted),
+                                        ?? evidence.meeting.effectiveRecordingStartedAt.formatted(
+                                            date: .abbreviated,
+                                            time: .omitted
+                                        ),
                                     systemImage: "calendar",
                                     action: { onOpenMeeting(evidence.meeting.id) }
                                 )

@@ -33,6 +33,163 @@ import os
             }
 
             #expect(persisted.status == .ready)
+            #expect(persisted.recordingStartedAt == startDate)
+        }
+
+        @Test
+        func firstAppendUsesActualRecordingStartInsteadOfPreRecordingEditTime() async throws {
+            let database = try makeDatabase()
+            let meetingId = UUID.v7()
+            let editedAt = Date(timeIntervalSince1970: 1_776_384_000)
+            let recordingStartedAt = editedAt.addingTimeInterval(600)
+            let store = TranscriptStore()
+            store.recordingStartTime = editedAt
+
+            try await database.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: testVault.id,
+                    projectId: nil,
+                    name: "Edited before recording",
+                    createdAt: editedAt,
+                    updatedAt: editedAt
+                ).insert(db)
+            }
+
+            _ = try await MeetingPersistenceService.createAppending(
+                store: store,
+                dbQueue: database.dbQueue,
+                existingMeetingId: meetingId,
+                recordingStartDate: recordingStartedAt
+            )
+
+            let persisted = try await database.dbQueue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                return try #require(meeting)
+            }
+
+            #expect(persisted.createdAt == editedAt)
+            #expect(persisted.recordingStartedAt == recordingStartedAt)
+            #expect(store.recordingStartTime == recordingStartedAt)
+        }
+
+        @Test
+        func laterAppendPreservesFirstRecordingStart() async throws {
+            let database = try makeDatabase()
+            let meetingId = UUID.v7()
+            let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
+            let firstRecordingStartedAt = createdAt.addingTimeInterval(60)
+            let laterRecordingStartedAt = createdAt.addingTimeInterval(600)
+
+            try await database.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: testVault.id,
+                    projectId: nil,
+                    name: "Recorded meeting",
+                    createdAt: createdAt,
+                    updatedAt: createdAt,
+                    recordingStartedAt: firstRecordingStartedAt
+                ).insert(db)
+            }
+
+            let store = TranscriptStore()
+            _ = try await MeetingPersistenceService.createAppending(
+                store: store,
+                dbQueue: database.dbQueue,
+                existingMeetingId: meetingId,
+                recordingStartDate: laterRecordingStartedAt
+            )
+
+            let persisted = try await database.dbQueue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                return try #require(meeting)
+            }
+
+            #expect(persisted.recordingStartedAt == firstRecordingStartedAt)
+            #expect(store.recordingStartTime == firstRecordingStartedAt)
+        }
+
+        @Test
+        // swiftlint:disable:next function_body_length
+        func failedFirstAppendIgnoresLegacyPlaceholderAndRestoresRecordingStart() async throws {
+            let database = try makeDatabase()
+            let meetingId = UUID.v7()
+            let placeholderSessionId = UUID.v7()
+            let createdAt = Date(timeIntervalSince1970: 1_776_384_000)
+            let failedStart = createdAt.addingTimeInterval(600)
+            let successfulStart = failedStart.addingTimeInterval(120)
+
+            try await database.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingId,
+                    vaultId: testVault.id,
+                    projectId: nil,
+                    name: "Legacy unrecorded meeting",
+                    createdAt: createdAt,
+                    updatedAt: createdAt
+                ).insert(db)
+                try RecordingSessionRecord(
+                    id: placeholderSessionId,
+                    meetingId: meetingId,
+                    startedAt: createdAt,
+                    endedAt: nil,
+                    duration: nil,
+                    offsetSeconds: 0,
+                    createdAt: createdAt,
+                    updatedAt: createdAt
+                ).insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO recording_audio_segments (
+                        id, recordingSessionId, source, segmentIndex, generationId, state,
+                        partialRelativePath, finalRelativePath, sampleRate, channelCount,
+                        sessionStartOffsetSeconds, createdAt, updatedAt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        UUID.v7(), placeholderSessionId, "microphone", 0, UUID.v7(), "recording",
+                        "empty.partial.caf", "empty.caf", 48_000, 1, 0, createdAt, createdAt,
+                    ]
+                )
+            }
+
+            let failedService = try await MeetingPersistenceService.createAppending(
+                store: TranscriptStore(),
+                dbQueue: database.dbQueue,
+                existingMeetingId: meetingId,
+                recordingStartDate: failedStart
+            )
+            await failedService.cancel()
+
+            let afterCancellation = try await database.dbQueue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                return (
+                    try #require(meeting),
+                    try RecordingSessionRecord.fetchOne(db, key: failedService.recordingSessionId),
+                    try RecordingSessionRecord.fetchOne(db, key: placeholderSessionId)
+                )
+            }
+            #expect(afterCancellation.0.recordingStartedAt == nil)
+            #expect(afterCancellation.1 == nil)
+            #expect(afterCancellation.2 != nil)
+
+            let retryStore = TranscriptStore()
+            let successfulService = try await MeetingPersistenceService.createAppending(
+                store: retryStore,
+                dbQueue: database.dbQueue,
+                existingMeetingId: meetingId,
+                recordingStartDate: successfulStart
+            )
+            let afterRetry = try await database.dbQueue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
+                return try #require(meeting)
+            }
+
+            #expect(afterRetry.recordingStartedAt == successfulStart)
+            #expect(retryStore.recordingStartTime == successfulStart)
+            _ = await successfulService.stop()
         }
 
         @Test

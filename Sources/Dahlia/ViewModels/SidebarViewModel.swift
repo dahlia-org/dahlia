@@ -408,7 +408,7 @@ final class SidebarViewModel {
                 SELECT
                     projects.id AS projectId,
                     COUNT(meetings.id) AS meetingCount,
-                    MAX(meetings.createdAt) AS latestMeetingDate
+                    MAX(COALESCE(meetings.recordingStartedAt, meetings.createdAt)) AS latestMeetingDate
                 FROM projects
                 LEFT JOIN meetings ON meetings.projectId = projects.id
                 WHERE projects.vaultId = ?

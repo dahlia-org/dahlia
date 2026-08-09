@@ -15,7 +15,7 @@ struct CodexChatMeetingReferenceDetailView: View {
                     .bold()
                     .lineLimit(2)
                 if let reference {
-                    Text(reference.createdAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
+                    Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
                         .foregroundStyle(.secondary)
                 }
             }

@@ -788,13 +788,13 @@ extension MeetingRepository {
                 return []
             }
             let currentCalendarEvent = try Self.fetchCalendarEvent(for: currentMeeting, in: db)
-            let cutoff = currentCalendarEvent?.start ?? currentMeeting.createdAt
+            let cutoff = currentCalendarEvent?.start ?? currentMeeting.effectiveRecordingStartedAt
             let rows = try Row.fetchCursor(
                 db,
                 sql: """
                 SELECT meetings.id AS meetingId,
                        meetings.name AS name,
-                       meetings.createdAt AS recordedAt,
+                       COALESCE(meetings.recordingStartedAt, meetings.createdAt) AS recordedAt,
                        calendar_events.start AS calendarStart,
                        calendar_events.end AS calendarEnd,
                        summaries.document AS summaryDocument
@@ -806,9 +806,9 @@ extension MeetingRepository {
                 WHERE meetings.vaultId = ?
                   AND meetings.calendar_event_ical_uid = ?
                   AND meetings.id <> ?
-                  AND COALESCE(calendar_events.start, meetings.createdAt) < ?
-                ORDER BY COALESCE(calendar_events.start, meetings.createdAt) DESC,
-                         meetings.createdAt DESC,
+                  AND COALESCE(calendar_events.start, meetings.recordingStartedAt, meetings.createdAt) < ?
+                ORDER BY COALESCE(calendar_events.start, meetings.recordingStartedAt, meetings.createdAt) DESC,
+                         COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC,
                          meetings.id DESC
                 """,
                 arguments: [currentMeeting.vaultId, icalUid, meetingId, cutoff]

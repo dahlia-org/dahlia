@@ -91,6 +91,104 @@ import GRDB
         }
 
         @Test
+        func meetingRecordingStartedAtMigrationBackfillsEarliestSessionAndAddsIndex() throws {
+            let queue = try DatabaseQueue()
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v33_sharedOrganizationDomains")
+            let vaultID = UUID.v7()
+            let meetingID = UUID.v7()
+            let unrecordedMeetingID = UUID.v7()
+            let placeholderSessionID = UUID.v7()
+            let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+            let firstRecordingStartedAt = createdAt.addingTimeInterval(60)
+            let secondRecordingStartedAt = createdAt.addingTimeInterval(120)
+
+            try queue.write { db in
+                try VaultRecord(
+                    id: vaultID,
+                    path: "/tmp/recording-start-migration",
+                    name: "Vault",
+                    createdAt: createdAt,
+                    lastOpenedAt: createdAt
+                ).insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO meetings (id, vaultId, name, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        meetingID, vaultID, "Migrated", createdAt, createdAt,
+                        unrecordedMeetingID, vaultID, "Unrecorded", createdAt, createdAt,
+                    ]
+                )
+                for startedAt in [secondRecordingStartedAt, firstRecordingStartedAt] {
+                    try RecordingSessionRecord(
+                        id: .v7(),
+                        meetingId: meetingID,
+                        startedAt: startedAt,
+                        endedAt: startedAt.addingTimeInterval(30),
+                        duration: 30,
+                        offsetSeconds: 0,
+                        createdAt: startedAt,
+                        updatedAt: startedAt
+                    ).insert(db)
+                }
+                try RecordingSessionRecord(
+                    id: placeholderSessionID,
+                    meetingId: unrecordedMeetingID,
+                    startedAt: createdAt,
+                    endedAt: nil,
+                    duration: nil,
+                    offsetSeconds: 0,
+                    createdAt: createdAt,
+                    updatedAt: createdAt
+                ).insert(db)
+                try db.execute(
+                    sql: """
+                    INSERT INTO recording_audio_segments (
+                        id, recordingSessionId, source, segmentIndex, generationId, state,
+                        partialRelativePath, finalRelativePath, sampleRate, channelCount,
+                        sessionStartOffsetSeconds, createdAt, updatedAt
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        UUID.v7(), placeholderSessionID, "microphone", 0, UUID.v7(), "recording",
+                        "empty.partial.caf", "empty.caf", 48_000, 1, 0, createdAt, createdAt,
+                    ]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            let result = try queue.read { db in
+                let meeting = try MeetingRecord.fetchOne(db, key: meetingID)
+                let unrecordedMeeting = try MeetingRecord.fetchOne(db, key: unrecordedMeetingID)
+                let indexSQL = try String.fetchOne(
+                    db,
+                    sql: "SELECT sql FROM sqlite_master WHERE name = ?",
+                    arguments: ["meetings_on_vaultId_recordingStartedAt_createdAt_id"]
+                )
+                let projectIndexSQL = try String.fetchOne(
+                    db,
+                    sql: "SELECT sql FROM sqlite_master WHERE name = ?",
+                    arguments: ["meetings_on_projectId_recordingStartedAt_createdAt_id"]
+                )
+                return (
+                    try #require(meeting),
+                    try #require(unrecordedMeeting),
+                    try #require(indexSQL),
+                    try #require(projectIndexSQL)
+                )
+            }
+
+            #expect(result.0.createdAt == createdAt)
+            #expect(result.0.recordingStartedAt == firstRecordingStartedAt)
+            #expect(result.1.recordingStartedAt == nil)
+            #expect(result.2.contains("COALESCE(recordingStartedAt, createdAt)"))
+            #expect(result.3.contains("COALESCE(recordingStartedAt, createdAt)"))
+        }
+
+        @Test
         func projectHierarchyMigrationPreservesUUIDsAndSynthesizesIntermediateProjects() throws {
             let queue = try DatabaseQueue()
             let vaultID = UUID.v7()

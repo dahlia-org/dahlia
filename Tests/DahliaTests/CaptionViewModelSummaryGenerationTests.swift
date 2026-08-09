@@ -99,6 +99,36 @@ import GRDB
         }
 
         @Test
+        func backgroundSummaryUsesRecordingStartInsteadOfMeetingCreationTime() async throws {
+            let fixture = try SummaryGenerationFixture()
+            defer { fixture.removeFiles() }
+            let runner = BlockingSummaryRunner()
+            let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
+            let recordingStartedAt = fixture.first.createdAt.addingTimeInterval(600)
+            try await fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET recordingStartedAt = ? WHERE id = ?",
+                    arguments: [recordingStartedAt, fixture.first.id]
+                )
+            }
+
+            viewModel.triggerManualSummaries(
+                meetingIds: [fixture.first.id],
+                dbQueue: fixture.database.dbQueue,
+                vaultURL: fixture.vaultURL,
+                options: SummaryGenerationOptions(
+                    previousMeetingCount: 0,
+                    exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
+                )
+            )
+            await runner.waitForCallCount(1)
+
+            #expect(runner.calls[0].recordedAt == recordingStartedAt)
+            runner.complete(meetingID: fixture.first.id, title: "Summary")
+            #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
+        }
+
+        @Test
         func summaryExportUsesProjectPathUpdatedDuringGeneration() async throws {
             let fixture = try SummaryGenerationFixture()
             defer { fixture.removeFiles() }
@@ -682,6 +712,7 @@ import GRDB
     final class BlockingSummaryRunner {
         struct Call {
             let meetingID: UUID
+            let recordedAt: Date
             let noteText: String?
             let projectName: String?
             let projectDescription: String?
@@ -700,6 +731,7 @@ import GRDB
         func run(_ input: SummaryGenerationRunnerInput) async throws -> SummaryService.GeneratedSummary {
             calls.append(Call(
                 meetingID: input.promptContext.meetingId,
+                recordedAt: input.promptContext.recordedAt,
                 noteText: input.noteText,
                 projectName: input.promptContext.projectName,
                 projectDescription: input.promptContext.projectDescription,

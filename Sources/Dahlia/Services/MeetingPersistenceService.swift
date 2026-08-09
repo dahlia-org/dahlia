@@ -30,6 +30,7 @@ final class MeetingPersistenceService {
     private(set) var projectName: String?
     private var recordingSession: RecordingSessionRecord
     private let createsMeeting: Bool
+    private let resetsRecordingStartOnCancel: Bool
     private let persistencePolicy: TranscriptPersistencePolicy
     private let now: () -> Date
     private nonisolated let transcriptWriter: TranscriptPersistenceWriter
@@ -42,6 +43,7 @@ final class MeetingPersistenceService {
         projectName: String?,
         recordingSession: RecordingSessionRecord,
         createsMeeting: Bool,
+        resetsRecordingStartOnCancel: Bool,
         existingSegmentIds: Set<UUID>,
         persistencePolicy: TranscriptPersistencePolicy,
         now: @escaping () -> Date = { .now }
@@ -54,6 +56,7 @@ final class MeetingPersistenceService {
         self.projectName = projectName
         self.recordingSession = recordingSession
         self.createsMeeting = createsMeeting
+        self.resetsRecordingStartOnCancel = resetsRecordingStartOnCancel
         self.persistencePolicy = persistencePolicy
         self.now = now
         self.transcriptWriter = TranscriptPersistenceWriter(
@@ -106,6 +109,7 @@ final class MeetingPersistenceService {
             projectName: prepared.projectName,
             recordingSession: prepared.recordingSession,
             createsMeeting: true,
+            resetsRecordingStartOnCancel: false,
             existingSegmentIds: [],
             persistencePolicy: persistencePolicy,
             now: now
@@ -118,7 +122,6 @@ final class MeetingPersistenceService {
         dbQueue: DatabaseQueue,
         existingMeetingId: UUID,
         recordingStartDate: Date = .now,
-        updatesMeetingStartWhenTranscriptIsEmpty: Bool = false,
         recordingSessionId: UUID = .v7(),
         transcriptionMode: TranscriptionMode = .realtime,
         persistencePolicy: TranscriptPersistencePolicy = .streaming,
@@ -130,8 +133,6 @@ final class MeetingPersistenceService {
                 meetingId: existingMeetingId,
                 recordingSessionId: recordingSessionId,
                 recordingStartDate: recordingStartDate,
-                existingRecordingStartTime: store.recordingStartTime,
-                updatesMeetingStartWhenTranscriptIsEmpty: updatesMeetingStartWhenTranscriptIsEmpty,
                 transcriptionMode: transcriptionMode,
                 retainAudioAfterBatch: retainAudioAfterBatch
             ),
@@ -141,9 +142,7 @@ final class MeetingPersistenceService {
         if !prepared.previousRecordingSessions.isEmpty {
             store.loadRecordingSessions(prepared.previousRecordingSessions.map(RecordingSessionTimeline.init))
         }
-        if store.recordingStartTime == nil {
-            store.recordingStartTime = prepared.resolvedRecordingStartTime
-        }
+        store.recordingStartTime = prepared.resolvedRecordingStartTime
 
         return MeetingPersistenceService(
             store: store,
@@ -153,6 +152,7 @@ final class MeetingPersistenceService {
             projectName: nil,
             recordingSession: prepared.recordingSession,
             createsMeeting: false,
+            resetsRecordingStartOnCancel: prepared.resetsRecordingStartOnCancel,
             existingSegmentIds: prepared.existingSegmentIds,
             persistencePolicy: persistencePolicy,
             now: now
@@ -219,6 +219,8 @@ final class MeetingPersistenceService {
         let sessionId = recordingSession.id
         let meetingId = meetingId
         let createsMeeting = createsMeeting
+        let resetsRecordingStartOnCancel = resetsRecordingStartOnCancel
+        let recordingStartedAt = recordingSession.startedAt
         try? await dbQueue.write { db in
             if createsMeeting {
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
@@ -227,6 +229,23 @@ final class MeetingPersistenceService {
                     .filter(Column("sessionId") == sessionId)
                     .deleteAll(db)
                 _ = try RecordingSessionRecord.deleteOne(db, key: sessionId)
+                if resetsRecordingStartOnCancel {
+                    try db.execute(
+                        sql: """
+                        UPDATE meetings
+                        SET recordingStartedAt = NULL
+                        WHERE id = ?
+                          AND recordingStartedAt = ?
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM recording_sessions
+                              WHERE recording_sessions.meetingId = meetings.id
+                                AND \(RecordingSessionRecord.hasRecordingEvidenceSQL)
+                          )
+                        """,
+                        arguments: [meetingId, recordingStartedAt]
+                    )
+                }
             }
         }
     }
@@ -258,8 +277,6 @@ private enum MeetingPersistenceStarter {
         let meetingId: UUID
         let recordingSessionId: UUID
         let recordingStartDate: Date
-        let existingRecordingStartTime: Date?
-        let updatesMeetingStartWhenTranscriptIsEmpty: Bool
         let transcriptionMode: TranscriptionMode
         let retainAudioAfterBatch: Bool
     }
@@ -269,6 +286,7 @@ private enum MeetingPersistenceStarter {
         let existingSegmentIds: Set<UUID>
         let previousRecordingSessions: [RecordingSessionRecord]
         let resolvedRecordingStartTime: Date
+        let resetsRecordingStartOnCancel: Bool
     }
 
     static func createNew(
@@ -295,6 +313,7 @@ private enum MeetingPersistenceStarter {
                 status: request.transcriptionMode == .realtime ? .ready : .transcriptNotFound,
                 createdAt: request.startedAt,
                 updatedAt: request.startedAt,
+                recordingStartedAt: request.startedAt,
                 calendarEventIcalUid: calendarEventKey?.icalUid,
                 calendarEventRecurrenceId: calendarEventKey?.recurrenceId
             ).insert(db)
@@ -332,20 +351,28 @@ private enum MeetingPersistenceStarter {
                 .filter(Column("meetingId") == request.meetingId)
                 .order(Column("offsetSeconds").asc, Column("startedAt").asc)
                 .fetchAll(db)
+            let existingRecordingStartTime = try Date.fetchOne(
+                db,
+                sql: """
+                SELECT MIN(recording_sessions.startedAt)
+                FROM recording_sessions
+                WHERE recording_sessions.meetingId = ?
+                  AND \(RecordingSessionRecord.hasRecordingEvidenceSQL)
+                """,
+                arguments: [request.meetingId]
+            )
             let firstSegmentStartTime = segments.first?.startTime
             let lastSegmentEndTime = segments.last.map { $0.endTime ?? $0.startTime }
-            let resolvedRecordingStartTime: Date
-            if let existingRecordingStartTime = request.existingRecordingStartTime {
-                resolvedRecordingStartTime = existingRecordingStartTime
-            } else if let firstSegmentStartTime {
-                resolvedRecordingStartTime = meeting?.createdAt ?? firstSegmentStartTime
-            } else {
-                resolvedRecordingStartTime = request.recordingStartDate
-                if request.updatesMeetingStartWhenTranscriptIsEmpty, var meeting {
-                    meeting.createdAt = request.recordingStartDate
-                    meeting.updatedAt = request.recordingStartDate
-                    try meeting.update(db)
-                }
+            let resolvedRecordingStartTime = meeting?.recordingStartedAt
+                ?? existingRecordingStartTime
+                ?? firstSegmentStartTime
+                ?? request.recordingStartDate
+            let resetsRecordingStartOnCancel = meeting?.recordingStartedAt == nil
+                && existingRecordingStartTime == nil
+                && firstSegmentStartTime == nil
+            if var meetingToUpdate = meeting, meetingToUpdate.recordingStartedAt == nil {
+                meetingToUpdate.recordingStartedAt = resolvedRecordingStartTime
+                try meetingToUpdate.update(db)
             }
 
             let recordingSession = makeRecordingSession(
@@ -365,7 +392,8 @@ private enum MeetingPersistenceStarter {
                 recordingSession: recordingSession,
                 existingSegmentIds: Set(segments.map(\.id)),
                 previousRecordingSessions: previousSessions,
-                resolvedRecordingStartTime: resolvedRecordingStartTime
+                resolvedRecordingStartTime: resolvedRecordingStartTime,
+                resetsRecordingStartOnCancel: resetsRecordingStartOnCancel
             )
         }
     }

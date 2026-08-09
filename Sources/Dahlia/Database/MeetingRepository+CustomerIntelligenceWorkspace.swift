@@ -282,7 +282,8 @@ extension MeetingRepository {
                 db,
                 sql: """
                 SELECT topics.*,
-                       MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                       MAX(CASE WHEN refs.resourceType = 'meeting'
+                                THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                            AS organizationCount
@@ -314,7 +315,7 @@ extension MeetingRepository {
                 WHERE organization_memberships.organizationId = ?
                   AND meetings.vaultId = ?
                   AND meeting_participants.responseStatus <> 'declined'
-                ORDER BY meetings.createdAt DESC
+                ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC
                 LIMIT 25
                 """,
                 arguments: [organizationId, vaultId]
@@ -361,7 +362,8 @@ extension MeetingRepository {
                 db,
                 sql: """
                 SELECT topics.*,
-                       MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                       MAX(CASE WHEN refs.resourceType = 'meeting'
+                                THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                            AS organizationCount
@@ -389,7 +391,8 @@ extension MeetingRepository {
                 db,
                 sql: """
                 SELECT topics.*,
-                       MAX(CASE WHEN refs.resourceType = 'meeting' THEN meetings.createdAt END) AS lastDiscussedAt,
+                       MAX(CASE WHEN refs.resourceType = 'meeting'
+                                THEN COALESCE(meetings.recordingStartedAt, meetings.createdAt) END) AS lastDiscussedAt,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'meeting' THEN refs.resourceId END) AS meetingCount,
                        COUNT(DISTINCT CASE WHEN refs.resourceType = 'organization' THEN refs.resourceId END)
                            AS organizationCount
@@ -430,7 +433,7 @@ extension MeetingRepository {
                   AND refs.resourceType = 'meeting'
                   AND topics.vaultId = ?
                   AND meetings.vaultId = topics.vaultId
-                ORDER BY meetings.createdAt DESC, meetings.id
+                ORDER BY COALESCE(meetings.recordingStartedAt, meetings.createdAt) DESC, meetings.id
                 """,
                 arguments: [id, vaultId]
             ).map {
