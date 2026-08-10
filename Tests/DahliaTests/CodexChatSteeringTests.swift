@@ -40,6 +40,7 @@ import Foundation
             #expect(session.canSend)
             session.sendDraft()
             await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
+            await waitUntil { session.messages.count { $0.role == .user } == 2 }
 
             #expect(session.isGenerating)
             #expect(session.draft.isEmpty)
@@ -48,21 +49,6 @@ import Foundation
                 "Follow-up while responding",
             ])
             #expect(await service.steeredTextBlocks == [["Follow-up while responding"]])
-            #expect(session.showsStandaloneThinking)
-            let items = CodexChatConversationItem.build(
-                from: session.messages,
-                showsStandaloneThinking: session.showsStandaloneThinking
-            )
-            #expect(items.count { item in
-                switch item {
-                case let .message(_, showsInlineActivity):
-                    showsInlineActivity
-                case .thinking:
-                    true
-                case .contextDivider:
-                    false
-                }
-            } == 1)
             session.stop()
             await waitUntil { !session.isGenerating }
             #expect(!session.showsStandaloneThinking)

@@ -24,6 +24,7 @@ Run the targeted suite first. Expand to the full suite for changes with broad ef
 - Mark a suite's struct `@MainActor` when it exercises `@MainActor` types; do not add per-test workarounds.
 - Use `AppDatabaseManager(path: ":memory:")` for database tests. Never access the user's Application Support database.
 - Replace network access, live calendars, Keychain, microphone, system audio, and user settings with fakes, stubs, or temporary storage.
+- Telemetry tests use a fake client or injected reporter and assert exact event names and allowlisted parameters. Never initialize a live telemetry SDK in tests.
 
 ## Test Design
 

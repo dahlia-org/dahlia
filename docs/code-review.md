@@ -10,6 +10,7 @@
 2. diff だけで判断せず、呼び出し元、状態の owner、失敗経路、関連テストを必要な範囲で確認する。
 3. `AGENTS.md` の Documentation Router から、変更に関係するアーキテクチャ節だけを読む。
 4. レビュー依頼は read-only として扱い、修正も明示的に依頼された場合だけ編集する。
+5. telemetry、analytics、Sentry、外部診断の変更では [`telemetry.md`](telemetry.md) を読み、許可外 field、内容・自由文・識別子、adapter 外の SDK 呼び出し、高頻度送信、送信待ち、ユーザー操作の成功への依存を確認する。
 
 ## Finding の採用基準
 

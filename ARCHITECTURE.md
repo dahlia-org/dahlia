@@ -15,7 +15,7 @@
 `Runtime Data Flow` と `Conformance Status` は現在の実装を記述する。未適合箇所は既成事実として追認せず、保証範囲、
 source of truth、再生成可能性、実測値に基づいて target state を再評価するか、`Remediation Plan` に従って減らす。
 
-最終確認日: 2026-07-25
+最終確認日: 2026-08-10
 
 ## Reliability Scope
 
@@ -84,6 +84,11 @@ runtime resource を所有しない。
 録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
+利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
+workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。
+SDK 初期化時の cache I/O は background で行い、準備完了前のイベントは欠測を許容する。送信完了を待たず、独自の再送・永続キューを持たない。許可データと SDK 境界は
+[`匿名テレメトリ収集ポリシー`](docs/telemetry.md) を正本とする。
+
 顧客インテリジェンスは録音クリティカルパス外の、再試行可能な補助永続化である。
 
 ```text
@@ -126,6 +131,7 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 | `durable` | immutable audio segment、確定文字起こし、確定翻訳、ユーザーが確定した保存操作 | 順序と完了を追跡し、停止時に drain する。失敗は呼び出し元へ返す |
 | `interactive UI` | 選択、画面遷移、開閉、操作開始のフィードバック | 重い処理を待つ前に応答し、投機的処理より優先する |
 | `rebuildable UI` | preview、表示 window、画像・Markdown cache、prefetch | 有界、キャンセル可能、集約または再生成可能にする |
+| `lossy observability` | 匿名の workflow event、技術診断 | 中核処理を待たせず、内容データを持たず、欠測を許容する |
 
 durable work を開始する UI は、操作を受理したことと保存が完了したことを区別して表示する。
 先に UI を更新する場合でも、永続化失敗を成功として隠さない。
@@ -215,6 +221,7 @@ MainActor では、表示状態の反映と短い計算だけを行う。同期 
 3. interactive UI は操作受付と進行状態を維持し、完了を待つ必要があることを明示する。
 4. durable work は破棄せず、所有された queue で順序を保つか、受付不能を明示的なエラーにする。
 5. recording-critical lane は UI を待たず、容量超過を録音失敗として表面化する。
+6. lossy observability は中止または欠測を許容し、他の class の成功条件にしない。
 
 preview や cache は意味を保てる範囲で集約・破棄できる。音声フレーム、確定文字起こし、確定翻訳、録音 range は
 UI の都合で破棄しない。正常停止では、capture を止めた後に in-flight routing、recognition、event pipeline、

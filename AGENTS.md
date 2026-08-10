@@ -30,6 +30,7 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
 | UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
+| Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [ADR-0025](docs/adr/0025-adopt-allowlisted-nonblocking-telemetry.md) |
 | Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
 | Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
@@ -47,7 +48,8 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
-- The app has exactly four SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- The app has exactly five SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
 - Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
 
 ## Code Review Rules
@@ -55,6 +57,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - Before reporting findings, read [`docs/code-review.md`](docs/code-review.md) and the architecture sections routed by the closest applicable `AGENTS.md`.
 - Report only actionable defects introduced or exposed by the change. Each finding must identify a reachable trigger, the concrete impact, and the violated Dahlia contract or missing validation. Do not report style, formatting, or other deterministic checks enforced by CI.
 - Prioritize recording and transcription integrity, released-user data, correctness, security, and sustained responsiveness. Do not trade durable or recording-critical data for UI performance; bound, coalesce, cancel, or rebuild only projection work whose source of truth is preserved.
+- Treat new telemetry fields and SDK calls as privacy and responsiveness changes. Reject values outside the telemetry policy and any path that can gate recording, persistence, or UI completion.
 
 ## Release Versioning
 

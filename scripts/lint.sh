@@ -3,6 +3,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+source "scripts/common.sh"
 
 is_ci=false
 if [[ "${CI:-}" == "true" ]]; then
@@ -18,6 +19,18 @@ else
     "$swiftformat_command" --cache ignore Sources/
 fi
 echo "SwiftFormat: done"
+
+echo ""
+echo "=== Telemetry policy ==="
+telemetrydeck_adapter="Sources/Dahlia/Services/TelemetryDeckClient.swift"
+telemetrydeck_imports="$(grep -RlE '^(@preconcurrency )?import TelemetryDeck$' Sources/Dahlia || true)"
+telemetrydeck_calls="$(grep -RlE 'TelemetryDeck\.' Sources/Dahlia || true)"
+if [ "$telemetrydeck_imports" != "$telemetrydeck_adapter" ] || [ "$telemetrydeck_calls" != "$telemetrydeck_adapter" ]; then
+    echo "error: TelemetryDeck imports and SDK calls must stay inside ${telemetrydeck_adapter}" >&2
+    exit 1
+fi
+validate_telemetrydeck_adapter "$telemetrydeck_adapter"
+echo "Telemetry policy: done"
 
 echo ""
 echo "=== SwiftLint ==="

@@ -67,6 +67,8 @@ The lint script and pre-commit hook use the exact SwiftFormat version managed by
 
 If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
 
+Set `TELEMETRYDECK_APP_ID` before `build-app.sh`, `notarize.sh`, or `run-dev.sh` to embed the public TelemetryDeck App ID. If it is absent, usage telemetry stays disabled. Debug builds send only Test Mode signals. Dahlia records allowlisted workflow outcomes without meeting content or identifiers and never waits for delivery; see [`docs/telemetry.md`](docs/telemetry.md).
+
 `build-app.sh` and `run-dev.sh` never upload files externally. When `notarize.sh` builds a Sentry-enabled release, it requires `SENTRY_AUTH_TOKEN` and `sentry-cli`, verifies that the executable and dSYM UUIDs match, then uploads the dSYM after notarization succeeds:
 
 ```bash
@@ -77,7 +79,7 @@ brew install getsentry/tools/sentry-cli
 
 Only debug symbols are uploaded by default. Source context can expose application source code in Sentry and must be enabled explicitly with `SENTRY_INCLUDE_SOURCES=1`. Keep `SENTRY_AUTH_TOKEN` in `.env.local`, Keychain, or a CI secret; it is never embedded in the app. Keep each release dSYM in a private archive and do not attach it to the public GitHub Release.
 
-The app sends crash stacks and explicitly captured errors, but disables default PII, automatic failed-request capture, network breadcrumbs, performance tracing, screenshots, and source upload. Configure server-side data scrubbing and IP address scrubbing in the Sentry project as an additional safeguard. Captured errors and tags must not include transcripts, audio, calendar details, API payloads, credentials, or user-specific paths.
+The app sends crash stacks, sanitized technical-error categories, and allowlisted short technical tags, but disables default PII, automatic and network breadcrumbs, failed-request capture, performance tracing, screenshots, and source upload. Configure server-side data scrubbing and IP address scrubbing in the Sentry project as an additional safeguard. Captured diagnostics must not include transcripts, audio, calendar details, API payloads, credentials, free-form errors, or user-specific paths.
 
 Before the first notarization run, create a notarytool keychain profile:
 
@@ -159,6 +161,7 @@ Sources/Dahlia/
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — SQLite toolkit
 - [sentry-cocoa](https://github.com/getsentry/sentry-cocoa) — Crash reporting for release builds
+- [TelemetryDeck SwiftSDK](https://github.com/TelemetryDeck/SwiftSDK) — Anonymous, non-blocking usage metrics
 - [Sparkle](https://github.com/sparkle-project/Sparkle) — Secure in-app updates
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — On-device language detection for batch transcription
 

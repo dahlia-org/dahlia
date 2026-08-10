@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/common.sh"
 
 cd "$PROJECT_DIR"
 
-# .env.local から環境変数を読み込む（SENTRY_DSN など）
+# .env.local から環境変数を読み込む（SENTRY_DSN、TELEMETRYDECK_APP_ID など）
 if [ -f .env.local ]; then
     set -a
     source .env.local
@@ -63,6 +63,7 @@ fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
 configure_sentry_plist "${CONTENTS}/Info.plist"
+configure_telemetrydeck_plist "${CONTENTS}/Info.plist"
 
 mkdir -p "$ICONSET_DIR"
 sips -z 16 16     "$ICON_SRC" --out "$ICONSET_DIR/icon_16x16.png"      > /dev/null
@@ -84,6 +85,7 @@ if [ -d "$RESOURCE_BUNDLE" ]; then
 fi
 embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
+embed_telemetrydeck_resources "$PROJECT_DIR" "$BUILD_DIR" "$CONTENTS"
 
 xattr -cr "${APP_BUNDLE}" || true
 

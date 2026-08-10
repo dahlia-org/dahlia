@@ -15,6 +15,7 @@ This file applies under `Sources/Dahlia/`. Changes under `Database/` must also f
 - When fixing a documented architecture deviation, follow its target and completion criteria in the
   [`Remediation Plan`](../../ARCHITECTURE.md#remediation-plan).
 - For a new or reversed architecture decision, start at the [`ADR index`](../../docs/adr/README.md) and read only the related records.
+- For telemetry, analytics, Sentry, or external diagnostics, read the [`Anonymous Telemetry Collection Policy`](../../docs/telemetry.md) before editing code.
 
 ## Safety Invariants
 
@@ -25,6 +26,8 @@ This file applies under `Sources/Dahlia/`. Changes under `Database/` must also f
 - `TranscriptStore` is a bounded, reloadable UI projection. Complete-transcript consumers read SQLite off MainActor.
 - Normal stop drains capture, recognition, the event pipeline, and persistence in the documented order.
 - `CaptionViewModel` owns requests and UI state, not AVFoundation or Speech runtime resources.
+- Feature code emits only typed `UsageTelemetryEvent` values. Never import a telemetry SDK outside its adapter, send content/free text/identifiers, or emit from per-frame, token, or segment paths.
+- Telemetry is lossy projection work: never await delivery, add an app-owned retry or durable queue, or include it in recording and persistence drain order.
 
 ## Concurrency
 

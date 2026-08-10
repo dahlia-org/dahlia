@@ -29,6 +29,7 @@ typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) as
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
 typealias SummaryGoogleDocsExporter = @MainActor (SummaryDocument, SummaryRenderContext, String) async throws -> String
 typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
+typealias UsageTelemetryReporter = @MainActor (UsageTelemetryEvent) -> Void
 
 private enum SummaryGoogleDocsExportError: Error {
     case summaryChanged
@@ -75,7 +76,30 @@ private struct RecordingStopContext {
     let dbQueue: DatabaseQueue?
     let recordingStart: Date
     let transcriptionMode: TranscriptionMode
+    let telemetry: RecordingTelemetryContext?
     let recordingSessionId: UUID?
+}
+
+struct RecordingTelemetryContext {
+    let mode: UsageTelemetryEvent.TranscriptionModeValue
+    let audioSources: UsageTelemetryEvent.AudioSources
+    var recordingFailureStage: UsageTelemetryEvent.RecordingFailureStage?
+    var transcriptionFailureStage: UsageTelemetryEvent.TranscriptionFailureStage?
+
+    func terminalEvents() -> [UsageTelemetryEvent] {
+        let recordingLifecycle: UsageTelemetryEvent.Lifecycle<UsageTelemetryEvent.RecordingFailureStage> =
+            recordingFailureStage.map { .failed($0) } ?? .completed
+        var events: [UsageTelemetryEvent] = [
+            .recording(recordingLifecycle, mode: mode, sources: audioSources),
+        ]
+        if mode == .realtime {
+            let transcriptionLifecycle: UsageTelemetryEvent
+                .Lifecycle<UsageTelemetryEvent.TranscriptionFailureStage> =
+                transcriptionFailureStage.map { .failed($0) } ?? .completed
+            events.append(.transcription(transcriptionLifecycle, mode: mode))
+        }
+        return events
+    }
 }
 
 private struct RecordingControllerStartRequest {
@@ -338,6 +362,7 @@ final class CaptionViewModel: ObservableObject {
         isExportingCurrentSummaryToGoogleDocs = true
         googleDocsExportErrorsByMeetingId.removeValue(forKey: meetingId)
         defer { isExportingCurrentSummaryToGoogleDocs = false }
+        usageTelemetryReporter(.export(.started, destination: .googleDocs, trigger: .manual))
 
         let context = SummaryRenderContext(
             meetingId: meetingId,
@@ -364,6 +389,7 @@ final class CaptionViewModel: ObservableObject {
             if let url = URL(string: "https://docs.google.com/document/d/\(fileId)/edit") {
                 NSWorkspace.shared.open(url)
             }
+            usageTelemetryReporter(.export(.completed, destination: .googleDocs, trigger: .manual))
             return true
         } catch {
             let message = GoogleAuthErrorFormatter.message(
@@ -372,6 +398,7 @@ final class CaptionViewModel: ObservableObject {
             )
             googleDocsExportErrorsByMeetingId[meetingId] = message
             ErrorReportingService.captureSanitized(.googleDocsExport)
+            usageTelemetryReporter(.export(.failed(.export), destination: .googleDocs, trigger: .manual))
             return false
         }
     }
@@ -549,6 +576,8 @@ final class CaptionViewModel: ObservableObject {
     private var isChatLiveModeEnabled = false
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private var batchTranscriptionRecoveryTask: Task<Void, Never>?
+    private var activeBatchTelemetrySessionIDs: Set<UUID> = []
+    private var activeRecordingTelemetryContext: RecordingTelemetryContext?
     private var onBatchTranscriptionRecoveryCompleted: (@MainActor @Sendable () async -> Void)?
     private var recordingStopTask: Task<Void, Never>?
     private var isTerminationRequested = false
@@ -593,6 +622,7 @@ final class CaptionViewModel: ObservableObject {
     private let summaryJobSleeper: SummaryJobSleeper
     private let googleDocsSummaryExporter: SummaryGoogleDocsExporter
     private let summaryDocumentLoader: SummaryDocumentLoader
+    private let usageTelemetryReporter: UsageTelemetryReporter
 
     private func updateCanBeginRecording() {
         let updatedValue = recordingLifecycle == .idle
@@ -635,6 +665,9 @@ final class CaptionViewModel: ObservableObject {
                     try SummaryRecord.fetchOne(db, key: meetingId)?.loadDocument()
                 }
             }.value
+        },
+        usageTelemetryReporter: @escaping UsageTelemetryReporter = { event in
+            UsageTelemetryService.shared.record(event)
         }
     ) {
         self.audioHardwareQueryService = audioHardwareQueryService
@@ -645,6 +678,7 @@ final class CaptionViewModel: ObservableObject {
         self.summaryJobSleeper = summaryJobSleeper
         self.googleDocsSummaryExporter = googleDocsSummaryExporter
         self.summaryDocumentLoader = summaryDocumentLoader
+        self.usageTelemetryReporter = usageTelemetryReporter
         bindStoreSegments()
         Task { [weak self] in
             await self?.refreshAvailableMicrophones()
@@ -1363,6 +1397,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func handleBatchTranscriptionUpdate(_ update: BatchTranscriptionUpdate) async {
+        recordBatchTranscriptionTelemetry(update.state)
         let isVisibleMeeting = currentMeetingId == update.meetingId
         if !isVisibleMeeting, update.state.changesUnprocessedRecordingsProjection {
             offscreenBatchTranscriptionChangeToken &+= 1
@@ -1391,6 +1426,23 @@ final class CaptionViewModel: ObservableObject {
             await reloadCurrentMeetingAfterBatchCompletion(meetingId: update.meetingId)
         }
         generatePendingBatchSummaryIfReady(meetingId: update.meetingId)
+    }
+
+    private func recordBatchTranscriptionTelemetry(_ state: BatchTranscriptionState) {
+        let sessionID = state.sessionId
+        switch state {
+        case .queued, .running:
+            guard activeBatchTelemetrySessionIDs.insert(sessionID).inserted else { return }
+            usageTelemetryReporter(.transcription(.started, mode: .batch))
+        case .completed:
+            guard activeBatchTelemetrySessionIDs.remove(sessionID) != nil else { return }
+            usageTelemetryReporter(.transcription(.completed, mode: .batch))
+        case .failed, .retranscriptionFailed, .interrupted:
+            guard activeBatchTelemetrySessionIDs.remove(sessionID) != nil else { return }
+            usageTelemetryReporter(.transcription(.failed(.transcription), mode: .batch))
+        case .recording, .awaitingConfirmation:
+            break
+        }
     }
 
     private func updatePendingBatchSummaryProgress(for update: BatchTranscriptionUpdate) {
@@ -2643,6 +2695,15 @@ final class CaptionViewModel: ObservableObject {
         previousBatchTranscriptionState: BatchTranscriptionState?
     ) async {
         guard recordingLifecycle == .starting(recordingSessionId) else { return }
+        let mode = UsageTelemetryEvent.TranscriptionModeValue(activeTranscriptionMode ?? .realtime)
+        let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources)
+            ?? requestedTelemetryAudioSources()
+        if let sources {
+            usageTelemetryReporter(.recording(.failed(.start), mode: mode, sources: sources))
+        }
+        if mode == .realtime {
+            usageTelemetryReporter(.transcription(.failed(.start), mode: mode))
+        }
         errorMessage = error.localizedDescription
         ErrorReportingService.capture(error, context: ["source": "startListening"])
         await recordingSessionController.abort()
@@ -2665,6 +2726,7 @@ final class CaptionViewModel: ObservableObject {
         activeTranscriptionMode = nil
         activeTranscriptionPlan = nil
         activeRecordingSessionId = nil
+        activeRecordingTelemetryContext = nil
         setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
@@ -2759,6 +2821,7 @@ final class CaptionViewModel: ObservableObject {
         startingSystemAudioEnabled = isSystemAudioEnabled
         startingLocaleIdentifier = selectedLocale
         recordingLifecycle = .starting(recordingSessionId)
+        activeRecordingTelemetryContext = nil
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
         let transcriptionMode = AppSettings.shared.transcriptionMode
@@ -2833,6 +2896,17 @@ final class CaptionViewModel: ObservableObject {
 
             completePersistenceStart(existingMeetingId: existingMeetingId)
             markRecordingStarted(recordingSessionId: recordingSessionId)
+            let mode = UsageTelemetryEvent.TranscriptionModeValue(transcriptionMode)
+            if let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources) {
+                activeRecordingTelemetryContext = RecordingTelemetryContext(
+                    mode: mode,
+                    audioSources: sources
+                )
+                usageTelemetryReporter(.recording(.started, mode: mode, sources: sources))
+                if transcriptionMode == .realtime {
+                    usageTelemetryReporter(.transcription(.started, mode: mode))
+                }
+            }
             if existingMeetingId == nil,
                let event = activeDraftMeeting?.linkedCalendarEvent,
                let meetingId = currentMeetingId {
@@ -2902,6 +2976,7 @@ final class CaptionViewModel: ObservableObject {
             dbQueue: ctx?.dbQueue ?? currentDbQueue,
             recordingStart: activeStore.timeBase,
             transcriptionMode: activeTranscriptionMode ?? .realtime,
+            telemetry: activeRecordingTelemetryContext,
             recordingSessionId: persistenceService?.recordingSessionId
         )
 
@@ -2915,13 +2990,28 @@ final class CaptionViewModel: ObservableObject {
     private func finishRecordingStop(_ context: RecordingStopContext) async {
         var stopResult: RecordingSessionController.StopResult?
         var firstFailureMessage: String?
+        var recordingFailureStage = context.telemetry?.recordingFailureStage
+        var transcriptionFailureStage = context.telemetry?.transcriptionFailureStage
         do {
             stopResult = try await recordingSessionController.stop()
             if context.transcriptionMode != .batch {
                 firstFailureMessage = stopResult?.captureFailureMessage
             }
+            if stopResult?.captureFailureMessage != nil {
+                recordingFailureStage = recordingFailureStage ?? .capture
+                if context.transcriptionMode == .realtime {
+                    transcriptionFailureStage = transcriptionFailureStage ?? .transcription
+                }
+            }
+            if context.transcriptionMode == .batch, stopResult?.batchRecordingSucceeded != true {
+                recordingFailureStage = recordingFailureStage ?? .persistence
+            }
         } catch {
             firstFailureMessage = error.localizedDescription
+            recordingFailureStage = recordingFailureStage ?? .stop
+            if context.transcriptionMode == .realtime {
+                transcriptionFailureStage = transcriptionFailureStage ?? .transcription
+            }
             ErrorReportingService.capture(error, context: ["source": "stopRecordingSession"])
             await recordingSessionController.abort()
         }
@@ -2936,6 +3026,8 @@ final class CaptionViewModel: ObservableObject {
                 try await stoppingPipeline.finish()
             } catch {
                 firstFailureMessage = firstFailureMessage ?? error.localizedDescription
+                recordingFailureStage = recordingFailureStage ?? .persistence
+                transcriptionFailureStage = transcriptionFailureStage ?? .persistence
                 ErrorReportingService.capture(error, context: ["source": "stopTranscriptionPersistence"])
             }
         }
@@ -2954,6 +3046,12 @@ final class CaptionViewModel: ObservableObject {
         failedPersistenceService = persistenceResult.succeeded ? nil : stoppingPersistenceService
         failedPersistenceMeetingId = persistenceResult.succeeded ? nil : stoppingPersistenceService?.meetingId
         failedTranscriptionEventPipeline = persistenceResult.succeeded ? nil : stoppingPipeline
+        if !persistenceResult.succeeded {
+            recordingFailureStage = recordingFailureStage ?? .persistence
+            if context.transcriptionMode == .realtime {
+                transcriptionFailureStage = transcriptionFailureStage ?? .persistence
+            }
+        }
         persistenceService = nil
         recordingContext = nil
         if persistenceResult.succeeded, let meetingId = context.meetingId {
@@ -2967,6 +3065,7 @@ final class CaptionViewModel: ObservableObject {
         activeTranscriptionMode = nil
         activeTranscriptionPlan = nil
         activeRecordingSessionId = nil
+        activeRecordingTelemetryContext = nil
         setActiveControllerSources([])
         pendingRealtimeRecognitionFailure = nil
         pendingLiveSubtitleWarning = nil
@@ -2979,6 +3078,12 @@ final class CaptionViewModel: ObservableObject {
         let recordingSessions = context.store.recordingSessions
         isFinalizingRecording = false
         finalizingMeetingId = nil
+
+        if var telemetry = context.telemetry {
+            telemetry.recordingFailureStage = recordingFailureStage
+            telemetry.transcriptionFailureStage = transcriptionFailureStage
+            telemetry.terminalEvents().forEach(usageTelemetryReporter)
+        }
 
         if context.transcriptionMode == .batch, let recordingSessionId = context.recordingSessionId {
             await finishStoppedBatchRecording(
@@ -3013,6 +3118,13 @@ final class CaptionViewModel: ObservableObject {
             segments: segments,
             recordingSessions: recordingSessions
         )
+    }
+
+    private func requestedTelemetryAudioSources() -> UsageTelemetryEvent.AudioSources? {
+        var sources: Set<RecordingAudioSource> = []
+        if selectedMicrophoneID != nil { sources.insert(.microphone) }
+        if startingSystemAudioEnabled ?? isSystemAudioEnabled { sources.insert(.system) }
+        return UsageTelemetryEvent.AudioSources(sources: sources)
     }
 
     private func retryFailedPersistenceIfNeeded() async -> Bool {
@@ -3282,6 +3394,7 @@ final class CaptionViewModel: ObservableObject {
         let options: SummaryGenerationOptions
         let generationSettings: SummaryGenerationSettings
         let retriesFailedPersistence: Bool
+        let telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
     }
 
     private struct BatchSummaryContext {
@@ -3473,7 +3586,8 @@ final class CaptionViewModel: ObservableObject {
                     meetingId: meetingId,
                     dbQueue: dbQueue,
                     vaultURL: vaultURL,
-                    options: options
+                    options: options,
+                    telemetryTrigger: .manual
                 )
                 startSummaryGeneration(request)
             } catch {
@@ -3509,7 +3623,8 @@ final class CaptionViewModel: ObservableObject {
             recordingSessions: store.recordingSessions,
             options: options,
             generationSettings: .current(),
-            retriesFailedPersistence: true
+            retriesFailedPersistence: true,
+            telemetryTrigger: .manual
         )
         requestShowSummaryTab = true
         return startSummaryGeneration(request)
@@ -3538,7 +3653,8 @@ final class CaptionViewModel: ObservableObject {
                 meetingId: meetingId,
                 dbQueue: first.dbQueue,
                 vaultURL: first.vaultURL,
-                options: options
+                options: options,
+                telemetryTrigger: .automaticAfterBatch
             )
             removePendingBatchSummaryRequests(pendingRequests)
             summaryGenerationJobs.removeAll { redundantJobIDs.contains($0.id) }
@@ -3577,7 +3693,8 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         dbQueue: DatabaseQueue,
         vaultURL: URL,
-        options: SummaryGenerationOptions
+        options: SummaryGenerationOptions,
+        telemetryTrigger: UsageTelemetryEvent.SummaryTrigger
     ) throws -> SummaryGenerationRequest {
         let snapshot = try dbQueue.read { db in
             let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
@@ -3604,7 +3721,8 @@ final class CaptionViewModel: ObservableObject {
             recordingSessions: snapshot.3.map(RecordingSessionTimeline.init),
             options: options,
             generationSettings: .current(),
-            retriesFailedPersistence: false
+            retriesFailedPersistence: false,
+            telemetryTrigger: telemetryTrigger
         )
     }
 
@@ -3640,6 +3758,7 @@ final class CaptionViewModel: ObservableObject {
         if currentMeetingId == request.meetingId {
             lastSummaryURL = nil
         }
+        usageTelemetryReporter(.summary(.started, trigger: request.telemetryTrigger))
 
         Task { [weak self] in
             await self?.runSummaryGeneration(request, job: job)
@@ -3739,6 +3858,7 @@ final class CaptionViewModel: ObservableObject {
 
         let exportOptions = request.options.exportOptions
         if exportOptions.exportsToVault {
+            usageTelemetryReporter(.export(.started, destination: .vault, trigger: .summaryGeneration))
             job.progress.vaultExport = .running
             do {
                 guard let vaultID = try repo.fetchMeeting(id: meetingId)?.vaultId else {
@@ -3768,18 +3888,21 @@ final class CaptionViewModel: ObservableObject {
                     screenshots: screenshots
                 )
                 job.progress.vaultExport = .completed
+                usageTelemetryReporter(.export(.completed, destination: .vault, trigger: .summaryGeneration))
                 if currentMeetingId == meetingId { lastSummaryURL = exportResult.fileURL }
             } catch {
-                try persistGeneratedSummary()
                 job.progress.vaultExport = .failed(error.localizedDescription)
                 summaryErrorsByMeetingId[meetingId] = error.localizedDescription
                 ErrorReportingService.capture(error, context: ["source": "vaultSummaryExport"])
+                usageTelemetryReporter(.export(.failed(.export), destination: .vault, trigger: .summaryGeneration))
+                try persistGeneratedSummary()
             }
         } else {
             try persistGeneratedSummary()
         }
 
         if exportOptions.exportsToGoogleDocs {
+            usageTelemetryReporter(.export(.started, destination: .googleDocs, trigger: .summaryGeneration))
             job.progress.googleDocsExport = .running
             do {
                 let fileId = try await exportSummaryToGoogleDocs(
@@ -3798,6 +3921,7 @@ final class CaptionViewModel: ObservableObject {
                     dbQueue: request.dbQueue
                 )
                 job.progress.googleDocsExport = .completed
+                usageTelemetryReporter(.export(.completed, destination: .googleDocs, trigger: .summaryGeneration))
             } catch {
                 let message = GoogleAuthErrorFormatter.message(
                     for: error,
@@ -3806,6 +3930,7 @@ final class CaptionViewModel: ObservableObject {
                 job.progress.googleDocsExport = .failed(message)
                 googleDocsExportErrorsByMeetingId[meetingId] = message
                 ErrorReportingService.captureSanitized(.googleDocsExport)
+                usageTelemetryReporter(.export(.failed(.export), destination: .googleDocs, trigger: .summaryGeneration))
             }
         }
     }
@@ -3827,6 +3952,11 @@ final class CaptionViewModel: ObservableObject {
         job: SummaryGenerationJob
     ) {
         summaryGeneratingMeetingIDs.remove(request.meetingId)
+        if job.progress.summaryGeneration.isFailed {
+            usageTelemetryReporter(.summary(.failed(.generation), trigger: request.telemetryTrigger))
+        } else {
+            usageTelemetryReporter(.summary(.completed, trigger: request.telemetryTrigger))
+        }
         if !job.hasFailure, job.progress.isAllDone {
             Task { [weak self] in
                 guard let self else { return }
@@ -4187,8 +4317,12 @@ final class CaptionViewModel: ObservableObject {
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
-                guard let self,
-                      await self.retryFailedPersistenceIfNeeded() else { return }
+                guard let self else { return }
+                self.usageTelemetryReporter(.export(.started, destination: .localFiles, trigger: .manual))
+                guard await self.retryFailedPersistenceIfNeeded() else {
+                    self.usageTelemetryReporter(.export(.failed(.export), destination: .localFiles, trigger: .manual))
+                    return
+                }
                 do {
                     try await Task.detached(priority: .userInitiated) {
                         let text = try FullTranscriptLoader.plainText(
@@ -4199,8 +4333,10 @@ final class CaptionViewModel: ObservableObject {
                         )
                         try text.write(to: url, atomically: true, encoding: .utf8)
                     }.value
+                    self.usageTelemetryReporter(.export(.completed, destination: .localFiles, trigger: .manual))
                 } catch {
                     self.errorMessage = error.localizedDescription
+                    self.usageTelemetryReporter(.export(.failed(.export), destination: .localFiles, trigger: .manual))
                 }
             }
         }
@@ -4281,11 +4417,19 @@ final class CaptionViewModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self,
                   self.activeRecordingSessionId == recordingSessionId else { return }
-            if let snapshot = await self.recordingSessionController.snapshot(),
-               snapshot.sessionId == recordingSessionId {
+            let snapshot = await self.recordingSessionController.snapshot()
+            if let snapshot, snapshot.sessionId == recordingSessionId {
                 self.setActiveControllerSources(snapshot.enabledSources)
             }
             if isFatal {
+                if var telemetry = self.activeRecordingTelemetryContext {
+                    let sourceWasRemoved = source.map { snapshot?.enabledSources.contains($0) == false } ?? false
+                    telemetry.recordingFailureStage = sourceWasRemoved ? .capture : .stop
+                    if telemetry.mode == .realtime {
+                        telemetry.transcriptionFailureStage = .transcription
+                    }
+                    self.activeRecordingTelemetryContext = telemetry
+                }
                 self.stopListening()
             }
         }

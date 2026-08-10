@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPOSITORY_DIR="$PROJECT_DIR"
 
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/create-github-release.sh"
@@ -46,7 +47,7 @@ write_appcast() {
 test_build_version_validation() {
     local plist_path="${TEST_DIR}/Info.plist"
 
-    cp "${PROJECT_DIR}/Resources/Info.plist" "$plist_path"
+    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 24' "$plist_path"
 
     [ "$(read_build_version "$plist_path")" = "24" ] || fail "failed to read build version"
@@ -341,6 +342,66 @@ test_whisperkit_license_embedding_validation() {
     expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
 }
 
+test_telemetrydeck_configuration_and_embedding() {
+    local plist_path="${TEST_DIR}/TelemetryInfo.plist"
+    local fake_project="${TEST_DIR}/telemetrydeck-project"
+    local build_dir="${fake_project}/build"
+    local checkout_dir="${fake_project}/.build/checkouts/SwiftSDK"
+    local contents_dir="${TEST_DIR}/TelemetryContents"
+
+    if grep -Eq 'codesign_path.*TelemetryDeck_TelemetryDeck\.bundle' \
+        "${REPOSITORY_DIR}/scripts/build-app.sh" \
+        "${REPOSITORY_DIR}/scripts/run-dev.sh" >/dev/null; then
+        fail "TelemetryDeck's resource-only bundle must not be signed separately"
+    fi
+
+    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
+    TELEMETRYDECK_APP_ID="test-app-id"
+    configure_telemetrydeck_plist "$plist_path"
+    [ "$(/usr/libexec/PlistBuddy -c 'Print :TELEMETRYDECK_APP_ID' "$plist_path")" = "test-app-id" ] \
+        || fail "TelemetryDeck App ID was not embedded"
+    unset TELEMETRYDECK_APP_ID
+    configure_telemetrydeck_plist "$plist_path"
+    expect_failure /usr/libexec/PlistBuddy -c 'Print :TELEMETRYDECK_APP_ID' "$plist_path"
+
+    mkdir -p "${build_dir}/TelemetryDeck_TelemetryDeck.bundle" "$checkout_dir"
+    printf '%s' 'privacy manifest' > "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
+    printf '%s' 'license fixture' > "${checkout_dir}/LICENSE"
+    embed_telemetrydeck_resources "$fake_project" "$build_dir" "$contents_dir"
+    cmp \
+        "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy" \
+        "${contents_dir}/Resources/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
+    cmp "$checkout_dir/LICENSE" "${contents_dir}/Resources/Licenses/TelemetryDeck/LICENSE"
+
+    rm "${build_dir}/TelemetryDeck_TelemetryDeck.bundle/PrivacyInfo.xcprivacy"
+    rmdir "${build_dir}/TelemetryDeck_TelemetryDeck.bundle"
+    expect_failure embed_telemetrydeck_resources "$fake_project" "$build_dir" "$contents_dir"
+}
+
+test_telemetrydeck_adapter_allowlist() {
+    local adapter_path="${TEST_DIR}/TelemetryDeckClient.swift"
+
+    printf '%s\n' \
+        'await Task.detached(priority: .utility) {' \
+        'let configuration = TelemetryDeck.Config(appID: appID)' \
+        'configuration.testMode = testMode' \
+        'TelemetryDeck.initialize(config: configuration)' \
+        'TelemetryDeck.signal(name, parameters: parameters)' > "$adapter_path"
+    validate_telemetrydeck_adapter "$adapter_path"
+
+    printf '%s\n' 'TelemetryDeck.updateDefaultUserID(to: userID)' >> "$adapter_path"
+    expect_failure validate_telemetrydeck_adapter "$adapter_path"
+
+    printf '%s\n' \
+        'await Task.detached(priority: .utility) {' \
+        'let configuration = TelemetryDeck.Config(appID: appID)' \
+        'configuration.testMode = testMode' \
+        'configuration.defaultParameters = parameters' \
+        'TelemetryDeck.initialize(config: configuration)' \
+        'TelemetryDeck.signal(name, parameters: parameters)' > "$adapter_path"
+    expect_failure validate_telemetrydeck_adapter "$adapter_path"
+}
+
 test_codesigning_keychain_unlock() {
     local keychain_log="${TEST_DIR}/keychain.log"
     local keychain_mode="locked"
@@ -388,6 +449,8 @@ test_release_upload_arguments
 test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
+test_telemetrydeck_configuration_and_embedding
+test_telemetrydeck_adapter_allowlist
 test_codesigning_keychain_unlock
 
 echo "Release script tests passed"
