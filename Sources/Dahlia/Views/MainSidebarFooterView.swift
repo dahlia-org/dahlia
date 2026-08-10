@@ -6,6 +6,8 @@ struct MainSidebarFooterView: View {
 
     @MainActor private static let mcpIcon = Bundle.appModule.image(forResource: "MCPLogo")
 
+    @Environment(\.openWindow) private var openWindow
+
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
     let onSelectVault: (VaultRecord) -> Void
@@ -28,6 +30,12 @@ struct MainSidebarFooterView: View {
                     })
                     .disabled(vault.id == currentVault?.id)
                 }
+
+                Divider()
+
+                Button(L10n.manageVaults, systemImage: "gearshape") {
+                    openWindow(id: WindowID.vaultManager)
+                }
             } label: {
                 HStack(spacing: 6) {
                     Label(currentVault?.name ?? L10n.noVaultSelected, systemImage: "externaldrive")
@@ -40,7 +48,8 @@ struct MainSidebarFooterView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, 10)
+                .padding(.trailing, 8)
                 .padding(.vertical, 5)
                 .background(
                     isVaultHovered ? Color.primary.opacity(0.08) : .clear,
