@@ -38,7 +38,7 @@
         <header class="legal-heading">
           <p class="section-index">PRIVACY</p>
           <h1>Privacy Policy</h1>
-          <p class="legal-effective-date">Effective July 22, 2026</p>
+          <p class="legal-effective-date">Effective August 10, 2026</p>
           <p>
             Dahlia is a macOS meeting transcription and note-taking application. This policy explains what data Dahlia
             accesses, how it is used and stored, when it leaves your Mac, and how you can manage or delete it.
@@ -76,22 +76,38 @@
           </p>
           <h3>Diagnostics</h3>
           <p>
-            Dahlia may send crash reports and explicitly captured technical errors to its diagnostics provider. Automatic
-            network capture and default personal information are disabled, and request, user, and extra fields are removed.
-            Dahlia does not intentionally attach meeting content or credentials. For Google integration failures, Dahlia
-            sends a fixed error category instead of the Google API response body or Calendar and Drive details.
+            Dahlia may send crash reports, sanitized technical-error categories, and allowlisted short technical context
+            such as the operation category, audio-source category, locale, diagnostic code, and small language-processing
+            counts to Sentry. Automatic network and lifecycle breadcrumb capture and default personal information are
+            disabled, and request, user, and extra fields are removed.
+          </p>
+          <h3>Anonymous usage analytics</h3>
+          <p>
+            Dahlia sends low-frequency workflow events to TelemetryDeck, such as whether recording, transcription,
+            summary generation, or export started, completed, or failed. These events can include fixed categories for
+            transcription mode, audio sources enabled when recording starts, trigger, destination, and failure stage. TelemetryDeck's SDK also
+            attaches an installation-specific hashed identifier, anonymous session identifier, app and SDK versions,
+            operating-system and device characteristics, language, locale, region, time zone, appearance, and
+            accessibility settings. It also supplies calendar buckets (such as hour and day of week), first-use date,
+            session counts, distinct usage days, and previous and average session duration. Dahlia does not attach
+            meeting content, names, email addresses, file paths, local
+            record identifiers, credentials, or free-form error messages to diagnostics or usage events.
           </p>
         </section>
 
         <section>
           <h2>2. How data is used</h2>
-          <p>Dahlia uses data only to provide user-facing features you choose, including:</p>
+          <p>Dahlia uses data to provide user-facing features you choose, including:</p>
           <ul>
             <li>recording, transcribing, organizing, searching, and displaying your meetings;</li>
             <li>showing your selected upcoming calendars and preparing a meeting from an event;</li>
             <li>associating an event with a meeting and using that context in a summary or AI chat you initiate; and</li>
             <li>exporting a summary to a Google Doc when you request it.</li>
           </ul>
+          <p>
+            Dahlia also uses the anonymous usage analytics and sanitized technical diagnostics described above to measure
+            feature reliability, investigate failures, and improve product quality.
+          </p>
           <p>
             Dahlia does not sell Google user data, use it for advertising or credit decisions, or use it to train or
             improve a general-purpose AI model.
@@ -118,6 +134,12 @@
               and in any database backups you create.
             </li>
             <li>Exported Google Docs remain in your Google Drive until you delete them there.</li>
+            <li>
+              The TelemetryDeck SDK keeps a bounded local queue for best-effort delivery. In UserDefaults it keeps recent
+              session details for 90 days and keeps first-use date and cumulative session and usage-day statistics until
+              the application data is removed. Anonymous analytics and diagnostics are retained by TelemetryDeck and
+              Sentry under their respective service policies.
+            </li>
           </ul>
           <p>
             Dahlia does not operate a developer server that receives or stores your Google Calendar events, Google Drive

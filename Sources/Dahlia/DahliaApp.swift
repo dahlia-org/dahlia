@@ -448,6 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard Self.hasMutationOwnership else { return }
         MeetingNotificationService.shared.install()
         ErrorReportingService.start()
+        UsageTelemetryService.shared.start()
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
         Task {

@@ -61,6 +61,7 @@ fi
 cp "Resources/Info.plist" "${CONTENTS}/Info.plist"
 configure_google_calendar_plist "${CONTENTS}/Info.plist"
 configure_sentry_plist "${CONTENTS}/Info.plist"
+configure_telemetrydeck_plist "${CONTENTS}/Info.plist"
 
 # アイコン生成（.iconset → .icns）
 ICON_SRC="Sources/Dahlia/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
@@ -86,6 +87,7 @@ if [ -d "$RESOURCE_BUNDLE" ]; then
 fi
 embed_sparkle_framework "$PROJECT_DIR" "$CONTENTS"
 embed_whisperkit_licenses "$PROJECT_DIR" "$CONTENTS"
+embed_telemetrydeck_resources "$PROJECT_DIR" "$BUILD_DIR" "$CONTENTS"
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 xattr -cr "${APP_BUNDLE}" || true

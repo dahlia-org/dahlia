@@ -3,6 +3,84 @@ import Foundation
 
 /// Sentry を用いたエラー報告サービス。
 enum ErrorReportingService {
+    private static let allowedSources: Set = [
+        "additionalMeetingRowsObservation",
+        "backupRestoreAudioCleanup",
+        "backupRestoreRelaunch",
+        "batchAudioPurge",
+        "batchAudioPurgeRecovery",
+        "batchLanguageDetectionFallback",
+        "batchRecording",
+        "batchTranscriptAudioFeatures",
+        "batchTranscriptExport",
+        "batchTranscription",
+        "batchTranscriptionFailurePersistence",
+        "batchTranscriptionQueue",
+        "batchTranscriptionStartupRecovery",
+        "batchTranscriptionTerminationPersistence",
+        "calendarEventRecording",
+        "calendarEventSelection",
+        "calendarMeetingNotification",
+        "calendarMeetingResolution",
+        "customer_intelligence_ingestion_error",
+        "deleteExportedScreenshots",
+        "deleteScreenshots",
+        "downloadScreenshot",
+        "folderImport",
+        "google_calendar_error",
+        "google_docs_export_error",
+        "google_drive_error",
+        "google_drive_export_folder_error",
+        "liveTranscription",
+        "loadMeeting",
+        "loadVaults",
+        "macCalendar",
+        "materializeDraftMeeting",
+        "meetingContext",
+        "meeting_conversation_metrics_error",
+        "meetingNotificationAuthorization",
+        "meetingReferenceObservation",
+        "meetingSidebarObservation",
+        "meetingSidebarPage",
+        "meetingSidebarSearch",
+        "microphoneMeetingNotification",
+        "prepareAnalyzer",
+        "projectCatalogObservation",
+        "recordingAppendTarget",
+        "registerVault",
+        "removeVault",
+        "selectedMeetingObservation",
+        "startListening",
+        "startTranscriptionPersistence",
+        "stopRecordingSession",
+        "stopTranscriptionPersistence",
+        "summaryGeneration",
+        "vaultSummaryExport",
+        "vaultSummaryPathSync",
+    ]
+    private static let allowedAudioSources: Set = ["mic", "microphone", "system", "unknown"]
+    private static let allowedCandidateScopes: Set = ["all", "selected"]
+    private static let allowedFailureKinds: Set = [
+        "recordingAudioPermanent",
+        "recordingRecovery",
+        "recordingStorage",
+        "transcription",
+        "transcriptionInterrupted",
+        "transcriptionStalled",
+    ]
+    private static let allowedErrorCodes: Set = [
+        "analysisDidNotAdvance",
+        "analysisStalled",
+        "audioFormatUnavailable",
+        "invalidAudioRange",
+        "languageDetectionAudioLoadingFailed",
+        "languageDetectionFailed",
+        "languageModelPreparationFailed",
+        "noAutomaticLanguageCandidates",
+        "unsupportedDetectedLanguage",
+    ]
+    private static let allowedLocaleIdentifiers = Set(Locale.availableIdentifiers)
+
     enum SanitizedCategory: String {
         case googleCalendar = "google_calendar_error"
         case googleDrive = "google_drive_error"
@@ -37,6 +115,7 @@ enum ErrorReportingService {
             options.enableCrashHandler = true
             options.enableAutoPerformanceTracing = false
             options.enableCaptureFailedRequests = false
+            options.enableAutoBreadcrumbTracking = false
             options.enableNetworkBreadcrumbs = false
             options.enableNetworkTracking = false
             options.tracesSampleRate = 0
@@ -46,6 +125,9 @@ enum ErrorReportingService {
                 event.request = nil
                 event.user = nil
                 return event
+            }
+            options.beforeBreadcrumb = { breadcrumb in
+                isAllowedBreadcrumbCategory(breadcrumb.category) ? breadcrumb : nil
             }
             if let releaseMetadata {
                 options.releaseName = releaseMetadata.name
@@ -59,25 +141,67 @@ enum ErrorReportingService {
         }
     }
 
-    static func capture(_ error: Error, context: [String: String] = [:]) {
+    static func capture(_: Error, context: [String: String] = [:]) {
+        capture(context: context)
+    }
+
+    static func captureSanitized(_ category: SanitizedCategory) {
+        capture(context: ["source": category.rawValue])
+    }
+
+    private static func capture(context: [String: String]) {
         guard isEnabled else { return }
-        SentrySDK.capture(error: error) { scope in
-            for (key, value) in context {
+        let sanitizedContext = sanitizedContext(context)
+        let category = sanitizedContext["source"] ?? "technical_error"
+        SentrySDK.capture(error: sanitizedError(description: category)) { scope in
+            for (key, value) in sanitizedContext {
                 scope.setTag(value: value, key: key)
             }
         }
     }
 
-    static func captureSanitized(_ category: SanitizedCategory) {
-        capture(sanitizedError(for: category), context: ["source": category.rawValue])
+    static func sanitizedError(for category: SanitizedCategory) -> NSError {
+        sanitizedError(description: category.rawValue)
     }
 
-    static func sanitizedError(for category: SanitizedCategory) -> NSError {
+    private static func sanitizedError(description: String) -> NSError {
         NSError(
             domain: "com.dahlia.app.sanitized-diagnostic",
             code: 1,
-            userInfo: [NSLocalizedDescriptionKey: category.rawValue]
+            userInfo: [NSLocalizedDescriptionKey: description]
         )
+    }
+
+    static func sanitizedContext(_ context: [String: String]) -> [String: String] {
+        context.filter { key, value in
+            isAllowedContextValue(value, for: key)
+        }
+    }
+
+    private static func isAllowedContextValue(_ value: String, for key: String) -> Bool {
+        switch key {
+        case "source":
+            allowedSources.contains(value)
+        case "audioSource":
+            allowedAudioSources.contains(value)
+        case "locale":
+            allowedLocaleIdentifiers.contains(value)
+                || allowedLocaleIdentifiers.contains(value.replacingOccurrences(of: "-", with: "_"))
+        case "candidateScope":
+            allowedCandidateScopes.contains(value)
+        case "candidateLanguageCount", "fallbackCount", "inferenceFailedCount":
+            value.allSatisfy(\.isNumber) && (Int(value).map { (0 ... 999).contains($0) } ?? false)
+        case "failureKind":
+            allowedFailureKinds.contains(value)
+        case "errorCode":
+            allowedErrorCodes.contains(value)
+        default:
+            false
+        }
+    }
+
+    static func isAllowedBreadcrumbCategory(_ category: String) -> Bool {
+        category == "runtime.automatic_screenshot" || category == "ui.screenshot_grid"
     }
 
     static func recordScreenshotCollectionState(countBucket: Int, minimumWidthBucket: Int) {

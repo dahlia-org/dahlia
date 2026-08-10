@@ -74,6 +74,69 @@ configure_sentry_plist() {
     fi
 }
 
+configure_telemetrydeck_plist() {
+    local plist_path="$1"
+
+    /usr/libexec/PlistBuddy -c "Delete :TELEMETRYDECK_APP_ID" "$plist_path" >/dev/null 2>&1 || true
+
+    if [ -n "${TELEMETRYDECK_APP_ID:-}" ]; then
+        /usr/libexec/PlistBuddy -c "Add :TELEMETRYDECK_APP_ID string ${TELEMETRYDECK_APP_ID}" "$plist_path"
+    fi
+}
+
+validate_telemetrydeck_adapter() {
+    local adapter_path="$1"
+    local actual_sdk_members
+    local actual_configuration_members
+    local expected_sdk_members=$'TelemetryDeck.Config\nTelemetryDeck.initialize\nTelemetryDeck.signal'
+    local expected_configuration_members='configuration.testMode'
+
+    actual_sdk_members="$(rg -o 'TelemetryDeck\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
+    if [ "$actual_sdk_members" != "$expected_sdk_members" ]; then
+        echo "error: TelemetryDeck adapter uses SDK members outside the approved allowlist" >&2
+        return 1
+    fi
+
+    actual_configuration_members="$(rg -o 'configuration\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
+    if [ "$actual_configuration_members" != "$expected_configuration_members" ]; then
+        echo "error: TelemetryDeck adapter mutates configuration outside the approved allowlist" >&2
+        return 1
+    fi
+
+    if ! rg -n 'Task\.detached\(priority: \.utility\)' "$adapter_path" >/dev/null; then
+        echo "error: TelemetryDeck initialization must stay on the background utility task" >&2
+        return 1
+    fi
+
+    if rg -n 'customUserID:|floatValue:' "$adapter_path" >/dev/null; then
+        echo "error: custom user IDs and numeric payloads are forbidden by docs/telemetry.md" >&2
+        return 1
+    fi
+}
+
+embed_telemetrydeck_resources() {
+    local project_dir="$1"
+    local build_dir="$2"
+    local contents_dir="$3"
+    local bundle_name="TelemetryDeck_TelemetryDeck.bundle"
+    local resource_bundle="${build_dir}/${bundle_name}"
+    local license_source="${project_dir}/.build/checkouts/SwiftSDK/LICENSE"
+    local license_destination="${contents_dir}/Resources/Licenses/TelemetryDeck/LICENSE"
+
+    if [ ! -d "$resource_bundle" ]; then
+        echo "error: TelemetryDeck privacy resource bundle was not found" >&2
+        return 1
+    fi
+    if [ ! -f "$license_source" ]; then
+        echo "error: TelemetryDeck license was not found in the SwiftPM checkout" >&2
+        return 1
+    fi
+
+    mkdir -p "${contents_dir}/Resources" "$(dirname "$license_destination")"
+    cp -R "$resource_bundle" "${contents_dir}/Resources/"
+    cp "$license_source" "$license_destination"
+}
+
 embed_sparkle_framework() {
     local project_dir="$1"
     local contents_dir="$2"

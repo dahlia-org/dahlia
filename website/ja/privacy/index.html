@@ -38,7 +38,7 @@
         <header class="legal-heading">
           <p class="section-index">PRIVACY</p>
           <h1>プライバシーポリシー</h1>
-          <p class="legal-effective-date">施行日：2026年7月22日</p>
+          <p class="legal-effective-date">施行日：2026年8月10日</p>
           <p>
             Dahliaは、macOS向けの会議文字起こし・ノートアプリです。本ポリシーでは、Dahliaがアクセスするデータ、
             利用・保存方法、Macの外部へ送信する場合、およびデータを管理・削除する方法を説明します。
@@ -76,21 +76,33 @@
           </p>
           <h3>診断情報</h3>
           <p>
-            Dahliaはクラッシュレポートと明示的に捕捉した技術エラーを診断サービスへ送る場合があります。ネットワークの自動捕捉と
-            既定の個人情報送信を無効にし、request、user、extraフィールドを除去しています。会議内容や認証情報を意図的に添付しません。
-            Google連携の失敗時は、Google APIのレスポンス本文やCalendar・Driveの詳細ではなく固定のエラー区分だけを送信します。
+            Dahliaはクラッシュレポート、匿名化された技術エラー区分、および処理区分、音源区分、locale、診断code、少数の
+            言語処理件数など許可リスト内の短い技術情報をSentryへ送る場合があります。ネットワークとlifecycle breadcrumbの
+            自動捕捉および既定の個人情報送信を無効にし、request、user、extraフィールドを除去しています。
+          </p>
+          <h3>匿名の利用状況分析</h3>
+          <p>
+            Dahliaは、録音、文字起こし、要約生成、書き出しが開始・完了・失敗したかという低頻度のworkflow eventを
+            TelemetryDeckへ送信します。eventには文字起こし方式、録音開始時に有効な音源、実行契機、書き出し先、失敗段階の固定区分が
+            含まれる場合があります。TelemetryDeck SDKは、インストールごとのハッシュ化ID、匿名session ID、アプリ・SDK version、
+            OS・端末特性、言語、locale、地域、timezone、外観、accessibility設定、時刻・曜日などのcalendar bucket、初回利用日、
+            session数、利用日数、直前・平均session時間も付加します。Dahliaは診断・利用eventへ、
+            会議内容、氏名、メールアドレス、ファイルpath、ローカルレコードID、認証情報、自由文のエラーメッセージを添付しません。
           </p>
         </section>
 
         <section>
           <h2>2. データの利用目的</h2>
-          <p>Dahliaは、ユーザーが選択した次の機能を提供するためだけにデータを利用します。</p>
+          <p>Dahliaは、ユーザーが選択した次の機能を提供するためにデータを利用します。</p>
           <ul>
             <li>会議の録音、文字起こし、整理、検索、表示</li>
             <li>選択したカレンダーの今後の予定表示と、予定からの会議準備</li>
             <li>予定と会議の関連付け、およびユーザーが実行した要約・AIチャットへの予定情報の利用</li>
             <li>ユーザーが要求したGoogle Docsへの要約書き出し</li>
           </ul>
+          <p>
+            また、上記の匿名利用状況と匿名化した技術診断を、機能の信頼性測定、障害調査、品質改善のために利用します。
+          </p>
           <p>
             Googleユーザーデータを販売せず、広告や信用判断に利用せず、汎用AIモデルの学習・改善にも利用しません。
           </p>
@@ -114,6 +126,11 @@
               関連する会議とともにローカルDBおよびユーザーが作成したDBバックアップに保存します。
             </li>
             <li>書き出したGoogle Docsは、ユーザーがGoogle Drive上で削除するまで残ります。</li>
+            <li>
+              TelemetryDeck SDKはbest-effort送信のため有界のローカルqueueを保持します。UserDefaultsには直近90日分の
+              session詳細を保持し、初回利用日、累計session数、累計利用日数はアプリデータが削除されるまで保持します。
+              匿名の利用状況と診断情報は、TelemetryDeckおよびSentryの各サービスポリシーに従って保持されます。
+            </li>
           </ul>
           <p>
             Dahliaの開発者は、Google Calendarの予定、Google Drive文書、会議録音、文字起こしを受信・保存するサーバーを運営しません。
