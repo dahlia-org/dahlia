@@ -91,24 +91,24 @@ validate_telemetrydeck_adapter() {
     local expected_sdk_members=$'TelemetryDeck.Config\nTelemetryDeck.initialize\nTelemetryDeck.signal'
     local expected_configuration_members='configuration.testMode'
 
-    actual_sdk_members="$(rg -o 'TelemetryDeck\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
+    actual_sdk_members="$(grep -Eo 'TelemetryDeck\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
     if [ "$actual_sdk_members" != "$expected_sdk_members" ]; then
         echo "error: TelemetryDeck adapter uses SDK members outside the approved allowlist" >&2
         return 1
     fi
 
-    actual_configuration_members="$(rg -o 'configuration\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
+    actual_configuration_members="$(grep -Eo 'configuration\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
     if [ "$actual_configuration_members" != "$expected_configuration_members" ]; then
         echo "error: TelemetryDeck adapter mutates configuration outside the approved allowlist" >&2
         return 1
     fi
 
-    if ! rg -n 'Task\.detached\(priority: \.utility\)' "$adapter_path" >/dev/null; then
+    if ! grep -Eq 'Task\.detached\(priority: \.utility\)' "$adapter_path"; then
         echo "error: TelemetryDeck initialization must stay on the background utility task" >&2
         return 1
     fi
 
-    if rg -n 'customUserID:|floatValue:' "$adapter_path" >/dev/null; then
+    if grep -Eq 'customUserID:|floatValue:' "$adapter_path"; then
         echo "error: custom user IDs and numeric payloads are forbidden by docs/telemetry.md" >&2
         return 1
     fi

@@ -349,7 +349,7 @@ test_telemetrydeck_configuration_and_embedding() {
     local checkout_dir="${fake_project}/.build/checkouts/SwiftSDK"
     local contents_dir="${TEST_DIR}/TelemetryContents"
 
-    if rg -n 'codesign_path.*TelemetryDeck_TelemetryDeck\.bundle' \
+    if grep -Eq 'codesign_path.*TelemetryDeck_TelemetryDeck\.bundle' \
         "${REPOSITORY_DIR}/scripts/build-app.sh" \
         "${REPOSITORY_DIR}/scripts/run-dev.sh" >/dev/null; then
         fail "TelemetryDeck's resource-only bundle must not be signed separately"

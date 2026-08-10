@@ -40,6 +40,7 @@ import Foundation
             #expect(session.canSend)
             session.sendDraft()
             await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
+            await waitUntil { session.messages.count { $0.role == .user } == 2 }
 
             #expect(session.isGenerating)
             #expect(session.draft.isEmpty)
