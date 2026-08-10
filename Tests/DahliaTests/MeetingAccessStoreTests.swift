@@ -943,6 +943,66 @@ import ImageIO
         }
 
         @Test
+        func internalMCPReportsOnlyCoarseToolUsageCategories() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
+            var events: [MCPUsageTelemetryEvent] = []
+            let server = DahliaMCPServer(
+                store: store,
+                telemetryOrigin: .codexChat,
+                usageTelemetryReporter: { events.append($0) }
+            )
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"query_projects","arguments":{}}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_contacts","arguments":{}}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"resolve_contact","arguments":{}}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_meeting_summary","arguments":{}}}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"not_a_tool","arguments":{}}}"#)
+
+            #expect(events == [
+                .init(origin: .codexChat, category: .meeting, operation: .read, outcome: .completed),
+                .init(origin: .codexChat, category: .project, operation: .read, outcome: .completed),
+                .init(origin: .codexChat, category: .customerIntelligence, operation: .read, outcome: .completed),
+                .init(origin: .codexChat, category: .customerIntelligence, operation: .write, outcome: .failed),
+                .init(origin: .codexChat, category: .meeting, operation: .write, outcome: .failed),
+                .init(origin: .codexChat, category: .unknown, operation: .write, outcome: .failed),
+            ])
+            #expect(events[0].signalName == "Dahlia.MCP.ToolCall.completed")
+            #expect(events[0].parameters == [
+                "origin": "codexChat",
+                "category": "meeting",
+                "operation": "read",
+            ])
+
+            var externalEvents: [MCPUsageTelemetryEvent] = []
+            let externalServer = DahliaMCPServer(
+                store: store,
+                usageTelemetryReporter: { externalEvents.append($0) }
+            )
+            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","id":8,"method":"initialize","params":{}}"#)
+            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            _ = externalServer.handleLine(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"query_meetings","arguments":{}}}"#)
+            #expect(externalEvents.isEmpty)
+        }
+
+        @Test
+        func mcpStandardIOWorkerLeavesMainQueueAvailable() async {
+            let releaseWorker = DispatchSemaphore(value: 0)
+
+            await withCheckedContinuation { continuation in
+                runMCPStandardIOWorker {
+                    continuation.resume()
+                    releaseWorker.wait()
+                } completion: {}
+            }
+
+            releaseWorker.signal()
+        }
+
+        @Test
         // swiftlint:disable:next function_body_length
         func mcpProtocolRequiresInitializationAndReportsScopedVaultErrors() throws {
             let fixture = try Fixture()

@@ -20,16 +20,31 @@ Dahlia は、主要機能の利用状況と失敗率を把握して品質を改�
 - 初回利用日、累計 session 数、累計利用日数、直近 30 日の利用日数。SDK が install 期間中 UserDefaults に保持する統計から算出する
 - 直前・平均 session 秒数。SDK が UserDefaults に保持する直近 90 日分の session から算出する
 
-Dahlia が追加できるイベントとパラメータは以下だけとする。値はコードで定義した enum の固定値であり、自由文、識別子、件数、時間、ファイル名を渡さない。
+Dahlia が追加できるイベントとパラメータは以下だけとする。文字列値はコードで定義した enum の固定値であり、自由文、識別子、件数、正確な時刻、ファイル名を渡さない。
 
 | Event | Allowed parameters |
 | --- | --- |
-| `Dahlia.Recording.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; `audioSources`: 録音開始時の `microphone` / `systemAudio` / `microphoneAndSystemAudio`（terminal でも同値）; 失敗時のみ `stage`: `start` / `capture` / `stop` / `persistence` |
+| `Dahlia.Recording.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; `audioSources`: 録音開始時の `microphone` / `systemAudio` / `microphoneAndSystemAudio`（terminal でも同値）; `meetingScope`: 最初の録音 session なら `new`、再開なら `continued`; 失敗時のみ `stage`: `start` / `capture` / `stop` / `persistence`; 完了時のみ `floatValue`: 永続化済み録音時間を分単位に四捨五入して 0〜360 に制限した値 |
 | `Dahlia.Transcription.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; 失敗時のみ `stage`: `start` / `persistence` / `transcription` |
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
 | `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
+| `Dahlia.AIChat.promptSubmitted`, `.liveModeEnabled` | なし。新規の手動 prompt と Live Mode の false→true 遷移だけを数え、retry と live transcript segment は数えない |
+| `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat` / `summary`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
 
-アプリ ID は `TELEMETRYDECK_APP_ID` からビルド時に `Info.plist` へ注入する。未設定なら TelemetryDeck を初期化せず、イベントを破棄する。Debug ビルドは必ず TelemetryDeck Test Mode とする。custom user ID、`floatValue`、追加の default parameter は使用しない。
+アプリ ID は `TELEMETRYDECK_APP_ID` からビルド時に `Info.plist` へ注入する。未設定なら TelemetryDeck を初期化せず、イベントを破棄する。Debug ビルドは必ず TelemetryDeck Test Mode とする。custom user ID は使用しない。固定 default parameter `runtime` は本体の `app` と内蔵 MCP helper の `mcpHelper` だけを許可する。
+
+内蔵 MCP helper は、Dahlia が非公開引数 `--telemetry-origin codexChat|summary` を付けて起動した場合だけ、親 app bundle の同じ App ID で TelemetryDeck を初期化する。通常の MCP 登録 command にはこの引数を含めず、外部 client からの helper 利用は計測しない。MCP tool 名、引数、結果は送らない。同じ App ID の自動 session event には app と helper の両方が含まれるため、本体の DAU と session は必ず `runtime=app` で絞り込む。
+
+## 指標定義
+
+- `App DAU`: `TelemetryDeck.Session.started` の unique user 数を `runtime=app` で集計する。
+- `Recording DAU`: `Dahlia.Recording.started` の unique user 数。一般の DAU と同一視しない。
+- 新規録音 meeting 数: `Dahlia.Recording.started` のうち `meetingScope=new` の event count。
+- 録音 session 数: `Dahlia.Recording.started` の全 event count。meeting 数とは呼ばない。
+- 完了録音の平均時間: `Dahlia.Recording.completed.floatValue` の mean。failed recording は含めない。
+- AI Chat DAU: `Dahlia.AIChat.promptSubmitted` または `.liveModeEnabled` の unique user 数。
+- 内蔵 MCP 利用: terminal tool call の event/user count と、`failed / (completed + failed)`。外部 MCP adoption とは呼ばない。
+- workflow 成功率: best-effort の started/terminal 欠測を避けるため、原則 `completed / (completed + failed)` とする。
 
 ## Sentry へ送信してよいデータ
 
@@ -63,12 +78,12 @@ Sentry の PII、request、user、extra、自動 breadcrumb、network breadcrumb
 - Vault・ファイル・URL の名前またはパス、meeting/session/recording/project/file ID
 - API key、token、cookie、認証情報、request/response body、任意のネットワーク URL
 - 生のエラーメッセージ、`localizedDescription`、ログ行、任意の自由文
-- Dahlia の custom parameter としての正確な時刻、録音時間、文字数、件数など、上記の SDK 自動項目と許可表にない値
+- Dahlia の custom parameter としての正確な時刻・録音秒数、文字数、件数など、上記の SDK 自動項目と許可表にない値
 - IP アドレス、位置情報、広告 ID、連絡先、独自 user ID
 
 ## 非ブロッキング要件
 
-機能コードは型付き `UsageTelemetryEvent` を `UsageTelemetryService` に渡すだけとする。SDK の `initialize` と `signal` を呼べるのは `TelemetryDeckClient` だけである。初期化時の disk cache 読み込みは background task で行い、完了前のイベントは欠測させる。公式 SDK の `signal` は送信を待たず、内部の utility キューと bounded cache に処理を委譲する。
+機能コードは型付き `UsageTelemetryEvent` を `UsageTelemetryService` に渡すだけとする。MCP server は型付き `MCPUsageTelemetryEvent` を注入 reporter に渡す。SDK の `initialize` と `signal` を呼べるのは各 executable の `TelemetryDeckClient` だけである。初期化時の disk cache 読み込みは background task で行い、完了前のイベントは欠測させる。公式 SDK の `signal` は送信を待たず、内部の utility キューと bounded cache に処理を委譲する。
 
 次は禁止する。
 
@@ -90,3 +105,4 @@ SDK の非ブロッキング契約や cache 上限が将来変わる場合は、
 - [TelemetryDeck Swift Setup](https://telemetrydeck.com/docs/guides/swift-setup/)
 - [TelemetryDeck default parameters](https://telemetrydeck.com/docs/ingest/default-parameters/)
 - [ADR-0025](adr/0025-adopt-allowlisted-nonblocking-telemetry.md)
+- [ADR-0026](adr/0026-measure-product-adoption-with-bounded-telemetry.md)

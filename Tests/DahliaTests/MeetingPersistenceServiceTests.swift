@@ -56,7 +56,7 @@ import os
                 ).insert(db)
             }
 
-            _ = try await MeetingPersistenceService.createAppending(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: store,
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
@@ -71,6 +71,7 @@ import os
             #expect(persisted.createdAt == editedAt)
             #expect(persisted.recordingStartedAt == recordingStartedAt)
             #expect(store.recordingStartTime == recordingStartedAt)
+            #expect(service.isFirstRecordingSession)
         }
 
         @Test
@@ -94,7 +95,7 @@ import os
             }
 
             let store = TranscriptStore()
-            _ = try await MeetingPersistenceService.createAppending(
+            let service = try await MeetingPersistenceService.createAppending(
                 store: store,
                 dbQueue: database.dbQueue,
                 existingMeetingId: meetingId,
@@ -108,6 +109,7 @@ import os
 
             #expect(persisted.recordingStartedAt == firstRecordingStartedAt)
             #expect(store.recordingStartTime == firstRecordingStartedAt)
+            #expect(!service.isFirstRecordingSession)
         }
 
         @Test

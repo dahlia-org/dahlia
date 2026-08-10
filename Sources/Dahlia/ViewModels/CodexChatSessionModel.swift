@@ -65,6 +65,7 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored let settings: AppSettings
     @ObservationIgnored let contextProvider: any CodexChatContextProviding
     @ObservationIgnored private let streamingUpdateInterval: Duration
+    @ObservationIgnored let usageTelemetryReporter: UsageTelemetryReporter
     @ObservationIgnored private var isStopRequested = false
     @ObservationIgnored var isTurnCleanupPending = false
     @ObservationIgnored private var isRequestingTurnHandle = false
@@ -105,7 +106,10 @@ final class CodexChatSessionModel: Identifiable {
         service: any CodexChatServicing = CodexChatService.shared,
         settings: AppSettings = .shared,
         contextProvider: any CodexChatContextProviding = CodexChatContextProvider(),
-        streamingUpdateInterval: Duration = .milliseconds(50)
+        streamingUpdateInterval: Duration = .milliseconds(50),
+        usageTelemetryReporter: @escaping UsageTelemetryReporter = { event in
+            UsageTelemetryService.shared.record(event)
+        }
     ) {
         self.id = id
         self.vaultID = vaultID ?? settings.currentVault?.id
@@ -118,6 +122,7 @@ final class CodexChatSessionModel: Identifiable {
         self.settings = settings
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
+        self.usageTelemetryReporter = usageTelemetryReporter
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -199,9 +204,11 @@ final class CodexChatSessionModel: Identifiable {
                 || activeSteeringManualSubmission?.composerSnapshot == composerSnapshot
                 || pendingManualInputs.contains(where: { $0.composerSnapshot == composerSnapshot })
             guard !isDuplicate else { return }
+            usageTelemetryReporter(.aiChatPromptSubmitted)
             enqueueManualInput(submission)
             return
         }
+        usageTelemetryReporter(.aiChatPromptSubmitted)
         submit(
             text,
             images: imagesSnapshot,
@@ -897,6 +904,9 @@ extension CodexChatSessionModel {
     func setLiveModeEnabled(_ isEnabled: Bool) {
         guard isLiveModeEnabled != isEnabled else { return }
         isLiveModeEnabled = isEnabled
+        if isEnabled {
+            usageTelemetryReporter(.aiChatLiveModeEnabled)
+        }
         liveModeGeneration &+= 1
         didSendLiveModeContext = false
         if !isEnabled {

@@ -29,7 +29,6 @@ typealias SummaryGenerationRunner = @MainActor (SummaryGenerationRunnerInput) as
 typealias SummaryJobSleeper = @Sendable (Duration) async throws -> Void
 typealias SummaryGoogleDocsExporter = @MainActor (SummaryDocument, SummaryRenderContext, String) async throws -> String
 typealias SummaryDocumentLoader = @MainActor (UUID, DatabaseQueue) async throws -> SummaryDocument?
-typealias UsageTelemetryReporter = @MainActor (UsageTelemetryEvent) -> Void
 
 private enum SummaryGoogleDocsExportError: Error {
     case summaryChanged
@@ -83,14 +82,21 @@ private struct RecordingStopContext {
 struct RecordingTelemetryContext {
     let mode: UsageTelemetryEvent.TranscriptionModeValue
     let audioSources: UsageTelemetryEvent.AudioSources
+    let meetingScope: UsageTelemetryEvent.MeetingScope
     var recordingFailureStage: UsageTelemetryEvent.RecordingFailureStage?
     var transcriptionFailureStage: UsageTelemetryEvent.TranscriptionFailureStage?
 
-    func terminalEvents() -> [UsageTelemetryEvent] {
+    func terminalEvents(recordingDuration: TimeInterval?) -> [UsageTelemetryEvent] {
         let recordingLifecycle: UsageTelemetryEvent.Lifecycle<UsageTelemetryEvent.RecordingFailureStage> =
             recordingFailureStage.map { .failed($0) } ?? .completed
         var events: [UsageTelemetryEvent] = [
-            .recording(recordingLifecycle, mode: mode, sources: audioSources),
+            .recording(
+                recordingLifecycle,
+                mode: mode,
+                sources: audioSources,
+                meetingScope: meetingScope,
+                duration: recordingLifecycle == .completed ? recordingDuration : nil
+            ),
         ]
         if mode == .realtime {
             let transcriptionLifecycle: UsageTelemetryEvent
@@ -2692,6 +2698,7 @@ final class CaptionViewModel: ObservableObject {
         recordingSessionId: UUID,
         rollbackState: RecordingStartRollbackState,
         existingMeetingId: UUID?,
+        meetingScope: UsageTelemetryEvent.MeetingScope,
         previousBatchTranscriptionState: BatchTranscriptionState?
     ) async {
         guard recordingLifecycle == .starting(recordingSessionId) else { return }
@@ -2699,7 +2706,13 @@ final class CaptionViewModel: ObservableObject {
         let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources)
             ?? requestedTelemetryAudioSources()
         if let sources {
-            usageTelemetryReporter(.recording(.failed(.start), mode: mode, sources: sources))
+            usageTelemetryReporter(.recording(
+                .failed(.start),
+                mode: mode,
+                sources: sources,
+                meetingScope: meetingScope,
+                duration: nil
+            ))
         }
         if mode == .realtime {
             usageTelemetryReporter(.transcription(.failed(.start), mode: mode))
@@ -2817,6 +2830,7 @@ final class CaptionViewModel: ObservableObject {
             recordingSessions: store.recordingSessions,
             recordingStartTime: store.recordingStartTime
         )
+        var meetingScope: UsageTelemetryEvent.MeetingScope = rollbackState.recordingSessions.isEmpty ? .new : .continued
         startingMicrophoneSelection = microphoneSelection
         startingSystemAudioEnabled = isSystemAudioEnabled
         startingLocaleIdentifier = selectedLocale
@@ -2873,6 +2887,7 @@ final class CaptionViewModel: ObservableObject {
                     draftMeeting: activeDraftMeeting
                 )
             )
+            meetingScope = persistenceService?.isFirstRecordingSession == true ? .new : .continued
             try await prepareAndStartRecordingController(RecordingControllerStartRequest(
                 dbQueue: dbQueue,
                 meetingId: currentMeetingId,
@@ -2900,9 +2915,16 @@ final class CaptionViewModel: ObservableObject {
             if let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources) {
                 activeRecordingTelemetryContext = RecordingTelemetryContext(
                     mode: mode,
-                    audioSources: sources
+                    audioSources: sources,
+                    meetingScope: meetingScope
                 )
-                usageTelemetryReporter(.recording(.started, mode: mode, sources: sources))
+                usageTelemetryReporter(.recording(
+                    .started,
+                    mode: mode,
+                    sources: sources,
+                    meetingScope: meetingScope,
+                    duration: nil
+                ))
                 if transcriptionMode == .realtime {
                     usageTelemetryReporter(.transcription(.started, mode: mode))
                 }
@@ -2925,6 +2947,7 @@ final class CaptionViewModel: ObservableObject {
                 recordingSessionId: recordingSessionId,
                 rollbackState: rollbackState,
                 existingMeetingId: existingMeetingId,
+                meetingScope: meetingScope,
                 previousBatchTranscriptionState: previousBatchTranscriptionState
             )
         }
@@ -3082,7 +3105,13 @@ final class CaptionViewModel: ObservableObject {
         if var telemetry = context.telemetry {
             telemetry.recordingFailureStage = recordingFailureStage
             telemetry.transcriptionFailureStage = transcriptionFailureStage
-            telemetry.terminalEvents().forEach(usageTelemetryReporter)
+            let recordingSession = context.recordingSessionId.flatMap { sessionID in
+                context.store.recordingSessions.first { $0.id == sessionID }
+            }
+            let recordingDuration = recordingSession.flatMap { session in
+                session.endedAt.map { max(0, $0.timeIntervalSince(session.startedAt)) }
+            }
+            telemetry.terminalEvents(recordingDuration: recordingDuration).forEach(usageTelemetryReporter)
         }
 
         if context.transcriptionMode == .batch, let recordingSessionId = context.recordingSessionId {

@@ -6,6 +6,11 @@ import Foundation
 import OSLog
 
 actor CodexAppServerService {
+    private enum MCPUsageTelemetryOrigin: String {
+        case codexChat
+        case summary
+    }
+
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
     typealias ConfigurationReadiness = @Sendable () async -> Bool
     typealias ProviderAuthenticationPreparation = @Sendable (
@@ -798,6 +803,7 @@ actor CodexAppServerService {
                 executableURL: dahliaMCP.executableURL,
                 vaultID: dahliaMCP.vaultID,
                 allowedMeetingIDs: dahliaMCP.allowedMeetingIDs,
+                telemetryOrigin: .summary,
                 runtimeProfile: runtimeProfile
             )
             config["mcp_servers"] = .object(servers)
@@ -823,6 +829,7 @@ actor CodexAppServerService {
             executableURL: helperURL,
             vaultID: vaultID,
             allowsWrites: true,
+            telemetryOrigin: .codexChat,
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
@@ -837,6 +844,7 @@ actor CodexAppServerService {
         vaultID: UUID,
         allowedMeetingIDs: [UUID] = [],
         allowsWrites: Bool = false,
+        telemetryOrigin: MCPUsageTelemetryOrigin,
         runtimeProfile: DahliaRuntimeProfile
     ) -> JSONValue {
         let command: String
@@ -856,11 +864,15 @@ actor CodexAppServerService {
             [JSONValue.string("--meeting-id"), .string(meetingID.uuidString)]
         }
         let writeArguments: [JSONValue] = allowsWrites ? [.string("--write")] : []
+        let telemetryArguments: [JSONValue] = [
+            .string("--telemetry-origin"),
+            .string(telemetryOrigin.rawValue),
+        ]
         return .object([
             "args": .array(invocationArguments + [
                 .string("--vault-id"),
                 .string(vaultID.uuidString),
-            ] + meetingArguments + writeArguments),
+            ] + meetingArguments + writeArguments + telemetryArguments),
             "command": .string(command),
             "enabled": .bool(true),
         ])

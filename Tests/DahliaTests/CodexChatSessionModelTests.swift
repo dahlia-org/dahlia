@@ -7,6 +7,38 @@ import Foundation
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
+        func telemetryCountsManualPromptsAndLiveModeTransitionsWithoutCountingRetriesOrTranscripts() async {
+            let service = TestCodexChatService(mode: .complete)
+            let settings = AppSettings()
+            settings.currentVault = Self.testVault()
+            var events: [UsageTelemetryEvent] = []
+            let session = CodexChatSessionModel(
+                modelID: "default-model",
+                effort: "medium",
+                service: service,
+                settings: settings,
+                usageTelemetryReporter: { events.append($0) }
+            )
+
+            session.toggleLiveMode()
+            session.receiveFinalizedLiveTranscript("Finalized speech")
+            await waitUntil { !session.isGenerating }
+            session.draft = "Question"
+            session.sendDraft()
+            await waitUntil { !session.isGenerating }
+            session.retry()
+            await waitUntil { !session.isGenerating }
+            session.disableLiveMode()
+            session.toggleLiveMode()
+
+            #expect(events == [
+                .aiChatLiveModeEnabled,
+                .aiChatPromptSubmitted,
+                .aiChatLiveModeEnabled,
+            ])
+        }
+
+        @Test
         func liveTranscriptIsSentWithoutAddingAUserMessageAndManualChatStaysVisible() async {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()

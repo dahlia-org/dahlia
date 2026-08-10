@@ -35,4 +35,5 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023 |
 | [0023](0023-review-vault-mcp-writes-in-chat.md) | AI runtime / Chat / MCP | Vault MCP の書き込みを追加権限なしの単一 tool call として承認する | Accepted; amends 0022 |
 | [0024](0024-flat-summary-blocks-with-hierarchy-attributes.md) | Summary / Meeting access | 平坦な階層属性でサマリーのネストリストと表を表現する | Accepted; amends 0001 and 0018 |
-| [0025](0025-adopt-allowlisted-nonblocking-telemetry.md) | Privacy / Observability | 許可リスト制の匿名テレメトリを公式 SDK の非ブロッキング経路で送る | Accepted |
+| [0025](0025-adopt-allowlisted-nonblocking-telemetry.md) | Privacy / Observability | 許可リスト制の匿名テレメトリを公式 SDK の非ブロッキング経路で送る | Accepted; amended by 0026 |
+| [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025 |

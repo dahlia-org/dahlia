@@ -20,11 +20,20 @@ public final class DahliaMCPServer {
 
     private let store: MeetingAccessStore
     private let allowedMeetingIDs: Set<UUID>?
+    private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
+    private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
 
-    public init(store: MeetingAccessStore, allowedMeetingIDs: Set<UUID>? = nil) {
+    public init(
+        store: MeetingAccessStore,
+        allowedMeetingIDs: Set<UUID>? = nil,
+        telemetryOrigin: MCPUsageTelemetryEvent.Origin? = nil,
+        usageTelemetryReporter: @escaping (MCPUsageTelemetryEvent) -> Void = { _ in }
+    ) {
         self.store = store
         self.allowedMeetingIDs = allowedMeetingIDs
+        self.telemetryOrigin = telemetryOrigin
+        self.usageTelemetryReporter = usageTelemetryReporter
     }
 
     public func handleLine(_ line: String) -> String? {
@@ -120,12 +129,14 @@ public final class DahliaMCPServer {
     private func callTool(id: Any, params: Any?) throws -> String {
         guard let params = params as? [String: Any],
               let name = params["name"] as? String else {
+            reportToolCall(named: nil, outcome: .failed)
             return response(id: id, errorCode: -32602, message: "Invalid tool parameters")
         }
         let arguments: [String: Any]
         do {
             arguments = try toolArguments(from: params)
         } catch let error as ParameterError {
+            reportToolCall(named: name, outcome: .failed)
             return response(id: id, errorCode: -32602, message: error.localizedDescription)
         }
         return toolCallResponse(id: id, name: name, arguments: arguments)
@@ -140,8 +151,11 @@ public final class DahliaMCPServer {
     }
 
     private func toolCallResponse(id: Any, name: String, arguments: [String: Any]) -> String {
+        var outcome = MCPUsageTelemetryEvent.Outcome.failed
+        defer { reportToolCall(named: name, outcome: outcome) }
         do {
             let result = try executeTool(named: name, arguments: arguments)
+            outcome = .completed
             return response(id: id, result: result)
         } catch let error as ParameterError {
             return response(id: id, errorCode: -32602, message: error.localizedDescription)
@@ -172,6 +186,50 @@ public final class DahliaMCPServer {
         } catch {
             return response(id: id, result: toolError("Unable to read Dahlia data"))
         }
+    }
+
+    private func reportToolCall(named name: String?, outcome: MCPUsageTelemetryEvent.Outcome) {
+        guard let telemetryOrigin else { return }
+        let classification = Self.telemetryClassification(for: name)
+        usageTelemetryReporter(MCPUsageTelemetryEvent(
+            origin: telemetryOrigin,
+            category: classification.category,
+            operation: classification.operation,
+            outcome: outcome
+        ))
+    }
+
+    private static func telemetryClassification(
+        for name: String?
+    ) -> (category: MCPUsageTelemetryEvent.Category, operation: MCPUsageTelemetryEvent.Operation) {
+        guard let name else { return (.unknown, .read) }
+        let operation: MCPUsageTelemetryEvent.Operation = if name.hasPrefix("query_")
+            || name.hasPrefix("get_") {
+            .read
+        } else {
+            .write
+        }
+        let category: MCPUsageTelemetryEvent.Category = switch name {
+        case "query_meetings", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript",
+             "update_meeting_summary":
+            .meeting
+        case "query_projects", "get_project", "create_project", "update_project", "query_project_resources",
+             "set_project_resource_reference", "remove_project_resource_reference", "set_meeting_project_assignment",
+             "remove_meeting_project_assignment":
+            .project
+        case "query_contacts", "get_contact", "resolve_contact", "create_contact", "update_contact", "delete_contact",
+             "query_organizations", "get_organization", "query_organization_chart", "create_organization",
+             "update_organization", "delete_organization", "set_organization_domain", "remove_organization_domain",
+             "set_contact_organization_membership", "remove_contact_organization_membership",
+             "query_conversation_topics", "get_conversation_topic", "create_conversation_topic",
+             "update_conversation_topic", "delete_conversation_topic", "set_conversation_topic_resource_reference",
+             "remove_conversation_topic_resource_reference", "query_insights", "get_insight", "create_insight",
+             "update_insight", "delete_insight", "set_insight_resource_reference", "remove_insight_resource_reference":
+            .customerIntelligence
+        default:
+            .unknown
+        }
+        return (category, operation)
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length

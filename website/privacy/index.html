@@ -84,13 +84,17 @@
           <h3>Anonymous usage analytics</h3>
           <p>
             Dahlia sends low-frequency workflow events to TelemetryDeck, such as whether recording, transcription,
-            summary generation, or export started, completed, or failed. These events can include fixed categories for
-            transcription mode, audio sources enabled when recording starts, trigger, destination, and failure stage. TelemetryDeck's SDK also
+            summary generation, or export started, completed, or failed, whether AI chat was used, and whether Dahlia's
+            built-in AI used a Dahlia MCP tool. These events can include fixed categories for transcription mode, audio
+            sources enabled when recording starts, new or continued recording, trigger, destination, failure stage,
+            built-in AI origin, read or write operation, and coarse feature area. For completed recordings, Dahlia also
+            sends the duration rounded to whole minutes and capped at 360 minutes. Dahlia does not collect MCP usage by
+            external clients or send MCP tool names, arguments, or results. TelemetryDeck's SDK also
             attaches an installation-specific hashed identifier, anonymous session identifier, app and SDK versions,
             operating-system and device characteristics, language, locale, region, time zone, appearance, and
             accessibility settings. It also supplies calendar buckets (such as hour and day of week), first-use date,
             session counts, distinct usage days, and previous and average session duration. Dahlia does not attach
-            meeting content, names, email addresses, file paths, local
+            meeting content, chat prompts or responses, names, email addresses, file paths, local
             record identifiers, credentials, or free-form error messages to diagnostics or usage events.
           </p>
         </section>
