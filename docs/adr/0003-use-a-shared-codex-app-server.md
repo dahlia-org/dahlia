@@ -402,6 +402,6 @@ Codex version を更新する際は、対象 binary の `codex app-server genera
 - OpenAI Codex authentication and credential storage: <https://learn.chatgpt.com/docs/auth.md>
 - OpenAI Codex app-server README: <https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md>
 - OpenAI Codex app-server protocol source: <https://github.com/openai/codex/tree/main/codex-rs/app-server-protocol>
-- `CodexAppServerService`: `Sources/Dahlia/Services/CodexAppServerService.swift`
-- stdio transport: `Sources/Dahlia/Services/CodexAppServerProcessTransport.swift`
-- Dahlia 専用 CODEX_HOME: `Sources/Dahlia/Services/CodexHome.swift`
+- `CodexAppServerService`: `apps/macos/Sources/Dahlia/Services/CodexAppServerService.swift`
+- stdio transport: `apps/macos/Sources/Dahlia/Services/CodexAppServerProcessTransport.swift`
+- Dahlia 専用 CODEX_HOME: `apps/macos/Sources/Dahlia/Services/CodexHome.swift`

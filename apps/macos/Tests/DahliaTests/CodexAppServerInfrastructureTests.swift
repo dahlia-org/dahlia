@@ -59,8 +59,7 @@ import Foundation
 
         @Test(.enabled(if: ProcessInfo.processInfo.environment["DAHLIA_CODEX_INTEGRATION_TEST"] == "1"))
         func bundledCodexAccountReadCompletes() async throws {
-            let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appending(path: ".build/codex-helper/codex")
+            let executableURL = bundledCodexExecutableURL
             let testEnvironment = try dedicatedCodexEnvironment()
             defer { try? FileManager.default.removeItem(at: testEnvironment.rootURL) }
             let service = CodexAppServerService(
@@ -84,8 +83,7 @@ import Foundation
 
         @Test(.enabled(if: ProcessInfo.processInfo.environment["DAHLIA_CODEX_INTEGRATION_TEST"] == "1"))
         func bundledCodexSummaryThreadStartsWithMCPDisabled() async throws {
-            let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appending(path: ".build/codex-helper/codex")
+            let executableURL = bundledCodexExecutableURL
             let testEnvironment = try dedicatedCodexEnvironment()
             defer { try? FileManager.default.removeItem(at: testEnvironment.rootURL) }
             let service = CodexAppServerService(
@@ -201,6 +199,14 @@ import Foundation
                 inputModalities: nil
             )
             #expect(model.supportsImages)
+        }
+
+        private var bundledCodexExecutableURL: URL {
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: ".build/codex-helper/codex")
         }
 
         private func dedicatedCodexEnvironment() throws -> (environment: [String: String], rootURL: URL) {

@@ -60,7 +60,7 @@ Dahlia のデータは層が異なる。録音音声と確定文字起こしは1
 - 書き込みは1レコードまたは1関係ずつ行い、1つの record への複数 property 変更は1回の `update_*` にまとめる。
   成功した write が返す `revision` を次の expected revision として使い、再読み込みしない。`changed: false` は
   変更ではなく no-op として扱う。
-- preset skill のリソースは `Sources/Dahlia/CodexSkills/` へ置き、`.copy` で同梱して subdirectory 指定で
+- preset skill のリソースは `apps/macos/Sources/Dahlia/CodexSkills/` へ置き、`.copy` で同梱して subdirectory 指定で
   解決する。`.process` は bundle 内で相対パスをフラット化するため、複数 skill の `SKILL.md` と
   `agents/openai.yaml` が basename で衝突する。
 - chat だけ skills を有効にし、summary thread では無効のままとする ADR 0015 と ADR 0003 の分離は変更

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-REPOSITORY_DIR="$PROJECT_DIR"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+MACOS_PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+PROJECT_DIR="$MACOS_PROJECT_DIR"
 
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/create-github-release.sh"
@@ -47,7 +48,7 @@ write_appcast() {
 test_build_version_validation() {
     local plist_path="${TEST_DIR}/Info.plist"
 
-    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$plist_path"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 24' "$plist_path"
 
     [ "$(read_build_version "$plist_path")" = "24" ] || fail "failed to read build version"
@@ -57,10 +58,12 @@ test_build_version_validation() {
 }
 
 test_latest_release_build_validation() {
+    local gh_api_log="${TEST_DIR}/gh-api.log"
+    local gh_api_mode="new"
     local previous_plist="${TEST_DIR}/PreviousInfo.plist"
     local gh_release_mode="success"
 
-    cp "${PROJECT_DIR}/Resources/Info.plist" "$previous_plist"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$previous_plist"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 23' "$previous_plist"
 
     gh() {
@@ -73,12 +76,30 @@ test_latest_release_build_validation() {
             return
         fi
 
-        cat "$previous_plist"
+        printf '<%s>\n' "$@" >> "$gh_api_log"
+        case "$gh_api_mode" in
+            new) cat "$previous_plist" ;;
+            legacy)
+                if [[ "$*" == *"contents/apps/macos/Resources/Info.plist"* ]]; then
+                    return 1
+                fi
+                cat "$previous_plist"
+                ;;
+            failure) return 1 ;;
+        esac
     }
 
     RELEASE_REPOSITORY="dahlia-org/dahlia"
     BUILD_VERSION="24"
     validate_build_version_against_latest_release
+    grep -Fq '<repos/dahlia-org/dahlia/contents/apps/macos/Resources/Info.plist>' "$gh_api_log" \
+        || fail "latest release validation did not try the monorepo Info.plist path"
+
+    : > "$gh_api_log"
+    gh_api_mode="legacy"
+    validate_build_version_against_latest_release
+    grep -Fq '<repos/dahlia-org/dahlia/contents/Resources/Info.plist>' "$gh_api_log" \
+        || fail "latest release validation did not fall back to the legacy Info.plist path"
 
     BUILD_VERSION="23"
     expect_failure validate_build_version_against_latest_release
@@ -86,6 +107,9 @@ test_latest_release_build_validation() {
     gh_release_mode="empty"
     expect_failure validate_build_version_against_latest_release
     gh_release_mode="failure"
+    expect_failure validate_build_version_against_latest_release
+    gh_release_mode="success"
+    gh_api_mode="failure"
     expect_failure validate_build_version_against_latest_release
 }
 
@@ -355,7 +379,7 @@ test_telemetrydeck_configuration_and_embedding() {
         fail "TelemetryDeck's resource-only bundle must not be signed separately"
     fi
 
-    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$plist_path"
     TELEMETRYDECK_APP_ID="test-app-id"
     configure_telemetrydeck_plist "$plist_path"
     [ "$(/usr/libexec/PlistBuddy -c 'Print :TELEMETRYDECK_APP_ID' "$plist_path")" = "test-app-id" ] \
@@ -401,6 +425,43 @@ test_telemetrydeck_adapter_allowlist() {
         'TelemetryDeck.initialize(config: configuration)' \
         'TelemetryDeck.signal(name, parameters: parameters)' > "$adapter_path"
     expect_failure validate_telemetrydeck_adapter "$adapter_path" "app"
+}
+
+test_dsym_upload_preserves_relative_build_directory() {
+    local fixture_dir="${TEST_DIR}/dsym-upload"
+    local fake_bin
+    local build_dir
+    local sentry_log
+
+    mkdir -p "$fixture_dir"
+    fixture_dir="$(cd "$fixture_dir" && pwd)"
+    fake_bin="${fixture_dir}/bin"
+    build_dir="${fixture_dir}/build"
+    sentry_log="${fixture_dir}/sentry-cli.log"
+
+    mkdir -p "$fake_bin" "${build_dir}/Dahlia.dSYM/Contents/Resources/DWARF"
+    printf '%s' 'executable' > "${build_dir}/Dahlia"
+    printf '%s' 'debug symbols' > "${build_dir}/Dahlia.dSYM/Contents/Resources/DWARF/Dahlia"
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'printf "%s\n" "UUID: TEST-UUID (arm64) fixture"' \
+        > "${fake_bin}/dwarfdump"
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'printf "<%s>\n" "$@" > "$SENTRY_CLI_LOG"' \
+        > "${fake_bin}/sentry-cli"
+    chmod +x "${fake_bin}/dwarfdump" "${fake_bin}/sentry-cli"
+
+    (
+        cd "$fixture_dir"
+        PATH="${fake_bin}:${PATH}" \
+            SENTRY_AUTH_TOKEN="test-token" \
+            SENTRY_CLI_LOG="$sentry_log" \
+            "${REPOSITORY_DIR}/scripts/upload-dsyms.sh" build >/dev/null
+    )
+
+    grep -Fxq "<${build_dir}/Dahlia.dSYM>" "$sentry_log" \
+        || fail "relative dSYM build directory was not resolved from the invocation directory"
 }
 
 test_codesigning_keychain_unlock() {
@@ -452,6 +513,7 @@ test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_telemetrydeck_adapter_allowlist
+test_dsym_upload_preserves_relative_build_directory
 test_codesigning_keychain_unlock
 
 echo "Release script tests passed"

@@ -4,7 +4,8 @@ set -euo pipefail
 APP_NAME="Dahlia"
 DMG_NAME="${APP_NAME}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
 APP_BUNDLE="${PROJECT_DIR}/${APP_NAME}.app"
 STAGING_DIR=""
 
@@ -35,11 +36,7 @@ EOF
 
 cd "$PROJECT_DIR"
 
-if [ -f .env.local ]; then
-    set -a
-    source .env.local
-    set +a
-fi
+load_local_env "${REPOSITORY_DIR}/.env.local"
 
 NOTARY_PROFILE="${NOTARY_PROFILE:-dahlia-notary}"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"

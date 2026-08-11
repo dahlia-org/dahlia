@@ -2,7 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+INVOCATION_DIR="$(pwd)"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -12,6 +14,10 @@ if [ $# -lt 1 ]; then
 fi
 
 BUILD_DIR="$1"
+case "$BUILD_DIR" in
+    /*) ;;
+    *) BUILD_DIR="${INVOCATION_DIR}/${BUILD_DIR}" ;;
+esac
 APP_NAME="${2:-Dahlia}"
 DSYM_PATH="${BUILD_DIR}/${APP_NAME}.dSYM"
 EXECUTABLE_PATH="${BUILD_DIR}/${APP_NAME}"
@@ -19,11 +25,7 @@ DSYM_EXECUTABLE_PATH="${DSYM_PATH}/Contents/Resources/DWARF/${APP_NAME}"
 
 cd "$PROJECT_DIR"
 
-if [ -f .env.local ]; then
-    set -a
-    source .env.local
-    set +a
-fi
+load_local_env "${REPOSITORY_DIR}/.env.local"
 
 SENTRY_ORG="${SENTRY_ORG:-dahlia-app}"
 SENTRY_PROJECT="${SENTRY_PROJECT:-dahlia-app}"

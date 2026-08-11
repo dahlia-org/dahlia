@@ -56,6 +56,6 @@ Dahlia は Vault 書き込みの承認を、同じ turn の正確な MCP item �
 ## References
 
 - ADR-0022: アプリ内チャットを workspace-write とユーザー承認で実行する
-- `CodexChatService`: `Sources/Dahlia/Services/CodexChatService.swift`
-- approval routing: `Sources/Dahlia/Services/CodexAppServerService.swift`
-- approval UI: `Sources/Dahlia/Views/CodexChat/CodexChatApprovalView.swift`
+- `CodexChatService`: `apps/macos/Sources/Dahlia/Services/CodexChatService.swift`
+- approval routing: `apps/macos/Sources/Dahlia/Services/CodexAppServerService.swift`
+- approval UI: `apps/macos/Sources/Dahlia/Views/CodexChat/CodexChatApprovalView.swift`

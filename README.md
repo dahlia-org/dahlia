@@ -39,16 +39,16 @@ The in-app chat uses the bundled `dahlia-mcp` helper and is restricted to the cu
 
 ```bash
 # Debug build and run (unsigned; bundled Codex summaries unavailable)
-swift build && swift run Dahlia
+swift build --package-path apps/macos && swift run --package-path apps/macos Dahlia
 
 # Debug build with code signing (enables Data Protection Keychain)
 ./scripts/run-dev.sh
 
 # Build release .app bundle
-./scripts/build-app.sh && open Dahlia.app
+./scripts/build-app.sh && open apps/macos/Dahlia.app
 
 # Run tests
-swift test
+swift test --package-path apps/macos
 
 # Build, sign, notarize, and staple Dahlia.dmg
 ./scripts/notarize.sh
@@ -60,12 +60,12 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **Note:** `swift run Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Dahlia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `.build`.
+> **Note:** `swift run --package-path apps/macos Dahlia` has no bundled Codex helper and cannot use Data Protection Keychain. Use `run-dev.sh` for full functionality. `run-dev.sh` uses the shared development profile at `~/Library/Application Support/Dahlia-Development`, keeping its database, recording recovery files, Codex state, and process lock separate from the release app. Development builds started by `run-dev.sh` share this profile with each other. On their first run, the app-bundle scripts download the pinned official Codex GitHub Release for `aarch64-apple-darwin`, verify its SHA-256, and cache it under `apps/macos/.build`.
 > If the login Keychain is locked, `run-dev.sh` asks for the macOS login password before building so the signing certificate's private key is available. The password is read directly by macOS and is not stored by the script. Set `CODESIGN_KEYCHAIN` only when the signing identity is stored in a non-default Keychain.
 
 The lint script and pre-commit hook use the exact SwiftFormat version managed by the independent `BuildTools` Swift package. SwiftPM resolves and caches the tool separately from the app's dependencies.
 
-If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
+If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run --package-path apps/macos Dahlia` and `run-dev.sh` do not send Sentry events by default.
 
 Set `TELEMETRYDECK_APP_ID` before `build-app.sh`, `notarize.sh`, or `run-dev.sh` to embed the public TelemetryDeck App ID. If it is absent, usage telemetry stays disabled. Debug builds send only Test Mode signals. Dahlia records allowlisted workflow outcomes, bounded recording durations, AI chat adoption, and built-in MCP usage without meeting content or identifiers and never waits for delivery. External MCP client usage is not collected; see [`docs/telemetry.md`](docs/telemetry.md).
 
@@ -90,7 +90,7 @@ xcrun notarytool store-credentials "dahlia-notary" \
   --password "APP_SPECIFIC_PASSWORD"
 ```
 
-`./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
+`./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `apps/macos/Dahlia.dmg` ready for distribution.
 
 Dahlia uses Sparkle 2 for in-app updates. Production builds check for updates every hour and prompt the user when one is available; updates are not installed automatically by default. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update and appcast with this key, then uploads both `Dahlia.dmg` and `appcast.xml` to the GitHub Release.
 
@@ -99,18 +99,18 @@ When replacing the release laptop, migrate the Sparkle key as follows. The expor
 ```bash
 # Old laptop: export the existing key to encrypted offline storage.
 umask 077
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -x /path/to/encrypted-volume/dahlia-sparkle-private-key
 
 # New laptop: resolve dependencies, then import that same key.
-swift package resolve
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+swift package --package-path apps/macos resolve
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -f /path/to/encrypted-volume/dahlia-sparkle-private-key
 
-# Verify that the imported public key matches Resources/Info.plist exactly.
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+# Verify that the imported public key matches apps/macos/Resources/Info.plist exactly.
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -p
 # Expected: HR6N/+ImpB4ahCwyYLfF+CKJf2YG267B7pu5Q8CSB2E=
@@ -118,7 +118,7 @@ swift package resolve
 
 After importing, remove any unencrypted transfer copy and retain one access-controlled, encrypted backup. Do not run `generate_keys` without `-f` on the new laptop: creating a different key would prevent installed Dahlia versions from accepting future updates.
 
-To publish a release, install and authenticate the GitHub CLI (`gh`), increment both `CFBundleShortVersionString` and the integer `CFBundleVersion` in `Resources/Info.plist`, then commit and push the version change and all other source changes before running:
+To publish a release, install and authenticate the GitHub CLI (`gh`), increment both `CFBundleShortVersionString` and the integer `CFBundleVersion` in `apps/macos/Resources/Info.plist`, then commit and push the version change and all other source changes before running:
 
 ```bash
 ./scripts/notarize.sh
@@ -145,16 +145,20 @@ and Meeting cardinality contract.
 ### Project Structure
 
 ```
-Sources/Dahlia/
-├── Audio/          # Audio capture (mic & system)
-├── Database/       # GRDB models, migrations, repository
-├── Models/         # Domain models
-├── Services/       # Codex app-server, vault sync, meeting detection, keychain
-├── Speech/         # Speech transcription pipeline
-├── Utilities/      # Helpers (UUID v7, localization, etc.)
-├── ViewModels/     # CaptionViewModel, SidebarViewModel
-├── Views/          # SwiftUI views
-└── Resources/      # Localized strings, assets
+apps/
+└── macos/          # SwiftPM macOS application, tests, resources, and vendor code
+    └── Sources/Dahlia/
+        ├── Audio/      # Audio capture (mic & system)
+        ├── Database/   # GRDB models, migrations, repository
+        ├── Models/     # Domain models
+        ├── Services/   # Codex app-server, vault sync, meeting detection, keychain
+        ├── Speech/     # Speech transcription pipeline
+        ├── Utilities/  # Helpers (UUID v7, localization, etc.)
+        ├── ViewModels/ # CaptionViewModel, SidebarViewModel
+        ├── Views/      # SwiftUI views
+        └── Resources/  # Localized strings, assets
+scripts/               # Repository-level development and release entry points
+website/               # Static product website
 ```
 
 ## Dependencies
