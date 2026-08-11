@@ -393,30 +393,26 @@ actor BatchTranscriptionCoordinator {
         } else {
             nil
         }
-        let automaticLanguageCandidateLocales = automaticLanguageCandidates.map {
-            BatchLanguageDetectionCandidateResolver.candidates(snapshot: $0, supportedLocales: supportedLocales).locales
-        }
         let totalFileCount = verifiedSegments.count
-        let workItems = try transcriptionWorkItems(
-            verifiedSegments: verifiedSegments,
-            job: job,
-            supportedLocales: supportedLocales,
-            automaticLanguageCandidateLocales: automaticLanguageCandidateLocales,
-            automaticLanguageCandidates: automaticLanguageCandidates
-        )
         await notifyProgress(
             meetingId: job.meeting.id,
             sessionId: job.session.id,
             completedFileCount: 0,
             totalFileCount: totalFileCount
         )
-        let recognitionState = Self.signposter.beginInterval("Recognize audio runs")
         let fallbackCollector = BatchLanguageFallbackCollector()
+        let workItems = try await prepareTranscriptionWorkItems(
+            verifiedSegments: verifiedSegments,
+            job: job,
+            supportedLocales: supportedLocales,
+            automaticLanguageCandidates: automaticLanguageCandidates,
+            fallbackCollector: fallbackCollector
+        )
+        let recognitionState = Self.signposter.beginInterval("Recognize audio runs")
         var workResults: [TranscriptionWorkResult]
         do {
             workResults = try await transcribeConcurrently(
                 workItems: workItems,
-                fallbackCollector: fallbackCollector,
                 meetingId: job.meeting.id,
                 sessionId: job.session.id,
                 totalFileCount: totalFileCount
@@ -441,12 +437,39 @@ actor BatchTranscriptionCoordinator {
                 configuration: translationConfiguration
             )
         }
-        let transcriptSegments = workResults.flatMap(\.segments)
-        return transcriptSegments.sorted { lhs, rhs in
-            if lhs.startTime == rhs.startTime {
-                return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
-            }
-            return lhs.startTime < rhs.startTime
+        return sortedTranscriptSegments(workResults.flatMap(\.segments))
+    }
+
+    private func prepareTranscriptionWorkItems(
+        verifiedSegments: [RecordingAudioStore.VerifiedSegment],
+        job: Job,
+        supportedLocales: [Locale],
+        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?,
+        fallbackCollector: BatchLanguageFallbackCollector
+    ) async throws -> [TranscriptionWorkItem] {
+        let candidateLocales = automaticLanguageCandidates.map {
+            BatchLanguageDetectionCandidateResolver.candidates(snapshot: $0, supportedLocales: supportedLocales).locales
+        }
+        do {
+            return try await transcriptionWorkItems(
+                verifiedSegments: verifiedSegments,
+                job: job,
+                automaticConfiguration: AutomaticTranscriptionConfiguration(
+                    supportedLocales: supportedLocales,
+                    candidateLocales: candidateLocales,
+                    allowedLanguageIdentifiers: automaticLanguageCandidates?.identifierSet,
+                    languageDetector: languageDetector,
+                    onLanguageFallback: { fallback in
+                        await fallbackCollector.record(fallback)
+                    }
+                )
+            )
+        } catch {
+            await reportLanguageFallbacks(
+                fallbackCollector.snapshot(),
+                candidates: automaticLanguageCandidates
+            )
+            throw error
         }
     }
 
@@ -496,26 +519,12 @@ actor BatchTranscriptionCoordinator {
 
     private func transcribe(
         workItem: TranscriptionWorkItem,
-        fallbackCollector: BatchLanguageFallbackCollector,
         onFileConsumed: @escaping @Sendable (Int) async -> Void
     ) async throws -> TranscriptionWorkResult {
         let result: BatchSpeechTranscriptionResult
         switch workItem.request {
-        case let .automatic(request):
-            result = try await BatchSpeechTranscriberService.transcribe(
-                request,
-                languageDetector: languageDetector,
-                speechRecognizer: speechRecognizer,
-                audioFeatureAnalyzer: audioFeatureAnalyzer,
-                onLanguageFallback: { fallback in
-                    await fallbackCollector.record(fallback)
-                }
-            )
-            for fileIndex in workItem.fileIndices {
-                await onFileConsumed(fileIndex)
-            }
-        case let .manual(run):
-            result = try await BatchManualSpeechTranscriberService.transcribe(
+        case let .run(run):
+            result = try await BatchTranscriptionRunService.transcribe(
                 run,
                 speechRecognizer: speechRecognizer,
                 audioFeatureAnalyzer: audioFeatureAnalyzer,
@@ -673,7 +682,6 @@ actor BatchTranscriptionCoordinator {
 extension BatchTranscriptionCoordinator {
     private func transcribeConcurrently(
         workItems: [TranscriptionWorkItem],
-        fallbackCollector: BatchLanguageFallbackCollector,
         meetingId: UUID,
         sessionId: UUID,
         totalFileCount: Int
@@ -697,7 +705,6 @@ extension BatchTranscriptionCoordinator {
                 group.addTask { [self] in
                     try await transcribe(
                         workItem: workItem,
-                        fallbackCollector: fallbackCollector,
                         onFileConsumed: { fileIndex in
                             await reportFileConsumed(workItem.index, fileIndex)
                         }
@@ -716,7 +723,6 @@ extension BatchTranscriptionCoordinator {
                         group.addTask { [self] in
                             try await transcribe(
                                 workItem: workItem,
-                                fallbackCollector: fallbackCollector,
                                 onFileConsumed: { fileIndex in
                                     await reportFileConsumed(workItem.index, fileIndex)
                                 }
@@ -894,6 +900,15 @@ extension BatchTranscriptionCoordinator {
             }
             return (session.meetingId, session.isBatchRetranscriptionPending)
         }
+    }
+}
+
+private func sortedTranscriptSegments(_ segments: [TranscriptSegment]) -> [TranscriptSegment] {
+    segments.sorted { lhs, rhs in
+        if lhs.startTime == rhs.startTime {
+            return (lhs.speakerLabel ?? "") < (rhs.speakerLabel ?? "")
+        }
+        return lhs.startTime < rhs.startTime
     }
 }
 

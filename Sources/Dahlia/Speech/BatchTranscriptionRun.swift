@@ -1,6 +1,6 @@
 import Foundation
 
-struct BatchManualTranscriptionRun: Sendable {
+struct BatchTranscriptionRun: Sendable {
     let slices: [BatchSpeechAudioSlice]
     let sliceFileIndices: [Int]
     let localeIdentifier: String

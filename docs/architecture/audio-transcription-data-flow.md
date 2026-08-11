@@ -233,7 +233,8 @@ sequenceDiagram
 
 固定言語では、同一音源、同一形式、同一 locale で session time が連続する verified CAF range を一つの論理 run として
 同じ `SpeechAnalyzer` へ順次供給する。ready CAF 自体は結合または変更せず、入力は一 buffer ずつ遅延読出しする。
-自動判定は CAF ごとの言語判定結果を使うため、CAF 単位の transcription のままとし、一つずつ処理する。
+自動判定では各 CAF の言語を個別に判定した後、固定言語と同じ条件を満たす同一判定 locale の連続 CAF を
+一つの論理 run として認識する。
 
 各 Apple Speech 解析には無進捗 watchdog を設ける。解析開始、論理 run 内の CAF slice 消費、認識結果の受信を進捗とし、
 解析開始時に固定した設定時間（1／2／3分、既定1分）進捗がなければ `SpeechAnalyzer` をキャンセルして失敗として保存する。

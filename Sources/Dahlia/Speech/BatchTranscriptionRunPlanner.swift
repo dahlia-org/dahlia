@@ -1,10 +1,10 @@
 @preconcurrency import AVFoundation
 import Foundation
 
-enum BatchManualTranscriptionRunPlanner {
+enum BatchTranscriptionRunPlanner {
     typealias AudioFormatProvider = (RecordingAudioStore.VerifiedSegment) throws -> AVAudioFormat
 
-    private struct Candidate {
+    struct Candidate {
         let slice: BatchSpeechAudioSlice
         let localeIdentifier: String
         let source: RecordingAudioSource
@@ -18,13 +18,13 @@ enum BatchManualTranscriptionRunPlanner {
         }
     }
 
-    static func runs(
+    static func manualRuns(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         recordingStartTime: Date,
         audioFormatProvider: AudioFormatProvider = {
             try AVAudioFile(forReading: $0.url).processingFormat
         }
-    ) throws -> [BatchManualTranscriptionRun] {
+    ) throws -> [BatchTranscriptionRun] {
         let candidates = try verifiedSegments.enumerated().flatMap { fileIndex, verified in
             let audioFormat = try audioFormatProvider(verified)
             return try verified.ranges.compactMap { range -> Candidate? in
@@ -50,13 +50,20 @@ enum BatchManualTranscriptionRunPlanner {
                 )
             }
         }
-        .sorted { lhs, rhs in
+
+        return runs(candidates: candidates, recordingStartTime: recordingStartTime)
+    }
+
+    static func runs(
+        candidates: [Candidate],
+        recordingStartTime: Date
+    ) -> [BatchTranscriptionRun] {
+        let candidates = candidates.sorted { lhs, rhs in
             if lhs.source == rhs.source {
                 return lhs.sessionOffsetSeconds < rhs.sessionOffsetSeconds
             }
             return sourceOrder(lhs.source) < sourceOrder(rhs.source)
         }
-
         var grouped: [[Candidate]] = []
         for candidate in candidates {
             if let previous = grouped.last?.last,
@@ -66,9 +73,9 @@ enum BatchManualTranscriptionRunPlanner {
                 grouped.append([candidate])
             }
         }
-        return grouped.compactMap { candidates in
-            guard let first = candidates.first else { return nil }
-            return BatchManualTranscriptionRun(
+        return grouped.map { candidates in
+            let first = candidates[0]
+            return BatchTranscriptionRun(
                 slices: candidates.map(\.slice),
                 sliceFileIndices: candidates.map(\.fileIndex),
                 localeIdentifier: first.localeIdentifier,

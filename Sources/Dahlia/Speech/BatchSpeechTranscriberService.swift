@@ -8,67 +8,33 @@ enum BatchSpeechTranscriberService {
         let isTemporary: Bool
     }
 
-    static func transcribe(
-        _ request: BatchSpeechTranscriptionRequest,
-        languageDetector: (any BatchLanguageDetecting)? = nil,
-        speechRecognizer: any BatchSpeechRecognizing = AppleBatchSpeechRecognizer(),
-        audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
+    static func resolveLocale(
+        for request: BatchSpeechTranscriptionRequest,
+        languageDetector: any BatchLanguageDetecting,
         onLanguageFallback: @escaping @Sendable (BatchLanguageFallback) async -> Void = { _ in }
-    ) async throws -> BatchSpeechTranscriptionResult {
+    ) async throws -> BatchLanguageResolution {
         guard request.startFrame >= 0, request.frameCount > 0 else {
-            return BatchSpeechTranscriptionResult(
-                segments: [],
-                localeIdentifier: request.recordedLocaleIdentifiers.first ?? "",
-                languageFallback: nil
-            )
+            throw BatchSpeechTranscriberError.invalidAudioRange
         }
         try Task.checkCancellation()
-        let preparationTask = Task.detached(priority: .utility) {
-            try prepareAudio(
-                from: request.audioURL,
-                startFrame: request.startFrame,
-                frameCount: request.frameCount
-            )
-        }
-        let preparedAudio = try await withTaskCancellationHandler {
-            try await preparationTask.value
-        } onCancel: {
-            preparationTask.cancel()
-        }
+        let preparedAudio = try await preparedAudio(for: request)
         defer {
             if preparedAudio.isTemporary {
                 try? FileManager.default.removeItem(at: preparedAudio.url)
             }
         }
-
-        let resolution = try await resolvedLocale(
-            for: request,
+        let resolution = try await BatchLanguageDetectionService.resolveLocale(
             audioURL: preparedAudio.url,
-            languageDetector: languageDetector
+            recordedLocaleIdentifiers: request.recordedLocaleIdentifiers,
+            supportedLocales: request.supportedLocales,
+            detectionCandidateLocales: request.automaticLanguageCandidateLocales,
+            languageDetector: languageDetector,
+            allowedLanguageIdentifiers: request.allowedLanguageIdentifiers
         )
         if let fallback = resolution.fallback {
             await onLanguageFallback(fallback)
         }
-        let recognitions = try await speechRecognizer.recognize(audioURL: preparedAudio.url, locale: resolution.locale)
-        let audioFeatures = try await BatchTranscriptAudioFeatureExtraction.bestEffort(
-            recognitions: recognitions,
-            audioURL: preparedAudio.url,
-            source: request.source,
-            analyzer: audioFeatureAnalyzer
-        )
-        let segments = transcriptSegments(
-            from: recognitions,
-            audioFeatures: audioFeatures,
-            recordingSessionId: request.recordingSessionId,
-            recordingStartTime: request.recordingStartTime,
-            sessionOffsetSeconds: request.sessionOffsetSeconds,
-            source: request.source
-        )
-        return BatchSpeechTranscriptionResult(
-            segments: segments,
-            localeIdentifier: resolution.locale.identifier,
-            languageFallback: resolution.fallback
-        )
+        return resolution
     }
 
     static func transcriptSegments(
@@ -99,33 +65,21 @@ enum BatchSpeechTranscriberService {
         }
     }
 
-    private static func resolvedLocale(
-        for request: BatchSpeechTranscriptionRequest,
-        audioURL: URL,
-        languageDetector: (any BatchLanguageDetecting)?
-    ) async throws -> BatchLanguageResolution {
-        if request.languageDetectionMode == .manual,
-           let recordedLocaleIdentifier = request.recordedLocaleIdentifiers.first {
-            return BatchLanguageResolution(
-                locale: Locale(identifier: recordedLocaleIdentifier),
-                fallback: nil
+    private static func preparedAudio(
+        for request: BatchSpeechTranscriptionRequest
+    ) async throws -> PreparedAudio {
+        let preparationTask = Task.detached(priority: .utility) {
+            try prepareAudio(
+                from: request.audioURL,
+                startFrame: request.startFrame,
+                frameCount: request.frameCount
             )
         }
-        guard request.languageDetectionMode == .automatic else {
-            throw BatchSpeechTranscriberError.invalidAudioRange
+        return try await withTaskCancellationHandler {
+            try await preparationTask.value
+        } onCancel: {
+            preparationTask.cancel()
         }
-        guard let languageDetector else {
-            throw BatchSpeechTranscriberError.languageDetectionFailed
-        }
-
-        return try await BatchLanguageDetectionService.resolveLocale(
-            audioURL: audioURL,
-            recordedLocaleIdentifiers: request.recordedLocaleIdentifiers,
-            supportedLocales: request.supportedLocales,
-            detectionCandidateLocales: request.automaticLanguageCandidateLocales,
-            languageDetector: languageDetector,
-            allowedLanguageIdentifiers: request.allowedLanguageIdentifiers
-        )
     }
 
     private static func prepareAudio(from sourceURL: URL, startFrame: Int64, frameCount: Int64) throws -> PreparedAudio {

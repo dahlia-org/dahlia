@@ -69,7 +69,7 @@ import GRDB
         }
 
         @Test
-        func slowProgressCallbackDoesNotDelayNextRecognition() async throws {
+        func slowProgressCallbackDoesNotDelayRemainingAutomaticRunSlices() async throws {
             let fixture = try makeFixture(name: "BatchProgressCallbackConcurrency", duration: 0.025)
             defer { fixture.removeFiles() }
             let fileCount = BatchTranscriptionConcurrency.appleSpeechMaximum * 2
@@ -94,7 +94,8 @@ import GRDB
 
             await coordinator.enqueue(sessionId: fixture.session.id)
             try await waitUntil { await stateProbe.isHoldingProgressCallback }
-            try await waitUntil { await recognizer.callCount == fileCount }
+            try await waitUntil { await recognizer.callCount == 1 }
+            #expect(await recognizer.sliceCounts == [fileCount])
             let finalRunningState = BatchTranscriptionState.running(
                 sessionId: fixture.session.id,
                 progress: BatchTranscriptionProgress(completedFileCount: fileCount, totalFileCount: fileCount)

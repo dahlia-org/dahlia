@@ -5,7 +5,7 @@ import Foundation
 #if canImport(Testing)
     import Testing
 
-    struct BatchManualTranscriptionRunPlannerTests {
+    struct BatchTranscriptionRunPlannerTests {
         @Test
         func joinsContiguousPhysicalSegmentsWithMatchingSourceFormatAndLocale() throws {
             let sessionID = UUID.v7()
@@ -29,7 +29,7 @@ import Foundation
                 ),
             ]
 
-            let runs = try BatchManualTranscriptionRunPlanner.runs(
+            let runs = try BatchTranscriptionRunPlanner.manualRuns(
                 verifiedSegments: verified,
                 recordingStartTime: recordingStart,
                 audioFormatProvider: { try audioFormat(for: $0) }
@@ -90,7 +90,7 @@ import Foundation
                 ),
             ]
 
-            let runs = try BatchManualTranscriptionRunPlanner.runs(
+            let runs = try BatchTranscriptionRunPlanner.manualRuns(
                 verifiedSegments: verified,
                 recordingStartTime: recordingStart,
                 audioFormatProvider: { try audioFormat(for: $0) }
@@ -124,7 +124,7 @@ import Foundation
                 ),
             ]
 
-            let runs = try BatchManualTranscriptionRunPlanner.runs(
+            let runs = try BatchTranscriptionRunPlanner.manualRuns(
                 verifiedSegments: verified,
                 recordingStartTime: recordingStart,
                 audioFormatProvider: { segment in

@@ -7,137 +7,39 @@ import Foundation
 
     struct BatchSpeechTranscriberServiceTests {
         @Test
-        func manualModeSkipsLanguageDetectionAndUsesSelectedLocale() async throws {
-            let audioURL = try makeAudioFile(name: "manual")
-            defer { try? FileManager.default.removeItem(at: audioURL) }
-            let detector = SequenceLanguageDetector(detections: [])
-            let recognizer = RecordingSpeechRecognizer(recognitions: [])
-            let request = BatchSpeechTranscriptionRequest(
-                audioURL: audioURL,
-                startFrame: 0,
-                frameCount: 320,
-                recordedLocaleIdentifiers: ["en_GB"],
-                languageDetectionMode: .manual,
-                supportedLocales: [],
-                source: .microphone,
-                recordingSessionId: UUID.v7(),
-                recordingStartTime: .now,
-                sessionOffsetSeconds: 0
-            )
-
-            let result = try await BatchSpeechTranscriberService.transcribe(
-                request,
-                languageDetector: detector,
-                speechRecognizer: recognizer
-            )
-
-            #expect(result.localeIdentifier == "en_GB")
-            #expect(await detector.audioURLs.isEmpty)
-            #expect(await recognizer.calls.map(\.localeIdentifier) == ["en_GB"])
-        }
-
-        @Test
-        func automaticModeUsesEachCAFDetectionForLocaleTimingAndSource() async throws {
-            let firstAudioURL = try makeAudioFile(name: "ja")
-            let secondAudioURL = try makeAudioFile(name: "en")
-            defer {
-                try? FileManager.default.removeItem(at: firstAudioURL)
-                try? FileManager.default.removeItem(at: secondAudioURL)
-            }
-
-            let detector = SequenceLanguageDetector(detections: [
-                "ja",
-                "en",
-            ])
-            let recognizer = RecordingSpeechRecognizer(recognitions: [
-                BatchSpeechRecognition(startSeconds: 0.1, endSeconds: 0.4, text: " transcript "),
-            ])
-            let recordingStart = Date(timeIntervalSince1970: 1_776_384_000)
-            let sessionID = UUID.v7()
-
-            let first = try await BatchSpeechTranscriberService.transcribe(
-                request(
-                    audioURL: firstAudioURL,
-                    recordedLocaleIdentifier: "ja_JP",
-                    source: .microphone,
-                    sessionID: sessionID,
-                    recordingStart: recordingStart,
-                    sessionOffsetSeconds: 0
-                ),
-                languageDetector: detector,
-                speechRecognizer: recognizer
-            )
-            let second = try await BatchSpeechTranscriberService.transcribe(
-                request(
-                    audioURL: secondAudioURL,
-                    recordedLocaleIdentifier: "ja_JP",
-                    source: .system,
-                    sessionID: sessionID,
-                    recordingStart: recordingStart,
-                    sessionOffsetSeconds: 30
-                ),
-                languageDetector: detector,
-                speechRecognizer: recognizer
-            )
-
-            #expect(first.localeIdentifier == "ja_JP")
-            #expect(second.localeIdentifier == "en_US")
-            #expect(first.segments.first?.text == "transcript")
-            #expect(first.segments.first?.speakerLabel == "mic")
-            #expect(second.segments.first?.speakerLabel == "system")
-            #expect(first.segments.first?.startTime == recordingStart.addingTimeInterval(0.1))
-            #expect(second.segments.first?.startTime == recordingStart.addingTimeInterval(30.1))
-
-            let detectedAudioURLs = await detector.audioURLs
-            let recognitionCalls = await recognizer.calls
-            #expect(detectedAudioURLs.count == 2)
-            #expect(detectedAudioURLs == [firstAudioURL, secondAudioURL])
-            #expect(recognitionCalls.map(\.audioURL) == detectedAudioURLs)
-            #expect(recognitionCalls.map(\.localeIdentifier) == ["ja_JP", "en_US"])
-        }
-
-        @Test
         func automaticModePassesConfiguredLanguageCandidatesToDetector() async throws {
             let audioURL = try makeAudioFile(name: "candidates")
             defer { try? FileManager.default.removeItem(at: audioURL) }
             let detector = SequenceLanguageDetector(detections: ["ja"])
-            let recognizer = RecordingSpeechRecognizer(recognitions: [])
             let transcriptionRequest = request(
                 audioURL: audioURL,
                 recordedLocaleIdentifier: "ja_JP",
-                source: .microphone,
-                sessionID: UUID.v7(),
-                recordingStart: .now,
-                sessionOffsetSeconds: 0,
                 allowedLanguageIdentifiers: ["en", "ja"]
             )
 
-            _ = try await BatchSpeechTranscriberService.transcribe(
-                transcriptionRequest,
-                languageDetector: detector,
-                speechRecognizer: recognizer
+            _ = try await BatchSpeechTranscriberService.resolveLocale(
+                for: transcriptionRequest,
+                languageDetector: detector
             )
 
             #expect(await detector.allowedLanguageIdentifiers == [["en", "ja"]])
         }
 
         @Test
-        func partialRangeUsesOneTemporaryCAFAndRemovesItAfterRecognition() async throws {
-            let audioURL = try makeAudioFile(name: "partial")
+        func partialRangeLanguageResolutionRemovesTemporaryCAF() async throws {
+            let audioURL = try makeAudioFile(name: "partial-language-resolution")
             defer { try? FileManager.default.removeItem(at: audioURL) }
             let detector = SequenceLanguageDetector(detections: ["ja"])
-            let recognizer = RecordingSpeechRecognizer(recognitions: [])
 
-            _ = try await BatchSpeechTranscriberService.transcribe(
-                partialRequest(audioURL: audioURL),
-                languageDetector: detector,
-                speechRecognizer: recognizer
+            let resolution = try await BatchSpeechTranscriberService.resolveLocale(
+                for: partialRequest(audioURL: audioURL),
+                languageDetector: detector
             )
 
-            let call = try #require(await recognizer.calls.first)
-            #expect(await detector.audioURLs == [call.audioURL])
-            #expect(call.audioURL != audioURL)
-            #expect(!FileManager.default.fileExists(atPath: call.audioURL.path))
+            let temporaryURL = try #require(await detector.audioURLs.first)
+            #expect(resolution.locale.identifier == "ja_JP")
+            #expect(temporaryURL != audioURL)
+            #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
             #expect(FileManager.default.fileExists(atPath: audioURL.path))
         }
 
@@ -145,18 +47,16 @@ import Foundation
         func cancellationRemovesPartialRangeTemporaryCAF() async throws {
             let audioURL = try makeAudioFile(name: "cancelled-partial")
             defer { try? FileManager.default.removeItem(at: audioURL) }
-            let detector = SequenceLanguageDetector(detections: ["ja"])
-            let recognizer = CancellableSpeechRecognizer()
+            let detector = CancellableLanguageDetector()
             let transcriptionTask = Task {
-                try await BatchSpeechTranscriberService.transcribe(
-                    partialRequest(audioURL: audioURL),
-                    languageDetector: detector,
-                    speechRecognizer: recognizer
+                try await BatchSpeechTranscriberService.resolveLocale(
+                    for: partialRequest(audioURL: audioURL),
+                    languageDetector: detector
                 )
             }
 
-            try await waitUntil { await recognizer.audioURL != nil }
-            let temporaryURL = try #require(await recognizer.audioURL)
+            try await waitUntil { await detector.audioURL != nil }
+            let temporaryURL = try #require(await detector.audioURL)
             transcriptionTask.cancel()
             await #expect(throws: CancellationError.self) {
                 _ = try await transcriptionTask.value
@@ -171,38 +71,15 @@ import Foundation
             let audioURL = try makeAudioFile(name: "failed-partial-detection")
             defer { try? FileManager.default.removeItem(at: audioURL) }
             let detector = SequenceLanguageDetector(detections: [])
-            let recognizer = RecordingSpeechRecognizer(recognitions: [])
 
-            let result = try await BatchSpeechTranscriberService.transcribe(
-                partialRequest(audioURL: audioURL),
-                languageDetector: detector,
-                speechRecognizer: recognizer
+            let resolution = try await BatchSpeechTranscriberService.resolveLocale(
+                for: partialRequest(audioURL: audioURL),
+                languageDetector: detector
             )
 
             let temporaryURL = try #require(await detector.audioURLs.first)
-            #expect(result.localeIdentifier == "en_US")
-            #expect(result.languageFallback == .inferenceFailure)
-            #expect(await recognizer.calls.first?.audioURL == temporaryURL)
-            #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
-            #expect(FileManager.default.fileExists(atPath: audioURL.path))
-        }
-
-        @Test
-        func recognitionFailureRemovesPartialRangeTemporaryCAF() async throws {
-            let audioURL = try makeAudioFile(name: "failed-partial-recognition")
-            defer { try? FileManager.default.removeItem(at: audioURL) }
-            let detector = SequenceLanguageDetector(detections: ["ja"])
-            let recognizer = FailingSpeechRecognizer()
-
-            await #expect(throws: CocoaError.self) {
-                _ = try await BatchSpeechTranscriberService.transcribe(
-                    partialRequest(audioURL: audioURL),
-                    languageDetector: detector,
-                    speechRecognizer: recognizer
-                )
-            }
-
-            let temporaryURL = try #require(await recognizer.audioURL)
+            #expect(resolution.locale.identifier == "en_US")
+            #expect(resolution.fallback == .inferenceFailure)
             #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
             #expect(FileManager.default.fileExists(atPath: audioURL.path))
         }
@@ -213,22 +90,13 @@ import Foundation
                 startFrame: 80,
                 frameCount: 160,
                 recordedLocaleIdentifiers: ["ja_JP"],
-                languageDetectionMode: .automatic,
-                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
-                source: .microphone,
-                recordingSessionId: UUID.v7(),
-                recordingStartTime: .now,
-                sessionOffsetSeconds: 0
+                supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")]
             )
         }
 
         private func request(
             audioURL: URL,
             recordedLocaleIdentifier: String,
-            source: RecordingAudioSource,
-            sessionID: UUID,
-            recordingStart: Date,
-            sessionOffsetSeconds: TimeInterval,
             allowedLanguageIdentifiers: Set<String>? = nil
         ) -> BatchSpeechTranscriptionRequest {
             BatchSpeechTranscriptionRequest(
@@ -236,13 +104,8 @@ import Foundation
                 startFrame: 0,
                 frameCount: 320,
                 recordedLocaleIdentifiers: [recordedLocaleIdentifier],
-                languageDetectionMode: .automatic,
                 supportedLocales: [Locale(identifier: "ja_JP"), Locale(identifier: "en_US")],
-                allowedLanguageIdentifiers: allowedLanguageIdentifiers,
-                source: source,
-                recordingSessionId: sessionID,
-                recordingStartTime: recordingStart,
-                sessionOffsetSeconds: sessionOffsetSeconds
+                allowedLanguageIdentifiers: allowedLanguageIdentifiers
             )
         }
 
@@ -293,41 +156,18 @@ import Foundation
         func unload() async {}
     }
 
-    private actor RecordingSpeechRecognizer: BatchSpeechRecognizing {
-        struct Call: Sendable {
-            let audioURL: URL
-            let localeIdentifier: String
-        }
-
-        private let recognitions: [BatchSpeechRecognition]
-        private(set) var calls: [Call] = []
-
-        init(recognitions: [BatchSpeechRecognition]) {
-            self.recognitions = recognitions
-        }
-
-        func recognize(audioURL: URL, locale: Locale) -> [BatchSpeechRecognition] {
-            calls.append(Call(audioURL: audioURL, localeIdentifier: locale.identifier))
-            return recognitions
-        }
-    }
-
-    private actor CancellableSpeechRecognizer: BatchSpeechRecognizing {
+    private actor CancellableLanguageDetector: BatchLanguageDetecting {
         private(set) var audioURL: URL?
 
-        func recognize(audioURL: URL, locale _: Locale) async throws -> [BatchSpeechRecognition] {
+        func detectLanguage(
+            audioURL: URL,
+            allowedLanguageIdentifiers _: Set<String>?
+        ) async throws -> BatchLanguageDetectionOutcome {
             self.audioURL = audioURL
             try await Task.sleep(for: .seconds(30))
-            return []
+            return .confidentDetection("ja")
         }
-    }
 
-    private actor FailingSpeechRecognizer: BatchSpeechRecognizing {
-        private(set) var audioURL: URL?
-
-        func recognize(audioURL: URL, locale _: Locale) throws -> [BatchSpeechRecognition] {
-            self.audioURL = audioURL
-            throw CocoaError(.fileReadUnknown)
-        }
+        func unload() async {}
     }
 #endif

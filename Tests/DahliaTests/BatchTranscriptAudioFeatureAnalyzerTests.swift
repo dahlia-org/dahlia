@@ -191,7 +191,7 @@ import Foundation
                 BatchSpeechAudioSlice(audioURL: firstURL, startFrame: 0, frameCount: 16000),
                 BatchSpeechAudioSlice(audioURL: secondURL, startFrame: 0, frameCount: 16000),
             ]
-            let run = BatchManualTranscriptionRun(
+            let run = BatchTranscriptionRun(
                 slices: slices,
                 sliceFileIndices: [0, 1],
                 localeIdentifier: "en_US",
@@ -205,7 +205,7 @@ import Foundation
                 recognitions: [recognition(start: 0.8, end: 1.2)]
             )
 
-            let result = try await BatchManualSpeechTranscriberService.transcribe(
+            let result = try await BatchTranscriptionRunService.transcribe(
                 run,
                 speechRecognizer: recognizer
             )
@@ -216,27 +216,25 @@ import Foundation
         }
 
         @Test
-        func extractionFailureDoesNotFailAutomaticTranscription() async throws {
+        func extractionFailureDoesNotFailTranscriptionRun() async throws {
             let audioURL = try makeAudioFile([
                 Tone(duration: 1, frequency: 220, amplitude: 0.25),
             ])
             defer { try? FileManager.default.removeItem(at: audioURL) }
-            let request = BatchSpeechTranscriptionRequest(
-                audioURL: audioURL,
-                startFrame: 0,
-                frameCount: 16000,
-                recordedLocaleIdentifiers: ["en_US"],
-                languageDetectionMode: .manual,
-                supportedLocales: [],
+            let run = BatchTranscriptionRun(
+                slices: [BatchSpeechAudioSlice(audioURL: audioURL, startFrame: 0, frameCount: 16000)],
+                sliceFileIndices: [0],
+                localeIdentifier: "en_US",
                 source: .microphone,
                 recordingSessionId: .v7(),
                 recordingStartTime: .now,
-                sessionOffsetSeconds: 0
+                sessionOffsetSeconds: 0,
+                fileIndices: [0]
             )
 
-            let result = try await BatchSpeechTranscriberService.transcribe(
-                request,
-                speechRecognizer: FileSpeechRecognizer(
+            let result = try await BatchTranscriptionRunService.transcribe(
+                run,
+                speechRecognizer: SliceSpeechRecognizer(
                     recognitions: [recognition(start: 0.2, end: 0.8)]
                 ),
                 audioFeatureAnalyzer: FailingAudioFeatureAnalyzer()
@@ -329,14 +327,6 @@ import Foundation
         let duration: TimeInterval
         let frequency: Double?
         let amplitude: Float
-    }
-
-    private struct FileSpeechRecognizer: BatchSpeechRecognizing {
-        let recognitions: [BatchSpeechRecognition]
-
-        func recognize(audioURL _: URL, locale _: Locale) -> [BatchSpeechRecognition] {
-            recognitions
-        }
     }
 
     private struct SliceSpeechRecognizer: BatchSpeechRecognizing {
