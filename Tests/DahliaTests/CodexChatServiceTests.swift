@@ -614,7 +614,13 @@ import Foundation
             #expect(config["web_search"] == .string("live"))
             #expect(config["mcp_servers"] == .object([
                 "dahlia": .object([
-                    "args": .array([.string("--vault-id"), .string(vaultID.uuidString), .string("--write")]),
+                    "args": .array([
+                        .string("--vault-id"),
+                        .string(vaultID.uuidString),
+                        .string("--write"),
+                        .string("--telemetry-origin"),
+                        .string("codexChat"),
+                    ]),
                     "command": .string("/tmp/dahlia-mcp"),
                     "enabled": .bool(true),
                 ]),

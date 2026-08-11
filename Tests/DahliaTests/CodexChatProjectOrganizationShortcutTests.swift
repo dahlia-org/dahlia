@@ -37,11 +37,13 @@ import Foundation
             let settings = AppSettings()
             let vault = Self.testVault()
             settings.currentVault = vault
+            var telemetryEvents: [UsageTelemetryEvent] = []
             let session = CodexChatSessionModel(
                 modelID: "default-model",
                 effort: "medium",
                 service: service,
-                settings: settings
+                settings: settings,
+                usageTelemetryReporter: { telemetryEvents.append($0) }
             )
             let meeting = Self.meetingReference(name: "Keep reference")
             let attachment = CodexChatImageAttachment(data: Data([0x01]), mimeType: "image/png")
@@ -61,6 +63,7 @@ import Foundation
             #expect(session.draft == "Keep draft")
             #expect(session.selectedMeetingReferenceIDs == [meeting.id])
             #expect(session.attachedImages == [attachment])
+            #expect(telemetryEvents == [.aiChatPromptSubmitted])
         }
 
         @Test

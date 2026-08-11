@@ -85,7 +85,7 @@ runtime resource を所有しない。
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
-workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。
+workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。内蔵 MCP helper も型付きの粗い tool-call event だけを専用 adapter へ渡し、外部 MCP client は計測しない。
 SDK 初期化時の cache I/O は background で行い、準備完了前のイベントは欠測を許容する。送信完了を待たず、独自の再送・永続キューを持たない。許可データと SDK 境界は
 [`匿名テレメトリ収集ポリシー`](docs/telemetry.md) を正本とする。
 

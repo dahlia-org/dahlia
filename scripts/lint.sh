@@ -22,14 +22,17 @@ echo "SwiftFormat: done"
 
 echo ""
 echo "=== Telemetry policy ==="
-telemetrydeck_adapter="Sources/Dahlia/Services/TelemetryDeckClient.swift"
-telemetrydeck_imports="$(grep -RlE '^(@preconcurrency )?import TelemetryDeck$' Sources/Dahlia || true)"
-telemetrydeck_calls="$(grep -RlE 'TelemetryDeck\.' Sources/Dahlia || true)"
-if [ "$telemetrydeck_imports" != "$telemetrydeck_adapter" ] || [ "$telemetrydeck_calls" != "$telemetrydeck_adapter" ]; then
-    echo "error: TelemetryDeck imports and SDK calls must stay inside ${telemetrydeck_adapter}" >&2
+telemetrydeck_app_adapter="Sources/Dahlia/Services/TelemetryDeckClient.swift"
+telemetrydeck_mcp_adapter="Sources/DahliaMCP/TelemetryDeckClient.swift"
+telemetrydeck_adapters="$(printf '%s\n%s' "$telemetrydeck_app_adapter" "$telemetrydeck_mcp_adapter" | sort)"
+telemetrydeck_imports="$(grep -RlE '^(@preconcurrency )?import TelemetryDeck$' Sources | sort || true)"
+telemetrydeck_calls="$(grep -RlE 'TelemetryDeck\.' Sources | sort || true)"
+if [ "$telemetrydeck_imports" != "$telemetrydeck_adapters" ] || [ "$telemetrydeck_calls" != "$telemetrydeck_adapters" ]; then
+    echo "error: TelemetryDeck imports and SDK calls must stay inside designated adapters" >&2
     exit 1
 fi
-validate_telemetrydeck_adapter "$telemetrydeck_adapter"
+validate_telemetrydeck_adapter "$telemetrydeck_app_adapter" "app"
+validate_telemetrydeck_adapter "$telemetrydeck_mcp_adapter" "mcpHelper"
 echo "Telemetry policy: done"
 
 echo ""

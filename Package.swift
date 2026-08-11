@@ -37,7 +37,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "DahliaMCP",
-            dependencies: ["DahliaMeetingAccess"],
+            dependencies: [
+                "DahliaMeetingAccess",
+                .product(name: "TelemetryDeck", package: "SwiftSDK"),
+            ],
             path: "Sources/DahliaMCP"
         ),
         .executableTarget(

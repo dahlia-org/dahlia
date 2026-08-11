@@ -50,7 +50,9 @@ import Foundation
             service.record(.recording(
                 .failed(.persistence),
                 mode: .batch,
-                sources: .microphoneAndSystemAudio
+                sources: .microphoneAndSystemAudio,
+                meetingScope: .continued,
+                duration: nil
             ))
             service.record(.export(
                 .completed,
@@ -63,16 +65,19 @@ import Foundation
                     name: "Dahlia.Recording.failed",
                     parameters: [
                         "audioSources": "microphoneAndSystemAudio",
+                        "meetingScope": "continued",
                         "stage": "persistence",
                         "transcriptionMode": "batch",
-                    ]
+                    ],
+                    floatValue: nil
                 ),
                 .init(
                     name: "Dahlia.Export.completed",
                     parameters: [
                         "destination": "googleDocs",
                         "trigger": "summaryGeneration",
-                    ]
+                    ],
+                    floatValue: nil
                 ),
             ])
         }
@@ -91,6 +96,7 @@ import Foundation
                 "stop",
                 "persistence",
             ])
+            #expect(UsageTelemetryEvent.MeetingScope.allCases.map(\.rawValue) == ["new", "continued"])
             #expect(UsageTelemetryEvent.TranscriptionFailureStage.allCases.map(\.rawValue) == [
                 "start",
                 "persistence",
@@ -108,7 +114,9 @@ import Foundation
             let recording = UsageTelemetryEvent.recording(
                 .failed(.capture),
                 mode: .realtime,
-                sources: .microphone
+                sources: .microphone,
+                meetingScope: .new,
+                duration: nil
             )
             let transcription = UsageTelemetryEvent.transcription(.failed(.persistence), mode: .realtime)
             let summary = UsageTelemetryEvent.summary(.failed(.generation), trigger: .automaticAfterBatch)
@@ -134,15 +142,48 @@ import Foundation
         func recordingTerminalEventsKeepStartDimensionsAfterRuntimeFailure() {
             var context = RecordingTelemetryContext(
                 mode: .realtime,
-                audioSources: .microphoneAndSystemAudio
+                audioSources: .microphoneAndSystemAudio,
+                meetingScope: .continued
             )
             context.recordingFailureStage = .capture
             context.transcriptionFailureStage = .transcription
 
-            #expect(context.terminalEvents() == [
-                .recording(.failed(.capture), mode: .realtime, sources: .microphoneAndSystemAudio),
+            #expect(context.terminalEvents(recordingDuration: 900) == [
+                .recording(
+                    .failed(.capture),
+                    mode: .realtime,
+                    sources: .microphoneAndSystemAudio,
+                    meetingScope: .continued,
+                    duration: nil
+                ),
                 .transcription(.failed(.transcription), mode: .realtime),
             ])
+        }
+
+        @Test
+        func completedRecordingRoundsDurationToMinutesAndCapsAtSixHours() {
+            func event(duration: TimeInterval) -> UsageTelemetryEvent {
+                .recording(
+                    .completed,
+                    mode: .realtime,
+                    sources: .microphone,
+                    meetingScope: .new,
+                    duration: duration
+                )
+            }
+
+            #expect(event(duration: 29).floatValue == 0)
+            #expect(event(duration: 30).floatValue == 1)
+            #expect(event(duration: 90).floatValue == 2)
+            #expect(event(duration: 21_600).floatValue == 360)
+            #expect(event(duration: 86_400).floatValue == 360)
+            #expect(UsageTelemetryEvent.recording(
+                .failed(.stop),
+                mode: .batch,
+                sources: .systemAudio,
+                meetingScope: .continued,
+                duration: 600
+            ).floatValue == nil)
         }
 
         private func waitUntilEnabled(_ service: UsageTelemetryService) async -> Bool {
@@ -226,6 +267,7 @@ import Foundation
         struct Signal: Equatable {
             let name: String
             let parameters: [String: String]
+            let floatValue: Double?
         }
 
         private(set) var starts: [Start] = []
@@ -235,8 +277,8 @@ import Foundation
             starts.append(.init(appID: appID, testMode: testMode))
         }
 
-        func signal(_ name: String, parameters: [String: String]) {
-            signals.append(.init(name: name, parameters: parameters))
+        func signal(_ name: String, parameters: [String: String], floatValue: Double?) {
+            signals.append(.init(name: name, parameters: parameters, floatValue: floatValue))
         }
     }
 #endif

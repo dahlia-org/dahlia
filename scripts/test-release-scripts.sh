@@ -385,12 +385,13 @@ test_telemetrydeck_adapter_allowlist() {
         'await Task.detached(priority: .utility) {' \
         'let configuration = TelemetryDeck.Config(appID: appID)' \
         'configuration.testMode = testMode' \
+        'configuration.defaultParameters = { ["runtime": "app"] }' \
         'TelemetryDeck.initialize(config: configuration)' \
-        'TelemetryDeck.signal(name, parameters: parameters)' > "$adapter_path"
-    validate_telemetrydeck_adapter "$adapter_path"
+        'TelemetryDeck.signal(name, parameters: parameters, floatValue: floatValue)' > "$adapter_path"
+    validate_telemetrydeck_adapter "$adapter_path" "app"
 
     printf '%s\n' 'TelemetryDeck.updateDefaultUserID(to: userID)' >> "$adapter_path"
-    expect_failure validate_telemetrydeck_adapter "$adapter_path"
+    expect_failure validate_telemetrydeck_adapter "$adapter_path" "app"
 
     printf '%s\n' \
         'await Task.detached(priority: .utility) {' \
@@ -399,7 +400,7 @@ test_telemetrydeck_adapter_allowlist() {
         'configuration.defaultParameters = parameters' \
         'TelemetryDeck.initialize(config: configuration)' \
         'TelemetryDeck.signal(name, parameters: parameters)' > "$adapter_path"
-    expect_failure validate_telemetrydeck_adapter "$adapter_path"
+    expect_failure validate_telemetrydeck_adapter "$adapter_path" "app"
 }
 
 test_codesigning_keychain_unlock() {

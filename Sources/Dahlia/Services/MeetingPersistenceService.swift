@@ -26,6 +26,7 @@ final class MeetingPersistenceService {
     private let dbQueue: DatabaseQueue
     nonisolated let meetingId: UUID
     nonisolated let recordingSessionId: UUID
+    nonisolated let isFirstRecordingSession: Bool
     private(set) var projectId: UUID?
     private(set) var projectName: String?
     private var recordingSession: RecordingSessionRecord
@@ -55,6 +56,7 @@ final class MeetingPersistenceService {
         self.projectId = projectId
         self.projectName = projectName
         self.recordingSession = recordingSession
+        self.isFirstRecordingSession = createsMeeting || resetsRecordingStartOnCancel
         self.createsMeeting = createsMeeting
         self.resetsRecordingStartOnCancel = resetsRecordingStartOnCancel
         self.persistencePolicy = persistencePolicy

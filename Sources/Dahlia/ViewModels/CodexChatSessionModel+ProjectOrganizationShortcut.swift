@@ -14,6 +14,7 @@ extension CodexChatSessionModel {
         calendar: Calendar = .current
     ) {
         guard canSendProjectOrganizationShortcut else { return }
+        usageTelemetryReporter(.aiChatPromptSubmitted)
         submit(CodexChatProjectOrganizationShortcut.prompt(now: now, calendar: calendar))
     }
 }

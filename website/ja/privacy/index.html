@@ -82,12 +82,15 @@
           </p>
           <h3>匿名の利用状況分析</h3>
           <p>
-            Dahliaは、録音、文字起こし、要約生成、書き出しが開始・完了・失敗したかという低頻度のworkflow eventを
-            TelemetryDeckへ送信します。eventには文字起こし方式、録音開始時に有効な音源、実行契機、書き出し先、失敗段階の固定区分が
-            含まれる場合があります。TelemetryDeck SDKは、インストールごとのハッシュ化ID、匿名session ID、アプリ・SDK version、
+            Dahliaは、録音、文字起こし、要約生成、書き出しが開始・完了・失敗したか、AIチャットを利用したか、内蔵AIがDahliaの
+            MCP toolを利用したかという低頻度のworkflow eventをTelemetryDeckへ送信します。eventには文字起こし方式、録音開始時に
+            有効な音源、新規または再開録音、実行契機、書き出し先、失敗段階、内蔵AIの処理元、read/write、粗い機能分類の固定区分が
+            含まれる場合があります。完了した録音については、録音時間を分単位に四捨五入して最大360分に制限した数値も送信します。
+            外部clientによるMCP利用、MCP tool名、引数、結果は送信しません。TelemetryDeck SDKは、インストールごとのハッシュ化ID、
+            匿名session ID、アプリ・SDK version、
             OS・端末特性、言語、locale、地域、timezone、外観、accessibility設定、時刻・曜日などのcalendar bucket、初回利用日、
             session数、利用日数、直前・平均session時間も付加します。Dahliaは診断・利用eventへ、
-            会議内容、氏名、メールアドレス、ファイルpath、ローカルレコードID、認証情報、自由文のエラーメッセージを添付しません。
+            会議内容、チャットのプロンプト・応答、氏名、メールアドレス、ファイルpath、ローカルレコードID、認証情報、自由文のエラーメッセージを添付しません。
           </p>
         </section>
 

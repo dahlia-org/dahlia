@@ -67,7 +67,7 @@ The lint script and pre-commit hook use the exact SwiftFormat version managed by
 
 If you set `SENTRY_DSN` before running `build-app.sh` or `notarize.sh`, the generated release app embeds the DSN into `Info.plist` and enables Sentry when launched from Finder. Debug runs remain disabled, so `swift run Dahlia` and `run-dev.sh` do not send Sentry events by default.
 
-Set `TELEMETRYDECK_APP_ID` before `build-app.sh`, `notarize.sh`, or `run-dev.sh` to embed the public TelemetryDeck App ID. If it is absent, usage telemetry stays disabled. Debug builds send only Test Mode signals. Dahlia records allowlisted workflow outcomes without meeting content or identifiers and never waits for delivery; see [`docs/telemetry.md`](docs/telemetry.md).
+Set `TELEMETRYDECK_APP_ID` before `build-app.sh`, `notarize.sh`, or `run-dev.sh` to embed the public TelemetryDeck App ID. If it is absent, usage telemetry stays disabled. Debug builds send only Test Mode signals. Dahlia records allowlisted workflow outcomes, bounded recording durations, AI chat adoption, and built-in MCP usage without meeting content or identifiers and never waits for delivery. External MCP client usage is not collected; see [`docs/telemetry.md`](docs/telemetry.md).
 
 `build-app.sh` and `run-dev.sh` never upload files externally. When `notarize.sh` builds a Sentry-enabled release, it requires `SENTRY_AUTH_TOKEN` and `sentry-cli`, verifies that the executable and dSYM UUIDs match, then uploads the dSYM after notarization succeeds:
 

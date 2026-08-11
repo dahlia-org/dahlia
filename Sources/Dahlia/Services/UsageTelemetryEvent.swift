@@ -39,6 +39,11 @@ enum UsageTelemetryEvent: Equatable, Sendable {
         case persistence
     }
 
+    enum MeetingScope: String, CaseIterable, Sendable {
+        case new
+        case continued
+    }
+
     enum TranscriptionFailureStage: String, CaseIterable, Sendable {
         case start
         case persistence
@@ -69,14 +74,23 @@ enum UsageTelemetryEvent: Equatable, Sendable {
         case localFiles
     }
 
-    case recording(Lifecycle<RecordingFailureStage>, mode: TranscriptionModeValue, sources: AudioSources)
+    // swiftlint:disable:next enum_case_associated_values_count
+    case recording(
+        Lifecycle<RecordingFailureStage>,
+        mode: TranscriptionModeValue,
+        sources: AudioSources,
+        meetingScope: MeetingScope,
+        duration: TimeInterval?
+    )
     case transcription(Lifecycle<TranscriptionFailureStage>, mode: TranscriptionModeValue)
     case summary(Lifecycle<SummaryFailureStage>, trigger: SummaryTrigger)
     case export(Lifecycle<ExportFailureStage>, destination: ExportDestination, trigger: ExportTrigger)
+    case aiChatPromptSubmitted
+    case aiChatLiveModeEnabled
 
     var signalName: String {
         switch self {
-        case let .recording(lifecycle, _, _):
+        case let .recording(lifecycle, _, _, _, _):
             "Dahlia.Recording.\(lifecycle.signalSuffix)"
         case let .transcription(lifecycle, _):
             "Dahlia.Transcription.\(lifecycle.signalSuffix)"
@@ -84,14 +98,22 @@ enum UsageTelemetryEvent: Equatable, Sendable {
             "Dahlia.Summary.\(lifecycle.signalSuffix)"
         case let .export(lifecycle, _, _):
             "Dahlia.Export.\(lifecycle.signalSuffix)"
+        case .aiChatPromptSubmitted:
+            "Dahlia.AIChat.promptSubmitted"
+        case .aiChatLiveModeEnabled:
+            "Dahlia.AIChat.liveModeEnabled"
         }
     }
 
     var parameters: [String: String] {
         switch self {
-        case let .recording(lifecycle, mode, sources):
+        case let .recording(lifecycle, mode, sources, meetingScope, _):
             parameters(
-                ["transcriptionMode": mode.rawValue, "audioSources": sources.rawValue],
+                [
+                    "transcriptionMode": mode.rawValue,
+                    "audioSources": sources.rawValue,
+                    "meetingScope": meetingScope.rawValue,
+                ],
                 failureStage: lifecycle.failureStage
             )
         case let .transcription(lifecycle, mode):
@@ -103,7 +125,14 @@ enum UsageTelemetryEvent: Equatable, Sendable {
                 ["destination": destination.rawValue, "trigger": trigger.rawValue],
                 failureStage: lifecycle.failureStage
             )
+        case .aiChatPromptSubmitted, .aiChatLiveModeEnabled:
+            [:]
         }
+    }
+
+    var floatValue: Double? {
+        guard case let .recording(.completed, _, _, _, duration?) = self else { return nil }
+        return min(360, max(0, (duration / 60).rounded()))
     }
 
     private func parameters(

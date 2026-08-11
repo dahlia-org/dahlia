@@ -86,10 +86,11 @@ configure_telemetrydeck_plist() {
 
 validate_telemetrydeck_adapter() {
     local adapter_path="$1"
+    local runtime="$2"
     local actual_sdk_members
     local actual_configuration_members
     local expected_sdk_members=$'TelemetryDeck.Config\nTelemetryDeck.initialize\nTelemetryDeck.signal'
-    local expected_configuration_members='configuration.testMode'
+    local expected_configuration_members=$'configuration.defaultParameters\nconfiguration.testMode'
 
     actual_sdk_members="$(grep -Eo 'TelemetryDeck\.[A-Za-z][A-Za-z0-9_]*' "$adapter_path" | sort -u || true)"
     if [ "$actual_sdk_members" != "$expected_sdk_members" ]; then
@@ -108,8 +109,13 @@ validate_telemetrydeck_adapter() {
         return 1
     fi
 
-    if grep -Eq 'customUserID:|floatValue:' "$adapter_path"; then
-        echo "error: custom user IDs and numeric payloads are forbidden by docs/telemetry.md" >&2
+    if ! grep -Fq "configuration.defaultParameters = { [\"runtime\": \"${runtime}\"] }" "$adapter_path"; then
+        echo "error: TelemetryDeck adapter must set its allowlisted runtime" >&2
+        return 1
+    fi
+
+    if grep -Eq 'customUserID:' "$adapter_path"; then
+        echo "error: custom user IDs are forbidden by docs/telemetry.md" >&2
         return 1
     fi
 }

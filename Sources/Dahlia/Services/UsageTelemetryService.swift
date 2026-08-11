@@ -1,5 +1,7 @@
 import Foundation
 
+typealias UsageTelemetryReporter = @MainActor (UsageTelemetryEvent) -> Void
+
 /// Sends allowlisted, content-free product metrics through TelemetryDeck's asynchronous queue.
 @MainActor
 final class UsageTelemetryService {
@@ -33,7 +35,7 @@ final class UsageTelemetryService {
 
     func record(_ event: UsageTelemetryEvent) {
         guard isEnabled else { return }
-        client.signal(event.signalName, parameters: event.parameters)
+        client.signal(event.signalName, parameters: event.parameters, floatValue: event.floatValue)
     }
 
     static func resolveAppID(infoDictionary: [String: Any]) -> String? {
