@@ -91,6 +91,6 @@ fail-closed の前提は「チャットは tool を利用しない」だった�
 
 - ADR-0003: Codex app-server をアプリ共有の長寿命 AI バックエンドとして使う
 - ADR-0012: 単一顧客の組織ビューと単数 CRUD による逐次AI更新
-- `CodexChatService`: `apps/macos/Sources/Dahlia/Services/CodexChatService.swift`
-- approval routing: `apps/macos/Sources/Dahlia/Services/CodexAppServerService.swift`
-- 承認 UI: `apps/macos/Sources/Dahlia/Views/CodexChat/CodexChatApprovalView.swift`
+- `CodexChatService`: `Sources/Dahlia/Services/CodexChatService.swift`
+- approval routing: `Sources/Dahlia/Services/CodexAppServerService.swift`
+- 承認 UI: `Sources/Dahlia/Views/CodexChat/CodexChatApprovalView.swift`

@@ -23,4 +23,4 @@ The production database is at `~/Library/Application Support/Dahlia/dahlia.sqlit
 
 - Add a test for each new migration that starts from the prior schema with existing rows and verifies that values and relationships survive.
 - Verify both applying every migration to an empty database and upgrading from the immediately preceding schema.
-- Run at least `swift test --package-path apps/macos --filter AppDatabaseManagerTests` plus any migration- or repository-specific tests for the changed behavior.
+- Run at least `swift test --filter AppDatabaseManagerTests` plus any migration- or repository-specific tests for the changed behavior.

@@ -9,7 +9,7 @@ Create release notes for people who use Dahlia, based on repository evidence rat
 
 ## Gather evidence
 
-1. Determine the target version from the request. If absent, read `CFBundleShortVersionString` from `apps/macos/Resources/Info.plist` and prefix it with `v`.
+1. Determine the target version from the request. If absent, read `CFBundleShortVersionString` from `Resources/Info.plist` and prefix it with `v`.
 2. Find the newest earlier semantic-version tag reachable from `HEAD`. Exclude the target tag itself when it already exists.
 3. Inspect the complete range from that tag through `HEAD`:
    - Read the first-parent commit list and subjects.

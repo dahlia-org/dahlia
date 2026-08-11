@@ -10,7 +10,7 @@ if [[ -z "${DEVELOPER_DIR:-}" ]] \
 fi
 
 exec swift run \
-    --package-path "$repo_root/apps/macos/BuildTools" \
+    --package-path "$repo_root/BuildTools" \
     --configuration release \
     --disable-automatic-resolution \
     swiftformat \

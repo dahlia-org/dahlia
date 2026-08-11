@@ -9,7 +9,7 @@ ARCHIVE_BINARY="codex-${TARGET}"
 DOWNLOAD_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/${ASSET_NAME}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")/apps/macos"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 CACHE_DIR="${PROJECT_DIR}/.build/codex-download"
 ARCHIVE_PATH="${CACHE_DIR}/${ASSET_NAME}"

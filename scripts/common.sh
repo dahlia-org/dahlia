@@ -1,14 +1,6 @@
 #!/bin/bash
 # Shared build and release helpers.
 
-load_local_env() {
-    if [ -f "$1" ]; then
-        set -a
-        source "$1"
-        set +a
-    fi
-}
-
 require_commands() {
     local command_name
 
