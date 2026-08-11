@@ -12,9 +12,9 @@ This file applies to the entire repository. Before editing a path covered by a m
 
 | Scope | Additional guidance |
 | --- | --- |
-| `Sources/Dahlia/` | Architecture, concurrency, and UI: `Sources/Dahlia/AGENTS.md` |
-| `Sources/Dahlia/Database/` | GRDB and migrations: `Sources/Dahlia/Database/AGENTS.md` |
-| `Tests/DahliaTests/` | Test implementation and verification: `Tests/DahliaTests/AGENTS.md` |
+| `apps/macos/Sources/Dahlia/` | Architecture, concurrency, and UI: `apps/macos/Sources/Dahlia/AGENTS.md` |
+| `apps/macos/Sources/Dahlia/Database/` | GRDB and migrations: `apps/macos/Sources/Dahlia/Database/AGENTS.md` |
+| `apps/macos/Tests/DahliaTests/` | Test implementation and verification: `apps/macos/Tests/DahliaTests/AGENTS.md` |
 | `scripts/` | SwiftPM build, signing, notarization, and lint scripts |
 
 `CLAUDE.md` imports the `AGENTS.md` in the same directory with `@AGENTS.md`. Do not maintain duplicate content.
@@ -29,7 +29,7 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Current runtime ownership or workload boundaries | [`ARCHITECTURE.md`](ARCHITECTURE.md#runtime-data-flow) |
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
-| UI interaction, rendering workload, or responsiveness | [`Sources/Dahlia/AGENTS.md`](Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
+| UI interaction, rendering workload, or responsiveness | [`apps/macos/Sources/Dahlia/AGENTS.md`](apps/macos/Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
 | Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [ADR-0026](docs/adr/0026-measure-product-adoption-with-bounded-telemetry.md) and [ADR-0025](docs/adr/0025-adopt-allowlisted-nonblocking-telemetry.md) |
 | Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
@@ -50,7 +50,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - Use Swift Package Manager only. Do not generate an Xcode project.
 - The app has exactly five SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
 - Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
-- Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
+- Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `apps/macos/Sources/Dahlia/Database/AGENTS.md`.
 
 ## Code Review Rules
 
@@ -69,7 +69,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - Never infer an `x.0.0` release. Increment `x` and reset `y` and `z` to `0` only when the user explicitly requests a major version; ask before release if a major increment appears necessary.
 - Update versions during release preparation, not as part of ordinary feature or fix changes.
 - Treat `CFBundleVersion` as an integer build number independent of the marketing version. Increase it from the latest published build for every newly published distribution artifact, including a replacement with the same marketing version. Local builds and unpublished attempts do not require an increment.
-- During release preparation, update `CFBundleShortVersionString` and `CFBundleVersion` together in `Resources/Info.plist`.
+- During release preparation, update `CFBundleShortVersionString` and `CFBundleVersion` together in `apps/macos/Resources/Info.plist`.
 
 ## Authorization
 
@@ -82,21 +82,21 @@ conflict, and update the tenet only through a new ADR that the user approves.
 ## Commands
 
 ```bash
-swift build                            # Debug build
-swift run Dahlia                       # Unsigned debug run
+swift build --package-path apps/macos             # Debug build
+swift run --package-path apps/macos Dahlia        # Unsigned debug run
 ./scripts/run-dev.sh                   # Debug + codesign; preferred for full-feature testing
 ./scripts/build-app.sh                 # Release .app bundle
-swift test                             # Full test suite
-swift test --filter SummaryServiceTests # Example targeted suite
+swift test --package-path apps/macos              # Full test suite
+swift test --package-path apps/macos --filter SummaryServiceTests # Example targeted suite
 CI=true ./scripts/lint.sh              # Check SwiftFormat and SwiftLint without modifying files
 ```
 
-`swift run Dahlia` is unsigned and cannot use the Data Protection Keychain. Use `./scripts/run-dev.sh` to verify Keychain or Touch ID behavior.
+`swift run --package-path apps/macos Dahlia` is unsigned and cannot use the Data Protection Keychain. Use `./scripts/run-dev.sh` to verify Keychain or Touch ID behavior.
 
 ## Definition of Done
 
 - The requested outcome and all applicable repository instructions are satisfied.
-- Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
+- Swift changes pass `swift build --package-path apps/macos`, behavior changes pass targeted tests, and broader changes run `swift test --package-path apps/macos` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
 - Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation.
 - Review the final diff against the applicable Code Review Rules for unintended changes and regressions.

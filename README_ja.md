@@ -40,16 +40,16 @@ MCP は単一顧客の組織階層、会話トピック、根拠会議、AI提�
 
 ```bash
 # デバッグビルド・実行（署名なし、同梱 Codex 要約は利用不可）
-swift build && swift run Dahlia
+swift build --package-path apps/macos && swift run --package-path apps/macos Dahlia
 
 # コード署名付きデバッグビルド（Data Protection Keychain が有効）
 ./scripts/run-dev.sh
 
 # リリース用 .app バンドルのビルド
-./scripts/build-app.sh && open Dahlia.app
+./scripts/build-app.sh && open apps/macos/Dahlia.app
 
 # テスト
-swift test
+swift test --package-path apps/macos
 
 # Dahlia.dmg のビルド + 署名 + notarization + staple
 ./scripts/notarize.sh
@@ -61,9 +61,9 @@ swift test
 ./scripts/lint.sh
 ```
 
-> **注意:** `swift run Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は共有開発プロファイル `~/Library/Application Support/Dahlia-Development` を使用し、DB、録音復旧ファイル、Codex 状態、プロセスロックを正アプリから分離します。`run-dev.sh` で起動する開発版同士はこのプロファイルを共有します。アプリバンドル用スクリプトの初回実行時は、固定した Codex の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `.build` 配下へキャッシュします。
+> **注意:** `swift run --package-path apps/macos Dahlia` には同梱 Codex ヘルパーがなく、Data Protection Keychain も使用できません。フル機能には `run-dev.sh` を使用してください。`run-dev.sh` は共有開発プロファイル `~/Library/Application Support/Dahlia-Development` を使用し、DB、録音復旧ファイル、Codex 状態、プロセスロックを正アプリから分離します。`run-dev.sh` で起動する開発版同士はこのプロファイルを共有します。アプリバンドル用スクリプトの初回実行時は、固定した Codex の公式 GitHub Release を `aarch64-apple-darwin` 向けに取得し、SHA-256 を検証して `apps/macos/.build` 配下へキャッシュします。
 
-`build-app.sh` または `notarize.sh` の実行前に `SENTRY_DSN` を設定すると、生成される release アプリの `Info.plist` に DSN を埋め込み、Finder 起動でも Sentry を有効化できます。Debug 実行では送信しないため、`swift run Dahlia` と `run-dev.sh` は既定で Sentry イベントを送信しません。
+`build-app.sh` または `notarize.sh` の実行前に `SENTRY_DSN` を設定すると、生成される release アプリの `Info.plist` に DSN を埋め込み、Finder 起動でも Sentry を有効化できます。Debug 実行では送信しないため、`swift run --package-path apps/macos Dahlia` と `run-dev.sh` は既定で Sentry イベントを送信しません。
 
 `build-app.sh` と `run-dev.sh` は外部へファイルをアップロードしません。`notarize.sh` で Sentry を有効にしたリリースを作る場合は、`SENTRY_AUTH_TOKEN` と `sentry-cli` を必須とし、実行ファイルと dSYM の UUID が一致することを検証してから、公証成功後に dSYM をアップロードします。
 
@@ -86,7 +86,7 @@ xcrun notarytool store-credentials "dahlia-notary" \
   --password "APP_SPECIFIC_PASSWORD"
 ```
 
-`./scripts/notarize.sh` は `NOTARY_PROFILE` 環境変数（既定値: `dahlia-notary`）を使い、署名・notarization・staple 済みの `Dahlia.dmg` を作成します。
+`./scripts/notarize.sh` は `NOTARY_PROFILE` 環境変数（既定値: `dahlia-notary`）を使い、署名・notarization・staple 済みの `apps/macos/Dahlia.dmg` を作成します。
 
 Dahlia のアプリ内更新には Sparkle 2 を使用します。製品版は24時間ごとに更新を確認し、利用可能な場合はユーザーに案内します。更新は既定では自動インストールしません。Ed25519 秘密鍵はログインキーチェーンの `com.dahlia.app` アカウントに保存されるため、安全な場所へバックアップしてください。別のリリースマシンでは Sparkle の `generate_keys` ツールで既存の秘密鍵をインポートし、代替鍵を新規生成したり、エクスポートした秘密鍵をコミットしたりしないでください。`create-github-release.sh` はこの鍵で DMG 更新と appcast に署名し、GitHub Release へ `Dahlia.dmg` と `appcast.xml` をアップロードします。
 
@@ -95,18 +95,18 @@ Dahlia のアプリ内更新には Sparkle 2 を使用します。製品版は24
 ```bash
 # 旧ラップトップ: 既存の鍵を暗号化済みオフラインストレージへエクスポート
 umask 077
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -x /path/to/encrypted-volume/dahlia-sparkle-private-key
 
 # 新ラップトップ: 依存関係を取得してから、同じ鍵をインポート
-swift package resolve
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+swift package --package-path apps/macos resolve
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -f /path/to/encrypted-volume/dahlia-sparkle-private-key
 
-# インポートした公開鍵が Resources/Info.plist と完全に一致することを確認
-.build/artifacts/sparkle/Sparkle/bin/generate_keys \
+# インポートした公開鍵が apps/macos/Resources/Info.plist と完全に一致することを確認
+apps/macos/.build/artifacts/sparkle/Sparkle/bin/generate_keys \
   --account com.dahlia.app \
   -p
 # 期待値: HR6N/+ImpB4ahCwyYLfF+CKJf2YG267B7pu5Q8CSB2E=
@@ -114,7 +114,7 @@ swift package resolve
 
 インポート後は暗号化されていない転送用コピーを削除し、アクセス制御された暗号化バックアップを 1 つ保管してください。新しいラップトップで `-f` を付けずに `generate_keys` を実行してはいけません。別の鍵を生成すると、インストール済みの Dahlia が以後の更新を受け入れられなくなります。
 
-リリースを公開するには GitHub CLI（`gh`）をインストールして認証し、`Resources/Info.plist` の `CFBundleShortVersionString` と整数の `CFBundleVersion` を両方増やしてください。そのバージョン変更を含むすべてのソース変更をコミットして push してから、次を実行します。
+リリースを公開するには GitHub CLI（`gh`）をインストールして認証し、`apps/macos/Resources/Info.plist` の `CFBundleShortVersionString` と整数の `CFBundleVersion` を両方増やしてください。そのバージョン変更を含むすべてのソース変更をコミットして push してから、次を実行します。
 
 ```bash
 ./scripts/notarize.sh
@@ -141,16 +141,20 @@ UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディ
 ### プロジェクト構成
 
 ```
-Sources/Dahlia/
-├── Audio/          # 音声キャプチャ（マイク & システム）
-├── Database/       # GRDB モデル、マイグレーション、リポジトリ
-├── Models/         # ドメインモデル
-├── Services/       # Codex app-server、Vault 同期、会議検出、Keychain
-├── Speech/         # 音声認識パイプライン
-├── Utilities/      # ヘルパー（UUID v7、ローカライゼーション等）
-├── ViewModels/     # CaptionViewModel、SidebarViewModel
-├── Views/          # SwiftUI ビュー
-└── Resources/      # ローカライズ文字列、アセット
+apps/
+└── macos/          # SwiftPM macOS アプリ、テスト、リソース、ベンダーコード
+    └── Sources/Dahlia/
+        ├── Audio/      # 音声キャプチャ（マイク & システム）
+        ├── Database/   # GRDB モデル、マイグレーション、リポジトリ
+        ├── Models/     # ドメインモデル
+        ├── Services/   # Codex app-server、Vault 同期、会議検出、Keychain
+        ├── Speech/     # 音声認識パイプライン
+        ├── Utilities/  # ヘルパー（UUID v7、ローカライゼーション等）
+        ├── ViewModels/ # CaptionViewModel、SidebarViewModel
+        ├── Views/      # SwiftUI ビュー
+        └── Resources/  # ローカライズ文字列、アセット
+scripts/               # リポジトリ共通の開発・リリース用エントリポイント
+website/               # 静的プロダクトサイト
 ```
 
 ## 依存ライブラリ

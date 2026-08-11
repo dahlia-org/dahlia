@@ -305,14 +305,14 @@ sequenceDiagram
 
 | Question | Start here |
 | --- | --- |
-| どの組み合わせで recognition／recording を作るか | [`TranscriptionSessionPlan`](../../Sources/Dahlia/Models/TranscriptionSessionPlan.swift) |
-| capture buffer をどこへ分配するか | [`AudioSourcePipeline`](../../Sources/Dahlia/Audio/AudioSourcePipeline.swift)、[`AudioFrameRouter`](../../Sources/Dahlia/Audio/AudioFrameRouter.swift) |
-| audio queue と segment rotation はどう動くか | [`SegmentedAudioSourceWriter`](../../Sources/Dahlia/Audio/SegmentedAudioSourceWriter.swift) |
-| segment をいつ ready にするか | [`RecordingAudioStore`](../../Sources/Dahlia/Services/RecordingAudioStore.swift) |
-| capture／recognition／writer の lifecycle を誰が所有するか | [`RecordingSessionController`](../../Sources/Dahlia/Services/RecordingSessionController.swift) |
-| UI と persistence をどう分離するか | [`TranscriptionEventPipeline`](../../Sources/Dahlia/Services/TranscriptionEventPipeline.swift) |
-| realtime transcript をいつ commit するか | [`TranscriptPersistenceWriter`](../../Sources/Dahlia/Services/TranscriptPersistenceWriter.swift) |
-| batch transcript をいつ一式反映するか | [`BatchTranscriptionCoordinator`](../../Sources/Dahlia/Services/BatchTranscriptionCoordinator.swift)、[`BatchTranscriptionPersistence`](../../Sources/Dahlia/Services/BatchTranscriptionPersistence.swift) |
+| どの組み合わせで recognition／recording を作るか | [`TranscriptionSessionPlan`](../../apps/macos/Sources/Dahlia/Models/TranscriptionSessionPlan.swift) |
+| capture buffer をどこへ分配するか | [`AudioSourcePipeline`](../../apps/macos/Sources/Dahlia/Audio/AudioSourcePipeline.swift)、[`AudioFrameRouter`](../../apps/macos/Sources/Dahlia/Audio/AudioFrameRouter.swift) |
+| audio queue と segment rotation はどう動くか | [`SegmentedAudioSourceWriter`](../../apps/macos/Sources/Dahlia/Audio/SegmentedAudioSourceWriter.swift) |
+| segment をいつ ready にするか | [`RecordingAudioStore`](../../apps/macos/Sources/Dahlia/Services/RecordingAudioStore.swift) |
+| capture／recognition／writer の lifecycle を誰が所有するか | [`RecordingSessionController`](../../apps/macos/Sources/Dahlia/Services/RecordingSessionController.swift) |
+| UI と persistence をどう分離するか | [`TranscriptionEventPipeline`](../../apps/macos/Sources/Dahlia/Services/TranscriptionEventPipeline.swift) |
+| realtime transcript をいつ commit するか | [`TranscriptPersistenceWriter`](../../apps/macos/Sources/Dahlia/Services/TranscriptPersistenceWriter.swift) |
+| batch transcript をいつ一式反映するか | [`BatchTranscriptionCoordinator`](../../apps/macos/Sources/Dahlia/Services/BatchTranscriptionCoordinator.swift)、[`BatchTranscriptionPersistence`](../../apps/macos/Sources/Dahlia/Services/BatchTranscriptionPersistence.swift) |
 
 ## 文書の更新条件
 

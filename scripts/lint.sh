@@ -2,8 +2,11 @@
 # SwiftFormat + SwiftLint を実行するスクリプト
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
-source "scripts/common.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")/apps/macos"
+
+cd "$PROJECT_DIR"
+source "${SCRIPT_DIR}/common.sh"
 
 is_ci=false
 if [[ "${CI:-}" == "true" ]]; then
@@ -11,7 +14,7 @@ if [[ "${CI:-}" == "true" ]]; then
 fi
 
 echo "=== SwiftFormat ==="
-swiftformat_command="$PWD/scripts/run-swiftformat.sh"
+swiftformat_command="${SCRIPT_DIR}/run-swiftformat.sh"
 
 if [[ "$is_ci" == "true" ]]; then
     "$swiftformat_command" --cache ignore --lint Sources/

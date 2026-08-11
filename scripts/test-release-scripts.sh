@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-REPOSITORY_DIR="$PROJECT_DIR"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+MACOS_PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+PROJECT_DIR="$MACOS_PROJECT_DIR"
 
 source "${SCRIPT_DIR}/common.sh"
 source "${SCRIPT_DIR}/create-github-release.sh"
@@ -47,7 +48,7 @@ write_appcast() {
 test_build_version_validation() {
     local plist_path="${TEST_DIR}/Info.plist"
 
-    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$plist_path"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 24' "$plist_path"
 
     [ "$(read_build_version "$plist_path")" = "24" ] || fail "failed to read build version"
@@ -57,10 +58,12 @@ test_build_version_validation() {
 }
 
 test_latest_release_build_validation() {
+    local gh_api_log="${TEST_DIR}/gh-api.log"
+    local gh_api_mode="new"
     local previous_plist="${TEST_DIR}/PreviousInfo.plist"
     local gh_release_mode="success"
 
-    cp "${PROJECT_DIR}/Resources/Info.plist" "$previous_plist"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$previous_plist"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleVersion 23' "$previous_plist"
 
     gh() {
@@ -73,12 +76,30 @@ test_latest_release_build_validation() {
             return
         fi
 
-        cat "$previous_plist"
+        printf '<%s>\n' "$@" >> "$gh_api_log"
+        case "$gh_api_mode" in
+            new) cat "$previous_plist" ;;
+            legacy)
+                if [[ "$*" == *"contents/apps/macos/Resources/Info.plist"* ]]; then
+                    return 1
+                fi
+                cat "$previous_plist"
+                ;;
+            failure) return 1 ;;
+        esac
     }
 
     RELEASE_REPOSITORY="dahlia-org/dahlia"
     BUILD_VERSION="24"
     validate_build_version_against_latest_release
+    grep -Fq '<repos/dahlia-org/dahlia/contents/apps/macos/Resources/Info.plist>' "$gh_api_log" \
+        || fail "latest release validation did not try the monorepo Info.plist path"
+
+    : > "$gh_api_log"
+    gh_api_mode="legacy"
+    validate_build_version_against_latest_release
+    grep -Fq '<repos/dahlia-org/dahlia/contents/Resources/Info.plist>' "$gh_api_log" \
+        || fail "latest release validation did not fall back to the legacy Info.plist path"
 
     BUILD_VERSION="23"
     expect_failure validate_build_version_against_latest_release
@@ -86,6 +107,9 @@ test_latest_release_build_validation() {
     gh_release_mode="empty"
     expect_failure validate_build_version_against_latest_release
     gh_release_mode="failure"
+    expect_failure validate_build_version_against_latest_release
+    gh_release_mode="success"
+    gh_api_mode="failure"
     expect_failure validate_build_version_against_latest_release
 }
 
@@ -355,7 +379,7 @@ test_telemetrydeck_configuration_and_embedding() {
         fail "TelemetryDeck's resource-only bundle must not be signed separately"
     fi
 
-    cp "${REPOSITORY_DIR}/Resources/Info.plist" "$plist_path"
+    cp "${MACOS_PROJECT_DIR}/Resources/Info.plist" "$plist_path"
     TELEMETRYDECK_APP_ID="test-app-id"
     configure_telemetrydeck_plist "$plist_path"
     [ "$(/usr/libexec/PlistBuddy -c 'Print :TELEMETRYDECK_APP_ID' "$plist_path")" = "test-app-id" ] \

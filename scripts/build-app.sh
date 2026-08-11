@@ -3,22 +3,15 @@ set -euo pipefail
 
 APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
 CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 
 source "${SCRIPT_DIR}/common.sh"
 
-load_local_env() {
-    if [ -f .env.local ]; then
-        set -a
-        source .env.local
-        set +a
-    fi
-}
-
 cd "$PROJECT_DIR"
-load_local_env
+load_local_env "${REPOSITORY_DIR}/.env.local"
 export CLANG_MODULE_CACHE_PATH="${TMPDIR:-/tmp}/dahlia-clang-module-cache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 

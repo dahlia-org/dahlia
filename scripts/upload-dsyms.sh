@@ -2,7 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -19,11 +20,7 @@ DSYM_EXECUTABLE_PATH="${DSYM_PATH}/Contents/Resources/DWARF/${APP_NAME}"
 
 cd "$PROJECT_DIR"
 
-if [ -f .env.local ]; then
-    set -a
-    source .env.local
-    set +a
-fi
+load_local_env "${REPOSITORY_DIR}/.env.local"
 
 SENTRY_ORG="${SENTRY_ORG:-dahlia-app}"
 SENTRY_PROJECT="${SENTRY_PROJECT:-dahlia-app}"
