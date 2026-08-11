@@ -12,6 +12,7 @@ struct MenuBarCalendarSectionView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
 
     var body: some View {
         Section(L10n.today) {
@@ -23,9 +24,11 @@ struct MenuBarCalendarSectionView: View {
                         canJoinAndRecord: event.conferenceURI != nil && canStartRecording,
                         canJoin: event.conferenceURI != nil,
                         canShowInCalendar: event.url != nil,
+                        isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled(for: event),
                         onJoinAndRecord: { onJoinAndRecordEvent(event) },
                         onJoin: { onJoinEvent(event) },
-                        onShowInCalendar: { onShowEventInCalendar(event) }
+                        onShowInCalendar: { onShowEventInCalendar(event) },
+                        onSetAutoRecording: { calendarAutoRecordingStore.setEnabled($0, for: event) }
                     )
                 }
             } else if settings.enabledCalendarSources.isEmpty {

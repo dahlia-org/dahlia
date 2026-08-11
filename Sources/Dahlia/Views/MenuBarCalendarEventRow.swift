@@ -6,12 +6,20 @@ struct MenuBarCalendarEventRow: View {
     let canJoinAndRecord: Bool
     let canJoin: Bool
     let canShowInCalendar: Bool
+    let isAutoRecordingEnabled: Bool
     let onJoinAndRecord: () -> Void
     let onJoin: () -> Void
     let onShowInCalendar: () -> Void
+    let onSetAutoRecording: (Bool) -> Void
 
     var body: some View {
         Menu {
+            if !event.isAllDay {
+                Toggle(L10n.calendarAutoRecording, systemImage: "timer", isOn: autoRecordingBinding)
+
+                Divider()
+            }
+
             Button(L10n.menuBarJoinMeetingWithRecording, systemImage: "record.circle", action: onJoinAndRecord)
                 .disabled(!canJoinAndRecord)
 
@@ -24,8 +32,15 @@ struct MenuBarCalendarEventRow: View {
                 .disabled(!canShowInCalendar)
         } label: {
             Label {
-                Text(menuTitle)
-                    .foregroundStyle(event.isAttending ? Color.primary : Color.secondary)
+                HStack {
+                    Text(menuTitle)
+
+                    if isAutoRecordingEnabled {
+                        Image(systemName: "timer")
+                            .accessibilityHidden(true)
+                    }
+                }
+                .foregroundStyle(event.isAttending ? Color.primary : Color.secondary)
             } icon: {
                 MenuBarCalendarParticipationIndicator(isAttending: event.isAttending)
             }
@@ -44,7 +59,15 @@ struct MenuBarCalendarEventRow: View {
 
     private var accessibilityLabel: String {
         let participation = event.isAttending ? ", \(L10n.calendarAttending)" : ""
-        return "\(event.resolvedMeetingTitle), \(timeText), \(event.calendarName)\(participation)"
+        let autoRecording = isAutoRecordingEnabled ? ", \(L10n.calendarAutoRecordingScheduled)" : ""
+        return "\(event.resolvedMeetingTitle), \(timeText), \(event.calendarName)\(participation)\(autoRecording)"
+    }
+
+    private var autoRecordingBinding: Binding<Bool> {
+        Binding(
+            get: { isAutoRecordingEnabled },
+            set: { isEnabled in onSetAutoRecording(isEnabled) }
+        )
     }
 
     private var timeText: String {

@@ -466,6 +466,7 @@
 "Upcoming schedule" = "Upcoming schedule";
 "Show Upcoming Schedule" = "Show Upcoming Schedule";
 "Auto-record" = "Auto-record";
+"Auto-record scheduled" = "Auto-record scheduled";
 "Automatically start recording when this event begins." = "Automatically start recording when this event begins.";
 "From calendar event" = "From calendar event";
 "Calendar event: %@" = "Calendar event: %@";
