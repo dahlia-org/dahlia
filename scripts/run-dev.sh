@@ -3,8 +3,7 @@ set -euo pipefail
 
 APP_NAME="Dahlia"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
-PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENTITLEMENTS_PATH="${PROJECT_DIR}/Dahlia.entitlements"
 CODEX_ENTITLEMENTS_PATH="${PROJECT_DIR}/CodexHelper.entitlements"
 
@@ -13,7 +12,11 @@ source "${SCRIPT_DIR}/common.sh"
 cd "$PROJECT_DIR"
 
 # .env.local から環境変数を読み込む（SENTRY_DSN、TELEMETRYDECK_APP_ID など）
-load_local_env "${REPOSITORY_DIR}/.env.local"
+if [ -f .env.local ]; then
+    set -a
+    source .env.local
+    set +a
+fi
 
 SIGN_IDENTITY="${CODESIGN_IDENTITY:-Developer ID Application: Kazuki Matsuda (XCHHYPN52N)}"
 unlock_codesigning_keychain_if_needed

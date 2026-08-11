@@ -5,8 +5,7 @@ APP_NAME="Dahlia"
 RELEASE_REPOSITORY="dahlia-org/dahlia"
 INVOCATION_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
-PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 INFO_PLIST="${PROJECT_DIR}/Resources/Info.plist"
 
 source "${SCRIPT_DIR}/common.sh"
@@ -44,8 +43,8 @@ usage() {
     cat <<EOF
 Usage: $0 [--notes-file path] [path-to-dmg]
 
-Create the GitHub Release for the version in apps/macos/Resources/Info.plist and attach
-its signed and notarized DMG. The default path is apps/macos/Dahlia.dmg. By default,
+Create the GitHub Release for the version in Resources/Info.plist and attach
+its signed and notarized DMG. The default path is Dahlia.dmg. By default,
 Codex uses \$generate-release-notes to write human-friendly release notes.
 Pass --notes-file to publish reviewed Markdown instead.
 EOF
@@ -119,10 +118,8 @@ validate_build_version_is_newer() {
 }
 
 validate_build_version_against_latest_release() {
-    local info_plist_path
     local previous_release_tag
     local previous_build_version
-    local previous_info_plist_found=false
 
     if ! previous_release_tag="$(gh release view --repo "$RELEASE_REPOSITORY" --json tagName --jq '.tagName')"; then
         echo "error: could not determine the latest GitHub Release" >&2
@@ -134,18 +131,12 @@ validate_build_version_against_latest_release() {
     fi
 
     PREVIOUS_RELEASE_INFO_PLIST="$(mktemp "${TMPDIR:-/tmp}/dahlia-previous-release-info.XXXXXX")"
-    for info_plist_path in apps/macos/Resources/Info.plist Resources/Info.plist; do
-        if gh api \
-            --method GET \
-            -H "Accept: application/vnd.github.raw+json" \
-            "repos/${RELEASE_REPOSITORY}/contents/${info_plist_path}" \
-            -f "ref=${previous_release_tag}" \
-            > "$PREVIOUS_RELEASE_INFO_PLIST" 2>/dev/null; then
-            previous_info_plist_found=true
-            break
-        fi
-    done
-    if [ "$previous_info_plist_found" != "true" ]; then
+    if ! gh api \
+        --method GET \
+        -H "Accept: application/vnd.github.raw+json" \
+        "repos/${RELEASE_REPOSITORY}/contents/Resources/Info.plist" \
+        -f "ref=${previous_release_tag}" \
+        > "$PREVIOUS_RELEASE_INFO_PLIST"; then
         rm -f "$PREVIOUS_RELEASE_INFO_PLIST"
         PREVIOUS_RELEASE_INFO_PLIST=""
         echo "error: could not read Info.plist from ${previous_release_tag}" >&2
@@ -173,7 +164,7 @@ validate_sparkle_release_configuration() {
 error: Sparkle's generate_keys tool was not found.
 
 Resolve package artifacts first with:
-  swift package --package-path apps/macos resolve
+  swift package resolve
 EOF
         exit 1
     fi
@@ -287,7 +278,7 @@ create_sparkle_appcast() {
 error: Sparkle's generate_appcast tool was not found.
 
 Resolve package artifacts first with:
-  swift package --package-path apps/macos resolve
+  swift package resolve
 EOF
         exit 1
     fi
@@ -478,7 +469,7 @@ if [ -z "$NOTES_FILE" ]; then
 
     echo "=== Generating release notes with Codex ==="
     codex exec \
-        --cd "$REPOSITORY_DIR" \
+        --cd "$PROJECT_DIR" \
         --sandbox danger-full-access \
         --ignore-user-config \
         --model gpt-5.6-terra \

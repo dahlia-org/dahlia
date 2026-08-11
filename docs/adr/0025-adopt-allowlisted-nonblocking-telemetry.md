@@ -42,5 +42,5 @@ TelemetryDeck の公式 Swift SDK は匿名化された install ID と端末・�
 ## References
 
 - policy: [`docs/telemetry.md`](../telemetry.md)
-- runtime: `apps/macos/Sources/Dahlia/Services/UsageTelemetryService.swift`
-- SDK adapter: `apps/macos/Sources/Dahlia/Services/TelemetryDeckClient.swift`
+- runtime: `Sources/Dahlia/Services/UsageTelemetryService.swift`
+- SDK adapter: `Sources/Dahlia/Services/TelemetryDeckClient.swift`

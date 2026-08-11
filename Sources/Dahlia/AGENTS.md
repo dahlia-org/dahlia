@@ -4,18 +4,18 @@ This file applies under `Sources/Dahlia/`. Changes under `Database/` must also f
 
 ## Reference Routing
 
-- For current ownership and data flow, read [`Runtime Data Flow`](../../../../ARCHITECTURE.md#runtime-data-flow).
+- For current ownership and data flow, read [`Runtime Data Flow`](../../ARCHITECTURE.md#runtime-data-flow).
 - For audio capture, recording, live subtitles, realtime/batch mode combinations, persistence timing, or stop order, read
-  [`Audio and Transcription Data Flow`](../../../../docs/architecture/audio-transcription-data-flow.md).
+  [`Audio and Transcription Data Flow`](../../docs/architecture/audio-transcription-data-flow.md).
 - For recording, transcription, persistence, or queue changes, also read
-  [`Reliability Scope`](../../../../ARCHITECTURE.md#reliability-scope) and
-  [`Failure and Overload Policy`](../../../../ARCHITECTURE.md#failure-and-overload-policy).
+  [`Reliability Scope`](../../ARCHITECTURE.md#reliability-scope) and
+  [`Failure and Overload Policy`](../../ARCHITECTURE.md#failure-and-overload-policy).
 - For UI, view-model, rendering, loading, or interaction work, read
-  [`UI and Interaction Responsiveness`](../../../../ARCHITECTURE.md#ui-and-interaction-responsiveness) when the change can affect workload behavior.
+  [`UI and Interaction Responsiveness`](../../ARCHITECTURE.md#ui-and-interaction-responsiveness) when the change can affect workload behavior.
 - When fixing a documented architecture deviation, follow its target and completion criteria in the
-  [`Remediation Plan`](../../../../ARCHITECTURE.md#remediation-plan).
-- For a new or reversed architecture decision, start at the [`ADR index`](../../../../docs/adr/README.md) and read only the related records.
-- For telemetry, analytics, Sentry, or external diagnostics, read the [`Anonymous Telemetry Collection Policy`](../../../../docs/telemetry.md) before editing code.
+  [`Remediation Plan`](../../ARCHITECTURE.md#remediation-plan).
+- For a new or reversed architecture decision, start at the [`ADR index`](../../docs/adr/README.md) and read only the related records.
+- For telemetry, analytics, Sentry, or external diagnostics, read the [`Anonymous Telemetry Collection Policy`](../../docs/telemetry.md) before editing code.
 
 ## Safety Invariants
 

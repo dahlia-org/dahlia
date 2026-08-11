@@ -15,7 +15,7 @@ fi
 # フォーマットして再ステージ
 echo "$STAGED_FILES" | while read -r file; do
     if [ -f "$file" ]; then
-        "$SWIFTFORMAT" --config "$REPO_ROOT/apps/macos/.swiftformat" "$file"
+        "$SWIFTFORMAT" "$file"
         git add "$file"
     fi
 done

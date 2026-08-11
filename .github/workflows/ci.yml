@@ -36,8 +36,8 @@ jobs:
       - name: Cache BuildTools
         uses: actions/cache@v5
         with:
-          path: apps/macos/BuildTools/.build
-          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/macos/BuildTools/Package.resolved') }}
+          path: BuildTools/.build
+          key: buildtools-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('BuildTools/Package.resolved') }}
 
       - name: Install lint tools
         run: brew install swiftlint
@@ -68,18 +68,18 @@ jobs:
       - name: Cache SwiftPM build
         uses: actions/cache@v5
         with:
-          path: apps/macos/.build
-          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/macos/Package.resolved') }}-${{ github.sha }}
+          path: .build
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/macos/Package.resolved') }}-
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-
 
       - name: Run unit tests
         run: |
           set -o pipefail
-          swift test --package-path apps/macos 2>&1 | tee test-output.log
+          swift test 2>&1 | tee test-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
 
       - name: Build executable
-        run: swift build --package-path apps/macos
+        run: swift build

@@ -5,8 +5,8 @@ Tests are complete when they prove the changed behavior with reproducible inputs
 ## Running Tests
 
 ```bash
-swift test --package-path apps/macos --filter SummaryServiceTests # Example targeted suite
-swift test --package-path apps/macos                              # Full suite
+swift test --filter SummaryServiceTests # Example targeted suite
+swift test                              # Full suite
 ```
 
 Run the targeted suite first. Expand to the full suite for changes with broad effects, including shared models, database migrations, and the recording lifecycle.
