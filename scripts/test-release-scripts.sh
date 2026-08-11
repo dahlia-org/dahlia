@@ -427,6 +427,43 @@ test_telemetrydeck_adapter_allowlist() {
     expect_failure validate_telemetrydeck_adapter "$adapter_path" "app"
 }
 
+test_dsym_upload_preserves_relative_build_directory() {
+    local fixture_dir="${TEST_DIR}/dsym-upload"
+    local fake_bin
+    local build_dir
+    local sentry_log
+
+    mkdir -p "$fixture_dir"
+    fixture_dir="$(cd "$fixture_dir" && pwd)"
+    fake_bin="${fixture_dir}/bin"
+    build_dir="${fixture_dir}/build"
+    sentry_log="${fixture_dir}/sentry-cli.log"
+
+    mkdir -p "$fake_bin" "${build_dir}/Dahlia.dSYM/Contents/Resources/DWARF"
+    printf '%s' 'executable' > "${build_dir}/Dahlia"
+    printf '%s' 'debug symbols' > "${build_dir}/Dahlia.dSYM/Contents/Resources/DWARF/Dahlia"
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'printf "%s\n" "UUID: TEST-UUID (arm64) fixture"' \
+        > "${fake_bin}/dwarfdump"
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'printf "<%s>\n" "$@" > "$SENTRY_CLI_LOG"' \
+        > "${fake_bin}/sentry-cli"
+    chmod +x "${fake_bin}/dwarfdump" "${fake_bin}/sentry-cli"
+
+    (
+        cd "$fixture_dir"
+        PATH="${fake_bin}:${PATH}" \
+            SENTRY_AUTH_TOKEN="test-token" \
+            SENTRY_CLI_LOG="$sentry_log" \
+            "${REPOSITORY_DIR}/scripts/upload-dsyms.sh" build >/dev/null
+    )
+
+    grep -Fxq "<${build_dir}/Dahlia.dSYM>" "$sentry_log" \
+        || fail "relative dSYM build directory was not resolved from the invocation directory"
+}
+
 test_codesigning_keychain_unlock() {
     local keychain_log="${TEST_DIR}/keychain.log"
     local keychain_mode="locked"
@@ -476,6 +513,7 @@ test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_telemetrydeck_adapter_allowlist
+test_dsym_upload_preserves_relative_build_directory
 test_codesigning_keychain_unlock
 
 echo "Release script tests passed"

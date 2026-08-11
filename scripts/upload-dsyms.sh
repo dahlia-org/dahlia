@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPOSITORY_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_DIR="${REPOSITORY_DIR}/apps/macos"
+INVOCATION_DIR="$(pwd)"
 
 source "${SCRIPT_DIR}/common.sh"
 
@@ -13,6 +14,10 @@ if [ $# -lt 1 ]; then
 fi
 
 BUILD_DIR="$1"
+case "$BUILD_DIR" in
+    /*) ;;
+    *) BUILD_DIR="${INVOCATION_DIR}/${BUILD_DIR}" ;;
+esac
 APP_NAME="${2:-Dahlia}"
 DSYM_PATH="${BUILD_DIR}/${APP_NAME}.dSYM"
 EXECUTABLE_PATH="${BUILD_DIR}/${APP_NAME}"
