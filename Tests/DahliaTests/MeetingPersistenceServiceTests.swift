@@ -1376,8 +1376,8 @@ private final class SynchronousDatabaseGate: @unchecked Sendable {
     }
 }
 
-private func fixtureEvent(startDate: Date) -> GoogleCalendarEvent {
-    GoogleCalendarEvent(
+private func fixtureEvent(startDate: Date) -> CalendarEvent {
+    CalendarEvent(
         id: "primary::event-1",
         calendarID: "primary",
         calendarName: "Primary",

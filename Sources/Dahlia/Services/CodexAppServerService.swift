@@ -171,7 +171,7 @@ actor CodexAppServerService {
     #endif
 
     init(
-        launcher: any CodexAppServerLaunching = BundledCodexAppServerLauncher(),
+        launcher: BundledCodexAppServerLauncher = BundledCodexAppServerLauncher(),
         clock: any CodexAppServerClock = ContinuousCodexAppServerClock(),
         transportTimeout: Duration = .seconds(15),
         summaryTimeout: Duration = .seconds(270),

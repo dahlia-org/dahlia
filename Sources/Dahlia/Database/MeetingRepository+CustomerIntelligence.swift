@@ -157,34 +157,6 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func updateOrganizationName(
-        id: UUID,
-        vaultId: UUID,
-        name: String,
-        expectedRevision: Int? = nil,
-        now: Date = .now
-    ) throws -> OrganizationRecord {
-        try dbQueue.write { db in
-            guard var organization = try OrganizationRecord
-                .filter(Column("id") == id && Column("vaultId") == vaultId)
-                .fetchOne(db)
-            else {
-                throw CustomerIntelligenceError.organizationNotFound
-            }
-            if let expectedRevision, organization.revision != expectedRevision {
-                throw CustomerIntelligenceError.revisionConflict
-            }
-            guard let name = CustomerIdentityNormalizer.organizationName(name) else {
-                throw CustomerIntelligenceError.invalidName
-            }
-            organization.name = name
-            organization.revision += 1
-            organization.updatedAt = now
-            try organization.update(db)
-            return organization
-        }
-    }
-
     nonisolated func updateOrganization(
         id: UUID,
         vaultId: UUID,

@@ -2760,37 +2760,6 @@ final class CaptionViewModel: ObservableObject {
 
     // MARK: - Recording Control
 
-    func toggleListening(
-        dbQueue: DatabaseQueue,
-        projectURL: URL?,
-        vaultId: UUID,
-        projectId: UUID?,
-        projectName: String? = nil,
-        vaultURL: URL
-    ) {
-        guard !isFinalizingRecording else { return }
-
-        switch recordingLifecycle {
-        case .recording:
-            stopListening()
-        case .idle:
-            guard let reservation = reserveRecordingStart() else { return }
-            Task {
-                await startListening(
-                    dbQueue: dbQueue,
-                    projectURL: projectURL,
-                    vaultId: vaultId,
-                    projectId: projectId,
-                    projectName: projectName,
-                    vaultURL: vaultURL,
-                    reservation: reservation
-                )
-            }
-        case .starting, .stopping:
-            break
-        }
-    }
-
     /// 新規文字起こしで録音を開始する。
     func startListening(
         dbQueue: DatabaseQueue,
@@ -4119,17 +4088,6 @@ final class CaptionViewModel: ObservableObject {
         _ = await screenshotExport
     }
 
-    func clearText() async {
-        guard !isFinalizingRecording else { return }
-
-        do {
-            try await transcriptionEventPipeline?.resetPersistence()
-            store.clear()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
     // MARK: - Screenshot
 
     /// キャプチャ対象のウィンドウ一覧を更新する。
@@ -4259,10 +4217,6 @@ final class CaptionViewModel: ObservableObject {
         guard hasNote || !noteText.isEmpty,
               noteText != lastSavedNoteText else { return }
         saveNote(text: noteText)
-    }
-
-    private func appendVisibleScreenshot(_ screenshot: MeetingScreenshotRecord) {
-        screenshotStore.upsert(screenshot)
     }
 
     func deleteScreenshot(_ screenshot: MeetingScreenshotRecord) {

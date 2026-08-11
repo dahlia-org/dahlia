@@ -509,7 +509,7 @@ struct GoogleCalendarStoreTests {
         let filtered = GoogleCalendarAPIClient.sortAndFilter(
             [
                 event,
-                GoogleCalendarEvent(
+                CalendarEvent(
                     id: "late",
                     calendarID: primaryCalendar.id,
                     calendarName: primaryCalendar.title,
@@ -664,21 +664,21 @@ private let fixtureSession = GoogleSession(
     grantedScopes: GoogleOAuthScope.authorizationScopes(for: GoogleOAuthScope.calendar)
 )
 
-private let primaryCalendar = GoogleCalendarListItem(
+private let primaryCalendar = CalendarListItem(
     id: "primary",
     title: "Primary",
     colorHex: "#4285F4",
     isPrimary: true
 )
 
-private let secondaryCalendar = GoogleCalendarListItem(
+private let secondaryCalendar = CalendarListItem(
     id: "team@example.com",
     title: "Team",
     colorHex: "#34A853",
     isPrimary: false
 )
 
-private let fixtureEvent = GoogleCalendarEvent(
+private let fixtureEvent = CalendarEvent(
     id: "primary::event-1",
     calendarID: "primary",
     calendarName: "Primary",
@@ -694,7 +694,7 @@ private let fixtureEvent = GoogleCalendarEvent(
 )
 
 private func calendarEvent(id: String) -> CalendarEvent {
-    GoogleCalendarEvent(
+    CalendarEvent(
         id: "primary::\(id)",
         calendarID: "primary",
         calendarName: "Primary",
@@ -779,29 +779,29 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
 
 @MainActor
 private final class MockGoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
-    private let calendarsResult: Result<[GoogleCalendarListItem], Error>
-    private let eventsResult: Result<[GoogleCalendarEvent], Error>
+    private let calendarsResult: Result<[CalendarListItem], Error>
+    private let eventsResult: Result<[CalendarEvent], Error>
     private(set) var fetchEventsCallCount = 0
 
     init(
-        calendars: [GoogleCalendarListItem] = [],
-        events: [GoogleCalendarEvent] = [],
-        eventsResult: Result<[GoogleCalendarEvent], Error>? = nil
+        calendars: [CalendarListItem] = [],
+        events: [CalendarEvent] = [],
+        eventsResult: Result<[CalendarEvent], Error>? = nil
     ) {
         calendarsResult = .success(calendars)
         self.eventsResult = eventsResult ?? .success(events)
     }
 
-    func fetchCalendarList(accessToken _: String) async throws -> [GoogleCalendarListItem] {
+    func fetchCalendarList(accessToken _: String) async throws -> [CalendarListItem] {
         try calendarsResult.get()
     }
 
     func fetchUpcomingEvents(
         accessToken _: String,
-        calendars _: [GoogleCalendarListItem],
+        calendars _: [CalendarListItem],
         now _: Date,
         daysAhead _: Int
-    ) async throws -> [GoogleCalendarEvent] {
+    ) async throws -> [CalendarEvent] {
         fetchEventsCallCount += 1
         return try eventsResult.get()
     }

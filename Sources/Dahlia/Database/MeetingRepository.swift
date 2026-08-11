@@ -180,15 +180,6 @@ final class MeetingRepository {
 
     // MARK: - Meetings
 
-    func fetchMeetings(forProjectId projectId: UUID) throws -> [MeetingRecord] {
-        try dbQueue.read { db in
-            try MeetingRecord
-                .filter(Column("projectId") == projectId)
-                .order(Column("createdAt").desc)
-                .fetchAll(db)
-        }
-    }
-
     nonisolated func fetchMeeting(id: UUID) throws -> MeetingRecord? {
         try dbQueue.read { db in
             try MeetingRecord.fetchOne(db, key: id)
@@ -441,12 +432,6 @@ final class MeetingRepository {
         }
     }
 
-    func fetchAllTags() throws -> [TagRecord] {
-        try dbQueue.read { db in
-            try TagRecord.order(Column("name").asc).fetchAll(db)
-        }
-    }
-
     func fetchTagsForMeeting(id meetingId: UUID) throws -> [TagRecord] {
         try dbQueue.read { db in
             try TagRecord.fetchAll(
@@ -460,15 +445,6 @@ final class MeetingRepository {
                 """,
                 arguments: [meetingId]
             )
-        }
-    }
-
-    func updateTagColor(id: Int64, colorHex: String) throws {
-        try dbQueue.write { db in
-            if var tag = try TagRecord.fetchOne(db, key: id) {
-                tag.colorHex = colorHex
-                try tag.update(db)
-            }
         }
     }
 
@@ -571,37 +547,12 @@ final class MeetingRepository {
         }
     }
 
-    func fetchSegmentIds(forMeetingId meetingId: UUID) throws -> Set<UUID> {
-        try dbQueue.read { db in
-            let ids = try TranscriptSegmentRecord
-                .select(Column("id"))
-                .filter(Column("meetingId") == meetingId)
-                .asRequest(of: UUID.self)
-                .fetchAll(db)
-            return Set(ids)
-        }
-    }
-
     // MARK: - Notes
-
-    /// 指定ミーティングに紐づくノートを取得する（1 meeting = 1 note）。
-    func fetchNote(forMeetingId meetingId: UUID) throws -> MeetingNoteRecord? {
-        try dbQueue.read { db in
-            try MeetingNoteRecord.fetchOne(db, key: meetingId)
-        }
-    }
 
     /// ノートを保存する（insert or update）。
     nonisolated func upsertNote(_ note: MeetingNoteRecord) throws {
         try dbQueue.write { db in
             try note.save(db)
-        }
-    }
-
-    /// ノートを削除する。
-    func deleteNote(meetingId: UUID) throws {
-        try dbQueue.write { db in
-            _ = try MeetingNoteRecord.deleteOne(db, key: meetingId)
         }
     }
 

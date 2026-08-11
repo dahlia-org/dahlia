@@ -305,20 +305,6 @@ extension MeetingRepository {
         }
     }
 
-    /// 指定プロジェクトとその配下を一括削除する。
-    func deleteProjectsByPrefix(name: String, vaultId: UUID) throws {
-        try dbQueue.write { db in
-            let records = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
-            guard let project = records.first(where: { $0.path == name }) else { return }
-            let ids = try ProjectRecord.hierarchy(projectId: project.id, vaultId: vaultId, in: db)
-                .reversed()
-                .map(\.id)
-            for id in ids {
-                _ = try ProjectRecord.deleteOne(db, key: id)
-            }
-        }
-    }
-
     @discardableResult
     func updateProjectDescription(
         id: UUID,
@@ -458,23 +444,6 @@ extension MeetingRepository {
             throw operationError
         }
         return stagedAudio
-    }
-
-    func prepareSegmentedAudioForProjectDeletion(
-        name: String,
-        vaultId: UUID,
-        managedRootURL: URL = BatchAudioStorage.managedRootURL
-    ) async throws {
-        let ids = try await dbQueue.read { db in
-            let projectIds = try ProjectRecord.hierarchy(path: name, vaultId: vaultId, in: db).map(\.id)
-            guard !projectIds.isEmpty else { return Set<UUID>() }
-            return try UUID.fetchSet(
-                db,
-                sql: "SELECT id FROM meetings WHERE projectId IN (\(projectIds.map { _ in "?" }.joined(separator: ",")))",
-                arguments: StatementArguments(projectIds)
-            )
-        }
-        try await prepareSegmentedAudioForDeletion(meetingIds: ids, managedRootURL: managedRootURL)
     }
 
     private func ensureNoActiveSegmentedAudio(meetingIds: Set<UUID>) throws {

@@ -1,10 +1,6 @@
 import Foundation
 
-protocol CodexPresetSkillInstalling: Sendable {
-    func install(into homeURL: URL) throws
-}
-
-struct BundledCodexPresetSkillInstaller: CodexPresetSkillInstalling {
+struct BundledCodexPresetSkillInstaller {
     nonisolated static let skillNames = [
         "projects-optimizer",
         "contacts-organizations-curator",

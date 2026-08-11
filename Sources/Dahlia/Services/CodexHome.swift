@@ -1,11 +1,7 @@
 import DahliaRuntimeSupport
 import Foundation
 
-protocol CodexHomeLocating: Sendable {
-    func homeURL() throws -> URL
-}
-
-struct ApplicationSupportCodexHomeLocator: CodexHomeLocating {
+struct ApplicationSupportCodexHomeLocator {
     private let applicationSupportURL: URL?
 
     init(applicationSupportURL: URL? = nil) {
