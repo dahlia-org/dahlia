@@ -18,7 +18,7 @@ struct MainSidebarFooterView: View {
     @State private var isMCPPresented = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             Menu {
                 ForEach(vaults) { vault in
                     Button(action: { onSelectVault(vault) }, label: {
