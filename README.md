@@ -15,7 +15,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Customer Intelligence Workspace** — Scope every Overview, Organization, People, Projects, Topics, and Insights view to one customer or the whole Vault, then inspect related records without mixing reading and editing
 - **Conversation Analytics (Beta)** — Compare speaking pace, speaking-time balance, conversation occupancy, and overlapping speech from confirmed microphone and system-audio transcripts
 - **Meeting Detection** — Combine microphone activity with supported app or meeting-window evidence and offer to start recording
-- **Calendar Auto-Recording** — Arm an individual upcoming event to start recording automatically at its scheduled time
+- **Calendar Auto-Recording** — Arm an individual upcoming event from the main window or menu bar to start recording automatically at its scheduled time
 - **Automatic Meeting-End Stop** — Optionally stop and save after supported meeting audio activity ends; browsers require meeting-window evidence
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries
 - **Automatic Updates** — Securely check, download, and install new releases with Sparkle 2

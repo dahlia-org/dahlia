@@ -466,6 +466,7 @@
 "Upcoming schedule" = "今後の予定";
 "Show Upcoming Schedule" = "今後の予定を表示";
 "Auto-record" = "自動録音";
+"Auto-record scheduled" = "自動録音予約済み";
 "Automatically start recording when this event begins." = "この予定の開始時刻になったら自動的に録音を開始します。";
 "From calendar event" = "カレンダーイベント由来";
 "Calendar event: %@" = "カレンダーイベント: %@";

@@ -1769,6 +1769,7 @@ enum L10n {
     static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
     static var showUpcomingSchedule: String { String(localized: "Show Upcoming Schedule", bundle: bundle) }
     static var calendarAutoRecording: String { String(localized: "Auto-record", bundle: bundle) }
+    static var calendarAutoRecordingScheduled: String { String(localized: "Auto-record scheduled", bundle: bundle) }
     static var calendarAutoRecordingHelp: String { String(
         localized: "Automatically start recording when this event begins.",
         bundle: bundle
