@@ -45,7 +45,7 @@ struct GoogleCalendarAPIClientTests {
         _ = try await client.fetchUpcomingEvents(
             accessToken: "token",
             calendars: [
-                GoogleCalendarListItem(
+                CalendarListItem(
                     id: "primary",
                     title: "Primary",
                     colorHex: nil,
@@ -85,7 +85,7 @@ struct GoogleCalendarAPIClientTests {
 
         let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(
+            calendarItem: CalendarListItem(
                 id: "primary",
                 title: "Primary",
                 colorHex: "#4285F4",
@@ -126,7 +126,7 @@ struct GoogleCalendarAPIClientTests {
         let item = try #require(response.items.first)
         let transformed = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
         )
         let event = try #require(transformed)
 
@@ -161,7 +161,7 @@ struct GoogleCalendarAPIClientTests {
         let item = try #require(response.items.first)
         let transformed = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
         )
         let event = try #require(transformed)
 
@@ -199,7 +199,7 @@ struct GoogleCalendarAPIClientTests {
         let item = try #require(response.items.first)
         let transformed = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
         )
 
         #expect(transformed?.isAttending == true)
@@ -227,7 +227,7 @@ struct GoogleCalendarAPIClientTests {
         let item = try #require(response.items.first)
         let transformed = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
         )
 
         #expect(transformed?.isAttending == true)
@@ -257,7 +257,7 @@ struct GoogleCalendarAPIClientTests {
         let item = try #require(response.items.first)
         let transformed = try GoogleCalendarAPIClient.makeEvent(
             from: item,
-            calendarItem: GoogleCalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
         )
 
         #expect(transformed?.recurrenceId == "20260417T073000Z")
@@ -326,7 +326,7 @@ final class GoogleCalendarAPIClientTests: XCTestCase {
         _ = try await client.fetchUpcomingEvents(
             accessToken: "token",
             calendars: [
-                GoogleCalendarListItem(
+                CalendarListItem(
                     id: "primary",
                     title: "Primary",
                     colorHex: nil,
@@ -366,7 +366,7 @@ final class GoogleCalendarAPIClientTests: XCTestCase {
         let event = try XCTUnwrap(
             GoogleCalendarAPIClient.makeEvent(
                 from: item,
-                calendarItem: GoogleCalendarListItem(
+                calendarItem: CalendarListItem(
                     id: "primary",
                     title: "Primary",
                     colorHex: "#4285F4",

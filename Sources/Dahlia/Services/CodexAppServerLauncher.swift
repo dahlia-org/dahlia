@@ -1,18 +1,14 @@
 import Foundation
 
-protocol CodexAppServerLaunching: Sendable {
-    func launch() throws -> any CodexAppServerTransport
-}
-
-struct BundledCodexAppServerLauncher: CodexAppServerLaunching {
+struct BundledCodexAppServerLauncher {
     private let executableLocator: any CodexExecutableLocating
-    private let homeLocator: any CodexHomeLocating
-    private let presetSkillInstaller: any CodexPresetSkillInstalling
+    private let homeLocator: ApplicationSupportCodexHomeLocator
+    private let presetSkillInstaller: BundledCodexPresetSkillInstaller
 
     init(
         executableLocator: any CodexExecutableLocating = BundleCodexExecutableLocator(),
-        homeLocator: any CodexHomeLocating = ApplicationSupportCodexHomeLocator(),
-        presetSkillInstaller: any CodexPresetSkillInstalling = BundledCodexPresetSkillInstaller()
+        homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator(),
+        presetSkillInstaller: BundledCodexPresetSkillInstaller = BundledCodexPresetSkillInstaller()
     ) {
         self.executableLocator = executableLocator
         self.homeLocator = homeLocator

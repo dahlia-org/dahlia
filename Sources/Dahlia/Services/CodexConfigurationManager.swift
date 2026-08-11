@@ -1,9 +1,9 @@
 import Foundation
 
 struct CodexConfigurationManager {
-    private let homeLocator: any CodexHomeLocating
+    private let homeLocator: ApplicationSupportCodexHomeLocator
 
-    init(homeLocator: any CodexHomeLocating = ApplicationSupportCodexHomeLocator()) {
+    init(homeLocator: ApplicationSupportCodexHomeLocator = ApplicationSupportCodexHomeLocator()) {
         self.homeLocator = homeLocator
     }
 

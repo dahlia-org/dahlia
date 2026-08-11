@@ -150,15 +150,10 @@ enum L10n {
     static var collapse: String { String(localized: "Collapse", bundle: bundle) }
     static var back: String { String(localized: "Back", bundle: bundle) }
     static var forward: String { String(localized: "Forward", bundle: bundle) }
-    static var showSidebar: String { String(localized: "Show Sidebar", bundle: bundle) }
-    static var hideSidebar: String { String(localized: "Hide Sidebar", bundle: bundle) }
 
     // MARK: - Sidebar
 
     static var home: String { String(localized: "Home", bundle: bundle) }
-    static var goodMorning: String { String(localized: "Good morning", bundle: bundle) }
-    static var goodAfternoon: String { String(localized: "Good afternoon", bundle: bundle) }
-    static var goodEvening: String { String(localized: "Good evening", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
@@ -185,11 +180,7 @@ enum L10n {
 
     static var topic: String { String(localized: "Topic", bundle: bundle) }
     static var customerIntelligence: String { String(localized: "Customer Intelligence", bundle: bundle) }
-    static var customerIntelligenceWorkspace: String {
-        String(localized: "Customer Intelligence Workspace", bundle: bundle)
-    }
 
-    static var customerIntelligenceContacts: String { String(localized: "Contacts", bundle: bundle) }
     static var customerIntelligenceInsights: String { String(localized: "Insights", bundle: bundle) }
     static var customerIntelligenceOverview: String { String(localized: "Overview", bundle: bundle) }
     static var customerIntelligenceAllCustomers: String { String(localized: "All Customers", bundle: bundle) }
@@ -416,9 +407,6 @@ enum L10n {
     static var customerIntelligenceAccept: String { String(localized: "Accept", bundle: bundle) }
     static var customerIntelligenceAccepted: String { String(localized: "Accepted", bundle: bundle) }
     static var customerIntelligenceNeedsReview: String { String(localized: "Needs Review", bundle: bundle) }
-    static var customerIntelligenceRejected: String { String(localized: "Rejected", bundle: bundle) }
-    static var customerIntelligenceApplied: String { String(localized: "Applied", bundle: bundle) }
-    static var customerIntelligenceStale: String { String(localized: "Stale", bundle: bundle) }
 
     static var customerIntelligenceAllStatuses: String {
         String(localized: "All Statuses", bundle: bundle)
@@ -452,37 +440,11 @@ enum L10n {
         String(localized: "Show All Topics", bundle: bundle)
     }
 
-    static func customerIntelligenceContactSummary(meetings: Int, memberships: Int, topics: Int) -> String {
-        String(
-            format: String(localized: "%lld meetings · %lld organizations · %lld topics", bundle: bundle),
-            locale: .current,
-            meetings,
-            memberships,
-            topics
-        )
-    }
-
     static func customerIntelligenceMergeContactMessage(_ name: String) -> String {
         String(
             format: String(localized: "This email belongs to “%@”. Merge this person into it?", bundle: bundle),
             locale: .current,
             name
-        )
-    }
-
-    static func customerIntelligenceReferenceCount(_ count: Int) -> String {
-        String(
-            format: String(localized: "%lld references", bundle: bundle),
-            locale: .current,
-            count
-        )
-    }
-
-    static func customerIntelligenceDepartmentCount(_ count: Int) -> String {
-        String(
-            format: String(localized: "%lld departments", bundle: bundle),
-            locale: .current,
-            count
         )
     }
 
@@ -495,13 +457,10 @@ enum L10n {
     static var unnamedPerson: String { String(localized: "Unnamed Person", bundle: bundle) }
     static var newOrganization: String { String(localized: "New Organization", bundle: bundle) }
     static var newDepartment: String { String(localized: "New Department", bundle: bundle) }
-    static var addToDepartment: String { String(localized: "Add to Department", bundle: bundle) }
-    static var removeFromDepartment: String { String(localized: "Remove from Department", bundle: bundle) }
     static var parentDepartment: String { String(localized: "Parent Department", bundle: bundle) }
     static var move: String { String(localized: "Move", bundle: bundle) }
     static var person: String { String(localized: "Person", bundle: bundle) }
     static var role: String { String(localized: "Role", bundle: bundle) }
-    static var saveTopicState: String { String(localized: "Save Topic State", bundle: bundle) }
     static var deleteOrganization: String { String(localized: "Delete Organization?", bundle: bundle) }
     static func deleteOrganization(named name: String) -> String {
         String(
@@ -669,15 +628,6 @@ enum L10n {
     static var newSubproject: String { String(localized: "New Subproject", bundle: bundle) }
     static var newTopLevelProject: String { String(localized: "New Project at Vault Top", bundle: bundle) }
 
-    static func projectCreationLocation(_ name: String) -> String {
-        String(localized: "Create a subproject inside \(name).", bundle: bundle)
-    }
-
-    static var projectCreationAtVaultTop: String { String(
-        localized: "Create a project at the top level of the vault.",
-        bundle: bundle
-    ) }
-    static var projectCreationFailed: String { String(localized: "Could Not Create Project", bundle: bundle) }
     static var projectCreationFailedDescription: String {
         String(localized: "The project could not be created.", bundle: bundle)
     }
@@ -731,30 +681,21 @@ enum L10n {
         bundle: bundle
     ) }
     static var location: String { String(localized: "Location", bundle: bundle) }
-    static var latestMeeting: String { String(localized: "Latest Meeting", bundle: bundle) }
     static var openInFinder: String { String(localized: "Open in Finder", bundle: bundle) }
     static var openInObsidian: String { String(localized: "Open in Obsidian", bundle: bundle) }
     static var openInBrowser: String { String(localized: "Open in Browser", bundle: bundle) }
-    static var homeUnderConstruction: String { String(localized: "Home is under construction.", bundle: bundle) }
-    static var actionItemsComingSoon: String { String(localized: "Action items will appear here.", bundle: bundle) }
-    static var selectProjectFromProjects: String { String(localized: "Select a project from Projects.", bundle: bundle) }
     static var openProjects: String { String(localized: "Open Projects", bundle: bundle) }
     static var title: String { String(localized: "Title", bundle: bundle) }
     static var all: String { String(localized: "All", bundle: bundle) }
     static var filter: String { String(localized: "Filter", bundle: bundle) }
-    static var searchFilters: String { String(localized: "Search filters...", bundle: bundle) }
     static var tags: String { String(localized: "Tags", bundle: bundle) }
-    static var assignedToMe: String { String(localized: "Assigned to me", bundle: bundle) }
     static var completed: String { String(localized: "Completed", bundle: bundle) }
     static var waiting: String { String(localized: "Waiting", bundle: bundle) }
     static var skipped: String { String(localized: "Skipped", bundle: bundle) }
-    static var projectIs: String { String(localized: "Project is", bundle: bundle) }
-    static var tagIs: String { String(localized: "Tag is", bundle: bundle) }
     static var today: String { String(localized: "Today", bundle: bundle) }
     static var tomorrow: String { String(localized: "Tomorrow", bundle: bundle) }
     static var inProgress: String { String(localized: "In Progress", bundle: bundle) }
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
-    static var noMeetingsMatchFilter: String { String(localized: "No meetings match the current filter.", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
     static var searchingMeetings: String { String(localized: "Searching…", bundle: bundle) }
     static var noMeetingsMatchSearch: String { String(localized: "No meetings match your search", bundle: bundle) }
@@ -855,7 +796,6 @@ enum L10n {
     static var searchProjects: String { String(localized: "Search projects...", bundle: bundle) }
     static var moveToProject: String { String(localized: "Move to Project", bundle: bundle) }
     static var noMeetingSelected: String { String(localized: "No meeting selected", bundle: bundle) }
-    static var selectMeetingDescription: String { String(localized: "Select a meeting from the sidebar.", bundle: bundle) }
     static var noProjectsYet: String { String(localized: "No projects yet", bundle: bundle) }
     static var noProjectsMatchFilter: String { String(localized: "No projects match the current filter.", bundle: bundle) }
     static var loadingProjects: String { String(localized: "Loading Projects…", bundle: bundle) }
@@ -870,9 +810,6 @@ enum L10n {
     ) }
     static var clearSearch: String { String(localized: "Clear Search", bundle: bundle) }
     static var noInstructionsYet: String { String(localized: "No instructions yet", bundle: bundle) }
-    static var noActionItemsYet: String { String(localized: "No action items yet", bundle: bundle) }
-    static var noActionItemsMatchFilter: String { String(localized: "No action items match the current filter.", bundle: bundle) }
-    static var actionItemsDescription: String { String(localized: "Action items extracted from summaries will appear here.", bundle: bundle) }
     static func meetingCount(_ count: Int) -> String { String(localized: "\(count) meetings", bundle: bundle) }
     static func compactMeetingCount(_ count: Int) -> String { String(localized: "\(count)", bundle: bundle) }
 
@@ -880,8 +817,6 @@ enum L10n {
         String(localized: "\(count) subprojects included", bundle: bundle)
     }
 
-    static var noMeetings: String { String(localized: "No meetings", bundle: bundle) }
-    static var noConversationDetected: String { String(localized: "We couldn't detect any conversation in this meeting.", bundle: bundle) }
     static var recordingNow: String { String(localized: "Recording now", bundle: bundle) }
     static var transcribingNow: String { String(localized: "Transcribing now", bundle: bundle) }
     static var returnToRecordingMeeting: String { String(localized: "Return to recording meeting", bundle: bundle) }
@@ -908,7 +843,6 @@ enum L10n {
         )
     }
 
-    static func moveCount(_ count: Int) -> String { String(localized: "Move \(count) items", bundle: bundle) }
     static func selectedCount(_ count: Int) -> String { String(localized: "\(count) selected", bundle: bundle) }
 
     // MARK: - Meeting Metadata
@@ -966,7 +900,6 @@ enum L10n {
     static var saved: String { String(localized: "Saved", bundle: bundle) }
     static var dangerZone: String { String(localized: "Danger Zone", bundle: bundle) }
     static var projectOverview: String { String(localized: "Project Overview", bundle: bundle) }
-    static var projectLocation: String { String(localized: "Project Location", bundle: bundle) }
     static var includedSubprojects: String { String(localized: "Included Subprojects", bundle: bundle) }
     static var meetingsInThisProject: String { String(localized: "Meetings in This Project", bundle: bundle) }
     static var meetingsInHierarchy: String { String(localized: "Meetings in Hierarchy", bundle: bundle) }
@@ -1099,7 +1032,6 @@ enum L10n {
 
     static var audioSource: String { String(localized: "Audio source", bundle: bundle) }
     static var preparingSpeechRecognition: String { String(localized: "Preparing speech recognition...", bundle: bundle) }
-    static var recognizing: String { String(localized: "Recognizing...", bundle: bundle) }
     static var transcription: String { String(localized: "Transcription", bundle: bundle) }
     static func segmentCount(_ count: Int) -> String { String(localized: "\(count) segments", bundle: bundle) }
     static var stop: String { String(localized: "Stop", bundle: bundle) }
@@ -1112,8 +1044,6 @@ enum L10n {
     static var resume: String { String(localized: "Resume", bundle: bundle) }
     static var record: String { String(localized: "Record", bundle: bundle) }
     static var export: String { String(localized: "Export", bundle: bundle) }
-    static var clearTranscription: String { String(localized: "Clear transcription", bundle: bundle) }
-    static var newTranscription: String { String(localized: "New Transcription", bundle: bundle) }
     static var screen: String { String(localized: "Screen", bundle: bundle) }
     static var source: String { String(localized: "Source", bundle: bundle) }
     static var notSelected: String { String(localized: "Not Selected", bundle: bundle) }
@@ -1199,7 +1129,6 @@ enum L10n {
     }
 
     static var newerTranscriptAvailable: String { String(localized: "New transcript available", bundle: bundle) }
-    static var batchRecordingInProgress: String { String(localized: "Recording audio for transcription after recording stops…", bundle: bundle) }
     static var batchTranscriptionAwaitingConfirmation: String { String(
         localized: "Audio is ready. Confirm the transcription language to start.",
         bundle: bundle
@@ -1220,7 +1149,6 @@ enum L10n {
         String(localized: "Files completed: \(completed) of \(total)", bundle: bundle)
     }
 
-    static var batchTranscriptionCompleted: String { String(localized: "High-accuracy transcription completed.", bundle: bundle) }
     static func batchTranscriptionFailed(_ reason: String) -> String {
         String(localized: "Batch transcription failed: \(reason)", bundle: bundle)
     }
@@ -1346,15 +1274,6 @@ enum L10n {
         bundle: bundle
     ) }
     static var cancel: String { String(localized: "Cancel", bundle: bundle) }
-    static var batchAudioBufferInvalid: String { String(localized: "The recorded audio format is invalid.", bundle: bundle) }
-    static var batchAudioBufferOverflow: String { String(
-        localized: "The audio writer could not keep up with the recording.",
-        bundle: bundle
-    ) }
-    static var batchAudioWriterClosed: String { String(
-        localized: "The audio writer was closed before the buffer was saved.",
-        bundle: bundle
-    ) }
     static func batchAudioWriteFailed(_ reason: String) -> String {
         String(localized: "Could not save the recording: \(reason)", bundle: bundle)
     }
@@ -1387,10 +1306,6 @@ enum L10n {
     }
 
     static var assignee: String { String(localized: "Assignee", bundle: bundle) }
-    static var assignToMe: String { String(localized: "Assign to me", bundle: bundle) }
-    static var editAssignee: String { String(localized: "Edit assignee", bundle: bundle) }
-    static var markActionItemComplete: String { String(localized: "Mark action item complete", bundle: bundle) }
-    static var markActionItemIncomplete: String { String(localized: "Mark action item incomplete", bundle: bundle) }
 
     // MARK: - Audio Source Mode
 
@@ -1640,10 +1555,6 @@ enum L10n {
         localized: "Turn on meeting notifications to choose notification conditions.",
         bundle: bundle
     ) }
-    static var transcriptionSettingsDescription: String { String(
-        localized: "Choose which languages are available for transcription and automatic detection.",
-        bundle: bundle
-    ) }
     static var transcriptionMethod: String { String(localized: "Transcription Method", bundle: bundle) }
     static var enableRealtimeTranscription: String { String(localized: "Enable Real-time Transcription", bundle: bundle) }
     static var realtimeTranscriptionDescription: String { String(
@@ -1773,7 +1684,6 @@ enum L10n {
         localized: "Automatically start recording when this event begins.",
         bundle: bundle
     ) }
-    static var calendarEventOriginTitle: String { String(localized: "From calendar event", bundle: bundle) }
 
     static func calendarEventOrigin(_ title: String) -> String {
         String(localized: "Calendar event: \(title)", bundle: bundle)
@@ -1931,10 +1841,6 @@ enum L10n {
         bundle: bundle
     ) }
     static var googleCalendarSignInRequiredTitle: String { String(localized: "Connect Google Calendar", bundle: bundle) }
-    static var googleCalendarSignInRequiredMessage: String { String(
-        localized: "Connect Google Calendar from Settings to show your upcoming events on Home.",
-        bundle: bundle
-    ) }
     static var googleCalendarScheduleSignInRequiredMessage: String { String(
         localized: "Connect Google Calendar from Settings to show your upcoming events here.",
         bundle: bundle
@@ -1989,7 +1895,6 @@ enum L10n {
         localized: "No window is available to present Google sign-in.",
         bundle: bundle
     ) }
-    static var googleCalendarNoPreviousSession: String { String(localized: "No previous Google Calendar session was found.", bundle: bundle) }
     static var googleAccountNoPreviousSession: String { String(localized: "No previous Google session was found.", bundle: bundle) }
     static var googleAccountAuthorizationTimedOut: String { String(
         localized: "Google sign-in timed out. Please try again.",
@@ -2039,8 +1944,6 @@ enum L10n {
 
     // MARK: - Vault Picker
 
-    static var createNewVault: String { String(localized: "Create New Vault", bundle: bundle) }
-    static var createNewVaultDescription: String { String(localized: "Create a new folder to use as a vault.", bundle: bundle) }
     static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }
     static var openFolderAsVaultDescription: String { String(localized: "Select an existing folder to use as a vault.", bundle: bundle) }
@@ -2094,7 +1997,6 @@ enum L10n {
     // MARK: - Settings (LLM)
 
     static var model: String { String(localized: "Model", bundle: bundle) }
-    static var templates: String { String(localized: "Templates", bundle: bundle) }
     static var codexHelperNotBundled: String { String(
         localized: "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.",
         bundle: bundle
@@ -2158,7 +2060,6 @@ enum L10n {
     static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
     static var codexAccount: String { String(localized: "Codex Account", bundle: bundle) }
-    static var codexAppServer: String { String(localized: "Codex app-server", bundle: bundle) }
     static var codexAccountDescription: String { String(
         localized: "Dahlia stores a separate Codex sign-in for this app. Signing in opens your browser.",
         bundle: bundle
@@ -2274,7 +2175,6 @@ enum L10n {
     static var summaryGenerationFailed: String { String(localized: "Could not generate the summary.", bundle: bundle) }
     static var noSummaryYet: String { String(localized: "No summary has been generated yet.", bundle: bundle) }
     static var summaryImageUnavailable: String { String(localized: "Summary image unavailable", bundle: bundle) }
-    static var summaryGenerated: String { String(localized: "Summary generated", bundle: bundle) }
     static var openSummary: String { String(localized: "Open Summary", bundle: bundle) }
     static var generateSummary: String { String(localized: "Generate Summary", bundle: bundle) }
     static var share: String { String(localized: "Share", bundle: bundle) }
@@ -2283,14 +2183,7 @@ enum L10n {
     static var googleDocsExportFailed: String { String(localized: "Could not export the summary to Google Docs.", bundle: bundle) }
     static var copySummaryForGoogleDocs: String { String(localized: "Copy for Google Docs", bundle: bundle) }
     static var copySummaryForSlack: String { String(localized: "Copy for Slack", bundle: bundle) }
-    static var summaryPrompt: String { String(localized: "Summary Prompt", bundle: bundle) }
-    static var resetToDefault: String { String(localized: "Reset to Default", bundle: bundle) }
     static var restoreAppDefaults: String { String(localized: "Restore App Defaults", bundle: bundle) }
-    static var summaryTemplate: String { String(localized: "Summary Template", bundle: bundle) }
-    static var openInEditor: String { String(localized: "Open in Editor", bundle: bundle) }
-    static var openTemplatesFolder: String { String(localized: "Open Templates Folder", bundle: bundle) }
-    static var resetPresets: String { String(localized: "Reset Presets", bundle: bundle) }
-    static var summaryTemplateDescription: String { String(localized: "Select a template from _custom_instructions/ in the vault.", bundle: bundle) }
 
     // MARK: - Error Messages (Audio)
 
@@ -2454,12 +2347,6 @@ enum L10n {
         bundle: bundle
     ) }
     static func languageChangeFailed(_ error: String) -> String { String(localized: "Failed to change language: \(error)", bundle: bundle) }
-    static func actionItemAssigneeUpdateFailed(_ error: String) -> String { String(
-        localized: "Could not update action item assignee: \(error)",
-        bundle: bundle
-    ) }
-    static func actionItemDeleteFailed(_ error: String) -> String { String(localized: "Could not delete action item: \(error)", bundle: bundle) }
-    static func actionItemUpdateFailed(_ error: String) -> String { String(localized: "Could not update action item: \(error)", bundle: bundle) }
     static var speechRecognitionNotReady: String { String(localized: "Speech recognition is not ready", bundle: bundle) }
     static var systemAudioCaptureStopped: String { String(localized: "System audio capture stopped", bundle: bundle) }
     static var microphoneCaptureStopped: String { String(localized: "Microphone capture stopped", bundle: bundle) }
@@ -2475,7 +2362,6 @@ enum L10n {
         """,
         bundle: bundle
     ) }
-    static var recordingSettings: String { String(localized: "Recording Settings", bundle: bundle) }
     static var recordingCommandHint: String { String(
         localized: "Starts or stops recording for the selected meeting.",
         bundle: bundle
@@ -2484,7 +2370,6 @@ enum L10n {
 
     // MARK: - Sidebar Footer
 
-    static var switchVault: String { String(localized: "Switch Vault", bundle: bundle) }
     static var manageVaults: String { String(localized: "Manage Vaults...", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }
@@ -2518,19 +2403,11 @@ enum L10n {
         bundle: bundle
     ) }
     static var menuBarNoMoreEventsToday: String { String(localized: "No more events today", bundle: bundle) }
-    static var menuBarNoMoreEventsTodayDescription: String { String(
-        localized: "There are no ongoing or upcoming events today.",
-        bundle: bundle
-    ) }
     static var menuBarNoEvents: String { String(localized: "No events", bundle: bundle) }
     static var menuBarOpenCalendarSettings: String { String(localized: "Open Calendar Settings", bundle: bundle) }
     static var menuBarInProgress: String { String(localized: "In progress", bundle: bundle) }
     static var menuBarStartingSoon: String { String(localized: "Starting soon", bundle: bundle) }
     static var menuBarEndingSoon: String { String(localized: "Ending soon", bundle: bundle) }
-
-    static func menuBarOpenEventInDahlia(_ title: String) -> String {
-        String(localized: "Open \(title) in Dahlia", bundle: bundle)
-    }
 
     static func menuBarStartsIn(_ duration: String) -> String {
         String(localized: "Starts in \(duration)", bundle: bundle)
@@ -2730,7 +2607,6 @@ enum L10n {
     static var conversationAnalyticsYou: String { String(localized: "You", bundle: bundle) }
     static var conversationAnalyticsOtherSide: String { String(localized: "Other Side", bundle: bundle) }
     static var conversationAnalyticsOverlap: String { String(localized: "Overlap", bundle: bundle) }
-    static var conversationAnalyticsYourPace: String { String(localized: "Your Speaking Pace", bundle: bundle) }
     static var conversationAnalyticsSpeakingPace: String { String(localized: "Speaking Pace", bundle: bundle) }
     static var conversationAnalyticsPaceTrend: String { String(localized: "Speaking Pace Over Time", bundle: bundle) }
     static var conversationAnalyticsPaceSeries: String { String(localized: "Pace Series", bundle: bundle) }
@@ -2743,21 +2619,8 @@ enum L10n {
         localized: "Segments without measurable duration are excluded from the pace-over-time chart.",
         bundle: bundle
     ) }
-    static var conversationAnalyticsSpeakingShare: String { String(localized: "Your Speaking Share", bundle: bundle) }
-    static var conversationAnalyticsYourSpeakingShare: String { String(
-        localized: "Share of total source speaking time",
-        bundle: bundle
-    ) }
     static var conversationAnalyticsOccupancy: String { String(localized: "Conversation Occupancy", bundle: bundle) }
-    static var conversationAnalyticsOccupancyDescription: String { String(
-        localized: "Active speech within recording time",
-        bundle: bundle
-    ) }
     static var conversationAnalyticsOverlapRate: String { String(localized: "Overlap Rate", bundle: bundle) }
-    static var conversationAnalyticsOverlapDescription: String { String(
-        localized: "Simultaneous speech within active speech",
-        bundle: bundle
-    ) }
     static var conversationAnalyticsPeerPaceUnavailable: String { String(
         localized: "No comparable pace for the other side",
         bundle: bundle
@@ -2787,26 +2650,14 @@ enum L10n {
     }
 
     static var conversationAnalyticsSpeechBalance: String { String(localized: "Speaking-Time Balance", bundle: bundle) }
-    static var conversationAnalyticsYouMicrophone: String { String(localized: "You (Microphone)", bundle: bundle) }
-    static var conversationAnalyticsOtherSideSystemAudio: String { String(
-        localized: "Other Side (System Audio)",
-        bundle: bundle
-    ) }
     static var conversationAnalyticsMissingSourceNote: String { String(
         localized: "Only one audio source has confirmed speech.",
         bundle: bundle
     ) }
-    static var conversationAnalyticsConversationComposition: String { String(localized: "Conversation Composition", bundle: bundle) }
     static var conversationAnalyticsConversationFlow: String { String(localized: "Conversation Flow", bundle: bundle) }
-    static var conversationAnalyticsRecordingTime: String { String(localized: "Recording Time", bundle: bundle) }
     static var conversationAnalyticsActiveSpeech: String { String(localized: "Active Speech", bundle: bundle) }
-    static var conversationAnalyticsSilence: String { String(localized: "Silence", bundle: bundle) }
-    static var conversationAnalyticsSoloSpeech: String { String(localized: "Non-overlapping Speech", bundle: bundle) }
     static var conversationAnalyticsSimultaneousSpeech: String { String(localized: "Simultaneous Speech", bundle: bundle) }
     static var conversationAnalyticsSourceDetails: String { String(localized: "Source Details", bundle: bundle) }
-    static var conversationAnalyticsSpeakingTime: String { String(localized: "Speaking Time", bundle: bundle) }
-    static var conversationAnalyticsNormalizedCharacters: String { String(localized: "Characters", bundle: bundle) }
-    static var conversationAnalyticsSpeechSegments: String { String(localized: "Speech Segments", bundle: bundle) }
     static var conversationAnalyticsOverlapCount: String { String(localized: "Overlap Count", bundle: bundle) }
     static var conversationAnalyticsLongestMonologue: String { String(localized: "Longest Monologue", bundle: bundle) }
     static var charactersPerMinute: String { String(localized: "chars/min", bundle: bundle) }

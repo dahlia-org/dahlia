@@ -46,15 +46,6 @@ struct FlatProjectRow: Identifiable, Equatable {
         return rows.filter { $0.id != project.id && $0.depth == 0 }
     }
 
-    /// この行の全祖先パスを返す。例: "a/b/c" → ["a", "a/b"]
-    func parentPaths() -> [String] {
-        let components = name.split(separator: "/")
-        guard components.count > 1 else { return [] }
-        return (1 ..< components.count).map { depth in
-            components[0 ..< depth].joined(separator: "/")
-        }
-    }
-
 }
 
 /// SwiftUI の OutlineGroup に渡すプロジェクトツリー行。

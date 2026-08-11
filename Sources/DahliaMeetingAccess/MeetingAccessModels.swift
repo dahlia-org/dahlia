@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import Foundation
 
 public struct MeetingQuery: Sendable, Equatable {
@@ -249,43 +250,7 @@ public struct MeetingProjectMembershipResult: Codable, Sendable, Equatable {
     public let projectID: UUID?
 }
 
-public enum JSONValue: Codable, Sendable, Equatable {
-    case object([String: Self])
-    case array([Self])
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case null
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            self = .null
-        } else if let value = try? container.decode([String: Self].self) {
-            self = .object(value)
-        } else if let value = try? container.decode([Self].self) {
-            self = .array(value)
-        } else if let value = try? container.decode(Bool.self) {
-            self = .bool(value)
-        } else if let value = try? container.decode(Double.self) {
-            self = .number(value)
-        } else {
-            self = try .string(container.decode(String.self))
-        }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        switch self {
-        case let .object(value): try container.encode(value)
-        case let .array(value): try container.encode(value)
-        case let .string(value): try container.encode(value)
-        case let .number(value): try container.encode(value)
-        case let .bool(value): try container.encode(value)
-        case .null: try container.encodeNil()
-        }
-    }
-}
+public typealias JSONValue = DahliaRuntimeSupport.JSONValue
 
 public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case vaultNotFound

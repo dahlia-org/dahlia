@@ -265,15 +265,6 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func fetchCustomerIntelligenceResourceLabels(
-        vaultId: UUID,
-        ids: Set<UUID>
-    ) throws -> [UUID: String] {
-        guard !ids.isEmpty else { return [:] }
-        return try dbQueue.read { db in
-            try Self.resourceLabels(vaultId: vaultId, ids: ids, in: db)
-        }
-    }
 }
 
 extension MeetingRepository {

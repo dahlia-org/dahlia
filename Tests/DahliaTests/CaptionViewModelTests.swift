@@ -452,7 +452,7 @@ import GRDB
         func beginDraftMeetingDoesNotPersistMeetingRecord() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let event = GoogleCalendarEvent(
+            let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -499,7 +499,7 @@ import GRDB
         @Test
         func clearCurrentMeetingDiscardsDraftMeeting() throws {
             let viewModel = CaptionViewModel()
-            let event = GoogleCalendarEvent(
+            let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -528,7 +528,7 @@ import GRDB
         @Test
         func projectNavigationPreservesDraftMeeting() throws {
             let viewModel = CaptionViewModel()
-            let event = GoogleCalendarEvent(
+            let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -580,7 +580,7 @@ import GRDB
             defer { AppSettings.shared.currentVault = previousVault }
 
             viewModel.beginDraftMeeting(
-                from: GoogleCalendarEvent(
+                from: CalendarEvent(
                     id: "primary::event-1",
                     calendarID: "primary",
                     calendarName: "Primary",
@@ -766,7 +766,7 @@ import GRDB
         func testBeginDraftMeetingDoesNotPersistMeetingRecord() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
-            let event = GoogleCalendarEvent(
+            let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -812,7 +812,7 @@ import GRDB
 
         func testClearCurrentMeetingDiscardsDraftMeeting() throws {
             let viewModel = CaptionViewModel()
-            let event = GoogleCalendarEvent(
+            let event = CalendarEvent(
                 id: "primary::event-1",
                 calendarID: "primary",
                 calendarName: "Primary",
@@ -863,7 +863,7 @@ import GRDB
             defer { AppSettings.shared.currentVault = previousVault }
 
             viewModel.beginDraftMeeting(
-                from: GoogleCalendarEvent(
+                from: CalendarEvent(
                     id: "primary::event-1",
                     calendarID: "primary",
                     calendarName: "Primary",
