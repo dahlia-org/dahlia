@@ -1,9 +1,17 @@
+@preconcurrency import AVFoundation
 import Foundation
 
 extension BatchTranscriptionCoordinator {
+    struct AutomaticTranscriptionConfiguration: Sendable {
+        let supportedLocales: [Locale]
+        let candidateLocales: [Locale]?
+        let allowedLanguageIdentifiers: Set<String>?
+        let languageDetector: any BatchLanguageDetecting
+        let onLanguageFallback: @Sendable (BatchLanguageFallback) async -> Void
+    }
+
     enum TranscriptionRequest: Sendable {
-        case automatic(BatchSpeechTranscriptionRequest)
-        case manual(BatchManualTranscriptionRun)
+        case run(BatchTranscriptionRun)
         case noAudio(localeIdentifier: String)
     }
 
@@ -22,44 +30,20 @@ extension BatchTranscriptionCoordinator {
     func transcriptionWorkItems(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         job: Job,
-        supportedLocales: [Locale],
-        automaticLanguageCandidateLocales: [Locale]?,
-        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
-    ) throws -> [TranscriptionWorkItem] {
+        automaticConfiguration: AutomaticTranscriptionConfiguration
+    ) async throws -> [TranscriptionWorkItem] {
         switch job.session.batchLanguageDetectionMode {
         case .manual:
-            let runs = try BatchManualTranscriptionRunPlanner.runs(
+            let runs = try BatchTranscriptionRunPlanner.manualRuns(
                 verifiedSegments: verifiedSegments,
                 recordingStartTime: job.session.startedAt
             )
-            var workItems = runs.enumerated().map { index, run in
-                TranscriptionWorkItem(
-                    index: index,
-                    fileIndices: run.fileIndices,
-                    request: .manual(run)
-                )
-            }
-            let coveredFileIndices = Set(runs.flatMap(\.fileIndices))
-            for (fileIndex, verified) in verifiedSegments.enumerated()
-                where !coveredFileIndices.contains(fileIndex) {
-                guard let localeIdentifier = verified.ranges.first?.localeIdentifier,
-                      !localeIdentifier.isEmpty else {
-                    throw BatchSpeechTranscriberError.invalidAudioRange
-                }
-                workItems.append(TranscriptionWorkItem(
-                    index: workItems.count,
-                    fileIndices: [fileIndex],
-                    request: .noAudio(localeIdentifier: localeIdentifier)
-                ))
-            }
-            return workItems
+            return try transcriptionWorkItems(for: runs, verifiedSegments: verifiedSegments)
         case .automatic:
-            return try automaticTranscriptionWorkItems(
+            return try await automaticTranscriptionWorkItems(
                 verifiedSegments: verifiedSegments,
                 job: job,
-                supportedLocales: supportedLocales,
-                automaticLanguageCandidateLocales: automaticLanguageCandidateLocales,
-                automaticLanguageCandidates: automaticLanguageCandidates
+                configuration: automaticConfiguration
             )
         }
     }
@@ -67,39 +51,94 @@ extension BatchTranscriptionCoordinator {
     private func automaticTranscriptionWorkItems(
         verifiedSegments: [RecordingAudioStore.VerifiedSegment],
         job: Job,
-        supportedLocales: [Locale],
-        automaticLanguageCandidateLocales: [Locale]?,
-        automaticLanguageCandidates: BatchLanguageDetectionCandidateSnapshot?
-    ) throws -> [TranscriptionWorkItem] {
-        var workItems: [TranscriptionWorkItem] = []
+        configuration: AutomaticTranscriptionConfiguration
+    ) async throws -> [TranscriptionWorkItem] {
+        var candidates: [BatchTranscriptionRunPlanner.Candidate] = []
         for (fileIndex, verified) in verifiedSegments.enumerated() {
-            let ranges = try BatchTranscriptionAudioRangePlanner.ranges(
+            try await candidates.append(contentsOf: automaticCandidates(
                 for: verified,
-                mode: .automatic
+                fileIndex: fileIndex,
+                configuration: configuration
+            ))
+        }
+        let runs = BatchTranscriptionRunPlanner.runs(
+            candidates: candidates,
+            recordingStartTime: job.session.startedAt
+        )
+        return try transcriptionWorkItems(for: runs, verifiedSegments: verifiedSegments)
+    }
+
+    private func transcriptionWorkItems(
+        for runs: [BatchTranscriptionRun],
+        verifiedSegments: [RecordingAudioStore.VerifiedSegment]
+    ) throws -> [TranscriptionWorkItem] {
+        var workItems = runs.enumerated().map { index, run in
+            TranscriptionWorkItem(
+                index: index,
+                fileIndices: run.fileIndices,
+                request: .run(run)
             )
-            for range in ranges {
-                workItems.append(
-                    TranscriptionWorkItem(
-                        index: workItems.count,
-                        fileIndices: [fileIndex],
-                        request: .automatic(BatchSpeechTranscriptionRequest(
-                            audioURL: verified.url,
-                            startFrame: range.startFrame,
-                            frameCount: range.frameCount,
-                            recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
-                            languageDetectionMode: .automatic,
-                            supportedLocales: supportedLocales,
-                            automaticLanguageCandidateLocales: automaticLanguageCandidateLocales,
-                            allowedLanguageIdentifiers: automaticLanguageCandidates?.identifierSet,
-                            source: verified.segment.source,
-                            recordingSessionId: job.session.id,
-                            recordingStartTime: job.session.startedAt,
-                            sessionOffsetSeconds: range.sessionOffsetSeconds
-                        ))
-                    )
-                )
+        }
+        let coveredFileIndices = Set(runs.flatMap(\.fileIndices))
+        for (fileIndex, verified) in verifiedSegments.enumerated()
+            where !coveredFileIndices.contains(fileIndex) {
+            guard let localeIdentifier = verified.ranges.first?.localeIdentifier,
+                  !localeIdentifier.isEmpty else {
+                throw BatchSpeechTranscriberError.invalidAudioRange
             }
+            workItems.append(TranscriptionWorkItem(
+                index: workItems.count,
+                fileIndices: [fileIndex],
+                request: .noAudio(localeIdentifier: localeIdentifier)
+            ))
         }
         return workItems
+    }
+
+    private func automaticCandidates(
+        for verified: RecordingAudioStore.VerifiedSegment,
+        fileIndex: Int,
+        configuration: AutomaticTranscriptionConfiguration
+    ) async throws -> [BatchTranscriptionRunPlanner.Candidate] {
+        let audioFormat = try AVAudioFile(forReading: verified.url).processingFormat
+        guard audioFormat.sampleRate > 0 else {
+            throw BatchSpeechTranscriberError.invalidAudioRange
+        }
+        let ranges = try BatchTranscriptionAudioRangePlanner.ranges(for: verified, mode: .automatic)
+        var candidates: [BatchTranscriptionRunPlanner.Candidate] = []
+        for range in ranges {
+            guard range.startFrame >= 0, range.frameCount >= 0 else {
+                throw BatchSpeechTranscriberError.invalidAudioRange
+            }
+            guard range.frameCount > 0 else { continue }
+            let request = BatchSpeechTranscriptionRequest(
+                audioURL: verified.url,
+                startFrame: range.startFrame,
+                frameCount: range.frameCount,
+                recordedLocaleIdentifiers: range.recordedLocaleIdentifiers,
+                supportedLocales: configuration.supportedLocales,
+                automaticLanguageCandidateLocales: configuration.candidateLocales,
+                allowedLanguageIdentifiers: configuration.allowedLanguageIdentifiers
+            )
+            let resolution = try await BatchSpeechTranscriberService.resolveLocale(
+                for: request,
+                languageDetector: configuration.languageDetector,
+                onLanguageFallback: configuration.onLanguageFallback
+            )
+            candidates.append(BatchTranscriptionRunPlanner.Candidate(
+                slice: BatchSpeechAudioSlice(
+                    audioURL: verified.url,
+                    startFrame: range.startFrame,
+                    frameCount: range.frameCount
+                ),
+                localeIdentifier: resolution.locale.identifier,
+                source: verified.segment.source,
+                recordingSessionId: verified.segment.recordingSessionId,
+                sessionOffsetSeconds: range.sessionOffsetSeconds,
+                audioFormat: audioFormat,
+                fileIndex: fileIndex
+            ))
+        }
+        return candidates
     }
 }

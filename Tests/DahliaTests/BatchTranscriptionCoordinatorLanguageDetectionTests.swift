@@ -42,7 +42,7 @@ import GRDB
         }
 
         @Test
-        func languageDetectionAndSpeechRecognitionRunSerially() async throws {
+        func adjacentCAFsWithSameDetectedLanguageUseOneRecognitionRun() async throws {
             let fixture = try BatchAudioTestFixture(
                 name: "AutomaticLanguagePipeline",
                 endedAt: Date(timeIntervalSince1970: 1_776_384_001),
@@ -76,13 +76,13 @@ import GRDB
                     .order(Column("startTime").asc)
                     .fetchAll(db)
             }
-            #expect(transcripts.count == 2)
+            #expect(transcripts.count == 1)
             #expect(await probe.events == [
                 "detection-1",
-                "recognition-1",
                 "detection-2",
-                "recognition-2",
+                "recognition-1",
             ])
+            #expect(await probe.recognitionSliceCounts == [2])
         }
 
         @Test
@@ -408,6 +408,10 @@ import GRDB
         func recognize(audioURL _: URL, locale _: Locale) throws -> [BatchSpeechRecognition] {
             throw CoordinatorLanguageDetectionTestError.forcedRecognitionFailure
         }
+
+        func recognize(audioSlices _: [BatchSpeechAudioSlice], locale _: Locale) throws -> [BatchSpeechRecognition] {
+            throw CoordinatorLanguageDetectionTestError.forcedRecognitionFailure
+        }
     }
 
     private actor RetryLanguageDetector: BatchLanguageDetecting {
@@ -467,6 +471,14 @@ import GRDB
         private(set) var localeIdentifiers: [String] = []
 
         func recognize(audioURL _: URL, locale: Locale) -> [BatchSpeechRecognition] {
+            recognition(locale: locale)
+        }
+
+        func recognize(audioSlices _: [BatchSpeechAudioSlice], locale: Locale) -> [BatchSpeechRecognition] {
+            recognition(locale: locale)
+        }
+
+        private func recognition(locale: Locale) -> [BatchSpeechRecognition] {
             localeIdentifiers.append(locale.identifier)
             return [
                 BatchSpeechRecognition(
@@ -511,14 +523,16 @@ import GRDB
 
     private actor BatchPipelineProbe {
         private(set) var events: [String] = []
+        private(set) var recognitionSliceCounts: [Int] = []
 
         func recordDetection(_ callCount: Int) {
             events.append("detection-\(callCount)")
         }
 
-        func recordRecognitionStart() {
+        func recordRecognitionStart(sliceCount: Int) {
             let recognitionCount = events.count(where: { $0.hasPrefix("recognition-") }) + 1
             events.append("recognition-\(recognitionCount)")
+            recognitionSliceCounts.append(sliceCount)
         }
     }
 
@@ -536,7 +550,7 @@ import GRDB
         ) async -> BatchLanguageDetectionOutcome {
             callCount += 1
             await probe.recordDetection(callCount)
-            return .confidentDetection(callCount == 1 ? "ja" : "en")
+            return .confidentDetection("ja")
         }
 
         func unload() async {}
@@ -550,8 +564,17 @@ import GRDB
         }
 
         func recognize(audioURL _: URL, locale: Locale) async -> [BatchSpeechRecognition] {
-            await probe.recordRecognitionStart()
-            return [
+            await probe.recordRecognitionStart(sliceCount: 1)
+            return recognition(locale: locale)
+        }
+
+        func recognize(audioSlices: [BatchSpeechAudioSlice], locale: Locale) async -> [BatchSpeechRecognition] {
+            await probe.recordRecognitionStart(sliceCount: audioSlices.count)
+            return recognition(locale: locale)
+        }
+
+        private func recognition(locale: Locale) -> [BatchSpeechRecognition] {
+            [
                 BatchSpeechRecognition(
                     startSeconds: 0.001,
                     endSeconds: 0.002,

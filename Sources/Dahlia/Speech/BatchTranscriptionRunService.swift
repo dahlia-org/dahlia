@@ -1,8 +1,8 @@
 import Foundation
 
-enum BatchManualSpeechTranscriberService {
+enum BatchTranscriptionRunService {
     static func transcribe(
-        _ run: BatchManualTranscriptionRun,
+        _ run: BatchTranscriptionRun,
         speechRecognizer: any BatchSpeechRecognizing,
         audioFeatureAnalyzer: any BatchTranscriptAudioFeatureAnalyzing = BatchTranscriptAudioFeatureAnalyzer(),
         onFileConsumed: @escaping @Sendable (Int) async -> Void = { _ in }
