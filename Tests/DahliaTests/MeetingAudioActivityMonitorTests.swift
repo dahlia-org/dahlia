@@ -391,6 +391,39 @@ import Foundation
         }
 
         @Test
+        func qualifiedChromeAudioContinuesWhenPWAWindowDisappears() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+
+            _ = tracker.shouldStop(after: snapshot(active: [.chrome], started: [.chrome], at: now))
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(30))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(31))
+            )
+
+            let result = tracker.shouldStop(after: snapshot(
+                active: [.chrome],
+                firstSeenAt: [.chrome: now],
+                lastSeenAt: [.chrome: now.advanced(by: .seconds(31))],
+                at: now.advanced(by: .seconds(31))
+            ))
+
+            #expect(!result)
+        }
+
+        @Test
         func waitsForEveryCorroboratedBrowserContextToEnd() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))

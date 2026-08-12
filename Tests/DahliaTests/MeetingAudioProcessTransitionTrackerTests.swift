@@ -5,6 +5,8 @@ import Foundation
     import Testing
 
     struct MeetingAudioActivityMonitorTests {
+        private static let chromeWebAppBundleIdentifier = "com.google.Chrome.app.kjgfgldnnfoeklkmfkjfagphfepbbdan"
+
         @Test
         func recognizesNativeAndBrowserAudioProcesses() {
             let contexts = MeetingAudioProcessCatalog.contexts(for: [
@@ -37,6 +39,16 @@ import Foundation
             #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Arc") == .arc)
             #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Safari") == nil)
             #expect(MeetingAudioWindowCatalog.browserContext(forApplicationName: "Example App") == nil)
+        }
+
+        @Test
+        func recognizesChromeWindowBundleIdentifierFamily() {
+            #expect(MeetingAudioWindowCatalog.browserContext(forBundleIdentifier: "com.google.Chrome") == .chrome)
+            #expect(MeetingAudioWindowCatalog.browserContext(forBundleIdentifier: "com.google.Chrome.helper.renderer") == .chrome)
+            #expect(MeetingAudioWindowCatalog.browserContext(
+                forBundleIdentifier: Self.chromeWebAppBundleIdentifier
+            ) == .chrome)
+            #expect(MeetingAudioWindowCatalog.browserContext(forBundleIdentifier: "com.example.Chrome.app.meet") == nil)
         }
 
         @Test
@@ -223,6 +235,77 @@ import Foundation
 
             #expect(detection?.name == "Google Meet")
             #expect(detection?.browserContexts == [.chrome, .edge])
+        }
+
+        @Test
+        func detectsActiveGoogleMeetChromePWAAsChromeContext() {
+            let detection = MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet - Meet - cfh-jkbp-nye 🔊",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+            ])
+
+            #expect(detection?.name == "Google Meet")
+            #expect(detection?.browserContexts == [.chrome])
+        }
+
+        @Test
+        func ignoresLandingAndUnrelatedChromePWAWindows() {
+            #expect(MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+                MeetingWindowInfo(
+                    owner: "Meet",
+                    title: "",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet - Calendar",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+                MeetingWindowInfo(
+                    owner: "Calendar",
+                    title: "abc-defg-hij",
+                    bundleIdentifier: "com.google.Chrome.app.example"
+                ),
+                MeetingWindowInfo(
+                    owner: "Calendar",
+                    title: "Zoom Meeting",
+                    bundleIdentifier: "com.google.Chrome.app.example"
+                ),
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Weekly sync",
+                    bundleIdentifier: "com.example.meet"
+                ),
+            ]) == nil)
+        }
+
+        @Test
+        func chromeTabAndGoogleMeetPWAUseSameContext() {
+            let tabDetection = MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(
+                    owner: "Google Chrome",
+                    title: "Meet - cfh-jkbp-nye",
+                    bundleIdentifier: "com.google.Chrome"
+                ),
+            ])
+            let pwaDetection = MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet - Meet - cfh-jkbp-nye 🔊",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+            ])
+
+            #expect(tabDetection?.browserContexts == [.chrome])
+            #expect(pwaDetection?.browserContexts == tabDetection?.browserContexts)
         }
 
         private func snapshot(
