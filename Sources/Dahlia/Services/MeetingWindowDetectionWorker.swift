@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -9,6 +10,13 @@ struct MeetingWindowDetection: Equatable, Sendable {
 struct MeetingWindowInfo: Sendable {
     let owner: String
     let title: String
+    let bundleIdentifier: String?
+
+    init(owner: String, title: String, bundleIdentifier: String? = nil) {
+        self.owner = owner
+        self.title = title
+        self.bundleIdentifier = bundleIdentifier
+    }
 }
 
 enum MeetingWindowDetector {
@@ -23,29 +31,52 @@ enum MeetingWindowDetector {
         var meetingName: String?
         var browserContexts = Set<MeetingAudioContext>()
 
-        for window in windows where !window.title.isEmpty {
-            if let pattern = titlePatterns.first(where: { window.title.contains($0.pattern) }) {
-                meetingName = meetingName ?? pattern.appName
-                if let browserContext = MeetingAudioWindowCatalog.browserContext(
-                    forApplicationName: window.owner
-                ) {
+        for window in windows {
+            let browserContext = browserContext(for: window)
+            if MeetingAudioWindowCatalog.isChromeWebApp(bundleIdentifier: window.bundleIdentifier) {
+                if let browserContext, isGoogleMeetWindow(window) {
+                    meetingName = meetingName ?? "Google Meet"
                     browserContexts.insert(browserContext)
                 }
                 continue
             }
 
-            if let browserContext = MeetingAudioWindowCatalog.browserContext(
-                forApplicationName: window.owner
-            ), window.title.hasPrefix("Meet -") || window.title.range(
-                of: "[a-z]{3}-[a-z]{4}-[a-z]{3}",
-                options: .regularExpression
-            ) != nil {
+            if let pattern = titlePatterns.first(where: { window.title.contains($0.pattern) }) {
+                meetingName = meetingName ?? pattern.appName
+                if let browserContext {
+                    browserContexts.insert(browserContext)
+                }
+                continue
+            }
+
+            if let browserContext, isGoogleMeetWindow(window) {
                 meetingName = meetingName ?? "Google Meet"
                 browserContexts.insert(browserContext)
             }
         }
 
         return meetingName.map { MeetingWindowDetection(name: $0, browserContexts: browserContexts) }
+    }
+
+    private static func browserContext(for window: MeetingWindowInfo) -> MeetingAudioContext? {
+        if let bundleIdentifier = window.bundleIdentifier,
+           let context = MeetingAudioWindowCatalog.browserContext(forBundleIdentifier: bundleIdentifier) {
+            return context
+        }
+        return MeetingAudioWindowCatalog.browserContext(forApplicationName: window.owner)
+    }
+
+    private static func isGoogleMeetWindow(_ window: MeetingWindowInfo) -> Bool {
+        if MeetingAudioWindowCatalog.isChromeWebApp(bundleIdentifier: window.bundleIdentifier) {
+            return window.owner == "Google Meet"
+                || window.owner == "Meet"
+                || window.title.contains("Google Meet")
+                || window.title.hasPrefix("Meet -")
+        }
+        return window.title.hasPrefix("Meet -") || window.title.range(
+            of: "[a-z]{3}-[a-z]{4}-[a-z]{3}",
+            options: .regularExpression
+        ) != nil
     }
 }
 
@@ -58,10 +89,12 @@ actor MeetingWindowDetectionWorker {
                   kCGNullWindowID
               ) as? [[String: Any]] else { return nil }
 
-        let windowInfo = windows.compactMap { window -> MeetingWindowInfo? in
-            guard let owner = window[kCGWindowOwnerName as String] as? String,
-                  let title = window[kCGWindowName as String] as? String else { return nil }
-            return MeetingWindowInfo(owner: owner, title: title)
+        let windowInfo = windows.map { window -> MeetingWindowInfo in
+            let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+            let title = window[kCGWindowName as String] as? String ?? ""
+            let bundleIdentifier = (window[kCGWindowOwnerPID as String] as? pid_t)
+                .flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            return MeetingWindowInfo(owner: owner, title: title, bundleIdentifier: bundleIdentifier)
         }
         guard !Task.isCancelled else { return nil }
         return MeetingWindowDetector.detect(in: windowInfo)

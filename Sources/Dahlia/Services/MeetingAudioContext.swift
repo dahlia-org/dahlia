@@ -48,6 +48,7 @@ enum MeetingAudioContext: CaseIterable, Hashable, Sendable {
 }
 
 enum MeetingAudioWindowCatalog {
+    private static let chromeBundleIdentifier = "com.google.chrome"
     private static let browserContextsByApplicationName: [String: MeetingAudioContext] = [
         "Google Chrome": .chrome,
         "Microsoft Edge": .edge,
@@ -63,6 +64,17 @@ enum MeetingAudioWindowCatalog {
 
     static func browserContext(forApplicationName applicationName: String) -> MeetingAudioContext? {
         browserContextsByApplicationName[applicationName]
+    }
+
+    static func browserContext(forBundleIdentifier bundleIdentifier: String) -> MeetingAudioContext? {
+        let normalizedBundleIdentifier = bundleIdentifier.lowercased()
+        guard normalizedBundleIdentifier == chromeBundleIdentifier
+            || normalizedBundleIdentifier.hasPrefix("\(chromeBundleIdentifier).") else { return nil }
+        return .chrome
+    }
+
+    static func isChromeWebApp(bundleIdentifier: String?) -> Bool {
+        bundleIdentifier?.lowercased().hasPrefix("\(chromeBundleIdentifier).app.") == true
     }
 }
 
