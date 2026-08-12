@@ -238,7 +238,7 @@ import Foundation
         }
 
         @Test
-        func detectsGoogleMeetChromePWAAsChromeContext() {
+        func detectsActiveGoogleMeetChromePWAAsChromeContext() {
             let ownerDetection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
                     owner: "Google Meet",
@@ -249,21 +249,14 @@ import Foundation
             let titleDetection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
                     owner: "Example App",
-                    title: "Google Meet",
+                    title: "Weekly sync - Google Meet",
                     bundleIdentifier: Self.chromeWebAppBundleIdentifier
                 ),
             ])
-            let shortOwnerDetection = MeetingWindowDetector.detect(in: [
+            let callTitleDetection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
-                    owner: "Meet",
-                    title: "",
-                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
-                ),
-            ])
-            let titleOnlyDetection = MeetingWindowDetector.detect(in: [
-                MeetingWindowInfo(
-                    owner: "",
-                    title: "Google Meet",
+                    owner: "Example App",
+                    title: "Meet - Weekly sync",
                     bundleIdentifier: Self.chromeWebAppBundleIdentifier
                 ),
             ])
@@ -272,15 +265,23 @@ import Foundation
             #expect(ownerDetection?.browserContexts == [.chrome])
             #expect(titleDetection?.name == "Google Meet")
             #expect(titleDetection?.browserContexts == [.chrome])
-            #expect(shortOwnerDetection?.name == "Google Meet")
-            #expect(shortOwnerDetection?.browserContexts == [.chrome])
-            #expect(titleOnlyDetection?.name == "Google Meet")
-            #expect(titleOnlyDetection?.browserContexts == [.chrome])
+            #expect(callTitleDetection?.name == "Google Meet")
+            #expect(callTitleDetection?.browserContexts == [.chrome])
         }
 
         @Test
-        func ignoresUnrelatedChromePWAAndUnrecognizedGoogleMeetOwner() {
+        func ignoresLandingAndUnrelatedChromePWAWindows() {
             #expect(MeetingWindowDetector.detect(in: [
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+                MeetingWindowInfo(
+                    owner: "Meet",
+                    title: "",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
                 MeetingWindowInfo(
                     owner: "Calendar",
                     title: "abc-defg-hij",

@@ -68,12 +68,21 @@ enum MeetingWindowDetector {
 
     private static func isGoogleMeetWindow(_ window: MeetingWindowInfo) -> Bool {
         if MeetingAudioWindowCatalog.isChromeWebApp(bundleIdentifier: window.bundleIdentifier) {
-            return window.owner == "Google Meet"
-                || window.owner == "Meet"
-                || window.title.contains("Google Meet")
-                || window.title.hasPrefix("Meet -")
+            let isLandingTitle = window.title.isEmpty
+                || window.title == "Google Meet"
+                || window.title == "Meet"
+            return !isLandingTitle && (
+                window.owner == "Google Meet"
+                    || window.owner == "Meet"
+                    || window.title.contains("Google Meet")
+                    || window.title.hasPrefix("Meet -")
+            )
         }
-        return window.title.hasPrefix("Meet -") || window.title.range(
+        return hasGoogleMeetCallTitle(window.title)
+    }
+
+    private static func hasGoogleMeetCallTitle(_ title: String) -> Bool {
+        title.hasPrefix("Meet -") || title.range(
             of: "[a-z]{3}-[a-z]{4}-[a-z]{3}",
             options: .regularExpression
         ) != nil
