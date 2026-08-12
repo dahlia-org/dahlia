@@ -20,6 +20,7 @@ struct MeetingWindowInfo: Sendable {
 }
 
 enum MeetingWindowDetector {
+    private static let googleMeetWebAppTitlePrefix = "Google Meet - "
     private static let titlePatterns: [(pattern: String, appName: String)] = [
         ("(Meeting) | Microsoft Teams", "Microsoft Teams"),
         ("Zoom Meeting", "Zoom"),
@@ -68,15 +69,9 @@ enum MeetingWindowDetector {
 
     private static func isGoogleMeetWindow(_ window: MeetingWindowInfo) -> Bool {
         if MeetingAudioWindowCatalog.isChromeWebApp(bundleIdentifier: window.bundleIdentifier) {
-            let isLandingTitle = window.title.isEmpty
-                || window.title == "Google Meet"
-                || window.title == "Meet"
-            return !isLandingTitle && (
-                window.owner == "Google Meet"
-                    || window.owner == "Meet"
-                    || window.title.contains("Google Meet")
-                    || window.title.hasPrefix("Meet -")
-            )
+            guard window.title.hasPrefix(googleMeetWebAppTitlePrefix) else { return false }
+            let chromeTitle = String(window.title.dropFirst(googleMeetWebAppTitlePrefix.count))
+            return hasGoogleMeetCallTitle(chromeTitle)
         }
         return hasGoogleMeetCallTitle(window.title)
     }

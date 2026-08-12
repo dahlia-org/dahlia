@@ -239,34 +239,16 @@ import Foundation
 
         @Test
         func detectsActiveGoogleMeetChromePWAAsChromeContext() {
-            let ownerDetection = MeetingWindowDetector.detect(in: [
+            let detection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
                     owner: "Google Meet",
-                    title: "Weekly sync",
-                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
-                ),
-            ])
-            let titleDetection = MeetingWindowDetector.detect(in: [
-                MeetingWindowInfo(
-                    owner: "Example App",
-                    title: "Weekly sync - Google Meet",
-                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
-                ),
-            ])
-            let callTitleDetection = MeetingWindowDetector.detect(in: [
-                MeetingWindowInfo(
-                    owner: "Example App",
-                    title: "Meet - Weekly sync",
+                    title: "Google Meet - Meet - cfh-jkbp-nye 🔊",
                     bundleIdentifier: Self.chromeWebAppBundleIdentifier
                 ),
             ])
 
-            #expect(ownerDetection?.name == "Google Meet")
-            #expect(ownerDetection?.browserContexts == [.chrome])
-            #expect(titleDetection?.name == "Google Meet")
-            #expect(titleDetection?.browserContexts == [.chrome])
-            #expect(callTitleDetection?.name == "Google Meet")
-            #expect(callTitleDetection?.browserContexts == [.chrome])
+            #expect(detection?.name == "Google Meet")
+            #expect(detection?.browserContexts == [.chrome])
         }
 
         @Test
@@ -280,6 +262,11 @@ import Foundation
                 MeetingWindowInfo(
                     owner: "Meet",
                     title: "",
+                    bundleIdentifier: Self.chromeWebAppBundleIdentifier
+                ),
+                MeetingWindowInfo(
+                    owner: "Google Meet",
+                    title: "Google Meet - Calendar",
                     bundleIdentifier: Self.chromeWebAppBundleIdentifier
                 ),
                 MeetingWindowInfo(
@@ -305,14 +292,14 @@ import Foundation
             let tabDetection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
                     owner: "Google Chrome",
-                    title: "Meet - Weekly sync",
+                    title: "Meet - cfh-jkbp-nye",
                     bundleIdentifier: "com.google.Chrome"
                 ),
             ])
             let pwaDetection = MeetingWindowDetector.detect(in: [
                 MeetingWindowInfo(
                     owner: "Google Meet",
-                    title: "Weekly sync",
+                    title: "Google Meet - Meet - cfh-jkbp-nye 🔊",
                     bundleIdentifier: Self.chromeWebAppBundleIdentifier
                 ),
             ])
