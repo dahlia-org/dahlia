@@ -1,4 +1,4 @@
-# ADR-0030: Dahlia Server の versioned extension contract を公開する
+# ADR-0031: Dahlia Server の versioned extension contract を公開する
 
 - Status: Accepted
 - Date: 2026-08-14
