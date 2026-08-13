@@ -17,6 +17,10 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
     },
+    "./node": {
+      "types": "./dist/server/node-api.d.ts",
+      "import": "./dist/server/node-api.js"
+    },
     "./client": {
       "types": "./dist/client-library/index.d.ts",
       "import": "./dist/client-library/index.js"
@@ -25,8 +29,8 @@
     "./client/index.html": "./dist/client/index.html",
     "./client/assets/*": "./dist/client/assets/*",
     "./migrations": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js"
+      "types": "./dist/server/migrations.d.ts",
+      "import": "./dist/server/migrations.js"
     },
     "./migrations/sqlite/*": "./auth-migrations/*",
     "./migrations/postgres/*": "./drizzle/*",

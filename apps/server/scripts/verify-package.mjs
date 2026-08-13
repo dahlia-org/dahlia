@@ -7,6 +7,20 @@ import { fileURLToPath } from "node:url";
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const directory = await mkdtemp(join(tmpdir(), "dahlia-server-package-"));
 
+async function readEntryGraph(entry) {
+  const files = new Map();
+  async function visit(file) {
+    if (files.has(file)) return;
+    const source = await readFile(file, "utf8");
+    files.set(file, source);
+    for (const match of source.matchAll(/(?:from\s+|import\s+)["']\.\/([^"']+\.js)["']/g)) {
+      await visit(join(dirname(file), match[1]));
+    }
+  }
+  await visit(entry);
+  return files;
+}
+
 try {
   const packed = spawnSync("pnpm", ["pack", "--pack-destination", directory], {
     cwd: new URL("..", import.meta.url),
@@ -36,15 +50,16 @@ try {
     type: "module",
   }));
   await writeFile(join(directory, "verify.mjs"), `
-    import { createApp, createNodeAuthStore, serverMigrationManifest } from "dahlia-ai";
+    import { createApp } from "dahlia-ai";
+    import { createNodeAuthStore } from "dahlia-ai/node";
     import { App } from "dahlia-ai/client";
-    import { serverMigrationManifest as manifestFromSubpath } from "dahlia-ai/migrations";
+    import { serverMigrationManifest } from "dahlia-ai/migrations";
     import { readFile } from "node:fs/promises";
     import { DatabaseSync } from "node:sqlite";
     import { fileURLToPath } from "node:url";
 
     if (typeof createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
-    if (serverMigrationManifest !== manifestFromSubpath || serverMigrationManifest.sqlite.files.length !== 2) {
+    if (serverMigrationManifest.sqlite.files.length !== 2) {
       throw new Error("Migration manifest is incomplete");
     }
     const style = await readFile(new URL(import.meta.resolve("dahlia-ai/client/styles.css")), "utf8");
@@ -79,6 +94,7 @@ try {
   `);
   await writeFile(join(directory, "verify.ts"), `
     import { createD1AuthStore, type D1DatabaseLike } from "dahlia-ai";
+    import { createNodeAuthStore } from "dahlia-ai/node";
     import type { App } from "dahlia-ai/client";
 
     declare const database: D1DatabaseLike;
@@ -86,6 +102,7 @@ try {
     const client: typeof App | undefined = undefined;
     void store;
     void client;
+    void createNodeAuthStore;
   `);
   await writeFile(join(directory, "tsconfig.json"), JSON.stringify({
     compilerOptions: {
@@ -112,6 +129,11 @@ try {
     const declaration = await readFile(join(installedPackage, "dist", "server", file), "utf8");
     if (/\bD1Database\b/.test(declaration)) {
       throw new Error(`Cloudflare global leaked into package declarations: ${file}`);
+    }
+  }
+  for (const [file, source] of await readEntryGraph(join(installedPackage, "dist", "server", "index.js"))) {
+    if (/node:(?:fs|http2|net|path|sqlite|url)/.test(source) || source.includes("node-store")) {
+      throw new Error(`Node-only module leaked into the package root entry: ${file}`);
     }
   }
 } finally {

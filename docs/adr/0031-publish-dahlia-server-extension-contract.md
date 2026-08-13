@@ -11,6 +11,7 @@ Dahlia Server はセルフホスト可能な実行アプリケーションであ
 ## Decision
 
 - `apps/server` を実行可能アプリケーション兼 `dahlia-ai` package とする。
+- package root は Worker-safe な共通 API だけを公開し、Node-only API は `dahlia-ai/node` subpath へ分離する。
 - package は macOS アプリとは独立した SemVer を持ち、`server-v<version>` tag から npm へ公開する。
 - backend extension は Better Auth plugin、認証前 route、認証済み API route、session capability、Gateway 転送前 hook を追加できる。
 - client extension はブランド、navigation、capability で保護された未予約の Dashboard route と React page を追加できる。Server 組み込み route は上書きできない。
