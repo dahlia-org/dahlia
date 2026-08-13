@@ -10,8 +10,8 @@
   },
   "d1_databases": [
     {
-      "binding": "AUTH_DB",
-      "database_name": "dahlia-auth",
+      "binding": "dahlia_db_prod",
+      "database_name": "replace-with-d1-database-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "auth-migrations"
     }

@@ -21,7 +21,7 @@ const headerConfig: AppConfig = {
 
 describe("deployment routing", () => {
   it("routes OAuth discovery through the Worker instead of the SPA", () => {
-    const wrangler = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8")) as {
+    const wrangler = JSON.parse(readFileSync(new URL("../wrangler.example.jsonc", import.meta.url), "utf8")) as {
       assets: {
         binding?: string;
         directory?: string;
@@ -37,13 +37,15 @@ describe("deployment routing", () => {
       run_worker_first: ["/api/*", "/.well-known/*", "/healthz"],
     });
     expect(wrangler.d1_databases).toContainEqual(expect.objectContaining({
-      binding: "AUTH_DB",
+      binding: "dahlia_db_prod",
+      database_id: "00000000-0000-0000-0000-000000000000",
       migrations_dir: "auth-migrations",
     }));
     expect(wrangler.vars).toEqual({
       DAHLIA_RUNTIME: "cloudflare",
     });
     expect(wrangler).not.toHaveProperty("hyperdrive");
+    expect(readFileSync(new URL("../.gitignore", import.meta.url), "utf8")).toContain("wrangler.jsonc");
   });
 
   it("keeps static assets outside the API-only Worker", () => {

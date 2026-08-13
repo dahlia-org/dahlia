@@ -10,7 +10,7 @@ Hono API Worker ─┬──── D1 ── Better Auth data
                  └──── HTTPS ── Cloudflare AI Gateway
 ```
 
-The checked-in configuration is [`apps/cloud/wrangler.jsonc`](../../wrangler.jsonc). D1 stores Better Auth data, Model Aliases, and administrator emails. Run these commands from the repository root.
+The checked-in template is [`apps/cloud/wrangler.example.jsonc`](../../wrangler.example.jsonc). Copy it to the ignored `apps/cloud/wrangler.jsonc` before deployment. D1 stores Better Auth data, Model Aliases, and administrator emails. Run these commands from the repository root.
 
 ## Prerequisites
 
@@ -29,11 +29,12 @@ pnpm --filter @dahlia/cloud build:cloudflare
 ## 2. Create and migrate D1
 
 ```bash
-pnpm --filter @dahlia/cloud exec wrangler d1 create dahlia-auth
-pnpm --filter @dahlia/cloud exec wrangler d1 migrations apply AUTH_DB --remote
+cp apps/cloud/wrangler.example.jsonc apps/cloud/wrangler.jsonc
+pnpm --filter @dahlia/cloud exec wrangler d1 create dahlia-db-prod
+pnpm --filter @dahlia/cloud exec wrangler d1 migrations apply dahlia_db_prod --remote
 ```
 
-Copy the database ID returned by the first command into `d1_databases[0].database_id` in `apps/cloud/wrangler.jsonc`. Keep the binding name `AUTH_DB` and migrations directory `auth-migrations` unchanged.
+Copy the database name and ID returned by the first command into `d1_databases[0]` in `apps/cloud/wrangler.jsonc`. Keep the binding name `dahlia_db_prod` and migrations directory `auth-migrations` unchanged. The real configuration stays local and is not committed.
 
 ## 3. Configure authentication
 

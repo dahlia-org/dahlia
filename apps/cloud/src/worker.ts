@@ -52,7 +52,7 @@ async function initializeWorkerApp(env: WorkerEnv): Promise<WorkerApp> {
   if (config.runtime !== "cloudflare" || config.authDatabase !== "d1") {
     throw new Error("The Worker entry point requires DAHLIA_RUNTIME=cloudflare");
   }
-  const authStore = createD1AuthStore(env.AUTH_DB);
+  const authStore = createD1AuthStore(env.dahlia_db_prod);
   const auth = await initializeDahliaAuth(config, authStore);
   return createApp({ config, auth, authStore });
 }
