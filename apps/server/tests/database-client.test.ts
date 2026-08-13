@@ -1,7 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DatabricksDatabaseConfig } from "../src/config";
-import { databricksDatabasePassword } from "../src/db/client";
+import { databricksDatabasePassword, postgresMigrationConfigs } from "../src/db/client";
+
+describe("PostgreSQL migrations", () => {
+  it("tracks each ordered extension directory independently", () => {
+    expect(postgresMigrationConfigs(["server", "billing", "analytics"])).toEqual([
+      { migrationsFolder: "server" },
+      { migrationsFolder: "billing", migrationsTable: "__dahlia_extension_migrations_1" },
+      { migrationsFolder: "analytics", migrationsTable: "__dahlia_extension_migrations_2" },
+    ]);
+  });
+});
 
 describe("Databricks Lakebase credentials", () => {
   it("mints and caches a short-lived database password without exposing service credentials", async () => {

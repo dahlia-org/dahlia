@@ -35,6 +35,13 @@ export function connectAuthDatabase(config: AppConfig) {
   };
 }
 
+export function postgresMigrationConfigs(migrationFolders: readonly string[]) {
+  return migrationFolders.map((migrationsFolder, index) => ({
+    migrationsFolder,
+    ...(index === 0 ? {} : { migrationsTable: `__dahlia_extension_migrations_${index}` }),
+  }));
+}
+
 export async function migrateAuthDatabase(
   config: AppConfig,
   migrationFolders: readonly string[] = ["./drizzle"],
@@ -46,8 +53,8 @@ export async function migrateAuthDatabase(
   try {
     await client`SELECT pg_advisory_lock(${lockId})`;
     locked = true;
-    for (const migrationsFolder of migrationFolders) {
-      await migrate(database, { migrationsFolder });
+    for (const migrationConfig of postgresMigrationConfigs(migrationFolders)) {
+      await migrate(database, migrationConfig);
     }
   } finally {
     if (locked) await client`SELECT pg_advisory_unlock(${lockId})`;
