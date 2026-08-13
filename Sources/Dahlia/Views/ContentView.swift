@@ -4,6 +4,7 @@ import SwiftUI
 /// ミーティング一覧サイドバーと詳細ビューを構成するルートビュー。
 struct ContentView: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var chatCoordinator: CodexChatCoordinator
@@ -23,6 +24,7 @@ struct ContentView: View {
                 ProjectManagementView(
                     sidebarViewModel: sidebarViewModel,
                     captionViewModel: viewModel,
+                    updateController: updateController,
                     recordingCoordinator: recordingCoordinator,
                     mainWindowNavigation: mainWindowNavigation,
                     onShowUpcomingSchedule: returnToCalendarSchedule,
@@ -47,6 +49,15 @@ struct ContentView: View {
                         onSelectVault: onSelectVault
                     )
                     .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
+                    .toolbar {
+                        if updateController.isUpdateAvailable {
+                            ToolbarItem(placement: .navigation) {
+                                AppUpdateBadge(updateController: updateController)
+                            }
+
+                            ToolbarSpacer(.fixed, placement: .navigation)
+                        }
+                    }
                 } detail: {
                     detailView
                         .navigationTitle("")

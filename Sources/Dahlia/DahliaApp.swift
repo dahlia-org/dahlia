@@ -87,6 +87,7 @@ struct DahliaApp: App {
                 } else {
                     ContentView(
                         viewModel: viewModel,
+                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
@@ -96,7 +97,7 @@ struct DahliaApp: App {
                 }
             }
             .toolbar {
-                if updateController.isUpdateAvailable {
+                if showVaultPicker, updateController.isUpdateAvailable {
                     ToolbarItem(placement: .navigation) {
                         AppUpdateBadge(updateController: updateController)
                     }

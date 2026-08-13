@@ -4,6 +4,7 @@ import SwiftUI
 struct ProjectManagementView: View {
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
+    var updateController: AppUpdateController
     let recordingCoordinator: RecordingCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let onShowUpcomingSchedule: () -> Void
@@ -77,6 +78,15 @@ struct ProjectManagementView: View {
                 }
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
+            .toolbar {
+                if updateController.isUpdateAvailable {
+                    ToolbarItem(placement: .navigation) {
+                        AppUpdateBadge(updateController: updateController)
+                    }
+
+                    ToolbarSpacer(.fixed, placement: .navigation)
+                }
+            }
         } detail: {
             selectedProjectDetail
         }

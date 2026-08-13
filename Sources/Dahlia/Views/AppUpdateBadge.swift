@@ -12,7 +12,7 @@ struct AppUpdateBadge: View {
         .labelStyle(.titleAndIcon)
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
-        .controlSize(.small)
+        .controlSize(.mini)
         .help(helpText)
     }
 
