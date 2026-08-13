@@ -79,7 +79,7 @@ import Foundation
             #expect(SettingsCategory.permissions.systemImage == "hand.raised")
             #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
             #expect(SettingsCategory.modelProvider.label == L10n.modelProvider)
-            #expect(SettingsCategory.modelProvider.systemImage == "server.rack")
+            #expect(SettingsCategory.modelProvider.systemImage == "cpu")
             #expect(SettingsCategory.liveSubtitles.rawValue == "liveSubtitles")
             #expect(SettingsCategory.liveSubtitles.label == L10n.liveSubtitles)
             #expect(SettingsCategory.liveSubtitles.systemImage == "captions.bubble")

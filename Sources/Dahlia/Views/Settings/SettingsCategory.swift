@@ -53,7 +53,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
         case .cloudStorage: "square.and.arrow.up"
-        case .modelProvider: "server.rack"
+        case .modelProvider: "cpu"
         case .aiSummary: "sparkles"
         case .mcp: "network"
         case .instructions: "list.bullet.clipboard"
