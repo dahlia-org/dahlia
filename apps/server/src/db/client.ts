@@ -3,6 +3,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import type { AppConfig, DatabricksDatabaseConfig } from "../config";
+import type { PostgresMigrationDirectory } from "../migrations";
 import * as authSchema from "./auth-schema";
 
 export type Database = PostgresJsDatabase<typeof authSchema>;
@@ -35,16 +36,22 @@ export function connectAuthDatabase(config: AppConfig) {
   };
 }
 
-export function postgresMigrationConfigs(migrationFolders: readonly string[]) {
-  return migrationFolders.map((migrationsFolder, index) => ({
-    migrationsFolder,
-    ...(index === 0 ? {} : { migrationsTable: `__dahlia_extension_migrations_${index}` }),
-  }));
+export function postgresMigrationConfigs(migrationDirectories: readonly PostgresMigrationDirectory[]) {
+  const ids = new Set<string>();
+  return migrationDirectories.map(({ id, path }) => {
+    if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid PostgreSQL migration ledger ID: ${id}`);
+    if (ids.has(id)) throw new Error(`Duplicate PostgreSQL migration ledger ID: ${id}`);
+    ids.add(id);
+    return {
+      migrationsFolder: path,
+      ...(id === "server" ? {} : { migrationsTable: `__dahlia_${id}_migrations` }),
+    };
+  });
 }
 
 export async function migrateAuthDatabase(
   config: AppConfig,
-  migrationFolders: readonly string[] = ["./drizzle"],
+  migrationDirectories: readonly PostgresMigrationDirectory[] = [{ id: "server", path: "./drizzle" }],
 ): Promise<void> {
   const client = databaseClient(config, 1);
   const database = drizzle(client, { schema: authSchema });
@@ -53,7 +60,7 @@ export async function migrateAuthDatabase(
   try {
     await client`SELECT pg_advisory_lock(${lockId})`;
     locked = true;
-    for (const migrationConfig of postgresMigrationConfigs(migrationFolders)) {
+    for (const migrationConfig of postgresMigrationConfigs(migrationDirectories)) {
       await migrate(database, migrationConfig);
     }
   } finally {

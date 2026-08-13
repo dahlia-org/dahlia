@@ -4,12 +4,30 @@ import type { DatabricksDatabaseConfig } from "../src/config";
 import { databricksDatabasePassword, postgresMigrationConfigs } from "../src/db/client";
 
 describe("PostgreSQL migrations", () => {
-  it("tracks each ordered extension directory independently", () => {
-    expect(postgresMigrationConfigs(["server", "billing", "analytics"])).toEqual([
+  it("tracks each extension directory by stable ledger ID", () => {
+    expect(postgresMigrationConfigs([
+      { id: "server", path: "server" },
+      { id: "billing", path: "billing" },
+      { id: "analytics", path: "analytics" },
+    ])).toEqual([
       { migrationsFolder: "server" },
-      { migrationsFolder: "billing", migrationsTable: "__dahlia_extension_migrations_1" },
-      { migrationsFolder: "analytics", migrationsTable: "__dahlia_extension_migrations_2" },
+      { migrationsFolder: "billing", migrationsTable: "__dahlia_billing_migrations" },
+      { migrationsFolder: "analytics", migrationsTable: "__dahlia_analytics_migrations" },
     ]);
+    expect(postgresMigrationConfigs([
+      { id: "server", path: "server" },
+      { id: "analytics", path: "analytics" },
+      { id: "billing", path: "billing" },
+    ])[2]).toEqual({ migrationsFolder: "billing", migrationsTable: "__dahlia_billing_migrations" });
+  });
+
+  it("rejects duplicate or unstable ledger IDs", () => {
+    expect(() => postgresMigrationConfigs([
+      { id: "billing", path: "first" },
+      { id: "billing", path: "second" },
+    ])).toThrow("Duplicate PostgreSQL migration ledger ID: billing");
+    expect(() => postgresMigrationConfigs([{ id: "Billing v2", path: "billing" }]))
+      .toThrow("Invalid PostgreSQL migration ledger ID: Billing v2");
   });
 });
 

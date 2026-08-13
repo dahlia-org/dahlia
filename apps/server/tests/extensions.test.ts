@@ -87,11 +87,20 @@ describe("server extensions", () => {
 
   it("composes extension migrations after the Server migrations", () => {
     expect(composeMigrationManifests(serverMigrationManifest, {
-      postgres: { directories: ["extension/drizzle"], files: ["extension/drizzle/0000.sql"] },
-      sqlite: { directories: ["extension/auth-migrations"], files: ["extension/auth-migrations/0001.sql"] },
+      postgres: {
+        directories: [{ id: "extension", path: "extension/drizzle" }],
+        files: ["extension/drizzle/0000.sql"],
+      },
+      sqlite: {
+        directories: ["extension/auth-migrations"],
+        files: ["extension/auth-migrations/0001.sql"],
+      },
     })).toEqual({
       postgres: {
-        directories: [...serverMigrationManifest.postgres.directories, "extension/drizzle"],
+        directories: [
+          ...serverMigrationManifest.postgres.directories,
+          { id: "extension", path: "extension/drizzle" },
+        ],
         files: [
           "drizzle/0000_solid_ted_forrester.sql",
           "drizzle/0001_server.sql",

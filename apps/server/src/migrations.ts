@@ -1,13 +1,18 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export interface MigrationSet {
-  directories: readonly string[];
+export interface PostgresMigrationDirectory {
+  id: string;
+  path: string;
+}
+
+export interface MigrationSet<TDirectory = string> {
+  directories: readonly TDirectory[];
   files: readonly string[];
 }
 
 export interface MigrationManifest {
-  postgres: MigrationSet;
+  postgres: MigrationSet<PostgresMigrationDirectory>;
   sqlite: MigrationSet;
 }
 
@@ -15,7 +20,7 @@ const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("dahlia-
 
 export const serverMigrationManifest: MigrationManifest = {
   postgres: {
-    directories: [join(packageDirectory, "drizzle")],
+    directories: [{ id: "server", path: join(packageDirectory, "drizzle") }],
     files: ["drizzle/0000_solid_ted_forrester.sql", "drizzle/0001_server.sql"],
   },
   sqlite: {
