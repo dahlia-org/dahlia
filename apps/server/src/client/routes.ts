@@ -8,6 +8,20 @@ export function shouldRedirectToSignIn(status: number | undefined): boolean {
   return status === 401;
 }
 
+const coreDashboardPaths = new Set([
+  "/",
+  "/sessions",
+  "/dashboard",
+  "/dashboard/settings",
+  "/admin",
+  "/admin/models",
+  "/admin/members",
+]);
+
+export function isCoreDashboardPath(path: string): boolean {
+  return coreDashboardPaths.has(path);
+}
+
 export function resolveDashboardRoute(
   path: string,
   capabilities: DashboardCapabilities,

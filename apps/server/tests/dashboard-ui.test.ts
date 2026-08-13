@@ -52,6 +52,20 @@ describe("dashboard navigation", () => {
     )).toMatchObject({ allowed: false });
   });
 
+  it("keeps core routes reserved from extensions", () => {
+    const extensions: DashboardExtension[] = [{
+      routes: [{ path: "/admin/models", component: ExtensionPage }],
+    }];
+
+    expect(resolveDashboardExtensionRoute(
+      "/admin/models",
+      { admin: false, sessions: false },
+      extensions,
+    )).toEqual({ allowed: true });
+    expect(resolveDashboardRoute("/admin/models", { admin: false, sessions: false }))
+      .toEqual({ redirect: "/dashboard" });
+  });
+
   it("does not expose implementation names or the browser model API", () => {
     const source = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
 

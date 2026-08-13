@@ -1,7 +1,12 @@
 import { createAuthClient } from "better-auth/react";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 
-import { resolveDashboardRoute, shouldRedirectToSignIn, type DashboardCapabilities } from "./routes";
+import {
+  isCoreDashboardPath,
+  resolveDashboardRoute,
+  shouldRedirectToSignIn,
+  type DashboardCapabilities,
+} from "./routes";
 
 export interface SessionInfo {
   capabilities: DashboardCapabilities;
@@ -43,6 +48,7 @@ export function resolveDashboardExtensionRoute(
   capabilities: DashboardCapabilities,
   extensions: readonly DashboardExtension[],
 ): { allowed: boolean; route?: DashboardExtensionRoute } {
+  if (isCoreDashboardPath(path)) return { allowed: true };
   const route = extensions
     .flatMap((extension) => extension.routes ?? [])
     .find((candidate) => candidate.path === path);
