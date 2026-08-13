@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    let appDatabase: AppDatabaseManager?
+    var vaultManagementModel: VaultManagementModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
@@ -19,7 +21,8 @@ struct SettingsView: View {
                 selection: mainWindowNavigation.settingsCategory,
                 captionViewModel: captionViewModel,
                 sidebarViewModel: sidebarViewModel,
-                mainWindowNavigation: mainWindowNavigation,
+                appDatabase: appDatabase,
+                vaultManagementModel: vaultManagementModel,
                 onSelectVault: onSelectVault
             )
         }

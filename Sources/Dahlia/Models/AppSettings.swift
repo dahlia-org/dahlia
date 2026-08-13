@@ -212,11 +212,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
         set { transcriptionModeRawValue = newValue.rawValue }
     }
 
-    var isRealtimeTranscriptionEnabled: Bool {
-        get { transcriptionMode == .realtime }
-        set { transcriptionMode = newValue ? .realtime : .batch }
-    }
-
     var batchTranscriptionStallTimeout: BatchTranscriptionStallTimeout {
         get { BatchTranscriptionStallTimeout.resolved(rawValue: batchTranscriptionStallTimeoutRawValue) }
         set { batchTranscriptionStallTimeoutRawValue = newValue.rawValue }

@@ -3,7 +3,7 @@ import Foundation
 /// サイドバーで設定項目をユーザーの目的別にまとめるグループ。
 enum SettingsGroup: CaseIterable, Identifiable {
     case app
-    case recording
+    case meetings
     case integrations
     case ai
     case advanced
@@ -13,7 +13,7 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .app: L10n.app
-        case .recording: L10n.recording
+        case .meetings: L10n.meetings
         case .integrations: L10n.integrations
         case .ai: L10n.ai
         case .advanced: L10n.advanced
@@ -22,8 +22,8 @@ enum SettingsGroup: CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .permissions, .backups]
-        case .recording: [.transcription, .liveSubtitles, .screenshots]
+        case .app: [.general, .vault, .permissions, .backups]
+        case .meetings: [.transcription, .liveSubtitles, .screenshots]
         case .integrations: [.calendar, .cloudStorage]
         case .ai: [.modelProvider, .aiSummary]
         case .advanced: [.betaFeatures, .developer, .audioDiagnostics]

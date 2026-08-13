@@ -3,6 +3,7 @@ import Foundation
 /// 設定画面のカテゴリ。
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case vault
     case permissions
     case backups
     case transcription
@@ -23,6 +24,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .general: L10n.general
+        case .vault: L10n.vault
         case .permissions: L10n.permissions
         case .backups: L10n.backups
         case .transcription: L10n.transcription
@@ -30,7 +32,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
         case .cloudStorage: L10n.export
-        case .modelProvider: L10n.aiConnection
+        case .modelProvider: L10n.modelProvider
         case .aiSummary: L10n.aiSummary
         case .mcp: L10n.mcp
         case .instructions: L10n.instructions
@@ -43,6 +45,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .vault: "externaldrive"
         case .permissions: "hand.raised"
         case .backups: "externaldrive.badge.timemachine"
         case .transcription: "waveform"
@@ -50,7 +53,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
         case .cloudStorage: "square.and.arrow.up"
-        case .modelProvider: "link"
+        case .modelProvider: "server.rack"
         case .aiSummary: "sparkles"
         case .mcp: "network"
         case .instructions: "list.bullet.clipboard"

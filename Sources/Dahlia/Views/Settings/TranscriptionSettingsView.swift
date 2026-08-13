@@ -4,12 +4,6 @@ import SwiftUI
 /// 設定画面「文字起こし」タブ。認識方法と利用する言語を管理する。
 struct TranscriptionSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
-    @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey)
-    private var generateSummaryAfterBatchTranscription = false
-    @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey)
-    private var exportBatchSummaryToVault = true
-    @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey)
-    private var exportBatchSummaryToGoogleDocs = false
     @State private var supportedLocales: [Locale] = []
     @State private var isLoadingLocales = true
     @State private var localeSearchText = ""
@@ -17,13 +11,18 @@ struct TranscriptionSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(isOn: $settings.isRealtimeTranscriptionEnabled) {
-                    Text(L10n.enableRealtimeTranscription)
-                    Text(L10n.realtimeTranscriptionDescription)
+                Picker(L10n.transcriptionMethod, selection: $settings.transcriptionMode) {
+                    ForEach(TranscriptionMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
                 }
-                .toggleStyle(.switch)
+                .pickerStyle(.segmented)
+            } footer: {
+                Text(transcriptionModeDescription)
+            }
 
-                if !settings.isRealtimeTranscriptionEnabled {
+            if settings.transcriptionMode == .batch {
+                Section {
                     Picker(selection: $settings.batchTranscriptionStallTimeout) {
                         ForEach(BatchTranscriptionStallTimeout.allCases) { timeout in
                             Text(timeout.displayName).tag(timeout)
@@ -40,31 +39,27 @@ struct TranscriptionSettingsView: View {
                     }
                     .toggleStyle(.switch)
 
-                    Toggle(isOn: $generateSummaryAfterBatchTranscription) {
+                    Toggle(isOn: $settings.generateSummaryAfterBatchTranscription) {
                         Text(L10n.generateSummaryAfterBatchTranscription)
                         Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
                     }
                     .toggleStyle(.switch)
 
-                    Toggle(isOn: $exportBatchSummaryToVault) {
+                    Toggle(isOn: $settings.exportBatchSummaryToVault) {
                         Text(L10n.exportBatchSummaryToVault)
                         Text(L10n.exportBatchSummaryToVaultDescription)
                     }
                     .toggleStyle(.switch)
-                    .disabled(!generateSummaryAfterBatchTranscription)
+                    .disabled(!settings.generateSummaryAfterBatchTranscription)
 
-                    Toggle(isOn: $exportBatchSummaryToGoogleDocs) {
+                    Toggle(isOn: $settings.exportBatchSummaryToGoogleDocs) {
                         Text(L10n.exportBatchSummaryToGoogleDocs)
                         Text(L10n.exportBatchSummaryToGoogleDocsDescription)
                     }
                     .toggleStyle(.switch)
-                    .disabled(!generateSummaryAfterBatchTranscription)
-                }
-            } header: {
-                Text(L10n.transcriptionMethod)
-            } footer: {
-                if !settings.isRealtimeTranscriptionEnabled {
-                    Text(L10n.batchTranscriptionDescription)
+                    .disabled(!settings.generateSummaryAfterBatchTranscription)
+                } header: {
+                    Text(L10n.batchTranscription)
                 }
             }
 
@@ -144,6 +139,13 @@ struct TranscriptionSettingsView: View {
     }
 
     // MARK: - Private
+
+    private var transcriptionModeDescription: String {
+        switch settings.transcriptionMode {
+        case .realtime: L10n.realtimeTranscriptionDescription
+        case .batch: L10n.batchTranscriptionDescription
+        }
+    }
 
     @ViewBuilder
     private var localeSelectionList: some View {
