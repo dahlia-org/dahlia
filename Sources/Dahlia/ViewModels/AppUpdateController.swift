@@ -3,12 +3,12 @@ import Sparkle
 
 @MainActor
 @Observable
-final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDelegate {
+final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDelegate, @MainActor SPUUpdaterDelegate {
     private(set) var availableVersion: String?
 
     @ObservationIgnored private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
-        updaterDelegate: nil,
+        updaterDelegate: self,
         userDriverDelegate: self
     )
 
@@ -54,16 +54,28 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         )
     }
 
-    func standardUserDriverDidReceiveUserAttention(forUpdate _: SUAppcastItem) {
-        availableVersion = nil
-    }
-
-    func standardUserDriverWillFinishUpdateSession() {
-        availableVersion = nil
+    func updater(
+        _: SPUUpdater,
+        userDidMake choice: SPUUserUpdateChoice,
+        forUpdate _: SUAppcastItem,
+        state _: SPUUserUpdateState
+    ) {
+        recordUserChoice(choice)
     }
 
     func recordAvailableUpdate(version: String, isHandledByStandardUserDriver: Bool) {
         guard !isHandledByStandardUserDriver else { return }
         availableVersion = version
+    }
+
+    func recordUserChoice(_ choice: SPUUserUpdateChoice) {
+        switch choice {
+        case .install, .skip:
+            availableVersion = nil
+        case .dismiss:
+            break
+        @unknown default:
+            break
+        }
     }
 }
