@@ -81,9 +81,11 @@
     "hono": "^4.13.0",
     "ipaddr.js": "^2.5.0",
     "postgres": "^3.4.9",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
     "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.51.0",
@@ -95,6 +97,8 @@
     "concurrently": "^10.0.4",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsup": "^8.5.1",
     "tsx": "^4.23.5",
     "typescript": "^6.0.3",

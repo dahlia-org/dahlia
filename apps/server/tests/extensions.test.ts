@@ -91,7 +91,7 @@ describe("server extensions", () => {
       sqlite: { directories: ["extension/auth-migrations"], files: ["extension/auth-migrations/0001.sql"] },
     })).toEqual({
       postgres: {
-        directories: ["drizzle", "extension/drizzle"],
+        directories: [...serverMigrationManifest.postgres.directories, "extension/drizzle"],
         files: [
           "drizzle/0000_solid_ted_forrester.sql",
           "drizzle/0001_server.sql",
@@ -99,7 +99,7 @@ describe("server extensions", () => {
         ],
       },
       sqlite: {
-        directories: ["auth-migrations", "extension/auth-migrations"],
+        directories: [...serverMigrationManifest.sqlite.directories, "extension/auth-migrations"],
         files: [
           "auth-migrations/0001_better_auth.sql",
           "auth-migrations/0002_server.sql",

@@ -21,7 +21,11 @@ try {
   });
   if (extracted.status !== 0) throw new Error(extracted.stderr || extracted.stdout || "tar extraction failed");
   const workspaceModules = fileURLToPath(new URL("../node_modules", import.meta.url));
-  for (const dependency of [...Object.keys(packageJson.dependencies), "@types/node"]) {
+  for (const dependency of [
+    ...Object.keys(packageJson.dependencies),
+    ...Object.keys(packageJson.peerDependencies),
+    "@types/node",
+  ]) {
     const destination = join(directory, "node_modules", dependency);
     await mkdir(dirname(destination), { recursive: true });
     await symlink(join(workspaceModules, dependency), destination);
@@ -32,10 +36,12 @@ try {
     type: "module",
   }));
   await writeFile(join(directory, "verify.mjs"), `
-    import { createApp, serverMigrationManifest } from "dahlia-ai";
+    import { createApp, createNodeAuthStore, serverMigrationManifest } from "dahlia-ai";
     import { App } from "dahlia-ai/client";
     import { serverMigrationManifest as manifestFromSubpath } from "dahlia-ai/migrations";
     import { readFile } from "node:fs/promises";
+    import { DatabaseSync } from "node:sqlite";
+    import { fileURLToPath } from "node:url";
 
     if (typeof createApp !== "function" || typeof App !== "function") throw new Error("Package API is incomplete");
     if (serverMigrationManifest !== manifestFromSubpath || serverMigrationManifest.sqlite.files.length !== 2) {
@@ -48,6 +54,27 @@ try {
     );
     if (!style.includes(".app-shell") || !migration.includes("modelAlias")) {
       throw new Error("Package assets are incomplete");
+    }
+
+    const databasePath = fileURLToPath(new URL("./auth.sqlite", import.meta.url));
+    const store = createNodeAuthStore({
+      runtime: "custom",
+      authProvider: "header",
+      authHeader: "X-Forwarded-Email",
+      authDatabase: "sqlite",
+      authSqlitePath: databasePath,
+      baseUrl: "http://localhost:5173",
+      oauthRedirectUris: [],
+      trustedProxyCidrs: ["127.0.0.0/8"],
+      maxRequestBytes: 1024,
+    });
+    await store.migrate();
+    const database = new DatabaseSync(databasePath);
+    const applied = database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all();
+    database.close();
+    await store.close?.();
+    if (applied.length !== 2 || applied[1]?.name !== "0002_server.sql") {
+      throw new Error("Installed package migrations did not run from the package directory");
     }
   `);
   await writeFile(join(directory, "verify.ts"), `
