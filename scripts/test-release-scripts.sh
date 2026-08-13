@@ -106,6 +106,7 @@ test_sparkle_configuration_validation() {
     DMG_SPARKLE_AUTOMATIC_CHECKS="true"
     DMG_SPARKLE_CHECK_INTERVAL="3600"
     DMG_SPARKLE_AUTOMATIC_UPDATES="false"
+    DMG_SPARKLE_ALLOWS_AUTOMATIC_UPDATES="false"
     gh() {
         printf '%s\n' "dahlia-org/dahlia"
     }
@@ -125,6 +126,9 @@ test_sparkle_configuration_validation() {
     expect_failure validate_sparkle_release_configuration
     DMG_SPARKLE_CHECK_INTERVAL="3600"
     DMG_SPARKLE_AUTOMATIC_UPDATES="true"
+    expect_failure validate_sparkle_release_configuration
+    DMG_SPARKLE_AUTOMATIC_UPDATES="false"
+    DMG_SPARKLE_ALLOWS_AUTOMATIC_UPDATES="true"
     expect_failure validate_sparkle_release_configuration
 }
 

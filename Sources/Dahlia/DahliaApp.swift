@@ -1,5 +1,4 @@
 import AppKit
-import Sparkle
 import SwiftUI
 
 enum WindowID {
@@ -19,8 +18,8 @@ private enum MainWindowMetrics {
 
 @main
 struct DahliaApp: App {
-    private let updaterController: SPUStandardUpdaterController
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var updateController: AppUpdateController
     @StateObject private var viewModel: CaptionViewModel
     @State private var sidebarViewModel: SidebarViewModel
     @StateObject private var meetingDetectionService: MeetingDetectionService
@@ -35,11 +34,7 @@ struct DahliaApp: App {
 
     @MainActor
     init() {
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: AppUpdatePolicy.shouldStartUpdater(),
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
+        let updateController = AppUpdateController()
         let viewModel = CaptionViewModel()
         let sidebarViewModel = SidebarViewModel()
         let liveSubtitleOverlayService = LiveSubtitleOverlayService()
@@ -68,6 +63,7 @@ struct DahliaApp: App {
         }
 
         _viewModel = StateObject(wrappedValue: viewModel)
+        _updateController = State(initialValue: updateController)
         _sidebarViewModel = State(initialValue: sidebarViewModel)
         _meetingDetectionService = StateObject(wrappedValue: meetingDetectionService)
         _liveSubtitleOverlayService = StateObject(wrappedValue: liveSubtitleOverlayService)
@@ -91,12 +87,20 @@ struct DahliaApp: App {
                 } else {
                     ContentView(
                         viewModel: viewModel,
+                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
                         onSelectVault: { vault in openVault(vault) }
                     )
+                }
+            }
+            .toolbar {
+                if showVaultPicker, updateController.isUpdateAvailable {
+                    ToolbarItem(placement: .primaryAction) {
+                        AppUpdateBadge(updateController: updateController)
+                    }
                 }
             }
             .task {
@@ -113,7 +117,7 @@ struct DahliaApp: App {
         .defaultLaunchBehavior(.presented)
         .commands {
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: updaterController.updater)
+                CheckForUpdatesView(updater: updateController.updater)
             }
             OrganizationWorkspaceCommands()
         }
