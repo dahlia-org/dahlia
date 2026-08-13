@@ -10,6 +10,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **On-Device Transcription** — Real-time speech-to-text using Apple Speech framework
 - **Automatic Batch Language Detection** — Detect each recording file's language with WhisperKit, then transcribe it with Apple Speech
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
+- **Optional Dahlia Cloud** — Self-host an authenticated Responses gateway for the bundled Codex without distributing provider credentials to each user
 - **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects or correct summaries through a vault-scoped local MCP server
 - **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy
 - **Customer Intelligence Workspace** — Scope every Overview, Organization, People, Projects, Topics, and Insights view to one customer or the whole Vault, then inspect related records without mixing reading and editing
@@ -142,9 +143,17 @@ remediation plan, and UI responsiveness policy. Historical decisions and their s
 See [Calendar event persistence schema](docs/calendar-event-schema.md) for the UID/RECURRENCE-ID key, source mapping,
 and Meeting cardinality contract.
 
+The TypeScript applications use pnpm workspaces. From the repository root, run `pnpm dev` for Dahlia Cloud,
+`pnpm dev:site` for the public site, and `pnpm check` for workspace validation. Both development commands use the
+repository-root `.env.local` where applicable. The default `DAHLIA_RUNTIME=custom` preset uses local SQLite for account authentication, so
+`pnpm dev` does not require PostgreSQL or Docker.
+
 ### Project Structure
 
 ```
+apps/
+├── cloud/          # Optional TypeScript AI Gateway and authentication UI
+└── site/           # Public static website
 Sources/Dahlia/
 ├── Audio/          # Audio capture (mic & system)
 ├── Database/       # GRDB models, migrations, repository
