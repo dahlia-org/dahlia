@@ -1,5 +1,5 @@
-@testable import Dahlia
 import Sparkle
+@testable import Dahlia
 
 #if canImport(Testing)
     import Testing
@@ -20,7 +20,7 @@ import Sparkle
         }
 
         @Test
-        func standardUpdateDialogDoesNotPublishBadge() {
+        func standardUpdateDialogPublishesBadge() {
             let controller = AppUpdateController(shouldStartUpdater: false)
 
             controller.recordAvailableUpdate(
@@ -28,8 +28,8 @@ import Sparkle
                 isHandledByStandardUserDriver: true
             )
 
-            #expect(controller.availableVersion == nil)
-            #expect(!controller.isUpdateAvailable)
+            #expect(controller.availableVersion == "1.2.3")
+            #expect(controller.isUpdateAvailable)
         }
 
         @Test

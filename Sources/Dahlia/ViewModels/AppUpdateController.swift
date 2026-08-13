@@ -63,8 +63,7 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         recordUserChoice(choice)
     }
 
-    func recordAvailableUpdate(version: String, isHandledByStandardUserDriver: Bool) {
-        guard !isHandledByStandardUserDriver else { return }
+    func recordAvailableUpdate(version: String, isHandledByStandardUserDriver _: Bool) {
         availableVersion = version
     }
 
