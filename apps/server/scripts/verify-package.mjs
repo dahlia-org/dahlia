@@ -73,7 +73,7 @@ try {
     const applied = database.prepare('SELECT "name" FROM "_dahlia_auth_migrations" ORDER BY "name"').all();
     database.close();
     await store.close?.();
-    if (applied.length !== 2 || applied[1]?.name !== "0002_server.sql") {
+    if (applied.length !== 2 || applied[1]?.name !== "server/0002_server.sql") {
       throw new Error("Installed package migrations did not run from the package directory");
     }
   `);

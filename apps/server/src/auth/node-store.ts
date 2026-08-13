@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { AppConfig } from "../config";
@@ -48,21 +48,25 @@ export function createNodeAuthStore(
       database.exec(`CREATE TABLE IF NOT EXISTS "_dahlia_auth_migrations" (
         "name" TEXT PRIMARY KEY NOT NULL, "appliedAt" TEXT NOT NULL
       )`);
-      const files = migrations.sqlite.directories.flatMap((directory) => readdirSync(directory)
-        .filter((name) => name.endsWith(".sql"))
-        .sort()
-        .map((name) => ({ directory, name })));
-      const names = new Set<string>();
-      for (const { directory, name } of files) {
-        if (names.has(name)) throw new Error(`Duplicate SQLite migration name: ${name}`);
-        names.add(name);
-        const applied = database.prepare('SELECT 1 FROM "_dahlia_auth_migrations" WHERE "name" = ?').get(name);
+      const directoryIds = new Set<string>();
+      const files = migrations.sqlite.directories.flatMap(({ id, path }) => {
+        if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid SQLite migration ledger ID: ${id}`);
+        if (directoryIds.has(id)) throw new Error(`Duplicate SQLite migration ledger ID: ${id}`);
+        directoryIds.add(id);
+        return readdirSync(path)
+          .filter((name) => name.endsWith(".sql"))
+          .sort()
+          .map((name) => ({ id, path, name }));
+      });
+      for (const { id, path, name } of files) {
+        const ledgerName = `${id}/${name}`;
+        const applied = database.prepare('SELECT 1 FROM "_dahlia_auth_migrations" WHERE "name" = ?').get(ledgerName);
         if (applied) continue;
         database.exec("BEGIN");
         try {
-          database.exec(readFileSync(`${directory}/${name}`, "utf8"));
+          database.exec(readFileSync(join(path, name), "utf8"));
           database.prepare('INSERT INTO "_dahlia_auth_migrations" ("name", "appliedAt") VALUES (?, ?)')
-            .run(name, new Date().toISOString());
+            .run(ledgerName, new Date().toISOString());
           database.exec("COMMIT");
         } catch (error) {
           database.exec("ROLLBACK");

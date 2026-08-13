@@ -159,4 +159,4 @@ This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA bui
 
 The tag workflow requires an `NPM_TOKEN` repository secret with publish access to the `dahlia-ai` package.
 
-The package exports the backend extension contract from `dahlia-ai`, Dashboard components from `dahlia-ai/client`, shared styles from `dahlia-ai/client/styles.css`, and its migration manifest. Server migrations must run before consumer migrations. Give every PostgreSQL migration directory a stable lowercase ledger ID; never derive it from manifest position.
+The package exports the backend extension contract from `dahlia-ai`, Dashboard components from `dahlia-ai/client`, shared styles from `dahlia-ai/client/styles.css`, and its migration manifest. Server migrations must run before consumer migrations. Give every SQLite and PostgreSQL migration directory a stable lowercase ledger ID; never derive it from manifest position.

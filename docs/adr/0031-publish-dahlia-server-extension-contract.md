@@ -14,7 +14,7 @@ Dahlia Server はセルフホスト可能な実行アプリケーションであ
 - package は macOS アプリとは独立した SemVer を持ち、`server-v<version>` tag から npm へ公開する。
 - backend extension は Better Auth plugin、認証前 route、認証済み API route、session capability、Gateway 転送前 hook を追加できる。
 - client extension はブランド、navigation、capability で保護された Dashboard route と React page を追加できる。
-- migration manifest は Server の SQLite／PostgreSQL migration を常に先に並べ、extension migration をその後へ合成する。PostgreSQL の各 directory は順序変更に依存しない安定した ledger ID を持つ。公開済み migration は変更しない。
+- migration manifest は Server の SQLite／PostgreSQL migration を常に先に並べ、extension migration をその後へ合成する。各 directory は順序変更や別 extension の filename に依存しない安定した ledger ID を持つ。公開済み migration は変更しない。
 - extension は provider secret、request/response content、録音、文字起こし、ローカル database を新しい共有 contract に含めない。
 - package consumer は exact version を使用する。公開前の共同開発は `pnpm link`、公開 artifact の確認は `pnpm pack` を使用する。
 
