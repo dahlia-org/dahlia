@@ -87,6 +87,7 @@
 "Expand" = "展開";
 "Collapse" = "折りたたむ";
 "Back" = "戻る";
+"Back to App" = "アプリに戻る";
 "Forward" = "進む";
 "Show Sidebar" = "サイドバーを表示";
 "Hide Sidebar" = "サイドバーを隠す";
@@ -640,6 +641,7 @@
 
 /* Sidebar Footer */
 "Switch Vault" = "保管庫を切り替え";
+"MCP Settings" = "MCP の設定";
 "Manage Vaults..." = "保管庫を管理...";
 "Manage Projects..." = "プロジェクトを管理...";
 "Settings" = "設定";

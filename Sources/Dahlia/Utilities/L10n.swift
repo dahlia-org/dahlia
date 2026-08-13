@@ -149,6 +149,7 @@ enum L10n {
     static var expand: String { String(localized: "Expand", bundle: bundle) }
     static var collapse: String { String(localized: "Collapse", bundle: bundle) }
     static var back: String { String(localized: "Back", bundle: bundle) }
+    static var backToApp: String { String(localized: "Back to App", bundle: bundle) }
     static var forward: String { String(localized: "Forward", bundle: bundle) }
 
     // MARK: - Sidebar
@@ -2370,6 +2371,8 @@ enum L10n {
 
     // MARK: - Sidebar Footer
 
+    static var switchVault: String { String(localized: "Switch Vault", bundle: bundle) }
+    static var mcpSettings: String { String(localized: "MCP Settings", bundle: bundle) }
     static var manageVaults: String { String(localized: "Manage Vaults...", bundle: bundle) }
     static var manageProjects: String { String(localized: "Manage Projects...", bundle: bundle) }
     static var settings: String { String(localized: "Settings", bundle: bundle) }

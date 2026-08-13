@@ -22,7 +22,8 @@ struct SettingsDetailView: View {
             case .backups:
                 BackupSettingsView(
                     dbQueue: sidebarViewModel.dbQueue,
-                    captionViewModel: captionViewModel
+                    captionViewModel: captionViewModel,
+                    mainWindowNavigation: mainWindowNavigation
                 )
             case .transcription:
                 TranscriptionSettingsView()

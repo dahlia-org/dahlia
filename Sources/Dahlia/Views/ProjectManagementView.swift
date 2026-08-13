@@ -4,6 +4,7 @@ import SwiftUI
 struct ProjectManagementView: View {
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
+    var updateController: AppUpdateController
     let recordingCoordinator: RecordingCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
     let onShowUpcomingSchedule: () -> Void
@@ -72,6 +73,7 @@ struct ProjectManagementView: View {
                     MainSidebarFooterView(
                         vaults: sidebarViewModel.allVaults,
                         currentVault: sidebarViewModel.currentVault,
+                        updateController: updateController,
                         onSelectVault: onSelectVault
                     )
                 }

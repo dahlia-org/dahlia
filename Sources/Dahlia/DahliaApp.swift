@@ -77,7 +77,14 @@ struct DahliaApp: App {
     var body: some Scene {
         Window(L10n.dahlia, id: WindowID.main) {
             Group {
-                if showVaultPicker {
+                if mainWindowNavigation.isShowingSettings {
+                    SettingsView(
+                        captionViewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        mainWindowNavigation: mainWindowNavigation,
+                        onSelectVault: { vault in openVault(vault) }
+                    )
+                } else if showVaultPicker {
                     VaultPickerView(
                         appDatabase: appDatabase,
                         canSwitchVault: viewModel.canSwitchVault
@@ -97,7 +104,9 @@ struct DahliaApp: App {
                 }
             }
             .toolbar {
-                if showVaultPicker, updateController.isUpdateAvailable {
+                if !mainWindowNavigation.isShowingSettings,
+                   showVaultPicker,
+                   updateController.isUpdateAvailable {
                     ToolbarItem(placement: .primaryAction) {
                         AppUpdateBadge(updateController: updateController)
                     }
@@ -111,11 +120,14 @@ struct DahliaApp: App {
                 await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
                 await driveRestore
             }
+            .modifier(MainWindowOpenWindowRegistrationModifier())
+            .environment(mainWindowNavigation)
         }
         .windowResizability(.contentMinSize)
         .defaultSize(width: MainWindowMetrics.defaultWidth, height: MainWindowMetrics.defaultHeight)
         .defaultLaunchBehavior(.presented)
         .commands {
+            SettingsCommands(mainWindowNavigation: mainWindowNavigation)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updateController.updater)
             }
@@ -123,22 +135,26 @@ struct DahliaApp: App {
         }
 
         WindowGroup(L10n.chat, id: WindowID.codexChat, for: CodexChatSessionID.self) { $sessionID in
-            if let sessionID {
-                CodexChatWindowView(
-                    coordinator: chatCoordinator,
-                    sidebarViewModel: sidebarViewModel,
-                    sessionID: sessionID
-                )
-            } else {
-                ContentUnavailableView(
-                    L10n.chatWindowUnavailable,
-                    systemImage: "bubble.left.and.bubble.right"
-                )
+            Group {
+                if let sessionID {
+                    CodexChatWindowView(
+                        coordinator: chatCoordinator,
+                        sidebarViewModel: sidebarViewModel,
+                        sessionID: sessionID
+                    )
+                } else {
+                    ContentUnavailableView(
+                        L10n.chatWindowUnavailable,
+                        systemImage: "bubble.left.and.bubble.right"
+                    )
+                }
             }
+            .environment(mainWindowNavigation)
         }
         .defaultSize(width: 620, height: 720)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.vault, id: WindowID.vaultManager) {
             VaultPickerView(
@@ -149,6 +165,7 @@ struct DahliaApp: App {
             }
         }
         .windowStyle(.automatic)
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
             OrganizationWorkspaceView(
@@ -160,6 +177,7 @@ struct DahliaApp: App {
         .defaultSize(width: 1380, height: 820)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.audioRecognitionTest, id: WindowID.audioRecognitionTest) {
             MicrophoneRecognitionTestView(captionViewModel: viewModel)
@@ -167,6 +185,7 @@ struct DahliaApp: App {
         .defaultSize(width: 720, height: 700)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.applicationLogs, id: WindowID.applicationLogs) {
             ApplicationLogView()
@@ -174,6 +193,7 @@ struct DahliaApp: App {
         .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.permissions, id: WindowID.permissions) {
             PermissionGuideWindowView()
@@ -181,15 +201,7 @@ struct DahliaApp: App {
         .defaultSize(width: 680, height: 620)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
-
-        Settings {
-            SettingsView(
-                captionViewModel: viewModel,
-                sidebarViewModel: sidebarViewModel,
-                mainWindowNavigation: mainWindowNavigation,
-                onSelectVault: { vault in openVault(vault) }
-            )
-        }
+        .dahliaSettingsCommands(mainWindowNavigation)
 
         MenuBarExtra {
             MenuBarMenuView(
@@ -232,6 +244,9 @@ struct DahliaApp: App {
 
         try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
 
+        sidebarViewModel.clearMeetingSelection()
+        viewModel.clearCurrentMeeting()
+        mainWindowNavigation.changeVault(to: vault.id)
         AppSettings.shared.currentVault = vault
         chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
@@ -401,6 +416,24 @@ struct DahliaApp: App {
         let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
         let projectURL = project.map { vault.url.appending(path: $0.path, directoryHint: .isDirectory) }
         return (projectURL, project?.id, project?.path)
+    }
+}
+
+private struct MainWindowOpenWindowRegistrationModifier: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear {
+            MainWindowOpener.shared.register(openWindow: openWindow)
+        }
+    }
+}
+
+private extension Scene {
+    func dahliaSettingsCommands(_ navigation: MainWindowNavigation) -> some Scene {
+        commands {
+            SettingsCommands(mainWindowNavigation: navigation)
+        }
     }
 }
 

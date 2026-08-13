@@ -4,6 +4,7 @@ import SwiftUI
 
 struct MeetingListSidebarView: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     let isShowingUpcomingSchedule: Bool
@@ -122,6 +123,7 @@ struct MeetingListSidebarView: View {
                 MainSidebarFooterView(
                     vaults: sidebarViewModel.allVaults,
                     currentVault: sidebarViewModel.currentVault,
+                    updateController: updateController,
                     onSelectVault: onSelectVault
                 )
                 .frame(maxWidth: .infinity)

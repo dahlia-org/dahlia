@@ -24,6 +24,7 @@ struct ContentView: View {
                 ProjectManagementView(
                     sidebarViewModel: sidebarViewModel,
                     captionViewModel: viewModel,
+                    updateController: updateController,
                     recordingCoordinator: recordingCoordinator,
                     mainWindowNavigation: mainWindowNavigation,
                     onShowUpcomingSchedule: returnToCalendarSchedule,
@@ -36,6 +37,7 @@ struct ContentView: View {
                 NavigationSplitView {
                     MeetingListSidebarView(
                         viewModel: viewModel,
+                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         isShowingUpcomingSchedule: isShowingUpcomingSchedule,
@@ -89,13 +91,6 @@ struct ContentView: View {
                 .labelStyle(.iconOnly)
                 .help(L10n.chat)
                 .accessibilityLabel(L10n.chat)
-            }
-
-            if updateController.isUpdateAvailable,
-               mainWindowNavigation.section == .projects || !hasMeetingDetail {
-                ToolbarItem(placement: .primaryAction) {
-                    AppUpdateBadge(updateController: updateController)
-                }
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -199,10 +194,7 @@ struct ContentView: View {
         .onChange(of: viewModel.draftMeeting) {
             syncChatContext()
         }
-        .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultID in
-            sidebarViewModel.clearMeetingSelection()
-            viewModel.clearCurrentMeeting()
-            mainWindowNavigation.changeVault(to: vaultID)
+        .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
             syncChatContext()
         }
         .onChange(of: mainWindowNavigation.selectedProjectId) { _, projectID in
@@ -221,7 +213,6 @@ struct ContentView: View {
             viewModel.reloadSummaryDocument()
         }
         .onAppear {
-            MainWindowOpener.shared.register(openWindow: openWindow)
             prepareInitialPresentation()
         }
         .task { syncChatContext() }
@@ -308,7 +299,6 @@ private extension ContentView {
         } else if hasMeetingDetail {
             ControlPanelView(
                 viewModel: viewModel,
-                updateController: updateController,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible
