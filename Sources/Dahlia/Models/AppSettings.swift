@@ -549,22 +549,31 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     }
 
     var isCodexAccountConfigurationCurrent: Bool {
-        Self.isCodexAccountConfigurationCurrent(
-            selectedProvider: codexAccountProvider,
+        configuredCodexAccountProvider != nil
+    }
+
+    var configuredCodexAccountProvider: AIAccountProvider? {
+        Self.configuredCodexAccountProvider(
+            selectedProviderRawValue: codexAccountProviderRawValue,
             selectedDatabricksProfile: codexDatabricksProfile,
             configuredProviderRawValue: codexConfiguredAccountProviderRawValue,
             configuredDatabricksProfile: codexConfiguredDatabricksProfile
         )
     }
 
-    nonisolated static func isCodexAccountConfigurationCurrent(
-        selectedProvider: AIAccountProvider,
+    nonisolated static func configuredCodexAccountProvider(
+        selectedProviderRawValue: String,
         selectedDatabricksProfile: String,
         configuredProviderRawValue: String,
         configuredDatabricksProfile: String
-    ) -> Bool {
-        guard configuredProviderRawValue == selectedProvider.rawValue else { return false }
-        return selectedProvider != .databricks || configuredDatabricksProfile == selectedDatabricksProfile
+    ) -> AIAccountProvider? {
+        guard let selectedProvider = AIAccountProvider(rawValue: selectedProviderRawValue),
+              configuredProviderRawValue == selectedProvider.rawValue,
+              selectedProvider != .databricks || configuredDatabricksProfile == selectedDatabricksProfile
+        else {
+            return nil
+        }
+        return selectedProvider
     }
 
     func invalidateCodexAccountConfiguration() {

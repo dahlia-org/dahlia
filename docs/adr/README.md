@@ -22,7 +22,7 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0009](0009-execution-context-and-degradation-order.md) | Concurrency / UI responsiveness | 実行コンテキストの判断基準と負荷時の縮退順序を定める | Accepted; partially supersedes 0002 |
 | [0010](0010-database-canonical-bounded-project-hierarchy.md) | Project workspace | DB 正本の2段階 Project 階層と派生 Summary 出力先を採用する | Accepted; amends 0005 |
 | [0011](0011-vault-scoped-customer-intelligence.md) | Customer intelligence | Vault単位の型付き正準データとAI示唆を分離する | Accepted; amends 0005, builds on 0010 |
-| [0012](0012-reviewable-customer-intelligence-workspace.md) | Customer intelligence / UI | 単一顧客の組織ビューと単数 CRUD による逐次AI更新を採用する | Accepted; amends 0011; amended by 0022 |
+| [0012](0012-reviewable-customer-intelligence-workspace.md) | Customer intelligence / UI | 単一顧客の組織ビューと単数 CRUD による逐次AI更新を採用する | Accepted; amends 0011; amended by 0022 and 0027 |
 | [0013](0013-expand-codex-stdout-burst-buffer.md) | AI runtime | Codex stdout の burst buffer を拡張し、消費済み payload を即時解放する | Superseded by 0019 |
 | [0014](0014-domain-driven-organization-merge.md) | Customer intelligence / Identity | メールドメイン追加を入口にルート組織を完全統合する | Accepted; amends 0011 and 0012 |
 | [0015](0015-preset-projects-optimizer-skill.md) | AI runtime / Project workspace | Projects Optimizer skill をアプリ内チャットへプリセットする | Accepted; partially superseded by 0021, amends 0003, builds on 0010 |
@@ -32,8 +32,9 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0019](0019-pull-codex-stdout-with-backpressure.md) | AI runtime | Codex stdout を64 KiB単位で需要駆動読み取りする | Accepted; supersedes 0013, amends 0003; amended by 0020 |
 | [0020](0020-bound-codex-output-relative-to-client-input.md) | AI runtime | Codex stdout の単一行上限をclient入力に応じて拡張する | Accepted; amends 0019 and 0003 |
 | [0021](0021-preserve-user-home-for-databricks-authentication.md) | AI runtime / Authentication | app-server では `CODEX_HOME` だけを分離し、Databricks CLI のため user `HOME` を継承する | Accepted; partially supersedes 0015, amends 0003 |
-| [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023 |
+| [0022](0022-user-approved-workspace-write-chat.md) | AI runtime / Chat | アプリ内チャットを `workspace-write` とユーザー承認で実行する | Accepted; amends 0003 and 0012; amended by 0023 and 0027 |
 | [0023](0023-review-vault-mcp-writes-in-chat.md) | AI runtime / Chat / MCP | Vault MCP の書き込みを追加権限なしの単一 tool call として承認する | Accepted; amends 0022 |
 | [0024](0024-flat-summary-blocks-with-hierarchy-attributes.md) | Summary / Meeting access | 平坦な階層属性でサマリーのネストリストと表を表現する | Accepted; amends 0001 and 0018 |
 | [0025](0025-adopt-allowlisted-nonblocking-telemetry.md) | Privacy / Observability | 許可リスト制の匿名テレメトリを公式 SDK の非ブロッキング経路で送る | Accepted; amended by 0026 |
 | [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025 |
+| [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023 |
