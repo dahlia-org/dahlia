@@ -395,6 +395,8 @@
 "Could Not Open System Settings" = "システム設定を開けませんでした";
 "Open Privacy & Security in System Settings and choose the relevant permission manually." = "システム設定の「プライバシーとセキュリティ」を開き、該当する権限を手動で選択してください。";
 "Check for Updates…" = "アップデートを確認…";
+"Update Available" = "アップデートあり";
+"Dahlia %@ is available. Click to view the update." = "Dahlia %@ を利用できます。クリックしてアップデートを確認します。";
 "App" = "アプリ";
 "Integrations" = "連携";
 "AI" = "AI";

@@ -395,6 +395,8 @@
 "Could Not Open System Settings" = "Could Not Open System Settings";
 "Open Privacy & Security in System Settings and choose the relevant permission manually." = "Open Privacy & Security in System Settings and choose the relevant permission manually.";
 "Check for Updates…" = "Check for Updates…";
+"Update Available" = "Update Available";
+"Dahlia %@ is available. Click to view the update." = "Dahlia %@ is available. Click to view the update.";
 "App" = "App";
 "Integrations" = "Integrations";
 "AI" = "AI";

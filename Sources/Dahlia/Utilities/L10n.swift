@@ -1496,6 +1496,12 @@ enum L10n {
     }
 
     static var checkForUpdates: String { String(localized: "Check for Updates…", bundle: bundle) }
+    static var updateAvailable: String { String(localized: "Update Available", bundle: bundle) }
+
+    static func updateAvailableVersion(_ version: String) -> String {
+        String(format: String(localized: "Dahlia %@ is available. Click to view the update.", bundle: bundle), version)
+    }
+
     static var app: String { String(localized: "App", bundle: bundle) }
     static var integrations: String { String(localized: "Integrations", bundle: bundle) }
     static var ai: String { String(localized: "AI", bundle: bundle) }
