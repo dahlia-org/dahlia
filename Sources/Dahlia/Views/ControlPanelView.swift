@@ -166,6 +166,8 @@ struct ControlPanelView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     let allowsTranscriptReferencePopovers: Bool
+
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .summary
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
@@ -338,7 +340,9 @@ struct ControlPanelView: View {
             }
         }
         .toolbar {
-            detailToolbar
+            if !mainWindowNavigation.isShowingSettings {
+                detailToolbar
+            }
         }
     }
 

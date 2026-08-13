@@ -77,31 +77,38 @@ struct DahliaApp: App {
 
     var body: some Scene {
         Window(L10n.dahlia, id: WindowID.main) {
-            Group {
+            ZStack {
+                Group {
+                    if showVaultPicker {
+                        VaultPickerView(
+                            appDatabase: appDatabase,
+                            model: vaultManagementModel,
+                            canSwitchVault: viewModel.canSwitchVault
+                        ) { vault in
+                            openVault(vault)
+                        }
+                    } else {
+                        ContentView(
+                            viewModel: viewModel,
+                            updateController: updateController,
+                            sidebarViewModel: sidebarViewModel,
+                            recordingCoordinator: recordingCoordinator,
+                            chatCoordinator: chatCoordinator,
+                            mainWindowNavigation: mainWindowNavigation,
+                            onSelectVault: { vault in openVault(vault) }
+                        )
+                    }
+                }
+                .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
+                .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
+                .accessibilityHidden(mainWindowNavigation.isShowingSettings)
+
                 if mainWindowNavigation.isShowingSettings {
                     SettingsView(
                         captionViewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
                         appDatabase: appDatabase,
                         vaultManagementModel: vaultManagementModel,
-                        mainWindowNavigation: mainWindowNavigation,
-                        onSelectVault: { vault in openVault(vault) }
-                    )
-                } else if showVaultPicker {
-                    VaultPickerView(
-                        appDatabase: appDatabase,
-                        model: vaultManagementModel,
-                        canSwitchVault: viewModel.canSwitchVault
-                    ) { vault in
-                        openVault(vault)
-                    }
-                } else {
-                    ContentView(
-                        viewModel: viewModel,
-                        updateController: updateController,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        chatCoordinator: chatCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
                         onSelectVault: { vault in openVault(vault) }
                     )

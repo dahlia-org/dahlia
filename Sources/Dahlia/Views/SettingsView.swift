@@ -8,9 +8,10 @@ struct SettingsView: View {
     var vaultManagementModel: VaultManagementModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SettingsSidebarView(
                 selection: $mainWindowNavigation.settingsCategory,
                 onReturnToApp: mainWindowNavigation.dismissSettings
@@ -25,6 +26,10 @@ struct SettingsView: View {
                 vaultManagementModel: vaultManagementModel,
                 onSelectVault: onSelectVault
             )
+        }
+        .toolbar(removing: .sidebarToggle)
+        .toolbar {
+            SidebarToggleToolbarItem(columnVisibility: $columnVisibility)
         }
         .frame(minWidth: 720, minHeight: 520)
     }
