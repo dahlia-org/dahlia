@@ -46,15 +46,46 @@ import Sparkle
             #expect(controller.isUpdateAvailable)
         }
 
-        @Test(arguments: [SPUUserUpdateChoice.install, .skip])
-        func committedUpdateChoiceClearsBadge(choice: SPUUserUpdateChoice) {
+        @Test
+        func startingInstallationKeepsBadgeUntilRelaunch() {
             let controller = AppUpdateController(shouldStartUpdater: false)
             controller.recordAvailableUpdate(
                 version: "1.2.3",
                 isHandledByStandardUserDriver: false
             )
 
-            controller.recordUserChoice(choice)
+            controller.recordUserChoice(.install)
+
+            #expect(controller.availableVersion == "1.2.3")
+            #expect(controller.isUpdateAvailable)
+        }
+
+        @Test
+        func skippingUpdateClearsBadge() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+            controller.recordAvailableUpdate(
+                version: "1.2.3",
+                isHandledByStandardUserDriver: false
+            )
+
+            controller.recordUserChoice(.skip)
+
+            #expect(controller.availableVersion == nil)
+            #expect(!controller.isUpdateAvailable)
+        }
+
+        @Test
+        func noUpdateResultClearsStaleBadge() {
+            let controller = AppUpdateController(shouldStartUpdater: false)
+            controller.recordAvailableUpdate(
+                version: "1.2.3",
+                isHandledByStandardUserDriver: false
+            )
+
+            controller.updaterDidNotFindUpdate(
+                controller.updater,
+                error: NSError(domain: SUSparkleErrorDomain, code: 0)
+            )
 
             #expect(controller.availableVersion == nil)
             #expect(!controller.isUpdateAvailable)

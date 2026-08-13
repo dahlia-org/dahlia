@@ -63,15 +63,19 @@ final class AppUpdateController: NSObject, @MainActor SPUStandardUserDriverDeleg
         recordUserChoice(choice)
     }
 
+    func updaterDidNotFindUpdate(_: SPUUpdater, error _: Error) {
+        availableVersion = nil
+    }
+
     func recordAvailableUpdate(version: String, isHandledByStandardUserDriver _: Bool) {
         availableVersion = version
     }
 
     func recordUserChoice(_ choice: SPUUserUpdateChoice) {
         switch choice {
-        case .install, .skip:
+        case .skip:
             availableVersion = nil
-        case .dismiss:
+        case .install, .dismiss:
             break
         @unknown default:
             break
