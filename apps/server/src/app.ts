@@ -39,7 +39,8 @@ export interface ServerExtensionServices {
 
 export interface GatewayExtensionContext {
   identity: Identity;
-  request: Request;
+  method: string;
+  path: string;
 }
 
 export interface DahliaServerExtension {
@@ -269,7 +270,8 @@ export function createApp(dependencies: AppDependencies) {
     for (const extension of extensions) {
       const response = await extension.beforeGateway?.({
         identity: context.get("identity"),
-        request: context.req.raw,
+        method: context.req.method,
+        path: context.req.path,
       });
       if (response) return response;
     }

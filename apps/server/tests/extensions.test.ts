@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createApp, type DahliaServerExtension } from "../src/app";
+import { createApp, type DahliaServerExtension, type GatewayExtensionContext } from "../src/app";
 import type { AppConfig } from "../src/config";
 import { composeMigrationManifests, serverMigrationManifest } from "../src/migrations";
 import { testStore } from "./test-store";
@@ -75,6 +75,29 @@ describe("server extensions", () => {
     expect(response.status).toBe(429);
     expect(order).toEqual(["first", "second"]);
     expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("exposes Gateway metadata without the request body", async () => {
+    const hook = vi.fn((context: GatewayExtensionContext) => {
+      void context;
+      return Promise.resolve(Response.json({ stopped: true }, { status: 418 }));
+    });
+    const app = createApp({
+      config,
+      authStore: testStore(),
+      extensions: [{ beforeGateway: hook }],
+    });
+
+    expect((await app.request("/api/v1/responses", {
+      method: "POST",
+      headers: identityHeaders,
+      body: JSON.stringify({ model: "summary" }),
+    })).status).toBe(418);
+    expect(hook).toHaveBeenCalledWith(expect.objectContaining({
+      method: "POST",
+      path: "/api/v1/responses",
+    }));
+    expect(hook.mock.calls[0]?.[0]).not.toHaveProperty("request");
   });
 
   it("rejects duplicate session capability names", async () => {
