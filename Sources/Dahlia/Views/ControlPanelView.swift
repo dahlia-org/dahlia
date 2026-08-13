@@ -383,11 +383,11 @@ struct ControlPanelView: View {
         ZStack(alignment: .topTrailing) {
             SummaryTabContentView(
                 screenshotStore: viewModel.screenshotStore,
+                transcriptStore: viewModel.store,
                 document: viewModel.currentSummaryDocument,
                 hasSummary: viewModel.hasCurrentMeetingSummary,
                 allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
-                openScreenshot: openSummaryScreenshot,
-                transcriptText: summaryTranscriptText
+                openScreenshot: openSummaryScreenshot
             )
             .padding(.trailing, 56)
 
@@ -557,22 +557,6 @@ struct ControlPanelView: View {
 
     private var referencedScreenshotIds: Set<UUID> {
         viewModel.currentSummaryDocument?.referencedScreenshotIds ?? []
-    }
-
-    private func summaryTranscriptText(for reference: TranscriptReference) -> String? {
-        let time = reference.time.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !time.isEmpty else { return nil }
-
-        let timeBase = viewModel.store.timeBase
-        let recordingSessions = viewModel.store.recordingSessions
-        return viewModel.store.segments.first { segment in
-            Formatters.elapsedHHmmss(
-                at: segment.startTime,
-                sessionId: segment.sessionId,
-                sessions: recordingSessions,
-                fallbackTimeBase: timeBase
-            ) == time
-        }?.displayText.nilIfBlank
     }
 
     private var displayedMeetingTitle: String? {

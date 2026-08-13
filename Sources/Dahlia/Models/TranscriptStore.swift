@@ -32,7 +32,9 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     @Published private(set) var hasNewerSegments = false
     @Published private(set) var requiresFullMeetingReload = false
 
-    var recordingStartTime: Date?
+    @Published var recordingStartTime: Date? {
+        didSet { summaryReferenceRevision &+= 1 }
+    }
 
     var timeBase: Date {
         recordingStartTime ?? recordingSessions.first?.startedAt ?? segments.first?.startTime ?? Date()
@@ -50,6 +52,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     private var pageLoader: TranscriptPageLoader?
     private var pagingGeneration = 0
     private var projectionRevision = 0
+    private(set) var summaryReferenceRevision: UInt64 = 0
     private var isFollowingLatest = true
     private var failedPageLoad: FailedPageLoad?
     private var pendingLatestReloadWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -174,6 +177,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
             insertInTimeline(segment)
             return
         }
+        summaryReferenceRevision &+= 1
 
         guard isFollowingLatest, !hasLaterSegments else {
             deferredConfirmedSegments[segment.id] = segment
@@ -210,6 +214,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     /// DB 以外の既存呼び出し向け。入力が大きくても projection の上限を超えて保持しない。
     func loadSegments(_ newSegments: [TranscriptSegment]) {
         projectionRevision &+= 1
+        summaryReferenceRevision &+= 1
         let previews = latestPreviews(in: newSegments)
         let confirmed = newSegments.filter(\.isConfirmed).sorted(by: Self.precedes)
         let boundedConfirmed = confirmed.suffix(Self.maximumConfirmedSegmentCount)
@@ -222,6 +227,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
     }
 
     func loadRecordingSessions(_ sessions: [RecordingSessionTimeline]) {
+        summaryReferenceRevision &+= 1
         recordingSessions = sessions.sorted { lhs, rhs in
             if lhs.offsetSeconds == rhs.offsetSeconds {
                 return lhs.startedAt < rhs.startedAt
@@ -255,6 +261,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         }
         if didUpdate {
             projectionRevision &+= 1
+            summaryReferenceRevision &+= 1
         }
     }
 
@@ -262,6 +269,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         cancelPendingLatestReloads()
         pagingGeneration &+= 1
         projectionRevision &+= 1
+        summaryReferenceRevision &+= 1
         meetingId = nil
         pageLoader = nil
         segments.removeAll()
@@ -364,6 +372,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         _ page: TranscriptPage,
         preservingExistingProjection: Bool = false
     ) {
+        summaryReferenceRevision &+= 1
         let previews = segments.filter { !$0.isConfirmed }
         var confirmedById = Dictionary(uniqueKeysWithValues: page.segments.map { ($0.id, $0) })
         if preservingExistingProjection {
@@ -387,6 +396,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         _ page: TranscriptPage,
         preservingExistingProjection: Bool
     ) {
+        summaryReferenceRevision &+= 1
         mergeConfirmedSegments(page.segments, preservingExistingProjection: preservingExistingProjection)
         let removed = trimConfirmedSegments(keeping: .earliest)
         hasEarlierSegments = page.hasEarlier
@@ -398,6 +408,7 @@ final class TranscriptStore: ObservableObject { // swiftlint:disable:this type_b
         _ page: TranscriptPage,
         preservingExistingProjection: Bool
     ) {
+        summaryReferenceRevision &+= 1
         mergeConfirmedSegments(page.segments, preservingExistingProjection: preservingExistingProjection)
         let removed = trimConfirmedSegments(keeping: .latest)
         hasEarlierSegments = hasEarlierSegments || page.hasEarlier || removed
