@@ -8,6 +8,10 @@ export interface MigrationDirectory {
 
 export type PostgresMigrationDirectory = MigrationDirectory;
 
+export interface SQLiteMigrationDirectory extends MigrationDirectory {
+  files: readonly string[];
+}
+
 export interface MigrationSet<TDirectory = MigrationDirectory> {
   directories: readonly TDirectory[];
   files: readonly string[];
@@ -15,7 +19,7 @@ export interface MigrationSet<TDirectory = MigrationDirectory> {
 
 export interface MigrationManifest {
   postgres: MigrationSet<PostgresMigrationDirectory>;
-  sqlite: MigrationSet<MigrationDirectory>;
+  sqlite: MigrationSet<SQLiteMigrationDirectory>;
 }
 
 const packageDirectory = fileURLToPath(new URL(".", import.meta.resolve("dahlia-ai/package.json")));
@@ -26,7 +30,11 @@ export const serverMigrationManifest: MigrationManifest = {
     files: ["drizzle/0000_solid_ted_forrester.sql", "drizzle/0001_server.sql"],
   },
   sqlite: {
-    directories: [{ id: "server", path: join(packageDirectory, "auth-migrations") }],
+    directories: [{
+      id: "server",
+      path: join(packageDirectory, "auth-migrations"),
+      files: ["0001_better_auth.sql", "0002_server.sql"],
+    }],
     files: ["auth-migrations/0001_better_auth.sql", "auth-migrations/0002_server.sql"],
   },
 };

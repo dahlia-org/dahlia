@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type { AppConfig } from "../config";
@@ -49,15 +49,22 @@ export function createNodeAuthStore(
         "name" TEXT PRIMARY KEY NOT NULL, "appliedAt" TEXT NOT NULL
       )`);
       const directoryIds = new Set<string>();
-      const files = migrations.sqlite.directories.flatMap(({ id, path }) => {
+      const files = migrations.sqlite.directories.flatMap(({ id, path, files: declaredFiles }) => {
         if (!/^[a-z][a-z0-9_]{0,31}$/.test(id)) throw new Error(`Invalid SQLite migration ledger ID: ${id}`);
         if (directoryIds.has(id)) throw new Error(`Duplicate SQLite migration ledger ID: ${id}`);
         directoryIds.add(id);
-        return readdirSync(path)
-          .filter((name) => name.endsWith(".sql"))
-          .sort()
-          .map((name) => ({ id, path, name }));
+        return declaredFiles.map((name) => {
+          if (basename(name) !== name || !name.endsWith(".sql")) {
+            throw new Error(`Invalid SQLite migration file: ${name}`);
+          }
+          return { id, path, name };
+        });
       });
+      const manifestNames = migrations.sqlite.files.map((file) => basename(file)).sort();
+      const executionNames = files.map(({ name }) => name).sort();
+      if (manifestNames.join("\0") !== executionNames.join("\0")) {
+        throw new Error("SQLite migration directory files do not match the manifest");
+      }
       for (const { id, path, name } of files) {
         const ledgerName = `${id}/${name}`;
         const applied = database.prepare('SELECT 1 FROM "_dahlia_auth_migrations" WHERE "name" = ?').get(ledgerName);

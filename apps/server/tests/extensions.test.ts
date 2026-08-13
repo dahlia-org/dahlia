@@ -115,7 +115,11 @@ describe("server extensions", () => {
         files: ["extension/drizzle/0000.sql"],
       },
       sqlite: {
-        directories: [{ id: "extension", path: "extension/auth-migrations" }],
+        directories: [{
+          id: "extension",
+          path: "extension/auth-migrations",
+          files: ["0001.sql"],
+        }],
         files: ["extension/auth-migrations/0001.sql"],
       },
     })).toEqual({
@@ -133,7 +137,7 @@ describe("server extensions", () => {
       sqlite: {
         directories: [
           ...serverMigrationManifest.sqlite.directories,
-          { id: "extension", path: "extension/auth-migrations" },
+          { id: "extension", path: "extension/auth-migrations", files: ["0001.sql"] },
         ],
         files: [
           "auth-migrations/0001_better_auth.sql",

@@ -112,11 +112,15 @@ describe("SQLite Better Auth store", () => {
     mkdirSync(first);
     mkdirSync(second);
     writeFileSync(join(first, "0001_init.sql"), 'CREATE TABLE "firstExtension" ("id" TEXT PRIMARY KEY);');
+    writeFileSync(join(first, "draft.sql"), 'CREATE TABLE "unlistedDraft" ("id" TEXT PRIMARY KEY);');
     writeFileSync(join(second, "0001_init.sql"), 'CREATE TABLE "secondExtension" ("id" TEXT PRIMARY KEY);');
     const migrations: MigrationManifest = {
       postgres: { directories: [], files: [] },
       sqlite: {
-        directories: [{ id: "first", path: first }, { id: "second", path: second }],
+        directories: [
+          { id: "first", path: first, files: ["0001_init.sql"] },
+          { id: "second", path: second, files: ["0001_init.sql"] },
+        ],
         files: ["first/0001_init.sql", "second/0001_init.sql"],
       },
     };
@@ -133,6 +137,7 @@ describe("SQLite Better Auth store", () => {
     ]);
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%Extension' ORDER BY name").all())
       .toEqual([{ name: "firstExtension" }, { name: "secondExtension" }]);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE name = 'unlistedDraft'").get()).toBeUndefined();
     database.close();
     await store.close?.();
   });
