@@ -4,7 +4,6 @@ import SwiftUI
 /// ミーティング一覧サイドバーと詳細ビューを構成するルートビュー。
 struct ContentView: View {
     @ObservedObject var viewModel: CaptionViewModel
-    var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var chatCoordinator: CodexChatCoordinator
@@ -56,14 +55,6 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
-            if updateController.isUpdateAvailable {
-                ToolbarItem(placement: .navigation) {
-                    AppUpdateBadge(updateController: updateController)
-                }
-
-                ToolbarSpacer(.fixed, placement: .navigation)
-            }
-
             MainWindowNavigationToolbar(
                 canGoBack: canGoBack,
                 canGoForward: canGoForward,

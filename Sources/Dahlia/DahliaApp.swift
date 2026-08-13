@@ -87,13 +87,21 @@ struct DahliaApp: App {
                 } else {
                     ContentView(
                         viewModel: viewModel,
-                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
                         onSelectVault: { vault in openVault(vault) }
                     )
+                }
+            }
+            .toolbar {
+                if updateController.isUpdateAvailable {
+                    ToolbarItem(placement: .navigation) {
+                        AppUpdateBadge(updateController: updateController)
+                    }
+
+                    ToolbarSpacer(.fixed, placement: .navigation)
                 }
             }
             .task {
