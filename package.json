@@ -1,0 +1,25 @@
+{
+  "name": "dahlia",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "build": "corepack pnpm --recursive --if-present run build",
+    "build:cloudflare": "corepack pnpm --filter @dahlia/cloud build:cloudflare",
+    "check": "corepack pnpm --recursive --if-present run check",
+    "db:migrate": "corepack pnpm --filter @dahlia/cloud db:migrate",
+    "db:migrate:d1:local": "corepack pnpm --filter @dahlia/cloud db:migrate:d1:local",
+    "db:migrate:prod": "corepack pnpm --filter @dahlia/cloud db:migrate:prod",
+    "db:up": "docker compose -f apps/cloud/docker-compose.yml up -d postgres",
+    "dev": "corepack pnpm --filter @dahlia/cloud dev",
+    "dev:cloudflare": "corepack pnpm --filter @dahlia/cloud dev:cloudflare",
+    "dev:site": "corepack pnpm --filter @dahlia/site dev",
+    "preview:cloudflare": "corepack pnpm --filter @dahlia/cloud preview:cloudflare",
+    "start": "corepack pnpm --filter @dahlia/cloud start",
+    "worker:dry-run": "corepack pnpm --filter @dahlia/cloud worker:dry-run",
+    "worker:dev": "corepack pnpm --filter @dahlia/cloud worker:dev",
+    "worker:types": "corepack pnpm --filter @dahlia/cloud worker:types"
+  }
+}

@@ -15,7 +15,7 @@
 `Runtime Data Flow` と `Conformance Status` は現在の実装を記述する。未適合箇所は既成事実として追認せず、保証範囲、
 source of truth、再生成可能性、実測値に基づいて target state を再評価するか、`Remediation Plan` に従って減らす。
 
-最終確認日: 2026-08-10
+最終確認日: 2026-08-12
 
 ## Reliability Scope
 
@@ -118,6 +118,40 @@ Organization/Contactなどの正準レコードと、AIまたは人によるInsi
 write-backを発生させない。汎用参照は書き込み時にtarget存在とVault一致を検証し、target削除時はtriggerで除去する。
 詳細な判断と将来のContact統合条件は
 [ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
+
+任意の Dahlia Cloud runtime は内蔵 Codex の provider transport だけを所有し、macOS の録音・文字起こし runtime と
+database を共有しない。`apps/cloud` は runtime 環境変数から単一の provider credential を読み、application database の公開
+Model Alias を upstream model へ対応付ける。`DAHLIA_RUNTIME` は `custom`（accounts／SQLite）、`cloudflare`
+（accounts／D1）、`databricks`（header／PostgreSQL Lakebase）の一貫した preset を選ぶ。
+`custom` だけは header auth と PostgreSQL へ上書きできる。全runtimeのupstreamは`OPENAI_API_KEY`と、既定値を持つ`OPENAI_BASE_URL`で同じOpenAI Responses互換contractを使う。provider credential と接続先は runtime secret に置き、公開 Model Alias と
+platform administrator は application database に保存する。Better Auth の identity、session、OAuth metadata は `custom` の SQLite／PostgreSQL または Cloudflare D1 に保存する。
+Databricks Apps の header identity は sessionless だが、Model Alias と administrator の正本として Lakebase を使用する。Responses request は上限内で検証して upstream model を
+変換し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log
+へ保存しない。
+
+```text
+Dahlia macOS / bundled Codex 0.146.0
+    ↓ authenticated OpenAI Responses request
+/api/v1
+    ├─ Better Auth OAuth access token
+    └─ Databricks Apps / trusted proxy identity
+        ↓ database-backed Model Alias resolution
+    OpenAI-compatible upstream adapter
+        ↓ administrator-owned credential
+    upstream Responses API
+
+Application store (custom SQLite/PostgreSQL, Lakebase, or Cloudflare D1)
+    ├─ Model Alias + platform administrator
+    └─ user + session + OAuth metadata (accounts mode)
+```
+
+Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/healthz` だけを処理する。React SPA と静的 asset は
+Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
+`index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
+
+Gateway、認証 store、upstream の停止は AI 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
+閲覧、検索はこの runtime を待たず、音声、SQLite、Vault を upload する API は持たない。runtime と data boundary の判断は
+[ADR-0029](docs/adr/0029-offer-an-optional-codex-ai-gateway.md)を正本とする。
 
 ## Workload Classes
 

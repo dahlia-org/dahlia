@@ -8,3 +8,9 @@ Dahlia-*.dmg
 DerivedData/
 .DS_Store
 .env.local
+.data/
+.dev.vars*
+.wrangler/
+node_modules/
+.pnpm-store/
+pnpm-debug.log*

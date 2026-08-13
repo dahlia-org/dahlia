@@ -39,3 +39,5 @@ Codex は全 ADR を順番に読まず、最初にこの一覧から現在の作
 | [0026](0026-measure-product-adoption-with-bounded-telemetry.md) | Privacy / Product analytics | 丸めた録音時間と AI chat・内蔵 MCP の利用を固定 allowlist で計測する | Accepted; amends 0025; amended by 0028 |
 | [0027](0027-use-provider-aware-chat-approval-reviewer.md) | AI runtime / Chat / Authentication | ChatGPT Subscription は代理審査、Databricks はユーザー承認を使う | Accepted; amends 0012 and 0022; builds on 0023 |
 | [0028](0028-remove-automatic-previous-meeting-summary-context.md) | Summary / AI runtime / MCP | 要約生成の過去 meeting 自動参照と要約専用 MCP session を廃止する | Accepted; amends 0003, 0015, 0017, and 0026 |
+| [0029](0029-offer-an-optional-codex-ai-gateway.md) | AI runtime / Cloud gateway | 内蔵 Codex 用の任意の認証付き AI Gateway を別 runtime で提供する | Accepted; amends 0003 |
+| [0030](0030-add-optional-personal-billing-and-reserve-team-schema.md) | Cloud gateway / Billing | 任意の個人向け Stripe 課金と、Team 機能を有効化しない単一所属 schema を追加する | Accepted; amends 0029 |

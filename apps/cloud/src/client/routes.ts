@@ -1,0 +1,32 @@
+export interface DashboardCapabilities {
+  admin: boolean;
+  billing: boolean;
+  sessions: boolean;
+}
+
+export function shouldRedirectToSignIn(status: number | undefined): boolean {
+  return status === 401;
+}
+
+export function resolveDashboardRoute(
+  path: string,
+  capabilities: DashboardCapabilities,
+): { page?: "overview" | "billing" | "settings" | "admin-models" | "admin-members"; redirect?: string } {
+  if (path === "/") return { redirect: "/dashboard" };
+  if (path === "/sessions") return { redirect: "/dashboard/settings" };
+  if (path === "/dashboard") return { page: "overview" };
+  if (path === "/dashboard/billing") {
+    return capabilities.billing ? { page: "billing" } : { redirect: "/dashboard" };
+  }
+  if (path === "/dashboard/settings") {
+    return capabilities.sessions ? { page: "settings" } : { redirect: "/dashboard" };
+  }
+  if (path === "/admin") return { redirect: capabilities.admin ? "/admin/models" : "/dashboard" };
+  if (path === "/admin/models") {
+    return capabilities.admin ? { page: "admin-models" } : { redirect: "/dashboard" };
+  }
+  if (path === "/admin/members") {
+    return capabilities.admin ? { page: "admin-members" } : { redirect: "/dashboard" };
+  }
+  return { redirect: "/dashboard" };
+}
