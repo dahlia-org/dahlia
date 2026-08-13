@@ -428,8 +428,7 @@ struct SummaryServiceTests {
         for detailLevel in SummaryDetailLevel.allCases {
             settings.summaryDetailLevel = detailLevel
             let instructions = SummaryService.summaryGenerationInstructions(
-                settings: settings,
-                includesPreviousMeetings: false
+                settings: settings
             )
 
             #expect(instructions.hasPrefix(AppSettings.defaultSummaryPrompt))
@@ -446,33 +445,15 @@ struct SummaryServiceTests {
         let settings = AppSettings.shared
         settings.selectedInstructionID = nil
         let autoInstructions = SummaryService.summaryGenerationInstructions(
-            settings: settings,
-            includesPreviousMeetings: false
+            settings: settings
         )
         settings.selectedInstructionID = .v7()
         let selectedInstructions = SummaryService.summaryGenerationInstructions(
-            settings: settings,
-            includesPreviousMeetings: false
+            settings: settings
         )
 
         #expect(selectedInstructions == autoInstructions)
     }
-
-    @Test
-    func summaryGenerationInstructionsIncludePreviousMeetingsOnlyWhenRequested() {
-        let withoutPreviousMeetings = SummaryService.summaryGenerationInstructions(
-            settings: AppSettings.shared,
-            includesPreviousMeetings: false
-        )
-        let withPreviousMeetings = SummaryService.summaryGenerationInstructions(
-            settings: AppSettings.shared,
-            includesPreviousMeetings: true
-        )
-
-        #expect(!withoutPreviousMeetings.contains(SummaryService.codexPreviousMeetingsInstruction))
-        #expect(withPreviousMeetings.components(separatedBy: SummaryService.codexPreviousMeetingsInstruction).count == 2)
-    }
-
 }
 #endif
 // swiftformat:enable indent

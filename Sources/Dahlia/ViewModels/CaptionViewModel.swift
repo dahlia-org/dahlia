@@ -21,7 +21,6 @@ struct SummaryGenerationRunnerInput {
     let noteText: String?
     let screenshots: [MeetingScreenshotRecord]
     let recordingSessions: [RecordingSessionTimeline]
-    let repository: MeetingRepository
     let generationSettings: SummaryGenerationSettings
 }
 
@@ -653,7 +652,6 @@ final class CaptionViewModel: ObservableObject {
                 noteText: input.noteText,
                 screenshots: input.screenshots,
                 recordingSessions: input.recordingSessions,
-                repository: input.repository,
                 generationSettings: input.generationSettings
             )
         },
@@ -3805,10 +3803,6 @@ final class CaptionViewModel: ObservableObject {
 
         let screenshots = (try? repo.fetchScreenshots(forMeetingId: meetingId)) ?? []
         let calendarEvent = try repo.fetchCalendarEvent(forMeetingId: meetingId)
-        let previousMeetings = try repo.fetchPreviousMeetingMetadata(
-            forMeetingId: meetingId,
-            limit: request.options.previousMeetingCount
-        )
         let promptProjectName = request.projectName.nilIfBlank
 
         job.progress.summaryGeneration = .running
@@ -3819,14 +3813,12 @@ final class CaptionViewModel: ObservableObject {
                 recordedAt: request.recordingStartedAt,
                 calendarEvent: calendarEvent,
                 projectName: promptProjectName,
-                projectDescription: request.projectDescription,
-                previousMeetings: previousMeetings
+                projectDescription: request.projectDescription
             ),
             transcriptText: summaryInput.text,
             noteText: request.noteText,
             screenshots: screenshots,
             recordingSessions: request.recordingSessions,
-            repository: repo,
             generationSettings: request.generationSettings
         ))
 

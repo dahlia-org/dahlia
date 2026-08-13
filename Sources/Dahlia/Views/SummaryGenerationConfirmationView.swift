@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SummaryGenerationConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var previousMeetingCount: Int
     @State private var exportsToVault = SummaryExportOptions.manual.exportsToVault
     @State private var exportsToGoogleDocs = SummaryExportOptions.manual.exportsToGoogleDocs
     @State private var selectedProjectId: UUID?
@@ -27,7 +26,6 @@ struct SummaryGenerationConfirmationView: View {
         self.actionTitle = actionTitle
         self.projects = projects
         self.onGenerate = onGenerate
-        _previousMeetingCount = State(initialValue: AppSettings.shared.summaryPreviousMeetingCount)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: nil)
     }
@@ -64,7 +62,6 @@ struct SummaryGenerationConfirmationView: View {
                     }
 
                     SummaryGenerationOptionsControls(
-                        previousMeetingCount: $previousMeetingCount,
                         exportsToVault: $exportsToVault,
                         exportsToGoogleDocs: $exportsToGoogleDocs,
                         isEnabled: true
@@ -97,9 +94,7 @@ struct SummaryGenerationConfirmationView: View {
     }
 
     private func generateSummary() {
-        AppSettings.shared.summaryPreviousMeetingCount = previousMeetingCount
         errorMessage = onGenerate(SummaryGenerationOptions(
-            previousMeetingCount: AppSettings.shared.summaryPreviousMeetingCount,
             exportOptions: SummaryExportOptions(
                 exportsToVault: exportsToVault,
                 exportsToGoogleDocs: exportsToGoogleDocs

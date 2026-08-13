@@ -115,7 +115,7 @@ Insight の参照がすべて解除されている場合だけ削除できます
 - `set_meeting_project_assignment` / `remove_meeting_project_assignment`
 
 `set` は作成または metadata 更新、`remove` は関係だけの削除です。同じ値の再設定や削除済み関係の再削除は
-成功し、`changed: false` を返します。Meeting 限定セッションは従来どおり `get_meeting` だけです。
+成功し、`changed: false` を返します。
 Contact 応答の `email` は常にキーを持ち、暫定人物では `null` です。
 Topic と Insight の削除は所有する参照だけを削除し、参照先の Meeting、Organization、Contact、Project
 は残します。

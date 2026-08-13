@@ -19,19 +19,16 @@ public final class DahliaMCPServer {
     }
 
     private let store: MeetingAccessStore
-    private let allowedMeetingIDs: Set<UUID>?
     private let telemetryOrigin: MCPUsageTelemetryEvent.Origin?
     private let usageTelemetryReporter: (MCPUsageTelemetryEvent) -> Void
     private var initialized = false
 
     public init(
         store: MeetingAccessStore,
-        allowedMeetingIDs: Set<UUID>? = nil,
         telemetryOrigin: MCPUsageTelemetryEvent.Origin? = nil,
         usageTelemetryReporter: @escaping (MCPUsageTelemetryEvent) -> Void = { _ in }
     ) {
         self.store = store
-        self.allowedMeetingIDs = allowedMeetingIDs
         self.telemetryOrigin = telemetryOrigin
         self.usageTelemetryReporter = usageTelemetryReporter
     }
@@ -234,9 +231,6 @@ public final class DahliaMCPServer {
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     private func executeTool(named name: String, arguments: [String: Any]) throws -> [String: Any] {
-        if allowedMeetingIDs != nil, name != "get_meeting" {
-            throw ParameterError("Tool is not available in this session")
-        }
         switch name {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
@@ -678,11 +672,11 @@ public final class DahliaMCPServer {
     }
 
     private func getMeeting(_ arguments: [String: Any]) throws -> MeetingDetail {
-        try store.meeting(id: authorizedMeetingID(arguments))
+        try store.meeting(id: requiredUUID(arguments, key: "meeting_id"))
     }
 
     private func getMeetingTranscript(_ arguments: [String: Any]) throws -> TranscriptPage {
-        let meetingID = try authorizedMeetingID(arguments)
+        let meetingID = try requiredUUID(arguments, key: "meeting_id")
         let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
         let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
         try validateTimeRange(from: from, to: to)
@@ -698,7 +692,7 @@ public final class DahliaMCPServer {
     private func getMeetingScreenshots(
         _ arguments: [String: Any]
     ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
-        let meetingID = try authorizedMeetingID(arguments)
+        let meetingID = try requiredUUID(arguments, key: "meeting_id")
         let screenshotIDs = try uuidArray(arguments, key: "screenshot_ids")
         let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
         let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
@@ -757,14 +751,6 @@ public final class DahliaMCPServer {
         guard count <= imageSize.maximumScreenshotCount else {
             throw ParameterError("image_size original requires exactly one screenshot per call")
         }
-    }
-
-    private func authorizedMeetingID(_ arguments: [String: Any]) throws -> UUID {
-        let meetingID = try requiredUUID(arguments, key: "meeting_id")
-        if let allowedMeetingIDs, !allowedMeetingIDs.contains(meetingID) {
-            throw ParameterError("meeting_id is not available in this session")
-        }
-        return meetingID
     }
 
     private func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
@@ -1285,11 +1271,6 @@ private extension DahliaMCPServer {
     }
 
     private var toolDefinitions: [[String: Any]] {
-        guard allowedMeetingIDs == nil else {
-            return Self.readOnlyToolDefinitions.filter { definition in
-                definition["name"] as? String == "get_meeting"
-            }
-        }
         if store.allowsWrites {
             return Self.readOnlyToolDefinitions + Self.writeToolDefinitions
         }

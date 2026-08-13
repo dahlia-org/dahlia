@@ -6,23 +6,6 @@ struct SummaryPromptContext {
     let calendarEvent: CalendarEventRecord?
     let projectName: String?
     let projectDescription: String?
-    let previousMeetings: [SummaryPreviousMeetingMetadata]
-
-    init(
-        meetingId: UUID,
-        recordedAt: Date,
-        calendarEvent: CalendarEventRecord?,
-        projectName: String?,
-        projectDescription: String?,
-        previousMeetings: [SummaryPreviousMeetingMetadata] = []
-    ) {
-        self.meetingId = meetingId
-        self.recordedAt = recordedAt
-        self.calendarEvent = calendarEvent
-        self.projectName = projectName
-        self.projectDescription = projectDescription
-        self.previousMeetings = previousMeetings
-    }
 
     var xml: String {
         var sections = [meetingXML]
@@ -31,9 +14,6 @@ struct SummaryPromptContext {
         }
         if let projectXML {
             sections.append(projectXML)
-        }
-        if !previousMeetings.isEmpty {
-            sections.append(previousMeetingsXML)
         }
         return "<context>\n" + sections.joined(separator: "\n\n") + "\n</context>"
     }
@@ -70,30 +50,6 @@ struct SummaryPromptContext {
             <description>\(Self.xmlEscaped(description))</description>
           </project>
         """
-    }
-
-    private var previousMeetingsXML: String {
-        let meetings = previousMeetings
-            .map(previousMeetingXML)
-            .joined(separator: "\n")
-        return "  <previous_meetings>\n\(meetings)\n  </previous_meetings>"
-    }
-
-    private func previousMeetingXML(_ meeting: SummaryPreviousMeetingMetadata) -> String {
-        var lines = [
-            "    <previous_meeting>",
-            "      <meeting_id>\(meeting.meetingId.uuidString)</meeting_id>",
-            "      <name>\(Self.xmlEscaped(meeting.name))</name>",
-            "      <recorded_at>\(Self.iso8601(meeting.recordedAt))</recorded_at>",
-        ]
-        if let calendarStart = meeting.calendarStart {
-            lines.append("      <start>\(Self.iso8601(calendarStart))</start>")
-        }
-        if let calendarEnd = meeting.calendarEnd {
-            lines.append("      <end>\(Self.iso8601(calendarEnd))</end>")
-        }
-        lines.append("    </previous_meeting>")
-        return lines.joined(separator: "\n")
     }
 
     private static func xmlEscaped(_ value: String) -> String {

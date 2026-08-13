@@ -14,7 +14,6 @@ struct BatchTranscriptionConfirmationView: View {
     @State private var generateSummaryAfterBatchTranscription: Bool
     @State private var exportBatchSummaryToVault: Bool
     @State private var exportBatchSummaryToGoogleDocs: Bool
-    @State private var previousMeetingCount: Int
     @State private var selectedProjectId: UUID?
     @State private var errorMessage: String?
 
@@ -45,7 +44,6 @@ struct BatchTranscriptionConfirmationView: View {
         _generateSummaryAfterBatchTranscription = State(initialValue: initiallyGeneratesSummary)
         _exportBatchSummaryToVault = State(initialValue: summaryGenerationOptions.exportOptions.exportsToVault)
         _exportBatchSummaryToGoogleDocs = State(initialValue: summaryGenerationOptions.exportOptions.exportsToGoogleDocs)
-        _previousMeetingCount = State(initialValue: summaryGenerationOptions.previousMeetingCount)
         _selectedProjectId = State(initialValue: initialProjectId)
         _errorMessage = State(initialValue: initialErrorMessage)
     }
@@ -75,7 +73,6 @@ struct BatchTranscriptionConfirmationView: View {
                 generateSummaryAfterBatchTranscription: $generateSummaryAfterBatchTranscription,
                 exportBatchSummaryToVault: $exportBatchSummaryToVault,
                 exportBatchSummaryToGoogleDocs: $exportBatchSummaryToGoogleDocs,
-                previousMeetingCount: $previousMeetingCount,
                 projects: projects,
                 selectedProjectId: $selectedProjectId
             )
@@ -110,13 +107,11 @@ struct BatchTranscriptionConfirmationView: View {
         .onChange(of: generateSummaryAfterBatchTranscription) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToVault) { _, _ in persistSummaryPreferencesIfNeeded() }
         .onChange(of: exportBatchSummaryToGoogleDocs) { _, _ in persistSummaryPreferencesIfNeeded() }
-        .onChange(of: previousMeetingCount) { _, _ in persistSummaryPreferencesIfNeeded() }
     }
 
     private func startTranscription() {
         let summaryOptions = generateSummaryAfterBatchTranscription
             ? SummaryGenerationOptions(
-                previousMeetingCount: AppSettings.normalizedSummaryPreviousMeetingCount(previousMeetingCount),
                 exportOptions: SummaryExportOptions(
                     exportsToVault: exportBatchSummaryToVault,
                     exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
@@ -137,6 +132,5 @@ struct BatchTranscriptionConfirmationView: View {
         settings.generateSummaryAfterBatchTranscription = generateSummaryAfterBatchTranscription
         settings.exportBatchSummaryToVault = exportBatchSummaryToVault
         settings.exportBatchSummaryToGoogleDocs = exportBatchSummaryToGoogleDocs
-        settings.summaryPreviousMeetingCount = previousMeetingCount
     }
 }
