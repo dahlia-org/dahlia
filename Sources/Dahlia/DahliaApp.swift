@@ -87,7 +87,6 @@ struct DahliaApp: App {
                 } else {
                     ContentView(
                         viewModel: viewModel,
-                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
@@ -96,14 +95,17 @@ struct DahliaApp: App {
                     )
                 }
             }
+            .toolbar(removing: .sidebarToggle)
             .toolbar {
-                if showVaultPicker, updateController.isUpdateAvailable {
+                if updateController.isUpdateAvailable {
                     ToolbarItem(placement: .navigation) {
                         AppUpdateBadge(updateController: updateController)
                     }
 
                     ToolbarSpacer(.fixed, placement: .navigation)
                 }
+
+                DefaultToolbarItem(kind: .sidebarToggle, placement: .navigation)
             }
             .task {
                 _ = liveSubtitleOverlayCoordinator
