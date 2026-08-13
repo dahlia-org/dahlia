@@ -7,6 +7,18 @@ import Foundation
     @MainActor
     struct DatabricksAccountControllerTests {
         @Test
+        func invalidSelectedProviderIsNotTreatedAsConfiguredChatGPT() {
+            let provider = AppSettings.configuredCodexAccountProvider(
+                selectedProviderRawValue: "future-provider",
+                selectedDatabricksProfile: "",
+                configuredProviderRawValue: AIAccountProvider.chatGPTSubscription.rawValue,
+                configuredDatabricksProfile: ""
+            )
+
+            #expect(provider == nil)
+        }
+
+        @Test
         func validProfileConfiguresCodexAndLoadsModels() async {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-databricks-account-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -37,18 +49,18 @@ import Foundation
             #expect(controller.errorMessage == nil)
             #expect(configurationStore.configuredProviderRawValue == AIAccountProvider.databricks.rawValue)
             #expect(configurationStore.configuredDatabricksProfile == "DEFAULT")
-            #expect(AppSettings.isCodexAccountConfigurationCurrent(
-                selectedProvider: .databricks,
+            #expect(AppSettings.configuredCodexAccountProvider(
+                selectedProviderRawValue: AIAccountProvider.databricks.rawValue,
                 selectedDatabricksProfile: "DEFAULT",
                 configuredProviderRawValue: configurationStore.configuredProviderRawValue,
                 configuredDatabricksProfile: configurationStore.configuredDatabricksProfile
-            ))
-            #expect(!AppSettings.isCodexAccountConfigurationCurrent(
-                selectedProvider: .databricks,
+            ) == .databricks)
+            #expect(AppSettings.configuredCodexAccountProvider(
+                selectedProviderRawValue: AIAccountProvider.databricks.rawValue,
                 selectedDatabricksProfile: "OTHER",
                 configuredProviderRawValue: configurationStore.configuredProviderRawValue,
                 configuredDatabricksProfile: configurationStore.configuredDatabricksProfile
-            ))
+            ) == nil)
             await service.shutdown()
         }
 

@@ -203,20 +203,28 @@ actor CodexChatService: CodexChatServicing {
         model: String?,
         effort: String
     ) async throws -> CodexChatTurnHandle {
-        try await appServer.prepareProviderAuthentication()
+        let turn = try await appServer.withChatOperation { appServer in
+            let approvalsReviewer = await appServer.configuredAccountProvider() == .chatGPTSubscription
+                ? "auto_review"
+                : "user"
 
-        var params: [String: JSONValue] = [
-            "approvalsReviewer": .string("user"),
-            "effort": .string(effort),
-            "input": .array(inputs.map(Self.jsonInput)),
-            "summary": .string("auto"),
-            "threadId": .string(threadID),
-        ]
-        if let model = model?.nilIfBlank {
-            params["model"] = .string(model)
+            var params: [String: JSONValue] = [
+                "approvalsReviewer": .string(approvalsReviewer),
+                "effort": .string(effort),
+                "input": .array(inputs.map(Self.jsonInput)),
+                "summary": .string("auto"),
+                "threadId": .string(threadID),
+            ]
+            if let model = model?.nilIfBlank {
+                params["model"] = .string(model)
+            }
+
+            return try await appServer.beginChatTurn(
+                threadID: threadID,
+                params: .object(params),
+                bypassConfigurationReloadAdmission: true
+            )
         }
-
-        let turn = try await appServer.beginChatTurn(threadID: threadID, params: .object(params))
 
         let events = AsyncThrowingStream<CodexChatTurnEvent, any Error>(
             bufferingPolicy: .bufferingNewest(64)

@@ -13,6 +13,7 @@ actor CodexAppServerService {
 
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
     typealias ConfigurationReadiness = @Sendable () async -> Bool
+    typealias AccountProviderResolver = @Sendable () async -> AIAccountProvider?
     typealias ProviderAuthenticationPreparation = @Sendable (
         _ authenticationMayChange: @Sendable () async -> Void
     ) async throws -> Bool
@@ -119,6 +120,7 @@ actor CodexAppServerService {
 
     private let transportFactory: TransportFactory
     private let configurationReadiness: ConfigurationReadiness
+    private let accountProviderResolver: AccountProviderResolver
     private let clock: any CodexAppServerClock
     private let transportTimeout: Duration
     private let summaryTimeout: Duration
@@ -179,10 +181,16 @@ actor CodexAppServerService {
             CodexAppServerService.prepareConfiguredDatabricksAuthentication,
         configurationReadiness: @escaping ConfigurationReadiness = {
             await MainActor.run { AppSettings.shared.isCodexAccountConfigurationCurrent }
+        },
+        accountProviderResolver: @escaping AccountProviderResolver = {
+            await MainActor.run {
+                AppSettings.shared.configuredCodexAccountProvider
+            }
         }
     ) {
         transportFactory = { try launcher.launch() }
         self.configurationReadiness = configurationReadiness
+        self.accountProviderResolver = accountProviderResolver
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
@@ -195,10 +203,12 @@ actor CodexAppServerService {
         transportTimeout: Duration = .seconds(15),
         summaryTimeout: Duration = .seconds(270),
         providerAuthenticationPreparation: @escaping ProviderAuthenticationPreparation = { _ in false },
-        configurationReadiness: @escaping ConfigurationReadiness = { true }
+        configurationReadiness: @escaping ConfigurationReadiness = { true },
+        accountProviderResolver: @escaping AccountProviderResolver = { nil }
     ) {
         self.transportFactory = transportFactory
         self.configurationReadiness = configurationReadiness
+        self.accountProviderResolver = accountProviderResolver
         self.clock = clock
         self.transportTimeout = transportTimeout
         self.summaryTimeout = summaryTimeout
@@ -229,6 +239,10 @@ actor CodexAppServerService {
             resumeStartupWaiters(throwing: error)
             throw error
         }
+    }
+
+    func configuredAccountProvider() async -> AIAccountProvider? {
+        await accountProviderResolver()
     }
 
     func shutdown() async {
@@ -553,9 +567,12 @@ actor CodexAppServerService {
 
     func beginChatTurn(
         threadID: String,
-        params: JSONValue
+        params: JSONValue,
+        bypassConfigurationReloadAdmission: Bool = false
     ) async throws -> CodexAppServerChatTurn {
-        try await waitForConfigurationReloadToFinish()
+        if !bypassConfigurationReloadAdmission {
+            try await waitForConfigurationReloadToFinish()
+        }
         try await start()
         guard chatTurnRuntimes.values.allSatisfy({ $0.threadID != threadID }),
               discoveredChatTurnStops.keys.allSatisfy({ $0.threadID != threadID })
@@ -2445,6 +2462,10 @@ private extension CodexAppServerService {
             await withCheckedContinuation { continuation in
                 chatTurnDrainTestWaiters.append(continuation)
             }
+        }
+
+        var codexOperationDrainWaiterCountForTesting: Int {
+            codexOperationDrainWaiters.count
         }
 
         func hasPendingApprovalForTesting(_ approvalID: String) -> Bool {
