@@ -42,6 +42,8 @@
     <integer>3600</integer>
     <key>SUAutomaticallyUpdate</key>
     <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
     <key>SUPublicEDKey</key>
     <string>HR6N/+ImpB4ahCwyYLfF+CKJf2YG267B7pu5Q8CSB2E=</string>
     <key>SURequireSignedFeed</key>
