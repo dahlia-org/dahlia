@@ -1,0 +1,109 @@
+name: Cloud CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cloud.yml"
+      - ".dockerignore"
+      - ".env.example"
+      - "app.yaml"
+      - "apps/cloud/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cloud.yml"
+      - ".dockerignore"
+      - ".env.example"
+      - "app.yaml"
+      - "apps/cloud/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+concurrency:
+  group: cloud-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: dahlia
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: dahlia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dahlia"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate cloud application
+        run: pnpm --filter @dahlia/cloud check
+
+      - name: Validate PostgreSQL migration
+        run: pnpm --filter @dahlia/cloud db:migrate
+        env:
+          DAHLIA_RUNTIME: custom
+          DAHLIA_AUTH_PROVIDER: accounts
+          DAHLIA_AUTH_DATABASE: postgres
+          DAHLIA_BASE_URL: https://dahlia.example
+          DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
+          BETTER_AUTH_SECRET: test-only-better-auth-secret-value
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback
+
+      - name: Validate PostgreSQL application store
+        run: pnpm --filter @dahlia/cloud exec vitest run tests/postgres-store.test.ts
+        env:
+          TEST_DATABASE_URL: postgresql://dahlia@127.0.0.1:5432/dahlia
+
+      - name: Validate SQLite migration
+        run: pnpm --filter @dahlia/cloud db:migrate
+        env:
+          DAHLIA_RUNTIME: custom
+          DAHLIA_AUTH_PROVIDER: accounts
+          DAHLIA_AUTH_DATABASE: sqlite
+          DAHLIA_AUTH_SQLITE_PATH: /tmp/dahlia-auth.sqlite
+          DAHLIA_BASE_URL: http://localhost:5173
+          BETTER_AUTH_SECRET: test-only-better-auth-secret-value
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          DAHLIA_OAUTH_REDIRECT_URIS: http://127.0.0.1:1455/oauth/callback
+
+      - name: Validate D1 auth migration
+        run: pnpm --filter @dahlia/cloud db:migrate:d1:local
