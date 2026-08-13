@@ -7,7 +7,7 @@ struct CalendarScheduleView: View {
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
     private let googleCalendarStore = GoogleCalendarStore.shared
     private let macCalendarStore = MacCalendarStore.shared
-    @Environment(\.openSettings) private var openSettings
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @Environment(\.openURL) private var openURL
 
     let onSelectEvent: (CalendarEvent) -> Void
@@ -103,14 +103,14 @@ struct CalendarScheduleView: View {
                 title: L10n.googleCalendarSignInRequiredTitle,
                 message: L10n.googleCalendarScheduleSignInRequiredMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         case .needsCalendarSelection:
             statusCard(
                 title: L10n.googleCalendarSelectionRequiredTitle,
                 message: L10n.googleCalendarScheduleSelectionRequiredMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         case .loading:
             EmptyView()
@@ -149,14 +149,14 @@ struct CalendarScheduleView: View {
                 title: L10n.macOSCalendarAccessDeniedTitle,
                 message: L10n.macOSCalendarAccessDeniedMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         case .needsCalendarSelection:
             statusCard(
                 title: L10n.calendarSelectionRequiredTitle,
                 message: L10n.calendarScheduleSelectionRequiredMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         case .loading:
             EmptyView()
@@ -183,7 +183,7 @@ struct CalendarScheduleView: View {
                 title: L10n.calendarNoSourcesEnabledTitle,
                 message: L10n.calendarNoSourcesEnabledMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         } else if isAnyEnabledSourceLoading {
             ProgressView(L10n.calendarLoading)
@@ -195,7 +195,7 @@ struct CalendarScheduleView: View {
                 title: L10n.calendarNoEventsMatchFiltersTitle,
                 message: L10n.calendarNoEventsMatchFiltersMessage,
                 actionTitle: L10n.settings,
-                action: { openSettings() }
+                action: openCalendarSettings
             )
         } else if hasLoadedEnabledSource || !hasEnabledSourceStatusCard {
             statusCard(
@@ -203,6 +203,10 @@ struct CalendarScheduleView: View {
                 message: L10n.calendarNoUpcomingEventsMessage
             )
         }
+    }
+
+    private func openCalendarSettings() {
+        mainWindowNavigation.openSettings(category: .calendar)
     }
 
     private var eventList: some View {

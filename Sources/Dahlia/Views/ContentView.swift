@@ -24,6 +24,7 @@ struct ContentView: View {
                 ProjectManagementView(
                     sidebarViewModel: sidebarViewModel,
                     captionViewModel: viewModel,
+                    updateController: updateController,
                     recordingCoordinator: recordingCoordinator,
                     mainWindowNavigation: mainWindowNavigation,
                     onShowUpcomingSchedule: returnToCalendarSchedule,
@@ -36,6 +37,7 @@ struct ContentView: View {
                 NavigationSplitView {
                     MeetingListSidebarView(
                         viewModel: viewModel,
+                        updateController: updateController,
                         sidebarViewModel: sidebarViewModel,
                         recordingCoordinator: recordingCoordinator,
                         isShowingUpcomingSchedule: isShowingUpcomingSchedule,
@@ -56,45 +58,40 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
-            MainWindowNavigationToolbar(
-                canGoBack: canGoBack,
-                canGoForward: canGoForward,
-                onGoBack: goBack,
-                onGoForward: goForward
-            )
+            if !mainWindowNavigation.isShowingSettings {
+                MainWindowNavigationToolbar(
+                    canGoBack: canGoBack,
+                    canGoForward: canGoForward,
+                    onGoBack: goBack,
+                    onGoForward: goForward
+                )
 
-            ToolbarItem(placement: .navigation) {
-                if mainWindowNavigation.section == .meetings {
-                    Button(L10n.newMeeting, systemImage: "square.and.pencil") {
-                        recordingCoordinator.createEmptyMeeting()
+                ToolbarItem(placement: .navigation) {
+                    if mainWindowNavigation.section == .meetings {
+                        Button(L10n.newMeeting, systemImage: "square.and.pencil") {
+                            recordingCoordinator.createEmptyMeeting()
+                        }
+                        .labelStyle(.iconOnly)
+                        .keyboardShortcut("n", modifiers: .command)
+                        .help(L10n.newMeeting)
+                    }
+                }
+
+                ToolbarSpacer(.fixed, placement: .navigation)
+
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        if chatCoordinator.isFloatingVisible {
+                            chatCoordinator.hideFloating()
+                        } else {
+                            chatCoordinator.showFloating()
+                        }
+                    } label: {
+                        Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
                     }
                     .labelStyle(.iconOnly)
-                    .keyboardShortcut("n", modifiers: .command)
-                    .help(L10n.newMeeting)
-                }
-            }
-
-            ToolbarSpacer(.fixed, placement: .navigation)
-
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    if chatCoordinator.isFloatingVisible {
-                        chatCoordinator.hideFloating()
-                    } else {
-                        chatCoordinator.showFloating()
-                    }
-                } label: {
-                    Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.chat)
-                .accessibilityLabel(L10n.chat)
-            }
-
-            if updateController.isUpdateAvailable,
-               mainWindowNavigation.section == .projects || !hasMeetingDetail {
-                ToolbarItem(placement: .primaryAction) {
-                    AppUpdateBadge(updateController: updateController)
+                    .help(L10n.chat)
+                    .accessibilityLabel(L10n.chat)
                 }
             }
         }
@@ -142,38 +139,6 @@ struct ContentView: View {
                 secondaryButton: .cancel()
             )
         }
-        .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
-            BatchTranscriptionConfirmationView(
-                locales: viewModel.batchTranscriptionLocaleOptions(
-                    preferredIdentifier: confirmation.suggestedLocaleIdentifier
-                ),
-                automaticLanguageLocales: viewModel.batchTranscriptionAutomaticLanguageCandidates(
-                    snapshot: confirmation.automaticLanguageCandidateSnapshot
-                ).locales,
-                displayLocale: AppSettings.shared.appLanguage.locale,
-                projects: confirmation.projectSelection.projects,
-                initialProjectId: confirmation.projectSelection.selectedProjectId,
-                initialErrorMessage: confirmation.projectSelection.errorMessage,
-                initialLanguageSelection: confirmation.initialLanguageSelection,
-                initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
-                initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
-                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
-                isRetranscription: confirmation.isRetranscription,
-                onStart: { languageSelection, retainAudio, summaryOptions, projectId in
-                    if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
-                        return error
-                    }
-                    viewModel.confirmBatchTranscription(
-                        languageSelection: languageSelection,
-                        retainAudioAfterBatch: retainAudio,
-                        summaryGenerationOptions: summaryOptions
-                    )
-                    return nil
-                },
-                onPostpone: viewModel.postponeBatchTranscription
-            )
-            .interactiveDismissDisabled()
-        }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
             if !newValue.isEmpty {
@@ -199,10 +164,7 @@ struct ContentView: View {
         .onChange(of: viewModel.draftMeeting) {
             syncChatContext()
         }
-        .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultID in
-            sidebarViewModel.clearMeetingSelection()
-            viewModel.clearCurrentMeeting()
-            mainWindowNavigation.changeVault(to: vaultID)
+        .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
             syncChatContext()
         }
         .onChange(of: mainWindowNavigation.selectedProjectId) { _, projectID in
@@ -221,7 +183,6 @@ struct ContentView: View {
             viewModel.reloadSummaryDocument()
         }
         .onAppear {
-            MainWindowOpener.shared.register(openWindow: openWindow)
             prepareInitialPresentation()
         }
         .task { syncChatContext() }
@@ -308,7 +269,6 @@ private extension ContentView {
         } else if hasMeetingDetail {
             ControlPanelView(
                 viewModel: viewModel,
-                updateController: updateController,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible

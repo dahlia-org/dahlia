@@ -87,6 +87,7 @@
 "Expand" = "Expand";
 "Collapse" = "Collapse";
 "Back" = "Back";
+"Back to App" = "Back to App";
 "Forward" = "Forward";
 "Show Sidebar" = "Show Sidebar";
 "Hide Sidebar" = "Hide Sidebar";
@@ -640,6 +641,7 @@
 
 /* Sidebar Footer */
 "Switch Vault" = "Switch Vault";
+"MCP Settings" = "MCP Settings";
 "Manage Vaults..." = "Manage Vaults...";
 "Manage Projects..." = "Manage Projects...";
 "Settings" = "Settings";

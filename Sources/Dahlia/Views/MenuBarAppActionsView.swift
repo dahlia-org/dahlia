@@ -4,7 +4,6 @@ struct MenuBarAppActionsView: View {
     let mainWindowNavigation: MainWindowNavigation
 
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
 
@@ -42,8 +41,7 @@ struct MenuBarAppActionsView: View {
     }
 
     private func showSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        openSettings()
+        mainWindowNavigation.openSettings()
     }
 
     private func quit() {

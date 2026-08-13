@@ -7,7 +7,6 @@ struct MenuBarMenuView: View {
 
     @State private var recordingState: MenuBarRecordingState
     @ObservedObject private var settings = AppSettings.shared
-    @Environment(\.openSettings) private var openSettings
 
     init(
         viewModel: CaptionViewModel,
@@ -64,11 +63,6 @@ struct MenuBarMenuView: View {
     }
 
     private func openCalendarSettings() {
-        UserDefaults.standard.set(
-            SettingsCategory.calendar.rawValue,
-            forKey: SettingsNavigation.selectedCategoryDefaultsKey
-        )
-        NSApp.activate(ignoringOtherApps: true)
-        openSettings()
+        mainWindowNavigation.openSettings(category: .calendar)
     }
 }

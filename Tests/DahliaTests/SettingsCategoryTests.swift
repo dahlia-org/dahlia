@@ -1,3 +1,4 @@
+import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
@@ -40,6 +41,30 @@
             #expect(SettingsNavigation.visibleSelection(.instructions) == .aiSummary)
             #expect(SettingsNavigation.visibleSelection(.mcp) == .aiSummary)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
+        }
+
+        @Test
+        func savedSelectionDefaultsToGeneralAndNormalizesHiddenCategories() throws {
+            let suiteName = "SettingsCategoryTests.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .general)
+
+            defaults.set(SettingsCategory.instructions.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .aiSummary)
+        }
+
+        @Test
+        func saveSelectionPersistsVisibleCategory() throws {
+            let suiteName = "SettingsCategoryTests.\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            SettingsNavigation.saveSelection(.cloudStorage, in: defaults)
+
+            #expect(defaults.string(forKey: SettingsNavigation.selectedCategoryDefaultsKey) == SettingsCategory.cloudStorage.rawValue)
         }
 
         @Test

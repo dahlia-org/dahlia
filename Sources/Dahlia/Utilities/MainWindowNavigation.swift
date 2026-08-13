@@ -33,6 +33,13 @@ final class MainWindowNavigation {
     private(set) var currentLocation: MainWindowLocation = .upcomingSchedule
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
+    private(set) var isShowingSettings = false
+    var settingsCategory: SettingsCategory {
+        didSet {
+            SettingsNavigation.saveSelection(settingsCategory, in: settingsDefaults)
+        }
+    }
+
     var selectedProjectId: UUID?
     var projectSearchText = ""
     var expandedProjectIds: Set<UUID> = []
@@ -44,15 +51,21 @@ final class MainWindowNavigation {
 
     private let openMainWindow: @MainActor () -> Void
     private let openMainWindowWithoutActivation: @MainActor () -> Void
+    private let settingsDefaults: UserDefaults
 
     init(
         openMainWindow: @escaping @MainActor () -> Void = { MainWindowOpener.shared.openMainWindow() },
         openMainWindowWithoutActivation: @escaping @MainActor () -> Void = {
             MainWindowOpener.shared.openMainWindowWithoutActivation()
-        }
+        },
+        initialSettingsCategory: SettingsCategory? = nil,
+        settingsDefaults: UserDefaults = .standard
     ) {
         self.openMainWindow = openMainWindow
         self.openMainWindowWithoutActivation = openMainWindowWithoutActivation
+        self.settingsDefaults = settingsDefaults
+        settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
+            ?? SettingsNavigation.savedSelection(in: settingsDefaults)
     }
 
     func showMeetings() {
@@ -64,19 +77,34 @@ final class MainWindowNavigation {
     }
 
     func openProjects() {
+        dismissSettings()
         recordNavigation(to: .project(selectedProjectId))
         showProjects()
         openMainWindow()
     }
 
     func openMeetings() {
+        dismissSettings()
         showMeetings()
         openMainWindow()
     }
 
     func openMeetingsWithoutActivation() {
+        dismissSettings()
         showMeetings()
         openMainWindowWithoutActivation()
+    }
+
+    func openSettings(category: SettingsCategory? = nil) {
+        if let category {
+            settingsCategory = SettingsNavigation.visibleSelection(category)
+        }
+        isShowingSettings = true
+        openMainWindow()
+    }
+
+    func dismissSettings() {
+        isShowingSettings = false
     }
 
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }

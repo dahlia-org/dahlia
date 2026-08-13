@@ -151,7 +151,7 @@ private struct FloatingSummaryButtonModifier: ViewModifier {
 }
 
 private struct SummarySharePopover: View {
-    @Environment(\.openSettings) private var openSettings
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject var viewModel: CaptionViewModel
     @ObservedObject private var driveStore = GoogleDriveStore.shared
     @ObservedObject private var settings = AppSettings.shared
@@ -279,11 +279,7 @@ private struct SummarySharePopover: View {
     }
 
     private func openCloudStorageSettings() {
-        UserDefaults.standard.set(
-            SettingsCategory.cloudStorage.rawValue,
-            forKey: SettingsNavigation.selectedCategoryDefaultsKey
-        )
-        openSettings()
+        mainWindowNavigation.openSettings(category: .cloudStorage)
         dismiss()
     }
 }

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct CodexChatErrorView: View {
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+
     let message: String
     let onRetry: () -> Void
 
@@ -11,7 +13,9 @@ struct CodexChatErrorView: View {
                 .foregroundStyle(.red)
             HStack {
                 Button(L10n.retry, action: onRetry)
-                SettingsLink { Text(L10n.openAISettings) }
+                Button(L10n.openAISettings) {
+                    mainWindowNavigation.openSettings(category: .modelProvider)
+                }
             }
             .controlSize(.small)
         }

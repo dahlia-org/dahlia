@@ -1,37 +1,28 @@
 import SwiftUI
 
-/// 設定画面（Cmd+, で表示）。
+/// メインウィンドウに表示する設定画面。
 struct SettingsView: View {
     @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
-    var mainWindowNavigation: MainWindowNavigation
+    @Bindable var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
-    @AppStorage(SettingsNavigation.selectedCategoryDefaultsKey)
-    private var selection: SettingsCategory = .general
-
     var body: some View {
-        NavigationStack {
-            HStack(spacing: 0) {
-                SettingsSidebarView(selection: $selection)
-                    .frame(width: 200)
-
-                Divider()
-
-                SettingsDetailView(
-                    selection: selection,
-                    captionViewModel: captionViewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    mainWindowNavigation: mainWindowNavigation,
-                    onSelectVault: onSelectVault
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .navigationTitle(selection.label)
+        NavigationSplitView {
+            SettingsSidebarView(
+                selection: $mainWindowNavigation.settingsCategory,
+                onReturnToApp: mainWindowNavigation.dismissSettings
+            )
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+        } detail: {
+            SettingsDetailView(
+                selection: mainWindowNavigation.settingsCategory,
+                captionViewModel: captionViewModel,
+                sidebarViewModel: sidebarViewModel,
+                mainWindowNavigation: mainWindowNavigation,
+                onSelectVault: onSelectVault
+            )
         }
         .frame(minWidth: 720, minHeight: 520)
-        .onAppear {
-            selection = SettingsNavigation.visibleSelection(selection)
-        }
     }
 }

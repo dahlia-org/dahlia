@@ -212,7 +212,6 @@ struct BackupSettingsView: View {
 
     private func resolveByTranscribing(_ item: BackupPreflightItem) async {
         guard let dbQueue else { return }
-        MainWindowOpener.shared.openMainWindow()
         await captionViewModel.presentManualBatchTranscription(
             sessionId: item.sessionId,
             meetingId: item.meetingId,
