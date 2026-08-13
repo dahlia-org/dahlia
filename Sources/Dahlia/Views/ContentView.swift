@@ -4,6 +4,7 @@ import SwiftUI
 /// ミーティング一覧サイドバーと詳細ビューを構成するルートビュー。
 struct ContentView: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var chatCoordinator: CodexChatCoordinator
@@ -88,6 +89,13 @@ struct ContentView: View {
                 .labelStyle(.iconOnly)
                 .help(L10n.chat)
                 .accessibilityLabel(L10n.chat)
+            }
+
+            if updateController.isUpdateAvailable,
+               mainWindowNavigation.section == .projects || !hasMeetingDetail {
+                ToolbarItem(placement: .primaryAction) {
+                    AppUpdateBadge(updateController: updateController)
+                }
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -274,9 +282,9 @@ private extension ContentView {
         mainWindowNavigation.canGoBack && canNavigateHistory
     }
 
-    private var canGoForward: Bool {
-        mainWindowNavigation.canGoForward && canNavigateHistory
-    }
+    private var canGoForward: Bool { mainWindowNavigation.canGoForward && canNavigateHistory }
+
+    private var hasMeetingDetail: Bool { sidebarViewModel.selectedMeetingId != nil || viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil }
 
     private var canNavigateHistory: Bool {
         !viewModel.hasDraftMeeting
@@ -297,9 +305,10 @@ private extension ContentView {
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel
             )
-        } else if sidebarViewModel.selectedMeetingId != nil || viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil {
+        } else if hasMeetingDetail {
             ControlPanelView(
                 viewModel: viewModel,
+                updateController: updateController,
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible

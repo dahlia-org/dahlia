@@ -1496,6 +1496,7 @@ enum L10n {
     }
 
     static var checkForUpdates: String { String(localized: "Check for Updates…", bundle: bundle) }
+    static var update: String { String(localized: "Update", bundle: bundle) }
     static var updateAvailable: String { String(localized: "Update Available", bundle: bundle) }
 
     static func updateAvailableVersion(_ version: String) -> String {

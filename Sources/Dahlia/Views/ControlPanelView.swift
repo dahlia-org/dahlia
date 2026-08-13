@@ -163,6 +163,7 @@ private struct MeetingDetailHeader: View {
 /// メインコントロールウィンドウ（議事録ビュー）。
 struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
+    var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     let allowsTranscriptReferencePopovers: Bool
@@ -351,6 +352,12 @@ struct ControlPanelView: View {
                     sidebarViewModel: sidebarViewModel,
                     recordingCoordinator: recordingCoordinator
                 )
+            }
+        }
+
+        if updateController.isUpdateAvailable {
+            ToolbarItem(placement: .primaryAction) {
+                AppUpdateBadge(updateController: updateController)
             }
         }
     }
