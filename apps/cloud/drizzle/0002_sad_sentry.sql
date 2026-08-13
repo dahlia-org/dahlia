@@ -1,1 +1,0 @@
-CREATE INDEX "subscription_referenceId_idx" ON "subscription" USING btree ("reference_id");

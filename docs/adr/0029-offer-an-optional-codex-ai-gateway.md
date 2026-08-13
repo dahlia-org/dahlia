@@ -12,13 +12,13 @@ Accepted
 
 Dahlia は固定版の Codex app-server を同梱し、AI 要約とアプリ内チャットを録音・文字起こしから分離された付加機能として提供している。現在の接続先は ChatGPT Subscription または、利用者自身の Databricks CLI profile と短期 token を使う Databricks AI Gateway である。
 
-セルフホスト環境や管理された配布では、AI provider の credential と公開モデルをデプロイ管理者が一元管理し、一般利用者には provider secret を配布せずに内蔵 Codex を使わせたい。実行環境として通常のコンテナ、Databricks Apps、Cloudflare Workers を想定する。Dahlia が個別 provider の認証と差異を macOS の機能ごとに実装すると、ADR-0003 が避けた provider 固有処理の重複を再導入する。
+セルフホスト環境では、AI provider の credential と公開モデルをデプロイ管理者が一元管理し、一般利用者には provider secret を配布せずに内蔵 Codex を使わせたい。実行環境として通常のコンテナ、Databricks Apps、Cloudflare Workers を想定する。Dahlia が個別 provider の認証と差異を macOS の機能ごとに実装すると、ADR-0003 が避けた provider 固有処理の重複を再導入する。
 
 一方、Dahlia の中核はローカル完結であり、PRODUCT T4 は外部サービスごとの業務統合を Dahlia に増やさず、T5 は録音・文字起こし・閲覧・検索をネットワークやアカウントへ依存させないことを求める。この判断は、チーム共有、共同編集、顧客データ同期、クラウドでの音声処理や保管へ scope を広げてはならない。
 
 ## Decision
 
-固定版の Dahlia 内蔵 Codex から利用する、任意の認証付き AI Gateway を別 runtime として提供する。macOS アプリはリポジトリルートに残し、Gateway は pnpm workspace の独立した TypeScript package `apps/cloud` に置く。公開サイトは `apps/site` に置き、この配置のために macOS package を移動しない。
+固定版の Dahlia 内蔵 Codex から利用する、任意の認証付き AI Gateway を別 runtime として提供する。macOS アプリはリポジトリルートに残し、Gateway は pnpm workspace の独立した TypeScript package `apps/server` に置く。公開サイトは `apps/site` に置き、この配置のために macOS package を移動しない。
 
 Gateway は次の境界を持つ。
 
@@ -64,7 +64,7 @@ Gateway、認証、provider の障害は AI 操作だけを失敗させる。録
 
 - 一般利用者へ provider secret を配布せず、デプロイ管理者が再起動なしで利用可能モデルを一元管理できる。
 - 内蔵 Codex は Responses interface に固定され、macOS の機能ごとに provider adapter を持たずに済む。
-- self-host と managed deployment が同じ application contract を共有し、認証 metadata だけを各 runtime に適した store へ配置できる。
+- 各 deployment が同じ application contract を共有し、認証 metadata だけを各 runtime に適した store へ配置できる。
 - AI service の停止や認証失敗が録音・文字起こしの正本へ影響しない。
 
 トレードオフ:

@@ -1,0 +1,44 @@
+name: Publish Dahlia Server package
+
+on:
+  push:
+    tags:
+      - "server-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify package tag
+        run: node -e 'const expected=`server-v${require("./apps/server/package.json").version}`;if(process.env.GITHUB_REF_NAME!==expected)throw new Error(`Expected tag ${expected}`)'
+
+      - name: Validate Server
+        run: pnpm --filter dahlia-ai check
+
+      - name: Publish package
+        run: pnpm --filter dahlia-ai publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
