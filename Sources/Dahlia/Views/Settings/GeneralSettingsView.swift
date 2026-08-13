@@ -1,39 +1,18 @@
 import SwiftUI
 
-/// 設定画面「一般」タブ。保管庫、表示言語、録音、通知の基本設定を管理する。
+/// 設定画面「一般」タブ。アカウント、表示言語、録音、通知の基本設定を管理する。
 struct GeneralSettingsView: View {
-    var sidebarViewModel: SidebarViewModel
-    var mainWindowNavigation: MainWindowNavigation
-    let canSwitchVault: Bool
-    var onSelectVault: (VaultRecord) -> Void = { _ in }
-
-    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         Form {
-            Section(L10n.vault) {
+            Section {
                 LabeledContent {
-                    Menu(settings.currentVault?.name ?? L10n.noVaultSelected) {
-                        ForEach(sidebarViewModel.allVaults) { vault in
-                            Button(vault.name) {
-                                onSelectVault(vault)
-                            }
-                            .disabled(vault.id == settings.currentVault?.id)
-                        }
-                    }
-                    .disabled(!canSwitchVault)
+                    Button(L10n.comingSoon) {}
+                        .disabled(true)
                 } label: {
-                    Text(L10n.currentVault)
-                    Text(L10n.currentVaultDescription)
-                }
-
-                Button(L10n.manageVaults) {
-                    openWindow(id: WindowID.vaultManager)
-                }
-
-                Button(L10n.manageProjects) {
-                    mainWindowNavigation.openProjects()
+                    Text(L10n.dahliaAccount)
+                    Text(L10n.dahliaAccountDescription)
                 }
             }
 

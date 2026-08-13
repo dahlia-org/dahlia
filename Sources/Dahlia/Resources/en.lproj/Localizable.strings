@@ -403,7 +403,7 @@
 "Integrations" = "Integrations";
 "AI" = "AI";
 "Advanced" = "Advanced";
-"AI Connection" = "AI Connection";
+"Model Provider" = "Model Provider";
 "Diagnostics" = "Diagnostics";
 "Notifications" = "Notifications";
 "Calendar" = "Calendar";
@@ -426,6 +426,11 @@
 "Ultra" = "Ultra";
 "Developer Settings" = "Developer Settings";
 "Vault" = "Vault";
+"Dahlia Account" = "Dahlia Account";
+"Manage your account and billing." = "Manage your account and billing.";
+"Coming Soon" = "Coming Soon";
+"Loading Vaults…" = "Loading Vaults…";
+"Removing Vault…" = "Removing Vault…";
 "Current Vault" = "Current Vault";
 "Choose the vault used for recordings and sync." = "Choose the vault used for recordings and sync.";
 "No vault selected" = "No vault selected";
@@ -716,7 +721,8 @@
 
 /* Batch Transcription */
 "Transcription Method" = "Transcription Method";
-"Enable Real-time Transcription" = "Enable Real-time Transcription";
+"Real-time Transcription" = "Real-time Transcription";
+"Batch Transcription" = "Batch Transcription";
 "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved." = "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved.";
 "Record audio first, then create a higher-accuracy transcript after recording stops." = "Record audio first, then create a higher-accuracy transcript after recording stops.";
 "Keep Audio After Transcription" = "Keep Audio After Transcription";
@@ -858,7 +864,7 @@
 "Stopped" = "Stopped";
 "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "The bundled Codex helper is unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Codex: %@" = "Could not start Codex: %@";
-"Codex is not signed in. Open AI Connection in Settings and sign in, then try again." = "Codex is not signed in. Open AI Connection in Settings and sign in, then try again.";
+"Codex is not signed in. Open Model Provider in Settings and sign in, then try again." = "Codex is not signed in. Open Model Provider in Settings and sign in, then try again.";
 "Codex sign-in failed: %@" = "Codex sign-in failed: %@";
 "Codex sign-in failed." = "Codex sign-in failed.";
 "Could not open the Codex sign-in page." = "Could not open the Codex sign-in page.";
@@ -875,6 +881,7 @@
 "Unknown Codex app-server error." = "Unknown Codex app-server error.";
 "Codex Version" = "Codex Version";
 "Account" = "Account";
+"Provider" = "Provider";
 "Choose the account used by Codex." = "Choose the account used by Codex.";
 "AI summaries use the selected account and its available models." = "AI summaries use the selected account and its available models.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
@@ -907,7 +914,7 @@
 "Codex Configuration" = "Codex Configuration";
 "Could not update the Codex configuration: %@" = "Could not update the Codex configuration: %@";
 "Codex is configured for Databricks" = "Codex is configured for Databricks";
-"The selected AI account is not ready. Open AI Connection in Settings and finish its configuration." = "The selected AI account is not ready. Open AI Connection in Settings and finish its configuration.";
+"The selected AI account is not ready. Open Model Provider in Settings and finish its configuration." = "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.";
 "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires." = "Codex uses this Databricks CLI profile. Browser sign-in opens when authentication expires.";
 "Codex returned no available models. Try again." = "Codex returned no available models. Try again.";
 "Models are loaded from the bundled Codex app-server." = "Models are loaded from the bundled Codex app-server.";
@@ -957,7 +964,7 @@
 "Deny" = "Deny";
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
-"Open AI Connection Settings" = "Open AI Connection Settings";
+"Open Model Provider Settings" = "Open Model Provider Settings";
 "Loading models…" = "Loading models…";
 "This chat is no longer available." = "This chat is no longer available.";
 "Resize" = "Resize";

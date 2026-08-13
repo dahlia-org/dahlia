@@ -4,7 +4,6 @@ import SwiftUI
 struct MainSidebarFooterView: View {
     static let verticalPadding: CGFloat = 8
 
-    @Environment(\.openWindow) private var openWindow
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
     let vaults: [VaultRecord]
@@ -75,7 +74,7 @@ struct MainSidebarFooterView: View {
     }
 
     private func showVaultManager() {
-        openWindow(id: WindowID.vaultManager)
+        mainWindowNavigation.openSettings(category: .vault)
     }
 
     private func showMCP() {

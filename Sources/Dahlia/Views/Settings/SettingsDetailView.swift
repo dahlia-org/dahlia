@@ -4,16 +4,22 @@ struct SettingsDetailView: View {
     let selection: SettingsCategory
     var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
-    var mainWindowNavigation: MainWindowNavigation
+    let appDatabase: AppDatabaseManager?
+    var vaultManagementModel: VaultManagementModel
     var onSelectVault: (VaultRecord) -> Void
+
+    @ObservedObject private var appSettings = AppSettings.shared
 
     var body: some View {
         Group {
             switch selection {
             case .general:
-                GeneralSettingsView(
-                    sidebarViewModel: sidebarViewModel,
-                    mainWindowNavigation: mainWindowNavigation,
+                GeneralSettingsView()
+            case .vault:
+                VaultSettingsView(
+                    appDatabase: appDatabase,
+                    model: vaultManagementModel,
+                    currentVault: appSettings.currentVault,
                     canSwitchVault: captionViewModel.canSwitchVault,
                     onSelectVault: onSelectVault
                 )

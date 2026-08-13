@@ -44,6 +44,22 @@ struct MainWindowSettingsNavigationTests {
     }
 
     @Test
+    func openingVaultSettingsPreservesCurrentAppLocation() {
+        let meetingID = UUID.v7()
+        let navigation = MainWindowNavigation(
+            openMainWindow: {},
+            initialSettingsCategory: .general
+        )
+        navigation.recordNavigation(to: .meeting(meetingID))
+
+        navigation.openSettings(category: .vault)
+
+        #expect(navigation.isShowingSettings)
+        #expect(navigation.settingsCategory == .vault)
+        #expect(navigation.currentLocation == .meeting(meetingID))
+    }
+
+    @Test
     func explicitMainDestinationDismissesSettings() {
         let navigation = MainWindowNavigation(
             openMainWindow: {},

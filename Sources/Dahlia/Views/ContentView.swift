@@ -16,12 +16,14 @@ struct ContentView: View {
     private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isShowingUnprocessedRecordings = false
 
     var body: some View {
         Group {
             if mainWindowNavigation.section == .projects {
                 ProjectManagementView(
+                    columnVisibility: $columnVisibility,
                     sidebarViewModel: sidebarViewModel,
                     captionViewModel: viewModel,
                     updateController: updateController,
@@ -34,7 +36,7 @@ struct ContentView: View {
                     onSelectVault: onSelectVault
                 )
             } else {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
                     MeetingListSidebarView(
                         viewModel: viewModel,
                         updateController: updateController,
@@ -57,8 +59,11 @@ struct ContentView: View {
             }
         }
         .toolbar(removing: .title)
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !mainWindowNavigation.isShowingSettings {
+                SidebarToggleToolbarItem(columnVisibility: $columnVisibility)
+
                 MainWindowNavigationToolbar(
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,

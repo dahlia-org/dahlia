@@ -6,6 +6,8 @@ struct MeetingSidebarSearchModifier: ViewModifier {
     @Binding var searchTokens: [MeetingSearchToken]
     var sidebarViewModel: SidebarViewModel
 
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+
     @State private var customDateStart = Calendar.current.startOfDay(for: .now)
     @State private var customDateEnd = Calendar.current.startOfDay(for: .now)
     @State private var isCustomDateRangePresented = false
@@ -22,56 +24,60 @@ struct MeetingSidebarSearchModifier: ViewModifier {
     @FocusState private var isSearchFocused: Bool
 
     func body(content: Content) -> some View {
-        content
-            .searchable(
-                text: boundedSearchText,
-                tokens: $searchTokens,
-                placement: .toolbar,
-                prompt: L10n.searchMeetings
-            ) { token in
-                MeetingSearchTokenLabel(
-                    token: token,
-                    projects: sidebarViewModel.flatProjects,
-                    tags: sidebarViewModel.allTags
-                )
-            }
-            .searchFocused($isSearchFocused)
-            .searchSuggestions {
-                searchSuggestions
-            }
-            .sheet(isPresented: $isCustomDateRangePresented) {
-                MeetingSearchDateRangeView(
-                    startDate: $customDateStart,
-                    endDate: $customDateEnd,
-                    onCancel: dismissCustomDateRange,
-                    onApply: applyCustomDateRange
-                )
-            }
-            .onSubmit(of: .search) {
-                submitSearch()
-            }
-            .onChange(of: searchText, searchTextChanged)
-            .onChange(of: searchTokens) { _, newTokens in
-                if newTokens.isEmpty, searchText.isEmpty {
-                    isSearchInputTruncated = false
-                    isCustomDateRangePresented = false
+        if mainWindowNavigation.isShowingSettings {
+            content
+        } else {
+            content
+                .searchable(
+                    text: boundedSearchText,
+                    tokens: $searchTokens,
+                    placement: .toolbar,
+                    prompt: L10n.searchMeetings
+                ) { token in
+                    MeetingSearchTokenLabel(
+                        token: token,
+                        projects: sidebarViewModel.flatProjects,
+                        tags: sidebarViewModel.allTags
+                    )
                 }
-                updateSearch()
-            }
-            .onChange(of: isSearchFocused, searchFocusChanged)
-            .onChange(of: sidebarViewModel.areSearchProjectsLoaded, searchCatalogLoaded)
-            .onChange(of: sidebarViewModel.areSearchTagsLoaded, searchCatalogLoaded)
-            .onChange(of: sidebarViewModel.currentVault?.id) {
-                clearSearch()
-            }
-            .onAppear {
-                startMonitoringPasteCommands()
-                startMonitoringOutsideClicks()
-            }
-            .onDisappear {
-                stopMonitoringPasteCommands()
-                stopMonitoringOutsideClicks()
-            }
+                .searchFocused($isSearchFocused)
+                .searchSuggestions {
+                    searchSuggestions
+                }
+                .sheet(isPresented: $isCustomDateRangePresented) {
+                    MeetingSearchDateRangeView(
+                        startDate: $customDateStart,
+                        endDate: $customDateEnd,
+                        onCancel: dismissCustomDateRange,
+                        onApply: applyCustomDateRange
+                    )
+                }
+                .onSubmit(of: .search) {
+                    submitSearch()
+                }
+                .onChange(of: searchText, searchTextChanged)
+                .onChange(of: searchTokens) { _, newTokens in
+                    if newTokens.isEmpty, searchText.isEmpty {
+                        isSearchInputTruncated = false
+                        isCustomDateRangePresented = false
+                    }
+                    updateSearch()
+                }
+                .onChange(of: isSearchFocused, searchFocusChanged)
+                .onChange(of: sidebarViewModel.areSearchProjectsLoaded, searchCatalogLoaded)
+                .onChange(of: sidebarViewModel.areSearchTagsLoaded, searchCatalogLoaded)
+                .onChange(of: sidebarViewModel.currentVault?.id) {
+                    clearSearch()
+                }
+                .onAppear {
+                    startMonitoringPasteCommands()
+                    startMonitoringOutsideClicks()
+                }
+                .onDisappear {
+                    stopMonitoringPasteCommands()
+                    stopMonitoringOutsideClicks()
+                }
+        }
     }
 }
 

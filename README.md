@@ -30,7 +30,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - Swift 6.2
 - Xcode 26+ (for Swift toolchain)
 
-Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → AI Connection**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Dahlia's Application Support directory; Databricks tokens remain managed by Databricks CLI. Before loading Databricks-backed models or chat data and before starting summary or chat generation, Dahlia validates the selected profile and opens the Databricks CLI browser login when its cached authentication has expired.
+Dahlia keeps its bundled Codex state and authentication separate from other Codex apps and the Codex CLI. In **Settings → Model Provider**, choose either a ChatGPT Subscription or an OAuth profile created by `databricks auth login`. The ChatGPT login is stored under Dahlia's Application Support directory; Databricks tokens remain managed by Databricks CLI. Before loading Databricks-backed models or chat data and before starting summary or chat generation, Dahlia validates the selected profile and opens the Databricks CLI browser login when its cached authentication has expired.
 
 Automatic batch transcription downloads the pinned multilingual WhisperKit `tiny` model and tokenizer on first use and caches them in Dahlia's Application Support directory. Language detection and transcription run on-device; recording audio is not uploaded.
 

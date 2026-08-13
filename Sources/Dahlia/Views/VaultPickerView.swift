@@ -1,37 +1,25 @@
-import Combine
 import SwiftUI
 
 /// 保管庫の登録・選択・登録解除を行う画面。
 struct VaultPickerView: View {
     let appDatabase: AppDatabaseManager?
+    var model: VaultManagementModel
     let canSwitchVault: Bool
     let onVaultSelected: (VaultRecord) -> Void
 
-    @Environment(\.dismissWindow) private var dismissWindow
-    @Environment(\.openWindow) private var openWindow
     @ObservedObject private var settings = AppSettings.shared
-    @State private var vaults: [VaultRecord] = []
     @State private var selectedVaultId: UUID?
     @State private var isShowingFolderPicker = false
-    @State private var isShowingError = false
-    @State private var errorMessage = ""
-
-    private static let defaultVaultURL = URL.documentsDirectory
-        .appending(path: "Meetings", directoryHint: .isDirectory)
-
-    private var repository: MeetingRepository? {
-        appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
-    }
 
     private var selectedVault: VaultRecord? {
         guard let selectedVaultId else { return nil }
-        return vaults.first(where: { $0.id == selectedVaultId })
+        return model.vaults.first(where: { $0.id == selectedVaultId })
     }
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
             VaultSidebarView(
-                vaults: vaults,
+                vaults: model.vaults,
                 selectedVaultId: $selectedVaultId,
                 currentVaultId: settings.currentVault?.id,
                 onAdd: showFolderPicker,
@@ -39,18 +27,26 @@ struct VaultPickerView: View {
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 280, max: 360)
         } detail: {
-            VaultDetailView(
-                vault: selectedVault,
-                hasRegisteredVaults: !vaults.isEmpty,
-                isCurrentVault: selectedVault?.id == settings.currentVault?.id,
-                canSwitchVault: canSwitchVault,
-                onOpen: openSelectedVault,
-                onAdd: showFolderPicker
-            )
+            if model.isRemovingVault {
+                ProgressView(L10n.removingVault)
+            } else if model.isLoading, model.vaults.isEmpty {
+                ProgressView(L10n.loadingVaults)
+            } else {
+                VaultDetailView(
+                    vault: selectedVault,
+                    hasRegisteredVaults: !model.vaults.isEmpty,
+                    isCurrentVault: selectedVault?.id == settings.currentVault?.id,
+                    canSwitchVault: canSwitchVault,
+                    onOpen: openSelectedVault,
+                    onAdd: showFolderPicker
+                )
+            }
         }
+        .disabled(model.isRemovingVault)
         .frame(minWidth: 720, minHeight: 460)
         .task(id: appDatabase != nil) {
-            loadVaults()
+            await model.configure(appDatabase: appDatabase)
+            reconcileSelection()
         }
         .fileImporter(
             isPresented: $isShowingFolderPicker,
@@ -58,10 +54,7 @@ struct VaultPickerView: View {
             allowsMultipleSelection: false,
             onCompletion: handleFolderImport
         )
-        .fileDialogDefaultDirectory(Self.defaultVaultURL)
-        .alert(L10n.vaultOperationFailed, isPresented: $isShowingError) {} message: {
-            Text(errorMessage)
-        }
+        .fileDialogDefaultDirectory(VaultManagementModel.defaultVaultURL)
     }
 
     private func showFolderPicker() {
@@ -78,78 +71,28 @@ struct VaultPickerView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
-            registerVault(url: url)
+            Task {
+                guard let vault = await model.registerVault(at: url) else { return }
+                selectedVaultId = vault.id
+                openVault(vault)
+            }
         case let .failure(error):
             guard (error as? CocoaError)?.code != .userCancelled else { return }
-            presentError(L10n.vaultFolderSelectionFailed, error: error, source: "folderImport")
+            model.presentFolderSelectionError(error)
         }
     }
 
-    private func loadVaults(preferredSelection: UUID? = nil) {
-        guard let repository else {
-            vaults = []
-            selectedVaultId = nil
-            return
-        }
-
-        do {
-            let loadedVaults = try repository.fetchAllVaults()
-            let preferredIds = [preferredSelection, selectedVaultId, settings.currentVault?.id].compactMap(\.self)
-            vaults = loadedVaults
-            selectedVaultId = preferredIds.first(where: { id in
-                loadedVaults.contains(where: { $0.id == id })
-            }) ?? loadedVaults.first?.id
-        } catch {
-            presentError(L10n.vaultLoadFailed, error: error, source: "loadVaults")
-        }
-    }
-
-    private func registerVault(url: URL) {
-        guard let repository else {
-            presentError(
-                L10n.vaultAddFailed,
-                error: VaultPickerError.databaseUnavailable,
-                source: "registerVault"
-            )
-            return
-        }
-
-        let normalizedURL = url.standardizedFileURL
-        if let existingVault = vaults.first(where: { $0.url.standardizedFileURL == normalizedURL }) {
-            selectedVaultId = existingVault.id
-            openVault(existingVault)
-            return
-        }
-
-        let now = Date.now
-        let vault = VaultRecord(
-            id: .v7(),
-            path: normalizedURL.path,
-            name: normalizedURL.lastPathComponent,
-            createdAt: now,
-            lastOpenedAt: now
-        )
-
-        do {
-            try repository.insertVault(vault)
-            loadVaults(preferredSelection: vault.id)
-            openVault(vault)
-        } catch {
-            presentError(L10n.vaultAddFailed, error: error, source: "registerVault")
-        }
+    private func reconcileSelection() {
+        let preferredIds = [selectedVaultId, settings.currentVault?.id].compactMap(\.self)
+        selectedVaultId = preferredIds.first(where: { id in
+            model.vaults.contains(where: { $0.id == id })
+        }) ?? model.vaults.first?.id
     }
 
     private func removeVault(_ vault: VaultRecord) {
-        guard let repository else { return }
         Task {
-            do {
-                try await repository.deleteVaultSafely(id: vault.id)
-                vaults.removeAll(where: { $0.id == vault.id })
-                if selectedVaultId == vault.id {
-                    selectedVaultId = vaults.first?.id
-                }
-            } catch {
-                presentError(L10n.vaultRemoveFailed, error: error, source: "removeVault")
+            if await model.removeVault(vault, currentVaultId: settings.currentVault?.id), selectedVaultId == vault.id {
+                selectedVaultId = model.vaults.first?.id
             }
         }
     }
@@ -162,22 +105,5 @@ struct VaultPickerView: View {
     private func openVault(_ vault: VaultRecord) {
         guard canSwitchVault else { return }
         onVaultSelected(vault)
-        openWindow(id: WindowID.main)
-        dismissWindow(id: WindowID.vaultManager)
-        NSApp.activate(ignoringOtherApps: true)
-        Task { @MainActor in
-            await Task.yield()
-            MainWindowOpener.shared.focusExistingMainWindow()
-        }
     }
-
-    private func presentError(_ message: String, error: any Error, source: String) {
-        errorMessage = message
-        isShowingError = true
-        ErrorReportingService.capture(error, context: ["source": source])
-    }
-}
-
-private enum VaultPickerError: Error {
-    case databaseUnavailable
 }

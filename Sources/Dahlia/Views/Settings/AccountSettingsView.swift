@@ -11,14 +11,14 @@ struct AccountSettingsView: View {
                         Text(provider.displayName).tag(provider)
                     }
                 } label: {
-                    Text(L10n.account)
+                    Text(L10n.provider)
                     Text(L10n.aiAccountDescription)
                 }
                 .pickerStyle(.menu)
 
                 LabeledContent(L10n.codexVersion, value: CodexBundle.version)
             } header: {
-                Text(L10n.aiConnection)
+                Text(L10n.modelProvider)
             } footer: {
                 Text(L10n.aiAccountSettingsDescription)
             }

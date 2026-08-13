@@ -46,7 +46,7 @@ struct CalendarSettingsView: View {
             }
 
             Section {
-                ForEach(displayedCalendarSources) { source in
+                ForEach([CalendarSource.macOS, .google]) { source in
                     Toggle(isOn: calendarSourceBinding(for: source)) {
                         Text(source.displayName)
                         Text(calendarSourceDescription(for: source))
@@ -66,6 +66,36 @@ struct CalendarSettingsView: View {
             if settings.isCalendarSourceEnabled(.google) {
                 googleCalendarSettings
             }
+
+            if showsCalendarSelection {
+                Section {
+                    if settings.isCalendarSourceEnabled(.macOS), macCalendarStore.isAuthorized {
+                        CalendarSourceSelectionView(
+                            sourceName: L10n.macOSCalendar,
+                            calendars: macCalendarStore.availableCalendars,
+                            isLoading: macCalendarStore.isBusy,
+                            loadingMessage: L10n.macOSCalendarLoading,
+                            emptyMessage: L10n.macOSCalendarNoCalendars,
+                            selectionBinding: macCalendarSelectionBinding
+                        )
+                    }
+
+                    if settings.isCalendarSourceEnabled(.google), googleCalendarStore.isAuthorized {
+                        CalendarSourceSelectionView(
+                            sourceName: L10n.googleCalendar,
+                            calendars: googleCalendarStore.availableCalendars,
+                            isLoading: googleCalendarStore.isBusy,
+                            loadingMessage: L10n.googleCalendarLoading,
+                            emptyMessage: L10n.googleCalendarNoCalendars,
+                            selectionBinding: googleCalendarSelectionBinding
+                        )
+                    }
+                } header: {
+                    Text(L10n.googleCalendarDisplayCalendars)
+                } footer: {
+                    Text(L10n.googleCalendarDisplayCalendarsDescription)
+                }
+            }
         }
         .task {
             await refreshEnabledSources()
@@ -83,8 +113,9 @@ struct CalendarSettingsView: View {
         .formStyle(.grouped)
     }
 
-    private var displayedCalendarSources: [CalendarSource] {
-        [.macOS, .google]
+    private var showsCalendarSelection: Bool {
+        settings.isCalendarSourceEnabled(.macOS) && macCalendarStore.isAuthorized
+            || settings.isCalendarSourceEnabled(.google) && googleCalendarStore.isAuthorized
     }
 
     private func startGoogleOAuthIfConsented() {
@@ -94,7 +125,6 @@ struct CalendarSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private var googleCalendarSettings: some View {
         Section {
             googleConnectionRow
@@ -107,31 +137,8 @@ struct CalendarSettingsView: View {
         } footer: {
             Text(L10n.googleCalendarSettingsDescription)
         }
-
-        if googleCalendarStore.isAuthorized {
-            Section {
-                if googleCalendarStore.isBusy, googleCalendarStore.availableCalendars.isEmpty {
-                    ProgressView(L10n.googleCalendarLoading)
-                } else if googleCalendarStore.availableCalendars.isEmpty {
-                    Text(L10n.googleCalendarNoCalendars)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(googleCalendarStore.availableCalendars) { calendar in
-                        CalendarSelectionToggle(
-                            calendar: calendar,
-                            isSelected: googleCalendarSelectionBinding(for: calendar.id)
-                        )
-                    }
-                }
-            } header: {
-                Text(L10n.googleCalendarDisplayCalendars)
-            } footer: {
-                Text(L10n.googleCalendarDisplayCalendarsDescription)
-            }
-        }
     }
 
-    @ViewBuilder
     private var macCalendarSettings: some View {
         Section {
             macCalendarAccessRow
@@ -143,28 +150,6 @@ struct CalendarSettingsView: View {
             Text(L10n.macOSCalendar)
         } footer: {
             Text(L10n.macOSCalendarSettingsDescription)
-        }
-
-        if macCalendarStore.isAuthorized {
-            Section {
-                if macCalendarStore.isBusy, macCalendarStore.availableCalendars.isEmpty {
-                    ProgressView(L10n.macOSCalendarLoading)
-                } else if macCalendarStore.availableCalendars.isEmpty {
-                    Text(L10n.macOSCalendarNoCalendars)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(macCalendarStore.availableCalendars) { calendar in
-                        CalendarSelectionToggle(
-                            calendar: calendar,
-                            isSelected: macCalendarSelectionBinding(for: calendar.id)
-                        )
-                    }
-                }
-            } header: {
-                Text(L10n.googleCalendarDisplayCalendars)
-            } footer: {
-                Text(L10n.macOSCalendarDisplayCalendarsDescription)
-            }
         }
     }
 
@@ -284,7 +269,7 @@ struct CalendarSettingsView: View {
         }
     }
 
-    private func googleCalendarSelectionBinding(for id: String) -> Binding<Bool> {
+    private func googleCalendarSelectionBinding(_ id: String) -> Binding<Bool> {
         Binding {
             googleCalendarStore.selectedCalendarIDs.contains(id)
         } set: { isSelected in
@@ -294,7 +279,7 @@ struct CalendarSettingsView: View {
         }
     }
 
-    private func macCalendarSelectionBinding(for id: String) -> Binding<Bool> {
+    private func macCalendarSelectionBinding(_ id: String) -> Binding<Bool> {
         Binding {
             macCalendarStore.selectedCalendarIDs.contains(id)
         } set: { isSelected in
@@ -309,26 +294,46 @@ struct CalendarSettingsView: View {
     }
 }
 
-private struct CalendarSelectionToggle: View {
-    let calendar: CalendarListItem
-    @Binding var isSelected: Bool
+private struct CalendarSourceSelectionView: View {
+    let sourceName: String
+    let calendars: [CalendarListItem]
+    let isLoading: Bool
+    let loadingMessage: String
+    let emptyMessage: String
+    let selectionBinding: (String) -> Binding<Bool>
 
     var body: some View {
-        Toggle(isOn: $isSelected) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                        .frame(width: 10, height: 10)
+        LabeledContent {
+            VStack(alignment: .leading) {
+                if isLoading, calendars.isEmpty {
+                    ProgressView(loadingMessage)
+                } else if calendars.isEmpty {
+                    Text(emptyMessage)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(calendars) { calendar in
+                        Toggle(isOn: selectionBinding(calendar.id)) {
+                            VStack(alignment: .leading) {
+                                Label {
+                                    Text(calendar.title)
+                                } icon: {
+                                    Circle()
+                                        .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
+                                        .frame(width: 10, height: 10)
+                                        .accessibilityHidden(true)
+                                }
 
-                    Text(calendar.title)
-                }
-
-                if calendar.isPrimary {
-                    Text(L10n.calendarPrimaryCalendar)
+                                if calendar.isPrimary {
+                                    Text(L10n.calendarPrimaryCalendar)
+                                }
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                    }
                 }
             }
+        } label: {
+            Text(sourceName)
         }
-        .toggleStyle(.checkbox)
     }
 }

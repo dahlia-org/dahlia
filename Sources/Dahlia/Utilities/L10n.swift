@@ -148,6 +148,8 @@ enum L10n {
     static var join: String { String(localized: "Join", bundle: bundle) }
     static var expand: String { String(localized: "Expand", bundle: bundle) }
     static var collapse: String { String(localized: "Collapse", bundle: bundle) }
+    static var showSidebar: String { String(localized: "Show Sidebar", bundle: bundle) }
+    static var hideSidebar: String { String(localized: "Hide Sidebar", bundle: bundle) }
     static var back: String { String(localized: "Back", bundle: bundle) }
     static var backToApp: String { String(localized: "Back to App", bundle: bundle) }
     static var forward: String { String(localized: "Forward", bundle: bundle) }
@@ -1500,7 +1502,7 @@ enum L10n {
     static var integrations: String { String(localized: "Integrations", bundle: bundle) }
     static var ai: String { String(localized: "AI", bundle: bundle) }
     static var advanced: String { String(localized: "Advanced", bundle: bundle) }
-    static var aiConnection: String { String(localized: "AI Connection", bundle: bundle) }
+    static var modelProvider: String { String(localized: "Model Provider", bundle: bundle) }
     static var diagnostics: String { String(localized: "Diagnostics", bundle: bundle) }
     static var notifications: String { String(localized: "Notifications", bundle: bundle) }
     static var calendar: String { String(localized: "Calendar", bundle: bundle) }
@@ -1542,6 +1544,11 @@ enum L10n {
 
     static var currentVaultDescription: String { String(localized: "Choose the vault used for recordings and sync.", bundle: bundle) }
     static var noVaultSelected: String { String(localized: "No vault selected", bundle: bundle) }
+    static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
+    static var dahliaAccountDescription: String { String(localized: "Manage your account and billing.", bundle: bundle) }
+    static var comingSoon: String { String(localized: "Coming Soon", bundle: bundle) }
+    static var loadingVaults: String { String(localized: "Loading Vaults…", bundle: bundle) }
+    static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
     static var appLanguage: String { String(localized: "App Language", bundle: bundle) }
@@ -1556,7 +1563,8 @@ enum L10n {
         bundle: bundle
     ) }
     static var transcriptionMethod: String { String(localized: "Transcription Method", bundle: bundle) }
-    static var enableRealtimeTranscription: String { String(localized: "Enable Real-time Transcription", bundle: bundle) }
+    static var realtimeTranscription: String { String(localized: "Real-time Transcription", bundle: bundle) }
+    static var batchTranscription: String { String(localized: "Batch Transcription", bundle: bundle) }
     static var realtimeTranscriptionDescription: String { String(
         localized: "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved.",
         bundle: bundle
@@ -2007,7 +2015,7 @@ enum L10n {
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: "Codex is not signed in. Open AI Connection in Settings and sign in, then try again.",
+        localized: "Codex is not signed in. Open Model Provider in Settings and sign in, then try again.",
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
@@ -2050,6 +2058,7 @@ enum L10n {
     static var codexUnknownError: String { String(localized: "Unknown Codex app-server error.", bundle: bundle) }
     static var codexVersion: String { String(localized: "Codex Version", bundle: bundle) }
     static var account: String { String(localized: "Account", bundle: bundle) }
+    static var provider: String { String(localized: "Provider", bundle: bundle) }
     static var aiAccountDescription: String { String(
         localized: "Choose the account used by Codex.",
         bundle: bundle
@@ -2124,7 +2133,7 @@ enum L10n {
     ) }
     static var databricksConfigured: String { String(localized: "Codex is configured for Databricks", bundle: bundle) }
     static var codexAccountConfigurationNotReady: String { String(
-        localized: "The selected AI account is not ready. Open AI Connection in Settings and finish its configuration.",
+        localized: "The selected AI account is not ready. Open Model Provider in Settings and finish its configuration.",
         bundle: bundle
     ) }
     static var databricksCodexDescription: String { String(
@@ -2551,7 +2560,7 @@ enum L10n {
         String(localized: "This request asks for permissions outside the allowed workspace and cannot be approved.", bundle: bundle)
     }
 
-    static var openAISettings: String { String(localized: "Open AI Connection Settings", bundle: bundle) }
+    static var openAISettings: String { String(localized: "Open Model Provider Settings", bundle: bundle) }
     static var chatModelLoading: String { String(localized: "Loading models…", bundle: bundle) }
     static var chatWindowUnavailable: String { String(localized: "This chat is no longer available.", bundle: bundle) }
     static var resize: String { String(localized: "Resize", bundle: bundle) }

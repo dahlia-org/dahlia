@@ -12,6 +12,8 @@ struct ProjectManagementSidebarView: View {
     let onCreateTopLevelProject: () -> Void
     let onCreateSubproject: () -> Void
 
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+
     private var projectNodes: [ProjectTreeNode] {
         ProjectTreeNode.buildNodes(from: projects)
     }
@@ -32,6 +34,25 @@ struct ProjectManagementSidebarView: View {
     }
 
     var body: some View {
+        if mainWindowNavigation.isShowingSettings {
+            projectList
+        } else {
+            projectList
+                .searchable(text: $searchText, prompt: L10n.searchProjects)
+                .toolbar {
+                    ToolbarItem {
+                        ProjectCreationMenu(
+                            selectedProject: selectedProject,
+                            hasVault: hasVault,
+                            onCreateTopLevelProject: onCreateTopLevelProject,
+                            onCreateSubproject: onCreateSubproject
+                        )
+                    }
+                }
+        }
+    }
+
+    private var projectList: some View {
         List(selection: $selectedProjectId) {
             ProjectManagementSidebarContent(
                 projects: projects,
@@ -48,17 +69,6 @@ struct ProjectManagementSidebarView: View {
             )
         }
         .listStyle(.sidebar)
-        .searchable(text: $searchText, prompt: L10n.searchProjects)
-        .toolbar {
-            ToolbarItem {
-                ProjectCreationMenu(
-                    selectedProject: selectedProject,
-                    hasVault: hasVault,
-                    onCreateTopLevelProject: onCreateTopLevelProject,
-                    onCreateSubproject: onCreateSubproject
-                )
-            }
-        }
     }
 
     private func clearSearch() {

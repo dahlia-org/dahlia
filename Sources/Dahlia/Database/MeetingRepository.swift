@@ -59,8 +59,15 @@ final class MeetingRepository {
     // MARK: - Vaults
 
     /// 全保管庫を最終オープン日時の降順で取得する。
-    func fetchAllVaults() throws -> [VaultRecord] {
+    nonisolated func fetchAllVaults() throws -> [VaultRecord] {
         try dbQueue.read { db in
+            try VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
+        }
+    }
+
+    /// UI をブロックせず、全保管庫を最終オープン日時の降順で取得する。
+    nonisolated func fetchAllVaultsAsync() async throws -> [VaultRecord] {
+        try await dbQueue.read { db in
             try VaultRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
         }
     }
@@ -73,14 +80,21 @@ final class MeetingRepository {
     }
 
     /// 保管庫を登録する。
-    func insertVault(_ vault: VaultRecord) throws {
+    nonisolated func insertVault(_ vault: VaultRecord) throws {
         try dbQueue.write { db in
             try vault.insert(db)
         }
     }
 
+    /// UI をブロックせず、保管庫を登録する。
+    nonisolated func insertVaultAsync(_ vault: VaultRecord) async throws {
+        try await dbQueue.write { db in
+            try vault.insert(db)
+        }
+    }
+
     /// 保管庫を登録解除する（関連プロジェクト・ミーティングもカスケード削除）。
-    func deleteVault(id: UUID) throws {
+    nonisolated func deleteVault(id: UUID) throws {
         let meetingIds = try meetingIds(vaultId: id)
         try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(vaultId: id, dbQueue: dbQueue)
@@ -96,7 +110,7 @@ final class MeetingRepository {
         }
     }
 
-    private static func deleteVaultRows(id: UUID, in db: Database) throws {
+    private nonisolated static func deleteVaultRows(id: UUID, in db: Database) throws {
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: id, in: db)
             .sorted {
                 $0.path.split(separator: "/").count > $1.path.split(separator: "/").count
@@ -107,7 +121,7 @@ final class MeetingRepository {
         _ = try VaultRecord.deleteOne(db, key: id)
     }
 
-    func deleteVaultSafely(
+    nonisolated func deleteVaultSafely(
         id: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws {
@@ -763,7 +777,7 @@ extension MeetingRepository {
 }
 
 extension MeetingRepository {
-    func prepareSegmentedAudioForDeletion(
+    nonisolated func prepareSegmentedAudioForDeletion(
         meetingIds: Set<UUID>,
         managedRootURL: URL
     ) async throws {
@@ -773,7 +787,7 @@ extension MeetingRepository {
         try await store.prepareForParentDeletion(sessionIds: sessionIds)
     }
 
-    func ensureNoLiveSegmentedAudio(meetingIds: Set<UUID>) throws {
+    nonisolated func ensureNoLiveSegmentedAudio(meetingIds: Set<UUID>) throws {
         guard !meetingIds.isEmpty else { return }
         let sessionIds = try recordingSessionIds(meetingIds: meetingIds)
         guard !sessionIds.isEmpty else { return }
@@ -786,7 +800,7 @@ extension MeetingRepository {
         guard count == 0 else { throw RecordingAudioStoreError.invalidState }
     }
 
-    func recordingSessionIds(meetingIds: Set<UUID>) throws -> [UUID] {
+    nonisolated func recordingSessionIds(meetingIds: Set<UUID>) throws -> [UUID] {
         guard !meetingIds.isEmpty else { return [] }
         return try dbQueue.read { db in
             try UUID.fetchAll(
@@ -797,7 +811,7 @@ extension MeetingRepository {
         }
     }
 
-    private func meetingIds(vaultId: UUID) throws -> [UUID] {
+    private nonisolated func meetingIds(vaultId: UUID) throws -> [UUID] {
         try dbQueue.read { db in
             try UUID.fetchAll(db, sql: "SELECT id FROM meetings WHERE vaultId = ?", arguments: [vaultId])
         }

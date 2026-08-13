@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ProjectManagementView: View {
+    @Binding var columnVisibility: NavigationSplitViewVisibility
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
     var updateController: AppUpdateController
@@ -35,7 +36,7 @@ struct ProjectManagementView: View {
     private let sidebarWidth: CGFloat = 300
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 MainSidebarNavigationView(
                     isShowingUpcomingSchedule: false,

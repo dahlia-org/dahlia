@@ -4,11 +4,14 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    let appDatabase: AppDatabaseManager?
+    var vaultManagementModel: VaultManagementModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SettingsSidebarView(
                 selection: $mainWindowNavigation.settingsCategory,
                 onReturnToApp: mainWindowNavigation.dismissSettings
@@ -19,9 +22,14 @@ struct SettingsView: View {
                 selection: mainWindowNavigation.settingsCategory,
                 captionViewModel: captionViewModel,
                 sidebarViewModel: sidebarViewModel,
-                mainWindowNavigation: mainWindowNavigation,
+                appDatabase: appDatabase,
+                vaultManagementModel: vaultManagementModel,
                 onSelectVault: onSelectVault
             )
+        }
+        .toolbar(removing: .sidebarToggle)
+        .toolbar {
+            SidebarToggleToolbarItem(columnVisibility: $columnVisibility)
         }
         .frame(minWidth: 720, minHeight: 520)
     }

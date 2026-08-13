@@ -3,7 +3,6 @@ import SwiftUI
 
 enum WindowID {
     static let main = "main"
-    static let vaultManager = "vault-manager"
     static let organizationWorkspace = "organization-workspace"
     static let audioRecognitionTest = "audio-recognition-test"
     static let applicationLogs = "application-logs"
@@ -28,6 +27,7 @@ struct DahliaApp: App {
     @State private var recordingCoordinator: RecordingCoordinator
     @State private var menuBarCalendarViewModel: MenuBarCalendarViewModel
     @State private var chatCoordinator: CodexChatCoordinator
+    @State private var vaultManagementModel: VaultManagementModel
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
     @State private var showVaultPicker = true
@@ -71,6 +71,7 @@ struct DahliaApp: App {
         _menuBarCalendarViewModel = State(initialValue: menuBarCalendarViewModel)
         _liveSubtitleOverlayCoordinator = State(initialValue: liveSubtitleOverlayCoordinator)
         _chatCoordinator = State(initialValue: chatCoordinator)
+        _vaultManagementModel = State(initialValue: VaultManagementModel())
         self.mainWindowNavigation = mainWindowNavigation
     }
 
@@ -81,6 +82,7 @@ struct DahliaApp: App {
                     if showVaultPicker {
                         VaultPickerView(
                             appDatabase: appDatabase,
+                            model: vaultManagementModel,
                             canSwitchVault: viewModel.canSwitchVault
                         ) { vault in
                             openVault(vault)
@@ -105,10 +107,21 @@ struct DahliaApp: App {
                     SettingsView(
                         captionViewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
+                        appDatabase: appDatabase,
+                        vaultManagementModel: vaultManagementModel,
                         mainWindowNavigation: mainWindowNavigation,
                         onSelectVault: { vault in openVault(vault) }
                     )
                 }
+            }
+            .alert(
+                L10n.vaultOperationFailed,
+                isPresented: Binding(
+                    get: { vaultManagementModel.isShowingError },
+                    set: { vaultManagementModel.isShowingError = $0 }
+                )
+            ) {} message: {
+                Text(vaultManagementModel.errorMessage)
             }
             .toolbar {
                 if !mainWindowNavigation.isShowingSettings,
@@ -193,17 +206,6 @@ struct DahliaApp: App {
         .defaultSize(width: 620, height: 720)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
-        .dahliaSettingsCommands(mainWindowNavigation)
-
-        Window(L10n.vault, id: WindowID.vaultManager) {
-            VaultPickerView(
-                appDatabase: appDatabase,
-                canSwitchVault: viewModel.canSwitchVault
-            ) { vault in
-                openVault(vault)
-            }
-        }
-        .windowStyle(.automatic)
         .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.customerIntelligence, id: WindowID.organizationWorkspace) {
