@@ -462,7 +462,7 @@ import GRDB
         }
 
         @Test
-        func readOnlyAndRestrictedServersRejectTheTool() throws {
+        func readOnlyServerRejectsTheTool() throws {
             let fixture = try Fixture()
             let original = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
@@ -470,13 +470,6 @@ import GRDB
             let denied = try Self.json(readOnly.handleLine(Self.updateRequest(id: 9, meetingID: fixture.firstMeetingID)))
             let deniedResult = try #require(denied["result"] as? [String: Any])
             #expect(deniedResult["isError"] as? Bool == true)
-
-            let restricted = try Self.initializedServer(
-                store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true),
-                allowedMeetingIDs: [fixture.firstMeetingID]
-            )
-            let blocked = try Self.json(restricted.handleLine(Self.updateRequest(id: 10, meetingID: fixture.firstMeetingID)))
-            #expect((blocked["error"] as? [String: Any])?["code"] as? Int == -32602)
 
             let after = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(after == original)
@@ -743,11 +736,8 @@ import GRDB
             return document
         }
 
-        private static func initializedServer(
-            store: MeetingAccessStore,
-            allowedMeetingIDs: Set<UUID>? = nil
-        ) throws -> DahliaMCPServer {
-            let server = DahliaMCPServer(store: store, allowedMeetingIDs: allowedMeetingIDs)
+        private static func initializedServer(store: MeetingAccessStore) throws -> DahliaMCPServer {
+            let server = DahliaMCPServer(store: store)
             _ = try json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
             #expect(server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#) == nil)
             return server

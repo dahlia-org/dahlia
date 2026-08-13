@@ -6,11 +6,6 @@ import Foundation
 import OSLog
 
 actor CodexAppServerService {
-    private enum MCPUsageTelemetryOrigin: String {
-        case codexChat
-        case summary
-    }
-
     typealias TransportFactory = @Sendable () throws -> any CodexAppServerTransport
     typealias ConfigurationReadiness = @Sendable () async -> Bool
     typealias AccountProviderResolver = @Sendable () async -> AIAccountProvider?
@@ -801,31 +796,12 @@ actor CodexAppServerService {
 
     nonisolated static func summaryThreadConfig(
         from configReadResult: JSONValue,
-        reasoningEffort: String = CodexReasoningEffortOption.defaultValue,
-        dahliaMCP: CodexAppServerDahliaMCPConfiguration? = nil,
-        runtimeProfile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()
+        reasoningEffort: String = CodexReasoningEffortOption.defaultValue
     ) throws -> JSONValue {
-        guard case var .object(config) = try restrictedThreadConfig(
+        try restrictedThreadConfig(
             from: configReadResult,
             reasoningEffort: reasoningEffort
-        ) else {
-            throw CodexAppServerError.invalidProtocolResponse
-        }
-        if let dahliaMCP {
-            guard !dahliaMCP.allowedMeetingIDs.isEmpty else {
-                throw CodexAppServerError.invalidProtocolResponse
-            }
-            var servers = config["mcp_servers"]?.objectValue ?? [:]
-            servers["dahlia"] = dahliaMCPServer(
-                executableURL: dahliaMCP.executableURL,
-                vaultID: dahliaMCP.vaultID,
-                allowedMeetingIDs: dahliaMCP.allowedMeetingIDs,
-                telemetryOrigin: .summary,
-                runtimeProfile: runtimeProfile
-            )
-            config["mcp_servers"] = .object(servers)
-        }
-        return .object(config)
+        )
     }
 
     nonisolated static func chatThreadConfig(
@@ -842,11 +818,9 @@ actor CodexAppServerService {
             throw CodexAppServerError.invalidProtocolResponse
         }
         var servers = config["mcp_servers"]?.objectValue ?? [:]
-        servers["dahlia"] = dahliaMCPServer(
+        servers["dahlia"] = dahliaChatMCPServer(
             executableURL: helperURL,
             vaultID: vaultID,
-            allowsWrites: true,
-            telemetryOrigin: .codexChat,
             runtimeProfile: runtimeProfile
         )
         config["mcp_servers"] = .object(servers)
@@ -856,12 +830,9 @@ actor CodexAppServerService {
         return .object(config)
     }
 
-    private nonisolated static func dahliaMCPServer(
+    private nonisolated static func dahliaChatMCPServer(
         executableURL: URL,
         vaultID: UUID,
-        allowedMeetingIDs: [UUID] = [],
-        allowsWrites: Bool = false,
-        telemetryOrigin: MCPUsageTelemetryOrigin,
         runtimeProfile: DahliaRuntimeProfile
     ) -> JSONValue {
         let command: String
@@ -877,19 +848,14 @@ actor CodexAppServerService {
                 .string(executableURL.path),
             ]
         }
-        let meetingArguments = allowedMeetingIDs.flatMap { meetingID in
-            [JSONValue.string("--meeting-id"), .string(meetingID.uuidString)]
-        }
-        let writeArguments: [JSONValue] = allowsWrites ? [.string("--write")] : []
-        let telemetryArguments: [JSONValue] = [
-            .string("--telemetry-origin"),
-            .string(telemetryOrigin.rawValue),
-        ]
         return .object([
             "args": .array(invocationArguments + [
                 .string("--vault-id"),
                 .string(vaultID.uuidString),
-            ] + meetingArguments + writeArguments + telemetryArguments),
+                .string("--write"),
+                .string("--telemetry-origin"),
+                .string("codexChat"),
+            ]),
             "command": .string(command),
             "enabled": .bool(true),
         ])
@@ -1014,13 +980,10 @@ private extension CodexAppServerService {
             "approvalPolicy": .string("never"),
             "config": Self.summaryThreadConfig(
                 from: configResult,
-                reasoningEffort: request.reasoningEffort,
-                dahliaMCP: request.dahliaMCP
+                reasoningEffort: request.reasoningEffort
             ),
             "cwd": .string(temporaryDirectory.path),
-            "developerInstructions": .string(request.developerInstructions + Self.summaryToolInstruction(
-                allowsDahliaMCP: request.dahliaMCP != nil
-            )),
+            "developerInstructions": .string(request.developerInstructions + Self.summaryToolInstruction),
             "ephemeral": .bool(true),
             "sandbox": .string("read-only"),
         ]
@@ -1064,12 +1027,7 @@ private extension CodexAppServerService {
         return try await waitForTurn(key, timeout: summaryTimeout)
     }
 
-    private nonisolated static func summaryToolInstruction(allowsDahliaMCP: Bool) -> String {
-        if allowsDahliaMCP {
-            return "\nYou may call only the Dahlia get_meeting tool. Do not call any other tool. Return only the requested JSON."
-        }
-        return "\nDo not call tools. Return only the requested JSON."
-    }
+    private nonisolated static let summaryToolInstruction = "\nDo not call tools. Return only the requested JSON."
 
     private func finishGeneration(_ generationID: UUID, interrupt: Bool = false) async {
         if interrupt {

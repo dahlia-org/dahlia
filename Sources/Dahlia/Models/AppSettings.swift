@@ -96,7 +96,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let generateSummaryAfterBatchTranscriptionUserDefaultsKey = "generateSummaryAfterBatchTranscription"
     nonisolated static let exportBatchSummaryToVaultUserDefaultsKey = "exportBatchSummaryToVault"
     nonisolated static let exportBatchSummaryToGoogleDocsUserDefaultsKey = "exportBatchSummaryToGoogleDocs"
-    nonisolated static let summaryPreviousMeetingCountUserDefaultsKey = "summaryPreviousMeetingCount"
     nonisolated static let transcriptionLanguageScopeUserDefaultsKey = "transcriptionLanguageScope"
     nonisolated static let batchTranscriptionStallTimeoutUserDefaultsKey = "batchTranscriptionStallTimeoutMinutes"
     nonisolated static let customerIntelligenceBetaEnabledUserDefaultsKey = "customerIntelligenceBetaEnabled"
@@ -108,8 +107,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
-    nonisolated static let summaryPreviousMeetingCountOptions = [0, 1, 2, 3, 4, 5]
-    nonisolated static let defaultSummaryPreviousMeetingCount = 3
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
@@ -199,8 +196,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToVaultUserDefaultsKey) var exportBatchSummaryToVault = true
     @AppStorage(AppSettings.exportBatchSummaryToGoogleDocsUserDefaultsKey) var exportBatchSummaryToGoogleDocs = false
-    @AppStorage(AppSettings.summaryPreviousMeetingCountUserDefaultsKey) private var storedSummaryPreviousMeetingCount =
-        AppSettings.defaultSummaryPreviousMeetingCount
     @AppStorage("transcriptTranslationEnabled") var transcriptTranslationEnabled = true
     @AppStorage("transcriptTranslationTargetLanguage") var transcriptTranslationTargetLanguage = TranscriptTranslationLanguage.defaultIdentifier
     @AppStorage("liveSubtitleOverlayEnabled") var liveSubtitleOverlayEnabled = false
@@ -229,28 +224,10 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     var batchSummaryGenerationOptions: SummaryGenerationOptions {
         SummaryGenerationOptions(
-            previousMeetingCount: summaryPreviousMeetingCount,
             exportOptions: SummaryExportOptions(
                 exportsToVault: exportBatchSummaryToVault,
                 exportsToGoogleDocs: exportBatchSummaryToGoogleDocs
             )
-        )
-    }
-
-    var summaryPreviousMeetingCount: Int {
-        get {
-            Self.normalizedSummaryPreviousMeetingCount(storedSummaryPreviousMeetingCount)
-        }
-        set {
-            storedSummaryPreviousMeetingCount = Self.normalizedSummaryPreviousMeetingCount(newValue)
-        }
-    }
-
-    nonisolated static func normalizedSummaryPreviousMeetingCount(_ value: Int) -> Int {
-        normalizedOption(
-            value,
-            options: summaryPreviousMeetingCountOptions,
-            defaultValue: defaultSummaryPreviousMeetingCount
         )
     }
 

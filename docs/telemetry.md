@@ -29,11 +29,11 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
 | `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
 | `Dahlia.AIChat.promptSubmitted`, `.liveModeEnabled` | なし。新規の手動 prompt と Live Mode の false→true 遷移だけを数え、retry と live transcript segment は数えない |
-| `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat` / `summary`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
+| `Dahlia.MCP.ToolCall.completed`, `.failed` | `origin`: `codexChat`; `category`: `meeting` / `project` / `customerIntelligence` / `unknown`; `operation`: `read` / `write` |
 
 アプリ ID は `TELEMETRYDECK_APP_ID` からビルド時に `Info.plist` へ注入する。未設定なら TelemetryDeck を初期化せず、イベントを破棄する。Debug ビルドは必ず TelemetryDeck Test Mode とする。custom user ID は使用しない。固定 default parameter `runtime` は本体の `app` と内蔵 MCP helper の `mcpHelper` だけを許可する。
 
-内蔵 MCP helper は、Dahlia が非公開引数 `--telemetry-origin codexChat|summary` を付けて起動した場合だけ、親 app bundle の同じ App ID で TelemetryDeck を初期化する。通常の MCP 登録 command にはこの引数を含めず、外部 client からの helper 利用は計測しない。MCP tool 名、引数、結果は送らない。同じ App ID の自動 session event には app と helper の両方が含まれるため、本体の DAU と session は必ず `runtime=app` で絞り込む。
+内蔵 MCP helper は、Dahlia が非公開引数 `--telemetry-origin codexChat` を付けて起動した場合だけ、親 app bundle の同じ App ID で TelemetryDeck を初期化する。通常の MCP 登録 command にはこの引数を含めず、外部 client からの helper 利用は計測しない。MCP tool 名、引数、結果は送らない。同じ App ID の自動 session event には app と helper の両方が含まれるため、本体の DAU と session は必ず `runtime=app` で絞り込む。
 
 ## 指標定義
 

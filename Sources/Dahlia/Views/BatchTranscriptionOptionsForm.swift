@@ -9,7 +9,6 @@ struct BatchTranscriptionOptionsForm: View {
     @Binding var generateSummaryAfterBatchTranscription: Bool
     @Binding var exportBatchSummaryToVault: Bool
     @Binding var exportBatchSummaryToGoogleDocs: Bool
-    @Binding var previousMeetingCount: Int
     let projects: [FlatProjectRow]
     @Binding var selectedProjectId: UUID?
 
@@ -52,7 +51,6 @@ struct BatchTranscriptionOptionsForm: View {
                 .toggleStyle(.switch)
 
                 SummaryGenerationOptionsControls(
-                    previousMeetingCount: normalizedPreviousMeetingCount,
                     exportsToVault: $exportBatchSummaryToVault,
                     exportsToGoogleDocs: $exportBatchSummaryToGoogleDocs,
                     isEnabled: generateSummaryAfterBatchTranscription
@@ -68,10 +66,4 @@ struct BatchTranscriptionOptionsForm: View {
             ?? locale.identifier
     }
 
-    private var normalizedPreviousMeetingCount: Binding<Int> {
-        Binding(
-            get: { AppSettings.normalizedSummaryPreviousMeetingCount(previousMeetingCount) },
-            set: { previousMeetingCount = AppSettings.normalizedSummaryPreviousMeetingCount($0) }
-        )
-    }
 }

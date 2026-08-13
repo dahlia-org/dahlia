@@ -17,15 +17,11 @@ enum SummaryService {
         noteText: String? = nil,
         screenshots: [MeetingScreenshotRecord] = [],
         recordingSessions: [RecordingSessionTimeline] = [],
-        repository: MeetingRepository? = nil,
         generationSettings: SummaryGenerationSettings? = nil
     ) async throws -> GeneratedSummary {
         let generationSettings = generationSettings ?? .current()
 
-        let systemPrompt = summaryGenerationInstructions(
-            generationSettings: generationSettings,
-            includesPreviousMeetings: !promptContext.previousMeetings.isEmpty
-        )
+        let systemPrompt = summaryGenerationInstructions(generationSettings: generationSettings)
         let inputs = await makeCodexInputs(.init(
             promptContext: promptContext,
             transcriptText: transcriptText,
@@ -34,18 +30,12 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        let dahliaMCP = try dahliaMCPConfiguration(
-            for: promptContext,
-            repository: repository
-        )
-
         let responseText = try await CodexAppServerService.shared.generate(.init(
             model: generationSettings.modelID,
             reasoningEffort: generationSettings.reasoningEffort,
             developerInstructions: systemPrompt,
             inputs: inputs,
-            outputSchema: SummaryDocumentResponse.outputSchema,
-            dahliaMCP: dahliaMCP
+            outputSchema: SummaryDocumentResponse.outputSchema
         ))
 
         let context = SummaryRenderContext(
@@ -284,27 +274,19 @@ enum SummaryService {
 
     @MainActor
     static func summaryGenerationInstructions(
-        settings: AppSettings,
-        includesPreviousMeetings: Bool
+        settings: AppSettings
     ) -> String {
-        summaryGenerationInstructions(
-            generationSettings: .current(settings),
-            includesPreviousMeetings: includesPreviousMeetings
-        )
+        summaryGenerationInstructions(generationSettings: .current(settings))
     }
 
     static func summaryGenerationInstructions(
-        generationSettings: SummaryGenerationSettings,
-        includesPreviousMeetings: Bool
+        generationSettings: SummaryGenerationSettings
     ) -> String {
         // カスタム instruction は一時的に無効化し、保存済みの選択にかかわらず既定値を使う。
         var sections = [
             AppSettings.defaultSummaryPrompt,
             codexInputTrustInstruction,
         ]
-        if includesPreviousMeetings {
-            sections.append(codexPreviousMeetingsInstruction)
-        }
         sections.append("# Detail Level\n\(generationSettings.detailLevelInstruction)")
         sections.append("# Language\nWrite the summary in \(generationSettings.languageDisplayName).")
         return sections.joined(separator: "\n\n") + codexStructuredInstruction

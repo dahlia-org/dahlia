@@ -24,7 +24,6 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: .init(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -49,7 +48,6 @@ import GRDB
                 usageTelemetryReporter: { events.append($0) }
             )
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: .init(exportsToVault: true, exportsToGoogleDocs: false)
             )
 

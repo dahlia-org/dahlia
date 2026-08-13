@@ -21,7 +21,6 @@ import GRDB
                 summaryDocumentLoader: loader.load
             )
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -83,7 +82,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Selected", description: "Selected context")
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -117,7 +115,6 @@ import GRDB
                 dbQueue: fixture.database.dbQueue,
                 vaultURL: fixture.vaultURL,
                 options: SummaryGenerationOptions(
-                    previousMeetingCount: 0,
                     exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
                 )
             )
@@ -136,7 +133,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try fixture.insertProject(name: "Original", description: "")
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -181,7 +177,6 @@ import GRDB
                 relativePath: "Project/Existing.md"
             )
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: true, exportsToGoogleDocs: false)
             )
 
@@ -240,7 +235,6 @@ import GRDB
             try fixture.assign(fixture.first, to: project)
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -284,7 +278,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -318,7 +311,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let meetingIDs: Set<UUID> = [fixture.first.id, fixture.second.id]
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -350,7 +342,6 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
 
@@ -401,7 +392,6 @@ import GRDB
                 summaryJobSleeper: sleeper.sleep
             )
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
             await fixture.select(fixture.first, in: viewModel, note: "note")
@@ -441,7 +431,6 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
             await fixture.select(fixture.first, in: viewModel, note: "manual")
@@ -512,7 +501,6 @@ import GRDB
             let runner = BlockingSummaryRunner()
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
             let originalSessionID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
@@ -579,7 +567,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let sessionID = UUID.v7()
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
             viewModel.registerPendingBatchSummaryForTesting(
@@ -617,7 +604,6 @@ import GRDB
                 sessionID: sessionID,
                 meetingID: missingMeetingID,
                 options: SummaryGenerationOptions(
-                    previousMeetingCount: 0,
                     exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
                 ),
                 dbQueue: fixture.database.dbQueue,
@@ -649,7 +635,6 @@ import GRDB
             let viewModel = CaptionViewModel(summaryGenerationRunner: runner.run)
             let project = try original.insertProject(name: "Original Project", description: "Original context")
             let options = SummaryGenerationOptions(
-                previousMeetingCount: 0,
                 exportOptions: SummaryExportOptions(exportsToVault: false, exportsToGoogleDocs: false)
             )
             await original.select(original.first, in: viewModel, note: "original")

@@ -3,7 +3,6 @@ import Foundation
 public struct MCPUsageTelemetryEvent: Equatable, Sendable {
     public enum Origin: String, Sendable {
         case codexChat
-        case summary
     }
 
     public enum Category: String, Sendable {

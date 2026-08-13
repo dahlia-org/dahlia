@@ -95,9 +95,8 @@ Meeting–Project is an exclusive assignment: a Meeting has zero or one `project
 
 ## MCP contract
 
-`dahlia-mcp --vault-id <UUID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools. A
-meeting-limited MCP process cannot combine `--meeting-id` with `--write`.
-Full-Vault in-app chat starts the helper with `--write`; meeting-limited summary sessions remain read-only.
+`dahlia-mcp --vault-id <UUID>` is read-only. Adding the sole capability flag, `--write`, publishes update tools.
+Full-Vault in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat presets its skills in Dahlia's private `CODEX_HOME` and enables skill instructions for chat threads.
 Summary-generation threads keep skills disabled. `projects-optimizer` owns Project structure, Project descriptions, and
 Meeting-to-Project assignments; the customer-intelligence curators described in
