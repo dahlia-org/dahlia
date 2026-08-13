@@ -43,6 +43,8 @@ describe("deployment routing", () => {
     }));
     expect(wrangler.vars).toEqual({
       DAHLIA_RUNTIME: "cloudflare",
+      DAHLIA_BASE_URL: "https://{name}.{subdomain}.workers.dev",
+      GOOGLE_CLIENT_ID: "replace-with-google-client-id",
     });
     expect(wrangler).not.toHaveProperty("hyperdrive");
     expect(readFileSync(new URL("../.gitignore", import.meta.url), "utf8")).toContain("wrangler.jsonc");
