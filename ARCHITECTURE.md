@@ -119,8 +119,8 @@ write-backを発生させない。汎用参照は書き込み時にtarget存在�
 詳細な判断と将来のContact統合条件は
 [ADR-0011](docs/adr/0011-vault-scoped-customer-intelligence.md)を正本とする。
 
-任意の Dahlia Cloud runtime は内蔵 Codex の provider transport だけを所有し、macOS の録音・文字起こし runtime と
-database を共有しない。`apps/cloud` は runtime 環境変数から単一の provider credential を読み、application database の公開
+任意の Dahlia Server runtime は内蔵 Codex の provider transport だけを所有し、macOS の録音・文字起こし runtime と
+database を共有しない。`apps/server` は runtime 環境変数から単一の provider credential を読み、application database の公開
 Model Alias を upstream model へ対応付ける。`DAHLIA_RUNTIME` は `custom`（accounts／SQLite）、`cloudflare`
 （accounts／D1）、`databricks`（header／PostgreSQL Lakebase）の一貫した preset を選ぶ。
 `custom` だけは header auth と PostgreSQL へ上書きできる。全runtimeのupstreamは`OPENAI_API_KEY`と、既定値を持つ`OPENAI_BASE_URL`で同じOpenAI Responses互換contractを使う。provider credential と接続先は runtime secret に置き、公開 Model Alias と

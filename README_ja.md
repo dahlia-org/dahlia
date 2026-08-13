@@ -10,7 +10,7 @@ macOS ネイティブのリアルタイム文字起こしアプリです。マ�
 - **オンデバイス文字起こし** — Apple Speech フレームワークによるリアルタイム音声認識
 - **バッチ言語自動判定** — WhisperKit で録音ファイルごとの言語を判定し、Apple Speech で文字起こし
 - **Codex 要約** — 同梱 Codex app-server を使った構造化された要約の生成（オプション）
-- **任意の Dahlia Cloud** — provider credential を利用者へ配布せず、同梱 Codex 用の認証付き Responses Gateway をセルフホスト
+- **任意の Dahlia Server** — provider credential を利用者へ配布せず、同梱 Codex 用の認証付き Responses Gateway をセルフホスト。公式マネージド版は Dahlia Cloud として提供
 - **AI 議事録アクセス** — Vault 固定のローカル MCP から議事録を探索し、明示的な `--write` 指定時だけ Project の再整理と要約の訂正を許可
 - **プロジェクト管理** — DB を正本とするルート／サブ Project 階層でミーティングを整理
 - **顧客組織ワークスペース** — 一社の組織階層、人物、Project、会話トピック、会議根拠、AI提案をレビュー
@@ -139,7 +139,7 @@ Dahlia が何を作り何を作らないかを決める positioning と tenet �
 UID／RECURRENCE-ID のキー形式、source 対応、Meeting とのカーディナリティは
 [カレンダー予定の永続化スキーマ](docs/calendar-event-schema.md)を参照してください。
 
-TypeScript アプリケーションは pnpm workspace で管理します。リポジトリルートから Dahlia Cloud は `pnpm dev`、
+TypeScript アプリケーションは pnpm workspace で管理します。リポジトリルートから Dahlia Server は `pnpm dev`、
 公開サイトは `pnpm dev:site`、workspace の検証は `pnpm check` で実行します。開発時の環境変数は必要に応じて
 リポジトリルートの `.env.local` を使用します。既定の `DAHLIA_RUNTIME=custom` はアカウント認証にローカル SQLite を使うため、
 `pnpm dev` に PostgreSQL や Docker は不要です。
@@ -148,7 +148,7 @@ TypeScript アプリケーションは pnpm workspace で管理します。リ�
 
 ```
 apps/
-├── cloud/          # 任意の TypeScript AI Gateway と認証 UI
+├── server/         # 任意のセルフホスト対応 TypeScript AI Gateway と認証 UI
 └── site/           # 公開静的サイト
 Sources/Dahlia/
 ├── Audio/          # 音声キャプチャ（マイク & システム）

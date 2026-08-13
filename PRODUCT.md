@@ -152,7 +152,7 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Google Docs や
 Drive への書き出し、Codex による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得がこれにあたる。Codex の接続先として任意の Dahlia Cloud Gateway を選ぶ場合も
+バッチ自動言語判定の初回モデル取得がこれにあたる。Codex の接続先として任意の Dahlia Server Gateway を選ぶ場合も
 同じ境界に置き、いずれも中核の前提条件にしない。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、

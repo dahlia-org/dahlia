@@ -5,4 +5,4 @@
 /.claude/settings.local.json
 
 # Local parameters for Cloudflare 
-/apps/cloud/wrangler.jsonc
+/apps/server/wrangler.jsonc
