@@ -137,38 +137,6 @@ struct ContentView: View {
                 secondaryButton: .cancel()
             )
         }
-        .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
-            BatchTranscriptionConfirmationView(
-                locales: viewModel.batchTranscriptionLocaleOptions(
-                    preferredIdentifier: confirmation.suggestedLocaleIdentifier
-                ),
-                automaticLanguageLocales: viewModel.batchTranscriptionAutomaticLanguageCandidates(
-                    snapshot: confirmation.automaticLanguageCandidateSnapshot
-                ).locales,
-                displayLocale: AppSettings.shared.appLanguage.locale,
-                projects: confirmation.projectSelection.projects,
-                initialProjectId: confirmation.projectSelection.selectedProjectId,
-                initialErrorMessage: confirmation.projectSelection.errorMessage,
-                initialLanguageSelection: confirmation.initialLanguageSelection,
-                initiallyRetainsAudioAfterBatch: confirmation.retainAudioAfterBatch,
-                initiallyGeneratesSummary: confirmation.initiallyGeneratesSummary,
-                summaryGenerationOptions: AppSettings.shared.batchSummaryGenerationOptions,
-                isRetranscription: confirmation.isRetranscription,
-                onStart: { languageSelection, retainAudio, summaryOptions, projectId in
-                    if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
-                        return error
-                    }
-                    viewModel.confirmBatchTranscription(
-                        languageSelection: languageSelection,
-                        retainAudioAfterBatch: retainAudio,
-                        summaryGenerationOptions: summaryOptions
-                    )
-                    return nil
-                },
-                onPostpone: viewModel.postponeBatchTranscription
-            )
-            .interactiveDismissDisabled()
-        }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { oldValue, newValue in
             guard oldValue != newValue else { return }
             if !newValue.isEmpty {

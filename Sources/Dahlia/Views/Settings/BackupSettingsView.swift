@@ -16,15 +16,12 @@ struct BackupSettingsView: View {
 
     private let dbQueue: DatabaseQueue?
     @ObservedObject private var captionViewModel: CaptionViewModel
-    private let mainWindowNavigation: MainWindowNavigation
 
     init(
         dbQueue: DatabaseQueue?,
-        captionViewModel: CaptionViewModel,
-        mainWindowNavigation: MainWindowNavigation
+        captionViewModel: CaptionViewModel
     ) {
         self.dbQueue = dbQueue
-        self.mainWindowNavigation = mainWindowNavigation
         _captionViewModel = ObservedObject(wrappedValue: captionViewModel)
         _model = State(initialValue: BackupSettingsViewModel(dbQueue: dbQueue))
     }
@@ -215,7 +212,6 @@ struct BackupSettingsView: View {
 
     private func resolveByTranscribing(_ item: BackupPreflightItem) async {
         guard let dbQueue else { return }
-        mainWindowNavigation.dismissSettings()
         await captionViewModel.presentManualBatchTranscription(
             sessionId: item.sessionId,
             meetingId: item.meetingId,
