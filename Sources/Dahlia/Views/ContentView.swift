@@ -58,39 +58,41 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbar {
-            MainWindowNavigationToolbar(
-                canGoBack: canGoBack,
-                canGoForward: canGoForward,
-                onGoBack: goBack,
-                onGoForward: goForward
-            )
+            if !mainWindowNavigation.isShowingSettings {
+                MainWindowNavigationToolbar(
+                    canGoBack: canGoBack,
+                    canGoForward: canGoForward,
+                    onGoBack: goBack,
+                    onGoForward: goForward
+                )
 
-            ToolbarItem(placement: .navigation) {
-                if mainWindowNavigation.section == .meetings {
-                    Button(L10n.newMeeting, systemImage: "square.and.pencil") {
-                        recordingCoordinator.createEmptyMeeting()
+                ToolbarItem(placement: .navigation) {
+                    if mainWindowNavigation.section == .meetings {
+                        Button(L10n.newMeeting, systemImage: "square.and.pencil") {
+                            recordingCoordinator.createEmptyMeeting()
+                        }
+                        .labelStyle(.iconOnly)
+                        .keyboardShortcut("n", modifiers: .command)
+                        .help(L10n.newMeeting)
+                    }
+                }
+
+                ToolbarSpacer(.fixed, placement: .navigation)
+
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        if chatCoordinator.isFloatingVisible {
+                            chatCoordinator.hideFloating()
+                        } else {
+                            chatCoordinator.showFloating()
+                        }
+                    } label: {
+                        Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
                     }
                     .labelStyle(.iconOnly)
-                    .keyboardShortcut("n", modifiers: .command)
-                    .help(L10n.newMeeting)
+                    .help(L10n.chat)
+                    .accessibilityLabel(L10n.chat)
                 }
-            }
-
-            ToolbarSpacer(.fixed, placement: .navigation)
-
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    if chatCoordinator.isFloatingVisible {
-                        chatCoordinator.hideFloating()
-                    } else {
-                        chatCoordinator.showFloating()
-                    }
-                } label: {
-                    Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
-                }
-                .labelStyle(.iconOnly)
-                .help(L10n.chat)
-                .accessibilityLabel(L10n.chat)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)

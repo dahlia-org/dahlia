@@ -19,6 +19,7 @@ struct GeneralSettingsView: View {
                             Button(vault.name) {
                                 onSelectVault(vault)
                             }
+                            .disabled(vault.id == settings.currentVault?.id)
                         }
                     }
                     .disabled(!canSwitchVault)
