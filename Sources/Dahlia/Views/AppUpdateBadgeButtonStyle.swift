@@ -6,7 +6,7 @@ struct AppUpdateBadgeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 8)
             .foregroundStyle(.white)
             .background(backgroundColor(isPressed: configuration.isPressed), in: Capsule())
             .contentShape(Capsule())
