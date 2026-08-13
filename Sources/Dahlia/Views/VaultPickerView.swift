@@ -91,7 +91,7 @@ struct VaultPickerView: View {
 
     private func removeVault(_ vault: VaultRecord) {
         Task {
-            if await model.removeVault(vault), selectedVaultId == vault.id {
+            if await model.removeVault(vault, currentVaultId: settings.currentVault?.id), selectedVaultId == vault.id {
                 selectedVaultId = model.vaults.first?.id
             }
         }

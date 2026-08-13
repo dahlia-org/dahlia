@@ -69,6 +69,11 @@ struct VaultSettingsView: View {
         }
         .formStyle(.grouped)
         .disabled(model.isRemovingVault)
+        .onChange(of: currentVault?.id) {
+            if pendingRemoval?.id == currentVault?.id {
+                pendingRemoval = nil
+            }
+        }
         .task(id: appDatabase != nil) {
             await model.configure(appDatabase: appDatabase)
         }
@@ -118,7 +123,7 @@ struct VaultSettingsView: View {
 
     private func removeVault(_ vault: VaultRecord) {
         Task {
-            _ = await model.removeVault(vault)
+            _ = await model.removeVault(vault, currentVaultId: currentVault?.id)
             pendingRemoval = nil
         }
     }

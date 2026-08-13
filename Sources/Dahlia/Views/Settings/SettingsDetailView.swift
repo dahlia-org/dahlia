@@ -8,6 +8,8 @@ struct SettingsDetailView: View {
     var vaultManagementModel: VaultManagementModel
     var onSelectVault: (VaultRecord) -> Void
 
+    @ObservedObject private var appSettings = AppSettings.shared
+
     var body: some View {
         Group {
             switch selection {
@@ -17,7 +19,7 @@ struct SettingsDetailView: View {
                 VaultSettingsView(
                     appDatabase: appDatabase,
                     model: vaultManagementModel,
-                    currentVault: sidebarViewModel.currentVault,
+                    currentVault: appSettings.currentVault,
                     canSwitchVault: captionViewModel.canSwitchVault,
                     onSelectVault: onSelectVault
                 )
