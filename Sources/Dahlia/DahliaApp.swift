@@ -114,6 +114,7 @@ struct DahliaApp: App {
                     )
                 }
             }
+            .toolbar(removing: mainWindowNavigation.isShowingSettings ? .sidebarToggle : .title)
             .alert(
                 L10n.vaultOperationFailed,
                 isPresented: Binding(
