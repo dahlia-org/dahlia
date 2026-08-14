@@ -30,6 +30,10 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         self.onOpenMCP = onOpenMCP
     }
 
+    static func shouldPassThroughKeyEvent(modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        !modifierFlags.isDisjoint(with: [.command, .control])
+    }
+
     func update(
         vaults: [VaultRecord],
         currentVault: VaultRecord?,
@@ -270,8 +274,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
 private extension MainSidebarAccountMenuCoordinator {
     func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
-        guard shortcutModifiers.isEmpty else { return event }
+        guard !Self.shouldPassThroughKeyEvent(modifierFlags: event.modifierFlags) else { return event }
 
         switch event.keyCode {
         case 53:

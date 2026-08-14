@@ -69,5 +69,12 @@
             #expect(first == 1)
             #expect(wrapped == 1)
         }
+
+        @Test
+        func optionOnlyTextInputDoesNotPassThroughMenu() {
+            #expect(!MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.option]))
+            #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.command, .option]))
+            #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.control]))
+        }
     }
 #endif
