@@ -15,14 +15,23 @@ enum CodexBundle {
     nonisolated static let sourceCommit = "be6e8eac029b183056b7e4402879f15d2c85f61b"
 
     nonisolated static func executableURL(in bundle: Bundle = .main) throws -> URL {
-        let url = bundle.bundleURL
+        let helpersURL = bundle.bundleURL
             .appending(path: "Contents", directoryHint: .isDirectory)
             .appending(path: "Helpers", directoryHint: .isDirectory)
+        return try executableURL(inHelpersDirectory: helpersURL)
+    }
+
+    nonisolated static func executableURL(inHelpersDirectory helpersURL: URL) throws -> URL {
+        let codexURL = helpersURL
             .appending(path: "codex")
-        guard FileManager.default.isExecutableFile(atPath: url.path) else {
+        let codeModeHostURL = helpersURL
+            .appending(path: "codex-code-mode-host")
+        guard FileManager.default.isExecutableFile(atPath: codexURL.path),
+              FileManager.default.isExecutableFile(atPath: codeModeHostURL.path)
+        else {
             throw CodexAppServerError.helperNotBundled
         }
-        return url
+        return codexURL
     }
 }
 

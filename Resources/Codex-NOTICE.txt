@@ -5,6 +5,8 @@ Release: rust-v0.147.0
 Commit: be6e8eac029b183056b7e4402879f15d2c85f61b
 Asset: codex-aarch64-apple-darwin.tar.gz
 SHA-256: 75984b81f92a71b0c0f4b3b5cad80e5c57177e4d8c8b4b1e13db703b20dc4358
+Code Mode Host Asset: codex-code-mode-host-aarch64-apple-darwin.tar.gz
+Code Mode Host SHA-256: 56cdbf6187bf914108d3b7feeea5a34ffba15e5c162bedce69e062ee92ddfb5e
 
 Codex is licensed under the Apache License 2.0. The complete license text is
 included alongside this notice.

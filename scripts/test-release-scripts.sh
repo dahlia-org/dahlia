@@ -382,6 +382,23 @@ test_telemetrydeck_configuration_and_embedding() {
     expect_failure embed_telemetrydeck_resources "$fake_project" "$build_dir" "$contents_dir"
 }
 
+test_codex_code_mode_host_packaging() {
+    local build_script
+
+    for build_script in \
+        "${REPOSITORY_DIR}/scripts/build-app.sh" \
+        "${REPOSITORY_DIR}/scripts/run-dev.sh"; do
+        grep -Fq \
+            'cp ".build/codex-helper/codex-code-mode-host" "${HELPERS}/codex-code-mode-host"' \
+            "$build_script" \
+            || fail "$(basename "$build_script") does not embed the Codex code-mode host"
+        grep -Fq \
+            'codesign_path "${HELPERS}/codex-code-mode-host" --entitlements "$CODEX_ENTITLEMENTS_PATH"' \
+            "$build_script" \
+            || fail "$(basename "$build_script") does not sign the Codex code-mode host"
+    done
+}
+
 test_telemetrydeck_adapter_allowlist() {
     local adapter_path="${TEST_DIR}/TelemetryDeckClient.swift"
 
@@ -455,6 +472,7 @@ test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
+test_codex_code_mode_host_packaging
 test_telemetrydeck_adapter_allowlist
 test_codesigning_keychain_unlock
 
