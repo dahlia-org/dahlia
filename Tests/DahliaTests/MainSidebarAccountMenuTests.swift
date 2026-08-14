@@ -39,6 +39,19 @@
         }
 
         @Test
+        func selectsScreenContainingButtonInsteadOfWindowScreen() {
+            let screenIndex = MainSidebarAccountMenuLayout.screenIndex(
+                containing: CGRect(x: 1050, y: 100, width: 120, height: 30),
+                screenFrames: [
+                    CGRect(x: 0, y: 0, width: 1000, height: 800),
+                    CGRect(x: 1000, y: 0, width: 1200, height: 900),
+                ]
+            )
+
+            #expect(screenIndex == 1)
+        }
+
+        @Test
         func keyboardSelectionSkipsDisabledItemsAndWraps() {
             let first = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: nil,

@@ -5,6 +5,15 @@ enum MainSidebarAccountMenuLayout {
     static let panelGap: CGFloat = 6
     static let screenInset: CGFloat = 6
 
+    static func screenIndex(
+        containing targetFrame: CGRect,
+        screenFrames: [CGRect]
+    ) -> Int? {
+        let center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+        return screenFrames.firstIndex { $0.contains(center) }
+            ?? screenFrames.firstIndex { $0.intersects(targetFrame) }
+    }
+
     static func submenuOrigin(
         panelSize: CGSize,
         mainPanelFrame: CGRect,

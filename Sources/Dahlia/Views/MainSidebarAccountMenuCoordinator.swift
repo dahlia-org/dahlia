@@ -144,7 +144,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private func positionMainPanel(_ panel: NSPanel, relativeTo button: NSButton) {
         guard let window = button.window else { return }
         let buttonFrame = window.convertToScreen(button.convert(button.bounds, to: nil))
-        let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let screenFrame = visibleScreenFrame(containing: buttonFrame)
         let x = min(max(buttonFrame.minX, screenFrame.minX + 6), screenFrame.maxX - panel.frame.width - 6)
         let preferredY = buttonFrame.maxY + 6
         let y = min(preferredY, screenFrame.maxY - panel.frame.height - 6)
@@ -152,12 +152,23 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 
     private func positionSubmenu(_ panel: NSPanel, relativeTo mainPanel: NSPanel) {
-        let screenFrame = button?.window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        let screenFrame = visibleScreenFrame(containing: mainPanel.frame)
         panel.setFrameOrigin(MainSidebarAccountMenuLayout.submenuOrigin(
             panelSize: panel.frame.size,
             mainPanelFrame: mainPanel.frame,
             screenFrame: screenFrame
         ))
+    }
+
+    private func visibleScreenFrame(containing targetFrame: NSRect) -> NSRect {
+        let screens = NSScreen.screens
+        if let index = MainSidebarAccountMenuLayout.screenIndex(
+            containing: targetFrame,
+            screenFrames: screens.map(\.frame)
+        ) {
+            return screens[index].visibleFrame
+        }
+        return button?.window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
     }
 
     private func attach(_ panel: NSPanel, to parentWindow: NSWindow?) {
@@ -279,7 +290,7 @@ private extension MainSidebarAccountMenuCoordinator {
         case 36, 49, 76:
             activateSelection()
         default:
-            return event
+            return nil
         }
         return nil
     }
