@@ -1699,10 +1699,6 @@ enum L10n {
         String(localized: "Calendar event: \(title)", bundle: bundle)
     }
 
-    static var calendarScheduleDescription: String { String(
-        localized: "Select a calendar event to prepare transcription.",
-        bundle: bundle
-    ) }
     static var googleDocs: String { String(localized: "Google Docs", bundle: bundle) }
     static var googleCalendarSettingsDescription: String { String(
         localized: "Connect a Google account and choose which calendars appear on Home.",

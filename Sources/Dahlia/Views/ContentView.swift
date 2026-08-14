@@ -287,8 +287,7 @@ private extension ContentView {
             )
         } else {
             CalendarScheduleView(
-                onSelectEvent: recordingCoordinator.openCalendarEvent,
-                onCreateMeeting: recordingCoordinator.createEmptyMeeting
+                onSelectEvent: recordingCoordinator.openCalendarEvent
             )
         }
     }
