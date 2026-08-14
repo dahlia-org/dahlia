@@ -176,6 +176,29 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(3)))
+        func clearsSelectionWhileReplacementSearchIsPending() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingMeetings(count: 2)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && model.selectedResultID != nil })
+
+            model.inputText = "Missing"
+            model.queryDidChange(using: sidebar)
+
+            #expect(model.meetings.isEmpty)
+            #expect(model.projects.isEmpty)
+            #expect(model.selectedResultID == nil)
+            model.dismiss()
+        }
+
+        @Test(.timeLimit(.minutes(3)))
         func updatesProjectResultsWhenCatalogFinishesLoading() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -216,6 +239,28 @@ import GRDB
 
             #expect(model.inputText.isEmpty)
             #expect(model.tokens.count == 1)
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func rebuildsMeetingSearchWhenClosedQualifierCatalogLoadsWithoutSubmit() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertSearchContent()
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(!sidebar.areSearchProjectsLoaded)
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = #"project:"Needle project""#
+            model.queryDidChange(using: sidebar)
+
+            #expect(await pollUntil { sidebar.areSearchProjectsLoaded && !sidebar.flatProjects.isEmpty })
+            model.catalogDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+
+            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
+            #expect(model.tokens.isEmpty)
         }
     }
 

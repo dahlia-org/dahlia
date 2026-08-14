@@ -22,6 +22,7 @@ final class MainSearchModel {
     @ObservationIgnored private var projectSearchTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var projectGeneration = 0
+    @ObservationIgnored private var activeMeetingCriteria = MeetingSearchCriteria()
     @ObservationIgnored private var pendingQualifierText: String?
 
     var resultIDs: [MainSearchResultID] {
@@ -82,8 +83,13 @@ final class MainSearchModel {
 
     func catalogDidChange(using sidebarViewModel: SidebarViewModel) {
         guard isPresented else { return }
-        startProjectSearch(criteria: searchCriteria(using: sidebarViewModel), using: sidebarViewModel)
-        resolvePendingQualifierIfPossible(using: sidebarViewModel)
+        guard !resolvePendingQualifierIfPossible(using: sidebarViewModel) else { return }
+        let criteria = searchCriteria(using: sidebarViewModel)
+        if criteria != activeMeetingCriteria {
+            startSearch(using: sidebarViewModel, delay: nil, appending: false)
+        } else {
+            startProjectSearch(criteria: criteria, using: sidebarViewModel)
+        }
     }
 
     func loadMore(using sidebarViewModel: SidebarViewModel) {
@@ -129,6 +135,7 @@ final class MainSearchModel {
         projectCatalogLoadFailed = false
         hasMoreMeetings = false
         meetingCursor = nil
+        activeMeetingCriteria = MeetingSearchCriteria()
         selectedResultID = nil
         isRecent = true
         pendingQualifierText = nil
@@ -145,6 +152,7 @@ final class MainSearchModel {
         let vaultID = sidebarViewModel.currentVault?.id
         let dbQueue = sidebarViewModel.dbQueue
         let criteria = searchCriteria(using: sidebarViewModel)
+        activeMeetingCriteria = criteria
         let cursor = appending ? meetingCursor : nil
         let limit = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
 
@@ -209,6 +217,7 @@ final class MainSearchModel {
         projects = []
         meetingCursor = nil
         hasMoreMeetings = false
+        selectedResultID = nil
     }
 
     private func startProjectSearch(
@@ -267,10 +276,10 @@ final class MainSearchModel {
         selectedResultID = resultIDs.first
     }
 
-    private func resolvePendingQualifierIfPossible(using sidebarViewModel: SidebarViewModel) {
+    private func resolvePendingQualifierIfPossible(using sidebarViewModel: SidebarViewModel) -> Bool {
         guard pendingQualifierText == inputText,
               let qualifier = terminalCatalogQualifier,
-              catalogIsLoaded(for: qualifier, using: sidebarViewModel) else { return }
+              catalogIsLoaded(for: qualifier, using: sidebarViewModel) else { return false }
         pendingQualifierText = nil
         let result = MeetingSearchQueryParser.parse(
             inputText,
@@ -279,10 +288,11 @@ final class MainSearchModel {
             tags: sidebarViewModel.allTags,
             allowsTerminalUnquotedValue: true
         )
-        guard result.text != inputText || result.tokens != tokens else { return }
+        guard result.text != inputText || result.tokens != tokens else { return false }
         inputText = result.text
         tokens = result.tokens
         startSearch(using: sidebarViewModel, delay: nil, appending: false)
+        return true
     }
 
     private func catalogIsLoaded(
