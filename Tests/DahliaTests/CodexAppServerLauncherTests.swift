@@ -6,14 +6,14 @@ import Foundation
 
     struct CodexAppServerLauncherTests {
         @Test
-        func launchesAppServerWithPrivateCodexHomeAndUserHome() async throws {
+        func launchesAppServerWithPrivateCodexHomeUserHomeAndPinnedCodeModeHost() async throws {
             let rootURL = URL.temporaryDirectory
                 .appending(path: "dahlia-codex-launcher-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
 
             let executableURL = rootURL.appending(path: "print-working-directory")
-            try Data("#!/bin/sh\n/bin/pwd\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv HOME\n".utf8)
+            try Data("#!/bin/sh\n/bin/pwd\n/usr/bin/printenv CODEX_HOME\n/usr/bin/printenv HOME\n/usr/bin/printenv CODEX_CODE_MODE_HOST_PATH\n".utf8)
                 .write(to: executableURL)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
 
@@ -47,11 +47,11 @@ import Foundation
                 URL(filePath: workingDirectory, directoryHint: .isDirectory).resolvingSymlinksInPath()
                     == expectedHomeURL.resolvingSymlinksInPath()
             )
-            let codexHomeEnvironment = try #require(await transport.receiveLine())
-            #expect(String(data: codexHomeEnvironment, encoding: .utf8) == expectedHomeURL.path)
-            let userHomeEnvironment = try #require(await transport.receiveLine())
             let inheritedHome = try #require(ProcessInfo.processInfo.environment["HOME"])
-            #expect(String(data: userHomeEnvironment, encoding: .utf8) == inheritedHome)
+            let expectedCodeModeHostPath = executableURL.deletingLastPathComponent().appending(path: "codex-code-mode-host").path
+            try await expectNextLine(from: transport, equals: expectedHomeURL.path)
+            try await expectNextLine(from: transport, equals: inheritedHome)
+            try await expectNextLine(from: transport, equals: expectedCodeModeHostPath)
             for (skillName, installedSkillURL) in zip(
                 BundledCodexPresetSkillInstaller.skillNames,
                 installedSkillURLs
@@ -170,5 +170,10 @@ import Foundation
     private func permissions(of url: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         return try #require(attributes[.posixPermissions] as? NSNumber).intValue
+    }
+
+    private func expectNextLine(from transport: any CodexAppServerTransport, equals expected: String) async throws {
+        let line = try #require(await transport.receiveLine())
+        #expect(String(data: line, encoding: .utf8) == expected)
     }
 #endif
