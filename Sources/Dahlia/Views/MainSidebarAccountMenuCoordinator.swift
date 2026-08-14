@@ -286,8 +286,9 @@ private extension MainSidebarAccountMenuCoordinator {
         case 126:
             moveSelection(-1)
         case 123:
-            guard navigation.activeMenu != .root else { return event }
-            closeSubmenu()
+            if navigation.activeMenu != .root {
+                closeSubmenu()
+            }
         case 124:
             openSelectedSubmenu()
         case 36, 49, 76:
