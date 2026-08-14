@@ -18,7 +18,7 @@ import GRDB
 
             let model = MainSearchModel()
             model.present(using: sidebar)
-            #expect(await pollUntil { !model.isLoading })
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
 
             #expect(model.isRecent)
             #expect(model.meetings.count == MainSearchDesign.recentResultLimit)
@@ -42,10 +42,28 @@ import GRDB
             model.queryDidChange(using: sidebar)
             model.inputText = "Needle"
             model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && !model.isRecent })
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading && !model.isRecent })
 
             #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
             #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func boundsProjectSearchResults() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingProjects(count: MainSearchDesign.projectResultLimit + 1)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+
+            #expect(model.projects.count == MainSearchDesign.projectResultLimit)
         }
 
         @Test(.timeLimit(.minutes(3)))
@@ -61,7 +79,7 @@ import GRDB
             model.present(using: sidebar)
             model.inputText = #"project:"Needle project""#
             #expect(model.submit(using: sidebar))
-            #expect(await pollUntil { !model.isLoading })
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
 
             #expect(model.tokens.count == 1)
             #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
@@ -172,6 +190,7 @@ import GRDB
 
             #expect(await pollUntil { sidebar.isProjectCatalogLoaded && !sidebar.allProjectItems.isEmpty })
             model.catalogDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isProjectCatalogLoading })
 
             #expect(!model.isProjectCatalogLoading)
             #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
@@ -273,6 +292,22 @@ import GRDB
             try await manager.dbQueue.write { db in
                 for index in 0 ..< count {
                     try Self.insertMeeting(vaultID: vaultID, name: "Planning \(index)", in: db)
+                }
+            }
+        }
+
+        func insertMatchingProjects(count: Int) async throws {
+            let vaultID = vault.id
+            try await manager.dbQueue.write { db in
+                for index in 0 ..< count {
+                    try ProjectRecord(
+                        id: .v7(),
+                        vaultId: vaultID,
+                        parentProjectId: nil,
+                        name: "Planning \(index)",
+                        createdAt: .now,
+                        projectType: .undefined
+                    ).insert(db)
                 }
             }
         }
