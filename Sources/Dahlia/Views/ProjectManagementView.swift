@@ -36,52 +36,56 @@ struct ProjectManagementView: View {
     private let sidebarWidth: CGFloat = 300
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                MainSidebarNavigationView(
-                    isShowingUpcomingSchedule: false,
-                    onShowUpcomingSchedule: onShowUpcomingSchedule,
-                    isShowingProjectManagement: true,
-                    onShowProjectManagement: {},
-                    isShowingUnprocessedRecordings: false,
-                    unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
-                    onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                    showsCustomerIntelligence: showsCustomerIntelligence,
-                    onOpenCustomerIntelligence: onOpenCustomerIntelligence
-                )
-                SidebarSectionHeader(title: L10n.projects)
-                ProjectManagementSidebarView(
-                    projects: sidebarViewModel.allProjectItems,
-                    hasVault: AppSettings.shared.currentVault != nil,
-                    isLoaded: sidebarViewModel.isProjectCatalogLoaded,
-                    loadFailed: sidebarViewModel.projectCatalogLoadFailed,
-                    selectedProjectId: $mainWindowNavigation.selectedProjectId,
-                    searchText: $mainWindowNavigation.projectSearchText,
-                    expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
-                    onRetry: sidebarViewModel.retryProjectCatalogLoading,
-                    onCreateTopLevelProject: presentTopLevelProjectCreation,
-                    onCreateSubproject: presentSubprojectCreation
-                )
+        Group {
+            if !mainWindowNavigation.isShowingSettings {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    VStack(spacing: 0) {
+                        MainSidebarNavigationView(
+                            isShowingUpcomingSchedule: false,
+                            onShowUpcomingSchedule: onShowUpcomingSchedule,
+                            isShowingProjectManagement: true,
+                            onShowProjectManagement: {},
+                            isShowingUnprocessedRecordings: false,
+                            unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                            onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                            showsCustomerIntelligence: showsCustomerIntelligence,
+                            onOpenCustomerIntelligence: onOpenCustomerIntelligence
+                        )
+                        SidebarSectionHeader(title: L10n.projects)
+                        ProjectManagementSidebarView(
+                            projects: sidebarViewModel.allProjectItems,
+                            hasVault: AppSettings.shared.currentVault != nil,
+                            isLoaded: sidebarViewModel.isProjectCatalogLoaded,
+                            loadFailed: sidebarViewModel.projectCatalogLoadFailed,
+                            selectedProjectId: $mainWindowNavigation.selectedProjectId,
+                            searchText: $mainWindowNavigation.projectSearchText,
+                            expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
+                            onRetry: sidebarViewModel.retryProjectCatalogLoading,
+                            onCreateTopLevelProject: presentTopLevelProjectCreation,
+                            onCreateSubproject: presentSubprojectCreation
+                        )
 
-                if captionViewModel.isListening {
-                    RecordingStatusBar(
-                        viewModel: captionViewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator
-                    )
-                    .padding(8)
-                } else if captionViewModel.canSwitchVault {
-                    MainSidebarFooterView(
-                        vaults: sidebarViewModel.allVaults,
-                        currentVault: sidebarViewModel.currentVault,
-                        updateController: updateController,
-                        onSelectVault: onSelectVault
-                    )
+                        if captionViewModel.isListening {
+                            RecordingStatusBar(
+                                viewModel: captionViewModel,
+                                sidebarViewModel: sidebarViewModel,
+                                recordingCoordinator: recordingCoordinator
+                            )
+                            .padding(8)
+                        } else if captionViewModel.canSwitchVault {
+                            MainSidebarFooterView(
+                                vaults: sidebarViewModel.allVaults,
+                                currentVault: sidebarViewModel.currentVault,
+                                updateController: updateController,
+                                onSelectVault: onSelectVault
+                            )
+                        }
+                    }
+                    .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
+                } detail: {
+                    selectedProjectDetail
                 }
             }
-            .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
-        } detail: {
-            selectedProjectDetail
         }
         .onAppear {
             reconcileSelection(with: sidebarViewModel.allProjectItems)

@@ -1,24 +1,5 @@
 import SwiftUI
 
-struct SidebarToggleToolbarItem: ToolbarContent {
-    @Binding var columnVisibility: NavigationSplitViewVisibility
-
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button {
-                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-            } label: {
-                Label(
-                    columnVisibility == .detailOnly ? L10n.showSidebar : L10n.hideSidebar,
-                    systemImage: "sidebar.left"
-                )
-            }
-            .labelStyle(.iconOnly)
-            .help(columnVisibility == .detailOnly ? L10n.showSidebar : L10n.hideSidebar)
-        }
-    }
-}
-
 struct MainWindowNavigationToolbar: ToolbarContent {
     let canGoBack: Bool
     let canGoForward: Bool
