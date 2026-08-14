@@ -20,6 +20,10 @@ import Foundation
                 url: nil,
                 textFields: ["Join https://workspace.slack.com/huddle/T1/C1"]
             )?.host() == "workspace.slack.com")
+            #expect(CalendarConferenceURIExtractor.conferenceURI(
+                url: try url("https://workspace.slack.com/archives/C1/p123"),
+                textFields: ["See https://workspace.slack.com/archives/C1/p456"]
+            ) == nil)
         }
 
         @Test
@@ -100,22 +104,14 @@ import Foundation
 
         @Test
         func browserDetectionExcludesGenericURLHandlers() {
-            let browserInfo: [String: Any] = [
-                "CFBundleURLTypes": [
-                    [
-                        "CFBundleURLSchemes": ["http", "https", "file"],
-                    ],
-                ],
-            ]
-            let genericURLHandlerInfo: [String: Any] = [
-                "CFBundleURLTypes": [
-                    [
-                        "CFBundleURLSchemes": ["http", "https"],
-                    ],
-                ],
-            ]
+            let browserInfo = webURLHandlerInfo(documentType: ["LSItemContentTypes": ["public.html"]])
+            let browserUsingFileExtensions = webURLHandlerInfo(
+                documentType: ["CFBundleTypeExtensions": ["html", "htm"]]
+            )
+            let genericURLHandlerInfo = webURLHandlerInfo()
 
             #expect(MeetingLinkApplicationCatalog.isWebBrowser(infoDictionary: browserInfo))
+            #expect(MeetingLinkApplicationCatalog.isWebBrowser(infoDictionary: browserUsingFileExtensions))
             #expect(!MeetingLinkApplicationCatalog.isWebBrowser(infoDictionary: genericURLHandlerInfo))
         }
 
@@ -337,6 +333,18 @@ import Foundation
                 resolvedBundleIdentifiersStorage
             }
         }
+    }
+
+    private func webURLHandlerInfo(documentType: [String: Any]? = nil) -> [String: Any] {
+        var info: [String: Any] = [
+            "CFBundleURLTypes": [
+                ["CFBundleURLSchemes": ["http", "https"]],
+            ],
+        ]
+        if let documentType {
+            info["CFBundleDocumentTypes"] = [documentType]
+        }
+        return info
     }
 
     private struct UserDefaultsValueSnapshot {

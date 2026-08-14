@@ -6,7 +6,6 @@ enum CalendarConferenceURIExtractor {
         "meet.google.com",
         "zoom.us",
         "teams.microsoft.com",
-        "slack.com",
         "webex.com",
         "bluejeans.com",
         "whereby.com",
@@ -41,8 +40,13 @@ enum CalendarConferenceURIExtractor {
 
     private static func isKnownMeetingURI(_ uri: URL) -> Bool {
         guard let host = uri.host?.lowercased() else { return false }
-        return knownMeetingDomains.contains { domain in
-            host == domain || host.hasSuffix(".\(domain)")
+        if matches(host, domain: "slack.com") {
+            return uri.path.split(separator: "/").first?.lowercased() == "huddle"
         }
+        return knownMeetingDomains.contains { matches(host, domain: $0) }
+    }
+
+    private static func matches(_ host: String, domain: String) -> Bool {
+        host == domain || host.hasSuffix(".\(domain)")
     }
 }

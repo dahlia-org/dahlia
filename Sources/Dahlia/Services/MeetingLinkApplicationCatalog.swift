@@ -77,7 +77,15 @@ extension MeetingLinkApplicationCatalog {
         let schemes = Set(urlTypes.flatMap { urlType in
             urlType["CFBundleURLSchemes"] as? [String] ?? []
         }.map { $0.lowercased() })
-        return schemes.isSuperset(of: ["http", "https", "file"])
+        guard schemes.isSuperset(of: ["http", "https"]),
+              let documentTypes = infoDictionary["CFBundleDocumentTypes"] as? [[String: Any]]
+        else { return false }
+        return documentTypes.contains { documentType in
+            let contentTypes = documentType["LSItemContentTypes"] as? [String] ?? []
+            let extensions = documentType["CFBundleTypeExtensions"] as? [String] ?? []
+            return contentTypes.contains { ["public.html", "public.xhtml"].contains($0.lowercased()) }
+                || extensions.contains { ["html", "htm", "xhtml", "xht"].contains($0.lowercased()) }
+        }
     }
 
     private static func knownApplications(for service: MeetingLinkService) -> [MeetingLinkApplication] {
