@@ -31,6 +31,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .layoutPriority(1)
         }
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
             // 空のツールバーを維持して、macOS のウィンドウ操作ボタンを表示する。
             ToolbarSpacer(.fixed, placement: .principal)
