@@ -23,7 +23,6 @@ struct MainSidebarNavigationLabel: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-        .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
     }
