@@ -11,6 +11,27 @@ struct SettingsDetailView: View {
     @ObservedObject private var appSettings = AppSettings.shared
 
     var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    EmptyView()
+                } header: {
+                    Text(selection.label)
+                        .font(.title2)
+                        .foregroundStyle(.primary)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
+            .formStyle(.grouped)
+            .frame(height: 64)
+
+            selectedSettings
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedSettings: some View {
         switch selection {
         case .general:
             GeneralSettingsView()
@@ -41,9 +62,7 @@ struct SettingsDetailView: View {
             CloudStorageSettingsView()
         case .modelProvider:
             AccountSettingsView()
-        case .aiSummary:
-            AISummarySettingsView()
-        case .mcp:
+        case .aiSummary, .mcp:
             AISummarySettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)

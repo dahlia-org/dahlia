@@ -15,7 +15,10 @@ struct SettingsView: View {
                 selection: $mainWindowNavigation.settingsCategory,
                 onReturnToApp: mainWindowNavigation.dismissSettings
             )
-            .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+            .frame(minWidth: 220, idealWidth: 240, maxWidth: 320)
+            .background {
+                SplitViewAutosaveView(widthDefaultsKey: "DahliaSettingsSidebar.width")
+            }
 
             SettingsDetailView(
                 selection: mainWindowNavigation.settingsCategory,
@@ -26,6 +29,7 @@ struct SettingsView: View {
                 onSelectVault: onSelectVault
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
         }
         .toolbar {
             // 空のツールバーを維持して、macOS のウィンドウ操作ボタンを表示する。
