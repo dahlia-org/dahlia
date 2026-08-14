@@ -53,6 +53,7 @@ struct MainSidebarAccountMenuRow: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
+        .help(title)
         .accessibilityAddTraits(selectionState == true ? .isSelected : [])
         .onHover { hovered in
             isHovered = hovered

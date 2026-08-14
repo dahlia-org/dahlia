@@ -19,7 +19,7 @@ struct MainSidebarAccountRootMenuView: View {
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 0,
                 onHoverStart: { hover(index: 0, submenu: .vaults, action: onShowVaults) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(onShowVaults) }
+                action: { activate(index: 0, action: onShowVaults) }
             )
 
             MainSidebarAccountMenuRow(
@@ -29,7 +29,7 @@ struct MainSidebarAccountRootMenuView: View {
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 1,
                 onHoverStart: { hover(index: 1, submenu: .languages, action: onShowLanguages) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(onShowLanguages) }
+                action: { activate(index: 1, action: onShowLanguages) }
             )
 
             MainSidebarAccountMenuRow(
@@ -38,7 +38,7 @@ struct MainSidebarAccountRootMenuView: View {
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 2,
                 onHoverStart: { hover(index: 2, submenu: nil, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(onOpenMCP) }
+                action: { activate(index: 2, action: onOpenMCP) }
             )
         }
         .onDisappear(perform: cancelPendingHover)
@@ -67,8 +67,9 @@ struct MainSidebarAccountRootMenuView: View {
         }
     }
 
-    private func activate(_ action: () -> Void) {
+    private func activate(index: Int, action: () -> Void) {
         cancelPendingHover()
+        navigation.selectRoot(index)
         action()
     }
 
