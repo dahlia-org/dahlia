@@ -553,6 +553,7 @@
 "Create New Vault" = "Create New Vault";
 "Create a new folder to use as a vault." = "Create a new folder to use as a vault.";
 "Add Vault" = "Add Vault";
+"Registered Vaults" = "Registered Vaults";
 "Open Folder as Vault" = "Open Folder as Vault";
 "Select an existing folder to use as a vault." = "Select an existing folder to use as a vault.";
 "Remove Vault" = "Remove Vault";
@@ -561,6 +562,7 @@
 "Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed." = "Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed.";
 "Vault Details" = "Vault Details";
 "Vault Name" = "Vault Name";
+"Rename %@" = "Rename %@";
 "Open Vault" = "Open Vault";
 "Use this vault for recordings and sync." = "Use this vault for recordings and sync.";
 "Select a vault to view its details." = "Select a vault to view its details.";
@@ -570,6 +572,7 @@
 "Could not select the vault folder." = "Could not select the vault folder.";
 "Could not load vaults." = "Could not load vaults.";
 "Could not add the vault." = "Could not add the vault.";
+"Could not rename the vault." = "Could not rename the vault.";
 "Could not remove the vault." = "Could not remove the vault.";
 "Open" = "Open";
 "Enlarge screenshot" = "Enlarge screenshot";

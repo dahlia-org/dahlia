@@ -75,7 +75,10 @@ final class MeetingRepository {
     /// 最後にオープンした保管庫を取得する。
     func fetchLastOpenedVault() throws -> VaultRecord? {
         try dbQueue.read { db in
-            try VaultRecord.order(Column("lastOpenedAt").desc).fetchOne(db)
+            try VaultRecord
+                .filter(Column("lastOpenedAt") != Date.distantPast)
+                .order(Column("lastOpenedAt").desc)
+                .fetchOne(db)
         }
     }
 
@@ -90,6 +93,16 @@ final class MeetingRepository {
     nonisolated func insertVaultAsync(_ vault: VaultRecord) async throws {
         try await dbQueue.write { db in
             try vault.insert(db)
+        }
+    }
+
+    /// 保管庫の表示名を更新する。
+    nonisolated func updateVaultName(id: UUID, name: String) async throws -> VaultRecord? {
+        try await dbQueue.write { db in
+            guard var vault = try VaultRecord.fetchOne(db, key: id) else { return nil }
+            vault.name = name
+            try vault.update(db)
+            return vault
         }
     }
 

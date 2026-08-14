@@ -6,7 +6,6 @@ struct SettingsDetailView: View {
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
     var vaultManagementModel: VaultManagementModel
-    var onSelectVault: (VaultRecord) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
 
@@ -40,8 +39,7 @@ struct SettingsDetailView: View {
                 appDatabase: appDatabase,
                 model: vaultManagementModel,
                 currentVault: appSettings.currentVault,
-                canSwitchVault: captionViewModel.canSwitchVault,
-                onSelectVault: onSelectVault
+                onRenameVault: updateCurrentVaultIfNeeded
             )
         case .permissions:
             PermissionSettingsView()
@@ -73,5 +71,10 @@ struct SettingsDetailView: View {
         case .audioDiagnostics:
             DebugSettingsView()
         }
+    }
+
+    private func updateCurrentVaultIfNeeded(_ vault: VaultRecord) {
+        guard appSettings.currentVault?.id == vault.id else { return }
+        appSettings.currentVault = vault
     }
 }

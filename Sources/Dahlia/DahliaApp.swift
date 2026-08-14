@@ -109,8 +109,7 @@ struct DahliaApp: App {
                         sidebarViewModel: sidebarViewModel,
                         appDatabase: appDatabase,
                         vaultManagementModel: vaultManagementModel,
-                        mainWindowNavigation: mainWindowNavigation,
-                        onSelectVault: { vault in openVault(vault) }
+                        mainWindowNavigation: mainWindowNavigation
                     )
                 }
             }
