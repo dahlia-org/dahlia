@@ -20,10 +20,14 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         configureWhenAttached(nsView, coordinator: context.coordinator)
     }
 
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
     private func configureWhenAttached(_ view: NSView, coordinator: Coordinator) {
         Task { @MainActor [weak view] in
             guard let view, let splitView = enclosingSplitView(for: view) else { return }
-            coordinator.attach(to: splitView)
+            coordinator.attach(to: splitView, markerView: view)
         }
     }
 
@@ -45,6 +49,7 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         private var width: CGFloat
         private var onWidthChange: (CGFloat) -> Void
         private weak var splitView: NSSplitView?
+        private weak var markerView: NSView?
 
         init(width: CGFloat, onWidthChange: @escaping (CGFloat) -> Void) {
             self.width = width
@@ -57,17 +62,11 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
             applyWidthIfNeeded()
         }
 
-        func attach(to splitView: NSSplitView) {
+        func attach(to splitView: NSSplitView, markerView: NSView) {
             splitView.wantsLayer = true
             splitView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             if self.splitView !== splitView {
-                if let observedSplitView = self.splitView {
-                    NotificationCenter.default.removeObserver(
-                        self,
-                        name: NSSplitView.didResizeSubviewsNotification,
-                        object: observedSplitView
-                    )
-                }
+                detach()
                 self.splitView = splitView
                 NotificationCenter.default.addObserver(
                     self,
@@ -76,11 +75,25 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
                     object: splitView
                 )
             }
+            self.markerView = markerView
             applyWidthIfNeeded()
         }
 
+        func detach() {
+            if let splitView {
+                NotificationCenter.default.removeObserver(
+                    self,
+                    name: NSSplitView.didResizeSubviewsNotification,
+                    object: splitView
+                )
+            }
+            splitView = nil
+            markerView = nil
+        }
+
         private func applyWidthIfNeeded() {
-            guard let splitView,
+            guard markerIsInFirstPane,
+                  let splitView,
                   splitView.subviews.count > 1,
                   let currentWidth = splitView.subviews.first?.frame.width,
                   abs(currentWidth - width) > Self.widthTolerance else { return }
@@ -88,9 +101,18 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         }
 
         @objc private func splitViewDidResize() {
-            guard let resizedWidth = splitView?.subviews.first?.frame.width,
+            guard markerIsInFirstPane,
+                  let splitView,
+                  splitView.subviews.count > 1,
+                  let resizedWidth = splitView.subviews.first?.frame.width,
                   abs(resizedWidth - width) > Self.widthTolerance else { return }
             onWidthChange(resizedWidth)
+        }
+
+        private var markerIsInFirstPane: Bool {
+            guard let markerView,
+                  let firstPane = splitView?.subviews.first else { return false }
+            return markerView === firstPane || markerView.isDescendant(of: firstPane)
         }
 
         deinit {
