@@ -148,8 +148,6 @@ enum L10n {
     static var join: String { String(localized: "Join", bundle: bundle) }
     static var expand: String { String(localized: "Expand", bundle: bundle) }
     static var collapse: String { String(localized: "Collapse", bundle: bundle) }
-    static var showSidebar: String { String(localized: "Show Sidebar", bundle: bundle) }
-    static var hideSidebar: String { String(localized: "Hide Sidebar", bundle: bundle) }
     static var back: String { String(localized: "Back", bundle: bundle) }
     static var backToApp: String { String(localized: "Back to App", bundle: bundle) }
     static var forward: String { String(localized: "Forward", bundle: bundle) }

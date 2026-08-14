@@ -35,7 +35,7 @@ struct ContentView: View {
                     onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                     onSelectVault: onSelectVault
                 )
-            } else {
+            } else if !mainWindowNavigation.isShowingSettings {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
                     MeetingListSidebarView(
                         viewModel: viewModel,
@@ -59,11 +59,8 @@ struct ContentView: View {
             }
         }
         .toolbar(removing: .title)
-        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !mainWindowNavigation.isShowingSettings {
-                SidebarToggleToolbarItem(columnVisibility: $columnVisibility)
-
                 MainWindowNavigationToolbar(
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,

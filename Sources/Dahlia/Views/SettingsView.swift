@@ -8,16 +8,15 @@ struct SettingsView: View {
     var vaultManagementModel: VaultManagementModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
     var onSelectVault: (VaultRecord) -> Void = { _ in }
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        HSplitView {
             SettingsSidebarView(
                 selection: $mainWindowNavigation.settingsCategory,
                 onReturnToApp: mainWindowNavigation.dismissSettings
             )
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
-        } detail: {
+            .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+
             SettingsDetailView(
                 selection: mainWindowNavigation.settingsCategory,
                 captionViewModel: captionViewModel,
@@ -26,10 +25,11 @@ struct SettingsView: View {
                 vaultManagementModel: vaultManagementModel,
                 onSelectVault: onSelectVault
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .toolbar(removing: .sidebarToggle)
         .toolbar {
-            SidebarToggleToolbarItem(columnVisibility: $columnVisibility)
+            // 空のツールバーを維持して、macOS のウィンドウ操作ボタンを表示する。
+            ToolbarSpacer(.fixed, placement: .principal)
         }
         .frame(minWidth: 720, minHeight: 520)
     }
