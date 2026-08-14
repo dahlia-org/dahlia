@@ -63,21 +63,13 @@ struct ProjectManagementView: View {
                         onCreateSubproject: presentSubprojectCreation
                     )
 
-                    if captionViewModel.isListening {
-                        RecordingStatusBar(
-                            viewModel: captionViewModel,
-                            sidebarViewModel: sidebarViewModel,
-                            recordingCoordinator: recordingCoordinator
-                        )
-                        .padding(8)
-                    } else if captionViewModel.canSwitchVault {
-                        MainSidebarFooterView(
-                            vaults: sidebarViewModel.allVaults,
-                            currentVault: sidebarViewModel.currentVault,
-                            updateController: updateController,
-                            onSelectVault: onSelectVault
-                        )
-                    }
+                    MainSidebarBottomArea(
+                        viewModel: captionViewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
+                        updateController: updateController,
+                        onSelectVault: onSelectVault
+                    )
                 }
                 .mainSidebarPane(
                     width: mainWindowNavigation.sidebarWidth,

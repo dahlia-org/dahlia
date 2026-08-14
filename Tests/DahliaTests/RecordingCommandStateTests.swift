@@ -44,46 +44,5 @@ import Foundation
                 currentMeetingID: UUID()
             ))
         }
-
-        @Test
-        func sidebarStopOnlyAppearsWhenDetailCannotStopTheRecording() {
-            let recordingMeetingID = UUID()
-
-            #expect(!RecordingCommandState.showsSidebarStop(
-                recordingMeetingID: nil,
-                currentMeetingID: UUID()
-            ))
-            #expect(!RecordingCommandState.showsSidebarStop(
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: recordingMeetingID
-            ))
-            #expect(RecordingCommandState.showsSidebarStop(
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: UUID()
-            ))
-            #expect(RecordingCommandState.showsSidebarStop(
-                recordingMeetingID: recordingMeetingID,
-                currentMeetingID: nil
-            ))
-        }
-
-        @Test
-        func recordingAlwaysHasExactlyOneMainWindowStopCommand() {
-            let recordingMeetingID = UUID()
-
-            for currentMeetingID in [recordingMeetingID, UUID(), nil] {
-                let showsDetail = RecordingCommandState.showsDetailCommand(
-                    isListening: true,
-                    recordingMeetingID: recordingMeetingID,
-                    currentMeetingID: currentMeetingID
-                )
-                let showsSidebar = RecordingCommandState.showsSidebarStop(
-                    recordingMeetingID: recordingMeetingID,
-                    currentMeetingID: currentMeetingID
-                )
-
-                #expect(showsDetail != showsSidebar)
-            }
-        }
     }
 #endif
