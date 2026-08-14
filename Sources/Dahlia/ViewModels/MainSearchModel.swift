@@ -192,7 +192,7 @@ final class MainSearchModel {
                 self.hasMoreMeetings = page.hasMore
                 self.isLoading = false
                 let preservesSelection = self.selectedResultID.map(self.resultIDs.contains) == true
-                if !appending || !preservesSelection {
+                if !preservesSelection {
                     self.selectedResultID = self.resultIDs.first
                 }
             } catch is CancellationError {
@@ -229,19 +229,13 @@ final class MainSearchModel {
         let requestGeneration = projectGeneration
 
         projects = []
+        selectFirstAvailableResultIfNeeded()
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
-        guard sidebarViewModel.currentVault != nil else {
-            selectFirstAvailableResultIfNeeded()
-            return
-        }
-        guard !projectCatalogLoadFailed else {
-            selectFirstAvailableResultIfNeeded()
-            return
-        }
+        guard sidebarViewModel.currentVault != nil else { return }
+        guard !projectCatalogLoadFailed else { return }
         guard sidebarViewModel.isProjectCatalogLoaded else {
             isProjectCatalogLoading = true
-            selectFirstAvailableResultIfNeeded()
             return
         }
 

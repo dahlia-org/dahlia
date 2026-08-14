@@ -199,6 +199,53 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(3)))
+        func preservesProjectSelectionWhenMeetingSearchFinishes() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingProjects(count: 3)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil {
+                !model.isProjectCatalogLoading && model.isLoading && model.projects.count == 3
+            })
+            model.moveSelection(by: 1)
+            let selection = model.selectedResultID
+
+            #expect(await pollUntil { !model.isLoading })
+            #expect(model.selectedResultID == selection)
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func clearsProjectSelectionWhileCatalogResultsRebuild() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertMatchingProjects(count: 2)
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "Planning"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+            model.moveSelection(by: 1)
+            #expect(model.selectedResultID != nil)
+
+            model.catalogDidChange(using: sidebar)
+
+            #expect(model.projects.isEmpty)
+            #expect(model.selectedResultID == nil)
+            model.dismiss()
+        }
+
+        @Test(.timeLimit(.minutes(3)))
         func updatesProjectResultsWhenCatalogFinishesLoading() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
