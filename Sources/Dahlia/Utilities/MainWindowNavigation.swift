@@ -34,6 +34,7 @@ final class MainWindowNavigation {
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
+    private(set) var sidebarWidth: CGFloat
     var settingsCategory: SettingsCategory {
         didSet {
             SettingsNavigation.saveSelection(settingsCategory, in: settingsDefaults)
@@ -64,6 +65,14 @@ final class MainWindowNavigation {
         self.openMainWindow = openMainWindow
         self.openMainWindowWithoutActivation = openMainWindowWithoutActivation
         self.settingsDefaults = settingsDefaults
+        let storedSidebarWidth = settingsDefaults.object(forKey: MainSidebarLayout.widthDefaultsKey) == nil
+            ? MainSidebarLayout.defaultWidth
+            : settingsDefaults.double(forKey: MainSidebarLayout.widthDefaultsKey)
+        let clampedSidebarWidth = MainSidebarLayout.clampedWidth(storedSidebarWidth)
+        sidebarWidth = clampedSidebarWidth
+        if clampedSidebarWidth != storedSidebarWidth {
+            settingsDefaults.set(clampedSidebarWidth, forKey: MainSidebarLayout.widthDefaultsKey)
+        }
         settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
             ?? SettingsNavigation.savedSelection(in: settingsDefaults)
     }
@@ -105,6 +114,13 @@ final class MainWindowNavigation {
 
     func dismissSettings() {
         isShowingSettings = false
+    }
+
+    func updateSidebarWidth(_ width: CGFloat) {
+        let clampedWidth = MainSidebarLayout.clampedWidth(width)
+        guard clampedWidth != sidebarWidth else { return }
+        sidebarWidth = clampedWidth
+        settingsDefaults.set(clampedWidth, forKey: MainSidebarLayout.widthDefaultsKey)
     }
 
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }

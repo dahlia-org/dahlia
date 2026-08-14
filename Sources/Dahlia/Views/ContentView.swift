@@ -16,14 +16,16 @@ struct ContentView: View {
     private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
+    @State private var meetingSearchText = ""
+    @State private var meetingSearchTokens: [MeetingSearchToken] = []
 
     var body: some View {
         Group {
             if mainWindowNavigation.section == .projects {
                 ProjectManagementView(
-                    columnVisibility: $columnVisibility,
+                    isSidebarVisible: $isSidebarVisible,
                     sidebarViewModel: sidebarViewModel,
                     captionViewModel: viewModel,
                     updateController: updateController,
@@ -36,48 +38,48 @@ struct ContentView: View {
                     onSelectVault: onSelectVault
                 )
             } else {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    MeetingListSidebarView(
-                        viewModel: viewModel,
-                        updateController: updateController,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        isShowingUpcomingSchedule: isShowingUpcomingSchedule,
-                        onShowUpcomingSchedule: returnToCalendarSchedule,
-                        onOpenProjectManagement: showProjectManagement,
-                        isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
-                        onShowUnprocessedRecordings: showUnprocessedRecordings,
-                        showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
-                        onSelectVault: onSelectVault
-                    )
-                    .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
-                } detail: {
+                HSplitView {
+                    if isSidebarVisible {
+                        MeetingListSidebarView(
+                            viewModel: viewModel,
+                            updateController: updateController,
+                            sidebarViewModel: sidebarViewModel,
+                            recordingCoordinator: recordingCoordinator,
+                            searchText: $meetingSearchText,
+                            searchTokens: $meetingSearchTokens,
+                            isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                            onShowUpcomingSchedule: returnToCalendarSchedule,
+                            onOpenProjectManagement: showProjectManagement,
+                            isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                            onShowUnprocessedRecordings: showUnprocessedRecordings,
+                            showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                            onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                            onSelectVault: onSelectVault
+                        )
+                        .mainSidebarPane(
+                            width: mainWindowNavigation.sidebarWidth,
+                            onWidthChange: mainWindowNavigation.updateSidebarWidth
+                        )
+                    }
+
                     detailView
                         .navigationTitle("")
+                        .mainDetailPane()
                 }
             }
         }
         .toolbar(removing: .title)
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
             if !mainWindowNavigation.isShowingSettings {
                 MainWindowNavigationToolbar(
+                    isSidebarVisible: isSidebarVisible,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
+                    onToggleSidebar: toggleSidebar,
                     onGoBack: goBack,
                     onGoForward: goForward
                 )
-
-                ToolbarItem(placement: .navigation) {
-                    if mainWindowNavigation.section == .meetings {
-                        Button(L10n.newMeeting, systemImage: "square.and.pencil") {
-                            recordingCoordinator.createEmptyMeeting()
-                        }
-                        .labelStyle(.iconOnly)
-                        .keyboardShortcut("n", modifiers: .command)
-                        .help(L10n.newMeeting)
-                    }
-                }
 
                 ToolbarSpacer(.fixed, placement: .navigation)
 
@@ -125,6 +127,10 @@ struct ContentView: View {
         }
         .task(id: sidebarViewModel.currentVault?.id) {
             await sidebarViewModel.refreshUnprocessedRecordings()
+        }
+        .onChange(of: sidebarViewModel.currentVault?.id) {
+            meetingSearchText = ""
+            meetingSearchTokens.removeAll()
         }
         .onChange(of: viewModel.batchTranscriptionState) { _, state in
             guard state?.changesUnprocessedRecordingsProjection != false else { return }
@@ -192,6 +198,10 @@ struct ContentView: View {
 }
 
 private extension ContentView {
+    private func toggleSidebar() {
+        isSidebarVisible.toggle()
+    }
+
     private func presentPermissionGuideIfNeeded() {
         guard PermissionGuidePresentationPolicy.shouldPresent(
             storedVersion: permissionGuidePresentationVersion

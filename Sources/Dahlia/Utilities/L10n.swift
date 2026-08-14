@@ -151,9 +151,12 @@ enum L10n {
     static var back: String { String(localized: "Back", bundle: bundle) }
     static var backToApp: String { String(localized: "Back to App", bundle: bundle) }
     static var forward: String { String(localized: "Forward", bundle: bundle) }
+    static var hideSidebar: String { String(localized: "Hide Sidebar", bundle: bundle) }
+    static var showSidebar: String { String(localized: "Show Sidebar", bundle: bundle) }
 
     // MARK: - Sidebar
 
+    static var createNewMeeting: String { String(localized: "Create New Meeting", bundle: bundle) }
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }

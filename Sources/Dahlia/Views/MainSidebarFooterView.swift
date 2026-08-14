@@ -1,9 +1,6 @@
-import AppKit
 import SwiftUI
 
 struct MainSidebarFooterView: View {
-    static let verticalPadding: CGFloat = 8
-
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
     let vaults: [VaultRecord]
@@ -28,9 +25,9 @@ struct MainSidebarFooterView: View {
             .frame(height: 30)
             .background(
                 isAccountMenuHovered ? Color.primary.opacity(0.08) : .clear,
-                in: RoundedRectangle(cornerRadius: 6)
+                in: .rect(cornerRadius: 6)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(.rect(cornerRadius: 6))
             .onContinuousHover { phase in
                 isAccountMenuHovered = phase != .ended
             }
@@ -45,7 +42,7 @@ struct MainSidebarFooterView: View {
             } label: {
                 Label(L10n.settings, systemImage: "gearshape")
                     .labelStyle(.iconOnly)
-                    .padding(7)
+                    .frame(width: 30, height: 30)
                     .background(isSettingsHovered ? Color.primary.opacity(0.08) : .clear, in: Circle())
                     .contentShape(Circle())
             }
@@ -54,17 +51,13 @@ struct MainSidebarFooterView: View {
             .accessibilityLabel(L10n.settings)
             .onHover { isSettingsHovered = $0 }
         }
-        .padding(2)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 12)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
-        }
         .padding(.horizontal, 10)
-        .padding(.vertical, Self.verticalPadding)
+        .frame(height: MainSidebarLayout.footerHeight)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 0.5)
+        }
         .sheet(isPresented: $isMCPPresented) {
             MCPModalView(
                 vaults: vaults,

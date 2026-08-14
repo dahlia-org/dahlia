@@ -14,10 +14,10 @@ struct SettingsView: View {
                 selection: $mainWindowNavigation.settingsCategory,
                 onReturnToApp: mainWindowNavigation.dismissSettings
             )
-            .frame(minWidth: 220, idealWidth: 240, maxWidth: 320)
-            .background {
-                SplitViewAutosaveView(widthDefaultsKey: "DahliaSettingsSidebar.width")
-            }
+            .mainSidebarPane(
+                width: mainWindowNavigation.sidebarWidth,
+                onWidthChange: mainWindowNavigation.updateSidebarWidth
+            )
 
             SettingsDetailView(
                 selection: mainWindowNavigation.settingsCategory,
@@ -26,8 +26,7 @@ struct SettingsView: View {
                 appDatabase: appDatabase,
                 vaultManagementModel: vaultManagementModel
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .layoutPriority(1)
+            .mainDetailPane()
         }
         .toolbar(removing: .sidebarToggle)
         .toolbar {
