@@ -10,15 +10,16 @@ struct MainSidebarBottomArea: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        MainSidebarFooterView(
-            vaults: sidebarViewModel.allVaults,
-            currentVault: sidebarViewModel.currentVault,
-            updateController: updateController,
-            onSelectVault: onSelectVault
-        )
-        .disabled(!viewModel.canSwitchVault)
-        .accessibilityHidden(viewModel.isListening)
-        .overlay(alignment: .bottom) {
+        ZStack(alignment: .bottom) {
+            MainSidebarFooterView(
+                vaults: sidebarViewModel.allVaults,
+                currentVault: sidebarViewModel.currentVault,
+                updateController: updateController,
+                onSelectVault: onSelectVault
+            )
+            .disabled(!viewModel.canSwitchVault)
+            .accessibilityHidden(viewModel.isListening)
+
             if viewModel.isListening {
                 RecordingStatusBar(
                     viewModel: viewModel,
