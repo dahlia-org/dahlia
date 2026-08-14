@@ -46,11 +46,17 @@ struct MainSearchPanel: View {
 
             Divider()
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    searchContent
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        searchContent
+                    }
+                    .padding(16)
                 }
-                .padding(16)
+                .onChange(of: model.selectedResultID) { _, selectedResultID in
+                    guard let selectedResultID else { return }
+                    proxy.scrollTo(selectedResultID, anchor: .center)
+                }
             }
         }
         .frame(width: panelWidth)
@@ -119,6 +125,7 @@ struct MainSearchPanel: View {
                         isSelected: model.selectedResultID == .meeting(meeting.id),
                         action: { onOpenMeeting(meeting.id) }
                     )
+                    .id(MainSearchResultID.meeting(meeting.id))
                 }
                 if model.hasMoreMeetings {
                     Button(L10n.loadMore) {
@@ -154,6 +161,7 @@ struct MainSearchPanel: View {
                         isSelected: model.selectedResultID == .project(project.id),
                         action: { onOpenProject(project.id) }
                     )
+                    .id(MainSearchResultID.project(project.id))
                 }
             }
 
