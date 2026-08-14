@@ -37,6 +37,45 @@
         }
 
         @Test
+        func registeringVaultFromManagementDoesNotMarkItAsOpened() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let currentVault = makeVault(name: "Current", lastOpenedAt: Date(timeIntervalSince1970: 1))
+            try repository.insertVault(currentVault)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            let registeredVault = try #require(await model.registerVault(
+                at: URL(
+                    filePath: "/tmp/Dahlia-VaultManagementModelTests-Unopened",
+                    directoryHint: .isDirectory
+                ),
+                markAsOpened: false
+            ))
+
+            #expect(registeredVault.lastOpenedAt == .distantPast)
+            #expect(try repository.fetchLastOpenedVault()?.id == currentVault.id)
+        }
+
+        @Test
+        func registeringFirstVaultFromManagementDoesNotMakeItLastOpened() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+
+            _ = try #require(await model.registerVault(
+                at: URL(
+                    filePath: "/tmp/Dahlia-VaultManagementModelTests-First-Unopened",
+                    directoryHint: .isDirectory
+                ),
+                markAsOpened: false
+            ))
+
+            #expect(try repository.fetchLastOpenedVault() == nil)
+        }
+
+        @Test
         func removesANoncurrentVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = VaultManagementModel()
@@ -51,6 +90,39 @@
             #expect(didRemove)
             #expect(model.vaults.isEmpty)
             #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().isEmpty)
+        }
+
+        @Test
+        func renamesAVaultAndPersistsTheTrimmedName() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let vault = try #require(await model.registerVault(at: URL(
+                filePath: "/tmp/Dahlia-VaultManagementModelTests-Rename",
+                directoryHint: .isDirectory
+            )))
+
+            let renamedVault = try #require(await model.renameVault(vault, to: "  Customer Interviews  "))
+
+            #expect(renamedVault.name == "Customer Interviews")
+            #expect(model.vaults.first?.name == "Customer Interviews")
+            #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first?.name == "Customer Interviews")
+        }
+
+        @Test
+        func doesNotRenameAVaultToABlankName() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            await model.configure(appDatabase: database)
+            let vault = makeVault(name: "Original", lastOpenedAt: .now)
+            try MeetingRepository(dbQueue: database.dbQueue).insertVault(vault)
+            await model.loadVaults()
+
+            let renamedVault = await model.renameVault(vault, to: "  \n  ")
+
+            #expect(renamedVault == nil)
+            #expect(model.vaults.first?.name == "Original")
+            #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().first?.name == "Original")
         }
 
         @Test

@@ -1952,6 +1952,7 @@ enum L10n {
     // MARK: - Vault Picker
 
     static var addVault: String { String(localized: "Add Vault", bundle: bundle) }
+    static var registeredVaults: String { String(localized: "Registered Vaults", bundle: bundle) }
     static var openFolderAsVault: String { String(localized: "Open Folder as Vault", bundle: bundle) }
     static var openFolderAsVaultDescription: String { String(localized: "Select an existing folder to use as a vault.", bundle: bundle) }
     static var removeVault: String { String(localized: "Remove Vault", bundle: bundle) }
@@ -1970,6 +1971,7 @@ enum L10n {
     ) }
     static var vaultDetails: String { String(localized: "Vault Details", bundle: bundle) }
     static var vaultName: String { String(localized: "Vault Name", bundle: bundle) }
+    static func renameVault(_ name: String) -> String { String(localized: "Rename \(name)", bundle: bundle) }
     static var openVault: String { String(localized: "Open Vault", bundle: bundle) }
     static var openVaultDescription: String { String(localized: "Use this vault for recordings and sync.", bundle: bundle) }
     static var selectVaultDescription: String { String(localized: "Select a vault to view its details.", bundle: bundle) }
@@ -1982,6 +1984,7 @@ enum L10n {
     static var vaultFolderSelectionFailed: String { String(localized: "Could not select the vault folder.", bundle: bundle) }
     static var vaultLoadFailed: String { String(localized: "Could not load vaults.", bundle: bundle) }
     static var vaultAddFailed: String { String(localized: "Could not add the vault.", bundle: bundle) }
+    static var vaultRenameFailed: String { String(localized: "Could not rename the vault.", bundle: bundle) }
     static var vaultRemoveFailed: String { String(localized: "Could not remove the vault.", bundle: bundle) }
     static var open: String { String(localized: "Open", bundle: bundle) }
     static var loadingLanguages: String { String(localized: "Loading supported languages...", bundle: bundle) }

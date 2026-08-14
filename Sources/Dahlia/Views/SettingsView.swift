@@ -7,7 +7,6 @@ struct SettingsView: View {
     let appDatabase: AppDatabaseManager?
     var vaultManagementModel: VaultManagementModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
-    var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     var body: some View {
         HSplitView {
@@ -25,8 +24,7 @@ struct SettingsView: View {
                 captionViewModel: captionViewModel,
                 sidebarViewModel: sidebarViewModel,
                 appDatabase: appDatabase,
-                vaultManagementModel: vaultManagementModel,
-                onSelectVault: onSelectVault
+                vaultManagementModel: vaultManagementModel
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .layoutPriority(1)

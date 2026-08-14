@@ -554,6 +554,7 @@
 "Create New Vault" = "保管庫を新規作成する";
 "Create a new folder to use as a vault." = "新しいフォルダを作成して保管庫として使用します。";
 "Add Vault" = "保管庫を追加";
+"Registered Vaults" = "登録済みの保管庫";
 "Open Folder as Vault" = "保管庫としてフォルダを開く";
 "Select an existing folder to use as a vault." = "既存のフォルダを選択して保管庫として使用します。";
 "Remove Vault" = "保管庫を登録解除";
@@ -562,6 +563,7 @@
 "Dahlia will remove this vault and its meeting history from the app. Audio files managed outside the vault folder will also be deleted. Files inside the vault folder are not changed." = "この保管庫とミーティング履歴が Dahlia から削除され、保管庫の外で Dahlia が管理する音声ファイルも削除されます。保管庫フォルダ内のファイルは変更されません。";
 "Vault Details" = "保管庫の詳細";
 "Vault Name" = "保管庫名";
+"Rename %@" = "「%@」の名前を変更";
 "Open Vault" = "この保管庫を開く";
 "Use this vault for recordings and sync." = "録音と同期にこの保管庫を使用します。";
 "Select a vault to view its details." = "詳細を表示する保管庫を選択してください。";
@@ -571,6 +573,7 @@
 "Could not select the vault folder." = "保管庫のフォルダを選択できませんでした。";
 "Could not load vaults." = "保管庫を読み込めませんでした。";
 "Could not add the vault." = "保管庫を追加できませんでした。";
+"Could not rename the vault." = "保管庫の名前を変更できませんでした。";
 "Could not remove the vault." = "保管庫の登録を解除できませんでした。";
 "Open" = "開く";
 "Enlarge screenshot" = "スクリーンショットを拡大表示";

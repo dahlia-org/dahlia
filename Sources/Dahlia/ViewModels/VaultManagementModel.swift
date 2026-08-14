@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// 初回起動と設定画面で共有する保管庫の登録・登録解除状態。
+/// 初回起動と設定画面で共有する保管庫の管理状態。
 @MainActor
 @Observable
 final class VaultManagementModel {
@@ -12,6 +12,7 @@ final class VaultManagementModel {
     private(set) var errorMessage = ""
     private(set) var isLoading = false
     private(set) var isRemovingVault = false
+    private(set) var isRenamingVault = false
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
@@ -39,7 +40,7 @@ final class VaultManagementModel {
         }
     }
 
-    func registerVault(at url: URL) async -> VaultRecord? {
+    func registerVault(at url: URL, markAsOpened: Bool = true) async -> VaultRecord? {
         guard let repository else {
             presentError(L10n.vaultAddFailed, source: "registerVault")
             return nil
@@ -56,7 +57,7 @@ final class VaultManagementModel {
             path: normalizedURL.path,
             name: normalizedURL.lastPathComponent,
             createdAt: now,
-            lastOpenedAt: now
+            lastOpenedAt: markAsOpened ? now : .distantPast
         )
 
         do {
@@ -86,6 +87,33 @@ final class VaultManagementModel {
         } catch {
             presentError(L10n.vaultRemoveFailed, error: error, source: "removeVault")
             return false
+        }
+    }
+
+    func renameVault(_ vault: VaultRecord, to proposedName: String) async -> VaultRecord? {
+        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        guard name != vault.name else { return vault }
+        guard !isRenamingVault else { return nil }
+        guard let repository else {
+            presentError(L10n.vaultRenameFailed, source: "renameVault")
+            return nil
+        }
+
+        isRenamingVault = true
+        defer { isRenamingVault = false }
+        do {
+            guard let renamedVault = try await repository.updateVaultName(id: vault.id, name: name) else {
+                presentError(L10n.vaultRenameFailed, source: "renameVault")
+                return nil
+            }
+            if let index = vaults.firstIndex(where: { $0.id == vault.id }) {
+                vaults[index] = renamedVault
+            }
+            return renamedVault
+        } catch {
+            presentError(L10n.vaultRenameFailed, error: error, source: "renameVault")
+            return nil
         }
     }
 
