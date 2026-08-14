@@ -480,7 +480,6 @@
 "Automatically start recording when this event begins." = "この予定の開始時刻になったら自動的に録音を開始します。";
 "From calendar event" = "カレンダーイベント由来";
 "Calendar event: %@" = "カレンダーイベント: %@";
-"Select a calendar event to prepare transcription." = "カレンダーの予定を選択して、文字起こし画面を準備します。";
 "Connect a Google account and choose which calendars appear on Home." = "Google アカウントを接続し、Home に表示するカレンダーを選びます。";
 "Use events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を使用します。";
 "Display Calendars" = "表示するカレンダー";

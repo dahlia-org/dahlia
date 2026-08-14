@@ -11,12 +11,14 @@ struct CalendarScheduleView: View {
     @Environment(\.openURL) private var openURL
 
     let onSelectEvent: (CalendarEvent) -> Void
-    let onCreateMeeting: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                header
+                Text(L10n.calendarScheduleTitle)
+                    .font(.title.weight(.semibold))
+                    .foregroundStyle(.primary)
+
                 content
             }
             .padding(28)
@@ -31,40 +33,6 @@ struct CalendarScheduleView: View {
                 await refreshEnabledSources(force: true)
             }
         }
-    }
-
-    private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                titleStack
-                Spacer(minLength: 12)
-                newMeetingButton
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                titleStack
-                newMeetingButton
-            }
-        }
-    }
-
-    private var titleStack: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.calendarScheduleTitle)
-                .font(.largeTitle.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            Text(L10n.calendarScheduleDescription)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var newMeetingButton: some View {
-        Button(action: onCreateMeeting) {
-            Label(L10n.newMeeting, systemImage: "square.and.pencil")
-        }
-        .buttonStyle(.bordered)
     }
 
     private var content: some View {
