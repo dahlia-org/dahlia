@@ -41,11 +41,16 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         onManageVaults: @escaping () -> Void,
         onOpenMCP: @escaping () -> Void
     ) {
+        let refreshVaultMenu = navigation.activeMenu == .vaults &&
+            (self.vaults != vaults || self.currentVault != currentVault)
         self.vaults = vaults
         self.currentVault = currentVault
         self.onSelectVault = onSelectVault
         self.onManageVaults = onManageVaults
         self.onOpenMCP = onOpenMCP
+        if refreshVaultMenu {
+            presentVaultMenu()
+        }
     }
 
     @objc
@@ -274,7 +279,10 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
 
 private extension MainSidebarAccountMenuCoordinator {
     func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        guard !Self.shouldPassThroughKeyEvent(modifierFlags: event.modifierFlags) else { return event }
+        if Self.shouldPassThroughKeyEvent(modifierFlags: event.modifierFlags) {
+            dismissMenu()
+            return event
+        }
 
         switch event.keyCode {
         case 53:
