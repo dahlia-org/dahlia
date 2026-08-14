@@ -1832,8 +1832,6 @@ enum L10n {
         bundle: bundle
     ) }
     static var openCloudStorageSettings: String { String(localized: "Open Cloud Storage Settings", bundle: bundle) }
-    static var googleCalendarPrimaryCalendar: String { String(localized: "Primary calendar", bundle: bundle) }
-    static var calendarPrimaryCalendar: String { googleCalendarPrimaryCalendar }
     static var googleCalendarNoCalendars: String { String(localized: "No calendars are available for this Google account.", bundle: bundle) }
     static var macOSCalendarNoCalendars: String { String(localized: "No calendars are available in macOS Calendar.", bundle: bundle) }
     static var calendarLoading: String { String(localized: "Loading calendars…", bundle: bundle) }

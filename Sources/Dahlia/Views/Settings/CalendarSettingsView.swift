@@ -303,37 +303,31 @@ private struct CalendarSourceSelectionView: View {
     let selectionBinding: (String) -> Binding<Bool>
 
     var body: some View {
-        LabeledContent {
-            VStack(alignment: .leading) {
-                if isLoading, calendars.isEmpty {
-                    ProgressView(loadingMessage)
-                } else if calendars.isEmpty {
-                    Text(emptyMessage)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(calendars) { calendar in
-                        Toggle(isOn: selectionBinding(calendar.id)) {
-                            VStack(alignment: .leading) {
-                                Label {
-                                    Text(calendar.title)
-                                } icon: {
-                                    Circle()
-                                        .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
-                                        .frame(width: 10, height: 10)
-                                        .accessibilityHidden(true)
-                                }
+        VStack(alignment: .leading) {
+            Text(sourceName)
 
-                                if calendar.isPrimary {
-                                    Text(L10n.calendarPrimaryCalendar)
-                                }
-                            }
+            if isLoading, calendars.isEmpty {
+                ProgressView(loadingMessage)
+            } else if calendars.isEmpty {
+                Text(emptyMessage)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(calendars) { calendar in
+                    Toggle(isOn: selectionBinding(calendar.id)) {
+                        Label {
+                            Text(calendar.title)
+                        } icon: {
+                            Circle()
+                                .fill(calendar.colorHex.map(Color.init(hex:)) ?? Color.accentColor)
+                                .frame(width: 10, height: 10)
+                                .accessibilityHidden(true)
                         }
-                        .toggleStyle(.checkbox)
                     }
+                    .toggleStyle(.checkbox)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-        } label: {
-            Text(sourceName)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
