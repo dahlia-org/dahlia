@@ -67,7 +67,10 @@ struct MainSearchPanel: View {
                 .stroke(.separator, lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.18), radius: 28, y: 12)
-        .onAppear { isSearchFocused = true }
+        .onAppear {
+            isSearchFocused = true
+            model.catalogDidChange(using: sidebarViewModel)
+        }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
         }
