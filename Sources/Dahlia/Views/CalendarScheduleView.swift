@@ -8,9 +8,9 @@ struct CalendarScheduleView: View {
     private let googleCalendarStore = GoogleCalendarStore.shared
     private let macCalendarStore = MacCalendarStore.shared
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
-    @Environment(\.openURL) private var openURL
 
     let onSelectEvent: (CalendarEvent) -> Void
+    let onJoinEvent: (CalendarEvent) -> Void
 
     var body: some View {
         ScrollView {
@@ -183,7 +183,7 @@ struct CalendarScheduleView: View {
                 CalendarScheduleSectionView(
                     section: section,
                     onSelectEvent: onSelectEvent,
-                    onOpenURL: { openURL($0) },
+                    onJoinEvent: onJoinEvent,
                     isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled,
                     onSetAutoRecording: { event, isEnabled in
                         calendarAutoRecordingStore.setEnabled(isEnabled, for: event)
@@ -320,7 +320,7 @@ private struct CalendarScheduleEventSection: Identifiable {
 private struct CalendarScheduleSectionView: View {
     let section: CalendarScheduleEventSection
     let onSelectEvent: (CalendarEvent) -> Void
-    let onOpenURL: (URL) -> Void
+    let onJoinEvent: (CalendarEvent) -> Void
     let isAutoRecordingEnabled: (CalendarEvent) -> Bool
     let onSetAutoRecording: (CalendarEvent, Bool) -> Void
 
@@ -335,8 +335,8 @@ private struct CalendarScheduleSectionView: View {
                     CalendarScheduleEventRow(
                         event: event,
                         onSelect: { onSelectEvent(event) },
-                        onJoin: event.conferenceURI.map { url in
-                            { onOpenURL(url) }
+                        onJoin: event.conferenceURI.map { _ in
+                            { onJoinEvent(event) }
                         },
                         isAutoRecordingEnabled: isAutoRecordingEnabled(event),
                         onSetAutoRecording: { onSetAutoRecording(event, $0) }

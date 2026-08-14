@@ -2412,6 +2412,32 @@ enum L10n {
         localized: "Show the time until the event starts or ends.",
         bundle: bundle
     ) }
+    static var meetingLinkApplications: String { String(localized: "Meeting Link Apps", bundle: bundle) }
+    static var meetingLinkApplicationsDescription: String { String(
+        localized: "Choose the default app Dahlia uses for meeting links. Service overrides fall back to this setting; if an app is unavailable, Dahlia uses the default web browser.",
+        bundle: bundle
+    ) }
+    static var meetingLinkServiceOverrides: String { String(localized: "Service Overrides", bundle: bundle) }
+    static var meetingLinkServiceOverridesDescription: String { String(
+        localized: "Override the default only for selected meeting services.",
+        bundle: bundle
+    ) }
+    static var allMeetingLinks: String { String(localized: "All meeting links", bundle: bundle) }
+    static var useAllMeetingLinksSetting: String { String(localized: "Use all meeting links setting", bundle: bundle) }
+    static var defaultWebBrowser: String { String(localized: "Default web browser", bundle: bundle) }
+    static var loadingMeetingLinkApplications: String { String(localized: "Finding installed apps…", bundle: bundle) }
+    static func selectedApplicationUnavailable(_ bundleIdentifier: String) -> String {
+        String(
+            format: String(localized: "Selected app unavailable (%@)", bundle: bundle),
+            locale: .current,
+            bundleIdentifier
+        )
+    }
+
+    static var googleMeet: String { String(localized: "Google Meet", bundle: bundle) }
+    static var zoom: String { String(localized: "Zoom", bundle: bundle) }
+    static var microsoftTeams: String { String(localized: "Microsoft Teams", bundle: bundle) }
+    static var slack: String { String(localized: "Slack", bundle: bundle) }
     static var menuBarNoMoreEventsToday: String { String(localized: "No more events today", bundle: bundle) }
     static var menuBarNoEvents: String { String(localized: "No events", bundle: bundle) }
     static var menuBarOpenCalendarSettings: String { String(localized: "Open Calendar Settings", bundle: bundle) }
