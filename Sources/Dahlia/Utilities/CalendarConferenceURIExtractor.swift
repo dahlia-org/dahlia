@@ -6,6 +6,7 @@ enum CalendarConferenceURIExtractor {
         "meet.google.com",
         "zoom.us",
         "teams.microsoft.com",
+        "slack.com",
         "webex.com",
         "bluejeans.com",
         "whereby.com",

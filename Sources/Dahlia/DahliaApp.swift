@@ -44,7 +44,8 @@ struct DahliaApp: App {
             viewModel: viewModel,
             sidebarViewModel: sidebarViewModel,
             mainWindowNavigation: mainWindowNavigation,
-            meetingDetectionService: meetingDetectionService
+            onRecordingDidStart: meetingDetectionService.recordingDidStart,
+            onRecordingDidStop: meetingDetectionService.recordingDidStop
         )
         let menuBarCalendarViewModel = MenuBarCalendarViewModel()
         let liveSubtitleOverlayCoordinator = LiveSubtitleOverlayCoordinator(
@@ -331,8 +332,8 @@ struct DahliaApp: App {
 
     private func joinAndStartRecording(_ meeting: DetectedMeeting, in db: AppDatabaseManager) {
         handleDetectedMeeting(meeting, in: db, startTranscription: true)
-        if let conferenceURI = meeting.calendarEvent?.conferenceURI {
-            NSWorkspace.shared.open(conferenceURI)
+        if let event = meeting.calendarEvent {
+            recordingCoordinator.openMeetingLink(for: event)
         }
     }
 

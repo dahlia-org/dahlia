@@ -105,6 +105,11 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
+    nonisolated static let defaultMeetingLinkOpenTargetUserDefaultsKey = "defaultMeetingLinkOpenTarget"
+    nonisolated static let googleMeetMeetingLinkOpenTargetUserDefaultsKey = "googleMeetMeetingLinkOpenTarget"
+    nonisolated static let zoomMeetingLinkOpenTargetUserDefaultsKey = "zoomMeetingLinkOpenTarget"
+    nonisolated static let teamsMeetingLinkOpenTargetUserDefaultsKey = "teamsMeetingLinkOpenTarget"
+    nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
@@ -380,6 +385,16 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("menuBarCalendarEnabled") var menuBarCalendarEnabled = true
     @AppStorage("menuBarCalendarShowsEventTitle") var menuBarCalendarShowsEventTitle = true
     @AppStorage("menuBarCalendarShowsCountdown") var menuBarCalendarShowsCountdown = true
+    @AppStorage(AppSettings.defaultMeetingLinkOpenTargetUserDefaultsKey)
+    var defaultMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.systemDefault.rawValue
+    @AppStorage(AppSettings.googleMeetMeetingLinkOpenTargetUserDefaultsKey)
+    var googleMeetMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
+    @AppStorage(AppSettings.zoomMeetingLinkOpenTargetUserDefaultsKey)
+    var zoomMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
+    @AppStorage(AppSettings.teamsMeetingLinkOpenTargetUserDefaultsKey)
+    var teamsMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
+    @AppStorage(AppSettings.slackMeetingLinkOpenTargetUserDefaultsKey)
+    var slackMeetingLinkOpenTargetRawValue = MeetingLinkOpenTarget.inheritGlobal.rawValue
     @AppStorage(AppSettings.automaticOrganizationMembershipEnabledUserDefaultsKey)
     var isAutomaticOrganizationMembershipEnabled = true
     nonisolated static let googleOAuthClientIDOverrideUserDefaultsKey = "googleOAuthClientIDOverride"
@@ -399,6 +414,54 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
             includesDeclinedEvents: includesDeclinedCalendarEvents,
             includesOutOfOfficeEvents: includesOutOfOfficeCalendarEvents
         )
+    }
+
+    var defaultMeetingLinkOpenTarget: MeetingLinkOpenTarget {
+        get {
+            let target = MeetingLinkOpenTarget(rawValue: defaultMeetingLinkOpenTargetRawValue) ?? .systemDefault
+            return target == .inheritGlobal ? .systemDefault : target
+        }
+        set {
+            defaultMeetingLinkOpenTargetRawValue = newValue == .inheritGlobal
+                ? MeetingLinkOpenTarget.systemDefault.rawValue
+                : newValue.rawValue
+        }
+    }
+
+    func meetingLinkOpenTarget(for service: MeetingLinkService) -> MeetingLinkOpenTarget {
+        MeetingLinkOpenTarget(rawValue: meetingLinkOpenTargetRawValue(for: service)) ?? .inheritGlobal
+    }
+
+    func setMeetingLinkOpenTarget(_ target: MeetingLinkOpenTarget, for service: MeetingLinkService) {
+        let rawValue = target.rawValue
+        switch service {
+        case .googleMeet: googleMeetMeetingLinkOpenTargetRawValue = rawValue
+        case .zoom: zoomMeetingLinkOpenTargetRawValue = rawValue
+        case .teams: teamsMeetingLinkOpenTargetRawValue = rawValue
+        case .slack: slackMeetingLinkOpenTargetRawValue = rawValue
+        }
+    }
+
+    func normalizeMeetingLinkOpenTargets() {
+        let normalizedDefaultRawValue = defaultMeetingLinkOpenTarget.rawValue
+        if defaultMeetingLinkOpenTargetRawValue != normalizedDefaultRawValue {
+            defaultMeetingLinkOpenTargetRawValue = normalizedDefaultRawValue
+        }
+        for service in MeetingLinkService.allCases {
+            let normalizedTarget = meetingLinkOpenTarget(for: service)
+            if meetingLinkOpenTargetRawValue(for: service) != normalizedTarget.rawValue {
+                setMeetingLinkOpenTarget(normalizedTarget, for: service)
+            }
+        }
+    }
+
+    private func meetingLinkOpenTargetRawValue(for service: MeetingLinkService) -> String {
+        switch service {
+        case .googleMeet: googleMeetMeetingLinkOpenTargetRawValue
+        case .zoom: zoomMeetingLinkOpenTargetRawValue
+        case .teams: teamsMeetingLinkOpenTargetRawValue
+        case .slack: slackMeetingLinkOpenTargetRawValue
+        }
     }
 
     nonisolated static func migrateCalendarEventFilterSettings(in userDefaults: UserDefaults) {

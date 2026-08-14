@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import GRDB
 
@@ -8,18 +7,24 @@ final class RecordingCoordinator {
     private let viewModel: CaptionViewModel
     private let sidebarViewModel: SidebarViewModel
     private let mainWindowNavigation: MainWindowNavigation
-    private let meetingDetectionService: MeetingDetectionService
+    private let notifyRecordingDidStart: @MainActor () -> Void
+    private let notifyRecordingDidStop: @MainActor () -> Void
+    private let meetingLinkOpener: MeetingLinkOpener
 
     init(
         viewModel: CaptionViewModel,
         sidebarViewModel: SidebarViewModel,
         mainWindowNavigation: MainWindowNavigation,
-        meetingDetectionService: MeetingDetectionService
+        onRecordingDidStart: @escaping @MainActor () -> Void,
+        onRecordingDidStop: @escaping @MainActor () -> Void,
+        meetingLinkOpener: MeetingLinkOpener = MeetingLinkOpener()
     ) {
         self.viewModel = viewModel
         self.sidebarViewModel = sidebarViewModel
         self.mainWindowNavigation = mainWindowNavigation
-        self.meetingDetectionService = meetingDetectionService
+        self.notifyRecordingDidStart = onRecordingDidStart
+        self.notifyRecordingDidStop = onRecordingDidStop
+        self.meetingLinkOpener = meetingLinkOpener
     }
 
     var canStartNewMeeting: Bool {
@@ -122,9 +127,13 @@ final class RecordingCoordinator {
     }
 
     func joinCalendarEventAndStartRecording(_ event: CalendarEvent) {
-        guard startRecording(forCalendarEvent: event),
-              let conferenceURI = event.conferenceURI else { return }
-        NSWorkspace.shared.open(conferenceURI)
+        openMeetingLink(for: event)
+        _ = startRecording(forCalendarEvent: event)
+    }
+
+    func openMeetingLink(for event: CalendarEvent) {
+        guard let conferenceURI = event.conferenceURI else { return }
+        meetingLinkOpener.open(conferenceURI)
     }
 
     func startAutomaticRecording(forCalendarEvent event: CalendarEvent) {
@@ -209,13 +218,13 @@ final class RecordingCoordinator {
     }
 
     func stopRecording() {
-        meetingDetectionService.recordingDidStop()
+        notifyRecordingDidStop()
         viewModel.stopListening()
     }
 
     func recordingDidStart() {
         guard viewModel.isListening else { return }
-        meetingDetectionService.recordingDidStart()
+        notifyRecordingDidStart()
     }
 
     @discardableResult

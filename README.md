@@ -17,6 +17,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Conversation Analytics (Beta)** — Compare speaking pace, speaking-time balance, conversation occupancy, and overlapping speech from confirmed microphone and system-audio transcripts
 - **Meeting Detection** — Combine microphone activity with supported app or meeting-window evidence and offer to start recording
 - **Calendar Auto-Recording** — Arm an individual upcoming event from the main window or menu bar to start recording automatically at its scheduled time
+- **Meeting Link Apps** — Choose a default app for meeting links and override it for Google Meet, Zoom, Microsoft Teams, or Slack, including an installed Google Meet Chrome app
 - **Automatic Meeting-End Stop** — Optionally stop and save after supported meeting audio activity ends; browsers require meeting-window evidence
 - **Screenshot Capture** — Attach screenshots to transcripts for multimodal summaries
 - **Automatic Updates** — Securely check, download, and install new releases with Sparkle 2

@@ -53,8 +53,7 @@ struct MenuBarMenuView: View {
     }
 
     private func joinEvent(_ event: CalendarEvent) {
-        guard let conferenceURI = event.conferenceURI else { return }
-        NSWorkspace.shared.open(conferenceURI)
+        recordingCoordinator.openMeetingLink(for: event)
     }
 
     private func showEventInCalendar(_ event: CalendarEvent) {

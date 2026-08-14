@@ -35,6 +35,8 @@ struct CalendarSettingsView: View {
                 Text(L10n.menuBarCalendarDescription)
             }
 
+            MeetingLinkSettingsView()
+
             CalendarEventFilterSettingsView(settings: settings)
 
             Section {
