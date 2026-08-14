@@ -18,11 +18,16 @@ struct BundledCodexAppServerLauncher {
     func launch() throws -> any CodexAppServerTransport {
         let homeURL = try homeLocator.homeURL()
         try presetSkillInstaller.install(into: homeURL)
+        let executableURL = try executableLocator.executableURL()
         var environment = ProcessInfo.processInfo.environment
         environment["CODEX_HOME"] = homeURL.path
+        environment["CODEX_CODE_MODE_HOST_PATH"] = executableURL
+            .deletingLastPathComponent()
+            .appending(path: "codex-code-mode-host")
+            .path
         environment["PATH"] = CommandLineToolLocator.searchPath(environment: environment)
         return try CodexAppServerProcessTransport(
-            executableURL: executableLocator.executableURL(),
+            executableURL: executableURL,
             environment: environment,
             currentDirectoryURL: homeURL
         )
