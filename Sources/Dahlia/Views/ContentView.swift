@@ -18,54 +18,70 @@ struct ContentView: View {
     private var isCustomerIntelligenceBetaEnabled = AppSettings.defaultCustomerIntelligenceBetaEnabled
     @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
-    @State private var meetingSearchText = ""
-    @State private var meetingSearchTokens: [MeetingSearchToken] = []
+    @State private var isShowingChatHistory = false
+    @State private var isShowingChatConfiguration = false
+    @State private var searchModel = MainSearchModel()
 
     var body: some View {
-        Group {
-            if mainWindowNavigation.section == .projects {
-                ProjectManagementView(
-                    isSidebarVisible: $isSidebarVisible,
-                    sidebarViewModel: sidebarViewModel,
-                    captionViewModel: viewModel,
-                    updateController: updateController,
-                    recordingCoordinator: recordingCoordinator,
-                    mainWindowNavigation: mainWindowNavigation,
-                    onShowUpcomingSchedule: returnToCalendarSchedule,
-                    onShowUnprocessedRecordings: showUnprocessedRecordings,
-                    showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                    onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
-                    onSelectVault: onSelectVault
-                )
-            } else {
-                HSplitView {
-                    if isSidebarVisible {
-                        MeetingListSidebarView(
-                            viewModel: viewModel,
-                            updateController: updateController,
-                            sidebarViewModel: sidebarViewModel,
-                            recordingCoordinator: recordingCoordinator,
-                            searchText: $meetingSearchText,
-                            searchTokens: $meetingSearchTokens,
-                            isShowingUpcomingSchedule: isShowingUpcomingSchedule,
-                            onShowUpcomingSchedule: returnToCalendarSchedule,
-                            onOpenProjectManagement: showProjectManagement,
-                            isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
-                            onShowUnprocessedRecordings: showUnprocessedRecordings,
-                            showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
-                            onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
-                            onSelectVault: onSelectVault
-                        )
-                        .mainSidebarPane(
-                            width: mainWindowNavigation.sidebarWidth,
-                            onWidthChange: mainWindowNavigation.updateSidebarWidth
-                        )
-                    }
+        HSplitView {
+            Group {
+                if mainWindowNavigation.section == .projects {
+                    ProjectManagementView(
+                        isSidebarVisible: $isSidebarVisible,
+                        sidebarViewModel: sidebarViewModel,
+                        captionViewModel: viewModel,
+                        updateController: updateController,
+                        recordingCoordinator: recordingCoordinator,
+                        mainWindowNavigation: mainWindowNavigation,
+                        onShowUpcomingSchedule: returnToCalendarSchedule,
+                        onShowUnprocessedRecordings: showUnprocessedRecordings,
+                        showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                        onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                        onSelectVault: onSelectVault
+                    )
+                } else {
+                    HSplitView {
+                        if isSidebarVisible {
+                            MeetingListSidebarView(
+                                viewModel: viewModel,
+                                updateController: updateController,
+                                sidebarViewModel: sidebarViewModel,
+                                recordingCoordinator: recordingCoordinator,
+                                isShowingUpcomingSchedule: isShowingUpcomingSchedule,
+                                onShowUpcomingSchedule: returnToCalendarSchedule,
+                                onOpenProjectManagement: showProjectManagement,
+                                isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
+                                onShowUnprocessedRecordings: showUnprocessedRecordings,
+                                showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
+                                onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                                onSelectVault: onSelectVault
+                            )
+                            .mainSidebarPane(
+                                width: mainWindowNavigation.sidebarWidth,
+                                onWidthChange: mainWindowNavigation.updateSidebarWidth
+                            )
+                        }
 
-                    detailView
-                        .navigationTitle("")
-                        .mainDetailPane()
+                        detailView
+                            .navigationTitle("")
+                            .mainDetailPane()
+                    }
                 }
+            }
+            .layoutPriority(1)
+
+            if chatCoordinator.isDockedVisible {
+                CodexChatSidebarView(
+                    coordinator: chatCoordinator,
+                    sidebarViewModel: sidebarViewModel,
+                    showsHistory: $isShowingChatHistory,
+                    showsConfiguration: $isShowingChatConfiguration,
+                    onOpenDetachedSession: openDetachedChat
+                )
+                .mainChatSidebarPane(
+                    width: mainWindowNavigation.chatSidebarWidth,
+                    onWidthChange: mainWindowNavigation.updateChatSidebarWidth
+                )
             }
         }
         .toolbar(removing: .title)
@@ -74,27 +90,25 @@ struct ContentView: View {
             if !mainWindowNavigation.isShowingSettings {
                 MainWindowNavigationToolbar(
                     isSidebarVisible: isSidebarVisible,
+                    isChatSidebarVisible: chatCoordinator.isDockedVisible,
+                    chatSidebarWidth: mainWindowNavigation.chatSidebarWidth,
+                    chatSessionTitle: chatCoordinator.dockedSession.displayTitle,
+                    isShowingChatHistory: isShowingChatHistory,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
                     onToggleSidebar: toggleSidebar,
+                    onSearch: showSearch,
                     onGoBack: goBack,
                     onGoForward: goForward,
+                    onNewChat: startNewDockedChat,
+                    onShowChatHistory: showChatHistory,
+                    onHideChatHistory: hideChatHistory,
+                    onPopOutChat: popOutDockedChat,
                     onToggleChat: toggleChat
                 )
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .overlay {
-            if chatCoordinator.isFloatingVisible {
-                CodexChatFloatingView(
-                    coordinator: chatCoordinator,
-                    sidebarViewModel: sidebarViewModel,
-                    onPopOut: openDetachedChat,
-                    onOpenDetachedSession: openDetachedChat
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
-            }
-        }
         .overlay(alignment: .bottomTrailing) {
             if !viewModel.summaryGenerationJobs.isEmpty {
                 SummaryProgressToastView(
@@ -106,6 +120,24 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 0.3), value: viewModel.summaryGenerationJobs.map(\.id))
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if chatCoordinator.isDockedVisible {
+                CodexChatConfigurationOverlay(
+                    session: chatCoordinator.dockedSession,
+                    isPresented: $isShowingChatConfiguration
+                )
+            }
+        }
+        .overlay {
+            if searchModel.isPresented {
+                MainSearchOverlay(
+                    model: searchModel,
+                    sidebarViewModel: sidebarViewModel,
+                    onOpenMeeting: openSearchMeeting,
+                    onOpenProject: openSearchProject
+                )
+            }
+        }
         .task {
             presentPermissionGuideIfNeeded()
         }
@@ -113,8 +145,9 @@ struct ContentView: View {
             await sidebarViewModel.refreshUnprocessedRecordings()
         }
         .onChange(of: sidebarViewModel.currentVault?.id) {
-            meetingSearchText = ""
-            meetingSearchTokens.removeAll()
+            isShowingChatHistory = false
+            dismissChatConfiguration()
+            searchModel.resetForVaultChange(using: sidebarViewModel)
         }
         .onChange(of: viewModel.batchTranscriptionState) { _, state in
             guard state?.changesUnprocessedRecordingsProjection != false else { return }
@@ -187,11 +220,60 @@ private extension ContentView {
     }
 
     private func toggleChat() {
-        if chatCoordinator.isFloatingVisible {
-            chatCoordinator.hideFloating()
+        if chatCoordinator.isDockedVisible {
+            isShowingChatHistory = false
+            dismissChatConfiguration()
+            chatCoordinator.hideDocked()
         } else {
-            chatCoordinator.showFloating()
+            chatCoordinator.showDocked()
         }
+    }
+
+    private func startNewDockedChat() {
+        isShowingChatHistory = false
+        dismissChatConfiguration()
+        chatCoordinator.newDockedChat()
+    }
+
+    private func showChatHistory() {
+        isShowingChatHistory = true
+        Task { await chatCoordinator.refreshHistory() }
+    }
+
+    private func hideChatHistory() {
+        isShowingChatHistory = false
+    }
+
+    private func popOutDockedChat() {
+        isShowingChatHistory = false
+        dismissChatConfiguration()
+        openDetachedChat(chatCoordinator.popOutDocked())
+    }
+
+    private func dismissChatConfiguration() {
+        isShowingChatConfiguration = false
+    }
+
+    private func showSearch() {
+        searchModel.present(using: sidebarViewModel)
+    }
+
+    private func openSearchMeeting(_ id: UUID) {
+        mainWindowNavigation.showMeetings()
+        isShowingUnprocessedRecordings = false
+        sidebarViewModel.selectMeeting(id)
+    }
+
+    private func openSearchProject(_ id: UUID) {
+        if let project = sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) {
+            let ancestorIds = ProjectManagementSelection.ancestorIDs(
+                toReveal: project.projectName,
+                projects: sidebarViewModel.allProjectItems
+            )
+            mainWindowNavigation.expandedProjectIds.formUnion(ancestorIds)
+        }
+        mainWindowNavigation.selectedProjectId = id
+        mainWindowNavigation.recordNavigation(to: .project(id))
     }
 
     private func presentPermissionGuideIfNeeded() {
@@ -274,8 +356,7 @@ private extension ContentView {
             ControlPanelView(
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel,
-                recordingCoordinator: recordingCoordinator,
-                allowsTranscriptReferencePopovers: !chatCoordinator.isFloatingVisible
+                recordingCoordinator: recordingCoordinator
             )
         } else {
             CalendarScheduleView(

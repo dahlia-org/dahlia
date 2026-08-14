@@ -7,8 +7,6 @@ struct MeetingListSidebarView: View {
     var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
-    @Binding var searchText: String
-    @Binding var searchTokens: [MeetingSearchToken]
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
     let onOpenProjectManagement: () -> Void
@@ -103,11 +101,6 @@ struct MeetingListSidebarView: View {
                 onSelectVault: onSelectVault
             )
         }
-        .meetingSidebarSearch(
-            text: $searchText,
-            tokens: $searchTokens,
-            sidebarViewModel: sidebarViewModel
-        )
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
@@ -145,8 +138,6 @@ struct MeetingListSidebarView: View {
     }
 
     private func clearSearch() {
-        searchText = ""
-        searchTokens.removeAll()
         sidebarViewModel.updateMeetingSearchCriteria(MeetingSearchCriteria())
     }
 

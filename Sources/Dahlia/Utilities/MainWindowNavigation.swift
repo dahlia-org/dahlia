@@ -35,6 +35,7 @@ final class MainWindowNavigation {
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
     private(set) var sidebarWidth: CGFloat
+    private(set) var chatSidebarWidth: CGFloat
     var settingsCategory: SettingsCategory {
         didSet {
             SettingsNavigation.saveSelection(settingsCategory, in: settingsDefaults)
@@ -42,7 +43,6 @@ final class MainWindowNavigation {
     }
 
     var selectedProjectId: UUID?
-    var projectSearchText = ""
     var expandedProjectIds: Set<UUID> = []
 
     private var projectVaultId: UUID?
@@ -72,6 +72,14 @@ final class MainWindowNavigation {
         sidebarWidth = clampedSidebarWidth
         if clampedSidebarWidth != storedSidebarWidth {
             settingsDefaults.set(clampedSidebarWidth, forKey: MainSidebarLayout.widthDefaultsKey)
+        }
+        let storedChatSidebarWidth = settingsDefaults.object(forKey: MainChatSidebarLayout.widthDefaultsKey) == nil
+            ? MainChatSidebarLayout.defaultWidth
+            : settingsDefaults.double(forKey: MainChatSidebarLayout.widthDefaultsKey)
+        let clampedChatSidebarWidth = MainChatSidebarLayout.clampedWidth(storedChatSidebarWidth)
+        chatSidebarWidth = clampedChatSidebarWidth
+        if clampedChatSidebarWidth != storedChatSidebarWidth {
+            settingsDefaults.set(clampedChatSidebarWidth, forKey: MainChatSidebarLayout.widthDefaultsKey)
         }
         settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
             ?? SettingsNavigation.savedSelection(in: settingsDefaults)
@@ -123,6 +131,13 @@ final class MainWindowNavigation {
         settingsDefaults.set(clampedWidth, forKey: MainSidebarLayout.widthDefaultsKey)
     }
 
+    func updateChatSidebarWidth(_ width: CGFloat) {
+        let clampedWidth = MainChatSidebarLayout.clampedWidth(width)
+        guard clampedWidth != chatSidebarWidth else { return }
+        chatSidebarWidth = clampedWidth
+        settingsDefaults.set(clampedWidth, forKey: MainChatSidebarLayout.widthDefaultsKey)
+    }
+
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }
     var canGoForward: Bool { !forwardHistory.isEmpty && !isNavigatingHistory }
 
@@ -163,7 +178,6 @@ final class MainWindowNavigation {
     func changeVault(to vaultId: UUID?) {
         projectVaultId = vaultId
         selectedProjectId = nil
-        projectSearchText = ""
         expandedProjectIds = []
         let location: MainWindowLocation = if section == .projects {
             .project(nil)
@@ -204,7 +218,6 @@ final class MainWindowNavigation {
         if projectVaultId != vaultId {
             projectVaultId = vaultId
             selectedProjectId = nil
-            projectSearchText = ""
             expandedProjectIds.removeAll()
         }
         let reconciledProjectId = ProjectManagementSelection.reconciled(

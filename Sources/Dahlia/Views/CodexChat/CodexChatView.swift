@@ -6,30 +6,24 @@ struct CodexChatView: View {
     let meetingReferences: [CodexChatMeetingReference]
     let meetingCatalogVaultID: UUID?
     let isMeetingCatalogLoaded: Bool
-    let allowsPopOut: Bool
+    let showsHeader: Bool
+    @Binding var showsHistory: Bool
+    var configurationPresentation: Binding<Bool>?
     let onNewChat: () -> Void
-    let onPopOut: () -> Void
-    let onHide: (() -> Void)?
     let onOpenHistory: (CodexChatThreadSummary) -> Void
-    var onHeaderDragChanged: ((CGSize) -> Void)?
-    var onHeaderDragEnded: ((CGSize) -> Void)?
-    @State private var showsHistory = false
 
     var body: some View {
         VStack(spacing: 0) {
-            CodexChatHeader(
-                title: session.displayTitle,
-                showsHistory: showsHistory,
-                hasConversation: !session.messages.isEmpty,
-                allowsPopOut: allowsPopOut,
-                onBack: hideHistory,
-                onShowHistory: showHistory,
-                onNewChat: startNewChat,
-                onPopOut: onPopOut,
-                onHide: onHide,
-                onDragChanged: onHeaderDragChanged,
-                onDragEnded: onHeaderDragEnded
-            )
+            if showsHeader {
+                CodexChatHeader(
+                    title: session.displayTitle,
+                    showsHistory: showsHistory,
+                    hasConversation: !session.messages.isEmpty,
+                    onBack: hideHistory,
+                    onShowHistory: showHistory,
+                    onNewChat: startNewChat
+                )
+            }
 
             if showsHistory {
                 CodexChatHistoryView(
@@ -97,9 +91,12 @@ struct CodexChatView: View {
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
 
-                CodexChatComposer(session: session)
-                    .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-                    .padding(.bottom, CodexChatDesign.composerBottomPadding)
+                CodexChatComposer(
+                    session: session,
+                    configurationPresentation: configurationPresentation
+                )
+                .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
+                .padding(.bottom, CodexChatDesign.composerBottomPadding)
             }
         }
         .background(.background)

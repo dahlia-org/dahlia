@@ -7,20 +7,17 @@ struct SummaryDocumentView: View {
     let screenshotProvider: (UUID) -> MeetingScreenshotRecord?
     let onOpenImage: (UUID, CGImage) -> Void
     let transcriptTextProvider: (TranscriptReference) -> String?
-    let allowsTranscriptReferencePopovers: Bool
 
     init(
         document: SummaryDocument,
         screenshotProvider: @escaping (UUID) -> MeetingScreenshotRecord?,
         onOpenImage: @escaping (UUID, CGImage) -> Void,
-        transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil },
-        allowsTranscriptReferencePopovers: Bool = true
+        transcriptTextProvider: @escaping (TranscriptReference) -> String? = { _ in nil }
     ) {
         self.document = document
         self.screenshotProvider = screenshotProvider
         self.onOpenImage = onOpenImage
         self.transcriptTextProvider = transcriptTextProvider
-        self.allowsTranscriptReferencePopovers = allowsTranscriptReferencePopovers
     }
 
     var body: some View {
@@ -244,8 +241,7 @@ struct SummaryDocumentView: View {
         if let ref {
             TranscriptReferenceChip(
                 reference: ref,
-                transcriptText: transcriptTextProvider(ref),
-                allowsPopover: allowsTranscriptReferencePopovers
+                transcriptText: transcriptTextProvider(ref)
             )
         }
     }
@@ -335,7 +331,6 @@ struct SummaryScreenshotImageView: View {
 private struct TranscriptReferenceChip: View {
     let reference: TranscriptReference
     let transcriptText: String?
-    let allowsPopover: Bool
 
     @State private var isTranscriptPopoverPresented = false
 
@@ -348,13 +343,8 @@ private struct TranscriptReferenceChip: View {
             .padding(.vertical, DahliaDesign.timestampChipVerticalPadding)
             .background(Color.primary.opacity(DahliaDesign.timestampChipBackgroundOpacity), in: Capsule())
             .onHover { isHovering in
-                isTranscriptPopoverPresented = allowsPopover
-                    && isHovering
+                isTranscriptPopoverPresented = isHovering
                     && transcriptText?.nilIfBlank != nil
-            }
-            .onChange(of: allowsPopover) {
-                guard !allowsPopover else { return }
-                isTranscriptPopoverPresented = false
             }
             .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
                 if let transcriptText = transcriptText?.nilIfBlank {

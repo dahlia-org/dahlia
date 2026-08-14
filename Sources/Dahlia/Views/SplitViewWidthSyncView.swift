@@ -2,11 +2,17 @@ import SwiftUI
 
 /// `HSplitView` の分割位置を共有状態と同期する。
 struct SplitViewWidthSyncView: NSViewRepresentable {
+    enum Pane {
+        case first
+        case last
+    }
+
     let width: CGFloat
     let onWidthChange: (CGFloat) -> Void
+    var pane: Pane = .first
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(width: width, onWidthChange: onWidthChange)
+        Coordinator(width: width, pane: pane, onWidthChange: onWidthChange)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -47,12 +53,18 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         private static let widthTolerance: CGFloat = 0.5
 
         private var width: CGFloat
+        private let pane: Pane
         private var onWidthChange: (CGFloat) -> Void
         private weak var splitView: NSSplitView?
         private weak var markerView: NSView?
 
-        init(width: CGFloat, onWidthChange: @escaping (CGFloat) -> Void) {
+        init(
+            width: CGFloat,
+            pane: Pane = .first,
+            onWidthChange: @escaping (CGFloat) -> Void
+        ) {
             self.width = width
+            self.pane = pane
             self.onWidthChange = onWidthChange
         }
 
@@ -92,27 +104,51 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         }
 
         private func applyWidthIfNeeded() {
-            guard markerIsInFirstPane,
+            guard markerIsInTrackedPane,
                   let splitView,
-                  splitView.subviews.count > 1,
-                  let currentWidth = splitView.subviews.first?.frame.width,
-                  abs(currentWidth - width) > Self.widthTolerance else { return }
-            splitView.setPosition(width, ofDividerAt: 0)
+                  let trackedPane,
+                  let dividerIndex,
+                  abs(trackedPane.frame.width - width) > Self.widthTolerance else { return }
+            let position = switch pane {
+            case .first:
+                width
+            case .last:
+                splitView.bounds.width - width - splitView.dividerThickness
+            }
+            splitView.setPosition(position, ofDividerAt: dividerIndex)
         }
 
         @objc private func splitViewDidResize() {
-            guard markerIsInFirstPane,
-                  let splitView,
-                  splitView.subviews.count > 1,
-                  let resizedWidth = splitView.subviews.first?.frame.width,
-                  abs(resizedWidth - width) > Self.widthTolerance else { return }
+            guard markerIsInTrackedPane,
+                  let trackedPane else { return }
+            let resizedWidth = trackedPane.frame.width
+            guard abs(resizedWidth - width) > Self.widthTolerance else { return }
             onWidthChange(resizedWidth)
         }
 
-        private var markerIsInFirstPane: Bool {
+        private var trackedPane: NSView? {
+            switch pane {
+            case .first:
+                splitView?.subviews.first
+            case .last:
+                splitView?.subviews.last
+            }
+        }
+
+        private var dividerIndex: Int? {
+            guard let splitView, splitView.subviews.count > 1 else { return nil }
+            return switch pane {
+            case .first:
+                0
+            case .last:
+                splitView.subviews.count - 2
+            }
+        }
+
+        private var markerIsInTrackedPane: Bool {
             guard let markerView,
-                  let firstPane = splitView?.subviews.first else { return false }
-            return markerView === firstPane || markerView.isDescendant(of: firstPane)
+                  let trackedPane else { return false }
+            return markerView === trackedPane || markerView.isDescendant(of: trackedPane)
         }
 
         deinit {

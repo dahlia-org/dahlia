@@ -701,6 +701,13 @@ enum L10n {
     static var inProgress: String { String(localized: "In Progress", bundle: bundle) }
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
+    static var searchMeetingsAndProjects: String { String(localized: "Search meetings and projects", bundle: bundle) }
+    static var closeSearch: String { String(localized: "Close search", bundle: bundle) }
+    static var removeSearchFilter: String { String(localized: "Remove search filter", bundle: bundle) }
+    static var searchUnavailable: String { String(localized: "Search unavailable", bundle: bundle) }
+    static var searchRequiresVault: String { String(localized: "Select a Vault to search.", bundle: bundle) }
+    static var recentMeetings: String { String(localized: "Recent Meetings", bundle: bundle) }
+    static var recentProjects: String { String(localized: "Recent Projects", bundle: bundle) }
     static var searchingMeetings: String { String(localized: "Searching…", bundle: bundle) }
     static var noMeetingsMatchSearch: String { String(localized: "No meetings match your search", bundle: bundle) }
     static var adjustMeetingSearch: String { String(
@@ -2504,6 +2511,9 @@ enum L10n {
     static var loadMore: String { String(localized: "Load more", bundle: bundle) }
     static var popOutChat: String { String(localized: "Open chat in a new window", bundle: bundle) }
     static var hideChat: String { String(localized: "Hide chat", bundle: bundle) }
+    static var showChat: String { String(localized: "Show chat", bundle: bundle) }
+    static var shown: String { String(localized: "Shown", bundle: bundle) }
+    static var hidden: String { String(localized: "Hidden", bundle: bundle) }
     static var sendMessage: String { String(localized: "Send message", bundle: bundle) }
     static var stopGenerating: String { String(localized: "Stop generating", bundle: bundle) }
     static var chatThinking: String { String(localized: "Thinking", bundle: bundle) }

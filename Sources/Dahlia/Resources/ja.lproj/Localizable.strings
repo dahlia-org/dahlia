@@ -1150,8 +1150,16 @@
 "Review this customer's people, work, topics, and recent conversations." = "この顧客の人物、Projects、トピック、最近の会話を俯瞰します。";
 "Key People" = "主要人物";
 "Recent Projects" = "最近動いたProjects";
+"Search meetings and projects" = "ミーティングとプロジェクトを検索";
+"Close search" = "検索を閉じる";
+"Remove search filter" = "検索フィルターを削除";
+"Search unavailable" = "検索を利用できません";
+"Select a Vault to search." = "検索するにはVaultを選択してください。";
+"Show chat" = "チャットを表示";
+"Shown" = "表示中";
+"Hidden" = "非表示";
 "Recently Discussed Topics" = "最近議論されたトピック";
-"Recent Meetings" = "最近のMeeting";
+"Recent Meetings" = "最近のミーティング";
 "No recent interaction" = "最近の接点はありません";
 "Selects this customer and opens its organization chart." = "この顧客を選択して組織図を開きます。";
 "Person Details" = "人物の基本情報";

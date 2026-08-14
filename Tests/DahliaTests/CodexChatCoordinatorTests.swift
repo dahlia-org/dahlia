@@ -7,23 +7,47 @@ import Foundation
     @MainActor
     struct CodexChatCoordinatorTests {
         @Test
-        func replacingFloatingChatRemovesPreviousSession() {
+        func replacingDockedChatRemovesPreviousSession() {
             let service = CoordinatorTestCodexChatService()
             let coordinator = CodexChatCoordinator(service: service)
-            let previousID = coordinator.floatingSessionID
+            let previousID = coordinator.dockedSessionID
 
-            coordinator.newFloatingChat()
+            coordinator.newDockedChat()
 
-            #expect(coordinator.floatingSessionID != previousID)
+            #expect(coordinator.dockedSessionID != previousID)
             #expect(coordinator.session(for: previousID) == nil)
             #expect(coordinator.sessions.count == 1)
+        }
+
+        @Test
+        func dockedChatStartsVisibleAndCanBeHiddenAndShown() {
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
+
+            #expect(coordinator.isDockedVisible)
+            coordinator.hideDocked()
+            #expect(!coordinator.isDockedVisible)
+            coordinator.showDocked()
+            #expect(coordinator.isDockedVisible)
+        }
+
+        @Test
+        func poppingOutDockedChatHidesSidebarAndCreatesReplacementSession() {
+            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
+            let previousID = coordinator.dockedSessionID
+
+            let poppedOutID = coordinator.popOutDocked()
+
+            #expect(poppedOutID == previousID)
+            #expect(coordinator.detachedSessionIDs.contains(previousID))
+            #expect(coordinator.dockedSessionID != previousID)
+            #expect(!coordinator.isDockedVisible)
         }
 
         @Test
         func detachedHistorySelectionStaysDetached() async {
             let service = CoordinatorTestCodexChatService()
             let coordinator = CodexChatCoordinator(service: service)
-            let originalFloatingID = coordinator.floatingSessionID
+            let originalDockedID = coordinator.dockedSessionID
             let currentWindowID = coordinator.newDetachedChat()
             let thread = Self.threadSummary(id: "history-thread")
 
@@ -32,8 +56,8 @@ import Foundation
             #expect(selectedID != currentWindowID)
             #expect(coordinator.detachedSessionIDs.contains(selectedID))
             #expect(coordinator.session(for: selectedID)?.backendThreadID == thread.id)
-            #expect(coordinator.floatingSessionID == originalFloatingID)
-            #expect(!coordinator.isFloatingVisible)
+            #expect(coordinator.dockedSessionID == originalDockedID)
+            #expect(coordinator.isDockedVisible)
         }
 
         @Test
@@ -87,6 +111,7 @@ import Foundation
                 lastOpenedAt: .now
             )
             settings.currentVault = vault
+            coordinator.hideDocked()
             coordinator.activateVault(vault.id)
 
             await coordinator.refreshHistory()
@@ -118,7 +143,7 @@ import Foundation
         }
 
         @Test
-        func floatingAndDetachedSessionsShareLatestScreenContext() async throws {
+        func dockedAndDetachedSessionsShareLatestScreenContext() async throws {
             let service = CoordinatorTestCodexChatService()
             let settings = AppSettings()
             let vault = Self.vault(name: "Shared Context")
@@ -132,9 +157,9 @@ import Foundation
                 dbQueue: nil
             )
 
-            coordinator.floatingSession.draft = "First question"
-            coordinator.floatingSession.sendDraft()
-            await waitUntil { await MainActor.run { !coordinator.floatingSession.isGenerating } }
+            coordinator.dockedSession.draft = "First question"
+            coordinator.dockedSession.sendDraft()
+            await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
 
             let detachedID = coordinator.newDetachedChat()
             let detachedSession = try #require(coordinator.session(for: detachedID))
@@ -179,9 +204,9 @@ import Foundation
             var statuses: [Bool] = []
             coordinator.liveModeStatusDidChange = { statuses.append($0) }
 
-            coordinator.floatingSession.toggleLiveMode()
+            coordinator.dockedSession.toggleLiveMode()
             detachedSession.toggleLiveMode()
-            coordinator.floatingSession.toggleLiveMode()
+            coordinator.dockedSession.toggleLiveMode()
             detachedSession.toggleLiveMode()
 
             #expect(statuses == [true, true, true, false])

@@ -165,7 +165,6 @@ struct ControlPanelView: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
-    let allowsTranscriptReferencePopovers: Bool
 
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject private var appSettings = AppSettings.shared
@@ -382,7 +381,6 @@ struct ControlPanelView: View {
                 screenshotStore: viewModel.screenshotStore,
                 document: viewModel.currentSummaryDocument,
                 hasSummary: viewModel.hasCurrentMeetingSummary,
-                allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers,
                 openScreenshot: openSummaryScreenshot,
                 transcriptText: summaryTranscriptText
             )

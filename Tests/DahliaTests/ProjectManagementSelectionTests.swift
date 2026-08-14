@@ -39,6 +39,21 @@ struct ProjectManagementSelectionTests {
         #expect(result == nil)
     }
 
+    @Test
+    func findsEveryAncestorNeededToRevealNestedProject() {
+        let root = project(named: "Customer")
+        let parent = project(named: "Customer/Platform")
+        let selected = project(named: "Customer/Platform/Migration")
+        let sibling = project(named: "Other")
+
+        let result = ProjectManagementSelection.ancestorIDs(
+            toReveal: selected.projectName,
+            projects: [root, parent, selected, sibling]
+        )
+
+        #expect(result == [root.projectId, parent.projectId])
+    }
+
     private func project(named name: String) -> ProjectOverviewItem {
         ProjectOverviewItem(
             projectId: .v7(),

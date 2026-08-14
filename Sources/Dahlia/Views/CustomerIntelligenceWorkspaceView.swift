@@ -338,12 +338,12 @@ private extension OrganizationWorkspaceView {
             start: formatter.string(from: start),
             end: formatter.string(from: end)
         )
-        if let draft = chatCoordinator.floatingSession.draft.nilIfBlank {
-            chatCoordinator.floatingSession.draft = "\(draft)\n\n\(prompt)"
+        if let draft = chatCoordinator.dockedSession.draft.nilIfBlank {
+            chatCoordinator.dockedSession.draft = "\(draft)\n\n\(prompt)"
         } else {
-            chatCoordinator.floatingSession.draft = prompt
+            chatCoordinator.dockedSession.draft = prompt
         }
         MainWindowOpener.shared.openMainWindow()
-        chatCoordinator.showFloating()
+        chatCoordinator.showDocked()
     }
 }

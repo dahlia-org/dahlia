@@ -5,7 +5,6 @@ struct SummaryTabContentView: View {
     @ObservedObject var screenshotStore: ScreenshotStore
     let document: SummaryDocument?
     let hasSummary: Bool
-    let allowsTranscriptReferencePopovers: Bool
     let openScreenshot: (UUID, CGImage) -> Void
     let transcriptText: (TranscriptReference) -> String?
 
@@ -16,8 +15,7 @@ struct SummaryTabContentView: View {
                     document: document,
                     screenshotProvider: screenshot,
                     onOpenImage: openScreenshot,
-                    transcriptTextProvider: transcriptText,
-                    allowsTranscriptReferencePopovers: allowsTranscriptReferencePopovers
+                    transcriptTextProvider: transcriptText
                 )
                 .frame(maxWidth: DahliaDesign.readingMaxWidth, alignment: .leading)
                 .padding(.horizontal, DahliaDesign.readingHorizontalPadding)

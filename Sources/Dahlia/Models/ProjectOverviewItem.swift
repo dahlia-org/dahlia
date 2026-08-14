@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// Projects ワークスペースに表示する一覧用の集約モデル。
-struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable {
+struct ProjectOverviewItem: Decodable, Equatable, FetchableRecord, Identifiable, Sendable {
     var projectId: UUID
     var projectName: String
     var projectDisplayName = ""

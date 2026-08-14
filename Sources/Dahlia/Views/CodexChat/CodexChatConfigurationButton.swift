@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CodexChatConfigurationButton: View {
     @Bindable var session: CodexChatSessionModel
+    let externalPresentation: Binding<Bool>?
 
     @State private var isHovering = false
     @State private var isPresented = false
@@ -16,13 +17,13 @@ struct CodexChatConfigurationButton: View {
             .padding(.horizontal, 10)
             .frame(height: CodexChatDesign.controlSize)
             .background(
-                isHovering || isPresented ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                isHovering || presentationIsActive ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
                 in: Capsule()
             )
             .onHover { isHovering = $0 }
             .help(L10n.model)
             .overlay(alignment: .bottomTrailing) {
-                if isPresented {
+                if externalPresentation == nil, isPresented {
                     CodexChatConfigurationPanel(
                         session: session,
                         showsModels: $showsModels,
@@ -37,7 +38,7 @@ struct CodexChatConfigurationButton: View {
                 }
             }
             .onExitCommand(perform: dismissConfiguration)
-            .zIndex(isPresented ? 1 : 0)
+            .zIndex(presentationIsActive ? 1 : 0)
     }
 
     private var configurationLabel: String {
@@ -51,8 +52,14 @@ struct CodexChatConfigurationButton: View {
             .joined(separator: " ")
     }
 
+    private var presentationIsActive: Bool {
+        externalPresentation?.wrappedValue ?? isPresented
+    }
+
     private func showConfiguration() {
-        if isPresented {
+        if let externalPresentation {
+            externalPresentation.wrappedValue.toggle()
+        } else if isPresented {
             dismissConfiguration()
         } else {
             isPresented = true
@@ -60,6 +67,7 @@ struct CodexChatConfigurationButton: View {
     }
 
     private func dismissConfiguration() {
+        externalPresentation?.wrappedValue = false
         isPresented = false
         showsModels = false
     }

@@ -56,7 +56,6 @@ struct ProjectManagementView: View {
                         isLoaded: sidebarViewModel.isProjectCatalogLoaded,
                         loadFailed: sidebarViewModel.projectCatalogLoadFailed,
                         selectedProjectId: $mainWindowNavigation.selectedProjectId,
-                        searchText: $mainWindowNavigation.projectSearchText,
                         expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
                         onRetry: sidebarViewModel.retryProjectCatalogLoading,
                         onCreateTopLevelProject: presentTopLevelProjectCreation,
@@ -377,7 +376,6 @@ private extension ProjectManagementView {
             return
         }
 
-        mainWindowNavigation.projectSearchText = ""
         requestExpansion(toReveal: project.path)
         mainWindowNavigation.selectedProjectId = project.id
         isShowingProjectCreation = false
@@ -564,7 +562,6 @@ private extension ProjectManagementView {
             previousRevision: previousRevision,
             revision: renamed.revision
         )
-        mainWindowNavigation.projectSearchText = ""
         requestExpansion(toReveal: renamed.path)
     }
 
@@ -685,9 +682,10 @@ private extension ProjectManagementView {
     }
 
     private func requestExpansion(toReveal projectName: String) {
-        let ancestorIds = sidebarViewModel.allProjectItems.compactMap { project -> UUID? in
-            projectName.hasPrefix(project.projectName + "/") ? project.projectId : nil
-        }
+        let ancestorIds = ProjectManagementSelection.ancestorIDs(
+            toReveal: projectName,
+            projects: sidebarViewModel.allProjectItems
+        )
         mainWindowNavigation.expandedProjectIds.formUnion(ancestorIds)
     }
 

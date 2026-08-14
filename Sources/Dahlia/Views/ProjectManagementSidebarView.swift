@@ -6,7 +6,6 @@ struct ProjectManagementSidebarView: View {
     let isLoaded: Bool
     let loadFailed: Bool
     @Binding var selectedProjectId: UUID?
-    @Binding var searchText: String
     @Binding var expandedProjectIds: Set<UUID>
     let onRetry: () -> Void
     let onCreateTopLevelProject: () -> Void
@@ -18,28 +17,15 @@ struct ProjectManagementSidebarView: View {
         ProjectTreeNode.buildNodes(from: projects)
     }
 
-    private var filteredProjectNodes: [ProjectTreeNode] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return projectNodes }
-        return projectNodes.compactMap { $0.filtered(matching: query) }
-    }
-
     private var selectedProject: ProjectOverviewItem? {
         guard let selectedProjectId else { return nil }
         return projects.first(where: { $0.projectId == selectedProjectId })
     }
 
-    private var isSearching: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     var body: some View {
-        if mainWindowNavigation.isShowingSettings {
-            projectList
-        } else {
-            projectList
-                .searchable(text: $searchText, prompt: L10n.searchProjects)
-                .toolbar {
+        projectList
+            .toolbar {
+                if !mainWindowNavigation.isShowingSettings {
                     ToolbarItem {
                         ProjectCreationMenu(
                             selectedProject: selectedProject,
@@ -49,30 +35,23 @@ struct ProjectManagementSidebarView: View {
                         )
                     }
                 }
-        }
+            }
     }
 
     private var projectList: some View {
         List(selection: $selectedProjectId) {
             ProjectManagementSidebarContent(
-                projects: projects,
-                filteredNodes: filteredProjectNodes,
+                nodes: projectNodes,
                 hasVault: hasVault,
                 isLoaded: isLoaded,
                 loadFailed: loadFailed,
                 selectedProjectId: selectedProjectId,
-                expandsAllDescendants: isSearching,
                 expandedProjectIds: $expandedProjectIds,
                 onRetry: onRetry,
-                onCreateTopLevelProject: onCreateTopLevelProject,
-                onClearSearch: clearSearch
+                onCreateTopLevelProject: onCreateTopLevelProject
             )
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-    }
-
-    private func clearSearch() {
-        searchText = ""
     }
 }
