@@ -506,14 +506,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     @AppStorage("codexReasoningEffort") var codexReasoningEffort = "high"
     @AppStorage("codexChatModelID") var codexChatModelID = ""
     @AppStorage("codexChatReasoningEffort") var codexChatReasoningEffort = CodexReasoningEffortOption.defaultValue
-    @AppStorage("codexChatDockSide") var codexChatDockSideRawValue = CodexChatDockSide.right.rawValue
     @AppStorage("llmSummaryLanguage") var llmSummaryLanguageRawValue = SummaryLanguage.ja.rawValue
     @AppStorage("summaryDetailLevel") var summaryDetailLevelRawValue = SummaryDetailLevel.defaultValue.rawValue
-
-    var codexChatDockSide: CodexChatDockSide {
-        get { CodexChatDockSide(rawValue: codexChatDockSideRawValue) ?? .right }
-        set { codexChatDockSideRawValue = newValue.rawValue }
-    }
 
     var codexAccountProvider: AIAccountProvider {
         get { AIAccountProvider(rawValue: codexAccountProviderRawValue) ?? .chatGPTSubscription }

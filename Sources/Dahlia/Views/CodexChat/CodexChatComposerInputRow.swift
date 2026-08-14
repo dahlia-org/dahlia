@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
+    let configurationPresentation: Binding<Bool>?
     @FocusState.Binding var isComposerFocused: Bool
     let showsAddPanel: Bool
     let showsMeetingPicker: Bool
@@ -64,7 +65,10 @@ struct CodexChatComposerInputRow: View {
                     .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
                     .accessibilityLabel(L10n.chatModelLoading)
             } else if !session.models.isEmpty {
-                CodexChatConfigurationButton(session: session)
+                CodexChatConfigurationButton(
+                    session: session,
+                    externalPresentation: configurationPresentation
+                )
             }
 
             if session.isGenerating, session.isPreparingTurn || !session.canSend {

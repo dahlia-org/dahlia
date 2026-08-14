@@ -1,0 +1,40 @@
+import SwiftUI
+
+struct MainSearchResultRow: View {
+    let title: String
+    let subtitle: String?
+    let systemImage: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .lineLimit(1)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 12)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .contentShape(.rect)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.14) : .clear,
+                in: .rect(cornerRadius: MainSearchDesign.rowCornerRadius)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}

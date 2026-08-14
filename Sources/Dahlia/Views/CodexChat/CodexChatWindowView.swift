@@ -4,6 +4,7 @@ struct CodexChatWindowView: View {
     @Bindable var coordinator: CodexChatCoordinator
     @Bindable var sidebarViewModel: SidebarViewModel
     @State private var sessionID: CodexChatSessionID
+    @State private var showsHistory = false
 
     init(
         coordinator: CodexChatCoordinator,
@@ -24,10 +25,10 @@ struct CodexChatWindowView: View {
                     meetingReferences: sidebarViewModel.meetingReferences,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
-                    allowsPopOut: false,
+                    showsHeader: true,
+                    showsHistory: $showsHistory,
+                    configurationPresentation: nil,
                     onNewChat: startNewChat,
-                    onPopOut: {},
-                    onHide: nil,
                     onOpenHistory: openHistory
                 )
             } else {

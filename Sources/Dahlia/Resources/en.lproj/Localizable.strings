@@ -1137,6 +1137,14 @@
 "Review this customer's people, work, topics, and recent conversations." = "Review this customer's people, work, topics, and recent conversations.";
 "Key People" = "Key People";
 "Recent Projects" = "Recent Projects";
+"Search meetings and projects" = "Search meetings and projects";
+"Close search" = "Close search";
+"Remove search filter" = "Remove search filter";
+"Search unavailable" = "Search unavailable";
+"Select a Vault to search." = "Select a Vault to search.";
+"Show chat" = "Show chat";
+"Shown" = "Shown";
+"Hidden" = "Hidden";
 "Recently Discussed Topics" = "Recently Discussed Topics";
 "Recent Meetings" = "Recent Meetings";
 "No recent interaction" = "No recent interaction";

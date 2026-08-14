@@ -11,4 +11,13 @@ enum ProjectManagementSelection {
         }
         return projects.first?.projectId
     }
+
+    static func ancestorIDs(
+        toReveal projectName: String,
+        projects: [ProjectOverviewItem]
+    ) -> Set<UUID> {
+        Set(projects.compactMap { project in
+            projectName.hasPrefix(project.projectName + "/") ? project.projectId : nil
+        })
+    }
 }

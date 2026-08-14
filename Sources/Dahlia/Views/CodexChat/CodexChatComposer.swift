@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct CodexChatComposer: View {
     @Bindable var session: CodexChatSessionModel
+    let configurationPresentation: Binding<Bool>?
     @State private var showsMeetingPicker = false
     @State private var meetingQuery = ""
     @State private var highlightedMeetingID: UUID?
@@ -37,6 +38,7 @@ struct CodexChatComposer: View {
 
             CodexChatComposerInputRow(
                 session: session,
+                configurationPresentation: configurationPresentation,
                 isComposerFocused: $isComposerFocused,
                 showsAddPanel: showsAddPanel,
                 showsMeetingPicker: showsMeetingPicker,

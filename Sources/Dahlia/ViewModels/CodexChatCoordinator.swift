@@ -11,8 +11,8 @@ final class CodexChatCoordinator {
     private(set) var isLoadingHistory = false
     private(set) var historyError: String?
     private(set) var detachedSessionIDs: Set<CodexChatSessionID> = []
-    private(set) var floatingSessionID: CodexChatSessionID
-    var isFloatingVisible = false
+    private(set) var dockedSessionID: CodexChatSessionID
+    var isDockedVisible = true
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
@@ -33,14 +33,14 @@ final class CodexChatCoordinator {
             settings: settings,
             contextProvider: contextProvider
         )
-        floatingSessionID = session.id
+        dockedSessionID = session.id
         sessions[session.id] = session
         configureLiveModeHandler(for: session)
     }
 
-    var floatingSession: CodexChatSessionModel {
-        guard let session = sessions[floatingSessionID] else {
-            preconditionFailure("Floating chat session must always exist")
+    var dockedSession: CodexChatSessionModel {
+        guard let session = sessions[dockedSessionID] else {
+            preconditionFailure("Docked chat session must always exist")
         }
         return session
     }
@@ -56,44 +56,44 @@ final class CodexChatCoordinator {
         detachedSessionIDs.insert(id)
     }
 
-    func showFloating() {
-        isFloatingVisible = true
-        Task { await floatingSession.prepare() }
+    func showDocked() {
+        isDockedVisible = true
+        Task { await dockedSession.prepare() }
         Task { await refreshHistory() }
     }
 
     func activateVault(_ vaultID: UUID) {
-        guard floatingSession.vaultID != vaultID else { return }
+        guard dockedSession.vaultID != vaultID else { return }
         contextProvider.update(vaultID: vaultID, meetingID: nil, draftMeeting: nil, dbQueue: nil)
         let session = makeSession(vaultID: vaultID)
-        replaceFloatingSession(with: session, isVisible: isFloatingVisible)
+        replaceDockedSession(with: session, isVisible: isDockedVisible)
         historyGeneration += 1
         history = []
         historyCursor = nil
         historyError = nil
         isLoadingHistory = false
-        if isFloatingVisible {
+        if isDockedVisible {
             Task { await session.prepare() }
             Task { await refreshHistory() }
         }
     }
 
-    func hideFloating() {
-        isFloatingVisible = false
+    func hideDocked() {
+        isDockedVisible = false
     }
 
-    func newFloatingChat() {
+    func newDockedChat() {
         let session = makeSession()
-        replaceFloatingSession(with: session, isVisible: true)
+        replaceDockedSession(with: session, isVisible: true)
         Task { await session.prepare() }
         Task { await refreshHistory() }
     }
 
-    func popOutFloating() -> CodexChatSessionID {
-        let id = floatingSessionID
+    func popOutDocked() -> CodexChatSessionID {
+        let id = dockedSessionID
         detachedSessionIDs.insert(id)
         let replacement = makeSession()
-        replaceFloatingSession(with: replacement, isVisible: false)
+        replaceDockedSession(with: replacement, isVisible: false)
         return id
     }
 
@@ -117,12 +117,12 @@ final class CodexChatCoordinator {
     }
 
     func openHistoryThread(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        let vaultID = floatingSession.vaultID
+        let vaultID = dockedSession.vaultID
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.vaultID == vaultID
         }) {
             if !detachedSessionIDs.contains(existing.id) {
-                replaceFloatingSession(with: existing, isVisible: true)
+                replaceDockedSession(with: existing, isVisible: true)
             }
             return existing.id
         }
@@ -132,20 +132,20 @@ final class CodexChatCoordinator {
             backendThreadID: thread.id,
             title: thread.title
         )
-        replaceFloatingSession(with: session, isVisible: true)
+        replaceDockedSession(with: session, isVisible: true)
         await session.restore()
         return session.id
     }
 
     func openHistoryThreadInDetachedWindow(_ thread: CodexChatThreadSummary) async -> CodexChatSessionID {
-        let vaultID = floatingSession.vaultID
+        let vaultID = dockedSession.vaultID
         if let existing = sessions.values.first(where: {
             $0.backendThreadID == thread.id && $0.vaultID == vaultID
         }) {
-            if existing.id == floatingSessionID {
+            if existing.id == dockedSessionID {
                 detachedSessionIDs.insert(existing.id)
                 let replacement = makeSession()
-                replaceFloatingSession(with: replacement, isVisible: false)
+                replaceDockedSession(with: replacement, isVisible: false)
             } else {
                 detachedSessionIDs.insert(existing.id)
             }
@@ -212,12 +212,12 @@ final class CodexChatCoordinator {
             }
         }
         do {
-            guard floatingSession.isBoundToCurrentVault,
-                  let vaultID = floatingSession.vaultID else { return }
+            guard dockedSession.isBoundToCurrentVault,
+                  let vaultID = dockedSession.vaultID else { return }
             let page = try await service.listThreads(cursor: historyCursor, vaultID: vaultID)
             guard generation == historyGeneration,
-                  floatingSession.isBoundToCurrentVault,
-                  floatingSession.vaultID == vaultID else { return }
+                  dockedSession.isBoundToCurrentVault,
+                  dockedSession.vaultID == vaultID else { return }
             history.append(contentsOf: page.threads.filter { item in
                 !history.contains(where: { $0.id == item.id })
             })
@@ -229,7 +229,7 @@ final class CodexChatCoordinator {
     }
 
     private func removeSessionIfUnused(_ id: CodexChatSessionID) {
-        guard id != floatingSessionID,
+        guard id != dockedSessionID,
               !detachedSessionIDs.contains(id),
               let session = sessions.removeValue(forKey: id)
         else { return }
@@ -240,14 +240,14 @@ final class CodexChatCoordinator {
         }
     }
 
-    private func replaceFloatingSession(
+    private func replaceDockedSession(
         with session: CodexChatSessionModel,
         isVisible: Bool
     ) {
-        let previousID = floatingSessionID
+        let previousID = dockedSessionID
         sessions[session.id] = session
-        floatingSessionID = session.id
-        isFloatingVisible = isVisible
+        dockedSessionID = session.id
+        isDockedVisible = isVisible
         removeSessionIfUnused(previousID)
     }
 
