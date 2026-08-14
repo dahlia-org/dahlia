@@ -89,8 +89,11 @@
 "Back" = "戻る";
 "Back to App" = "アプリに戻る";
 "Forward" = "進む";
+"Hide Sidebar" = "サイドバーを非表示";
+"Show Sidebar" = "サイドバーを表示";
 
 /* Sidebar */
+"Create New Meeting" = "新しいミーティング";
 "Home" = "Home";
 "Good morning" = "おはようございます";
 "Good afternoon" = "こんにちは";

@@ -179,6 +179,11 @@ struct DahliaApp: App {
         .defaultSize(width: MainWindowMetrics.defaultWidth, height: MainWindowMetrics.defaultHeight)
         .defaultLaunchBehavior(.presented)
         .commands {
+            CommandGroup(replacing: .newItem) {
+                Button(L10n.createNewMeeting, action: recordingCoordinator.createEmptyMeeting)
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(showVaultPicker || mainWindowNavigation.isShowingSettings)
+            }
             SettingsCommands(mainWindowNavigation: mainWindowNavigation)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updateController.updater)

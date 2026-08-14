@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ProjectManagementView: View {
-    @Binding var columnVisibility: NavigationSplitViewVisibility
+    @Binding var isSidebarVisible: Bool
     var sidebarViewModel: SidebarViewModel
     @ObservedObject var captionViewModel: CaptionViewModel
     var updateController: AppUpdateController
@@ -33,59 +33,60 @@ struct ProjectManagementView: View {
     @State private var projectDescriptionExpectedRevision: Int?
     @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
 
-    private let sidebarWidth: CGFloat = 300
-
     var body: some View {
-        Group {
-            if !mainWindowNavigation.isShowingSettings {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    VStack(spacing: 0) {
-                        MainSidebarNavigationView(
-                            isShowingUpcomingSchedule: false,
-                            onShowUpcomingSchedule: onShowUpcomingSchedule,
-                            isShowingProjectManagement: true,
-                            onShowProjectManagement: {},
-                            isShowingUnprocessedRecordings: false,
-                            unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
-                            onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                            showsCustomerIntelligence: showsCustomerIntelligence,
-                            onOpenCustomerIntelligence: onOpenCustomerIntelligence
-                        )
-                        SidebarSectionHeader(title: L10n.projects)
-                        ProjectManagementSidebarView(
-                            projects: sidebarViewModel.allProjectItems,
-                            hasVault: AppSettings.shared.currentVault != nil,
-                            isLoaded: sidebarViewModel.isProjectCatalogLoaded,
-                            loadFailed: sidebarViewModel.projectCatalogLoadFailed,
-                            selectedProjectId: $mainWindowNavigation.selectedProjectId,
-                            searchText: $mainWindowNavigation.projectSearchText,
-                            expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
-                            onRetry: sidebarViewModel.retryProjectCatalogLoading,
-                            onCreateTopLevelProject: presentTopLevelProjectCreation,
-                            onCreateSubproject: presentSubprojectCreation
-                        )
+        HSplitView {
+            if isSidebarVisible {
+                VStack(spacing: 0) {
+                    MainSidebarNavigationView(
+                        onCreateMeeting: recordingCoordinator.createEmptyMeeting,
+                        isShowingUpcomingSchedule: false,
+                        onShowUpcomingSchedule: onShowUpcomingSchedule,
+                        isShowingProjectManagement: true,
+                        onShowProjectManagement: {},
+                        isShowingUnprocessedRecordings: false,
+                        unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                        onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                        showsCustomerIntelligence: showsCustomerIntelligence,
+                        onOpenCustomerIntelligence: onOpenCustomerIntelligence
+                    )
+                    SidebarSectionHeader(title: L10n.projects)
+                    ProjectManagementSidebarView(
+                        projects: sidebarViewModel.allProjectItems,
+                        hasVault: AppSettings.shared.currentVault != nil,
+                        isLoaded: sidebarViewModel.isProjectCatalogLoaded,
+                        loadFailed: sidebarViewModel.projectCatalogLoadFailed,
+                        selectedProjectId: $mainWindowNavigation.selectedProjectId,
+                        searchText: $mainWindowNavigation.projectSearchText,
+                        expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
+                        onRetry: sidebarViewModel.retryProjectCatalogLoading,
+                        onCreateTopLevelProject: presentTopLevelProjectCreation,
+                        onCreateSubproject: presentSubprojectCreation
+                    )
 
-                        if captionViewModel.isListening {
-                            RecordingStatusBar(
-                                viewModel: captionViewModel,
-                                sidebarViewModel: sidebarViewModel,
-                                recordingCoordinator: recordingCoordinator
-                            )
-                            .padding(8)
-                        } else if captionViewModel.canSwitchVault {
-                            MainSidebarFooterView(
-                                vaults: sidebarViewModel.allVaults,
-                                currentVault: sidebarViewModel.currentVault,
-                                updateController: updateController,
-                                onSelectVault: onSelectVault
-                            )
-                        }
+                    if captionViewModel.isListening {
+                        RecordingStatusBar(
+                            viewModel: captionViewModel,
+                            sidebarViewModel: sidebarViewModel,
+                            recordingCoordinator: recordingCoordinator
+                        )
+                        .padding(8)
+                    } else if captionViewModel.canSwitchVault {
+                        MainSidebarFooterView(
+                            vaults: sidebarViewModel.allVaults,
+                            currentVault: sidebarViewModel.currentVault,
+                            updateController: updateController,
+                            onSelectVault: onSelectVault
+                        )
                     }
-                    .navigationSplitViewColumnWidth(min: 240, ideal: sidebarWidth, max: 420)
-                } detail: {
-                    selectedProjectDetail
                 }
+                .mainSidebarPane(
+                    width: mainWindowNavigation.sidebarWidth,
+                    onWidthChange: mainWindowNavigation.updateSidebarWidth
+                )
             }
+
+            selectedProjectDetail
+                .mainDetailPane()
         }
         .onAppear {
             reconcileSelection(with: sidebarViewModel.allProjectItems)

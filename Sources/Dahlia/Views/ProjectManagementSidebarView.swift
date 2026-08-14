@@ -69,6 +69,7 @@ struct ProjectManagementSidebarView: View {
             )
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     private func clearSearch() {

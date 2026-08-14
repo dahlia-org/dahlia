@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainSidebarNavigationView: View {
+    let onCreateMeeting: () -> Void
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
     let isShowingProjectManagement: Bool
@@ -13,6 +14,15 @@ struct MainSidebarNavigationView: View {
 
     var body: some View {
         VStack(spacing: 2) {
+            Button(action: onCreateMeeting) {
+                MainSidebarNavigationLabel(
+                    title: L10n.createNewMeeting,
+                    systemImage: "square.and.pencil"
+                )
+            }
+            .buttonStyle(.plain)
+            .help(L10n.createNewMeeting)
+
             Button(action: onShowUpcomingSchedule) {
                 MainSidebarNavigationLabel(
                     title: L10n.calendarScheduleTitle,

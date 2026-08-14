@@ -7,6 +7,8 @@ struct MeetingListSidebarView: View {
     var updateController: AppUpdateController
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    @Binding var searchText: String
+    @Binding var searchTokens: [MeetingSearchToken]
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
     let onOpenProjectManagement: () -> Void
@@ -16,13 +18,10 @@ struct MeetingListSidebarView: View {
     let onOpenCustomerIntelligence: () -> Void
     let onSelectVault: (VaultRecord) -> Void
 
-    @State private var searchText = ""
-    @State private var searchTokens: [MeetingSearchToken] = []
     @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
     @State private var editingMeetingName = ""
     @State private var pendingDeletion: MeetingDeletionRequest?
-    @State private var sidebarFooterHeight: CGFloat = 0
     @FocusState private var isRenameFieldFocused: Bool
 
     private var meetingSelection: Binding<Set<UUID>> {
@@ -42,6 +41,7 @@ struct MeetingListSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             MainSidebarNavigationView(
+                onCreateMeeting: recordingCoordinator.createEmptyMeeting,
                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                 onShowUpcomingSchedule: onShowUpcomingSchedule,
                 isShowingProjectManagement: false,
@@ -84,11 +84,7 @@ struct MeetingListSidebarView: View {
                 )
             }
             .listStyle(.sidebar)
-            .contentMargins(
-                .bottom,
-                showsSidebarFooter ? sidebarFooterHeight : 0,
-                for: .scrollContent
-            )
+            .scrollContentBackground(.hidden)
             .overlay {
                 MeetingListStatusOverlay(
                     isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,
@@ -103,12 +99,6 @@ struct MeetingListSidebarView: View {
                 contextMenu(for: selection)
             }
 
-            if showsSidebarFooter {
-                Color.clear
-                    .frame(height: MainSidebarFooterView.verticalPadding)
-                    .accessibilityHidden(true)
-            }
-
             if viewModel.isListening {
                 RecordingStatusBar(
                     viewModel: viewModel,
@@ -116,22 +106,13 @@ struct MeetingListSidebarView: View {
                     recordingCoordinator: recordingCoordinator
                 )
                 .padding(8)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if showsSidebarFooter {
+            } else if showsSidebarFooter {
                 MainSidebarFooterView(
                     vaults: sidebarViewModel.allVaults,
                     currentVault: sidebarViewModel.currentVault,
                     updateController: updateController,
                     onSelectVault: onSelectVault
                 )
-                .frame(maxWidth: .infinity)
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { height in
-                    sidebarFooterHeight = height
-                }
             }
         }
         .meetingSidebarSearch(

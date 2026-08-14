@@ -27,5 +27,6 @@ struct SettingsSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 }

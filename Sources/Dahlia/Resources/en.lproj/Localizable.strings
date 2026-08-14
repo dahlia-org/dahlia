@@ -89,8 +89,11 @@
 "Back" = "Back";
 "Back to App" = "Back to App";
 "Forward" = "Forward";
+"Hide Sidebar" = "Hide Sidebar";
+"Show Sidebar" = "Show Sidebar";
 
 /* Sidebar */
+"Create New Meeting" = "New meeting";
 "Home" = "Home";
 "Good morning" = "Good morning";
 "Good afternoon" = "Good afternoon";
