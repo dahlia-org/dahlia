@@ -78,25 +78,9 @@ struct ContentView: View {
                     canGoForward: canGoForward,
                     onToggleSidebar: toggleSidebar,
                     onGoBack: goBack,
-                    onGoForward: goForward
+                    onGoForward: goForward,
+                    onToggleChat: toggleChat
                 )
-
-                ToolbarSpacer(.fixed, placement: .navigation)
-
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        if chatCoordinator.isFloatingVisible {
-                            chatCoordinator.hideFloating()
-                        } else {
-                            chatCoordinator.showFloating()
-                        }
-                    } label: {
-                        Label(L10n.chat, systemImage: "bubble.left.and.bubble.right")
-                    }
-                    .labelStyle(.iconOnly)
-                    .help(L10n.chat)
-                    .accessibilityLabel(L10n.chat)
-                }
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -200,6 +184,14 @@ struct ContentView: View {
 private extension ContentView {
     private func toggleSidebar() {
         isSidebarVisible.toggle()
+    }
+
+    private func toggleChat() {
+        if chatCoordinator.isFloatingVisible {
+            chatCoordinator.hideFloating()
+        } else {
+            chatCoordinator.showFloating()
+        }
     }
 
     private func presentPermissionGuideIfNeeded() {

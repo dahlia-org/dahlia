@@ -7,24 +7,30 @@ struct MainWindowNavigationToolbar: ToolbarContent {
     let onToggleSidebar: () -> Void
     let onGoBack: () -> Void
     let onGoForward: () -> Void
+    let onToggleChat: () -> Void
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Button(sidebarToggleLabel, systemImage: "sidebar.left", action: onToggleSidebar)
-                .labelStyle(.iconOnly)
-                .keyboardShortcut("s", modifiers: [.command, .control])
-                .help(sidebarToggleLabel)
-            Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
-                .labelStyle(.iconOnly)
-                .disabled(!canGoBack)
-                .keyboardShortcut("[", modifiers: .command)
-                .help(L10n.back)
-            Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
-                .labelStyle(.iconOnly)
-                .disabled(!canGoForward)
-                .keyboardShortcut("]", modifiers: .command)
-                .help(L10n.forward)
+            HStack(spacing: 6) {
+                Button(sidebarToggleLabel, systemImage: "sidebar.left", action: onToggleSidebar)
+                    .keyboardShortcut("s", modifiers: [.command, .control])
+                    .help(sidebarToggleLabel)
+                Button(L10n.back, systemImage: "arrow.backward", action: onGoBack)
+                    .disabled(!canGoBack)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help(L10n.back)
+                Button(L10n.forward, systemImage: "arrow.forward", action: onGoForward)
+                    .disabled(!canGoForward)
+                    .keyboardShortcut("]", modifiers: .command)
+                    .help(L10n.forward)
+                Button(L10n.chat, systemImage: "bubble.left.and.bubble.right", action: onToggleChat)
+                    .help(L10n.chat)
+                    .accessibilityLabel(L10n.chat)
+            }
+            .labelStyle(.iconOnly)
+            .controlSize(.regular)
         }
+        .sharedBackgroundVisibility(.hidden)
     }
 
     private var sidebarToggleLabel: String {
