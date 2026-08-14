@@ -35,7 +35,7 @@ struct ContentView: View {
                     onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                     onSelectVault: onSelectVault
                 )
-            } else if !mainWindowNavigation.isShowingSettings {
+            } else {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
                     MeetingListSidebarView(
                         viewModel: viewModel,
