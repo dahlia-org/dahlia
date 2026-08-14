@@ -34,10 +34,6 @@ struct MeetingListSidebarView: View {
         )
     }
 
-    private var showsSidebarFooter: Bool {
-        viewModel.canSwitchVault
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             MainSidebarNavigationView(
@@ -99,21 +95,13 @@ struct MeetingListSidebarView: View {
                 contextMenu(for: selection)
             }
 
-            if viewModel.isListening {
-                RecordingStatusBar(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    recordingCoordinator: recordingCoordinator
-                )
-                .padding(8)
-            } else if showsSidebarFooter {
-                MainSidebarFooterView(
-                    vaults: sidebarViewModel.allVaults,
-                    currentVault: sidebarViewModel.currentVault,
-                    updateController: updateController,
-                    onSelectVault: onSelectVault
-                )
-            }
+            MainSidebarBottomArea(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                recordingCoordinator: recordingCoordinator,
+                updateController: updateController,
+                onSelectVault: onSelectVault
+            )
         }
         .meetingSidebarSearch(
             text: $searchText,
@@ -289,13 +277,6 @@ struct RecordingStatusBar: View {
         }
     }
 
-    private var showsSidebarStop: Bool {
-        RecordingCommandState.showsSidebarStop(
-            recordingMeetingID: recordingMeetingId,
-            currentMeetingID: viewModel.currentMeetingId
-        )
-    }
-
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -309,16 +290,12 @@ struct RecordingStatusBar: View {
                 .help(recordingLabels.returnToMeeting)
                 .accessibilityLabel("\(recordingLabels.activity), \(recordingTitle)")
 
-                if showsSidebarStop {
-                    Button(recordingLabels.stop, systemImage: "stop.fill") {
-                        recordingCoordinator.stopRecording()
-                    }
+                Button(recordingLabels.stop, systemImage: "stop.fill", action: recordingCoordinator.stopRecording)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                     .controlSize(.small)
                     .help(recordingLabels.stop)
-                }
             }
 
             Divider()
@@ -333,14 +310,12 @@ struct RecordingStatusBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(.quaternary, lineWidth: 1)
-                .allowsHitTesting(false)
+        .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 0.5)
         }
         .onAppear(perform: retainCurrentRecordingMeetingItem)
         .onChange(of: currentRecordingMeetingItem) {

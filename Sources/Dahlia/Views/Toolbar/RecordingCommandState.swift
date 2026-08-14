@@ -1,6 +1,6 @@
 import Foundation
 
-/// Centralizes recording command visibility so the same stop action is not duplicated across regions.
+/// Centralizes recording command state shared by the main-window controls.
 struct RecordingCommandState: Equatable {
     enum Action: Equatable {
         case start
@@ -21,13 +21,5 @@ struct RecordingCommandState: Equatable {
         currentMeetingID: UUID?
     ) -> Bool {
         !isListening || recordingMeetingID == currentMeetingID
-    }
-
-    static func showsSidebarStop(
-        recordingMeetingID: UUID?,
-        currentMeetingID: UUID?
-    ) -> Bool {
-        guard let recordingMeetingID else { return false }
-        return recordingMeetingID != currentMeetingID
     }
 }
