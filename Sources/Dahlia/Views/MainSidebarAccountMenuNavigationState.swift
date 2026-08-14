@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 
 @MainActor
 final class MainSidebarAccountMenuNavigationState: ObservableObject {
@@ -48,5 +49,19 @@ final class MainSidebarAccountMenuNavigationState: ObservableObject {
             }
         }
         return nil
+    }
+
+    static func firstEnabledIndex(
+        matching prefix: String,
+        titles: [String],
+        isEnabled: (Int) -> Bool
+    ) -> Int? {
+        titles.indices.first { index in
+            isEnabled(index) && titles[index].range(
+                of: prefix,
+                options: [.anchored, .caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            ) != nil
+        }
     }
 }

@@ -15,6 +15,8 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var submenuPanel: NSPanel?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
+    private var typeAheadResetTask: Task<Void, Never>?
+    private var typeAheadBuffer = ""
 
     init(
         vaults: [VaultRecord],
@@ -117,6 +119,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         menu: MainSidebarAccountMenuNavigationState.ActiveMenu
     ) {
         guard let mainPanel else { return }
+        resetTypeAhead()
         closePanel(&submenuPanel)
         navigation.showSubmenu(menu)
 
@@ -203,6 +206,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 
     private func closeSubmenu() {
+        resetTypeAhead()
         closePanel(&submenuPanel)
         navigation.activeMenu = .root
         navigation.submenuSelection = nil
@@ -302,9 +306,68 @@ private extension MainSidebarAccountMenuCoordinator {
         case 36, 49, 76:
             activateSelection()
         default:
-            return nil
+            handleTypeAhead(event)
         }
         return nil
+    }
+
+    func handleTypeAhead(_ event: NSEvent) {
+        guard navigation.activeMenu != .root,
+              let input = event.charactersIgnoringModifiers,
+              !input.isEmpty,
+              input.rangeOfCharacter(from: .controlCharacters) == nil else { return }
+
+        let combinedInput = typeAheadBuffer + input
+        if selectTypeAheadMatch(for: combinedInput) {
+            typeAheadBuffer = combinedInput
+        } else if selectTypeAheadMatch(for: input) {
+            typeAheadBuffer = input
+        } else {
+            typeAheadBuffer = ""
+        }
+        scheduleTypeAheadReset()
+    }
+
+    func selectTypeAheadMatch(for prefix: String) -> Bool {
+        let titles: [String]
+        let isEnabled: (Int) -> Bool
+        switch navigation.activeMenu {
+        case .root:
+            return false
+        case .vaults:
+            titles = vaults.map(\.name) + [L10n.manageVaults]
+            isEnabled = { [vaults, currentVault] index in
+                index == vaults.count || vaults[index].id != currentVault?.id
+            }
+        case .languages:
+            let languages = AppLanguage.allCases
+            titles = languages.map(\.displayName)
+            isEnabled = { index in languages[index] != AppSettings.shared.appLanguage }
+        }
+        guard let match = MainSidebarAccountMenuNavigationState.firstEnabledIndex(
+            matching: prefix,
+            titles: titles,
+            isEnabled: isEnabled
+        ) else { return false }
+        navigation.submenuSelection = match
+        announceCurrentSelection()
+        return true
+    }
+
+    func scheduleTypeAheadReset() {
+        typeAheadResetTask?.cancel()
+        typeAheadResetTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            self?.typeAheadBuffer = ""
+            self?.typeAheadResetTask = nil
+        }
+    }
+
+    func resetTypeAhead() {
+        typeAheadResetTask?.cancel()
+        typeAheadResetTask = nil
+        typeAheadBuffer = ""
     }
 
     func moveSelection(_ direction: Int) {

@@ -71,6 +71,17 @@
         }
 
         @Test
+        func typeAheadSelectionMatchesPrefixAndSkipsDisabledItems() {
+            let match = MainSidebarAccountMenuNavigationState.firstEnabledIndex(
+                matching: "pri",
+                titles: ["Primary", "Private", "Project"],
+                isEnabled: { $0 != 0 }
+            )
+
+            #expect(match == 1)
+        }
+
+        @Test
         func optionOnlyTextInputDoesNotPassThroughMenu() {
             #expect(!MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.option]))
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.command, .option]))

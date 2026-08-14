@@ -8,6 +8,7 @@ struct MainSidebarAccountMenuRow: View {
     var isEnabled = true
     var isKeyboardHighlighted = false
     var onHoverStart: (() -> Void)?
+    var onHoverEnd: (() -> Void)?
     let action: () -> Void
 
     @State private var isHovered = false
@@ -57,6 +58,8 @@ struct MainSidebarAccountMenuRow: View {
             isHovered = hovered
             if hovered {
                 onHoverStart?()
+            } else {
+                onHoverEnd?()
             }
         }
     }

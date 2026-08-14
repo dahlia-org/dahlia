@@ -8,6 +8,8 @@ struct MainSidebarAccountRootMenuView: View {
     let onDismissSubmenu: () -> Void
     let onOpenMCP: () -> Void
 
+    @State private var pendingHoverTask: Task<Void, Never>?
+
     var body: some View {
         VStack(spacing: 2) {
             MainSidebarAccountMenuRow(
@@ -15,11 +17,9 @@ struct MainSidebarAccountRootMenuView: View {
                 image: Image(systemName: "externaldrive"),
                 showsDisclosure: true,
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 0,
-                onHoverStart: {
-                    navigation.selectRoot(0)
-                    onShowVaults()
-                },
-                action: onShowVaults
+                onHoverStart: { hover(index: 0, submenu: .vaults, action: onShowVaults) },
+                onHoverEnd: cancelPendingHover,
+                action: { activate(onShowVaults) }
             )
 
             MainSidebarAccountMenuRow(
@@ -27,24 +27,54 @@ struct MainSidebarAccountRootMenuView: View {
                 image: Image(systemName: "globe"),
                 showsDisclosure: true,
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 1,
-                onHoverStart: {
-                    navigation.selectRoot(1)
-                    onShowLanguages()
-                },
-                action: onShowLanguages
+                onHoverStart: { hover(index: 1, submenu: .languages, action: onShowLanguages) },
+                onHoverEnd: cancelPendingHover,
+                action: { activate(onShowLanguages) }
             )
 
             MainSidebarAccountMenuRow(
                 title: L10n.mcpSettings,
                 image: mcpImage,
                 isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == 2,
-                onHoverStart: {
-                    navigation.selectRoot(2)
-                    onDismissSubmenu()
-                },
-                action: onOpenMCP
+                onHoverStart: { hover(index: 2, submenu: nil, action: onDismissSubmenu) },
+                onHoverEnd: cancelPendingHover,
+                action: { activate(onOpenMCP) }
             )
         }
+        .onDisappear(perform: cancelPendingHover)
+    }
+
+    private func hover(
+        index: Int,
+        submenu: MainSidebarAccountMenuNavigationState.ActiveMenu?,
+        action: @escaping () -> Void
+    ) {
+        cancelPendingHover()
+        guard navigation.activeMenu != submenu else { return }
+        let applyHover = {
+            navigation.selectRoot(index)
+            action()
+        }
+        guard navigation.activeMenu != .root else {
+            applyHover()
+            return
+        }
+        pendingHoverTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            pendingHoverTask = nil
+            applyHover()
+        }
+    }
+
+    private func activate(_ action: () -> Void) {
+        cancelPendingHover()
+        action()
+    }
+
+    private func cancelPendingHover() {
+        pendingHoverTask?.cancel()
+        pendingHoverTask = nil
     }
 
     private var mcpImage: Image {
