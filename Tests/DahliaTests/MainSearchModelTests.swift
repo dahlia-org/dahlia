@@ -209,6 +209,7 @@ import GRDB
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
             try await fixture.insertMatchingProjects(count: 3)
+            try await fixture.insertMatchingMeetings(count: MainSearchDesign.meetingPageSize + 1)
             let sidebar = fixture.makeSidebarViewModel()
             defer { sidebar.setAppDatabase(nil) }
             #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
@@ -218,12 +219,18 @@ import GRDB
             model.inputText = "Planning"
             model.queryDidChange(using: sidebar)
             #expect(await pollUntil {
-                !model.isProjectCatalogLoading && model.isLoading && model.projects.count == 3
+                !model.isLoading && !model.isProjectCatalogLoading && model.projects.count == 3
             })
-            model.moveSelection(by: 1)
-            let selection = model.selectedResultID
+            #expect(model.hasMoreMeetings)
 
-            #expect(await pollUntil { !model.isLoading })
+            model.moveSelection(by: -1)
+            let selection = model.selectedResultID
+            #expect(selection == model.projects.last.map { .project($0.id) })
+
+            model.loadMore(using: sidebar)
+            #expect(await pollUntil {
+                !model.isLoading && model.meetings.count == MainSearchDesign.meetingPageSize + 1
+            })
             #expect(model.selectedResultID == selection)
         }
 
