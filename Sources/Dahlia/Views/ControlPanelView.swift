@@ -348,7 +348,7 @@ struct ControlPanelView: View {
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         if showsToolbarRecordButton {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .navigation) {
                 RecordToolbarButton(
                     viewModel: viewModel,
                     sidebarViewModel: sidebarViewModel,
