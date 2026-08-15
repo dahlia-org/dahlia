@@ -2769,10 +2769,16 @@ final class CaptionViewModel: ObservableObject {
             currentMeetingId = nil
         }
         if let preservedDraftContext = rollbackState.preservedDraftContext {
-            draftMeeting = preservedDraftContext.meeting
-            currentProjectURL = preservedDraftContext.meeting.projectURL
-            currentProjectId = preservedDraftContext.meeting.projectId
-            currentProjectName = preservedDraftContext.meeting.projectName
+            let restoredDraftMeeting: DraftMeeting = if let draftMeeting,
+                                                        draftMeeting.id == preservedDraftContext.meeting.id {
+                draftMeeting
+            } else {
+                preservedDraftContext.meeting
+            }
+            draftMeeting = restoredDraftMeeting
+            currentProjectURL = restoredDraftMeeting.projectURL
+            currentProjectId = restoredDraftMeeting.projectId
+            currentProjectName = restoredDraftMeeting.projectName
             currentVaultURL = preservedDraftContext.vaultURL
             currentDbQueue = preservedDraftContext.dbQueue
             setupNoteAutoSave()

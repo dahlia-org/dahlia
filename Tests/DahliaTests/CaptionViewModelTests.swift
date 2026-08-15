@@ -1,4 +1,5 @@
 import CoreAudio
+import Dispatch
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -592,23 +593,45 @@ import GRDB
             viewModel.updateDraftMeetingTitle("Edited design review")
             viewModel.noteText = "Keep this draft note"
 
-            await viewModel.startListening(
-                dbQueue: dbQueue,
-                projectURL: nil,
-                vaultId: UUID.v7(),
-                projectId: nil,
-                vaultURL: testVaultURL,
-                initialMeetingName: "Quick recording 2026-08-15 12:34:56",
-                usesDraftMeeting: false
-            )
+            let databaseAccessStarted = AsyncStream<Void>.makeStream()
+            let releaseDatabase = DispatchSemaphore(value: 0)
+            let blockingDatabaseTask = Task.detached {
+                try dbQueue.read { _ in
+                    databaseAccessStarted.continuation.yield()
+                    releaseDatabase.wait()
+                }
+                databaseAccessStarted.continuation.finish()
+            }
+            var databaseAccessIterator = databaseAccessStarted.stream.makeAsyncIterator()
+            _ = await databaseAccessIterator.next()
+            defer { releaseDatabase.signal() }
+
+            let recordingStartTask = Task {
+                await viewModel.startListening(
+                    dbQueue: dbQueue,
+                    projectURL: nil,
+                    vaultId: UUID.v7(),
+                    projectId: nil,
+                    vaultURL: testVaultURL,
+                    initialMeetingName: "Quick recording 2026-08-15 12:34:56",
+                    usesDraftMeeting: false
+                )
+            }
+            try await waitUntil { viewModel.currentProjectId == nil }
+            viewModel.updateDraftMeetingTitle("Edited while recording starts")
+            viewModel.noteText = "Keep the latest draft note"
+            viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
+            releaseDatabase.signal()
+            await recordingStartTask.value
+            try await blockingDatabaseTask.value
 
             #expect(viewModel.hasDraftMeeting)
-            #expect(viewModel.draftMeetingTitle == "Edited design review")
+            #expect(viewModel.draftMeetingTitle == "Edited while recording starts")
             #expect(viewModel.draftMeeting?.linkedCalendarEvent == event)
-            #expect(viewModel.currentProjectURL == projectURL)
-            #expect(viewModel.currentProjectId == projectId)
-            #expect(viewModel.currentProjectName == "Projects/Design")
-            #expect(viewModel.noteText == "Keep this draft note")
+            #expect(viewModel.currentProjectURL == nil)
+            #expect(viewModel.currentProjectId == nil)
+            #expect(viewModel.currentProjectName == nil)
+            #expect(viewModel.noteText == "Keep the latest draft note")
             #expect(!viewModel.isListening)
             #expect(viewModel.errorMessage != nil)
         }
