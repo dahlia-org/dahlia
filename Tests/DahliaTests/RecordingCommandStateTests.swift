@@ -29,19 +29,28 @@ import Foundation
             let recordingMeetingID = UUID()
 
             #expect(RecordingCommandState.showsDetailCommand(
+                isShowingSettings: false,
                 isListening: false,
                 recordingMeetingID: nil,
                 currentMeetingID: nil
             ))
             #expect(RecordingCommandState.showsDetailCommand(
+                isShowingSettings: false,
                 isListening: true,
                 recordingMeetingID: recordingMeetingID,
                 currentMeetingID: recordingMeetingID
             ))
             #expect(!RecordingCommandState.showsDetailCommand(
+                isShowingSettings: false,
                 isListening: true,
                 recordingMeetingID: recordingMeetingID,
                 currentMeetingID: UUID()
+            ))
+            #expect(!RecordingCommandState.showsDetailCommand(
+                isShowingSettings: true,
+                isListening: false,
+                recordingMeetingID: nil,
+                currentMeetingID: nil
             ))
         }
     }

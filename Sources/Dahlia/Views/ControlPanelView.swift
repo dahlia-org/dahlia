@@ -118,8 +118,10 @@ private struct MeetingNameHeader: View {
 }
 
 private struct MeetingDetailHeader: View {
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
+    let recordingCoordinator: RecordingCoordinator
     let title: String
     let metadataText: String
     let calendarEvent: CalendarEventDisplayInfo?
@@ -133,30 +135,46 @@ private struct MeetingDetailHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            MeetingNameHeader(
-                title: title,
-                isEditing: $isEditing,
-                editingName: $editingName,
-                isFocused: $isFocused,
-                onBeginEditing: onBeginEditing,
-                onCommit: onCommit,
-                onCancel: onCancel,
-                onEditorTap: onEditorTap
-            )
+            HStack(spacing: 16) {
+                MeetingNameHeader(
+                    title: title,
+                    isEditing: $isEditing,
+                    editingName: $editingName,
+                    isFocused: $isFocused,
+                    onBeginEditing: onBeginEditing,
+                    onCommit: onCommit,
+                    onCancel: onCancel,
+                    onEditorTap: onEditorTap
+                )
 
-            metadataStack
+                if showsRecordButton {
+                    RecordButton(
+                        viewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+
+            MeetingMetadataBar(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                metadataText: metadataText,
+                calendarEvent: calendarEvent
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.bottom, 2)
     }
 
-    private var metadataStack: some View {
-        MeetingMetadataBar(
-            viewModel: viewModel,
-            sidebarViewModel: sidebarViewModel,
-            metadataText: metadataText,
-            calendarEvent: calendarEvent
+    private var showsRecordButton: Bool {
+        RecordingCommandState.showsDetailCommand(
+            isShowingSettings: mainWindowNavigation.isShowingSettings,
+            isListening: viewModel.isListening,
+            recordingMeetingID: viewModel.recordingMeetingId,
+            currentMeetingID: viewModel.currentMeetingId
         )
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -166,7 +184,6 @@ struct ControlPanelView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
 
-    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var selectedTab: DetailTab = .summary
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
@@ -196,6 +213,7 @@ struct ControlPanelView: View {
                     MeetingDetailHeader(
                         viewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
                         title: meetingTitle,
                         metadataText: meetingMetadataText,
                         calendarEvent: displayedCalendarEvent,
@@ -336,24 +354,6 @@ struct ControlPanelView: View {
                     onDismiss: dismissExpandedScreenshot
                 )
                 .transition(.opacity)
-            }
-        }
-        .toolbar {
-            if !mainWindowNavigation.isShowingSettings {
-                detailToolbar
-            }
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var detailToolbar: some ToolbarContent {
-        if showsToolbarRecordButton {
-            ToolbarItem(placement: .navigation) {
-                RecordToolbarButton(
-                    viewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    recordingCoordinator: recordingCoordinator
-                )
             }
         }
     }
@@ -598,14 +598,6 @@ struct ControlPanelView: View {
 
     private var tabContentBackgroundColor: Color {
         selectedTab == .notes ? Color(nsColor: .textBackgroundColor) : Color(nsColor: .windowBackgroundColor)
-    }
-
-    private var showsToolbarRecordButton: Bool {
-        RecordingCommandState.showsDetailCommand(
-            isListening: viewModel.isListening,
-            recordingMeetingID: viewModel.recordingMeetingId,
-            currentMeetingID: viewModel.currentMeetingId
-        )
     }
 
     private var meetingMetadataText: String {

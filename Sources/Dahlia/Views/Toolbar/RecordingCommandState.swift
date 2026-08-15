@@ -16,10 +16,11 @@ struct RecordingCommandState: Equatable {
     }
 
     static func showsDetailCommand(
+        isShowingSettings: Bool,
         isListening: Bool,
         recordingMeetingID: UUID?,
         currentMeetingID: UUID?
     ) -> Bool {
-        !isListening || recordingMeetingID == currentMeetingID
+        !isShowingSettings && (!isListening || recordingMeetingID == currentMeetingID)
     }
 }
