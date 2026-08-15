@@ -32,6 +32,8 @@ struct DahliaApp: App {
     @State private var vaultManagementModel: VaultManagementModel
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
+    @State private var isInitializingVault = true
+    @State private var vaultInitializationTask: Task<Void, Never>?
     @State private var showVaultPicker = true
 
     @MainActor
@@ -83,7 +85,9 @@ struct DahliaApp: App {
             let isShowingSettings = mainWindowNavigation.isShowingSettings
 
             Group {
-                if showVaultPicker {
+                if isInitializingVault {
+                    ProgressView(L10n.loadingVaults)
+                } else if showVaultPicker {
                     VaultPickerView(
                         appDatabase: appDatabase,
                         model: vaultManagementModel,
@@ -170,7 +174,7 @@ struct DahliaApp: App {
             }
             .task {
                 _ = liveSubtitleOverlayCoordinator
-                initializeAppIfNeeded()
+                await initializeAppIfNeeded()
                 let settings = AppSettings.shared
                 async let driveRestore: Void = GoogleDriveStore.shared.restoreSessionIfNeeded()
                 await CalendarSourceCoordinator.shared.refreshEnabledSources(settings.enabledCalendarSources)
@@ -269,10 +273,27 @@ struct DahliaApp: App {
         .menuBarExtraStyle(.menu)
     }
 
-    private func initializeAppIfNeeded() {
-        guard appDatabase == nil else { return }
-        guard AppDelegate.hasMutationOwnership else { return }
-        guard let db = try? AppDatabaseManager() else { return }
+    private func initializeAppIfNeeded() async {
+        if let vaultInitializationTask {
+            await vaultInitializationTask.value
+            return
+        }
+        guard isInitializingVault else { return }
+        let task = Task { @MainActor in
+            await initializeApp()
+        }
+        vaultInitializationTask = task
+        await task.value
+        vaultInitializationTask = nil
+    }
+
+    private func initializeApp() async {
+        guard appDatabase == nil,
+              AppDelegate.hasMutationOwnership,
+              let db = try? AppDatabaseManager() else {
+            isInitializingVault = false
+            return
+        }
         appDatabase = db
         sidebarViewModel.setAppDatabase(db)
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
@@ -282,18 +303,21 @@ struct DahliaApp: App {
             await viewModel?.prepareForTermination()
         }
 
-        let repo = MeetingRepository(dbQueue: db.dbQueue)
-        if let lastVault = try? repo.fetchLastOpenedVault() {
-            openVault(lastVault)
+        let resolution = await vaultManagementModel.resolveStartupVault(appDatabase: db)
+        if let resolution {
+            openVault(resolution.vault, isNewlyCreated: resolution.isNewlyCreated)
         }
+        isInitializingVault = false
         configureMeetingDetection(in: db)
     }
 
-    private func openVault(_ vault: VaultRecord) {
+    private func openVault(_ vault: VaultRecord, isNewlyCreated: Bool = false) {
         guard viewModel.canSwitchVault, let db = appDatabase else { return }
         guard showVaultPicker || AppSettings.shared.currentVault?.id != vault.id else { return }
 
-        try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
+        if !isNewlyCreated {
+            try? FileManager.default.createDirectory(at: vault.url, withIntermediateDirectories: true)
+        }
 
         sidebarViewModel.clearMeetingSelection()
         viewModel.clearCurrentMeeting()
@@ -301,7 +325,9 @@ struct DahliaApp: App {
         AppSettings.shared.currentVault = vault
         chatCoordinator.activateVault(vault.id)
         sidebarViewModel.setAppDatabase(db)
-        sidebarViewModel.updateVaultLastOpened(vault.id)
+        if !isNewlyCreated {
+            sidebarViewModel.updateVaultLastOpened(vault.id)
+        }
         viewModel.prepareAnalyzer()
         showVaultPicker = false
     }
