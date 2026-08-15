@@ -13,14 +13,35 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
-        func recordingStartReservationImmediatelyMarksTheLifecycleBusy() throws {
+        func recordingStartReservationMarksTheLifecycleBusyAndRejectsNewDrafts() throws {
             let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let event = CalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: nil,
+                platformId: "event-1",
+                title: "Design review",
+                description: "",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                conferenceURI: nil
+            )
 
             _ = try #require(viewModel.reserveRecordingStart())
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
 
             #expect(viewModel.isRecordingLifecycleBusy)
             #expect(!viewModel.canBeginRecording)
             #expect(viewModel.reserveRecordingStart() == nil)
+            #expect(!viewModel.hasDraftMeeting)
         }
 
         @Test
