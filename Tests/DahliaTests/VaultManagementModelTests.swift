@@ -6,6 +6,117 @@
     @MainActor
     struct VaultManagementModelTests {
         @Test
+        func defaultVaultUsesTheDahliaFolderInDocuments() {
+            #expect(VaultManagementModel.defaultVaultURL == URL.documentsDirectory
+                .appending(path: "Dahlia", directoryHint: .isDirectory))
+        }
+
+        @Test
+        func createsAndSelectsDefaultVaultForAnEmptyDatabase() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            let rootURL = temporaryDirectoryURL()
+            let defaultVaultURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+
+            let resolution = try #require(await model.resolveStartupVault(
+                appDatabase: database,
+                defaultVaultURL: defaultVaultURL
+            ))
+            let vault = resolution.vault
+
+            #expect(resolution.isNewlyCreated)
+            #expect(vault.name == "Default")
+            #expect(vault.url == defaultVaultURL)
+            #expect(vault.lastOpenedAt != .distantPast)
+            #expect(FileManager.default.fileExists(atPath: defaultVaultURL.path))
+            #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().map(\.id) == [vault.id])
+        }
+
+        @Test
+        func reusesAnExistingDefaultDirectoryWithoutChangingItsContents() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            let rootURL = temporaryDirectoryURL()
+            let defaultVaultURL = rootURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            let existingFileURL = defaultVaultURL.appending(path: "keep.txt")
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: defaultVaultURL, withIntermediateDirectories: true)
+            try Data("keep".utf8).write(to: existingFileURL)
+
+            let resolution = try #require(await model.resolveStartupVault(
+                appDatabase: database,
+                defaultVaultURL: defaultVaultURL
+            ))
+            let vault = resolution.vault
+
+            #expect(resolution.isNewlyCreated)
+            #expect(vault.name == "Default")
+            #expect(try String(contentsOf: existingFileURL, encoding: .utf8) == "keep")
+        }
+
+        @Test
+        func preservesAnExistingLastOpenedVaultAtStartup() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let existingVault = makeVault(name: "Existing", lastOpenedAt: .now)
+            try repository.insertVault(existingVault)
+            let model = VaultManagementModel()
+            let defaultVaultURL = temporaryDirectoryURL().appending(path: "Dahlia", directoryHint: .isDirectory)
+
+            let startupVault = await model.resolveStartupVault(
+                appDatabase: database,
+                defaultVaultURL: defaultVaultURL
+            )
+
+            #expect(startupVault?.vault.id == existingVault.id)
+            #expect(startupVault?.isNewlyCreated == false)
+            #expect(try repository.fetchAllVaults().map(\.id) == [existingVault.id])
+            #expect(!FileManager.default.fileExists(atPath: defaultVaultURL.path))
+        }
+
+        @Test
+        func doesNotCreateDefaultVaultWhenExistingVaultHasNeverBeenOpened() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let repository = MeetingRepository(dbQueue: database.dbQueue)
+            let existingVault = makeVault(name: "Unopened", lastOpenedAt: .distantPast)
+            try repository.insertVault(existingVault)
+            let model = VaultManagementModel()
+            let defaultVaultURL = temporaryDirectoryURL().appending(path: "Dahlia", directoryHint: .isDirectory)
+
+            let startupVault = await model.resolveStartupVault(
+                appDatabase: database,
+                defaultVaultURL: defaultVaultURL
+            )
+
+            #expect(startupVault == nil)
+            #expect(try repository.fetchAllVaults() == [existingVault])
+            #expect(!FileManager.default.fileExists(atPath: defaultVaultURL.path))
+        }
+
+        @Test
+        func presentsAnErrorWithoutRegisteringVaultWhenDefaultDirectoryCannotBeCreated() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let model = VaultManagementModel()
+            let rootURL = temporaryDirectoryURL()
+            let blockingFileURL = rootURL.appending(path: "file")
+            let defaultVaultURL = blockingFileURL.appending(path: "Dahlia", directoryHint: .isDirectory)
+            defer { try? FileManager.default.removeItem(at: rootURL) }
+            try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+            try Data().write(to: blockingFileURL)
+
+            let startupVault = await model.resolveStartupVault(
+                appDatabase: database,
+                defaultVaultURL: defaultVaultURL
+            )
+
+            #expect(startupVault == nil)
+            #expect(model.isShowingError)
+            #expect(model.errorMessage == L10n.vaultAddFailed)
+            #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllVaults().isEmpty)
+        }
+
+        @Test
         func configureLoadsVaultsByLastOpenedDate() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let repository = MeetingRepository(dbQueue: database.dbQueue)
@@ -175,6 +286,11 @@
                 createdAt: lastOpenedAt,
                 lastOpenedAt: lastOpenedAt
             )
+        }
+
+        private func temporaryDirectoryURL() -> URL {
+            URL.temporaryDirectory
+                .appending(path: "Dahlia-VaultManagementModelTests-\(UUID())", directoryHint: .isDirectory)
         }
     }
 #endif
