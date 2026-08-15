@@ -11,6 +11,8 @@ enum WindowID {
 }
 
 private enum MainWindowMetrics {
+    static let minimumWidth: CGFloat = 720
+    static let minimumHeight: CGFloat = 520
     static let defaultWidth: CGFloat = 1120
     static let defaultHeight: CGFloat = 740
 }
@@ -105,6 +107,10 @@ struct DahliaApp: App {
             .allowsHitTesting(!isShowingSettings)
             .disabled(isShowingSettings)
             .accessibilityHidden(isShowingSettings)
+            .frame(
+                minWidth: MainWindowMetrics.minimumWidth,
+                minHeight: MainWindowMetrics.minimumHeight
+            )
             .overlay {
                 SettingsView(
                     captionViewModel: viewModel,
