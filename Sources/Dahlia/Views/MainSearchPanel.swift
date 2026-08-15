@@ -97,7 +97,6 @@ struct MainSearchPanel: View {
             model.moveSelection(by: -1)
             return .handled
         }
-        .onExitCommand(perform: onDismiss)
     }
 
     @ViewBuilder
@@ -122,7 +121,7 @@ struct MainSearchPanel: View {
                 sectionHeader(model.isRecent ? L10n.recentMeetings : L10n.meetings)
                 ForEach(model.meetings) { meeting in
                     MainSearchResultRow(
-                        title: meeting.meetingName,
+                        title: meeting.displayTitle,
                         subtitle: meeting.projectName,
                         systemImage: "list.bullet.rectangle",
                         isSelected: model.selectedResultID == .meeting(meeting.id),

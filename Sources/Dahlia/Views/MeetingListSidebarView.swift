@@ -749,7 +749,7 @@ private struct MeetingSidebarRow: View {
                 } else {
                     MeetingTitleMarquee(
                         isHovered: isHovered,
-                        title: highlightedText(displayTitle)
+                        title: highlightedText(item.displayTitle)
                     )
                 }
 
@@ -805,11 +805,6 @@ private struct MeetingSidebarRow: View {
                 .frame(width: 12)
                 .accessibilityHidden(true)
         }
-    }
-
-    private var displayTitle: String {
-        let trimmed = item.meetingName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? L10n.newMeeting : trimmed
     }
 
     private var projectName: String? {
@@ -890,7 +885,7 @@ private struct MeetingSidebarRow: View {
     }
 
     private var accessibilityLabel: String {
-        var components = [displayTitle]
+        var components = [item.displayTitle]
         if isActiveRecording {
             components.append(L10n.recordingNow)
         }
