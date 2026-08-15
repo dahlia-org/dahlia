@@ -1913,7 +1913,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
-        guard !isFinalizingRecording else { return }
+        guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
         resetMeetingState()
         draftMeeting = nil

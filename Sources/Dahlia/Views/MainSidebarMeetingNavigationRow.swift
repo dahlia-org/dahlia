@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainSidebarMeetingNavigationRow: View {
+    let canCreateMeeting: Bool
     let canStartQuickRecording: Bool
     let onCreateMeeting: () -> Void
     let onStartQuickRecording: () -> Void
@@ -13,6 +14,7 @@ struct MainSidebarMeetingNavigationRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(!canCreateMeeting)
             .help(L10n.createNewMeeting)
 
             MainSidebarNavigationAccessoryButton(

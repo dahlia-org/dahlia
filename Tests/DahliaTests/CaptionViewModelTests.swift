@@ -13,7 +13,7 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
-        func recordingStartReservationRejectsDraftCreationAndMaterialization() throws {
+        func recordingStartReservationRejectsMeetingCreationAndDraftMaterialization() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
             let event = CalendarEvent(
@@ -38,7 +38,15 @@ import GRDB
             let draftId = viewModel.draftMeeting?.id
 
             _ = try #require(viewModel.reserveRecordingStart())
-            viewModel.currentMeetingId = .v7()
+            let recordingMeetingId = UUID.v7()
+            viewModel.currentMeetingId = recordingMeetingId
+            viewModel.createEmptyMeeting(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                vaultId: UUID.v7(),
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
             viewModel.beginDraftMeeting(
                 from: event,
                 dbQueue: database.dbQueue,
@@ -48,6 +56,7 @@ import GRDB
             #expect(viewModel.isRecordingLifecycleBusy)
             #expect(!viewModel.canBeginRecording)
             #expect(viewModel.reserveRecordingStart() == nil)
+            #expect(viewModel.currentMeetingId == recordingMeetingId)
             #expect(viewModel.draftMeeting?.id == draftId)
             #expect(viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence) == nil)
         }

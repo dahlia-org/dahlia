@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainSidebarNavigationView: View {
     let onCreateMeeting: () -> Void
+    let canCreateMeeting: Bool
     let canStartQuickRecording: Bool
     let onStartQuickRecording: () -> Void
     let isShowingUpcomingSchedule: Bool
@@ -19,6 +20,7 @@ struct MainSidebarNavigationView: View {
     var body: some View {
         VStack(spacing: 2) {
             MainSidebarMeetingNavigationRow(
+                canCreateMeeting: canCreateMeeting,
                 canStartQuickRecording: canStartQuickRecording,
                 onCreateMeeting: onCreateMeeting,
                 onStartQuickRecording: onStartQuickRecording
