@@ -90,7 +90,7 @@ ChatGPT Subscription:
 
 1. 起動時と状態更新時に `account/read` を `refreshToken: false` で呼ぶ。
 2. 未認証で OpenAI 認証が必要な場合だけ「ChatGPT でサインイン」を表示する。
-3. ユーザー操作で `account/login/start` を `type: chatgpt`、`useHostedLoginSuccessPage: true`、`appBrand: codex` として呼ぶ。
+3. ユーザー操作で `account/login/start` を `type: chatgpt` として呼び、既定のローカル成功ページを使う。
 4. 返された HTTPS の `authUrl` を `NSWorkspace` で開く。
 5. 対応する `account/login/completed` notification を `loginId` で待つ。
 

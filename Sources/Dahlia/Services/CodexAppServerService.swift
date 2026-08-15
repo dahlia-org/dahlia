@@ -346,9 +346,7 @@ actor CodexAppServerService {
         let result = try await request(
             method: "account/login/start",
             params: .object([
-                "appBrand": .string("codex"),
                 "type": .string("chatgpt"),
-                "useHostedLoginSuccessPage": .bool(true),
             ])
         )
         guard let object = result.objectValue,

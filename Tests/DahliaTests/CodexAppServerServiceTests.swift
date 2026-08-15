@@ -76,9 +76,7 @@ import Foundation
                 $0.objectValue?["method"]?.stringValue == "account/login/start"
             })
             #expect(loginRequest.objectValue?["params"] == .object([
-                "appBrand": .string("codex"),
                 "type": .string("chatgpt"),
-                "useHostedLoginSuccessPage": .bool(true),
             ]))
             await service.shutdown()
         }
