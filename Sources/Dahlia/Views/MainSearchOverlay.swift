@@ -11,6 +11,7 @@ struct MainSearchOverlay: View {
             ZStack {
                 Button(action: model.dismiss) {
                     Color.black.opacity(0.12)
+                        .ignoresSafeArea()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
@@ -32,6 +33,5 @@ struct MainSearchOverlay: View {
                 )
             }
         }
-        .ignoresSafeArea()
     }
 }

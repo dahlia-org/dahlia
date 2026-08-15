@@ -7,6 +7,8 @@ struct MainSearchResultRow: View {
     let isSelected: Bool
     let action: () -> Void
 
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
@@ -31,10 +33,21 @@ struct MainSearchResultRow: View {
             .padding(.vertical, 9)
             .contentShape(.rect)
             .background(
-                isSelected ? Color.accentColor.opacity(0.14) : .clear,
+                backgroundColor,
                 in: .rect(cornerRadius: MainSearchDesign.rowCornerRadius)
             )
         }
         .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.14)
+        }
+        if isHovered {
+            return Color.primary.opacity(0.08)
+        }
+        return .clear
     }
 }

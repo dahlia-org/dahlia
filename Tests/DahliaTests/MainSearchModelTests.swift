@@ -25,6 +25,10 @@ import GRDB
             #expect(model.projects.count == MainSearchDesign.recentResultLimit)
             #expect(model.meetings.map(\.meetingName) == (2 ... 7).reversed().map { "Meeting \($0)" })
             #expect(model.projects.map(\.projectDisplayName) == (2 ... 7).reversed().map { "Project \($0)" })
+            #expect(model.selectedResultID == nil)
+
+            model.moveSelection(by: 1)
+            #expect(model.selectedResultID == model.resultIDs.first)
         }
 
         @Test(.timeLimit(.minutes(3)))
@@ -187,7 +191,9 @@ import GRDB
             model.present(using: sidebar)
             model.inputText = "Planning"
             model.queryDidChange(using: sidebar)
-            #expect(await pollUntil { !model.isLoading && model.selectedResultID != nil })
+            #expect(await pollUntil { !model.isLoading && model.meetings.count == 2 })
+            model.moveSelection(by: 1)
+            #expect(model.selectedResultID != nil)
 
             model.inputText = "Missing"
             model.queryDidChange(using: sidebar)
