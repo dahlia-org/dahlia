@@ -94,8 +94,8 @@
 
 /* Sidebar */
 "Create New Meeting" = "新しいミーティング";
-"Quick Recording" = "Quick Recording";
-"Quick recording %@" = "Quick recording %1$@";
+"Quick Recording" = "クイック録音";
+"Quick recording %@" = "クイック録音 %1$@";
 "Home" = "Home";
 "Good morning" = "おはようございます";
 "Good afternoon" = "こんにちは";

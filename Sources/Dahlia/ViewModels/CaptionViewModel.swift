@@ -63,6 +63,13 @@ private struct RecordingStartRollbackState {
     let segments: [TranscriptSegment]
     let recordingSessions: [RecordingSessionTimeline]
     let recordingStartTime: Date?
+    let preservedDraftContext: PreservedDraftContext?
+}
+
+private struct PreservedDraftContext {
+    let meeting: DraftMeeting
+    let vaultURL: URL?
+    let dbQueue: DatabaseQueue?
 }
 
 private struct RecordingStopContext {
@@ -2686,11 +2693,16 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    private func completePersistenceStart(existingMeetingId: UUID?) {
+    private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
         guard existingMeetingId == nil else { return }
+        if activeDraftMeeting == nil, draftMeeting != nil {
+            resetNoteState()
+        }
         draftMeeting = nil
         setupNoteAutoSave()
-        saveNoteImmediately()
+        if activeDraftMeeting != nil {
+            saveNoteImmediately()
+        }
     }
 
     private func handleRecordingStartFailure(
@@ -2756,6 +2768,15 @@ final class CaptionViewModel: ObservableObject {
         if existingMeetingId == nil {
             currentMeetingId = nil
         }
+        if let preservedDraftContext = rollbackState.preservedDraftContext {
+            draftMeeting = preservedDraftContext.meeting
+            currentProjectURL = preservedDraftContext.meeting.projectURL
+            currentProjectId = preservedDraftContext.meeting.projectId
+            currentProjectName = preservedDraftContext.meeting.projectName
+            currentVaultURL = preservedDraftContext.vaultURL
+            currentDbQueue = preservedDraftContext.dbQueue
+            setupNoteAutoSave()
+        }
     }
 
     // MARK: - Recording Control
@@ -2769,6 +2790,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL,
         initialMeetingName: String = "",
+        usesDraftMeeting: Bool = true,
         appendingTo existingMeetingId: UUID? = nil,
         reservation: RecordingStartReservation? = nil
     ) async {
@@ -2788,17 +2810,30 @@ final class CaptionViewModel: ObservableObject {
               !isTerminationRequested,
               canStartRecording() else { return }
         let previousBatchTranscriptionState = batchTranscriptionState
+        let activeDraftMeeting = usesDraftMeeting ? draftMeeting : nil
+        let preservedDraftContext: PreservedDraftContext? = if !usesDraftMeeting, let draftMeeting {
+            PreservedDraftContext(
+                meeting: draftMeeting,
+                vaultURL: currentVaultURL,
+                dbQueue: currentDbQueue
+            )
+        } else {
+            nil
+        }
+        if preservedDraftContext != nil {
+            noteAutoSaveCancellable?.cancel()
+        }
 
         (currentProjectURL, currentProjectId, currentProjectName) = (projectURL, projectId, projectName)
         (currentVaultURL, currentDbQueue) = (vaultURL, dbQueue)
         resetSummaryState()
-        let activeDraftMeeting = draftMeeting
 
         let recordingSessionId = UUID.v7()
         let rollbackState = RecordingStartRollbackState(
             segments: store.segments,
             recordingSessions: store.recordingSessions,
-            recordingStartTime: store.recordingStartTime
+            recordingStartTime: store.recordingStartTime,
+            preservedDraftContext: preservedDraftContext
         )
         var meetingScope: UsageTelemetryEvent.MeetingScope = rollbackState.recordingSessions.isEmpty ? .new : .continued
         startingMicrophoneSelection = microphoneSelection
@@ -2880,7 +2915,10 @@ final class CaptionViewModel: ObservableObject {
                 throw RecordingPipelineFailure(message: failure.message)
             }
 
-            completePersistenceStart(existingMeetingId: existingMeetingId)
+            completePersistenceStart(
+                existingMeetingId: existingMeetingId,
+                activeDraftMeeting: activeDraftMeeting
+            )
             markRecordingStarted(recordingSessionId: recordingSessionId)
             let mode = UsageTelemetryEvent.TranscriptionModeValue(transcriptionMode)
             if let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources) {

@@ -60,11 +60,12 @@ final class RecordingCoordinator {
         }
 
         let shouldUseDraftMeeting = usesDraftMeeting && viewModel.hasDraftMeeting
+        let preservesDraftUntilStart = !usesDraftMeeting && viewModel.hasDraftMeeting
         let projectURL = shouldUseDraftMeeting ? viewModel.currentProjectURL : nil
         let projectId = shouldUseDraftMeeting ? viewModel.currentProjectId : nil
         let projectName = shouldUseDraftMeeting ? viewModel.currentProjectName : nil
 
-        if !shouldUseDraftMeeting {
+        if !shouldUseDraftMeeting, !preservesDraftUntilStart {
             viewModel.clearCurrentMeeting()
         }
 
@@ -77,6 +78,7 @@ final class RecordingCoordinator {
                 projectName: projectName,
                 vaultURL: vault.url,
                 initialMeetingName: initialMeetingName,
+                usesDraftMeeting: usesDraftMeeting,
                 reservation: reservation
             )
             recordingDidStart()

@@ -556,6 +556,64 @@ import GRDB
         }
 
         @Test
+        func failedQuickRecordingPreservesDraftMeeting() async throws {
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            viewModel.microphoneSelection = .none
+            viewModel.isSystemAudioEnabled = true
+            let database = try AppDatabaseManager(path: ":memory:")
+            let dbQueue = database.dbQueue
+            let projectId = UUID.v7()
+            let projectURL = testVaultURL.appending(path: "Projects/Design", directoryHint: .isDirectory)
+            let event = CalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "event-1",
+                title: "Design review",
+                description: "Discuss the rollout",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                conferenceURI: URL(string: "https://meet.google.com/test-link")
+            )
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: dbQueue,
+                projectURL: projectURL,
+                projectId: projectId,
+                projectName: "Projects/Design",
+                vaultURL: testVaultURL
+            )
+            viewModel.updateDraftMeetingTitle("Edited design review")
+            viewModel.noteText = "Keep this draft note"
+
+            await viewModel.startListening(
+                dbQueue: dbQueue,
+                projectURL: nil,
+                vaultId: UUID.v7(),
+                projectId: nil,
+                vaultURL: testVaultURL,
+                initialMeetingName: "Quick recording 2026-08-15 12:34:56",
+                usesDraftMeeting: false
+            )
+
+            #expect(viewModel.hasDraftMeeting)
+            #expect(viewModel.draftMeetingTitle == "Edited design review")
+            #expect(viewModel.draftMeeting?.linkedCalendarEvent == event)
+            #expect(viewModel.currentProjectURL == projectURL)
+            #expect(viewModel.currentProjectId == projectId)
+            #expect(viewModel.currentProjectName == "Projects/Design")
+            #expect(viewModel.noteText == "Keep this draft note")
+            #expect(!viewModel.isListening)
+            #expect(viewModel.errorMessage != nil)
+        }
+
+        @Test
         func materializeDraftMeetingPersistsMeetingAndCalendarEvent() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
