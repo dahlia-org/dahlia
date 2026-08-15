@@ -103,7 +103,6 @@ struct DahliaApp: App {
                     )
                 }
             }
-            .opacity(isShowingSettings ? 0 : 1)
             .allowsHitTesting(!isShowingSettings)
             .disabled(isShowingSettings)
             .accessibilityHidden(isShowingSettings)
