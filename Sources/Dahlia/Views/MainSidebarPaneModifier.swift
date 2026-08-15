@@ -3,12 +3,16 @@ import SwiftUI
 extension View {
     func mainSidebarPane(
         width: CGFloat,
+        minimumWidth: CGFloat = MainSidebarLayout.minimumWidth,
+        maximumWidth: CGFloat = MainSidebarLayout.maximumWidth,
+        isVisible: Bool = true,
+        widthSourceID: Int = 0,
         onWidthChange: @escaping (CGFloat) -> Void
     ) -> some View {
         frame(
-            minWidth: MainSidebarLayout.minimumWidth,
-            idealWidth: width,
-            maxWidth: MainSidebarLayout.maximumWidth
+            minWidth: isVisible ? minimumWidth : 0,
+            idealWidth: isVisible ? width : 0,
+            maxWidth: isVisible ? maximumWidth : 0
         )
         .background {
             SidebarMaterialBackground()
@@ -19,10 +23,13 @@ extension View {
                 .ignoresSafeArea()
         }
         .background {
-            SplitViewWidthSyncView(
-                width: width,
-                onWidthChange: onWidthChange
-            )
+            if isVisible {
+                SplitViewWidthSyncView(
+                    width: width,
+                    onWidthChange: onWidthChange,
+                    widthSourceID: widthSourceID
+                )
+            }
         }
     }
 }

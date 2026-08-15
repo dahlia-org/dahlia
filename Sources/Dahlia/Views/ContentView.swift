@@ -8,7 +8,9 @@ struct ContentView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     var chatCoordinator: CodexChatCoordinator
-    var mainWindowNavigation: MainWindowNavigation
+    @Bindable var mainWindowNavigation: MainWindowNavigation
+    let appDatabase: AppDatabaseManager?
+    var vaultManagementModel: VaultManagementModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
@@ -28,6 +30,8 @@ struct ContentView: View {
     @State private var projectCreationErrorMessage = ""
 
     var body: some View {
+        let isShowingSettings = mainWindowNavigation.isShowingSettings
+
         HSplitView {
             Group {
                 if mainWindowNavigation.section == .projects {
@@ -38,6 +42,8 @@ struct ContentView: View {
                         updateController: updateController,
                         recordingCoordinator: recordingCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
+                        appDatabase: appDatabase,
+                        vaultManagementModel: vaultManagementModel,
                         onShowUpcomingSchedule: returnToCalendarSchedule,
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
@@ -47,7 +53,11 @@ struct ContentView: View {
                     )
                 } else {
                     HSplitView {
-                        if isSidebarVisible {
+                        MainWindowPaneContent(
+                            isMainContentVisible: isSidebarVisible,
+                            isShowingSettings: isShowingSettings,
+                            settingsBackground: .sidebar
+                        ) {
                             MeetingListSidebarView(
                                 viewModel: viewModel,
                                 updateController: updateController,
@@ -63,15 +73,31 @@ struct ContentView: View {
                                 onCreateProject: presentProjectCreation,
                                 onSelectVault: onSelectVault
                             )
-                            .mainSidebarPane(
-                                width: mainWindowNavigation.sidebarWidth,
-                                onWidthChange: mainWindowNavigation.updateSidebarWidth
+                        } settingsContent: {
+                            SettingsSidebarView(
+                                selection: $mainWindowNavigation.settingsCategory,
+                                onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
+                        .mainSidebarPane(
+                            width: mainWindowNavigation.sidebarWidth,
+                            isVisible: isSidebarVisible || isShowingSettings,
+                            onWidthChange: mainWindowNavigation.updateSidebarWidth
+                        )
 
-                        detailView
-                            .navigationTitle("")
-                            .mainDetailPane()
+                        MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
+                            detailView
+                                .navigationTitle("")
+                        } settingsContent: {
+                            SettingsDetailView(
+                                selection: mainWindowNavigation.settingsCategory,
+                                captionViewModel: viewModel,
+                                sidebarViewModel: sidebarViewModel,
+                                appDatabase: appDatabase,
+                                vaultManagementModel: vaultManagementModel
+                            )
+                        }
+                        .mainDetailPane()
                     }
                 }
             }
@@ -87,11 +113,12 @@ struct ContentView: View {
                 )
                 .mainChatSidebarPane(
                     width: mainWindowNavigation.chatSidebarWidth,
+                    isVisible: !isShowingSettings,
                     onWidthChange: mainWindowNavigation.updateChatSidebarWidth
                 )
             }
         }
-        .allowsHitTesting(!searchModel.isPresented)
+        .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .toolbar(removing: .title)
         .toolbar(removing: .sidebarToggle)
         .toolbar {
@@ -123,6 +150,10 @@ struct ContentView: View {
                     onDismiss: viewModel.dismissSummaryGenerationJob
                 )
                 .padding(16)
+                .opacity(isShowingSettings ? 0 : 1)
+                .allowsHitTesting(!isShowingSettings)
+                .disabled(isShowingSettings)
+                .accessibilityHidden(isShowingSettings)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .animation(.easeInOut(duration: 0.3), value: viewModel.summaryGenerationJobs.map(\.id))
             }
@@ -133,6 +164,10 @@ struct ContentView: View {
                     session: chatCoordinator.dockedSession,
                     isPresented: $isShowingChatConfiguration
                 )
+                .opacity(isShowingSettings ? 0 : 1)
+                .allowsHitTesting(!isShowingSettings)
+                .disabled(isShowingSettings)
+                .accessibilityHidden(isShowingSettings)
             }
         }
         .overlay {
@@ -143,6 +178,10 @@ struct ContentView: View {
                     onOpenMeeting: openSearchMeeting,
                     onOpenProject: openSearchProject
                 )
+                .opacity(isShowingSettings ? 0 : 1)
+                .allowsHitTesting(!isShowingSettings)
+                .disabled(isShowingSettings)
+                .accessibilityHidden(isShowingSettings)
             }
         }
         .sheet(isPresented: $isShowingProjectCreation) {

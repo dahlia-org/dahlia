@@ -87,7 +87,10 @@ struct DahliaApp: App {
                     VaultPickerView(
                         appDatabase: appDatabase,
                         model: vaultManagementModel,
-                        canSwitchVault: viewModel.canSwitchVault
+                        canSwitchVault: viewModel.canSwitchVault,
+                        captionViewModel: viewModel,
+                        sidebarViewModel: sidebarViewModel,
+                        mainWindowNavigation: mainWindowNavigation
                     ) { vault in
                         openVault(vault)
                     }
@@ -99,30 +102,16 @@ struct DahliaApp: App {
                         recordingCoordinator: recordingCoordinator,
                         chatCoordinator: chatCoordinator,
                         mainWindowNavigation: mainWindowNavigation,
+                        appDatabase: appDatabase,
+                        vaultManagementModel: vaultManagementModel,
                         onSelectVault: { vault in openVault(vault) }
                     )
                 }
             }
-            .opacity(isShowingSettings ? 0 : 1)
-            .allowsHitTesting(!isShowingSettings)
-            .disabled(isShowingSettings)
-            .accessibilityHidden(isShowingSettings)
             .frame(
                 minWidth: MainWindowMetrics.minimumWidth,
                 minHeight: MainWindowMetrics.minimumHeight
             )
-            .overlay {
-                SettingsView(
-                    captionViewModel: viewModel,
-                    sidebarViewModel: sidebarViewModel,
-                    appDatabase: appDatabase,
-                    vaultManagementModel: vaultManagementModel,
-                    mainWindowNavigation: mainWindowNavigation
-                )
-                .opacity(isShowingSettings ? 1 : 0)
-                .allowsHitTesting(isShowingSettings)
-                .accessibilityHidden(!isShowingSettings)
-            }
             .toolbar(removing: .title)
             .toolbar(removing: .sidebarToggle)
             .alert(
