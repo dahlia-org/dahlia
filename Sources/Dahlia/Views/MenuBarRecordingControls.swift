@@ -160,7 +160,7 @@ struct MenuBarRecordingControls: View {
         } else if AppSettings.shared.currentVault == nil {
             MainWindowOpener.shared.openMainWindow()
         } else {
-            recordingCoordinator.startNewMeeting()
+            recordingCoordinator.startQuickRecording()
         }
     }
 }

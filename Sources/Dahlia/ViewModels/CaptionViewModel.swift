@@ -56,12 +56,20 @@ private struct PersistenceStartRequest {
     let persistencePolicy: TranscriptPersistencePolicy
     let retainAudioAfterBatch: Bool
     let draftMeeting: DraftMeeting?
+    let initialMeetingName: String
 }
 
 private struct RecordingStartRollbackState {
     let segments: [TranscriptSegment]
     let recordingSessions: [RecordingSessionTimeline]
     let recordingStartTime: Date?
+    let preservedDraftContext: PreservedDraftContext?
+}
+
+private struct PreservedDraftContext {
+    let meeting: DraftMeeting
+    let vaultURL: URL?
+    let dbQueue: DatabaseQueue?
 }
 
 private struct RecordingStopContext {
@@ -1905,7 +1913,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
-        guard !isFinalizingRecording else { return }
+        guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
         resetMeetingState()
         draftMeeting = nil
@@ -1942,7 +1950,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         vaultURL: URL
     ) {
-        guard !isFinalizingRecording else { return }
+        guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
         resetMeetingState()
         let draftId = UUID.v7()
@@ -1974,6 +1982,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
     ) -> UUID? {
+        guard !isRecordingStartPending else { return nil }
         if let currentMeetingId {
             return currentMeetingId
         }
@@ -2602,7 +2611,8 @@ final class CaptionViewModel: ObservableObject {
             return
         }
 
-        let initialName = request.draftMeeting?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let initialName = request.draftMeeting?.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? request.initialMeetingName.trimmingCharacters(in: .whitespacesAndNewlines)
         let service = try await MeetingPersistenceService.createNew(
             store: store,
             dbQueue: request.dbQueue,
@@ -2684,11 +2694,16 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    private func completePersistenceStart(existingMeetingId: UUID?) {
+    private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
         guard existingMeetingId == nil else { return }
+        if activeDraftMeeting == nil, draftMeeting != nil {
+            resetNoteState()
+        }
         draftMeeting = nil
         setupNoteAutoSave()
-        saveNoteImmediately()
+        if activeDraftMeeting != nil {
+            saveNoteImmediately()
+        }
     }
 
     private func handleRecordingStartFailure(
@@ -2754,6 +2769,21 @@ final class CaptionViewModel: ObservableObject {
         if existingMeetingId == nil {
             currentMeetingId = nil
         }
+        if let preservedDraftContext = rollbackState.preservedDraftContext {
+            let restoredDraftMeeting: DraftMeeting = if let draftMeeting,
+                                                        draftMeeting.id == preservedDraftContext.meeting.id {
+                draftMeeting
+            } else {
+                preservedDraftContext.meeting
+            }
+            draftMeeting = restoredDraftMeeting
+            currentProjectURL = restoredDraftMeeting.projectURL
+            currentProjectId = restoredDraftMeeting.projectId
+            currentProjectName = restoredDraftMeeting.projectName
+            currentVaultURL = preservedDraftContext.vaultURL
+            currentDbQueue = preservedDraftContext.dbQueue
+            setupNoteAutoSave()
+        }
     }
 
     // MARK: - Recording Control
@@ -2766,6 +2796,8 @@ final class CaptionViewModel: ObservableObject {
         projectId: UUID?,
         projectName: String? = nil,
         vaultURL: URL,
+        initialMeetingName: String = "",
+        usesDraftMeeting: Bool = true,
         appendingTo existingMeetingId: UUID? = nil,
         reservation: RecordingStartReservation? = nil
     ) async {
@@ -2785,17 +2817,30 @@ final class CaptionViewModel: ObservableObject {
               !isTerminationRequested,
               canStartRecording() else { return }
         let previousBatchTranscriptionState = batchTranscriptionState
+        let activeDraftMeeting = usesDraftMeeting ? draftMeeting : nil
+        let preservedDraftContext: PreservedDraftContext? = if !usesDraftMeeting, let draftMeeting {
+            PreservedDraftContext(
+                meeting: draftMeeting,
+                vaultURL: currentVaultURL,
+                dbQueue: currentDbQueue
+            )
+        } else {
+            nil
+        }
+        if preservedDraftContext != nil {
+            noteAutoSaveCancellable?.cancel()
+        }
 
         (currentProjectURL, currentProjectId, currentProjectName) = (projectURL, projectId, projectName)
         (currentVaultURL, currentDbQueue) = (vaultURL, dbQueue)
         resetSummaryState()
-        let activeDraftMeeting = draftMeeting
 
         let recordingSessionId = UUID.v7()
         let rollbackState = RecordingStartRollbackState(
             segments: store.segments,
             recordingSessions: store.recordingSessions,
-            recordingStartTime: store.recordingStartTime
+            recordingStartTime: store.recordingStartTime,
+            preservedDraftContext: preservedDraftContext
         )
         var meetingScope: UsageTelemetryEvent.MeetingScope = rollbackState.recordingSessions.isEmpty ? .new : .continued
         startingMicrophoneSelection = microphoneSelection
@@ -2851,7 +2896,8 @@ final class CaptionViewModel: ObservableObject {
                     transcriptionMode: transcriptionMode,
                     persistencePolicy: transcriptionPlan.persistsRealtimeTranscript ? .streaming : .deferred,
                     retainAudioAfterBatch: retainAudioAfterBatch,
-                    draftMeeting: activeDraftMeeting
+                    draftMeeting: activeDraftMeeting,
+                    initialMeetingName: initialMeetingName
                 )
             )
             meetingScope = persistenceService?.isFirstRecordingSession == true ? .new : .continued
@@ -2876,7 +2922,10 @@ final class CaptionViewModel: ObservableObject {
                 throw RecordingPipelineFailure(message: failure.message)
             }
 
-            completePersistenceStart(existingMeetingId: existingMeetingId)
+            completePersistenceStart(
+                existingMeetingId: existingMeetingId,
+                activeDraftMeeting: activeDraftMeeting
+            )
             markRecordingStarted(recordingSessionId: recordingSessionId)
             let mode = UsageTelemetryEvent.TranscriptionModeValue(transcriptionMode)
             if let sources = UsageTelemetryEvent.AudioSources(sources: activeControllerSources) {

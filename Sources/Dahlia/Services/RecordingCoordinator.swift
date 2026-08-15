@@ -37,7 +37,19 @@ final class RecordingCoordinator {
         startNewMeeting(opensMainWindowOnFailure: true)
     }
 
-    private func startNewMeeting(opensMainWindowOnFailure: Bool) {
+    func startQuickRecording() {
+        startNewMeeting(
+            opensMainWindowOnFailure: true,
+            initialMeetingName: QuickRecordingMeetingTitle.make(at: .now),
+            usesDraftMeeting: false
+        )
+    }
+
+    private func startNewMeeting(
+        opensMainWindowOnFailure: Bool,
+        initialMeetingName: String = "",
+        usesDraftMeeting: Bool = true
+    ) {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
               let dbQueue = sidebarViewModel.dbQueue,
@@ -47,12 +59,13 @@ final class RecordingCoordinator {
             return
         }
 
-        let shouldUseDraftMeeting = viewModel.hasDraftMeeting
+        let shouldUseDraftMeeting = usesDraftMeeting && viewModel.hasDraftMeeting
+        let preservesDraftUntilStart = !usesDraftMeeting && viewModel.hasDraftMeeting
         let projectURL = shouldUseDraftMeeting ? viewModel.currentProjectURL : nil
         let projectId = shouldUseDraftMeeting ? viewModel.currentProjectId : nil
         let projectName = shouldUseDraftMeeting ? viewModel.currentProjectName : nil
 
-        if !shouldUseDraftMeeting {
+        if !shouldUseDraftMeeting, !preservesDraftUntilStart {
             viewModel.clearCurrentMeeting()
         }
 
@@ -64,6 +77,8 @@ final class RecordingCoordinator {
                 projectId: projectId,
                 projectName: projectName,
                 vaultURL: vault.url,
+                initialMeetingName: initialMeetingName,
+                usesDraftMeeting: usesDraftMeeting,
                 reservation: reservation
             )
             recordingDidStart()

@@ -1,4 +1,5 @@
 import CoreAudio
+import Dispatch
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -12,14 +13,52 @@ import GRDB
         private let testVaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 
         @Test
-        func recordingStartReservationImmediatelyMarksTheLifecycleBusy() throws {
+        func recordingStartReservationRejectsMeetingCreationAndDraftMaterialization() throws {
             let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let event = CalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: nil,
+                platformId: "event-1",
+                title: "Design review",
+                description: "",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                conferenceURI: nil
+            )
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
+            let draftId = viewModel.draftMeeting?.id
 
             _ = try #require(viewModel.reserveRecordingStart())
+            let recordingMeetingId = UUID.v7()
+            viewModel.currentMeetingId = recordingMeetingId
+            viewModel.createEmptyMeeting(
+                dbQueue: database.dbQueue,
+                projectURL: nil,
+                vaultId: UUID.v7(),
+                projectId: nil,
+                vaultURL: testVaultURL
+            )
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: database.dbQueue,
+                vaultURL: testVaultURL
+            )
 
             #expect(viewModel.isRecordingLifecycleBusy)
             #expect(!viewModel.canBeginRecording)
             #expect(viewModel.reserveRecordingStart() == nil)
+            #expect(viewModel.currentMeetingId == recordingMeetingId)
+            #expect(viewModel.draftMeeting?.id == draftId)
+            #expect(viewModel.materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence) == nil)
         }
 
         @Test
@@ -553,6 +592,86 @@ import GRDB
 
             #expect(viewModel.hasDraftMeeting)
             #expect(viewModel.draftMeetingTitle == "Edited title")
+        }
+
+        @Test
+        func failedQuickRecordingPreservesDraftMeeting() async throws {
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            viewModel.microphoneSelection = .none
+            viewModel.isSystemAudioEnabled = true
+            let database = try AppDatabaseManager(path: ":memory:")
+            let dbQueue = database.dbQueue
+            let projectId = UUID.v7()
+            let projectURL = testVaultURL.appending(path: "Projects/Design", directoryHint: .isDirectory)
+            let event = CalendarEvent(
+                id: "primary::event-1",
+                calendarID: "primary",
+                calendarName: "Primary",
+                calendarColorHex: "#4285F4",
+                platformId: "event-1",
+                title: "Design review",
+                description: "Discuss the rollout",
+                icalUid: "event-1@google.com",
+                startDate: Date(timeIntervalSince1970: 1_776_384_000),
+                endDate: Date(timeIntervalSince1970: 1_776_387_600),
+                isAllDay: false,
+                conferenceURI: URL(string: "https://meet.google.com/test-link")
+            )
+            viewModel.beginDraftMeeting(
+                from: event,
+                dbQueue: dbQueue,
+                projectURL: projectURL,
+                projectId: projectId,
+                projectName: "Projects/Design",
+                vaultURL: testVaultURL
+            )
+            viewModel.updateDraftMeetingTitle("Edited design review")
+            viewModel.noteText = "Keep this draft note"
+
+            let databaseAccessStarted = AsyncStream<Void>.makeStream()
+            let releaseDatabase = DispatchSemaphore(value: 0)
+            let blockingDatabaseTask = Task.detached {
+                try dbQueue.read { _ in
+                    databaseAccessStarted.continuation.yield()
+                    releaseDatabase.wait()
+                }
+                databaseAccessStarted.continuation.finish()
+            }
+            var databaseAccessIterator = databaseAccessStarted.stream.makeAsyncIterator()
+            _ = await databaseAccessIterator.next()
+            defer { releaseDatabase.signal() }
+
+            let recordingStartTask = Task {
+                await viewModel.startListening(
+                    dbQueue: dbQueue,
+                    projectURL: nil,
+                    vaultId: UUID.v7(),
+                    projectId: nil,
+                    vaultURL: testVaultURL,
+                    initialMeetingName: "Quick recording 2026-08-15 12:34:56",
+                    usesDraftMeeting: false
+                )
+            }
+            try await waitUntil { viewModel.currentProjectId == nil }
+            viewModel.updateDraftMeetingTitle("Edited while recording starts")
+            viewModel.noteText = "Keep the latest draft note"
+            viewModel.setExplicitProjectContext(projectURL: nil, projectId: nil, projectName: nil)
+            releaseDatabase.signal()
+            await recordingStartTask.value
+            try await blockingDatabaseTask.value
+
+            #expect(viewModel.hasDraftMeeting)
+            #expect(viewModel.draftMeetingTitle == "Edited while recording starts")
+            #expect(viewModel.draftMeeting?.linkedCalendarEvent == event)
+            #expect(viewModel.currentProjectURL == nil)
+            #expect(viewModel.currentProjectId == nil)
+            #expect(viewModel.currentProjectName == nil)
+            #expect(viewModel.noteText == "Keep the latest draft note")
+            #expect(!viewModel.isListening)
+            #expect(viewModel.errorMessage != nil)
         }
 
         @Test

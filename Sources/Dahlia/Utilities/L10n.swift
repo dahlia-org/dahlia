@@ -157,6 +157,15 @@ enum L10n {
     // MARK: - Sidebar
 
     static var createNewMeeting: String { String(localized: "Create New Meeting", bundle: bundle) }
+    static var quickRecording: String { String(localized: "Quick Recording", bundle: bundle) }
+    static func quickRecordingMeetingName(timestamp: String) -> String {
+        String(
+            format: String(localized: "Quick recording %@", bundle: bundle),
+            locale: .current,
+            timestamp
+        )
+    }
+
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
