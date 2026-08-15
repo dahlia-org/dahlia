@@ -120,6 +120,7 @@ struct DahliaApp: App {
                 )
                 .opacity(isShowingSettings ? 1 : 0)
                 .allowsHitTesting(isShowingSettings)
+                .disabled(!isShowingSettings)
                 .accessibilityHidden(!isShowingSettings)
             }
             .toolbar(removing: .title)
