@@ -1982,6 +1982,7 @@ final class CaptionViewModel: ObservableObject {
         projectName: String? = nil,
         customerIntelligenceIngestion: CustomerIntelligenceIngestionPolicy
     ) -> UUID? {
+        guard !isRecordingStartPending else { return nil }
         if let currentMeetingId {
             return currentMeetingId
         }
