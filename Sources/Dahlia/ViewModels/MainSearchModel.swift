@@ -191,10 +191,7 @@ final class MainSearchModel {
                 self.meetingCursor = page.nextCursor
                 self.hasMoreMeetings = page.hasMore
                 self.isLoading = false
-                let preservesSelection = self.selectedResultID.map(self.resultIDs.contains) == true
-                if !preservesSelection {
-                    self.selectedResultID = self.resultIDs.first
-                }
+                self.clearInvalidSelection()
             } catch is CancellationError {
                 return
             } catch {
@@ -229,7 +226,7 @@ final class MainSearchModel {
         let requestGeneration = projectGeneration
 
         projects = []
-        selectFirstAvailableResultIfNeeded()
+        clearInvalidSelection()
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
         guard sidebarViewModel.currentVault != nil else { return }
@@ -250,7 +247,7 @@ final class MainSearchModel {
             guard let self, self.projectGeneration == requestGeneration else { return }
             self.projects = results
             self.isProjectCatalogLoading = false
-            self.selectFirstAvailableResultIfNeeded()
+            self.clearInvalidSelection()
         }
     }
 
@@ -265,9 +262,9 @@ final class MainSearchModel {
         return MeetingSearchQueryParser.criteria(text: result.text, tokens: result.tokens)
     }
 
-    private func selectFirstAvailableResultIfNeeded() {
-        guard selectedResultID.map(resultIDs.contains) != true else { return }
-        selectedResultID = resultIDs.first
+    private func clearInvalidSelection() {
+        guard let selectedResultID, !resultIDs.contains(selectedResultID) else { return }
+        self.selectedResultID = nil
     }
 
     private func resolvePendingQualifierIfPossible(using sidebarViewModel: SidebarViewModel) -> Bool {
