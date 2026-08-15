@@ -7,6 +7,7 @@ struct VaultSidebarView: View {
     let onAdd: () -> Void
     let onRemove: (VaultRecord) -> Void
 
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @State private var isShowingRemovalConfirmation = false
 
     private var selectedVault: VaultRecord? {
@@ -49,10 +50,21 @@ struct VaultSidebarView: View {
             ToolbarItemGroup {
                 Button(L10n.addVault, systemImage: "plus", action: onAdd)
                     .help(L10n.openFolderAsVaultDescription)
+                    .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
+                    .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
+                    .disabled(mainWindowNavigation.isShowingSettings)
+                    .accessibilityHidden(mainWindowNavigation.isShowingSettings)
 
                 Button(L10n.removeVault, systemImage: "minus", action: requestRemoval)
-                    .disabled(selectedVault == nil || selectedVault?.id == currentVaultId)
+                    .disabled(
+                        mainWindowNavigation.isShowingSettings
+                            || selectedVault == nil
+                            || selectedVault?.id == currentVaultId
+                    )
                     .help(selectedVault?.id == currentVaultId ? L10n.currentVaultRemoveDescription : L10n.removeVault)
+                    .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
+                    .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
+                    .accessibilityHidden(mainWindowNavigation.isShowingSettings)
                     .confirmationDialog(
                         L10n.removeVaultConfirmation(selectedVault?.name ?? ""),
                         isPresented: $isShowingRemovalConfirmation,

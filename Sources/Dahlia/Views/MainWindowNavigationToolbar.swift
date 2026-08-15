@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainWindowNavigationToolbar: ToolbarContent {
+    let isVisible: Bool
     let isSidebarVisible: Bool
     let isChatSidebarVisible: Bool
     let chatSidebarWidth: CGFloat
@@ -42,6 +43,10 @@ struct MainWindowNavigationToolbar: ToolbarContent {
             }
             .labelStyle(.iconOnly)
             .controlSize(.regular)
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .disabled(!isVisible)
+            .accessibilityHidden(!isVisible)
         }
         .sharedBackgroundVisibility(.hidden)
 
@@ -92,6 +97,10 @@ struct MainWindowNavigationToolbar: ToolbarContent {
             )
             .labelStyle(.iconOnly)
             .controlSize(.regular)
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+            .disabled(!isVisible)
+            .accessibilityHidden(!isVisible)
         }
         .sharedBackgroundVisibility(.hidden)
     }
