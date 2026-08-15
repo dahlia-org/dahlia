@@ -21,6 +21,11 @@ struct ContentView: View {
     @State private var isShowingChatHistory = false
     @State private var isShowingChatConfiguration = false
     @State private var searchModel = MainSearchModel()
+    @State private var isShowingProjectCreation = false
+    @State private var projectCreationParentId: UUID?
+    @State private var newProjectName = ""
+    @State private var newProjectType = ProjectType.undefined
+    @State private var projectCreationErrorMessage = ""
 
     var body: some View {
         HSplitView {
@@ -37,6 +42,7 @@ struct ContentView: View {
                         onShowUnprocessedRecordings: showUnprocessedRecordings,
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                         onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                        onCreateProject: presentProjectCreation,
                         onSelectVault: onSelectVault
                     )
                 } else {
@@ -54,6 +60,7 @@ struct ContentView: View {
                                 onShowUnprocessedRecordings: showUnprocessedRecordings,
                                 showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                                 onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
+                                onCreateProject: presentProjectCreation,
                                 onSelectVault: onSelectVault
                             )
                             .mainSidebarPane(
@@ -138,6 +145,17 @@ struct ContentView: View {
                     onOpenProject: openSearchProject
                 )
             }
+        }
+        .sheet(isPresented: $isShowingProjectCreation) {
+            ProjectCreationSheet(
+                parentProjects: projectCreationParentProjects,
+                parentProjectId: $projectCreationParentId,
+                projectName: $newProjectName,
+                projectType: $newProjectType,
+                errorMessage: projectCreationErrorMessage,
+                onCancel: dismissProjectCreation,
+                onCreate: createProject
+            )
         }
         .task {
             presentPermissionGuideIfNeeded()
@@ -407,6 +425,48 @@ private extension ContentView {
     private func showProjectManagement() {
         mainWindowNavigation.recordNavigation(to: .project(mainWindowNavigation.selectedProjectId))
         mainWindowNavigation.showProjects()
+    }
+
+    private var projectCreationParentProjects: [ProjectOverviewItem] {
+        sidebarViewModel.allProjectItems.filter { $0.parentProjectId == nil }
+    }
+
+    private func presentProjectCreation() {
+        projectCreationParentId = nil
+        newProjectName = ""
+        newProjectType = .undefined
+        projectCreationErrorMessage = ""
+        isShowingProjectCreation = true
+    }
+
+    private func dismissProjectCreation() {
+        isShowingProjectCreation = false
+        projectCreationParentId = nil
+        projectCreationErrorMessage = ""
+    }
+
+    private func createProject() {
+        let projectName = newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !projectName.isEmpty else { return }
+
+        guard let project = sidebarViewModel.createProject(
+            name: projectName,
+            parentProjectId: projectCreationParentId,
+            projectType: projectCreationParentId == nil ? newProjectType : nil
+        ) else {
+            projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
+            return
+        }
+
+        mainWindowNavigation.selectCreatedProject(project.id)
+        mainWindowNavigation.expandedProjectIds.formUnion(
+            ProjectManagementSelection.ancestorIDs(
+                toReveal: project.path,
+                projects: sidebarViewModel.allProjectItems
+            )
+        )
+        dismissProjectCreation()
+        showProjectManagement()
     }
 
     private func prepareProjectManagement() {

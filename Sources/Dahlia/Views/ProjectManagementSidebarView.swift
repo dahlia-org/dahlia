@@ -8,38 +8,13 @@ struct ProjectManagementSidebarView: View {
     @Binding var selectedProjectId: UUID?
     @Binding var expandedProjectIds: Set<UUID>
     let onRetry: () -> Void
-    let onCreateTopLevelProject: () -> Void
-    let onCreateSubproject: () -> Void
-
-    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
+    let onCreateProject: () -> Void
 
     private var projectNodes: [ProjectTreeNode] {
         ProjectTreeNode.buildNodes(from: projects)
     }
 
-    private var selectedProject: ProjectOverviewItem? {
-        guard let selectedProjectId else { return nil }
-        return projects.first(where: { $0.projectId == selectedProjectId })
-    }
-
     var body: some View {
-        projectList
-            .toolbar {
-                if !mainWindowNavigation.isShowingSettings {
-                    ToolbarItem(placement: .navigation) {
-                        ProjectCreationMenu(
-                            selectedProject: selectedProject,
-                            hasVault: hasVault,
-                            onCreateTopLevelProject: onCreateTopLevelProject,
-                            onCreateSubproject: onCreateSubproject
-                        )
-                    }
-                    .sharedBackgroundVisibility(.hidden)
-                }
-            }
-    }
-
-    private var projectList: some View {
         List(selection: $selectedProjectId) {
             ProjectManagementSidebarContent(
                 nodes: projectNodes,
@@ -49,7 +24,7 @@ struct ProjectManagementSidebarView: View {
                 selectedProjectId: selectedProjectId,
                 expandedProjectIds: $expandedProjectIds,
                 onRetry: onRetry,
-                onCreateTopLevelProject: onCreateTopLevelProject
+                onCreateProject: onCreateProject
             )
         }
         .listStyle(.sidebar)
