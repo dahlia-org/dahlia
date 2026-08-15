@@ -56,6 +56,7 @@ private struct PersistenceStartRequest {
     let persistencePolicy: TranscriptPersistencePolicy
     let retainAudioAfterBatch: Bool
     let draftMeeting: DraftMeeting?
+    let initialMeetingName: String
 }
 
 private struct RecordingStartRollbackState {
@@ -2602,7 +2603,8 @@ final class CaptionViewModel: ObservableObject {
             return
         }
 
-        let initialName = request.draftMeeting?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let initialName = request.draftMeeting?.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? request.initialMeetingName.trimmingCharacters(in: .whitespacesAndNewlines)
         let service = try await MeetingPersistenceService.createNew(
             store: store,
             dbQueue: request.dbQueue,
@@ -2766,6 +2768,7 @@ final class CaptionViewModel: ObservableObject {
         projectId: UUID?,
         projectName: String? = nil,
         vaultURL: URL,
+        initialMeetingName: String = "",
         appendingTo existingMeetingId: UUID? = nil,
         reservation: RecordingStartReservation? = nil
     ) async {
@@ -2851,7 +2854,8 @@ final class CaptionViewModel: ObservableObject {
                     transcriptionMode: transcriptionMode,
                     persistencePolicy: transcriptionPlan.persistsRealtimeTranscript ? .streaming : .deferred,
                     retainAudioAfterBatch: retainAudioAfterBatch,
-                    draftMeeting: activeDraftMeeting
+                    draftMeeting: activeDraftMeeting,
+                    initialMeetingName: initialMeetingName
                 )
             )
             meetingScope = persistenceService?.isFirstRecordingSession == true ? .new : .continued
