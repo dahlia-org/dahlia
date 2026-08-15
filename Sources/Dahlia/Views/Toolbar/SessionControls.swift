@@ -1,10 +1,11 @@
 import DahliaRuntimeSupport
 import SwiftUI
 
-struct RecordToolbarButton: View {
+struct RecordButton: View {
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
+    @State private var isHovered = false
 
     private var state: RecordingCommandState {
         RecordingCommandState(
@@ -14,17 +15,22 @@ struct RecordToolbarButton: View {
     }
 
     var body: some View {
-        Button(action: toggle) {
-            Label(label, systemImage: iconName)
-        }
-        .labelStyle(.titleAndIcon)
-        .buttonStyle(.borderedProminent)
-        .controlSize(.small)
-        .tint(.red)
-        .disabled(!state.isEnabled)
-        .keyboardShortcut("r", modifiers: [.command, .shift])
-        .help(label)
-        .accessibilityHint(L10n.recordingCommandHint)
+        Button(label, systemImage: iconName, action: toggle)
+            .labelStyle(.titleAndIcon)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(.red)
+            .overlay {
+                Capsule()
+                    .fill(.white.opacity(isHovered && state.isEnabled ? 0.12 : 0))
+                    .allowsHitTesting(false)
+            }
+            .onHover { isHovered = $0 }
+            .disabled(!state.isEnabled)
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .help(label)
+            .accessibilityHint(L10n.recordingCommandHint)
     }
 
     private func toggle() {
