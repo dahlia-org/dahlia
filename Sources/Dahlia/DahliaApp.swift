@@ -11,6 +11,8 @@ enum WindowID {
 }
 
 private enum MainWindowMetrics {
+    static let minimumWidth: CGFloat = 720
+    static let minimumHeight: CGFloat = 520
     static let defaultWidth: CGFloat = 1120
     static let defaultHeight: CGFloat = 740
 }
@@ -78,43 +80,51 @@ struct DahliaApp: App {
 
     var body: some Scene {
         Window(L10n.dahlia, id: WindowID.main) {
-            ZStack {
-                Group {
-                    if showVaultPicker {
-                        VaultPickerView(
-                            appDatabase: appDatabase,
-                            model: vaultManagementModel,
-                            canSwitchVault: viewModel.canSwitchVault
-                        ) { vault in
-                            openVault(vault)
-                        }
-                    } else {
-                        ContentView(
-                            viewModel: viewModel,
-                            updateController: updateController,
-                            sidebarViewModel: sidebarViewModel,
-                            recordingCoordinator: recordingCoordinator,
-                            chatCoordinator: chatCoordinator,
-                            mainWindowNavigation: mainWindowNavigation,
-                            onSelectVault: { vault in openVault(vault) }
-                        )
-                    }
-                }
-                .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
-                .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
-                .accessibilityHidden(mainWindowNavigation.isShowingSettings)
+            let isShowingSettings = mainWindowNavigation.isShowingSettings
 
-                if mainWindowNavigation.isShowingSettings {
-                    SettingsView(
-                        captionViewModel: viewModel,
-                        sidebarViewModel: sidebarViewModel,
+            Group {
+                if showVaultPicker {
+                    VaultPickerView(
                         appDatabase: appDatabase,
-                        vaultManagementModel: vaultManagementModel,
-                        mainWindowNavigation: mainWindowNavigation
+                        model: vaultManagementModel,
+                        canSwitchVault: viewModel.canSwitchVault
+                    ) { vault in
+                        openVault(vault)
+                    }
+                } else {
+                    ContentView(
+                        viewModel: viewModel,
+                        updateController: updateController,
+                        sidebarViewModel: sidebarViewModel,
+                        recordingCoordinator: recordingCoordinator,
+                        chatCoordinator: chatCoordinator,
+                        mainWindowNavigation: mainWindowNavigation,
+                        onSelectVault: { vault in openVault(vault) }
                     )
                 }
             }
-            .toolbar(removing: mainWindowNavigation.isShowingSettings ? .sidebarToggle : .title)
+            .opacity(isShowingSettings ? 0 : 1)
+            .allowsHitTesting(!isShowingSettings)
+            .disabled(isShowingSettings)
+            .accessibilityHidden(isShowingSettings)
+            .frame(
+                minWidth: MainWindowMetrics.minimumWidth,
+                minHeight: MainWindowMetrics.minimumHeight
+            )
+            .overlay {
+                SettingsView(
+                    captionViewModel: viewModel,
+                    sidebarViewModel: sidebarViewModel,
+                    appDatabase: appDatabase,
+                    vaultManagementModel: vaultManagementModel,
+                    mainWindowNavigation: mainWindowNavigation
+                )
+                .opacity(isShowingSettings ? 1 : 0)
+                .allowsHitTesting(isShowingSettings)
+                .accessibilityHidden(!isShowingSettings)
+            }
+            .toolbar(removing: .title)
+            .toolbar(removing: .sidebarToggle)
             .alert(
                 L10n.vaultOperationFailed,
                 isPresented: Binding(
@@ -125,11 +135,15 @@ struct DahliaApp: App {
                 Text(vaultManagementModel.errorMessage)
             }
             .toolbar {
-                if !mainWindowNavigation.isShowingSettings,
-                   showVaultPicker,
-                   updateController.isUpdateAvailable {
+                ToolbarSpacer(.fixed, placement: .principal)
+
+                if showVaultPicker, updateController.isUpdateAvailable {
                     ToolbarItem(placement: .primaryAction) {
                         AppUpdateBadge(updateController: updateController)
+                            .opacity(isShowingSettings ? 0 : 1)
+                            .allowsHitTesting(!isShowingSettings)
+                            .disabled(isShowingSettings)
+                            .accessibilityHidden(isShowingSettings)
                     }
                 }
             }

@@ -95,26 +95,25 @@ struct ContentView: View {
         .toolbar(removing: .title)
         .toolbar(removing: .sidebarToggle)
         .toolbar {
-            if !mainWindowNavigation.isShowingSettings {
-                MainWindowNavigationToolbar(
-                    isSidebarVisible: isSidebarVisible,
-                    isChatSidebarVisible: chatCoordinator.isDockedVisible,
-                    chatSidebarWidth: mainWindowNavigation.chatSidebarWidth,
-                    chatSessionTitle: chatCoordinator.dockedSession.displayTitle,
-                    isShowingChatHistory: isShowingChatHistory,
-                    canGoBack: canGoBack,
-                    canGoForward: canGoForward,
-                    onToggleSidebar: toggleSidebar,
-                    onSearch: showSearch,
-                    onGoBack: goBack,
-                    onGoForward: goForward,
-                    onNewChat: startNewDockedChat,
-                    onShowChatHistory: showChatHistory,
-                    onHideChatHistory: hideChatHistory,
-                    onPopOutChat: popOutDockedChat,
-                    onToggleChat: toggleChat
-                )
-            }
+            MainWindowNavigationToolbar(
+                isVisible: !mainWindowNavigation.isShowingSettings,
+                isSidebarVisible: isSidebarVisible,
+                isChatSidebarVisible: chatCoordinator.isDockedVisible,
+                chatSidebarWidth: mainWindowNavigation.chatSidebarWidth,
+                chatSessionTitle: chatCoordinator.dockedSession.displayTitle,
+                isShowingChatHistory: isShowingChatHistory,
+                canGoBack: canGoBack,
+                canGoForward: canGoForward,
+                onToggleSidebar: toggleSidebar,
+                onSearch: showSearch,
+                onGoBack: goBack,
+                onGoForward: goForward,
+                onNewChat: startNewDockedChat,
+                onShowChatHistory: showChatHistory,
+                onHideChatHistory: hideChatHistory,
+                onPopOutChat: popOutDockedChat,
+                onToggleChat: toggleChat
+            )
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .overlay(alignment: .bottomTrailing) {
