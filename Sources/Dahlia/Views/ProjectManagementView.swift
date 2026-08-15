@@ -8,6 +8,8 @@ struct ProjectManagementView: View {
     var updateController: AppUpdateController
     let recordingCoordinator: RecordingCoordinator
     @Bindable var mainWindowNavigation: MainWindowNavigation
+    let appDatabase: AppDatabaseManager?
+    var vaultManagementModel: VaultManagementModel
     let onShowUpcomingSchedule: () -> Void
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
@@ -30,8 +32,14 @@ struct ProjectManagementView: View {
     @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
 
     var body: some View {
+        let isShowingSettings = mainWindowNavigation.isShowingSettings
+
         HSplitView {
-            if isSidebarVisible {
+            MainWindowPaneContent(
+                isMainContentVisible: isSidebarVisible,
+                isShowingSettings: isShowingSettings,
+                settingsBackground: .sidebar
+            ) {
                 VStack(spacing: 0) {
                     MainSidebarNavigationView(
                         onCreateMeeting: recordingCoordinator.createEmptyMeeting,
@@ -70,14 +78,30 @@ struct ProjectManagementView: View {
                         onSelectVault: onSelectVault
                     )
                 }
-                .mainSidebarPane(
-                    width: mainWindowNavigation.sidebarWidth,
-                    onWidthChange: mainWindowNavigation.updateSidebarWidth
+            } settingsContent: {
+                SettingsSidebarView(
+                    selection: $mainWindowNavigation.settingsCategory,
+                    onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
+            .mainSidebarPane(
+                width: mainWindowNavigation.sidebarWidth,
+                isVisible: isSidebarVisible || isShowingSettings,
+                onWidthChange: mainWindowNavigation.updateSidebarWidth
+            )
 
-            selectedProjectDetail
-                .mainDetailPane()
+            MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
+                selectedProjectDetail
+            } settingsContent: {
+                SettingsDetailView(
+                    selection: mainWindowNavigation.settingsCategory,
+                    captionViewModel: captionViewModel,
+                    sidebarViewModel: sidebarViewModel,
+                    appDatabase: appDatabase,
+                    vaultManagementModel: vaultManagementModel
+                )
+            }
+            .mainDetailPane()
         }
         .onAppear {
             reconcileSelection(with: sidebarViewModel.allProjectItems)

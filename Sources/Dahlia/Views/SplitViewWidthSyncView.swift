@@ -10,34 +10,52 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
     let width: CGFloat
     let onWidthChange: (CGFloat) -> Void
     var pane: Pane = .first
+    var widthSourceID = 0
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(width: width, pane: pane, onWidthChange: onWidthChange)
+        Coordinator(
+            width: width,
+            pane: pane,
+            widthSourceID: widthSourceID,
+            onWidthChange: onWidthChange
+        )
     }
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        configureWhenAttached(view, coordinator: context.coordinator)
+    func makeNSView(context: Context) -> SplitViewAttachmentTrackingView {
+        let view = SplitViewAttachmentTrackingView()
+        view.onAttachmentChange = { view in
+            Self.configureAttachment(of: view, coordinator: context.coordinator)
+        }
+        view.scheduleAttachmentUpdate()
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.update(width: width, onWidthChange: onWidthChange)
-        configureWhenAttached(nsView, coordinator: context.coordinator)
+    func updateNSView(_ nsView: SplitViewAttachmentTrackingView, context: Context) {
+        context.coordinator.update(
+            width: width,
+            widthSourceID: widthSourceID,
+            onWidthChange: onWidthChange
+        )
+        nsView.scheduleAttachmentUpdate()
     }
 
-    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+    static func dismantleNSView(_ nsView: SplitViewAttachmentTrackingView, coordinator: Coordinator) {
+        nsView.invalidate()
         coordinator.detach()
     }
 
-    private func configureWhenAttached(_ view: NSView, coordinator: Coordinator) {
-        Task { @MainActor [weak view] in
-            guard let view, let splitView = enclosingSplitView(for: view) else { return }
+    private static func configureAttachment(
+        of view: SplitViewAttachmentTrackingView,
+        coordinator: Coordinator
+    ) {
+        if let splitView = enclosingSplitView(for: view) {
             coordinator.attach(to: splitView, markerView: view)
+        } else {
+            coordinator.detach()
         }
     }
 
-    private func enclosingSplitView(for view: NSView) -> NSSplitView? {
+    private static func enclosingSplitView(for view: NSView) -> NSSplitView? {
         var ancestor = view.superview
         while let currentView = ancestor {
             if let splitView = currentView as? NSSplitView {
@@ -53,23 +71,44 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         private static let widthTolerance: CGFloat = 0.5
 
         private var width: CGFloat
+        private var widthSourceID: Int
         private let pane: Pane
         private var onWidthChange: (CGFloat) -> Void
+        private let resizeDelay: Duration
+        private let onResizeTaskCompletion: (() -> Void)?
         private weak var splitView: NSSplitView?
         private weak var markerView: NSView?
+        private var resizeTask: Task<Void, Never>?
+        private var pendingWidth: CGFloat?
 
         init(
             width: CGFloat,
             pane: Pane = .first,
+            widthSourceID: Int = 0,
+            resizeDelay: Duration = .milliseconds(50),
+            onResizeTaskCompletion: (() -> Void)? = nil,
             onWidthChange: @escaping (CGFloat) -> Void
         ) {
             self.width = width
+            self.widthSourceID = widthSourceID
             self.pane = pane
+            self.resizeDelay = resizeDelay
+            self.onResizeTaskCompletion = onResizeTaskCompletion
             self.onWidthChange = onWidthChange
         }
 
-        func update(width: CGFloat, onWidthChange: @escaping (CGFloat) -> Void) {
+        func update(
+            width: CGFloat,
+            widthSourceID: Int = 0,
+            onWidthChange: @escaping (CGFloat) -> Void
+        ) {
+            if widthSourceID != self.widthSourceID || abs(width - self.width) > Self.widthTolerance {
+                resizeTask?.cancel()
+                resizeTask = nil
+                pendingWidth = nil
+            }
             self.width = width
+            self.widthSourceID = widthSourceID
             self.onWidthChange = onWidthChange
             applyWidthIfNeeded()
         }
@@ -92,6 +131,9 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         }
 
         func detach() {
+            resizeTask?.cancel()
+            resizeTask = nil
+            pendingWidth = nil
             if let splitView {
                 NotificationCenter.default.removeObserver(
                     self,
@@ -108,22 +150,44 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
                   let splitView,
                   let trackedPane,
                   let dividerIndex,
-                  abs(trackedPane.frame.width - width) > Self.widthTolerance else { return }
+                  abs(trackedPane.frame.width - targetWidth) > Self.widthTolerance else { return }
             let position = switch pane {
             case .first:
-                width
+                targetWidth
             case .last:
-                splitView.bounds.width - width - splitView.dividerThickness
+                splitView.bounds.width - targetWidth - splitView.dividerThickness
             }
             splitView.setPosition(position, ofDividerAt: dividerIndex)
         }
 
         @objc private func splitViewDidResize() {
-            guard markerIsInTrackedPane,
-                  let trackedPane else { return }
-            let resizedWidth = trackedPane.frame.width
-            guard abs(resizedWidth - width) > Self.widthTolerance else { return }
-            onWidthChange(resizedWidth)
+            guard markerIsInTrackedPane, let currentTrackedPane = trackedPane else { return }
+            resizeTask?.cancel()
+            let resizedWidth = currentTrackedPane.frame.width
+            guard abs(resizedWidth - width) > Self.widthTolerance else {
+                resizeTask = nil
+                pendingWidth = nil
+                return
+            }
+            pendingWidth = resizedWidth
+            resizeTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer { onResizeTaskCompletion?() }
+                try? await Task.sleep(for: resizeDelay)
+                guard !Task.isCancelled,
+                      markerIsInTrackedPane,
+                      let trackedPane else { return }
+                let resizedWidth = trackedPane.frame.width
+                pendingWidth = nil
+                resizeTask = nil
+                guard abs(resizedWidth - width) > Self.widthTolerance else { return }
+                width = resizedWidth
+                onWidthChange(resizedWidth)
+            }
+        }
+
+        private var targetWidth: CGFloat {
+            pendingWidth ?? width
         }
 
         private var trackedPane: NSView? {
@@ -152,6 +216,7 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
         }
 
         deinit {
+            resizeTask?.cancel()
             NotificationCenter.default.removeObserver(self)
         }
     }
