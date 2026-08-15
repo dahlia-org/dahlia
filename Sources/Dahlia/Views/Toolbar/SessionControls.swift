@@ -19,6 +19,7 @@ struct RecordToolbarButton: View {
         }
         .labelStyle(.titleAndIcon)
         .buttonStyle(.borderedProminent)
+        .controlSize(.small)
         .tint(.red)
         .disabled(!state.isEnabled)
         .keyboardShortcut("r", modifiers: [.command, .shift])

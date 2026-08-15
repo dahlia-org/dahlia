@@ -26,7 +26,7 @@ struct ProjectManagementSidebarView: View {
         projectList
             .toolbar {
                 if !mainWindowNavigation.isShowingSettings {
-                    ToolbarItem {
+                    ToolbarItem(placement: .navigation) {
                         ProjectCreationMenu(
                             selectedProject: selectedProject,
                             hasVault: hasVault,
@@ -34,6 +34,7 @@ struct ProjectManagementSidebarView: View {
                             onCreateSubproject: onCreateSubproject
                         )
                     }
+                    .sharedBackgroundVisibility(.hidden)
                 }
             }
     }
