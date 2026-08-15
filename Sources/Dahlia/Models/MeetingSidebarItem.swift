@@ -17,6 +17,10 @@ struct MeetingSidebarItem: Equatable, FetchableRecord, Identifiable, Sendable {
 
     var id: UUID { meetingId }
 
+    var displayTitle: String {
+        meetingName.nilIfBlank ?? L10n.newMeeting
+    }
+
     var effectiveRecordingStartedAt: Date {
         recordingStartedAt ?? createdAt
     }

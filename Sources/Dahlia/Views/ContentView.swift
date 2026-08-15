@@ -84,6 +84,7 @@ struct ContentView: View {
                 )
             }
         }
+        .allowsHitTesting(!searchModel.isPresented)
         .toolbar(removing: .title)
         .toolbar(removing: .sidebarToggle)
         .toolbar {

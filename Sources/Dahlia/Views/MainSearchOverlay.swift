@@ -9,12 +9,12 @@ struct MainSearchOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Button(L10n.closeSearch, action: model.dismiss)
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(.rect)
-                    .background(.black.opacity(0.12))
-                    .accessibilityHidden(true)
+                Button(action: model.dismiss) {
+                    Color.black.opacity(0.12)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityHidden(true)
 
                 MainSearchPanel(
                     model: model,
