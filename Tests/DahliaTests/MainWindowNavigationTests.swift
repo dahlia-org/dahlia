@@ -423,6 +423,27 @@
             #expect(!navigation.canGoBack)
             #expect(!navigation.canGoForward)
         }
+
+        @Test
+        func createdProjectSelectionSurvivesAStaleCatalogUntilObserved() {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let vaultId = UUID.v7()
+            let existing = project(named: "Existing")
+            let created = project(named: "Created")
+            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing])
+
+            navigation.selectCreatedProject(created.projectId)
+            navigation.recordNavigation(to: .project(created.projectId))
+            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing])
+
+            #expect(navigation.selectedProjectId == created.projectId)
+            #expect(navigation.currentLocation == .project(created.projectId))
+
+            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing, created])
+
+            #expect(navigation.selectedProjectId == created.projectId)
+            #expect(navigation.currentLocation == .project(created.projectId))
+        }
     }
 
     private actor NavigationValidationGate {

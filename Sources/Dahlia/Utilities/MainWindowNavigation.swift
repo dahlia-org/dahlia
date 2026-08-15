@@ -42,10 +42,18 @@ final class MainWindowNavigation {
         }
     }
 
-    var selectedProjectId: UUID?
+    var selectedProjectId: UUID? {
+        didSet {
+            if selectedProjectId != pendingCreatedProjectId {
+                pendingCreatedProjectId = nil
+            }
+        }
+    }
+
     var expandedProjectIds: Set<UUID> = []
 
     private var projectVaultId: UUID?
+    private var pendingCreatedProjectId: UUID?
     private var navigationGeneration = 0
     private var backHistory: [MainWindowLocation] = []
     private var forwardHistory: [MainWindowLocation] = []
@@ -91,6 +99,11 @@ final class MainWindowNavigation {
 
     func showProjects() {
         section = .projects
+    }
+
+    func selectCreatedProject(_ projectId: UUID) {
+        pendingCreatedProjectId = projectId
+        selectedProjectId = projectId
     }
 
     func openProjects() {
@@ -177,6 +190,7 @@ final class MainWindowNavigation {
 
     func changeVault(to vaultId: UUID?) {
         projectVaultId = vaultId
+        pendingCreatedProjectId = nil
         selectedProjectId = nil
         expandedProjectIds = []
         let location: MainWindowLocation = if section == .projects {
@@ -217,9 +231,16 @@ final class MainWindowNavigation {
     ) {
         if projectVaultId != vaultId {
             projectVaultId = vaultId
+            pendingCreatedProjectId = nil
             selectedProjectId = nil
             expandedProjectIds.removeAll()
         }
+        if let pendingCreatedProjectId,
+           selectedProjectId == pendingCreatedProjectId,
+           !projects.contains(where: { $0.projectId == pendingCreatedProjectId }) {
+            return
+        }
+        pendingCreatedProjectId = nil
         let reconciledProjectId = ProjectManagementSelection.reconciled(
             selectedProjectId: selectedProjectId,
             projects: projects

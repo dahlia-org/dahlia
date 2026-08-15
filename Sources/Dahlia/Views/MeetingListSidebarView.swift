@@ -14,6 +14,7 @@ struct MeetingListSidebarView: View {
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
+    let onCreateProject: () -> Void
     let onSelectVault: (VaultRecord) -> Void
 
     @State private var renderedMeetingSelection: Set<UUID> = []
@@ -40,6 +41,8 @@ struct MeetingListSidebarView: View {
                 onShowUpcomingSchedule: onShowUpcomingSchedule,
                 isShowingProjectManagement: false,
                 onShowProjectManagement: onOpenProjectManagement,
+                canCreateProject: sidebarViewModel.currentVault != nil,
+                onCreateProject: onCreateProject,
                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings,

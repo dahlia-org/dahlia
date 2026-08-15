@@ -12,13 +12,9 @@ struct ProjectManagementView: View {
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
+    let onCreateProject: () -> Void
     let onSelectVault: (VaultRecord) -> Void
 
-    @State private var isShowingProjectCreation = false
-    @State private var projectCreationParentId: UUID?
-    @State private var newProjectName = ""
-    @State private var newProjectType = ProjectType.undefined
-    @State private var projectCreationErrorMessage = ""
     @State private var projectName = ""
     @State private var projectParentId: UUID?
     @State private var projectType = ProjectType.undefined
@@ -43,6 +39,8 @@ struct ProjectManagementView: View {
                         onShowUpcomingSchedule: onShowUpcomingSchedule,
                         isShowingProjectManagement: true,
                         onShowProjectManagement: {},
+                        canCreateProject: sidebarViewModel.currentVault != nil,
+                        onCreateProject: onCreateProject,
                         isShowingUnprocessedRecordings: false,
                         unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
                         onShowUnprocessedRecordings: onShowUnprocessedRecordings,
@@ -58,8 +56,7 @@ struct ProjectManagementView: View {
                         selectedProjectId: $mainWindowNavigation.selectedProjectId,
                         expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
                         onRetry: sidebarViewModel.retryProjectCatalogLoading,
-                        onCreateTopLevelProject: presentTopLevelProjectCreation,
-                        onCreateSubproject: presentSubprojectCreation
+                        onCreateProject: onCreateProject
                     )
 
                     MainSidebarBottomArea(
@@ -122,20 +119,6 @@ struct ProjectManagementView: View {
                 }
             )
         }
-        .sheet(isPresented: $isShowingProjectCreation) {
-            ProjectCreationSheet(
-                parentName: projectCreationParent?.projectName,
-                projectName: $newProjectName,
-                projectType: $newProjectType,
-                errorMessage: projectCreationErrorMessage,
-                onCancel: {
-                    isShowingProjectCreation = false
-                    projectCreationParentId = nil
-                    projectCreationErrorMessage = ""
-                },
-                onCreate: createProject
-            )
-        }
         .alert(L10n.projectOperationFailed, isPresented: $isShowingProjectOperationError) {} message: {
             Text(projectOperationErrorMessage)
         }
@@ -144,10 +127,6 @@ struct ProjectManagementView: View {
     private var selectedProject: ProjectOverviewItem? {
         guard let selectedProjectId = mainWindowNavigation.selectedProjectId else { return nil }
         return sidebarViewModel.allProjectItems.first(where: { $0.projectId == selectedProjectId })
-    }
-
-    private var trimmedNewProjectName: String {
-        newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder
@@ -177,7 +156,7 @@ struct ProjectManagementView: View {
             } description: {
                 Text(L10n.createFirstProjectDescription)
             } actions: {
-                Button(L10n.newProject, systemImage: "plus", action: presentTopLevelProjectCreation)
+                Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
             }
         } else {
             ContentUnavailableView {
@@ -346,43 +325,6 @@ private extension ProjectManagementView {
         }
     }
 
-    private func presentSubprojectCreation() {
-        guard let selectedProject else { return }
-        presentProjectCreation(parentProjectId: selectedProject.projectId)
-    }
-
-    private func presentTopLevelProjectCreation() {
-        presentProjectCreation(parentProjectId: nil)
-    }
-
-    private func presentProjectCreation(parentProjectId: UUID?) {
-        projectCreationParentId = parentProjectId
-        newProjectName = ""
-        newProjectType = .undefined
-        projectCreationErrorMessage = ""
-        isShowingProjectCreation = true
-    }
-
-    private func createProject() {
-        let projectName = trimmedNewProjectName
-        guard !projectName.isEmpty else { return }
-
-        guard let project = sidebarViewModel.createProject(
-            name: projectName,
-            parentProjectId: projectCreationParentId,
-            projectType: projectCreationParentId == nil ? newProjectType : nil
-        ) else {
-            projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
-            return
-        }
-
-        requestExpansion(toReveal: project.path)
-        mainWindowNavigation.selectedProjectId = project.id
-        isShowingProjectCreation = false
-        projectCreationParentId = nil
-        projectCreationErrorMessage = ""
-    }
-
     private func reconcileSelection(with projects: [ProjectOverviewItem]) {
         mainWindowNavigation.reconcileProjectCatalog(
             vaultId: sidebarViewModel.currentVault?.id,
@@ -524,11 +466,6 @@ private extension ProjectManagementView {
             descriptionStatusMessage = L10n.projectDescriptionSaveFailed
             descriptionSaveFailed = true
         }
-    }
-
-    private var projectCreationParent: ProjectOverviewItem? {
-        guard let projectCreationParentId else { return nil }
-        return sidebarViewModel.allProjectItems.first(where: { $0.projectId == projectCreationParentId })
     }
 
     private var descriptionStatusImage: String {

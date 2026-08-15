@@ -8,7 +8,7 @@ struct ProjectManagementSidebarContent: View {
     let selectedProjectId: UUID?
     @Binding var expandedProjectIds: Set<UUID>
     let onRetry: () -> Void
-    let onCreateTopLevelProject: () -> Void
+    let onCreateProject: () -> Void
 
     var body: some View {
         if !hasVault {
@@ -51,7 +51,7 @@ struct ProjectManagementSidebarContent: View {
         } description: {
             Text(L10n.createFirstProjectDescription)
         } actions: {
-            Button(L10n.newProject, systemImage: "plus", action: onCreateTopLevelProject)
+            Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
         }
         .listRowSeparator(.hidden)
     }
