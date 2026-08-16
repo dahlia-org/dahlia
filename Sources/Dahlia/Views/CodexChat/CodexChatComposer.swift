@@ -55,7 +55,7 @@ struct CodexChatComposer: View {
                 onHover: updateTextInputCursor
             )
         }
-        .padding(6)
+        .padding(CodexChatDesign.composerContentPadding)
         .background {
             CodexChatComposerBackground(isDropTargeted: isImageDropTargeted)
         }
@@ -81,7 +81,7 @@ struct CodexChatComposer: View {
         .pasteDestination(for: CodexChatTransferImage.self, action: addTransferImages)
     }
 
-    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザーの矩形外に描画される。
+    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザー上に描画される。
     /// 表示中は候補のクリックが外側クリックに見えるため、フォーカスを保持して参照挿入後の入力を続けられるようにする。
     static func dismissesComposerFocus(showsAddPanel: Bool) -> Bool {
         !showsAddPanel

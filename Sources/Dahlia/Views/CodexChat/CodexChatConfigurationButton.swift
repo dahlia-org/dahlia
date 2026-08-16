@@ -32,7 +32,7 @@ struct CodexChatConfigurationButton: View {
                     .codexChatDismissOnOutsideClick(perform: dismissConfiguration)
                     .offset(
                         x: CodexChatDesign.controlSize,
-                        y: -(CodexChatDesign.controlSize + 8)
+                        y: -(CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing)
                     )
                     .zIndex(1)
                 }
