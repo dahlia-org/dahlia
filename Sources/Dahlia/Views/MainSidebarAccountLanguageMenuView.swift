@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MainSidebarAccountLanguageMenuView: View {
-    @ObservedObject var navigation: MainSidebarAccountMenuNavigationState
+    var navigation: MainSidebarAccountMenuNavigationState
 
     let onSelectLanguage: () -> Void
 
@@ -9,7 +9,7 @@ struct MainSidebarAccountLanguageMenuView: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            ForEach(Array(AppLanguage.allCases.enumerated()), id: \.element.id) { index, language in
+            ForEach(AppLanguage.allCases.enumerated(), id: \.element.id) { index, language in
                 MainSidebarAccountMenuRow(
                     title: language.displayName,
                     selectionState: language == settings.appLanguage,

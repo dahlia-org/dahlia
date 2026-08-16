@@ -53,6 +53,7 @@ final class SidebarViewModel {
     var isMeetingListLimited = false
     var isMeetingSearchLimited = false
     var selectedMeetingDetail: MeetingDetailItem?
+    var selectedMeetingDetailLoadError: String?
     var meetingReferences: [CodexChatMeetingReference] = []
     var isMeetingCatalogLoaded = false
     /// 現在の vault に属する全 project の集約一覧。
@@ -185,6 +186,7 @@ final class SidebarViewModel {
         isMeetingListLimited = false
         isMeetingSearchLimited = false
         selectedMeetingDetail = nil
+        selectedMeetingDetailLoadError = nil
         meetingReferences.removeAll()
         isMeetingCatalogLoaded = false
         meetingListCursor = nil

@@ -413,14 +413,15 @@ import GRDB
         }
     }
 
-    private func insertMeeting(
+    func insertMeeting(
+        id: UUID = .v7(),
         vaultId: UUID,
         name: String,
         createdAt: Date = .now,
         in db: Database
     ) throws {
         try MeetingRecord(
-            id: .v7(),
+            id: id,
             vaultId: vaultId,
             projectId: nil,
             name: name,

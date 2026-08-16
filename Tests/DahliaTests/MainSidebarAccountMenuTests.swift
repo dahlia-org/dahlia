@@ -82,6 +82,26 @@
         }
 
         @Test
+        func navigationStateKeepsSelectionSemantics() {
+            let navigation = MainSidebarAccountMenuNavigationState()
+
+            navigation.selectRoot(2)
+            #expect(navigation.activeMenu == .root)
+            #expect(navigation.rootSelection == 2)
+            #expect(navigation.submenuSelection == nil)
+
+            navigation.showSubmenu(.vaults)
+            navigation.selectSubmenu(1)
+            #expect(navigation.activeMenu == .vaults)
+            #expect(navigation.submenuSelection == 1)
+
+            navigation.reset()
+            #expect(navigation.activeMenu == .root)
+            #expect(navigation.rootSelection == nil)
+            #expect(navigation.submenuSelection == nil)
+        }
+
+        @Test
         func optionOnlyTextInputDoesNotPassThroughMenu() {
             #expect(!MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.option]))
             #expect(MainSidebarAccountMenuCoordinator.shouldPassThroughKeyEvent(modifierFlags: [.command, .option]))

@@ -3,6 +3,14 @@ import GRDB
 import OSLog
 
 extension SidebarViewModel {
+    func containsMeeting(id meetingId: UUID) async -> Bool {
+        guard let dbQueue,
+              let vaultId = currentVault?.id else { return false }
+        return await (try? dbQueue.read { db in
+            try MeetingRecord.fetchOne(db, key: meetingId)?.vaultId == vaultId
+        }) == true && currentVault?.id == vaultId
+    }
+
     var meetingSearchQuery: String {
         meetingSearchCriteria.text
     }
@@ -143,6 +151,7 @@ extension SidebarViewModel {
         selectedMeetingObservation?.cancel()
         selectedMeetingObservationGeneration &+= 1
         selectedMeetingDetail = nil
+        selectedMeetingDetailLoadError = nil
         guard let meetingId = selectedMeetingId,
               let dbQueue,
               let vaultId = currentVault?.id else { return }
@@ -165,6 +174,7 @@ extension SidebarViewModel {
                       self.currentVault?.id == vaultId,
                       self.selectedMeetingId == meetingId,
                       self.selectedMeetingObservationGeneration == generation else { return }
+                self.selectedMeetingDetailLoadError = error.localizedDescription
                 self.lastError = error.localizedDescription
             },
             onChange: { [weak self] detail in
@@ -176,6 +186,7 @@ extension SidebarViewModel {
                     self.selectedMeetingIds.remove(meetingId)
                     return
                 }
+                self.selectedMeetingDetailLoadError = nil
                 self.selectedMeetingDetail = detail
             }
         )

@@ -138,7 +138,7 @@ struct ConversationAnalyticsFlowCard: View {
             height: .fixed(18)
         )
         .foregroundStyle(Color(nsColor: .quaternaryLabelColor))
-        .cornerRadius(4)
+        .clipShape(.rect(cornerRadius: 4))
         .accessibilityHidden(true)
     }
 
@@ -155,7 +155,7 @@ struct ConversationAnalyticsFlowCard: View {
             height: .fixed(18)
         )
         .foregroundStyle(color)
-        .cornerRadius(4)
+        .clipShape(.rect(cornerRadius: 4))
         .accessibilityLabel(title)
         .accessibilityValue(
             "\(Formatters.elapsedMinutesSeconds(duration: start))–\(Formatters.elapsedMinutesSeconds(duration: end))"

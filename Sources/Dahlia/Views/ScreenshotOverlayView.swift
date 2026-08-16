@@ -76,7 +76,7 @@ struct ScreenshotOverlayView: View {
     let onNext: () -> Void
     let onDismiss: () -> Void
 
-    @StateObject private var imageLoader = ScreenshotImageLoadModel()
+    @State private var imageLoader = ScreenshotImageLoadModel()
 
     private var displayedImage: CGImage? {
         if case let .loaded(image) = imageLoader.state {

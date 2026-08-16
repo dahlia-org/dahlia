@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MainSidebarAccountRootMenuView: View {
-    @ObservedObject var navigation: MainSidebarAccountMenuNavigationState
+    var navigation: MainSidebarAccountMenuNavigationState
 
     let onShowVaults: () -> Void
     let onShowLanguages: () -> Void

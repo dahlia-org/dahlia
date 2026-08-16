@@ -27,23 +27,30 @@ struct TranscriptRowView: View, Equatable {
             }
 
             // テキスト
-            VStack(alignment: .leading, spacing: 4) {
-                Text(segment.displayText)
-                    .font(.body)
-                    .foregroundStyle(segment.isConfirmed ? .primary : .secondary)
-
-                if let translatedText = segment.visibleTranslatedText(isEnabled: showsTranslatedText) {
-                    Text(translatedText)
-                        .font(.body)
-                        .foregroundStyle(.blue)
-                }
-            }
             // 録音中は AppKit の選択範囲管理を作らず、連続更新・スクロール時の
             // MainActor 負荷を録音停止後へ先送りする。
-            .modifier(ConditionalTextSelectionModifier(isEnabled: allowsTextSelection))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            if allowsTextSelection {
+                transcriptText.textSelection(.enabled)
+            } else {
+                transcriptText
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    private var transcriptText: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(segment.displayText)
+                .font(.body)
+                .foregroundStyle(segment.isConfirmed ? .primary : .secondary)
+
+            if let translatedText = segment.visibleTranslatedText(isEnabled: showsTranslatedText) {
+                Text(translatedText)
+                    .font(.body)
+                    .foregroundStyle(.blue)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func speakerDisplayName(for label: String) -> String {

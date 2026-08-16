@@ -63,7 +63,7 @@ struct SummaryDocumentView: View {
                     .lineSpacing(DahliaDesign.paragraphLineSpacing)
             case let .bulletedList(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    ForEach(items.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
                                 .foregroundStyle(.secondary)
@@ -78,7 +78,7 @@ struct SummaryDocumentView: View {
                 .padding(.leading, 8)
             case let .numberedList(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    ForEach(items.enumerated(), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("\(index + 1).")
                                 .monospacedDigit()
@@ -93,7 +93,7 @@ struct SummaryDocumentView: View {
                 .padding(.leading, 8)
             case let .checklist(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    ForEach(items.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: item.checked ? "checkmark.square" : "square")
                                 .foregroundStyle(item.checked ? .secondary : .tertiary)
@@ -189,7 +189,7 @@ struct SummaryDocumentView: View {
     private func tableView(headers: [SummaryText], rows: [[SummaryText]]) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
-                ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
+                ForEach(headers.enumerated(), id: \.offset) { _, header in
                     tableCellView(header)
                         .font(.caption.bold())
                         .padding(.horizontal, 8)
@@ -199,9 +199,9 @@ struct SummaryDocumentView: View {
                 }
             }
             Divider()
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+            ForEach(rows.enumerated(), id: \.offset) { _, row in
                 GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                    ForEach(row.enumerated(), id: \.offset) { _, cell in
                         tableCellView(cell)
                             .font(.caption)
                             .padding(.horizontal, 8)
@@ -264,7 +264,7 @@ struct SummaryScreenshotImageView: View {
     let screenshot: MeetingScreenshotRecord
     let accessibilityLabel: String
     let onOpen: (UUID, CGImage) -> Void
-    @StateObject private var imageLoader = ScreenshotImageLoadModel()
+    @State private var imageLoader = ScreenshotImageLoadModel()
 
     var body: some View {
         Group {

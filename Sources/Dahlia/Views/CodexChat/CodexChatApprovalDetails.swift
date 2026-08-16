@@ -90,7 +90,7 @@ private struct CodexChatFileApprovalDetails: View {
     var body: some View {
         if !request.fileChanges.isEmpty || request.grantRoot != nil {
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(request.fileChanges.enumerated()), id: \.offset) { _, change in
+                ForEach(request.fileChanges.enumerated(), id: \.offset) { _, change in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title(for: change))
                             .font(.system(.caption, design: .monospaced).weight(.medium))
