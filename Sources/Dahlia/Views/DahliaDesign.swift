@@ -9,7 +9,7 @@ enum DahliaDesign {
     static let windowHeaderHorizontalPadding: CGFloat = 12
     static let windowControlsLeadingInset: CGFloat = 68
     static let windowHeaderControlSize: CGFloat = 28
-    static let windowHeaderGroupSpacing: CGFloat = 6
+    static let windowHeaderGroupSpacing: CGFloat = 4
 
     static let readingMaxWidth: CGFloat = 720
     static let readingHorizontalPadding: CGFloat = 20

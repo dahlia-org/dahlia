@@ -6,6 +6,8 @@ struct DahliaWindowHeader<Content: View>: View {
     let backgroundColor: Color
     @ViewBuilder let content: Content
 
+    @State private var helpController = DahliaWindowHeaderHelpController()
+
     init(
         reservesWindowControls: Bool = false,
         allowsWindowDragging: Bool = true,
@@ -41,5 +43,6 @@ struct DahliaWindowHeader<Content: View>: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
+        .environment(helpController)
     }
 }

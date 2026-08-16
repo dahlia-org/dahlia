@@ -25,12 +25,14 @@ struct ApplicationLogView: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.refreshApplicationLogs,
                     systemImage: "arrow.clockwise",
+                    helpAlignment: .bottomTrailing,
                     action: refreshLogs
                 )
 
                 DahliaWindowHeaderIconButton(
                     label: L10n.followLatestApplicationLogs,
                     systemImage: "arrow.down.to.line",
+                    helpAlignment: .bottomTrailing,
                     action: followLatest
                 )
                 .disabled(isFollowingLatest || displayedText.isEmpty)
@@ -38,6 +40,7 @@ struct ApplicationLogView: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.copyDisplayedLogs,
                     systemImage: "doc.on.doc",
+                    helpAlignment: .bottomTrailing,
                     action: copyDisplayedLogs
                 )
                 .disabled(displayedText.isEmpty)
