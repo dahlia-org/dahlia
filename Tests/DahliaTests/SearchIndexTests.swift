@@ -151,6 +151,59 @@ import GRDB
         }
 
         @Test
+        func projectSearchBoundsCommonMatchesAndRetainsTheRareResult() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = Self.makeVault()
+            let targetID = UUID.v7()
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                for index in 0 ... 2000 {
+                    let projectID = index == 0 ? targetID : UUID.v7()
+                    let title = index == 0 ? "会議 固有顧客名" : "会議"
+                    try upsertDocument(
+                        SearchDocumentProjection(
+                            kind: "project",
+                            sourceID: projectID,
+                            vaultID: vault.id,
+                            meetingID: nil,
+                            projectID: projectID,
+                            segmentStart: nil,
+                            segmentEnd: nil,
+                            fields: SearchDocumentFields(
+                                title: title,
+                                description: "",
+                                calendar: "",
+                                tags: "",
+                                projectPath: title,
+                                transcript: ""
+                            )
+                        ),
+                        generation: 1,
+                        in: db
+                    )
+                }
+                try db.execute(sql: "DELETE FROM search_index_jobs")
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
+            }
+
+            let common = try await MeetingRepository.searchProjectIDs(
+                vaultID: vault.id,
+                query: "会議",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            let narrowed = try await MeetingRepository.searchProjectIDs(
+                vaultID: vault.id,
+                query: "会議 固有顧客名",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+
+            #expect(common.count == 20)
+            #expect(narrowed == [targetID])
+        }
+
+        @Test
         func transcriptEvidenceIsWindowedAroundTheMatch() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = Self.makeVault()
@@ -575,23 +628,21 @@ import GRDB
             #expect(hierarchyJobs.first?["targetKey"] as UUID? == firstRoot.id)
             await database.searchIndexer.drain()
 
-            let snapshot = try await database.dbQueue.read { db in
-                try (
-                    Date.fetchOne(
-                        db,
-                        sql: "SELECT updatedAt FROM search_documents WHERE kind = 'project' AND sourceId = ?",
-                        arguments: [unrelated.id]
-                    ),
-                    MeetingRepository.searchProjectIDs(
-                        vaultID: vault.id,
-                        query: "Renamed Child",
-                        limit: 20,
-                        in: db
-                    )
+            let unrelatedUpdatedAfterHierarchyChange = try await database.dbQueue.read { db in
+                try Date.fetchOne(
+                    db,
+                    sql: "SELECT updatedAt FROM search_documents WHERE kind = 'project' AND sourceId = ?",
+                    arguments: [unrelated.id]
                 )
             }
-            #expect(snapshot.0 == unrelatedUpdatedAt)
-            #expect(snapshot.1 == [child.id])
+            let projectIDs = try await MeetingRepository.searchProjectIDs(
+                vaultID: vault.id,
+                query: "Renamed Child",
+                limit: 20,
+                dbQueue: database.dbQueue
+            )
+            #expect(unrelatedUpdatedAfterHierarchyChange == unrelatedUpdatedAt)
+            #expect(projectIDs == [child.id])
         }
 
         @Test

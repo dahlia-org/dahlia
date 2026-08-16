@@ -252,14 +252,12 @@ final class MainSearchModel {
                 results = []
             } else {
                 do {
-                    let ids = try await dbQueue.read { db in
-                        try MeetingRepository.searchProjectIDs(
-                            vaultID: vaultID,
-                            query: criteria.text,
-                            limit: MainSearchDesign.projectResultLimit,
-                            in: db
-                        )
-                    }
+                    let ids = try await MeetingRepository.searchProjectIDs(
+                        vaultID: vaultID,
+                        query: criteria.text,
+                        limit: MainSearchDesign.projectResultLimit,
+                        dbQueue: dbQueue
+                    )
                     let byID = Dictionary(uniqueKeysWithValues: projectItems.map { ($0.id, $0) })
                     results = ids.compactMap { byID[$0] }
                 } catch {

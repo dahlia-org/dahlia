@@ -47,17 +47,19 @@ extension MeetingRepository {
         }
     }
 
-    private nonisolated static func withSearchDeadline(
-        _ operation: @escaping @Sendable () async throws -> MeetingSearchPage
-    ) async throws -> MeetingSearchPage {
-        try await withThrowingTaskGroup(of: MeetingSearchPage.self) { group in
+    /// Both callers wrap GRDB async reads, whose task cancellation interrupts the active SQLite statement.
+    private nonisolated static func withSearchDeadline<Result: Sendable>(
+        _ operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        try await withThrowingTaskGroup(of: Result.self) { group in
             group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(for: .milliseconds(500))
                 throw MeetingSearchError.queryTooBroad
             }
             defer { group.cancelAll() }
-            return try await group.next() ?? .empty(replacesResults: false)
+            guard let result = try await group.next() else { throw CancellationError() }
+            return result
         }
     }
 
@@ -516,51 +518,52 @@ extension MeetingRepository {
         vaultID: UUID,
         query: String,
         limit: Int,
+        dbQueue: DatabaseQueue
+    ) async throws -> [UUID] {
+        try await withSearchDeadline {
+            try await dbQueue.read { db in
+                try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+            }
+        }
+    }
+
+    private nonisolated static func searchProjectIDs(
+        vaultID: UUID,
+        query: String,
+        limit: Int,
         in db: Database
     ) throws -> [UUID] {
         let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
         guard phase != "failed" else { return [] }
         let tokens = try fullTextTokens(for: query, in: db)
         guard !tokens.isEmpty else { return [] }
-        var matches: [UUID: [Int: (matchClass: Int, relevance: Double)]] = [:]
-        let fields: [SearchField] = [.title, .projectPath, .description]
-        for (ordinal, token) in tokens.enumerated() {
+        let tokenQuery = tokens.enumerated().map { ordinal, token in
+            quotedFTSToken(token, isPrefix: ordinal == tokens.count - 1)
+        }.joined(separator: " AND ")
+        let columnScopes = ["title", "{title projectPath}", "{title projectPath description}"]
+        var projectIDs: [UUID] = []
+        var seenProjectIDs: Set<UUID> = []
+        for columnScope in columnScopes {
             try Task.checkCancellation()
-            let tokenQuery = quotedFTSToken(token, isPrefix: ordinal == tokens.count - 1)
-            for field in fields {
-                try Task.checkCancellation()
-                let rows = try Row.fetchAll(
-                    db,
-                    sql: """
-                    SELECT search_documents.projectId AS projectId,
-                           -bm25(search_documents_fts) AS relevance
-                    FROM search_documents_fts
-                    JOIN search_documents ON search_documents.id = search_documents_fts.rowid
-                    WHERE search_documents_fts MATCH ?
-                      AND search_documents.vaultId = ? AND search_documents.kind = 'project'
-                    """,
-                    arguments: ["\(field.rawValue) : \(tokenQuery)", vaultID]
-                )
-                for row in rows {
-                    let id: UUID = row["projectId"]
-                    let relevance: Double = row["relevance"]
-                    if let current = matches[id]?[ordinal],
-                       current.matchClass < field.matchClass
-                       || (current.matchClass == field.matchClass && current.relevance >= relevance) {
-                        continue
-                    }
-                    matches[id, default: [:]][ordinal] = (field.matchClass, relevance)
-                }
+            let ids = try UUID.fetchAll(
+                db,
+                sql: """
+                SELECT search_documents.projectId
+                FROM search_documents_fts
+                JOIN search_documents ON search_documents.id = search_documents_fts.rowid
+                WHERE search_documents_fts MATCH ?
+                  AND search_documents.vaultId = ? AND search_documents.kind = 'project'
+                ORDER BY bm25(search_documents_fts), search_documents.projectId
+                LIMIT ?
+                """,
+                arguments: ["\(columnScope) : (\(tokenQuery))", vaultID, limit]
+            )
+            for id in ids where seenProjectIDs.insert(id).inserted {
+                projectIDs.append(id)
+                if projectIDs.count == limit { return projectIDs }
             }
         }
-        return matches.compactMap { id, hits -> (UUID, Int, Double)? in
-            guard hits.count == tokens.count else { return nil }
-            return (id, hits.values.map(\.matchClass).max() ?? 2, hits.values.map(\.relevance).min() ?? 0)
-        }.sorted {
-            if $0.1 != $1.1 { return $0.1 < $1.1 }
-            if $0.2 != $1.2 { return $0.2 > $1.2 }
-            return $0.0.uuidString < $1.0.uuidString
-        }.prefix(limit).map(\.0)
+        return projectIDs
     }
 }
 
