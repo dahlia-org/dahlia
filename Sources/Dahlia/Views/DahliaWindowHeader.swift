@@ -43,6 +43,12 @@ struct DahliaWindowHeader<Content: View>: View {
             }
         }
         .ignoresSafeArea(.container, edges: .top)
+        .coordinateSpace(name: DahliaWindowHeaderHelpLayout.coordinateSpaceName)
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            geometry.size.width
+        } action: { width in
+            helpController.updateContainerWidth(width)
+        }
         .environment(helpController)
     }
 }

@@ -20,14 +20,14 @@ import Foundation
         }
 
         @Test
-        func dockedChatStartsVisibleAndCanBeHiddenAndShown() {
+        func dockedChatStartsHiddenAndCanBeShownAndHidden() {
             let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
 
-            #expect(coordinator.isDockedVisible)
-            coordinator.hideDocked()
             #expect(!coordinator.isDockedVisible)
             coordinator.showDocked()
             #expect(coordinator.isDockedVisible)
+            coordinator.hideDocked()
+            #expect(!coordinator.isDockedVisible)
         }
 
         @Test
@@ -57,7 +57,7 @@ import Foundation
             #expect(coordinator.detachedSessionIDs.contains(selectedID))
             #expect(coordinator.session(for: selectedID)?.backendThreadID == thread.id)
             #expect(coordinator.dockedSessionID == originalDockedID)
-            #expect(coordinator.isDockedVisible)
+            #expect(!coordinator.isDockedVisible)
         }
 
         @Test

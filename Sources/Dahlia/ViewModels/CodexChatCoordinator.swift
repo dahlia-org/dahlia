@@ -12,7 +12,7 @@ final class CodexChatCoordinator {
     private(set) var historyError: String?
     private(set) var detachedSessionIDs: Set<CodexChatSessionID> = []
     private(set) var dockedSessionID: CodexChatSessionID
-    var isDockedVisible = true
+    var isDockedVisible = false
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored private let settings: AppSettings
