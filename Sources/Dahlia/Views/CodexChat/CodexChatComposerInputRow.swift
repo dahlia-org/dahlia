@@ -18,7 +18,6 @@ struct CodexChatComposerInputRow: View {
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
     let onHover: (HoverPhase) -> Void
-    let panelVerticalOffset: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,7 +58,9 @@ struct CodexChatComposerInputRow: View {
                         onSelectMeeting: onSelectMeeting
                     )
                     .codexChatDismissOnOutsideClick(perform: onExitCommand)
-                    .offset(y: panelVerticalOffset)
+                    .offset(
+                        y: -(CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing)
+                    )
                     .zIndex(1)
                 }
             }

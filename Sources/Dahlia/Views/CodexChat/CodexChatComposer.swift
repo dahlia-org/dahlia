@@ -13,7 +13,6 @@ struct CodexChatComposer: View {
     @State private var isImageImporterPresented = false
     @State private var isImageDropTargeted = false
     @State private var showsAddPanel = false
-    @State private var composerHeight: CGFloat = 0
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -53,8 +52,7 @@ struct CodexChatComposer: View {
                 onSubmit: handleSubmit,
                 onMoveCommand: handleMoveCommand,
                 onExitCommand: dismissAddPanel,
-                onHover: updateTextInputCursor,
-                panelVerticalOffset: panelVerticalOffset
+                onHover: updateTextInputCursor
             )
         }
         .padding(CodexChatDesign.composerContentPadding)
@@ -81,14 +79,9 @@ struct CodexChatComposer: View {
         }
         .onDropSessionUpdated(updateDropTarget)
         .pasteDestination(for: CodexChatTransferImage.self, action: addTransferImages)
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { composerHeight = $0 }
     }
 
-    private var panelVerticalOffset: CGFloat {
-        -(composerHeight - CodexChatDesign.composerContentPadding + CodexChatDesign.floatingPanelSpacing)
-    }
-
-    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザーの矩形外に描画される。
+    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザー上に描画される。
     /// 表示中は候補のクリックが外側クリックに見えるため、フォーカスを保持して参照挿入後の入力を続けられるようにする。
     static func dismissesComposerFocus(showsAddPanel: Bool) -> Bool {
         !showsAddPanel
