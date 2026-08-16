@@ -46,7 +46,7 @@ struct MainSearchResultRow: View {
             return Color.accentColor.opacity(0.14)
         }
         if isHovered {
-            return Color.primary.opacity(0.08)
+            return DahliaDesign.hoverHighlightColor
         }
         return .clear
     }

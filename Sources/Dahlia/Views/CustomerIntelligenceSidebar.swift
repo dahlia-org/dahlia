@@ -27,6 +27,7 @@ struct CustomerIntelligenceSidebar: View {
                     .tag(CustomerIntelligenceSection.insights)
             }
             .listStyle(.sidebar)
+            .tint(DahliaDesign.sidebarSelectionColor)
         }
     }
 

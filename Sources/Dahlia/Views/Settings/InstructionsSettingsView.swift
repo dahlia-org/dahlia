@@ -103,6 +103,7 @@ struct InstructionsSettingsView: View {
                 }
             }
             .listStyle(.inset)
+            .tint(DahliaDesign.sidebarSelectionColor)
         }
     }
 

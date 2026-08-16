@@ -27,6 +27,7 @@ struct SettingsSidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(DahliaDesign.sidebarSelectionColor)
         .scrollContentBackground(.hidden)
     }
 }

@@ -90,6 +90,7 @@ struct VaultSidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .tint(DahliaDesign.sidebarSelectionColor)
             .onDeleteCommand(perform: requestRemoval)
         }
     }

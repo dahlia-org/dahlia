@@ -321,7 +321,7 @@ private struct SummarySharePopoverRow: View {
             .padding(.vertical, 8)
             .background {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? Color.accentColor.opacity(0.12) : Color.clear)
+                    .fill(isHovering ? DahliaDesign.hoverHighlightColor : .clear)
             }
         }
         .buttonStyle(.plain)

@@ -56,7 +56,7 @@ struct DetailTabBar: View {
                     .background {
                         if !isFolderOnly, hoveredTab == tab {
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.primary.opacity(0.05))
+                                .fill(DahliaDesign.hoverHighlightColor)
                         }
                     }
                     .overlay(alignment: .bottom) {

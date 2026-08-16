@@ -19,7 +19,7 @@ struct CodexChatIconButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+            isHovering ? DahliaDesign.hoverHighlightColor : .clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
         .onHover { isHovering = $0 }

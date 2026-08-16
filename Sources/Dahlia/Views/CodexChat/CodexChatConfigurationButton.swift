@@ -17,7 +17,7 @@ struct CodexChatConfigurationButton: View {
             .padding(.horizontal, 10)
             .frame(height: CodexChatDesign.controlSize)
             .background(
-                isHovering || presentationIsActive ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                isHovering || presentationIsActive ? DahliaDesign.hoverHighlightColor : .clear,
                 in: Capsule()
             )
             .onHover { isHovering = $0 }

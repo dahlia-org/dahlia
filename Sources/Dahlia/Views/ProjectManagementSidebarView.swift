@@ -28,6 +28,7 @@ struct ProjectManagementSidebarView: View {
             )
         }
         .listStyle(.sidebar)
+        .tint(DahliaDesign.sidebarSelectionColor)
         .scrollContentBackground(.hidden)
     }
 }
