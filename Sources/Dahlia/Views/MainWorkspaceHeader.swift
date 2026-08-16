@@ -18,21 +18,24 @@ struct MainWorkspaceHeader: View {
                 DahliaWindowHeaderIconButton(
                     label: sidebarToggleLabel,
                     systemImage: "sidebar.left",
+                    helpShortcut: "⌘B",
                     action: onToggleSidebar
                 )
-                .keyboardShortcut("s", modifiers: [.command, .control])
+                .keyboardShortcut("b", modifiers: .command)
 
                 DahliaWindowHeaderIconButton(
                     label: L10n.search,
                     systemImage: "magnifyingglass",
+                    helpShortcut: "⌘F",
                     action: onSearch
                 )
-                .keyboardShortcut("k", modifiers: .command)
+                .keyboardShortcut("f", modifiers: .command)
 
-                HStack(spacing: 2) {
+                HStack(spacing: DahliaDesign.windowHeaderGroupSpacing) {
                     DahliaWindowHeaderIconButton(
                         label: L10n.back,
                         systemImage: "arrow.backward",
+                        helpShortcut: "⌘[",
                         action: onGoBack
                     )
                     .disabled(!canGoBack)
@@ -41,13 +44,12 @@ struct MainWorkspaceHeader: View {
                     DahliaWindowHeaderIconButton(
                         label: L10n.forward,
                         systemImage: "arrow.forward",
+                        helpShortcut: "⌘]",
                         action: onGoForward
                     )
                     .disabled(!canGoForward)
                     .keyboardShortcut("]", modifiers: .command)
                 }
-                .padding(.leading, 6)
-
                 Spacer(minLength: 12)
 
                 if !isChatSidebarVisible {
