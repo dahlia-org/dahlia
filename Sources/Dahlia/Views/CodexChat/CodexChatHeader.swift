@@ -14,12 +14,22 @@ struct CodexChatHeader: View {
     var body: some View {
         DahliaWindowHeader(reservesWindowControls: reservesWindowControls) {
             if showsHistory {
-                CodexChatIconButton(label: L10n.back, systemImage: "chevron.left", action: onBack)
+                DahliaWindowHeaderIconButton(
+                    label: L10n.back,
+                    systemImage: "chevron.left",
+                    helpAlignment: .bottomLeading,
+                    action: onBack
+                )
                 Text(L10n.chatHistory)
                     .font(.body)
             } else {
                 if hasConversation {
-                    CodexChatIconButton(label: L10n.newChat, systemImage: "square.and.pencil", action: onNewChat)
+                    DahliaWindowHeaderIconButton(
+                        label: L10n.newChat,
+                        systemImage: "square.and.pencil",
+                        helpAlignment: .bottomLeading,
+                        action: onNewChat
+                    )
                     Divider()
                         .frame(height: 16)
                 }
@@ -32,25 +42,28 @@ struct CodexChatHeader: View {
             Spacer(minLength: 8)
 
             if !showsHistory {
-                CodexChatIconButton(
+                DahliaWindowHeaderIconButton(
                     label: L10n.chatHistory,
                     systemImage: "clock.arrow.circlepath",
+                    helpAlignment: .bottomTrailing,
                     action: onShowHistory
                 )
             }
 
             if let onPopOut {
-                CodexChatIconButton(
+                DahliaWindowHeaderIconButton(
                     label: L10n.popOutChat,
                     systemImage: "rectangle.on.rectangle",
+                    helpAlignment: .bottomTrailing,
                     action: onPopOut
                 )
             }
 
             if let onClose {
-                CodexChatIconButton(
+                DahliaWindowHeaderIconButton(
                     label: L10n.hideChat,
                     systemImage: "sidebar.right",
+                    helpAlignment: .bottomTrailing,
                     action: onClose
                 )
             }
