@@ -40,5 +40,6 @@ struct DahliaWindowHeader<Content: View>: View {
                 backgroundColor
             }
         }
+        .ignoresSafeArea(.container, edges: .top)
     }
 }

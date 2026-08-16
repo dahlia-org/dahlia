@@ -79,7 +79,6 @@ struct ContentView: View {
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
-                        .padding(.top, DahliaDesign.windowHeaderHeight)
                         .mainSidebarPane(
                             width: mainWindowNavigation.sidebarWidth,
                             isVisible: isSidebarVisible || isShowingSettings,
@@ -97,7 +96,6 @@ struct ContentView: View {
                                 vaultManagementModel: vaultManagementModel
                             )
                         }
-                        .padding(.top, DahliaDesign.windowHeaderHeight)
                         .mainDetailPane()
                     }
                 }

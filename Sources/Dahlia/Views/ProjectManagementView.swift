@@ -84,7 +84,6 @@ struct ProjectManagementView: View {
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
-            .padding(.top, DahliaDesign.windowHeaderHeight)
             .mainSidebarPane(
                 width: mainWindowNavigation.sidebarWidth,
                 isVisible: isSidebarVisible || isShowingSettings,
@@ -102,7 +101,6 @@ struct ProjectManagementView: View {
                     vaultManagementModel: vaultManagementModel
                 )
             }
-            .padding(.top, DahliaDesign.windowHeaderHeight)
             .mainDetailPane()
         }
         .onAppear {
