@@ -51,6 +51,8 @@ struct SettingsDetailView: View {
                 dbQueue: sidebarViewModel.dbQueue,
                 captionViewModel: captionViewModel
             )
+        case .search:
+            SearchSettingsView(database: appDatabase)
         case .transcription:
             TranscriptionSettingsView()
         case .liveSubtitles:

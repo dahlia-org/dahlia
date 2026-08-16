@@ -23,6 +23,10 @@ let package = Package(
             name: "DahliaAEC3",
             path: "Vendor/DahliaAEC3.xcframework"
         ),
+        .binaryTarget(
+            name: "DahliaLindera",
+            path: "Vendor/DahliaLindera.xcframework"
+        ),
         .target(
             name: "DahliaRuntimeSupport",
             path: "Sources/DahliaRuntimeSupport"
@@ -47,6 +51,7 @@ let package = Package(
             name: "Dahlia",
             dependencies: [
                 "DahliaAEC3",
+                "DahliaLindera",
                 "DahliaRuntimeSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Sentry", package: "sentry-cocoa"),

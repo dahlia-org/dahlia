@@ -8,6 +8,18 @@ struct MeetingDateGroup: Identifiable, Equatable, Sendable {
 }
 
 enum MeetingDateGrouping {
+    static func searchResultGroups(from meetings: [MeetingSidebarItem]) -> [MeetingDateGroup] {
+        guard !meetings.isEmpty else { return [] }
+        return [
+            MeetingDateGroup(
+                id: "search-results",
+                title: L10n.searchResults,
+                date: .distantFuture,
+                meetings: meetings
+            ),
+        ]
+    }
+
     static func groups(
         from meetings: [MeetingSidebarItem],
         calendar: Calendar = .current,

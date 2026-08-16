@@ -132,7 +132,7 @@ extension SidebarViewModel {
                       self.meetingSearchCriteria == criteria,
                       self.meetingSearchObservationGeneration == generation else { return }
 
-                if appending {
+                if appending, !page.replacesResults {
                     self.appendMeetingSearchPage(page)
                 } else {
                     self.meetingSearchItems = page.items
@@ -279,7 +279,7 @@ extension SidebarViewModel {
         meetingSidebarItems.removeAll { ids.contains($0.id) }
         meetingSearchItems.removeAll { ids.contains($0.id) }
         meetingSidebarGroups = MeetingDateGrouping.groups(from: meetingSidebarItems)
-        meetingSearchGroups = MeetingDateGrouping.groups(from: meetingSearchItems)
+        refreshMeetingSearchGroups()
         startAdditionalMeetingRowsObservationIfNeeded()
     }
 
@@ -463,9 +463,9 @@ extension SidebarViewModel {
         }
     }
 
-    private func appendMeetingSearchPage(_ page: MeetingSidebarPage) {
+    private func appendMeetingSearchPage(_ page: MeetingSearchPage) {
         meetingSearchItems.append(contentsOf: page.items)
-        meetingSearchGroups = MeetingDateGrouping.groups(from: meetingSearchItems)
+        refreshMeetingSearchGroups()
         meetingSearchCursor = page.nextCursor
         updateMeetingSearchBoundary(hasMore: page.hasMore)
         isMeetingSearchLoaded = true
@@ -541,7 +541,15 @@ extension SidebarViewModel {
         }
         if let index = meetingSearchItems.firstIndex(where: { $0.id == id }) {
             update(&meetingSearchItems[index])
+            refreshMeetingSearchGroups()
+        }
+    }
+
+    private func refreshMeetingSearchGroups() {
+        if meetingSearchCriteria.text.isEmpty {
             meetingSearchGroups = MeetingDateGrouping.groups(from: meetingSearchItems)
+        } else {
+            meetingSearchGroups = MeetingDateGrouping.searchResultGroups(from: meetingSearchItems)
         }
     }
 

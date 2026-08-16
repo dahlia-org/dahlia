@@ -106,16 +106,17 @@ import GRDB
         }
 
         @Test
-        func searchesSidebarMetadataButNotTranscriptText() async throws {
+        func searchesIndexedMetadataAndTranscriptText() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let expected = try fixture.insertSearchFixtures()
+            await fixture.manager.searchIndexer.drain()
 
             #expect(try await fixture.resultIDs(query: "Quarterly") == [expected.title])
             #expect(try await fixture.resultIDs(query: "budget") == [expected.description])
             #expect(try await fixture.resultIDs(query: "Acme/Zephyr") == [expected.project])
             #expect(try await fixture.resultIDs(query: "Launch") == [expected.calendar])
             #expect(try await fixture.resultIDs(query: "Customer") == [expected.tag])
-            #expect(try await fixture.resultIDs(query: "verbatimneedle").isEmpty)
+            #expect(try await fixture.resultIDs(query: "verbatimneedle") == [expected.transcript])
             #expect(try await fixture.resultIDs(query: "%_") == [expected.literal])
             #expect(try await fixture.resultIDs(query: "resume") == [expected.localized])
             #expect(try await fixture.resultIDs(query: "Priority") == [expected.separatorTag])
@@ -130,6 +131,7 @@ import GRDB
                 startDate: startDate,
                 endDate: endDate
             )
+            await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
                 vaultId: fixture.vault.id,
@@ -152,6 +154,7 @@ import GRDB
         func reportsTheMetadataThatMatchedFreeText() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             _ = try fixture.insertSearchFixtures()
+            await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
                 vaultId: fixture.vault.id,
@@ -477,7 +480,7 @@ import GRDB
                 let calendarID = try insertMeeting(name: "Calendar match", calendarKey: calendarKey, in: db)
                 let tagID = try insertMeeting(name: "Tag match", in: db)
                 try attachTag(name: "Important Customer", colorHex: "#808080", to: tagID, in: db)
-                try insertTranscriptOnlyMeeting(text: "verbatimneedle", in: db)
+                let transcriptID = try insertTranscriptOnlyMeeting(text: "verbatimneedle", in: db)
                 let literalID = try insertMeeting(name: "Status 100%_ready", in: db)
                 let localizedID = try insertMeeting(name: "Résumé review", in: db)
                 let separatorTagID = try insertMeeting(name: "Separator tag match", in: db)
@@ -494,6 +497,7 @@ import GRDB
                     project: projectID,
                     calendar: calendarID,
                     tag: tagID,
+                    transcript: transcriptID,
                     literal: literalID,
                     localized: localizedID,
                     separatorTag: separatorTagID
@@ -689,7 +693,7 @@ import GRDB
             try MeetingTagRecord(meetingId: meetingID, tagId: tagID).insert(db)
         }
 
-        private func insertTranscriptOnlyMeeting(text: String, in db: Database) throws {
+        private func insertTranscriptOnlyMeeting(text: String, in db: Database) throws -> UUID {
             let meetingID = try insertMeeting(name: "Transcript only", in: db)
             try TranscriptSegmentRecord(
                 id: .v7(),
@@ -699,6 +703,7 @@ import GRDB
                 translatedText: nil,
                 isConfirmed: true
             ).insert(db)
+            return meetingID
         }
 
         private func insertOtherVaultTitleMeeting(vaultId: UUID, in db: Database) throws {
@@ -738,6 +743,7 @@ import GRDB
         let project: UUID
         let calendar: UUID
         let tag: UUID
+        let transcript: UUID
         let literal: UUID
         let localized: UUID
         let separatorTag: UUID

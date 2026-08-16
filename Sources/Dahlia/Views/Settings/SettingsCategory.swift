@@ -7,6 +7,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case vault
     case permissions
     case backups
+    case search
     case transcription
     case liveSubtitles
     case screenshots
@@ -29,6 +30,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .vault: L10n.vault
         case .permissions: L10n.permissions
         case .backups: L10n.backups
+        case .search: L10n.search
         case .transcription: L10n.transcription
         case .liveSubtitles: L10n.liveSubtitles
         case .screenshots: L10n.screenshots
@@ -51,6 +53,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .vault: "externaldrive"
         case .permissions: "hand.raised"
         case .backups: "externaldrive.badge.timemachine"
+        case .search: "magnifyingglass"
         case .transcription: "waveform"
         case .liveSubtitles: "captions.bubble"
         case .screenshots: "photo.on.rectangle.angled"

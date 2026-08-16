@@ -1,0 +1,738 @@
+import Dispatch
+import Foundation
+import GRDB
+
+actor SearchIndexer {
+    private let dbQueue: DatabaseQueue
+    private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
+    private var workerTask: Task<Void, Never>?
+    private var jobObservation: AnyDatabaseCancellable?
+    private var isDraining = false
+    private var didValidateAnalyzer = false
+    private var lastDivergenceCheckAt: Date?
+
+    private static let divergenceCheckInterval: TimeInterval = 15 * 60
+
+    init(dbQueue: DatabaseQueue) {
+        self.dbQueue = dbQueue
+    }
+
+    func start() {
+        guard workerTask == nil else { return }
+        let observation = ValueObservation.tracking { db in
+            try Int.fetchOne(
+                db,
+                sql: """
+                SELECT COUNT(*) + COALESCE(SUM(generation), 0)
+                FROM search_index_jobs WHERE indexKind = 'fts'
+                """
+            ) ?? 0
+        }.removeDuplicates()
+        jobObservation = observation.start(
+            in: dbQueue,
+            scheduling: .async(onQueue: observationQueue),
+            onError: { _ in },
+            onChange: { [weak self] _ in
+                Task { await self?.drainScheduledWork() }
+            }
+        )
+        workerTask = Task(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                await self?.drainScheduledWork()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func stop() {
+        workerTask?.cancel()
+        workerTask = nil
+        jobObservation?.cancel()
+        jobObservation = nil
+    }
+
+    func requestRebuild() async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET indexGeneration = indexGeneration + 1,
+                    phase = 'pending', completedCount = 0, totalCount = 0,
+                    lastErrorCode = NULL, updatedAt = ?
+                WHERE indexKind = 'fts'
+                """,
+                arguments: [Date()]
+            )
+        }
+        await drain()
+    }
+
+    func drain() async {
+        await drain(checksDivergence: true)
+    }
+
+    private func drainScheduledWork() async {
+        let now = Date()
+        let checksDivergence = lastDivergenceCheckAt.map {
+            now.timeIntervalSince($0) >= Self.divergenceCheckInterval
+        } ?? true
+        await drain(checksDivergence: checksDivergence)
+    }
+
+    private func drain(checksDivergence: Bool) async {
+        guard !isDraining else { return }
+        isDraining = true
+        defer { isDraining = false }
+        do {
+            let phase = try await indexPhase()
+            if phase == "failed" {
+                try await drainCleanupJobs()
+                return
+            }
+            try await validateAnalyzer()
+            if try await needsRebuild(phase: phase, checksDivergence: checksDivergence) {
+                try await rebuild()
+            }
+            while let job = try await claimNextJob() {
+                do {
+                    try await process(job)
+                    try await complete(job)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    try await fail(job, error: error)
+                }
+            }
+        } catch is CancellationError {
+        } catch {
+            try? await recordFailure(error)
+        }
+    }
+
+    private func drainCleanupJobs() async throws {
+        while let job = try await claimNextJob(cleanupOnly: true) {
+            do {
+                try await process(job)
+                try await complete(job)
+            } catch is CancellationError {
+                return
+            } catch {
+                try await fail(job, error: error)
+            }
+        }
+    }
+
+    private func indexPhase() async throws -> String? {
+        try await dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+        }
+    }
+
+    private func validateAnalyzer() async throws {
+        guard !didValidateAnalyzer else { return }
+        try await dbQueue.read { db in
+            _ = try db.makeTokenizer(SearchFTS5Tokenizer.tokenizerDescriptor())
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT analyzerVersion, analyzerConfigurationHash FROM search_index_state WHERE indexKind = 'fts'"
+            ),
+                row["analyzerVersion"] == SearchDocumentsMigration.analyzerVersion,
+                row["analyzerConfigurationHash"] == SearchDocumentsMigration.analyzerConfigurationHash
+            else {
+                throw SearchIndexError.analyzerMismatch
+            }
+        }
+        didValidateAnalyzer = true
+    }
+
+    private func needsRebuild(phase: String?, checksDivergence: Bool) async throws -> Bool {
+        guard phase == "ready" else { return true }
+        guard checksDivergence else { return false }
+        let isDiverged = try await dbQueue.read { db in
+            try Bool.fetchOne(
+                db,
+                sql: """
+                SELECT EXISTS(
+                    SELECT 1 FROM search_documents
+                    LEFT JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
+                    WHERE search_documents_fts.rowid IS NULL
+                ) OR EXISTS(
+                    SELECT 1 FROM search_documents_fts
+                    LEFT JOIN search_documents ON search_documents.id = search_documents_fts.rowid
+                    WHERE search_documents.id IS NULL
+                )
+                """
+            ) ?? false
+        }
+        lastDivergenceCheckAt = .now
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE search_index_state SET lastIntegrityCheckAt = ?, updatedAt = ? WHERE indexKind = 'fts'",
+                arguments: [Date(), Date()]
+            )
+        }
+        guard isDiverged else { return false }
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET indexGeneration = indexGeneration + 1, phase = 'pending', updatedAt = ?
+                WHERE indexKind = 'fts'
+                """,
+                arguments: [Date()]
+            )
+        }
+        return true
+    }
+
+    private func rebuild() async throws {
+        let generation = try await dbQueue.write { db in
+            let generation = try Int.fetchOne(
+                db,
+                sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'"
+            ) ?? 1
+            let total = try Int.fetchOne(
+                db,
+                sql: """
+                SELECT (SELECT COUNT(*) FROM meetings)
+                     + (SELECT COUNT(*) FROM projects)
+                     + (SELECT COUNT(*) FROM transcript_segments WHERE isConfirmed)
+                """
+            ) ?? 0
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET phase = 'metadata', totalCount = ?, completedCount = 0,
+                    lastErrorCode = NULL, updatedAt = ? WHERE indexKind = 'fts'
+                """,
+                arguments: [total, Date()]
+            )
+            return generation
+        }
+
+        let projectIDs = try await dbQueue.read { db in
+            try UUID.fetchAll(db, sql: "SELECT id FROM projects ORDER BY rowid")
+        }
+        for id in projectIDs {
+            try Task.checkCancellation()
+            try await indexProject(id: id, generation: generation, forceFTSUpdate: true)
+            try await incrementRebuildProgress()
+        }
+
+        let meetingIDs = try await dbQueue.read { db in
+            try UUID.fetchAll(db, sql: "SELECT id FROM meetings ORDER BY rowid")
+        }
+        for id in meetingIDs {
+            try Task.checkCancellation()
+            try await indexMeeting(id: id, generation: generation, forceFTSUpdate: true)
+            try await incrementRebuildProgress()
+        }
+
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE search_index_state SET phase = 'segments', updatedAt = ? WHERE indexKind = 'fts'",
+                arguments: [Date()]
+            )
+        }
+        for id in meetingIDs {
+            try Task.checkCancellation()
+            try await indexTranscript(
+                meetingID: id,
+                generation: generation
+            )
+        }
+
+        try await removeDocumentsOlderThan(generation: generation)
+        try await removeOrphanedFTSRows()
+        try await dbQueue.write { db in
+            try db.execute(sql: "INSERT INTO search_documents_fts(search_documents_fts) VALUES('integrity-check')")
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET phase = 'ready', indexRevision = indexRevision + 1,
+                    completedCount = totalCount, lastErrorCode = NULL,
+                    lastIntegrityCheckAt = ?, updatedAt = ?
+                WHERE indexKind = 'fts'
+                """,
+                arguments: [Date(), Date()]
+            )
+        }
+        lastDivergenceCheckAt = .now
+    }
+
+    private func incrementRebuildProgress(by count: Int = 1) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET completedCount = min(totalCount, completedCount + ?), updatedAt = ?
+                WHERE indexKind = 'fts'
+                """,
+                arguments: [count, Date()]
+            )
+        }
+    }
+
+    private func claimNextJob(cleanupOnly: Bool = false) async throws -> SearchIndexJob? {
+        try await dbQueue.write { db in
+            let now = Date()
+            let cleanupFilter = cleanupOnly
+                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup', 'segmentCleanup')"
+                : ""
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT targetKind, targetKey, generation
+                FROM search_index_jobs
+                WHERE indexKind = 'fts'
+                  AND availableAt <= ?
+                  AND (status = 'pending' OR leaseExpiresAt < ?)
+                  \(cleanupFilter)
+                ORDER BY priority DESC, availableAt, targetKind, targetKey
+                LIMIT 1
+                """,
+                arguments: [now, now]
+            ) else { return nil }
+            let job = SearchIndexJob(
+                targetKind: row["targetKind"],
+                targetID: row["targetKey"],
+                generation: row["generation"]
+            )
+            try db.execute(
+                sql: """
+                UPDATE search_index_jobs
+                SET status = 'processing', attempts = attempts + 1,
+                    claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
+                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                """,
+                arguments: [
+                    now,
+                    now.addingTimeInterval(60),
+                    now,
+                    job.targetKind,
+                    job.targetID,
+                    job.generation,
+                ]
+            )
+            return job
+        }
+    }
+
+    private func process(_ job: SearchIndexJob) async throws {
+        let generation = try await currentGeneration()
+        switch job.targetKind {
+        case "vaultCleanup":
+            try await deleteDocuments(where: "vaultId = ?", arguments: [job.targetID])
+        case "meeting":
+            try await indexMeeting(id: job.targetID, generation: generation)
+        case "meetingCleanup":
+            try await deleteDocuments(where: "meetingId = ?", arguments: [job.targetID])
+        case "segment":
+            try await indexSegment(id: job.targetID, generation: generation)
+        case "segmentCleanup":
+            try await deleteDocuments(
+                where: "kind = 'segment' AND sourceId = ?",
+                arguments: [job.targetID]
+            )
+        case "project":
+            try await indexProject(id: job.targetID, generation: generation)
+        case "projectHierarchy":
+            try await reconcileProjectHierarchyChange(id: job.targetID, generation: generation)
+        case "projectCleanup":
+            try await deleteDocuments(
+                where: "kind = 'project' AND projectId = ?",
+                arguments: [job.targetID]
+            )
+        default:
+            throw SearchIndexError.unknownJob(job.targetKind)
+        }
+    }
+
+    private func currentGeneration() async throws -> Int {
+        try await dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT indexGeneration FROM search_index_state WHERE indexKind = 'fts'") ?? 1
+        }
+    }
+
+    private func reconcileProjectHierarchyChange(id: UUID, generation: Int) async throws {
+        let affected = try await dbQueue.read { db -> ([ProjectRecord], [UUID: String]) in
+            guard let project = try ProjectRecord.fetchOne(db, key: id) else { return ([], [:]) }
+            let projects = try ProjectRecord.hierarchy(projectId: id, vaultId: project.vaultId, in: db)
+            let paths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
+            guard !paths.isEmpty else { return ([], [:]) }
+            let projectIDs = Array(paths.keys)
+            let placeholders = Array(repeating: "?", count: projectIDs.count).joined(separator: ",")
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT id, projectId FROM meetings WHERE projectId IN (\(placeholders))",
+                arguments: StatementArguments(projectIDs)
+            )
+            let meetingPaths = Dictionary(uniqueKeysWithValues: rows.compactMap { row -> (UUID, String)? in
+                let meetingID: UUID = row["id"]
+                let meetingProjectID: UUID = row["projectId"]
+                return paths[meetingProjectID].map { (meetingID, $0) }
+            })
+            return (projects, meetingPaths)
+        }
+        for project in affected.0 {
+            try await indexProject(project, generation: generation)
+        }
+        for (meetingID, projectPath) in affected.1 {
+            try await indexMeeting(id: meetingID, generation: generation, projectPath: projectPath)
+        }
+    }
+}
+
+private extension SearchIndexer {
+    func indexMeeting(
+        id: UUID,
+        generation: Int,
+        forceFTSUpdate: Bool = false,
+        projectPath knownProjectPath: String? = nil
+    ) async throws {
+        try await dbQueue.write { db in
+            guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
+            let calendar = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT title, description FROM calendar_events
+                WHERE ical_uid = ? AND recurrence_id = ?
+                """,
+                arguments: [meeting.calendarEventIcalUid, meeting.calendarEventRecurrenceId]
+            )
+            let tags = try String.fetchAll(
+                db,
+                sql: """
+                SELECT tags.name FROM tags JOIN meeting_tags ON meeting_tags.tagId = tags.id
+                WHERE meeting_tags.meetingId = ? ORDER BY tags.id
+                """,
+                arguments: [id]
+            ).joined(separator: " ")
+            let projectPath: String = if let knownProjectPath {
+                knownProjectPath
+            } else if let projectID = meeting.projectId {
+                try ProjectRecord.fetchResolved(id: projectID, in: db)?.path ?? ""
+            } else {
+                ""
+            }
+            let calendarText = [calendar?["title"] as String?, calendar?["description"] as String?]
+                .compactMap(\.self).joined(separator: " ")
+            let fields = SearchDocumentFields(
+                title: meeting.name,
+                description: meeting.description,
+                calendar: calendarText,
+                tags: tags,
+                projectPath: projectPath,
+                transcript: ""
+            )
+            try db.execute(
+                sql: "UPDATE search_documents SET projectId = ? WHERE meetingId = ? AND projectId IS NOT ?",
+                arguments: [meeting.projectId, id, meeting.projectId]
+            )
+            let document = SearchDocumentProjection(
+                kind: "meeting",
+                sourceID: id,
+                vaultID: meeting.vaultId,
+                meetingID: id,
+                projectID: meeting.projectId,
+                segmentStart: nil,
+                segmentEnd: nil,
+                fields: fields
+            )
+            try upsertDocument(document, generation: generation, forceFTSUpdate: forceFTSUpdate, in: db)
+        }
+    }
+
+    private func indexProject(id: UUID, generation: Int, forceFTSUpdate: Bool = false) async throws {
+        try await dbQueue.write { db in
+            guard let project = try ProjectRecord.fetchResolved(id: id, in: db) else { return }
+            try upsertDocument(
+                Self.projectDocument(project),
+                generation: generation,
+                forceFTSUpdate: forceFTSUpdate,
+                in: db
+            )
+        }
+    }
+
+    private func indexProject(
+        _ project: ProjectRecord,
+        generation: Int
+    ) async throws {
+        try await dbQueue.write { db in
+            try upsertDocument(
+                Self.projectDocument(project),
+                generation: generation,
+                in: db
+            )
+        }
+    }
+
+    static func projectDocument(_ project: ProjectRecord) -> SearchDocumentProjection {
+        SearchDocumentProjection(
+            kind: "project",
+            sourceID: project.id,
+            vaultID: project.vaultId,
+            meetingID: nil,
+            projectID: project.id,
+            segmentStart: nil,
+            segmentEnd: nil,
+            fields: SearchDocumentFields(
+                title: project.name,
+                description: project.description,
+                calendar: "",
+                tags: "",
+                projectPath: project.path,
+                transcript: ""
+            )
+        )
+    }
+
+    private func indexSegment(id: UUID, generation: Int) async throws {
+        try await dbQueue.write { db in
+            guard let segment = try TranscriptSegmentRecord.fetchOne(db, key: id),
+                  segment.isConfirmed,
+                  let meeting = try MeetingRecord.fetchOne(db, key: segment.meetingId) else {
+                try Self.deleteDocuments(
+                    where: "kind = 'segment' AND sourceId = ?",
+                    arguments: [id],
+                    in: db
+                )
+                return
+            }
+            let document = SearchDocumentProjection(
+                kind: "segment",
+                sourceID: segment.id,
+                vaultID: meeting.vaultId,
+                meetingID: meeting.id,
+                projectID: meeting.projectId,
+                segmentStart: segment.startTime,
+                segmentEnd: segment.endTime,
+                fields: .transcript(segment.text)
+            )
+            try upsertDocument(document, generation: generation, in: db)
+        }
+    }
+
+    private func indexTranscript(
+        meetingID: UUID,
+        generation: Int
+    ) async throws {
+        var cursor: (startTime: Date, id: UUID)?
+        while true {
+            try Task.checkCancellation()
+            let pageCursor = cursor
+            let batch = try await dbQueue.read { db in
+                if let pageCursor {
+                    try TranscriptSegmentRecord.fetchAll(
+                        db,
+                        sql: """
+                        SELECT * FROM transcript_segments
+                        WHERE meetingId = ? AND isConfirmed = 1
+                          AND (startTime > ? OR (startTime = ? AND id > ?))
+                        ORDER BY startTime, id LIMIT 50
+                        """,
+                        arguments: [meetingID, pageCursor.startTime, pageCursor.startTime, pageCursor.id]
+                    )
+                } else {
+                    try TranscriptSegmentRecord.fetchAll(
+                        db,
+                        sql: """
+                        SELECT * FROM transcript_segments
+                        WHERE meetingId = ? AND isConfirmed = 1
+                        ORDER BY startTime, id LIMIT 50
+                        """,
+                        arguments: [meetingID]
+                    )
+                }
+            }
+            guard !batch.isEmpty else { break }
+            try await dbQueue.write { db in
+                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID) else { return }
+                for segment in batch {
+                    let document = SearchDocumentProjection(
+                        kind: "segment",
+                        sourceID: segment.id,
+                        vaultID: meeting.vaultId,
+                        meetingID: meetingID,
+                        projectID: meeting.projectId,
+                        segmentStart: segment.startTime,
+                        segmentEnd: segment.endTime,
+                        fields: .transcript(segment.text)
+                    )
+                    try upsertDocument(
+                        document,
+                        generation: generation,
+                        forceFTSUpdate: true,
+                        in: db
+                    )
+                }
+            }
+            try await incrementRebuildProgress(by: batch.count)
+            let last = batch[batch.count - 1]
+            cursor = (last.startTime, last.id)
+        }
+        let staleRows = try await dbQueue.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: """
+                SELECT search_documents.id
+                FROM search_documents
+                LEFT JOIN transcript_segments
+                  ON transcript_segments.id = search_documents.sourceId
+                 AND transcript_segments.meetingId = ?
+                 AND transcript_segments.isConfirmed = 1
+                WHERE search_documents.meetingId = ?
+                  AND search_documents.kind = 'segment'
+                  AND transcript_segments.id IS NULL
+                """,
+                arguments: [meetingID, meetingID]
+            )
+        }
+        try await deleteDocuments(rowIDs: staleRows)
+    }
+
+    private func removeDocumentsOlderThan(generation: Int) async throws {
+        let ids = try await dbQueue.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: "SELECT id FROM search_documents WHERE indexGeneration < ?",
+                arguments: [generation]
+            )
+        }
+        try await deleteDocuments(rowIDs: ids)
+    }
+
+    private func removeOrphanedFTSRows() async throws {
+        let ids = try await dbQueue.read { db in
+            try Int64.fetchAll(
+                db,
+                sql: """
+                SELECT search_documents_fts.rowid FROM search_documents_fts
+                LEFT JOIN search_documents ON search_documents.id = search_documents_fts.rowid
+                WHERE search_documents.id IS NULL
+                """
+            )
+        }
+        for batch in ids.chunked(maximumCount: 50) {
+            try await dbQueue.write { db in
+                for id in batch {
+                    try db.execute(sql: "DELETE FROM search_documents_fts WHERE rowid = ?", arguments: [id])
+                }
+            }
+        }
+    }
+
+    private func deleteDocuments(
+        where condition: String,
+        arguments: StatementArguments
+    ) async throws {
+        let ids = try await dbQueue.read { db in
+            try Int64.fetchAll(db, sql: "SELECT id FROM search_documents WHERE \(condition)", arguments: arguments)
+        }
+        try await deleteDocuments(rowIDs: ids)
+    }
+
+    private nonisolated static func deleteDocuments(
+        where condition: String,
+        arguments: StatementArguments,
+        in db: Database
+    ) throws {
+        let ids = try Int64.fetchAll(
+            db,
+            sql: "SELECT id FROM search_documents WHERE \(condition)",
+            arguments: arguments
+        )
+        try Self.deleteDocuments(rowIDs: ids, in: db)
+    }
+
+    private func deleteDocuments(rowIDs: [Int64]) async throws {
+        for batch in rowIDs.chunked(maximumCount: 50) {
+            try await dbQueue.write { db in
+                try Self.deleteDocuments(rowIDs: batch, in: db)
+            }
+        }
+    }
+
+    private nonisolated static func deleteDocuments(rowIDs: [Int64], in db: Database) throws {
+        let previousSecureDelete = try Int.fetchOne(db, sql: "PRAGMA secure_delete") ?? 0
+        try db.execute(sql: "PRAGMA secure_delete = ON")
+        defer { try? db.execute(sql: "PRAGMA secure_delete = \(previousSecureDelete)") }
+        for id in rowIDs {
+            try db.execute(sql: "DELETE FROM search_documents_fts WHERE rowid = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM search_documents WHERE id = ?", arguments: [id])
+        }
+    }
+
+    private func complete(_ job: SearchIndexJob) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM search_index_jobs
+                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                """,
+                arguments: [job.targetKind, job.targetID, job.generation]
+            )
+            try db.execute(
+                sql: """
+                UPDATE search_index_state SET updatedAt = ?
+                WHERE indexKind = 'fts'
+                """,
+                arguments: [Date()]
+            )
+        }
+    }
+
+    private func fail(_ job: SearchIndexJob, error: Error) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_jobs
+                SET status = 'pending', availableAt = ?, claimedAt = NULL, leaseExpiresAt = NULL,
+                    lastErrorCode = ?, updatedAt = ?
+                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                """,
+                arguments: [
+                    Date().addingTimeInterval(30),
+                    String(describing: type(of: error)),
+                    Date(),
+                    job.targetKind,
+                    job.targetID,
+                    job.generation,
+                ]
+            )
+        }
+    }
+
+    private func recordFailure(_ error: Error) async throws {
+        try await dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE search_index_state
+                SET phase = 'failed', lastErrorCode = ?, updatedAt = ? WHERE indexKind = 'fts'
+                """,
+                arguments: [String(describing: type(of: error)), Date()]
+            )
+        }
+    }
+}
+
+private struct SearchIndexJob: Sendable {
+    let targetKind: String
+    let targetID: UUID
+    let generation: Int
+}
+
+private enum SearchIndexError: Error {
+    case analyzerMismatch
+    case unknownJob(String)
+}
+
+private extension Array {
+    func chunked(maximumCount: Int) -> [[Element]] {
+        guard !isEmpty else { return [] }
+        return stride(from: 0, to: count, by: maximumCount).map {
+            Array(self[$0 ..< Swift.min($0 + maximumCount, count)])
+        }
+    }
+}

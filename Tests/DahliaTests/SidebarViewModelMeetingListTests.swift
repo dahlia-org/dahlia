@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    // swiftlint:disable:next type_body_length
     struct SidebarViewModelMeetingListTests {
         @Test(.timeLimit(.minutes(3)))
         func loadsMeetingsInFiftyItemBatches() async throws {
@@ -99,7 +100,7 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(3)))
-        func debouncesSearchAndKeepsTranscriptTextOutOfResults() async throws {
+        func debouncesSearchAndIncludesTranscriptMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
                 fixture.stop()
@@ -132,6 +133,7 @@ import GRDB
                     isConfirmed: true
                 ).insert(db)
             }
+            await fixture.manager.searchIndexer.drain()
             let viewModel = fixture.makeViewModel()
             defer {
                 viewModel.setAppDatabase(nil)
@@ -143,8 +145,10 @@ import GRDB
             #expect(viewModel.isSearchingMeetings)
             #expect(!viewModel.isMeetingSearchLoaded)
             #expect(await waitUntil {
-                viewModel.isMeetingSearchLoaded && viewModel.meetingSearchItems.map(\.id) == [metadataMeetingID]
+                viewModel.isMeetingSearchLoaded
+                    && viewModel.meetingSearchItems.map(\.id) == [metadataMeetingID, transcriptOnlyMeetingID]
             })
+            #expect(viewModel.meetingSearchItems.last?.searchMatchContext?.kind == .transcript)
 
             viewModel.updateMeetingSearchQuery("")
 
@@ -177,6 +181,7 @@ import GRDB
                     )
                 }
             }
+            await fixture.manager.searchIndexer.drain()
             let viewModel = fixture.makeViewModel()
             defer {
                 viewModel.setAppDatabase(nil)
@@ -210,6 +215,7 @@ import GRDB
                 try insertMeeting(vaultId: fixture.vault.id, name: "Alpha planning", in: db)
                 try insertMeeting(vaultId: fixture.vault.id, name: "Beta planning", in: db)
             }
+            await fixture.manager.searchIndexer.drain()
             let viewModel = fixture.makeViewModel()
             defer {
                 viewModel.setAppDatabase(nil)
@@ -224,6 +230,69 @@ import GRDB
                     && viewModel.meetingSearchItems.map(\.meetingName) == ["Beta planning"]
             })
             #expect(viewModel.meetingSearchQuery == "Beta")
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func activeSearchRefreshesWhenTheIndexCatchesUp() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer {
+                fixture.stop()
+            }
+            let meetingID = UUID.v7()
+            try await fixture.manager.dbQueue.write { db in
+                try MeetingRecord(
+                    id: meetingID,
+                    vaultId: fixture.vault.id,
+                    projectId: nil,
+                    name: "Original target",
+                    createdAt: .now,
+                    updatedAt: .now
+                ).insert(db)
+            }
+            await fixture.manager.searchIndexer.drain()
+            let viewModel = fixture.makeViewModel()
+            defer {
+                viewModel.setAppDatabase(nil)
+            }
+            #expect(await waitUntil { viewModel.isMeetingListLoaded })
+            let initialRevision = try await fixture.manager.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+                ) ?? 0
+            }
+            #expect(await waitUntil(timeout: .seconds(5)) { viewModel.searchIndexRevision == initialRevision })
+            viewModel.updateMeetingSearchQuery("Original")
+            #expect(await waitUntil(timeout: .seconds(5)) { viewModel.meetingSearchItems.map(\.id) == [meetingID] })
+
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE meetings SET name = ?, updatedAt = ? WHERE id = ?",
+                    arguments: ["Renamed target", Date(), meetingID]
+                )
+            }
+            await fixture.manager.searchIndexer.drain()
+            let updatedRevision = try await fixture.manager.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+                ) ?? 0
+            }
+            #expect(updatedRevision > initialRevision)
+            let currentPage = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: fixture.vault.id,
+                query: "Original",
+                limit: 20,
+                dbQueue: fixture.manager.dbQueue
+            )
+            #expect(currentPage.items.isEmpty)
+
+            #expect(await waitUntil(timeout: .seconds(5)) {
+                viewModel.searchIndexRevision == updatedRevision
+            })
+            #expect(await waitUntil(timeout: .seconds(5)) {
+                viewModel.isMeetingSearchLoaded && viewModel.meetingSearchItems.isEmpty
+            })
         }
 
         @Test(.timeLimit(.minutes(3)))

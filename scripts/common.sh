@@ -201,6 +201,24 @@ embed_whisperkit_licenses() {
     chmod u+w "${destination_dir}/LICENSE" "${destination_dir}/NOTICES"
 }
 
+embed_lindera_licenses() {
+    local project_dir="$1"
+    local contents_dir="$2"
+    local destination_dir="${contents_dir}/Resources/Licenses/DahliaLindera"
+    local notice_name
+
+    for notice_name in DahliaLindera-LICENSE.txt DahliaLindera-THIRD-PARTY-NOTICES.txt; do
+        if [ ! -f "${project_dir}/Vendor/${notice_name}" ]; then
+            echo "error: DahliaLindera notice was not found: ${notice_name}" >&2
+            return 1
+        fi
+    done
+
+    mkdir -p "$destination_dir"
+    cp "${project_dir}/Vendor/DahliaLindera-LICENSE.txt" "${destination_dir}/LICENSE"
+    cp "${project_dir}/Vendor/DahliaLindera-THIRD-PARTY-NOTICES.txt" "${destination_dir}/THIRD-PARTY-NOTICES.txt"
+}
+
 has_entitlements() {
     local entitlements_path="$1"
 

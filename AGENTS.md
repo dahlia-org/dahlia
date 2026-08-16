@@ -48,7 +48,7 @@ conflict, and update the tenet only through a new ADR that the user approves.
 - **IMPORTANT:** Do not write overly defensive code. Always prefer simplicity over pathological complexity.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
-- The app has exactly five SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, and WhisperKit. The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
+- The app has exactly five SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, and WhisperKit. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera 2.0.1, embedded IPADIC, and a committed Cargo.lock). The separate `BuildTools` package pins SwiftFormat. The app also verifies and bundles a pinned official arm64 release of the OpenAI Codex CLI as a runtime helper. Get confirmation before adding or updating dependencies.
 - Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
 - Never destroy a released user's database. Do not modify registered migrations; add a new migration according to `Sources/Dahlia/Database/AGENTS.md`.
 

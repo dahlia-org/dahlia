@@ -10,6 +10,7 @@ import GRDB
 // swiftlint:disable:next type_body_length
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
+    let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init() throws {
@@ -26,7 +27,11 @@ final class AppDatabaseManager: Sendable {
         }
         var configuration = Configuration()
         configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try SearchFTS5Tokenizer.register(in: db)
+        }
         dbQueue = try DatabaseQueue(path: path, configuration: configuration)
+        searchIndexer = SearchIndexer(dbQueue: dbQueue)
         try Self.migrator.migrate(dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
@@ -183,6 +188,11 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v34_meetingRecordingStartedAt") { db in
             try addMeetingRecordingStartedAt(in: db)
+        }
+
+        migrator.registerMigration("v35_searchDocuments") { db in
+            try SearchFTS5Tokenizer.register(in: db)
+            try SearchDocumentsMigration.migrate(in: db)
         }
 
         return migrator

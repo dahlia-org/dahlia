@@ -31,6 +31,7 @@ final class SidebarViewModel {
     /// 別プロセスが同じ Vault を変更するたびに増える。
     /// GRDB の `ValueObservation` は他プロセスの書き込みを検知しないため、これが跨プロセス更新の合図になる。
     private(set) var workspaceChangeToken: UInt64 = 0
+    private(set) var searchIndexRevision = 0
 
     var meetingSidebarItems: [MeetingSidebarItem] = []
     var meetingSidebarGroups: [MeetingDateGroup] = []
@@ -103,6 +104,7 @@ final class SidebarViewModel {
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var searchIndexPollTask: Task<Void, Never>?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
@@ -111,7 +113,7 @@ final class SidebarViewModel {
     @ObservationIgnored var isProjectMeetingProjectionRequested = false
     @ObservationIgnored var projectMeetingLoadTasks: [MeetingProjectKey: Task<Void, Never>] = [:]
     @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
-    @ObservationIgnored var meetingSearchCursor: MeetingSidebarCursor?
+    @ObservationIgnored var meetingSearchCursor: MeetingSearchCursor?
     @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
     @ObservationIgnored var isMeetingCatalogRequested = false
     @ObservationIgnored var meetingListObservationGeneration = 0
@@ -158,6 +160,7 @@ final class SidebarViewModel {
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
         vaultObservation?.cancel()
+        searchIndexPollTask?.cancel()
         meetingListObservation?.cancel()
         additionalMeetingRowsObservation?.cancel()
         selectedMeetingObservation?.cancel()
@@ -179,6 +182,7 @@ final class SidebarViewModel {
 
         vaultSyncService = nil
         fileWatcher = nil
+        searchIndexRevision = 0
         flatProjects.removeAll()
         areSearchProjectsLoaded = false
         meetingSidebarItems.removeAll()
@@ -245,6 +249,7 @@ final class SidebarViewModel {
         }
 
         startVaultObservation(dbQueue: dbQueue)
+        startSearchIndexPolling(dbQueue: dbQueue)
 
         guard let vault = currentVault else {
             settings.selectedInstructionID = nil
@@ -297,6 +302,23 @@ final class SidebarViewModel {
                 self.startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
                 await self.refreshUnprocessedRecordings()
                 self.workspaceChangeToken &+= 1
+            }
+        }
+    }
+
+    private func startSearchIndexPolling(dbQueue: DatabaseQueue) {
+        searchIndexPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                if let revision = try? await dbQueue.read({ db in
+                    try Int.fetchOne(
+                        db,
+                        sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+                    ) ?? 0
+                }), let self, revision != self.searchIndexRevision {
+                    self.searchIndexRevision = revision
+                    self.restartCurrentMeetingSearch()
+                }
+                try? await Task.sleep(for: .milliseconds(500))
             }
         }
     }

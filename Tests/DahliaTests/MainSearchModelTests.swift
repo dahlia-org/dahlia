@@ -373,6 +373,7 @@ import GRDB
                     )
                 }
             }
+            await manager.searchIndexer.drain()
         }
 
         func insertSearchContent() async throws {
@@ -390,6 +391,7 @@ import GRDB
                 try Self.insertMeeting(vaultID: vaultID, name: "Needle meeting", projectID: projectID, in: db)
                 try Self.insertMeeting(vaultID: vaultID, name: "Older meeting", in: db)
             }
+            await manager.searchIndexer.drain()
         }
 
         func insertMatchingMeetings(count: Int) async throws {
@@ -399,6 +401,7 @@ import GRDB
                     try Self.insertMeeting(vaultID: vaultID, name: "Planning \(index)", in: db)
                 }
             }
+            await manager.searchIndexer.drain()
         }
 
         func insertMatchingProjects(count: Int) async throws {
@@ -415,6 +418,7 @@ import GRDB
                     ).insert(db)
                 }
             }
+            await manager.searchIndexer.drain()
         }
 
         func stop() {

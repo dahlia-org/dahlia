@@ -223,10 +223,15 @@ recording-critical lane から捨てる根拠にはしない。
 画面や選択対象が変わった場合は不要な処理をキャンセルし、identity または generation を確認して古い完了結果を捨てる。
 UI projection を破棄しても、durable source of truth は変更しない。
 
+全文検索は `search_documents` registry と contentless `search_documents_fts` を再構築可能な projection として扱い、文字起こしは原文だけを検索用 source とする。翻訳文は FTS と将来の vector projection の対象にしない。source table の trigger は coalesce 可能な job の upsert だけを行い、Lindera による tokenization と FTS 更新は utility-priority の `SearchIndexer` actor が小さい transaction で処理する。初期構築・再構築中は完成済み部分だけを検索対象とし、索引の遅延や failure は録音、確定文字起こし、正本 metadata の commit を待たせない。meeting 削除は cascade trigger に依存せず cleanup job で配下 segment 索引を消す。
+
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
-最大 500 件に制限し、それ以前は全履歴のメタデータ検索で到達可能にする。検索は小さな DB chunk ごとに接続を解放し、
-新しい検索語で古い処理をキャンセルする。選択詳細とチャット候補は一覧とは別の projection とし、チャット候補は
+最大 500 件に制限し、それ以前は全履歴の FTS projection から検索可能にする。文字列検索は索引 revision 付き relevance
+cursor、filter-only 検索は時系列 keyset cursor を使い、新しい検索語で古い処理をキャンセルする。選択詳細とチャット候補は一覧とは別の projection とし、チャット候補は
 チャット UI が必要とするまで読み込まない。
+複数語の全文検索は FTS vocabulary の文書頻度が最小の token から候補 meeting を作り、残りの token を候補文書内で
+検証する。SQLite read は 500 ms でキャンセルし、広すぎる query には絞り込みを求める。高頻度語の検索が単一の
+`DatabaseQueue` を占有して、確定文字起こしの durable write を長時間待たせないためである。
 
 ここでいう上限は、必ずしもユーザーが閲覧する一つの完全な文書を切り詰めることではない。チャット本文のように raw content
 自体を完全に残す必要がある場合は、同時に保持する解析世代、待機要求、cache cost、実際に materialize する layout を有界にし、
