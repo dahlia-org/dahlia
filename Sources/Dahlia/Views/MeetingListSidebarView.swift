@@ -84,6 +84,7 @@ struct MeetingListSidebarView: View {
                 )
             }
             .listStyle(.sidebar)
+            .tint(DahliaDesign.sidebarSelectionColor)
             .scrollContentBackground(.hidden)
             .overlay {
                 MeetingListStatusOverlay(
@@ -789,7 +790,7 @@ private struct MeetingSidebarRow: View {
         .background {
             if isHovered {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(isSelected ? 0.08 : 0.06))
+                    .fill(DahliaDesign.hoverHighlightColor)
             }
         }
         .contentShape(Rectangle())

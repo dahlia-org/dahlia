@@ -45,7 +45,7 @@ struct MainSidebarAccountMenuRow: View {
             .frame(height: 30)
             .contentShape(.rect(cornerRadius: 7))
             .background(
-                (isHovered || isKeyboardHighlighted) && isEnabled ? Color.primary.opacity(0.07) : .clear,
+                (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.hoverHighlightColor : .clear,
                 in: .rect(cornerRadius: 7)
             )
             .foregroundStyle(.primary)

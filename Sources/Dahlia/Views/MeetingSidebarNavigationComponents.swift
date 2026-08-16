@@ -31,8 +31,8 @@ struct SidebarNavigationRowModifier: ViewModifier {
 
     private var backgroundColor: Color {
         if isSelected {
-            return Color.accentColor.opacity(isHovered ? 0.22 : 0.16)
+            return DahliaDesign.sidebarSelectionHighlightColor
         }
-        return Color.primary.opacity(isHovered ? 0.08 : 0)
+        return isHovered ? DahliaDesign.hoverHighlightColor : .clear
     }
 }

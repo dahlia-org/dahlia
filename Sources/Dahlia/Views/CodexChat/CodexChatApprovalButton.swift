@@ -61,7 +61,7 @@ struct CodexChatApprovalButton: View {
             }
         case .secondary:
             if isHovering {
-                AnyShapeStyle(.quaternary)
+                AnyShapeStyle(DahliaDesign.hoverHighlightColor)
             } else {
                 AnyShapeStyle(.background)
             }

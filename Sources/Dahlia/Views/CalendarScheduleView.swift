@@ -408,7 +408,7 @@ private struct CalendarScheduleEventRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(Color.primary.opacity(isHovered ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 8))
+        .background(isHovered ? DahliaDesign.hoverHighlightColor : .clear, in: RoundedRectangle(cornerRadius: 8))
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)

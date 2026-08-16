@@ -38,7 +38,7 @@ struct CodexChatConfigurationRow: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering || isSelected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+            isHovering || isSelected ? DahliaDesign.hoverHighlightColor : .clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
         .onHover { isHovering = $0 }

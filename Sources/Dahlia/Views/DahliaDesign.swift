@@ -1,6 +1,10 @@
 import SwiftUI
 
 enum DahliaDesign {
+    static let hoverHighlightColor = Color.gray.opacity(0.16)
+    static let sidebarSelectionColor = Color.gray
+    static let sidebarSelectionHighlightColor = sidebarSelectionColor.opacity(0.32)
+
     static let windowHeaderHeight: CGFloat = 32
     static let windowHeaderHorizontalPadding: CGFloat = 12
     static let windowControlsLeadingInset: CGFloat = 68
@@ -18,9 +22,7 @@ enum DahliaDesign {
     static let chipHorizontalPadding: CGFloat = 8
     static let chipVerticalPadding: CGFloat = 3.5
     static let chipStaticOpacity = 0.055
-    static let chipHoverOpacity = 0.10
     static let chipTintOpacity = 0.10
-    static let chipTintHoverOpacity = 0.16
     static let chipSpacing: CGFloat = 6
     static let chipRowSpacing: CGFloat = 7
 
@@ -52,10 +54,13 @@ private struct DahliaChipSurface: ViewModifier {
     }
 
     private var surfaceColor: Color {
-        if let tint {
-            return tint.opacity(isHovered ? DahliaDesign.chipTintHoverOpacity : DahliaDesign.chipTintOpacity)
+        if isHovered {
+            return DahliaDesign.hoverHighlightColor
         }
-        return Color.primary.opacity(isHovered ? DahliaDesign.chipHoverOpacity : DahliaDesign.chipStaticOpacity)
+        if let tint {
+            return tint.opacity(DahliaDesign.chipTintOpacity)
+        }
+        return Color.primary.opacity(DahliaDesign.chipStaticOpacity)
     }
 }
 
