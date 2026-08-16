@@ -28,7 +28,6 @@ struct UnprocessedRecordingsView: View {
                 }
             }
         }
-        .navigationTitle(L10n.unprocessedRecordings)
         .confirmationDialog(
             L10n.discardUnprocessedRecordingConfirmation,
             isPresented: Binding(

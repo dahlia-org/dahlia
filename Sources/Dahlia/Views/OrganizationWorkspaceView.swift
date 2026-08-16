@@ -59,7 +59,6 @@ struct OrganizationHierarchyView: View {
                 .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
                 .alert(item: $model.pendingDeletion, content: deletionAlert)
             }
-            .navigationTitle(L10n.organizations)
             .disabled(model.isMutating)
             .onChange(of: sidebarViewModel.currentVault?.id) { _, id in
                 Task { await model.changeVault(to: id) }
@@ -81,9 +80,6 @@ struct OrganizationHierarchyView: View {
                 if let id {
                     onSelectOrganization(id)
                 }
-            }
-            .toolbar {
-                canvasToolbar
             }
             .task {
                 await model.load(selectingRootID: rootOrganizationID)
@@ -145,9 +141,8 @@ struct OrganizationHierarchyView: View {
         )
     }
 
-    @ToolbarContentBuilder
-    private var canvasToolbar: some ToolbarContent {
-        ToolbarItemGroup {
+    private var canvasZoomControls: some View {
+        HStack(spacing: 6) {
             Button(L10n.zoomOut, systemImage: "minus.magnifyingglass") {
                 zoom = OrganizationCanvasZoom.clamped(zoom - OrganizationCanvasZoom.step)
             }
@@ -166,6 +161,8 @@ struct OrganizationHierarchyView: View {
                 fitCanvas()
             }
         }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
     }
 
     private var canvasColumn: some View {
@@ -189,6 +186,7 @@ struct OrganizationHierarchyView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 320)
                 Spacer()
+                canvasZoomControls
                 if model.isLoading {
                     ProgressView()
                         .controlSize(.small)

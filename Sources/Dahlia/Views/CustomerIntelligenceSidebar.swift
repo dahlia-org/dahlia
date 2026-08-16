@@ -28,11 +28,10 @@ struct CustomerIntelligenceSidebar: View {
             }
             .listStyle(.sidebar)
         }
-        .navigationTitle(L10n.customerIntelligence)
     }
 
     private var navigationControls: some View {
-        HStack(spacing: 4) {
+        DahliaWindowHeader(reservesWindowControls: true) {
             Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
                 .labelStyle(.iconOnly)
                 .disabled(!canGoBack)
@@ -44,8 +43,6 @@ struct CustomerIntelligenceSidebar: View {
             Spacer()
         }
         .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     private var insightLabel: some View {

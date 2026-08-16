@@ -4,6 +4,7 @@ struct VaultSidebarView: View {
     let vaults: [VaultRecord]
     @Binding var selectedVaultId: UUID?
     let currentVaultId: UUID?
+    var updateController: AppUpdateController
     let onAdd: () -> Void
     let onRemove: (VaultRecord) -> Void
 
@@ -16,72 +17,100 @@ struct VaultSidebarView: View {
     }
 
     var body: some View {
-        List(selection: $selectedVaultId) {
-            ForEach(vaults) { vault in
-                HStack {
-                    Label {
-                        VStack(alignment: .leading) {
-                            Text(vault.name)
-                            Text(vault.path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    } icon: {
-                        Image(systemName: "externaldrive")
-                    }
+        VStack(spacing: 0) {
+            DahliaWindowHeader(reservesWindowControls: true) {
+                Text(L10n.vault)
+                    .font(.headline)
+                    .lineLimit(1)
 
-                    Spacer()
+                Spacer(minLength: 0)
 
-                    if vault.id == currentVaultId {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(L10n.currentVault)
-                    }
-                }
-                .tag(vault.id)
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle(L10n.vault)
-        .onDeleteCommand(perform: requestRemoval)
-        .toolbar {
-            ToolbarItemGroup {
-                Button(L10n.addVault, systemImage: "plus", action: onAdd)
-                    .help(L10n.openFolderAsVaultDescription)
-                    .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
-                    .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
-                    .disabled(mainWindowNavigation.isShowingSettings)
-                    .accessibilityHidden(mainWindowNavigation.isShowingSettings)
-
-                Button(L10n.removeVault, systemImage: "minus", action: requestRemoval)
-                    .disabled(
-                        mainWindowNavigation.isShowingSettings
-                            || selectedVault == nil
-                            || selectedVault?.id == currentVaultId
+                if updateController.isUpdateAvailable {
+                    DahliaWindowHeaderIconButton(
+                        label: updateButtonLabel,
+                        systemImage: "arrow.down.circle.fill",
+                        action: updateController.showUpdateDialog
                     )
-                    .help(selectedVault?.id == currentVaultId ? L10n.currentVaultRemoveDescription : L10n.removeVault)
-                    .opacity(mainWindowNavigation.isShowingSettings ? 0 : 1)
-                    .allowsHitTesting(!mainWindowNavigation.isShowingSettings)
-                    .accessibilityHidden(mainWindowNavigation.isShowingSettings)
-                    .confirmationDialog(
-                        L10n.removeVaultConfirmation(selectedVault?.name ?? ""),
-                        isPresented: $isShowingRemovalConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button(L10n.removeVault, role: .destructive, action: confirmRemoval)
-                        Button(L10n.cancel, role: .cancel) {}
-                    } message: {
-                        Text(L10n.removeVaultConfirmationDescription)
-                    }
+                }
+
+                DahliaWindowHeaderIconButton(
+                    label: L10n.addVault,
+                    systemImage: "plus",
+                    action: onAdd
+                )
+                .disabled(mainWindowNavigation.isShowingSettings)
+
+                DahliaWindowHeaderIconButton(
+                    label: removeButtonLabel,
+                    systemImage: "minus",
+                    action: requestRemoval
+                )
+                .disabled(
+                    mainWindowNavigation.isShowingSettings
+                        || selectedVault == nil
+                        || isCurrentVaultSelected
+                )
+                .confirmationDialog(
+                    L10n.removeVaultConfirmation(selectedVault?.name ?? ""),
+                    isPresented: $isShowingRemovalConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button(L10n.removeVault, role: .destructive, action: confirmRemoval)
+                    Button(L10n.cancel, role: .cancel) {}
+                } message: {
+                    Text(L10n.removeVaultConfirmationDescription)
+                }
             }
+
+            List(selection: $selectedVaultId) {
+                ForEach(vaults) { vault in
+                    HStack {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(vault.name)
+                                Text(vault.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        } icon: {
+                            Image(systemName: "externaldrive")
+                        }
+
+                        Spacer()
+
+                        if vault.id == currentVaultId {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel(L10n.currentVault)
+                        }
+                    }
+                    .tag(vault.id)
+                }
+            }
+            .listStyle(.sidebar)
+            .onDeleteCommand(perform: requestRemoval)
         }
-        .toolbar(removing: .sidebarToggle)
+    }
+
+    private var removeButtonLabel: String {
+        isCurrentVaultSelected ? L10n.currentVaultRemoveDescription : L10n.removeVault
+    }
+
+    private var isCurrentVaultSelected: Bool {
+        selectedVault?.id == currentVaultId
+    }
+
+    private var updateButtonLabel: String {
+        guard let version = updateController.availableVersion else {
+            return L10n.updateAvailable
+        }
+        return L10n.updateAvailableVersion(version)
     }
 
     private func requestRemoval() {
-        guard let selectedVault, selectedVault.id != currentVaultId else { return }
+        guard selectedVault != nil, !isCurrentVaultSelected else { return }
         isShowingRemovalConfirmation = true
     }
 

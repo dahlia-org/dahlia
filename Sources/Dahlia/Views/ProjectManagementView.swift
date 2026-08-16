@@ -84,6 +84,7 @@ struct ProjectManagementView: View {
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
+            .padding(.top, DahliaDesign.windowHeaderHeight)
             .mainSidebarPane(
                 width: mainWindowNavigation.sidebarWidth,
                 isVisible: isSidebarVisible || isShowingSettings,
@@ -101,6 +102,7 @@ struct ProjectManagementView: View {
                     vaultManagementModel: vaultManagementModel
                 )
             }
+            .padding(.top, DahliaDesign.windowHeaderHeight)
             .mainDetailPane()
         }
         .onAppear {
@@ -176,7 +178,6 @@ struct ProjectManagementView: View {
             }
         } else if let selectedProject {
             projectDetailForm(for: selectedProject)
-                .navigationTitle(displayName(for: selectedProject.projectName))
         } else if sidebarViewModel.allProjectItems.isEmpty {
             ContentUnavailableView {
                 Label(L10n.noProjectsYet, systemImage: "folder.badge.plus")

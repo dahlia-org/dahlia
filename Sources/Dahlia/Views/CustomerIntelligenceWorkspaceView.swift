@@ -26,7 +26,7 @@ struct OrganizationWorkspaceView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             CustomerIntelligenceSidebar(
                 selection: Binding(
                     get: { model.section },
@@ -38,24 +38,26 @@ struct OrganizationWorkspaceView: View {
                 onGoBack: { Task { await model.goBack() } },
                 onGoForward: { Task { await model.goForward() } }
             )
-            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 300)
-        } detail: {
-            workspaceDetail
-        }
-        .navigationTitle(L10n.customerIntelligence)
-        .toolbar {
-            CustomerIntelligenceToolbar(
-                section: model.section,
-                scope: model.scope,
-                selectedOrganizationID: model.selection.organizationID,
-                roots: model.roots,
-                showsInspector: $showsInspector,
-                onSelectScope: { scope in
-                    Task { await model.selectScope(scope) }
-                },
-                onCreate: { creationRequest = $0 },
-                onOrganizeWithAI: { showsAIScope = true }
-            )
+            .frame(minWidth: 210, idealWidth: 240, maxWidth: 300)
+
+            VStack(spacing: 0) {
+                CustomerIntelligenceHeader(
+                    section: model.section,
+                    scope: model.scope,
+                    selectedOrganizationID: model.selection.organizationID,
+                    roots: model.roots,
+                    showsInspector: $showsInspector,
+                    onSelectScope: { scope in
+                        Task { await model.selectScope(scope) }
+                    },
+                    onCreate: { creationRequest = $0 },
+                    onOrganizeWithAI: { showsAIScope = true }
+                )
+
+                workspaceDetail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .layoutPriority(1)
         }
         .task { await model.load() }
         .onChange(of: sidebarViewModel.currentVault?.id) { _, vaultID in

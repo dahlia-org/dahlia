@@ -45,8 +45,6 @@ struct CustomerIntelligenceInsightsView: View {
             Divider()
             insightTable
         }
-        .navigationTitle(L10n.customerIntelligenceInsights)
-        .searchable(text: $model.searchText, prompt: L10n.customerIntelligenceSearchInsights)
         .inspector(isPresented: $showsInspector) {
             insightInspector
                 .inspectorColumnWidth(min: 340, ideal: 420, max: 580)
@@ -70,14 +68,23 @@ struct CustomerIntelligenceInsightsView: View {
     }
 
     private var filterBar: some View {
-        Picker(L10n.status, selection: $model.isAccepted) {
-            Text(L10n.customerIntelligenceNeedsReview).tag(Optional(false))
-            Text(L10n.customerIntelligenceAllStatuses).tag(Bool?.none)
-            Text(L10n.customerIntelligenceAccepted).tag(Optional(true))
+        HStack(spacing: 12) {
+            DahliaInlineSearchField(
+                placeholder: L10n.customerIntelligenceSearchInsights,
+                text: $model.searchText
+            )
+
+            Picker(L10n.status, selection: $model.isAccepted) {
+                Text(L10n.customerIntelligenceNeedsReview).tag(Optional(false))
+                Text(L10n.customerIntelligenceAllStatuses).tag(Bool?.none)
+                Text(L10n.customerIntelligenceAccepted).tag(Optional(true))
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 420)
+
+            Spacer(minLength: 0)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 420)
         .padding()
     }
 

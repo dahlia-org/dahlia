@@ -31,7 +31,6 @@ struct CustomerIntelligenceOverviewView: View {
             }
             .padding()
         }
-        .navigationTitle(L10n.customerIntelligenceOverview)
         .overlay {
             if isLoading, overview == .empty {
                 ProgressView()

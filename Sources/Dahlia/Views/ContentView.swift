@@ -79,6 +79,7 @@ struct ContentView: View {
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
+                        .padding(.top, DahliaDesign.windowHeaderHeight)
                         .mainSidebarPane(
                             width: mainWindowNavigation.sidebarWidth,
                             isVisible: isSidebarVisible || isShowingSettings,
@@ -87,7 +88,6 @@ struct ContentView: View {
 
                         MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
                             detailView
-                                .navigationTitle("")
                         } settingsContent: {
                             SettingsDetailView(
                                 selection: mainWindowNavigation.settingsCategory,
@@ -97,11 +97,26 @@ struct ContentView: View {
                                 vaultManagementModel: vaultManagementModel
                             )
                         }
+                        .padding(.top, DahliaDesign.windowHeaderHeight)
                         .mainDetailPane()
                     }
                 }
             }
             .layoutPriority(1)
+            .overlay(alignment: .top) {
+                MainWorkspaceHeader(
+                    isVisible: !isShowingSettings,
+                    isSidebarVisible: isSidebarVisible,
+                    isChatSidebarVisible: chatCoordinator.isDockedVisible,
+                    canGoBack: canGoBack,
+                    canGoForward: canGoForward,
+                    onToggleSidebar: toggleSidebar,
+                    onSearch: showSearch,
+                    onGoBack: goBack,
+                    onGoForward: goForward,
+                    onToggleChat: toggleChat
+                )
+            }
 
             if chatCoordinator.isDockedVisible {
                 CodexChatSidebarView(
@@ -109,6 +124,8 @@ struct ContentView: View {
                     sidebarViewModel: sidebarViewModel,
                     showsHistory: $isShowingChatHistory,
                     showsConfiguration: $isShowingChatConfiguration,
+                    onPopOut: popOutDockedChat,
+                    onClose: toggleChat,
                     onOpenDetachedSession: openDetachedChat
                 )
                 .mainChatSidebarPane(
@@ -119,30 +136,6 @@ struct ContentView: View {
             }
         }
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
-        .toolbar(removing: .title)
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            MainWindowNavigationToolbar(
-                isVisible: !mainWindowNavigation.isShowingSettings,
-                isSidebarVisible: isSidebarVisible,
-                isChatSidebarVisible: chatCoordinator.isDockedVisible,
-                chatSidebarWidth: mainWindowNavigation.chatSidebarWidth,
-                chatSessionTitle: chatCoordinator.dockedSession.displayTitle,
-                isShowingChatHistory: isShowingChatHistory,
-                canGoBack: canGoBack,
-                canGoForward: canGoForward,
-                onToggleSidebar: toggleSidebar,
-                onSearch: showSearch,
-                onGoBack: goBack,
-                onGoForward: goForward,
-                onNewChat: startNewDockedChat,
-                onShowChatHistory: showChatHistory,
-                onHideChatHistory: hideChatHistory,
-                onPopOutChat: popOutDockedChat,
-                onToggleChat: toggleChat
-            )
-        }
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .overlay(alignment: .bottomTrailing) {
             if !viewModel.summaryGenerationJobs.isEmpty {
                 SummaryProgressToastView(
@@ -284,21 +277,6 @@ private extension ContentView {
         } else {
             chatCoordinator.showDocked()
         }
-    }
-
-    private func startNewDockedChat() {
-        isShowingChatHistory = false
-        dismissChatConfiguration()
-        chatCoordinator.newDockedChat()
-    }
-
-    private func showChatHistory() {
-        isShowingChatHistory = true
-        Task { await chatCoordinator.refreshHistory() }
-    }
-
-    private func hideChatHistory() {
-        isShowingChatHistory = false
     }
 
     private func popOutDockedChat() {

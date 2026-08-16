@@ -6,24 +6,27 @@ struct CodexChatView: View {
     let meetingReferences: [CodexChatMeetingReference]
     let meetingCatalogVaultID: UUID?
     let isMeetingCatalogLoaded: Bool
-    let showsHeader: Bool
     @Binding var showsHistory: Bool
     var configurationPresentation: Binding<Bool>?
     let onNewChat: () -> Void
     let onOpenHistory: (CodexChatThreadSummary) -> Void
+    let onPopOut: (() -> Void)?
+    let onClose: (() -> Void)?
+    let reservesWindowControls: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            if showsHeader {
-                CodexChatHeader(
-                    title: session.displayTitle,
-                    showsHistory: showsHistory,
-                    hasConversation: !session.messages.isEmpty,
-                    onBack: hideHistory,
-                    onShowHistory: showHistory,
-                    onNewChat: startNewChat
-                )
-            }
+            CodexChatHeader(
+                title: session.displayTitle,
+                showsHistory: showsHistory,
+                hasConversation: !session.messages.isEmpty,
+                onBack: hideHistory,
+                onShowHistory: showHistory,
+                onNewChat: startNewChat,
+                onPopOut: onPopOut,
+                onClose: onClose,
+                reservesWindowControls: reservesWindowControls
+            )
 
             if showsHistory {
                 CodexChatHistoryView(

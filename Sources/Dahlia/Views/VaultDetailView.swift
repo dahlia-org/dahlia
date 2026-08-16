@@ -40,7 +40,6 @@ struct VaultDetailView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(vault.name)
         } else if hasRegisteredVaults {
             ContentUnavailableView {
                 Label(L10n.noVaultSelected, systemImage: "externaldrive")

@@ -84,12 +84,6 @@
             )
         }
 
-        @Test
-        func chatToolbarContentTracksSidebarWidthWithConsistentInsets() {
-        #expect(MainChatSidebarLayout.toolbarContentWidth(for: 320) == 304)
-        #expect(MainChatSidebarLayout.toolbarContentWidth(for: 520) == 504)
-        }
-
         private func temporarySidebarDefaults() throws -> (defaults: UserDefaults, suiteName: String) {
             let suiteName = "MainWindowNavigationTests.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))

@@ -14,6 +14,7 @@ struct VaultPickerView: View {
     @ObservedObject var captionViewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     @Bindable var mainWindowNavigation: MainWindowNavigation
+    var updateController: AppUpdateController
     let onVaultSelected: (VaultRecord) -> Void
 
     @ObservedObject private var settings = AppSettings.shared
@@ -42,6 +43,7 @@ struct VaultPickerView: View {
                     vaults: model.vaults,
                     selectedVaultId: $selectedVaultId,
                     currentVaultId: settings.currentVault?.id,
+                    updateController: updateController,
                     onAdd: showFolderPicker,
                     onRemove: removeVault
                 )
@@ -52,6 +54,7 @@ struct VaultPickerView: View {
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
+            .padding(.top, isShowingSettings ? DahliaDesign.windowHeaderHeight : 0)
             .mainSidebarPane(
                 width: sidebarWidth,
                 minimumWidth: minimumSidebarWidth,
@@ -61,21 +64,32 @@ struct VaultPickerView: View {
             )
 
             MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
-                Group {
-                    if model.isRemovingVault {
-                        ProgressView(L10n.removingVault)
-                    } else if model.isLoading, model.vaults.isEmpty {
-                        ProgressView(L10n.loadingVaults)
-                    } else {
-                        VaultDetailView(
-                            vault: selectedVault,
-                            hasRegisteredVaults: !model.vaults.isEmpty,
-                            isCurrentVault: selectedVault?.id == settings.currentVault?.id,
-                            canSwitchVault: canSwitchVault,
-                            onOpen: openSelectedVault,
-                            onAdd: showFolderPicker
-                        )
+                VStack(spacing: 0) {
+                    DahliaWindowHeader {
+                        Text(selectedVault?.name ?? L10n.vaultDetails)
+                            .font(.headline)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 12)
                     }
+
+                    Group {
+                        if model.isRemovingVault {
+                            ProgressView(L10n.removingVault)
+                        } else if model.isLoading, model.vaults.isEmpty {
+                            ProgressView(L10n.loadingVaults)
+                        } else {
+                            VaultDetailView(
+                                vault: selectedVault,
+                                hasRegisteredVaults: !model.vaults.isEmpty,
+                                isCurrentVault: selectedVault?.id == settings.currentVault?.id,
+                                canSwitchVault: canSwitchVault,
+                                onOpen: openSelectedVault,
+                                onAdd: showFolderPicker
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .disabled(model.isRemovingVault)
             } settingsContent: {
@@ -87,7 +101,15 @@ struct VaultPickerView: View {
                     vaultManagementModel: model
                 )
             }
+            .padding(.top, isShowingSettings ? DahliaDesign.windowHeaderHeight : 0)
             .mainDetailPane()
+        }
+        .overlay(alignment: .top) {
+            if isShowingSettings {
+                DahliaWindowHeader(reservesWindowControls: true, backgroundColor: .clear) {
+                    Spacer()
+                }
+            }
         }
         .frame(minWidth: 720, minHeight: 460)
         .task(id: appDatabase != nil) {

@@ -7,19 +7,22 @@ struct MCPModalView: View {
     let currentVault: VaultRecord?
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.mcp)
+
             MCPSettingsView(
                 vaults: vaults,
                 currentVault: currentVault
             )
-            .navigationTitle(L10n.mcp)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.close, action: dismiss.callAsFunction)
-                }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            DahliaSheetActionBar {
+                Button(L10n.close, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
             }
         }
         .frame(minWidth: 720, minHeight: 600)
+        .dahliaSimpleWindowStyle()
         .background {
             SheetOutsideClickMonitor(onOutsideClick: dismiss.callAsFunction)
         }

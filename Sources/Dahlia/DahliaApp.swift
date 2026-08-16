@@ -82,11 +82,15 @@ struct DahliaApp: App {
 
     var body: some Scene {
         Window(L10n.dahlia, id: WindowID.main) {
-            let isShowingSettings = mainWindowNavigation.isShowingSettings
-
             Group {
                 if isInitializingVault {
-                    ProgressView(L10n.loadingVaults)
+                    VStack(spacing: 0) {
+                        DahliaWindowHeader(reservesWindowControls: true) {
+                            Spacer()
+                        }
+                        ProgressView(L10n.loadingVaults)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else if showVaultPicker {
                     VaultPickerView(
                         appDatabase: appDatabase,
@@ -94,7 +98,8 @@ struct DahliaApp: App {
                         canSwitchVault: viewModel.canSwitchVault,
                         captionViewModel: viewModel,
                         sidebarViewModel: sidebarViewModel,
-                        mainWindowNavigation: mainWindowNavigation
+                        mainWindowNavigation: mainWindowNavigation,
+                        updateController: updateController
                     ) { vault in
                         openVault(vault)
                     }
@@ -116,8 +121,7 @@ struct DahliaApp: App {
                 minWidth: MainWindowMetrics.minimumWidth,
                 minHeight: MainWindowMetrics.minimumHeight
             )
-            .toolbar(removing: .title)
-            .toolbar(removing: .sidebarToggle)
+            .dahliaSimpleWindowStyle()
             .alert(
                 L10n.vaultOperationFailed,
                 isPresented: Binding(
@@ -126,19 +130,6 @@ struct DahliaApp: App {
                 )
             ) {} message: {
                 Text(vaultManagementModel.errorMessage)
-            }
-            .toolbar {
-                ToolbarSpacer(.fixed, placement: .principal)
-
-                if showVaultPicker, updateController.isUpdateAvailable {
-                    ToolbarItem(placement: .primaryAction) {
-                        AppUpdateBadge(updateController: updateController)
-                            .opacity(isShowingSettings ? 0 : 1)
-                            .allowsHitTesting(!isShowingSettings)
-                            .disabled(isShowingSettings)
-                            .accessibilityHidden(isShowingSettings)
-                    }
-                }
             }
             .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
                 BatchTranscriptionConfirmationView(
@@ -183,6 +174,7 @@ struct DahliaApp: App {
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: MainWindowMetrics.defaultWidth, height: MainWindowMetrics.defaultHeight)
         .defaultLaunchBehavior(.presented)
@@ -208,14 +200,22 @@ struct DahliaApp: App {
                         sessionID: sessionID
                     )
                 } else {
-                    ContentUnavailableView(
-                        L10n.chatWindowUnavailable,
-                        systemImage: "bubble.left.and.bubble.right"
-                    )
+                    VStack(spacing: 0) {
+                        DahliaWindowHeader(reservesWindowControls: true) {
+                            Spacer()
+                        }
+                        ContentUnavailableView(
+                            L10n.chatWindowUnavailable,
+                            systemImage: "bubble.left.and.bubble.right"
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
             .environment(mainWindowNavigation)
+            .dahliaSimpleWindowStyle()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 620, height: 720)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
@@ -227,15 +227,24 @@ struct DahliaApp: App {
                 chatCoordinator: chatCoordinator,
                 mainWindowNavigation: mainWindowNavigation
             )
+            .dahliaSimpleWindowStyle()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1380, height: 820)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
         .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.audioRecognitionTest, id: WindowID.audioRecognitionTest) {
-            MicrophoneRecognitionTestView(captionViewModel: viewModel)
+            VStack(spacing: 0) {
+                DahliaWindowHeader(reservesWindowControls: true) {
+                    Spacer()
+                }
+                MicrophoneRecognitionTestView(captionViewModel: viewModel)
+            }
+            .dahliaSimpleWindowStyle()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 720, height: 700)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
@@ -243,15 +252,24 @@ struct DahliaApp: App {
 
         Window(L10n.applicationLogs, id: WindowID.applicationLogs) {
             ApplicationLogView()
+                .dahliaSimpleWindowStyle()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 900, height: 600)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
         .dahliaSettingsCommands(mainWindowNavigation)
 
         Window(L10n.permissions, id: WindowID.permissions) {
-            PermissionGuideWindowView()
+            VStack(spacing: 0) {
+                DahliaWindowHeader(reservesWindowControls: true) {
+                    Spacer()
+                }
+                PermissionGuideWindowView()
+            }
+            .dahliaSimpleWindowStyle()
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 680, height: 620)
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)

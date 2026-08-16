@@ -7,9 +7,12 @@ struct CodexChatHeader: View {
     let onBack: () -> Void
     let onShowHistory: () -> Void
     let onNewChat: () -> Void
+    let onPopOut: (() -> Void)?
+    let onClose: (() -> Void)?
+    let reservesWindowControls: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        DahliaWindowHeader(reservesWindowControls: reservesWindowControls) {
             if showsHistory {
                 CodexChatIconButton(label: L10n.back, systemImage: "chevron.left", action: onBack)
                 Text(L10n.chatHistory)
@@ -35,8 +38,22 @@ struct CodexChatHeader: View {
                     action: onShowHistory
                 )
             }
+
+            if let onPopOut {
+                CodexChatIconButton(
+                    label: L10n.popOutChat,
+                    systemImage: "rectangle.on.rectangle",
+                    action: onPopOut
+                )
+            }
+
+            if let onClose {
+                CodexChatIconButton(
+                    label: L10n.hideChat,
+                    systemImage: "sidebar.right",
+                    action: onClose
+                )
+            }
         }
-        .padding(.horizontal, CodexChatDesign.headerHorizontalPadding)
-        .frame(height: CodexChatDesign.headerHeight)
     }
 }
