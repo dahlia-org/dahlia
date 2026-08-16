@@ -181,5 +181,37 @@
 
             #expect(abs(distance - DahliaDesign.windowHeaderHeight) < 0.5)
         }
+
+        @Test
+        func projectSplitViewPanesStartBelowWindowHeader() throws {
+            for probesDetailPane in [false, true] {
+                let capture = ProbeCapture()
+                let distance = try distanceFromWindowTop(
+                    for: HSplitView {
+                        HSplitView {
+                            VStack(spacing: 0) {
+                                if !probesDetailPane {
+                                    LayoutProbe(capture: capture)
+                                        .frame(height: 1)
+                                }
+                                Spacer()
+                            }
+                            VStack(spacing: 0) {
+                                if probesDetailPane {
+                                    LayoutProbe(capture: capture)
+                                        .frame(height: 1)
+                                }
+                                Spacer()
+                            }
+                        }
+                        Color.clear
+                    }
+                    .dahliaSimpleWindowStyle(),
+                    capture: capture
+                )
+
+                #expect(abs(distance - DahliaDesign.windowHeaderHeight) < 0.5)
+            }
+        }
     }
 #endif
