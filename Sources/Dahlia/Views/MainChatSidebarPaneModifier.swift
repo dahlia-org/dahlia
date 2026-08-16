@@ -9,31 +9,25 @@ extension View {
         frame(
             minWidth: isVisible ? MainChatSidebarLayout.minimumWidth : 0,
             idealWidth: isVisible ? width : 0,
-            maxWidth: isVisible ? MainChatSidebarLayout.maximumWidth : 0
+            maxWidth: isVisible ? MainChatSidebarLayout.maximumWidth : 0,
+            alignment: .leading
         )
+        .clipped()
         .opacity(isVisible ? 1 : 0)
         .allowsHitTesting(isVisible)
         .disabled(!isVisible)
         .accessibilityHidden(!isVisible)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { actualWidth in
-            if isVisible {
-                onWidthChange(actualWidth)
-            }
-        }
         .background {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
         }
         .background {
-            if isVisible {
-                SplitViewWidthSyncView(
-                    width: width,
-                    onWidthChange: onWidthChange,
-                    pane: .last
-                )
-            }
+            DeferredSplitViewWidthSyncView(
+                width: width,
+                onWidthChange: onWidthChange,
+                pane: .last,
+                isVisible: isVisible
+            )
         }
     }
 }

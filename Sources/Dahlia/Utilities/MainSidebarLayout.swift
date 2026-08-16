@@ -1,4 +1,9 @@
-import CoreGraphics
+import SwiftUI
+
+enum MainSidebarTransition {
+    static let duration = 0.25
+    static let animation = Animation.smooth(duration: duration)
+}
 
 enum MainSidebarLayout {
     static let widthDefaultsKey = "DahliaSettingsSidebar.width"

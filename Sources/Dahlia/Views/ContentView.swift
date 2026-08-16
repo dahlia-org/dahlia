@@ -14,6 +14,7 @@ struct ContentView: View {
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
     private var permissionGuidePresentationVersion = 0
     @AppStorage(AppSettings.customerIntelligenceBetaEnabledUserDefaultsKey)
@@ -133,8 +134,11 @@ struct ContentView: View {
                     isVisible: !isShowingSettings,
                     onWidthChange: mainWindowNavigation.updateChatSidebarWidth
                 )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .animation(sidebarAnimation, value: isSidebarVisible)
+        .animation(sidebarAnimation, value: chatCoordinator.isDockedVisible)
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .overlay(alignment: .bottomTrailing) {
             if !viewModel.summaryGenerationJobs.isEmpty {
@@ -283,6 +287,10 @@ private extension ContentView {
         isShowingChatHistory = false
         dismissChatConfiguration()
         openDetachedChat(chatCoordinator.popOutDocked())
+    }
+
+    private var sidebarAnimation: Animation? {
+        reduceMotion ? nil : MainSidebarTransition.animation
     }
 
     private func dismissChatConfiguration() {

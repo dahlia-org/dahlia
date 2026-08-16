@@ -12,8 +12,10 @@ extension View {
         frame(
             minWidth: isVisible ? minimumWidth : 0,
             idealWidth: isVisible ? width : 0,
-            maxWidth: isVisible ? maximumWidth : 0
+            maxWidth: isVisible ? maximumWidth : 0,
+            alignment: .trailing
         )
+        .clipped()
         .background {
             SidebarMaterialBackground()
                 .overlay {
@@ -23,13 +25,12 @@ extension View {
                 .ignoresSafeArea()
         }
         .background {
-            if isVisible {
-                SplitViewWidthSyncView(
-                    width: width,
-                    onWidthChange: onWidthChange,
-                    widthSourceID: widthSourceID
-                )
-            }
+            DeferredSplitViewWidthSyncView(
+                width: width,
+                onWidthChange: onWidthChange,
+                widthSourceID: widthSourceID,
+                isVisible: isVisible
+            )
         }
     }
 }
