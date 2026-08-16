@@ -5,6 +5,7 @@ import Observation
 @Observable
 final class DahliaWindowHeaderHelpController {
     private(set) var visibleHelpID: UUID?
+    private(set) var containerWidth: CGFloat = 0
 
     @ObservationIgnored private let displayDelay: Duration
     @ObservationIgnored private let immediateSwitchWindow: Duration
@@ -47,6 +48,10 @@ final class DahliaWindowHeaderHelpController {
             guard !Task.isCancelled, hoveredHelpID == id else { return }
             presentHelp(for: id)
         }
+    }
+
+    func updateContainerWidth(_ width: CGFloat) {
+        containerWidth = width
     }
 
     func hoverEnded(for id: UUID) {

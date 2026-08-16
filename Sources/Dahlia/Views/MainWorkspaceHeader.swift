@@ -56,7 +56,6 @@ struct MainWorkspaceHeader: View {
                     DahliaWindowHeaderIconButton(
                         label: L10n.showChat,
                         systemImage: "sidebar.right",
-                        helpAlignment: .bottomTrailing,
                         action: onToggleChat
                     )
                     .accessibilityValue(L10n.hidden)

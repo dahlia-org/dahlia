@@ -26,7 +26,6 @@ struct CustomerIntelligenceHeader: View {
             DahliaWindowHeaderIconButton(
                 label: L10n.organizeWithAI,
                 systemImage: "sparkles",
-                helpAlignment: .bottomTrailing,
                 action: onOrganizeWithAI
             )
             .disabled(scope == .all)
@@ -59,7 +58,6 @@ struct CustomerIntelligenceHeader: View {
                     ? L10n.customerIntelligenceHideInspector
                     : L10n.customerIntelligenceShowInspector,
                 systemImage: "sidebar.right",
-                helpAlignment: .bottomTrailing,
                 action: { showsInspector.toggle() }
             )
             .disabled(section == .overview || section == .organizations && scope == .all)
@@ -73,7 +71,6 @@ struct CustomerIntelligenceHeader: View {
             DahliaWindowHeaderIconButton(
                 label: scope == .all ? L10n.newOrganization : L10n.newDepartment,
                 systemImage: "plus",
-                helpAlignment: .bottomTrailing,
                 action: {
                     onCreate(scope == .all
                         ? .organization(parentID: nil)
@@ -84,21 +81,18 @@ struct CustomerIntelligenceHeader: View {
             DahliaWindowHeaderIconButton(
                 label: L10n.customerIntelligenceNewPerson,
                 systemImage: "plus",
-                helpAlignment: .bottomTrailing,
                 action: { onCreate(.contact(organizationID: creationOrganizationID)) }
             )
         case .projects:
             DahliaWindowHeaderIconButton(
                 label: L10n.newProject,
                 systemImage: "plus",
-                helpAlignment: .bottomTrailing,
                 action: { onCreate(.project(organizationID: creationOrganizationID)) }
             )
         case .topics:
             DahliaWindowHeaderIconButton(
                 label: L10n.customerIntelligenceNewTopic,
                 systemImage: "plus",
-                helpAlignment: .bottomTrailing,
                 action: { onCreate(.topic(organizationID: creationOrganizationID)) }
             )
         case .overview, .insights:

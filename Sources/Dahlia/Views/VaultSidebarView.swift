@@ -29,7 +29,6 @@ struct VaultSidebarView: View {
                     DahliaWindowHeaderIconButton(
                         label: updateButtonLabel,
                         systemImage: "arrow.down.circle.fill",
-                        helpAlignment: .bottomTrailing,
                         action: updateController.showUpdateDialog
                     )
                 }
@@ -37,7 +36,6 @@ struct VaultSidebarView: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.addVault,
                     systemImage: "plus",
-                    helpAlignment: .bottomTrailing,
                     action: onAdd
                 )
                 .disabled(mainWindowNavigation.isShowingSettings)
@@ -45,7 +43,6 @@ struct VaultSidebarView: View {
                 DahliaWindowHeaderIconButton(
                     label: removeButtonLabel,
                     systemImage: "minus",
-                    helpAlignment: .bottomTrailing,
                     action: requestRemoval
                 )
                 .disabled(

@@ -4,24 +4,23 @@ struct DahliaWindowHeaderIconButton: View {
     let label: String
     let systemImage: String
     let helpShortcut: String?
-    let helpAlignment: Alignment
     let action: () -> Void
 
     @Environment(DahliaWindowHeaderHelpController.self) private var helpController
     @State private var helpID = UUID()
+    @State private var helpWidth: CGFloat = 0
+    @State private var buttonMidX: CGFloat = 0
     @State private var isHovering = false
 
     init(
         label: String,
         systemImage: String,
         helpShortcut: String? = nil,
-        helpAlignment: Alignment = .bottom,
         action: @escaping () -> Void
     ) {
         self.label = label
         self.systemImage = systemImage
         self.helpShortcut = helpShortcut
-        self.helpAlignment = helpAlignment
         self.action = action
     }
 
@@ -40,11 +39,22 @@ struct DahliaWindowHeaderIconButton: View {
             isHovering ? DahliaDesign.hoverHighlightColor : .clear,
             in: .rect(cornerRadius: 8)
         )
-        .overlay(alignment: helpAlignment) {
+        .overlay(alignment: .bottom) {
             if helpController.visibleHelpID == helpID {
                 DahliaWindowHeaderHelp(label: label, shortcut: helpShortcut)
-                    .offset(y: 42)
+                    .onGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.size.width
+                    } action: { width in
+                        helpWidth = width
+                    }
+                    .offset(x: helpHorizontalOffset, y: 42)
+                    .opacity(helpWidth > 0 ? 1 : 0)
             }
+        }
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            geometry.frame(in: .named(DahliaWindowHeaderHelpLayout.coordinateSpaceName)).midX
+        } action: { midX in
+            buttonMidX = midX
         }
         .onHover(perform: updateHoverState)
         .onDisappear { helpController.hoverEnded(for: helpID) }
@@ -59,5 +69,13 @@ struct DahliaWindowHeaderIconButton: View {
         } else {
             helpController.hoverEnded(for: helpID)
         }
+    }
+
+    private var helpHorizontalOffset: CGFloat {
+        DahliaWindowHeaderHelpLayout.horizontalOffset(
+            buttonMidX: buttonMidX,
+            helpWidth: helpWidth,
+            containerWidth: helpController.containerWidth
+        )
     }
 }
