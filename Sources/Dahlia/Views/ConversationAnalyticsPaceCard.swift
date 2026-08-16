@@ -72,7 +72,7 @@ struct ConversationAnalyticsPaceCard: View {
             y: .value(L10n.conversationAnalyticsSourceDetails, title)
         )
         .foregroundStyle(color)
-        .cornerRadius(4)
+        .clipShape(.rect(cornerRadius: 4))
         .annotation(position: .trailing, alignment: .leading) {
             Text(pace(source))
                 .font(.subheadline.bold())

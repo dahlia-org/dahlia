@@ -15,7 +15,7 @@ struct SummaryActionItemsView: View {
                     .padding(.top, DahliaDesign.sectionHeadingTopPadding)
 
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
-                    ForEach(Array(displayableItems.enumerated()), id: \.offset) { _, item in
+                    ForEach(displayableItems.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "square")
                                 .foregroundStyle(.tertiary)

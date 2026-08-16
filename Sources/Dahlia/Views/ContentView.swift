@@ -13,6 +13,7 @@ struct ContentView: View {
     var vaultManagementModel: VaultManagementModel
     var onSelectVault: (VaultRecord) -> Void = { _ in }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openWindow) private var openWindow
     @AppStorage(PermissionGuidePresentationPolicy.userDefaultsKey)
     private var permissionGuidePresentationVersion = 0
@@ -145,7 +146,7 @@ struct ContentView: View {
                 .allowsHitTesting(!isShowingSettings)
                 .disabled(isShowingSettings)
                 .accessibilityHidden(isShowingSettings)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .animation(.easeInOut(duration: 0.3), value: viewModel.summaryGenerationJobs.map(\.id))
             }
         }
@@ -196,6 +197,7 @@ struct ContentView: View {
             isShowingChatHistory = false
             dismissChatConfiguration()
             searchModel.resetForVaultChange(using: sidebarViewModel)
+            syncChatContext()
         }
         .onChange(of: viewModel.batchTranscriptionState) { _, state in
             guard state?.changesUnprocessedRecordingsProjection != false else { return }
@@ -221,11 +223,20 @@ struct ContentView: View {
             if newValue.count == 1, let meetingID = newValue.first {
                 mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
             }
-            handleMeetingSelectionChange(newValue)
+            if newValue.count != 1 {
+                if !newValue.isEmpty || !viewModel.hasDraftMeeting {
+                    viewModel.clearCurrentMeeting()
+                }
+            }
             if newValue.isEmpty {
                 mainWindowNavigation.recordUpcomingScheduleIfVisible(isShowingUpcomingSchedule)
             }
             syncChatContext()
+        }
+        .onChange(of: sidebarViewModel.selectedMeetingDetail) { _, detail in
+            guard let detail,
+                  detail.meetingId != viewModel.currentMeetingId else { return }
+            handleMeetingSelection(detail)
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in
             guard oldId != newId else { return }
@@ -235,9 +246,6 @@ struct ContentView: View {
             syncChatContext()
         }
         .onChange(of: viewModel.draftMeeting) {
-            syncChatContext()
-        }
-        .onChange(of: sidebarViewModel.currentVault?.id) { _, _ in
             syncChatContext()
         }
         .onChange(of: mainWindowNavigation.selectedProjectId) { _, projectID in
@@ -344,7 +352,7 @@ private extension ContentView {
         chatCoordinator.updateCurrentContext(
             vaultID: sidebarViewModel.currentVault?.id,
             meetingID: draftMeeting == nil
-                ? viewModel.currentMeetingId ?? sidebarViewModel.selectedMeetingId
+                ? sidebarViewModel.selectedMeetingId ?? viewModel.currentMeetingId
                 : nil,
             draftMeeting: draftMeeting,
             dbQueue: sidebarViewModel.dbQueue
@@ -364,7 +372,7 @@ private extension ContentView {
 
     private var canGoForward: Bool { mainWindowNavigation.canGoForward && canNavigateHistory }
 
-    private var hasMeetingDetail: Bool { sidebarViewModel.selectedMeetingId != nil || viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil }
+    private var hasMeetingDetail: Bool { viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil }
 
     private var canNavigateHistory: Bool {
         !viewModel.hasDraftMeeting
@@ -385,6 +393,11 @@ private extension ContentView {
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel
             )
+        } else if Self.isMeetingSelectionPending(
+            selectedMeetingID: sidebarViewModel.selectedMeetingId,
+            currentMeetingID: viewModel.currentMeetingId
+        ) {
+            meetingLoadingPlaceholder
         } else if hasMeetingDetail {
             ControlPanelView(
                 viewModel: viewModel,
@@ -399,14 +412,19 @@ private extension ContentView {
         }
     }
 
-    private func handleMeetingSelectionChange(_ selection: Set<UUID>) {
-        guard selection.count == 1, let meetingId = selection.first else {
-            if !selection.isEmpty || !viewModel.hasDraftMeeting {
-                viewModel.clearCurrentMeeting()
+    @ViewBuilder
+    private var meetingLoadingPlaceholder: some View {
+        if let error = sidebarViewModel.selectedMeetingDetailLoadError {
+            ContentUnavailableView {
+                Label(L10n.meetingListLoadFailed, systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(error)
+            } actions: {
+                Button(L10n.retry, action: sidebarViewModel.startSelectedMeetingObservationIfNeeded)
             }
-            return
+        } else {
+            ProgressView(L10n.loadingMeetings)
         }
-        handleMeetingSelection(meetingId)
     }
 
     private func returnToCalendarSchedule() {
@@ -503,9 +521,9 @@ private extension ContentView {
             return
         }
         if sidebarViewModel.selectedMeetingIds.count == 1,
-           let meetingId = sidebarViewModel.selectedMeetingId,
-           viewModel.currentMeetingId != meetingId {
-            handleMeetingSelection(meetingId)
+           let detail = sidebarViewModel.selectedMeetingDetail,
+           viewModel.currentMeetingId != detail.meetingId {
+            handleMeetingSelection(detail)
         }
         let initialLocation = sidebarViewModel.selectedMeetingId.map(MainWindowLocation.meeting)
             ?? .upcomingSchedule
@@ -555,7 +573,7 @@ private extension ContentView {
             let currentMeetingID = viewModel.currentMeetingId
             let isRecordingStartPending = viewModel.isRecordingStartPending
             let isFinalizingRecording = viewModel.isFinalizingRecording
-            let exists = await meetingExists(meetingID)
+            let exists = await sidebarViewModel.containsMeeting(id: meetingID)
             guard canNavigateHistory,
                   sidebarViewModel.selectedMeetingIds == selectedMeetingIds,
                   viewModel.draftMeeting == draftMeeting,
@@ -588,33 +606,28 @@ private extension ContentView {
         }
     }
 
-    private func meetingExists(_ meetingID: UUID) async -> Bool {
+    private func handleMeetingSelection(_ detail: MeetingDetailItem) {
         guard let dbQueue = sidebarViewModel.dbQueue,
-              let vaultID = sidebarViewModel.currentVault?.id else { return false }
-        let existsInVault = await Task.detached(priority: .userInitiated) {
-            try? MeetingRepository(dbQueue: dbQueue).fetchMeeting(id: meetingID)?.vaultId == vaultID
-        }.value == true
-        return existsInVault && sidebarViewModel.currentVault?.id == vaultID
+              let vault = sidebarViewModel.currentVault,
+              sidebarViewModel.selectedMeetingId == detail.meetingId,
+              detail.vaultId == vault.id else { return }
+
+        viewModel.loadMeeting(
+            detail.meetingId,
+            dbQueue: dbQueue,
+            projectURL: detail.projectName.map { vault.url.appending(path: $0, directoryHint: .isDirectory) },
+            projectId: detail.projectId,
+            projectName: detail.projectName,
+            vaultURL: vault.url
+        )
     }
+}
 
-    private func handleMeetingSelection(_ meetingId: UUID) {
-        guard let dbQueue = sidebarViewModel.dbQueue,
-              let vault = sidebarViewModel.currentVault else { return }
-
-        do {
-            let repository = MeetingRepository(dbQueue: dbQueue)
-            guard let meeting = try repository.fetchMeeting(id: meetingId) else { return }
-            let project = try meeting.projectId.flatMap { try repository.fetchProject(id: $0) }
-            viewModel.loadMeeting(
-                meetingId,
-                dbQueue: dbQueue,
-                projectURL: project.map { vault.url.appending(path: $0.path, directoryHint: .isDirectory) },
-                projectId: project?.id,
-                projectName: project?.path,
-                vaultURL: vault.url
-            )
-        } catch {
-            viewModel.errorMessage = error.localizedDescription
-        }
+extension ContentView {
+    static func isMeetingSelectionPending(
+        selectedMeetingID: UUID?,
+        currentMeetingID: UUID?
+    ) -> Bool {
+        selectedMeetingID != nil && selectedMeetingID != currentMeetingID
     }
 }

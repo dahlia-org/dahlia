@@ -135,24 +135,26 @@ struct ShareSummaryFloatingButton: View {
 }
 
 private struct FloatingSummaryButtonModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isEnabled: Bool
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         let respondsToHover = isHovered && isEnabled
+        let scalesOnHover = respondsToHover && !reduceMotion
 
         content
             .labelStyle(.iconOnly)
             .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
             .controlSize(.large)
-            .scaleEffect(respondsToHover ? 1.08 : 1)
+            .scaleEffect(scalesOnHover ? 1.08 : 1)
             .shadow(
                 color: .black.opacity(respondsToHover ? 0.18 : 0.06),
                 radius: respondsToHover ? 5 : 2,
                 y: respondsToHover ? 2 : 1
             )
-            .animation(.easeOut(duration: 0.12), value: respondsToHover)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: respondsToHover)
             .onHover { isHovered = $0 }
     }
 }

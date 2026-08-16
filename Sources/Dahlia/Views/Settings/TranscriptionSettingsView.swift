@@ -190,11 +190,10 @@ struct TranscriptionSettingsView: View {
 
     private var searchFilteredLocales: [Locale] {
         guard !localeSearchText.isEmpty else { return supportedLocales }
-        let query = localeSearchText.lowercased()
         return supportedLocales.filter { locale in
             let name = locale.localizedString(forIdentifier: locale.identifier) ?? ""
-            return name.lowercased().contains(query)
-                || locale.identifier.lowercased().contains(query)
+            return name.localizedStandardContains(localeSearchText)
+                || locale.identifier.localizedStandardContains(localeSearchText)
         }
     }
 

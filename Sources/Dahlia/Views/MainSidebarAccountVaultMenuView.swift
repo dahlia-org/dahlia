@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MainSidebarAccountVaultMenuView: View {
-    @ObservedObject var navigation: MainSidebarAccountMenuNavigationState
+    var navigation: MainSidebarAccountMenuNavigationState
 
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
@@ -13,7 +13,7 @@ struct MainSidebarAccountVaultMenuView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(Array(vaults.enumerated()), id: \.element.id) { index, vault in
+                        ForEach(vaults.enumerated(), id: \.element.id) { index, vault in
                             MainSidebarAccountMenuRow(
                                 title: vault.name,
                                 selectionState: vault.id == currentVault?.id,

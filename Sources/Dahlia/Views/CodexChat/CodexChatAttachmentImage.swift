@@ -4,7 +4,7 @@ struct CodexChatAttachmentImage: View {
     let attachment: CodexChatImageAttachment
     let size: CGFloat
 
-    @StateObject private var imageLoader = ScreenshotImageLoadModel()
+    @State private var imageLoader = ScreenshotImageLoadModel()
 
     var body: some View {
         Group {

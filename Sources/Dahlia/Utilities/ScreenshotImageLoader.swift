@@ -1,7 +1,7 @@
-import Combine
 import CoreGraphics
 import DahliaRuntimeSupport
 import Foundation
+import Observation
 
 /// サムネイルキャッシュを所有し、用途別のデコードレーンへ処理を振り分ける。
 actor ScreenshotImageLoader {
@@ -199,7 +199,8 @@ actor ScreenshotImageLoader {
 }
 
 @MainActor
-final class ScreenshotImageLoadModel: ObservableObject {
+@Observable
+final class ScreenshotImageLoadModel {
     enum State {
         case idle
         case loading
@@ -207,7 +208,7 @@ final class ScreenshotImageLoadModel: ObservableObject {
         case failed
     }
 
-    @Published private(set) var state: State = .idle
+    private(set) var state: State = .idle
     private let loader: ScreenshotImageLoader
     private var loadGeneration: UInt64 = 0
 

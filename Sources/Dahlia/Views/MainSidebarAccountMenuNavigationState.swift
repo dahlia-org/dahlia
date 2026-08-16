@@ -1,17 +1,18 @@
-import Combine
 import Foundation
+import Observation
 
 @MainActor
-final class MainSidebarAccountMenuNavigationState: ObservableObject {
+@Observable
+final class MainSidebarAccountMenuNavigationState {
     enum ActiveMenu {
         case root
         case vaults
         case languages
     }
 
-    @Published var activeMenu = ActiveMenu.root
-    @Published var rootSelection: Int?
-    @Published var submenuSelection: Int?
+    var activeMenu = ActiveMenu.root
+    var rootSelection: Int?
+    var submenuSelection: Int?
 
     func reset() {
         activeMenu = .root

@@ -91,8 +91,8 @@ final class OrganizationWorkspaceViewModel {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return roots }
         return roots.filter {
-            $0.organization.name.localizedCaseInsensitiveContains(query)
-                || $0.organization.description.localizedCaseInsensitiveContains(query)
+            $0.organization.name.localizedStandardContains(query)
+                || $0.organization.description.localizedStandardContains(query)
         }
     }
 
