@@ -1,8 +1,6 @@
 import CoreGraphics
 
 enum CodexChatDesign {
-    static let headerHeight: CGFloat = 44
-    static let headerHorizontalPadding: CGFloat = 14
     static let liveModeStatusSpacing: CGFloat = 6
     static let liveModeStatusHorizontalPadding: CGFloat = 10
     static let liveModeStatusVerticalPadding: CGFloat = 3

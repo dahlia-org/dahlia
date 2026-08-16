@@ -32,15 +32,20 @@ struct ProjectDeletionDialog: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(L10n.deleteProjectConfirmation(project.projectName))
-                .font(.title2)
-                .bold()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding([.top, .horizontal])
-                .accessibilityAddTraits(.isHeader)
+            DahliaSheetHeader(title: L10n.deleteProjectConfirmation(project.projectName))
+
+            Divider()
 
             Form {
                 Section {
+                    Label {
+                        Text(project.projectName)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } icon: {
+                        Image(systemName: "folder")
+                    }
+
                     Label(
                         L10n.projectDeletionSummary(projectCount: projectCount, meetingCount: meetingCount),
                         systemImage: "trash"
@@ -100,25 +105,23 @@ struct ProjectDeletionDialog: View {
 
             Divider()
 
-            HStack {
+            DahliaSheetActionBar(alignsActionsTrailing: false) {
                 if isDeleting {
                     ProgressView()
                         .controlSize(.small)
                     Text(L10n.deletingProjects)
                         .foregroundStyle(.secondary)
                 }
-
-                Spacer()
+                Spacer(minLength: 12)
                 Button(L10n.cancel, role: .cancel, action: dismiss.callAsFunction)
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
                 Button(confirmButtonTitle, role: .destructive, action: confirmDeletion)
                     .disabled(!canConfirmDeletion)
             }
-            .padding()
         }
-        .navigationTitle(L10n.deleteProjectConfirmation(project.projectName))
         .frame(minWidth: 520, minHeight: 390)
+        .dahliaSimpleWindowStyle()
         .interactiveDismissDisabled(isDeleting)
     }
 

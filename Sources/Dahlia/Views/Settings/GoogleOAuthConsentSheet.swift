@@ -95,7 +95,9 @@ struct GoogleOAuthConsentSheet: View {
     @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: disclosure.title)
+
             Form {
                 Section {
                     Text(disclosure.overview)
@@ -130,21 +132,20 @@ struct GoogleOAuthConsentSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(disclosure.title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel) {
-                        dismiss()
-                    }
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel) {
+                    dismiss()
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.continueToGoogle) {
-                        onConsent()
-                        dismiss()
-                    }
-                    .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.cancelAction)
+                Button(L10n.continueToGoogle) {
+                    onConsent()
+                    dismiss()
                 }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
             }
         }
+        .dahliaSimpleWindowStyle()
     }
 }

@@ -44,46 +44,56 @@ struct CustomerIntelligenceTopicsView: View {
     }
 
     var body: some View {
-        topicTable
-            .navigationTitle(L10n.topics)
-            .searchable(text: $model.searchText, prompt: L10n.customerIntelligenceSearchTopics)
-            .inspector(isPresented: $showsInspector) {
-                topicInspector
-                    .inspectorColumnWidth(min: 340, ideal: 420, max: 580)
-            }
-            .task(id: reloadToken) {
-                selectedTopicID = initialTopicID ?? selectedTopicID
-                await model.load(selectedID: selectedTopicID)
-                reconcileSelection()
-            }
-            .onChange(of: initialTopicID) { _, id in
-                selectedTopicID = id
-            }
-            .onChange(of: selectedTopicID) { _, id in
-                onSelectTopic(id)
-                Task { await model.select(id) }
-            }
-            .sheet(item: $editedTopic) { topic in
-                CustomerIntelligenceTopicEditorSheet(topic: topic, model: model)
-            }
-            .alert(item: $model.pendingDeletion) { pending in
-                Alert(
-                    title: Text(L10n.deleteTopic),
-                    message: Text(L10n.topicDeletionImpact(pending.impact)),
-                    primaryButton: .destructive(Text(L10n.delete)) {
-                        Task {
-                            if await model.confirmDeletion(pending) {
-                                selectedTopicID = nil
-                            }
-                        }
-                    },
-                    secondaryButton: .cancel()
+        VStack(spacing: 0) {
+            HStack {
+                DahliaInlineSearchField(
+                    placeholder: L10n.customerIntelligenceSearchTopics,
+                    text: $model.searchText
                 )
+                Spacer(minLength: 0)
             }
-            .customerIntelligenceErrorAlert(
-                title: L10n.customerIntelligenceTopicsError,
-                message: $model.errorMessage
+            .padding()
+
+            Divider()
+            topicTable
+        }
+        .inspector(isPresented: $showsInspector) {
+            topicInspector
+                .inspectorColumnWidth(min: 340, ideal: 420, max: 580)
+        }
+        .task(id: reloadToken) {
+            selectedTopicID = initialTopicID ?? selectedTopicID
+            await model.load(selectedID: selectedTopicID)
+            reconcileSelection()
+        }
+        .onChange(of: initialTopicID) { _, id in
+            selectedTopicID = id
+        }
+        .onChange(of: selectedTopicID) { _, id in
+            onSelectTopic(id)
+            Task { await model.select(id) }
+        }
+        .sheet(item: $editedTopic) { topic in
+            CustomerIntelligenceTopicEditorSheet(topic: topic, model: model)
+        }
+        .alert(item: $model.pendingDeletion) { pending in
+            Alert(
+                title: Text(L10n.deleteTopic),
+                message: Text(L10n.topicDeletionImpact(pending.impact)),
+                primaryButton: .destructive(Text(L10n.delete)) {
+                    Task {
+                        if await model.confirmDeletion(pending) {
+                            selectedTopicID = nil
+                        }
+                    }
+                },
+                secondaryButton: .cancel()
             )
+        }
+        .customerIntelligenceErrorAlert(
+            title: L10n.customerIntelligenceTopicsError,
+            message: $model.errorMessage
+        )
     }
 
     private var topicTable: some View {
@@ -250,7 +260,11 @@ private struct CustomerIntelligenceTopicEditorSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.customerIntelligenceEditTopic)
+
+            Divider()
+
             Form {
                 if let errorMessage = model.errorMessage {
                     Section {
@@ -269,23 +283,24 @@ private struct CustomerIntelligenceTopicEditorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceEditTopic)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.save) {
-                        Task {
-                            if await model.save(topic: topic, title: title, currentState: currentState) {
-                                dismiss()
-                            }
+
+            Divider()
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.save) {
+                    Task {
+                        if await model.save(topic: topic, title: title, currentState: currentState) {
+                            dismiss()
                         }
                     }
-                    .disabled(title.nilIfBlank == nil || currentState.nilIfBlank == nil || model.isSaving)
                 }
+                .keyboardShortcut(.defaultAction)
+                .disabled(title.nilIfBlank == nil || currentState.nilIfBlank == nil || model.isSaving)
             }
         }
         .frame(minWidth: 540, minHeight: 440)
+        .dahliaSimpleWindowStyle()
     }
 }

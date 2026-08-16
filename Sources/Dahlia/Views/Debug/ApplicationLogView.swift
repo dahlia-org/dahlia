@@ -12,6 +12,37 @@ struct ApplicationLogView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            DahliaWindowHeader(reservesWindowControls: true) {
+                Text(L10n.applicationLogs)
+                    .font(.headline)
+
+                Spacer(minLength: 12)
+
+                TextField(L10n.searchApplicationLogs, text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 260)
+
+                DahliaWindowHeaderIconButton(
+                    label: L10n.refreshApplicationLogs,
+                    systemImage: "arrow.clockwise",
+                    action: refreshLogs
+                )
+
+                DahliaWindowHeaderIconButton(
+                    label: L10n.followLatestApplicationLogs,
+                    systemImage: "arrow.down.to.line",
+                    action: followLatest
+                )
+                .disabled(isFollowingLatest || displayedText.isEmpty)
+
+                DahliaWindowHeaderIconButton(
+                    label: L10n.copyDisplayedLogs,
+                    systemImage: "doc.on.doc",
+                    action: copyDisplayedLogs
+                )
+                .disabled(displayedText.isEmpty)
+            }
+
             if let errorMessage = model.errorMessage, model.hasLogs {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -54,30 +85,6 @@ struct ApplicationLogView: View {
                 } action: { _, isAtBottom in
                     isFollowingLatest = isAtBottom
                 }
-            }
-        }
-        .searchable(text: $searchText, prompt: L10n.searchApplicationLogs)
-        .toolbar {
-            ToolbarItemGroup {
-                Button(
-                    L10n.refreshApplicationLogs,
-                    systemImage: "arrow.clockwise",
-                    action: refreshLogs
-                )
-
-                Button(
-                    L10n.followLatestApplicationLogs,
-                    systemImage: "arrow.down.to.line",
-                    action: followLatest
-                )
-                .disabled(isFollowingLatest || displayedText.isEmpty)
-
-                Button(
-                    L10n.copyDisplayedLogs,
-                    systemImage: "doc.on.doc",
-                    action: copyDisplayedLogs
-                )
-                .disabled(displayedText.isEmpty)
             }
         }
         .task {

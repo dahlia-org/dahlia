@@ -25,15 +25,23 @@ struct CodexChatWindowView: View {
                     meetingReferences: sidebarViewModel.meetingReferences,
                     meetingCatalogVaultID: sidebarViewModel.currentVault?.id,
                     isMeetingCatalogLoaded: sidebarViewModel.isMeetingCatalogLoaded,
-                    showsHeader: true,
                     showsHistory: $showsHistory,
                     configurationPresentation: nil,
                     onNewChat: startNewChat,
-                    onOpenHistory: openHistory
+                    onOpenHistory: openHistory,
+                    onPopOut: nil,
+                    onClose: nil,
+                    reservesWindowControls: true
                 )
             } else {
-                ProgressView()
-                    .task { coordinator.ensureDetachedSession(id: sessionID) }
+                VStack(spacing: 0) {
+                    DahliaWindowHeader(reservesWindowControls: true) {
+                        Spacer()
+                    }
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .task { coordinator.ensureDetachedSession(id: sessionID) }
             }
         }
         .frame(minWidth: 420, minHeight: 360)

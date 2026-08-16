@@ -23,7 +23,11 @@ struct CustomerIntelligenceCreationSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: title)
+
+            Divider()
+
             Form {
                 if let errorMessage {
                     Section {
@@ -35,20 +39,21 @@ struct CustomerIntelligenceCreationSheet: View {
                 fields
             }
             .formStyle(.grouped)
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
+
+            Divider()
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.create) {
+                    Task { await submit() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.create) {
-                        Task { await submit() }
-                    }
-                    .disabled(!canSubmit || isSaving)
-                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmit || isSaving)
             }
         }
         .frame(minWidth: 500, minHeight: sheetHeight)
+        .dahliaSimpleWindowStyle()
         .task {
             selectedOrganizationID = request.initialOrganizationID ?? scope.organizationID ?? roots.first?.id
             await loadOrganizationOptions()

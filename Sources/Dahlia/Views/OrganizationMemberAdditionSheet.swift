@@ -10,7 +10,9 @@ struct OrganizationMemberAdditionSheet: View {
     @State private var isSaving = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.customerIntelligenceAddPerson)
+
             Form {
                 Section {
                     if availableContacts.isEmpty {
@@ -37,14 +39,14 @@ struct OrganizationMemberAdditionSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceAddPerson)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.done, action: dismiss.callAsFunction)
-                }
+
+            DahliaSheetActionBar {
+                Button(L10n.done, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .frame(minWidth: 540, minHeight: 380)
+        .dahliaSimpleWindowStyle()
     }
 
     private var availableContacts: [ContactRecord] {

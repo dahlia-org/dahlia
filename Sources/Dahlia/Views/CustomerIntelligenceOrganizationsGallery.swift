@@ -20,7 +20,6 @@ struct CustomerIntelligenceOrganizationsGallery: View {
             }
             .padding()
         }
-        .navigationTitle(L10n.organizations)
         .overlay {
             if isLoading, customers.isEmpty {
                 ProgressView()

@@ -51,12 +51,13 @@ struct CustomerIntelligenceContactsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CustomerIntelligenceContactFilterBar(filter: $model.filter)
+            CustomerIntelligenceContactFilterBar(
+                searchText: $model.searchText,
+                filter: $model.filter
+            )
             Divider()
             contactTable
         }
-        .navigationTitle(L10n.people)
-        .searchable(text: $model.searchText, prompt: L10n.customerIntelligenceSearchContacts)
         .inspector(isPresented: $showsInspector) {
             contactInspector
                 .inspectorColumnWidth(min: 320, ideal: 390, max: 540)
@@ -284,7 +285,11 @@ private struct CustomerIntelligenceMembershipSheet: View {
     @State private var roleLabel = ""
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.customerIntelligenceManageMemberships)
+
+            Divider()
+
             Form {
                 if let errorMessage = model.errorMessage {
                     Section {
@@ -343,14 +348,16 @@ private struct CustomerIntelligenceMembershipSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceManageMemberships)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.done, action: dismiss.callAsFunction)
-                }
+
+            Divider()
+
+            DahliaSheetActionBar {
+                Button(L10n.done, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .frame(minWidth: 560, minHeight: 520)
+        .dahliaSimpleWindowStyle()
     }
 
     private var availableOrganizations: [OrganizationRecord] {
@@ -360,18 +367,28 @@ private struct CustomerIntelligenceMembershipSheet: View {
 }
 
 private struct CustomerIntelligenceContactFilterBar: View {
+    @Binding var searchText: String
     @Binding var filter: CustomerIntelligenceContactsViewModel.Filter
 
     var body: some View {
-        Picker(L10n.filter, selection: $filter) {
-            Text(L10n.all).tag(CustomerIntelligenceContactsViewModel.Filter.all)
-            Text(L10n.unassignedPeople).tag(CustomerIntelligenceContactsViewModel.Filter.unassigned)
-            Text(L10n.customerIntelligenceEmailNotSet)
-                .tag(CustomerIntelligenceContactsViewModel.Filter.emailMissing)
+        HStack(spacing: 12) {
+            DahliaInlineSearchField(
+                placeholder: L10n.customerIntelligenceSearchContacts,
+                text: $searchText
+            )
+
+            Picker(L10n.filter, selection: $filter) {
+                Text(L10n.all).tag(CustomerIntelligenceContactsViewModel.Filter.all)
+                Text(L10n.unassignedPeople).tag(CustomerIntelligenceContactsViewModel.Filter.unassigned)
+                Text(L10n.customerIntelligenceEmailNotSet)
+                    .tag(CustomerIntelligenceContactsViewModel.Filter.emailMissing)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 420)
+
+            Spacer(minLength: 0)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 420)
         .padding()
     }
 }
@@ -393,7 +410,11 @@ private struct CustomerIntelligenceContactEditorSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.customerIntelligenceEditContact)
+
+            Divider()
+
             Form {
                 if let errorMessage = model.errorMessage {
                     Section {
@@ -413,20 +434,21 @@ private struct CustomerIntelligenceContactEditorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceEditContact)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
+
+            Divider()
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.save) {
+                    Task { await save() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.save) {
-                        Task { await save() }
-                    }
-                    .disabled(displayName.nilIfBlank == nil || model.isSaving)
-                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(displayName.nilIfBlank == nil || model.isSaving)
             }
         }
         .frame(minWidth: 500, minHeight: 340)
+        .dahliaSimpleWindowStyle()
         .alert(item: Binding(
             get: { model.pendingResolution },
             set: { model.pendingResolution = $0 }

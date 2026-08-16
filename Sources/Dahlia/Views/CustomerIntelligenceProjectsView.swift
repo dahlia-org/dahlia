@@ -50,38 +50,48 @@ struct CustomerIntelligenceProjectsView: View {
     }
 
     var body: some View {
-        projectTable
-            .navigationTitle(L10n.projects)
-            .searchable(text: $model.searchText, prompt: L10n.customerIntelligenceSearchProjects)
-            .inspector(isPresented: $showsInspector) {
-                projectInspector
-                    .inspectorColumnWidth(min: 340, ideal: 420, max: 580)
-            }
-            .task(id: reloadToken) {
-                selectedProjectID = initialProjectID ?? selectedProjectID
-                await model.load(selectedID: selectedProjectID)
-                reconcileSelection()
-            }
-            .onChange(of: initialProjectID) { _, id in
-                selectedProjectID = id
-            }
-            .onChange(of: selectedProjectID) { _, id in
-                onSelectProject(id)
-                Task { await model.select(id) }
-            }
-            .sheet(item: $editedProject) { project in
-                CustomerIntelligenceProjectEditorSheet(
-                    project: project,
-                    effectiveProjectType: model.detail?.summary.effectiveType ?? project.projectType ?? .undefined,
-                    projects: sidebarViewModel.flatProjects,
-                    sidebarViewModel: sidebarViewModel,
-                    model: model
+        VStack(spacing: 0) {
+            HStack {
+                DahliaInlineSearchField(
+                    placeholder: L10n.customerIntelligenceSearchProjects,
+                    text: $model.searchText
                 )
+                Spacer(minLength: 0)
             }
-            .customerIntelligenceErrorAlert(
-                title: L10n.customerIntelligenceProjectsError,
-                message: $model.errorMessage
+            .padding()
+
+            Divider()
+            projectTable
+        }
+        .inspector(isPresented: $showsInspector) {
+            projectInspector
+                .inspectorColumnWidth(min: 340, ideal: 420, max: 580)
+        }
+        .task(id: reloadToken) {
+            selectedProjectID = initialProjectID ?? selectedProjectID
+            await model.load(selectedID: selectedProjectID)
+            reconcileSelection()
+        }
+        .onChange(of: initialProjectID) { _, id in
+            selectedProjectID = id
+        }
+        .onChange(of: selectedProjectID) { _, id in
+            onSelectProject(id)
+            Task { await model.select(id) }
+        }
+        .sheet(item: $editedProject) { project in
+            CustomerIntelligenceProjectEditorSheet(
+                project: project,
+                effectiveProjectType: model.detail?.summary.effectiveType ?? project.projectType ?? .undefined,
+                projects: sidebarViewModel.flatProjects,
+                sidebarViewModel: sidebarViewModel,
+                model: model
             )
+        }
+        .customerIntelligenceErrorAlert(
+            title: L10n.customerIntelligenceProjectsError,
+            message: $model.errorMessage
+        )
     }
 
     private var projectTable: some View {
@@ -273,7 +283,11 @@ private struct CustomerIntelligenceProjectEditorSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.customerIntelligenceEditProject)
+
+            Divider()
+
             Form {
                 if let displayedError = errorMessage {
                     Section {
@@ -314,21 +328,22 @@ private struct CustomerIntelligenceProjectEditorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.customerIntelligenceEditProject)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
+
+            Divider()
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.save) {
+                    model.setSaving(true)
+                    Task { await save() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.save) {
-                        model.setSaving(true)
-                        Task { await save() }
-                    }
-                    .disabled(name.nilIfBlank == nil || model.isSaving)
-                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.nilIfBlank == nil || model.isSaving)
             }
         }
         .frame(minWidth: 560, minHeight: 520)
+        .dahliaSimpleWindowStyle()
     }
 
     private var parentCandidates: [FlatProjectRow] {

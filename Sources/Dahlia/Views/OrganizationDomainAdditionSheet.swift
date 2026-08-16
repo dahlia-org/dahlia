@@ -10,7 +10,9 @@ struct OrganizationDomainAdditionSheet: View {
     @State private var isSaving = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: L10n.addOrganizationDomain)
+
             Form {
                 Section {
                     TextField(L10n.organizationDomain, text: $domainName)
@@ -25,20 +27,19 @@ struct OrganizationDomainAdditionSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(L10n.addOrganizationDomain)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.add) {
+                    Task { await addDomain() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.add) {
-                        Task { await addDomain() }
-                    }
-                    .disabled(domainName.nilIfBlank == nil || isSaving)
-                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(domainName.nilIfBlank == nil || isSaving)
             }
         }
         .frame(minWidth: 460, minHeight: 240)
+        .dahliaSimpleWindowStyle()
     }
 
     private func addDomain() async {

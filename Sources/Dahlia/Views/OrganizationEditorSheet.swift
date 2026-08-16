@@ -26,7 +26,9 @@ struct OrganizationEditorSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            DahliaSheetHeader(title: title)
+
             Form {
                 Section {
                     TextField(L10n.name, text: $name)
@@ -43,20 +45,19 @@ struct OrganizationEditorSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle(title)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.cancel, action: dismiss.callAsFunction)
+
+            DahliaSheetActionBar {
+                Button(L10n.cancel, action: dismiss.callAsFunction)
+                    .keyboardShortcut(.cancelAction)
+                Button(L10n.save) {
+                    Task { await save() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.save) {
-                        Task { await save() }
-                    }
-                    .disabled(!hasChanges || name.nilIfBlank == nil || isSaving)
-                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!hasChanges || name.nilIfBlank == nil || isSaving)
             }
         }
         .frame(minWidth: 520, minHeight: 300)
+        .dahliaSimpleWindowStyle()
     }
 
     private var title: String {

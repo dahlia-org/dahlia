@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct CustomerIntelligenceToolbar: ToolbarContent {
+struct CustomerIntelligenceHeader: View {
     let section: CustomerIntelligenceSection
     let scope: CustomerIntelligenceScope
     let selectedOrganizationID: UUID?
@@ -10,19 +10,25 @@ struct CustomerIntelligenceToolbar: ToolbarContent {
     let onCreate: (CustomerIntelligenceCreationRequest) -> Void
     let onOrganizeWithAI: () -> Void
 
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
+    var body: some View {
+        DahliaWindowHeader {
             CustomerIntelligenceScopePicker(
                 scope: scope,
                 roots: roots,
                 onSelect: onSelectScope
             )
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
+            .frame(maxWidth: 360)
+
+            Spacer(minLength: 12)
+
             creationMenu
 
-            Button(L10n.organizeWithAI, systemImage: "sparkles", action: onOrganizeWithAI)
-                .disabled(scope == .all)
+            DahliaWindowHeaderIconButton(
+                label: L10n.organizeWithAI,
+                systemImage: "sparkles",
+                action: onOrganizeWithAI
+            )
+            .disabled(scope == .all)
 
             Menu(L10n.customerIntelligenceViewOptions, systemImage: "textformat.size") {
                 Picker(
@@ -44,9 +50,13 @@ struct CustomerIntelligenceToolbar: ToolbarContent {
                         .tag(CustomerIntelligenceTableDensity.compact)
                 }
             }
+            .menuStyle(.borderlessButton)
+            .help(L10n.customerIntelligenceViewOptions)
 
-            Button(
-                showsInspector ? L10n.customerIntelligenceHideInspector : L10n.customerIntelligenceShowInspector,
+            DahliaWindowHeaderIconButton(
+                label: showsInspector
+                    ? L10n.customerIntelligenceHideInspector
+                    : L10n.customerIntelligenceShowInspector,
                 systemImage: "sidebar.right",
                 action: { showsInspector.toggle() }
             )
@@ -58,42 +68,54 @@ struct CustomerIntelligenceToolbar: ToolbarContent {
     private var creationMenu: some View {
         switch section {
         case .organizations:
-            Button(
-                scope == .all ? L10n.newOrganization : L10n.newDepartment,
+            DahliaWindowHeaderIconButton(
+                label: scope == .all ? L10n.newOrganization : L10n.newDepartment,
                 systemImage: "plus",
                 action: {
                     onCreate(scope == .all
                         ? .organization(parentID: nil)
-                        : .organization(parentID: selectedOrganizationID ?? scope.organizationID))
+                        : .organization(parentID: creationOrganizationID))
                 }
             )
         case .contacts:
-            Button(L10n.customerIntelligenceNewPerson, systemImage: "plus") {
-                onCreate(.contact(organizationID: selectedOrganizationID ?? scope.organizationID))
-            }
+            DahliaWindowHeaderIconButton(
+                label: L10n.customerIntelligenceNewPerson,
+                systemImage: "plus",
+                action: { onCreate(.contact(organizationID: creationOrganizationID)) }
+            )
         case .projects:
-            Button(L10n.newProject, systemImage: "plus") {
-                onCreate(.project(organizationID: selectedOrganizationID ?? scope.organizationID))
-            }
+            DahliaWindowHeaderIconButton(
+                label: L10n.newProject,
+                systemImage: "plus",
+                action: { onCreate(.project(organizationID: creationOrganizationID)) }
+            )
         case .topics:
-            Button(L10n.customerIntelligenceNewTopic, systemImage: "plus") {
-                onCreate(.topic(organizationID: selectedOrganizationID ?? scope.organizationID))
-            }
+            DahliaWindowHeaderIconButton(
+                label: L10n.customerIntelligenceNewTopic,
+                systemImage: "plus",
+                action: { onCreate(.topic(organizationID: creationOrganizationID)) }
+            )
         case .overview, .insights:
             Menu(L10n.create, systemImage: "plus") {
                 Button(L10n.newOrganization, systemImage: "building.2") {
                     onCreate(.organization(parentID: nil))
                 }
                 Button(L10n.customerIntelligenceNewPerson, systemImage: "person.badge.plus") {
-                    onCreate(.contact(organizationID: selectedOrganizationID ?? scope.organizationID))
+                    onCreate(.contact(organizationID: creationOrganizationID))
                 }
                 Button(L10n.newProject, systemImage: "folder.badge.plus") {
-                    onCreate(.project(organizationID: selectedOrganizationID ?? scope.organizationID))
+                    onCreate(.project(organizationID: creationOrganizationID))
                 }
                 Button(L10n.customerIntelligenceNewTopic, systemImage: "text.bubble") {
-                    onCreate(.topic(organizationID: selectedOrganizationID ?? scope.organizationID))
+                    onCreate(.topic(organizationID: creationOrganizationID))
                 }
             }
+            .menuStyle(.borderlessButton)
+            .help(L10n.create)
         }
+    }
+
+    private var creationOrganizationID: UUID? {
+        selectedOrganizationID ?? scope.organizationID
     }
 }
