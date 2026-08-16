@@ -17,7 +17,6 @@ struct CodexChatHeader: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.back,
                     systemImage: "chevron.left",
-                    helpAlignment: .bottomLeading,
                     action: onBack
                 )
                 Text(L10n.chatHistory)
@@ -27,7 +26,6 @@ struct CodexChatHeader: View {
                     DahliaWindowHeaderIconButton(
                         label: L10n.newChat,
                         systemImage: "square.and.pencil",
-                        helpAlignment: .bottomLeading,
                         action: onNewChat
                     )
                     Divider()
@@ -45,7 +43,6 @@ struct CodexChatHeader: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.chatHistory,
                     systemImage: "clock.arrow.circlepath",
-                    helpAlignment: .bottomTrailing,
                     action: onShowHistory
                 )
             }
@@ -54,7 +51,6 @@ struct CodexChatHeader: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.popOutChat,
                     systemImage: "rectangle.on.rectangle",
-                    helpAlignment: .bottomTrailing,
                     action: onPopOut
                 )
             }
@@ -63,7 +59,6 @@ struct CodexChatHeader: View {
                 DahliaWindowHeaderIconButton(
                     label: L10n.hideChat,
                     systemImage: "sidebar.right",
-                    helpAlignment: .bottomTrailing,
                     action: onClose
                 )
             }
