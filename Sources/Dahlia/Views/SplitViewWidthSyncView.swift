@@ -1,39 +1,5 @@
 import SwiftUI
 
-/// サイドバーの開閉中に、途中の分割位置をユーザー設定として保存しないための遅延同期ビュー。
-struct DeferredSplitViewWidthSyncView: View {
-    let width: CGFloat
-    let onWidthChange: (CGFloat) -> Void
-    var pane: SplitViewWidthSyncView.Pane = .first
-    var widthSourceID = 0
-    let isVisible: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isReady = false
-
-    var body: some View {
-        Group {
-            if isVisible, isReady {
-                SplitViewWidthSyncView(
-                    width: width,
-                    onWidthChange: onWidthChange,
-                    pane: pane,
-                    widthSourceID: widthSourceID
-                )
-            }
-        }
-        .task(id: isVisible) {
-            isReady = false
-            guard isVisible else { return }
-            if !reduceMotion {
-                try? await Task.sleep(for: .seconds(MainSidebarTransition.duration))
-                guard !Task.isCancelled else { return }
-            }
-            isReady = true
-        }
-    }
-}
-
 /// `HSplitView` の分割位置を共有状態と同期する。
 struct SplitViewWidthSyncView: NSViewRepresentable {
     enum Pane {
@@ -57,6 +23,9 @@ struct SplitViewWidthSyncView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> SplitViewAttachmentTrackingView {
         let view = SplitViewAttachmentTrackingView()
+        if context.transaction.animation != nil, !context.transaction.disablesAnimations {
+            view.attachmentDelay = .seconds(MainSidebarTransition.duration)
+        }
         view.onAttachmentChange = { view in
             Self.configureAttachment(of: view, coordinator: context.coordinator)
         }

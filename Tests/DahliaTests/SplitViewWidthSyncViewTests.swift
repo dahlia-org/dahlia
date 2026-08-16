@@ -171,6 +171,23 @@
             #expect(abs(sidebar.frame.width - 360) < 0.5)
         }
 
+        @Test
+        func attachmentUpdateCanBeDeferredUntilAnAnimationCompletes() async {
+            let markerView = SplitViewAttachmentTrackingView()
+            var attachmentCount = 0
+            markerView.attachmentDelay = .milliseconds(20)
+            markerView.onAttachmentChange = { _ in
+                attachmentCount += 1
+            }
+
+            markerView.scheduleAttachmentUpdate()
+
+            #expect(attachmentCount == 0)
+            let didAttach = await pollUntil { attachmentCount == 1 }
+            #expect(didAttach)
+            #expect(markerView.attachmentDelay == .zero)
+        }
+
         private func makeFixture(resizeDelay: Duration = .zero) -> Fixture {
             makeFixture(resizeDelay: resizeDelay, onResizeTaskCompletion: nil)
         }

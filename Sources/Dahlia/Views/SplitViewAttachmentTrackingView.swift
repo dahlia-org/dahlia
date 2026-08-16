@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class SplitViewAttachmentTrackingView: NSView {
     var onAttachmentChange: ((SplitViewAttachmentTrackingView) -> Void)?
+    var attachmentDelay = Duration.zero
 
     private var attachmentTask: Task<Void, Never>?
 
@@ -19,8 +20,15 @@ final class SplitViewAttachmentTrackingView: NSView {
     func scheduleAttachmentUpdate() {
         attachmentTask?.cancel()
         attachmentTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let delay = attachmentDelay
+            if delay > .zero {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
+                attachmentDelay = .zero
+            }
             await Task.yield()
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled else { return }
             onAttachmentChange?(self)
         }
     }

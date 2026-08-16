@@ -22,12 +22,13 @@ extension View {
                 .ignoresSafeArea()
         }
         .background {
-            DeferredSplitViewWidthSyncView(
-                width: width,
-                onWidthChange: onWidthChange,
-                pane: .last,
-                isVisible: isVisible
-            )
+            if isVisible {
+                SplitViewWidthSyncView(
+                    width: width,
+                    onWidthChange: onWidthChange,
+                    pane: .last
+                )
+            }
         }
     }
 }
