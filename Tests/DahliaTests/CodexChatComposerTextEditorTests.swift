@@ -15,16 +15,56 @@ import SwiftUI
         }
 
         @Test
-        func editorGrowsWithContentAndCapsItsVisibleHeight() throws {
+        func emptyThroughTwoLinesUseTheMinimumHeight() throws {
+            let empty = ComposerTextEditorHarness(text: "")
             let singleLine = ComposerTextEditorHarness(text: "One line")
-            let longDraft = ComposerTextEditorHarness(text: String(repeating: "Line\n", count: 20))
+            let twoLines = ComposerTextEditorHarness(text: lines(2))
 
+            let emptyScrollView = try #require(empty.textView.enclosingScrollView)
             let singleLineScrollView = try #require(singleLine.textView.enclosingScrollView)
-            let longDraftScrollView = try #require(longDraft.textView.enclosingScrollView)
+            let twoLineScrollView = try #require(twoLines.textView.enclosingScrollView)
 
-            #expect(singleLineScrollView.frame.height < longDraftScrollView.frame.height)
-            #expect(singleLineScrollView.frame.height < 40)
-            #expect(longDraftScrollView.frame.height < 100)
+            #expect(emptyScrollView.frame.height == singleLineScrollView.frame.height)
+            #expect(singleLineScrollView.frame.height == twoLineScrollView.frame.height)
+        }
+
+        @Test
+        func editorGrowsFromThreeThroughThirteenLinesAndThenCapsItsHeight() throws {
+            let twoLines = ComposerTextEditorHarness(text: lines(2))
+            let threeLines = ComposerTextEditorHarness(text: lines(3))
+            let thirteenLines = ComposerTextEditorHarness(text: lines(13))
+            let fourteenLines = ComposerTextEditorHarness(text: lines(14))
+
+            let twoLineScrollView = try #require(twoLines.textView.enclosingScrollView)
+            let threeLineScrollView = try #require(threeLines.textView.enclosingScrollView)
+            let thirteenLineScrollView = try #require(thirteenLines.textView.enclosingScrollView)
+            let fourteenLineScrollView = try #require(fourteenLines.textView.enclosingScrollView)
+
+            #expect(twoLineScrollView.frame.height < threeLineScrollView.frame.height)
+            #expect(threeLineScrollView.frame.height < thirteenLineScrollView.frame.height)
+            #expect(thirteenLineScrollView.frame.height == fourteenLineScrollView.frame.height)
+        }
+
+        @Test
+        func editorGrowsForVisuallyWrappedLines() throws {
+            let shortDraft = ComposerTextEditorHarness(text: "Short draft")
+            let wrappedDraft = ComposerTextEditorHarness(text: String(repeating: "Wrapped content ", count: 20))
+
+            let shortDraftScrollView = try #require(shortDraft.textView.enclosingScrollView)
+            let wrappedDraftScrollView = try #require(wrappedDraft.textView.enclosingScrollView)
+
+            #expect(shortDraftScrollView.frame.height < wrappedDraftScrollView.frame.height)
+        }
+
+        @Test
+        func trailingNewlineCreatesTheNextVisibleLine() throws {
+            let twoLines = ComposerTextEditorHarness(text: lines(2))
+            let trailingNewline = ComposerTextEditorHarness(text: lines(2) + "\n")
+
+            let twoLineScrollView = try #require(twoLines.textView.enclosingScrollView)
+            let trailingNewlineScrollView = try #require(trailingNewline.textView.enclosingScrollView)
+
+            #expect(twoLineScrollView.frame.height < trailingNewlineScrollView.frame.height)
         }
 
         @Test
@@ -65,6 +105,10 @@ import SwiftUI
 
             #expect(harness.state.submissionCount == 0)
             #expect(harness.state.text == "Draft\n")
+        }
+
+        private func lines(_ count: Int) -> String {
+            (1 ... count).map(String.init).joined(separator: "\n")
         }
     }
 

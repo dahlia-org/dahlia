@@ -18,9 +18,26 @@ struct CodexChatComposerInputRow: View {
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
     let onHover: (HoverPhase) -> Void
+    let panelVerticalOffset: CGFloat
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        VStack(spacing: 0) {
+            CodexChatComposerTextEditor(
+                text: $session.draft,
+                isFocused: $isComposerFocused,
+                onSubmit: onSubmit,
+                onMoveCommand: onMoveCommand,
+                onExitCommand: onExitCommand,
+                onPasteImages: onPasteImages,
+                onHover: onHover
+            )
+
+            controlBar
+        }
+    }
+
+    private var controlBar: some View {
+        HStack(spacing: 10) {
             Button(action: onToggleAddPanel) {
                 Label(L10n.addToChat, systemImage: "plus")
                     .labelStyle(.iconOnly)
@@ -42,22 +59,14 @@ struct CodexChatComposerInputRow: View {
                         onSelectMeeting: onSelectMeeting
                     )
                     .codexChatDismissOnOutsideClick(perform: onExitCommand)
-                    .offset(y: -(CodexChatDesign.controlSize + 8))
+                    .offset(y: panelVerticalOffset)
                     .zIndex(1)
                 }
             }
             .onExitCommand(perform: onExitCommand)
             .zIndex(showsAddPanel ? 1 : 0)
 
-            CodexChatComposerTextEditor(
-                text: $session.draft,
-                isFocused: $isComposerFocused,
-                onSubmit: onSubmit,
-                onMoveCommand: onMoveCommand,
-                onExitCommand: onExitCommand,
-                onPasteImages: onPasteImages,
-                onHover: onHover
-            )
+            Spacer(minLength: 0)
 
             if session.isLoading, session.models.isEmpty {
                 ProgressView()
@@ -99,49 +108,52 @@ struct CodexChatComposerTextEditor: View {
     let onPasteImages: () -> Bool
     let onHover: (HoverPhase) -> Void
 
-    private static let maximumLineCount = 5
+    private static let maximumLineCount = 13
 
     var body: some View {
-        // The capped Text supplies intrinsic height while TextEditor owns native scrolling.
-        Text(text.isEmpty ? " " : text)
-            .font(.body)
-            .lineLimit(Self.maximumLineCount)
-            .padding(.leading, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityHidden(true)
-            .hidden()
-            .overlay(alignment: .topLeading) {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $text)
-                        .font(.body)
-                        .focused($isFocused)
-                        .scrollContentBackground(.hidden)
-                        .padding(.leading, 3)
-                        .padding(.vertical, 6)
-                        .accessibilityLabel(L10n.messageCodex)
-                        .onMoveCommand(perform: onMoveCommand)
-                        .onExitCommand(perform: onExitCommand)
-                        .onKeyPress(.return, phases: .down, action: handleReturnKey)
-                        .onKeyPress(.tab, phases: .down, action: handleTabKey)
-                        .onKeyPress("v", phases: .down) { keyPress in
-                            guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
-                            return .handled
-                        }
-
-                    if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
-                        Text(L10n.messageCodex)
-                            .font(.body)
-                            .foregroundStyle(.tertiary)
-                            .padding(.leading, 8)
-                            .padding(.top, 6)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
+        // The capped text supplies intrinsic height while the two-line reference sets the minimum.
+        ZStack(alignment: .topLeading) {
+            Text(text.isEmpty ? " " : text)
+                .lineLimit(Self.maximumLineCount)
+            Text(verbatim: " \n ")
+        }
+        .font(.body)
+        .padding(.leading, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityHidden(true)
+        .hidden()
+        .overlay(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $text)
+                    .font(.body)
+                    .focused($isFocused)
+                    .scrollContentBackground(.hidden)
+                    .padding(.leading, 3)
+                    .padding(.vertical, 6)
+                    .accessibilityLabel(L10n.messageCodex)
+                    .onMoveCommand(perform: onMoveCommand)
+                    .onExitCommand(perform: onExitCommand)
+                    .onKeyPress(.return, phases: .down, action: handleReturnKey)
+                    .onKeyPress(.tab, phases: .down, action: handleTabKey)
+                    .onKeyPress("v", phases: .down) { keyPress in
+                        guard keyPress.modifiers.contains(.command), onPasteImages() else { return .ignored }
+                        return .handled
                     }
+
+                if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
+                    Text(L10n.messageCodex)
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 8)
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
-                .contentShape(.rect)
-                .onContinuousHover(perform: onHover)
             }
+            .contentShape(.rect)
+            .onContinuousHover(perform: onHover)
+        }
     }
 
     static func shouldShowPlaceholder(text: String, isFocused: Bool) -> Bool {
