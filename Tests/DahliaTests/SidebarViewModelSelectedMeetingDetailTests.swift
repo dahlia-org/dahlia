@@ -7,6 +7,22 @@ import GRDB
 
     @MainActor
     struct SidebarViewModelSelectedMeetingDetailTests {
+        @Test
+        func selectionLoadingResumesAfterRecordingLifecycleTransition() {
+            #expect(!ContentView.canLoadMeetingSelection(
+                isRecordingStartPending: true,
+                isFinalizingRecording: false
+            ))
+            #expect(!ContentView.canLoadMeetingSelection(
+                isRecordingStartPending: false,
+                isFinalizingRecording: true
+            ))
+            #expect(ContentView.canLoadMeetingSelection(
+                isRecordingStartPending: false,
+                isFinalizingRecording: false
+            ))
+        }
+
         @Test(.timeLimit(.minutes(3)))
         func rapidSelectionChangePublishesOnlyLatestMeetingDetail() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()

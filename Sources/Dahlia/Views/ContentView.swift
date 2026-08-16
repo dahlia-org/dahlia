@@ -233,10 +233,12 @@ struct ContentView: View {
             }
             syncChatContext()
         }
-        .onChange(of: sidebarViewModel.selectedMeetingDetail) { _, detail in
-            guard let detail,
-                  detail.meetingId != viewModel.currentMeetingId else { return }
-            handleMeetingSelection(detail)
+        .onChange(of: sidebarViewModel.selectedMeetingDetail) { _, _ in
+            loadSelectedMeetingIfPossible()
+        }
+        .onChange(of: canLoadSelectedMeeting) { _, canLoad in
+            guard canLoad else { return }
+            loadSelectedMeetingIfPossible()
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in
             guard oldId != newId else { return }
@@ -373,6 +375,13 @@ private extension ContentView {
     private var canGoForward: Bool { mainWindowNavigation.canGoForward && canNavigateHistory }
 
     private var hasMeetingDetail: Bool { viewModel.hasDraftMeeting || viewModel.currentMeetingId != nil }
+
+    private var canLoadSelectedMeeting: Bool {
+        Self.canLoadMeetingSelection(
+            isRecordingStartPending: viewModel.isRecordingStartPending,
+            isFinalizingRecording: viewModel.isFinalizingRecording
+        )
+    }
 
     private var canNavigateHistory: Bool {
         !viewModel.hasDraftMeeting
@@ -621,9 +630,23 @@ private extension ContentView {
             vaultURL: vault.url
         )
     }
+
+    private func loadSelectedMeetingIfPossible() {
+        guard canLoadSelectedMeeting,
+              let detail = sidebarViewModel.selectedMeetingDetail,
+              detail.meetingId != viewModel.currentMeetingId else { return }
+        handleMeetingSelection(detail)
+    }
 }
 
 extension ContentView {
+    static func canLoadMeetingSelection(
+        isRecordingStartPending: Bool,
+        isFinalizingRecording: Bool
+    ) -> Bool {
+        !isRecordingStartPending && !isFinalizingRecording
+    }
+
     static func isMeetingSelectionPending(
         selectedMeetingID: UUID?,
         currentMeetingID: UUID?
