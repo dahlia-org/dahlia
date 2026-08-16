@@ -4,6 +4,7 @@ struct DahliaWindowHeaderIconButton: View {
     let label: String
     let systemImage: String
     let helpShortcut: String?
+    let helpAlignment: Alignment
     let action: () -> Void
 
     @Environment(DahliaWindowHeaderHelpController.self) private var helpController
@@ -14,11 +15,13 @@ struct DahliaWindowHeaderIconButton: View {
         label: String,
         systemImage: String,
         helpShortcut: String? = nil,
+        helpAlignment: Alignment = .bottom,
         action: @escaping () -> Void
     ) {
         self.label = label
         self.systemImage = systemImage
         self.helpShortcut = helpShortcut
+        self.helpAlignment = helpAlignment
         self.action = action
     }
 
@@ -37,7 +40,7 @@ struct DahliaWindowHeaderIconButton: View {
             isHovering ? DahliaDesign.hoverHighlightColor : .clear,
             in: .rect(cornerRadius: 8)
         )
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: helpAlignment) {
             if helpController.visibleHelpID == helpID {
                 DahliaWindowHeaderHelp(label: label, shortcut: helpShortcut)
                     .offset(y: 42)
