@@ -5,6 +5,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
     private static var animationDuration: TimeInterval { 0.3 }
 
     let width: CGFloat
+    let contentMinimumWidth: CGFloat
     let isVisible: Bool
     let onWidthChange: (CGFloat) -> Void
     @ViewBuilder let content: Content
@@ -17,11 +18,13 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
         GeometryReader { geometry in
             let restingSidebarWidth = MainChatSidebarLayout.effectiveWidth(
                 width,
-                availableWidth: geometry.size.width
+                availableWidth: geometry.size.width,
+                contentMinimumWidth: contentMinimumWidth
             )
             let sidebarWidth = MainChatSidebarLayout.effectiveWidth(
                 restingSidebarWidth - resizeTranslation,
-                availableWidth: geometry.size.width
+                availableWidth: geometry.size.width,
+                contentMinimumWidth: contentMinimumWidth
             )
             let visibleSidebarWidth = isVisible ? sidebarWidth : 0
 
@@ -58,7 +61,7 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
             .clipped()
             .animation(reduceMotion ? nil : .smooth(duration: Self.animationDuration), value: isVisible)
         }
-        .frame(minWidth: isVisible ? MainChatSidebarLayout.minimumSplitWidth : MainChatSidebarLayout.minimumContentWidth)
+        .frame(minWidth: isVisible ? MainChatSidebarLayout.minimumWidth + contentMinimumWidth : contentMinimumWidth)
     }
 
     private func resizeHandle(from width: CGFloat, availableWidth: CGFloat) -> some View {
@@ -86,7 +89,8 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
             .onEnded { value in
                 onWidthChange(MainChatSidebarLayout.effectiveWidth(
                     width - value.translation.width,
-                    availableWidth: availableWidth
+                    availableWidth: availableWidth,
+                    contentMinimumWidth: contentMinimumWidth
                 ))
             }
     }
@@ -103,7 +107,8 @@ struct MainChatSplitView<Content: View, Sidebar: View>: View {
         }
         onWidthChange(MainChatSidebarLayout.effectiveWidth(
             width + adjustment,
-            availableWidth: availableWidth
+            availableWidth: availableWidth,
+            contentMinimumWidth: contentMinimumWidth
         ))
     }
 }

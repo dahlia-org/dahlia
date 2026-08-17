@@ -95,13 +95,14 @@
         }
 
         @Test
-        func chatSidebarReservesTheContentMinimumWidth() {
+        func chatSidebarReservesTheVisibleMainSidebarWidth() {
             let width = MainChatSidebarLayout.effectiveWidth(
                 MainChatSidebarLayout.maximumWidth,
-                availableWidth: MainChatSidebarLayout.minimumSplitWidth
+                availableWidth: MainSidebarLayout.minimumSplitWidth + MainChatSidebarLayout.defaultWidth,
+                contentMinimumWidth: MainSidebarLayout.minimumSplitWidth
             )
 
-            #expect(width == MainChatSidebarLayout.minimumWidth)
+            #expect(width == MainChatSidebarLayout.defaultWidth)
         }
 
         private func temporarySidebarDefaults() throws -> (defaults: UserDefaults, suiteName: String) {
