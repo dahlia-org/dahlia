@@ -21,7 +21,9 @@ struct CalendarScheduleView: View {
 
                 content
             }
-            .padding(28)
+            .padding(.horizontal, 28)
+            .padding(.top, DahliaDesign.detailTopPadding)
+            .padding(.bottom, 28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(.background)

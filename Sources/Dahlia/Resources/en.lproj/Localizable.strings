@@ -101,9 +101,10 @@
 "Good afternoon" = "Good afternoon";
 "Good evening" = "Good evening";
 "Meetings" = "Meetings";
+"Recent" = "Recent";
 "Projects" = "Projects";
 "Organize Sidebar" = "Organize Sidebar";
-"Chronological" = "Recents";
+"Chronological" = "Chronological";
 "Group by Project" = "Group by Project";
 "Pinned" = "Pinned";
 "Project Options" = "Project Options";

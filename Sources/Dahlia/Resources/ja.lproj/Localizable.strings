@@ -101,9 +101,10 @@
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
 "Meetings" = "ミーティング";
+"Recent" = "最近の項目";
 "Projects" = "Projects";
 "Organize Sidebar" = "サイドバーを整理";
-"Chronological" = "最近の項目";
+"Chronological" = "時系列";
 "Group by Project" = "プロジェクト別";
 "Pinned" = "ピン留め";
 "Project Options" = "プロジェクトのオプション";
