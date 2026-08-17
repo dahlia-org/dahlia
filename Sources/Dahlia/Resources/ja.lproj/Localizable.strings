@@ -156,6 +156,17 @@
 "Nature" = "自然";
 "Work" = "仕事";
 "Analytics" = "分析";
+"Award" = "受賞";
+"Fitness" = "フィットネス";
+"Notes" = "ノート";
+"Balance" = "バランス";
+"Global" = "グローバル";
+"Travel" = "旅行";
+"Tools" = "ツール";
+"Animals" = "動物";
+"Science" = "科学";
+"Ideas" = "アイデア";
+"Favorite" = "お気に入り";
 "Rename Project" = "プロジェクト名を変更";
 "Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved." = "名前を変更すると、Project の論理パスと追跡中の Summary 出力を更新します。無関係なディレクトリやファイルは移動しません。";
 "Location" = "場所";

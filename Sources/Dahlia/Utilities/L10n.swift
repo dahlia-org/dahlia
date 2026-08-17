@@ -697,6 +697,17 @@ enum L10n {
     static var projectIconNature: String { String(localized: "Nature", bundle: bundle) }
     static var projectIconWork: String { String(localized: "Work", bundle: bundle) }
     static var projectIconAnalytics: String { String(localized: "Analytics", bundle: bundle) }
+    static var projectIconAward: String { String(localized: "Award", bundle: bundle) }
+    static var projectIconFitness: String { String(localized: "Fitness", bundle: bundle) }
+    static var projectIconNotes: String { String(localized: "Notes", bundle: bundle) }
+    static var projectIconBalance: String { String(localized: "Balance", bundle: bundle) }
+    static var projectIconGlobal: String { String(localized: "Global", bundle: bundle) }
+    static var projectIconTravel: String { String(localized: "Travel", bundle: bundle) }
+    static var projectIconTools: String { String(localized: "Tools", bundle: bundle) }
+    static var projectIconAnimals: String { String(localized: "Animals", bundle: bundle) }
+    static var projectIconScience: String { String(localized: "Science", bundle: bundle) }
+    static var projectIconIdeas: String { String(localized: "Ideas", bundle: bundle) }
+    static var projectIconFavorite: String { String(localized: "Favorite", bundle: bundle) }
     static var parentProject: String { String(localized: "Parent Project", bundle: bundle) }
     static var vaultRoot: String { String(localized: "Vault Root", bundle: bundle) }
     static var projectType: String { String(localized: "Project Type", bundle: bundle) }

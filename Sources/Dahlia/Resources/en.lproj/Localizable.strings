@@ -156,6 +156,17 @@
 "Nature" = "Nature";
 "Work" = "Work";
 "Analytics" = "Analytics";
+"Award" = "Award";
+"Fitness" = "Fitness";
+"Notes" = "Notes";
+"Balance" = "Balance";
+"Global" = "Global";
+"Travel" = "Travel";
+"Tools" = "Tools";
+"Animals" = "Animals";
+"Science" = "Science";
+"Ideas" = "Ideas";
+"Favorite" = "Favorite";
 "Rename Project" = "Rename Project";
 "Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved." = "Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved.";
 "Location" = "Location";

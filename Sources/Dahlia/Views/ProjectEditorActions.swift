@@ -25,6 +25,7 @@ struct ProjectEditorActions: View {
                     .frame(minWidth: 72)
             }
             .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.extraLarge)
             .keyboardShortcut(.cancelAction)
             .disabled(isSaving)
@@ -42,6 +43,7 @@ struct ProjectEditorActions: View {
                 .frame(minWidth: 96)
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.extraLarge)
             .keyboardShortcut(.defaultAction)
             .disabled(isSaveDisabled || isSaving)

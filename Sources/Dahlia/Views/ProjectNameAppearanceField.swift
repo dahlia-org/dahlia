@@ -16,7 +16,7 @@ struct ProjectNameAppearanceField: View {
             }
             .buttonStyle(.plain)
             .help(L10n.appearance)
-            .popover(isPresented: $isAppearancePickerPresented, arrowEdge: .top) {
+            .popover(isPresented: $isAppearancePickerPresented, arrowEdge: .bottom) {
                 ProjectAppearancePicker(appearance: $appearance)
             }
 
