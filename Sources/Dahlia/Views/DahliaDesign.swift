@@ -4,11 +4,10 @@ enum DahliaDesign {
     static let hoverHighlightColor = Color.gray.opacity(0.16)
     static let sidebarSelectionColor = Color.gray
     static let sidebarSelectionHighlightColor = sidebarSelectionColor.opacity(0.32)
-    static let sidebarPrimaryTextColor = Color.primary.opacity(0.78)
-    static let sidebarSecondaryTextColor = Color.primary.opacity(0.38)
     static let sidebarFontScale: CGFloat = 1.1
     static let sidebarFont = Font.body.scaled(by: sidebarFontScale)
     static let sidebarRowVerticalPadding: CGFloat = 3
+    static let sidebarNavigationVerticalPadding: CGFloat = 8
 
     static let windowHeaderHeight: CGFloat = 32
     static let windowHeaderHorizontalPadding: CGFloat = 12
@@ -41,7 +40,7 @@ enum DahliaDesign {
     static let tabIndicatorHeight: CGFloat = 2
 
     static let detailHorizontalPadding: CGFloat = 24
-    static let detailTopPadding: CGFloat = 20
+    static let detailTopPadding = windowHeaderHeight + sidebarNavigationVerticalPadding
     static let tabContentInset: CGFloat = 16
 }
 

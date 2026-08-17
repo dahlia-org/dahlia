@@ -168,6 +168,7 @@ enum L10n {
 
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
+    static var recent: String { String(localized: "Recent", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
     static var sidebarOrganization: String { String(localized: "Organize Sidebar", bundle: bundle) }
     static var chronological: String { String(localized: "Chronological", bundle: bundle) }

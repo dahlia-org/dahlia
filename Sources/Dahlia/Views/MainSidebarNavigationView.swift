@@ -57,6 +57,6 @@ struct MainSidebarNavigationView: View {
             .accessibilityAddTraits(isShowingUnprocessedRecordings ? .isSelected : [])
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, DahliaDesign.sidebarNavigationVerticalPadding)
     }
 }

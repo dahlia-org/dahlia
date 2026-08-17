@@ -15,7 +15,7 @@ struct MeetingSidebarHeader: View {
         HStack {
             Button(action: onToggleExpansion) {
                 HStack(spacing: 5) {
-                    Text(displayMode == .chronological ? L10n.meetings : L10n.project)
+                    Text(displayMode == .chronological ? L10n.recent : L10n.project)
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption)
                         .opacity(!isExpanded || isHovered ? 1 : 0)
@@ -23,7 +23,6 @@ struct MeetingSidebarHeader: View {
             }
             .buttonStyle(.plain)
             .font(DahliaDesign.sidebarFont)
-            .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
 
