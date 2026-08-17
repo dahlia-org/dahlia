@@ -16,12 +16,12 @@ struct ProjectManagementView: View {
     let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
     let onEditProject: (ProjectOverviewItem, String?, Int?) -> Void
+    let onRequestProjectDeletion: (ProjectOverviewItem) -> Void
     let isProjectEditorPresented: Bool
     let usesMeetingSidebar: Bool
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
 
-    @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var isShowingProjectOperationError = false
     @State private var projectOperationErrorMessage = ""
     @State private var projectDescription = ""
@@ -94,25 +94,6 @@ struct ProjectManagementView: View {
             mainWindowNavigation.reconcileProjectCatalog(
                 vaultId: vaultId,
                 projects: sidebarViewModel.allProjectItems
-            )
-        }
-        .sheet(item: $projectPendingDeletion) { project in
-            let hierarchy = projectHierarchy(for: project)
-            ProjectDeletionDialog(
-                project: project,
-                projectCount: hierarchy.count,
-                meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
-                moveDestinations: ProjectDestinationOptions.meetingMoveCandidates(
-                    whenDeleting: project,
-                    projects: sidebarViewModel.allProjectItems
-                ),
-                onConfirm: { disposition, deletesSummaryFiles in
-                    await deleteProject(
-                        project,
-                        meetingDisposition: disposition,
-                        deletesSummaryFiles: deletesSummaryFiles
-                    )
-                }
             )
         }
         .alert(L10n.projectOperationFailed, isPresented: $isShowingProjectOperationError) {} message: {
@@ -474,7 +455,7 @@ private extension ProjectManagementView {
 
     private func requestSelectedProjectDeletion() {
         guard let selectedProject else { return }
-        projectPendingDeletion = selectedProject
+        onRequestProjectDeletion(selectedProject)
     }
 
     private func handlePendingProjectNavigationIntent() {
@@ -489,27 +470,6 @@ private extension ProjectManagementView {
         case .delete:
             requestSelectedProjectDeletion()
         }
-    }
-
-    private func deleteProject(
-        _ project: ProjectOverviewItem,
-        meetingDisposition: ProjectMeetingDisposition,
-        deletesSummaryFiles: Bool
-    ) async -> String? {
-        guard await sidebarViewModel.deleteProjectHierarchy(
-            id: project.projectId,
-            meetingDisposition: meetingDisposition,
-            deletesSummaryFiles: deletesSummaryFiles
-        ) else {
-            return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
-        }
-        if mainWindowNavigation.selectedProjectId == project.projectId
-            || projectHierarchy(for: project).contains(where: {
-                $0.projectId == mainWindowNavigation.selectedProjectId
-            }) {
-            mainWindowNavigation.selectedProjectId = nil
-        }
-        return nil
     }
 
     private func projectHierarchy(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {

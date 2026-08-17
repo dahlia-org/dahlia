@@ -13,6 +13,7 @@ struct ProjectEditorActions: View {
             if let onDelete {
                 Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: onDelete)
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.roundedRectangle(radius: 8))
                     .tint(.red)
                     .controlSize(.extraLarge)
                     .disabled(isSaving)
@@ -45,7 +46,6 @@ struct ProjectEditorActions: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.extraLarge)
-            .keyboardShortcut(.defaultAction)
             .disabled(isSaveDisabled || isSaving)
         }
     }

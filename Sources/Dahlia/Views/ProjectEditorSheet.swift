@@ -8,6 +8,7 @@ struct ProjectEditorSheet: View {
     let onDelete: (() -> Void)?
     let initiallyFocusesName: Bool
     let onSave: (String, String, UUID?, ProjectType, ProjectAppearance) async -> String?
+    @Binding var isSaving: Bool
 
     @State private var projectName: String
     @State private var projectDescription: String
@@ -15,8 +16,8 @@ struct ProjectEditorSheet: View {
     @State private var projectType: ProjectType
     @State private var appearance: ProjectAppearance
     @State private var errorMessage = ""
-    @State private var isSaving = false
     @FocusState private var isProjectNameFocused: Bool
+    @FocusState private var isProjectDescriptionFocused: Bool
 
     init(
         title: String,
@@ -27,6 +28,7 @@ struct ProjectEditorSheet: View {
         parentProjectId: UUID?,
         projectType: ProjectType,
         appearance: ProjectAppearance,
+        isSaving: Binding<Bool>,
         initiallyFocusesName: Bool,
         onCancel: @escaping () -> Void,
         onDelete: (() -> Void)? = nil,
@@ -39,6 +41,7 @@ struct ProjectEditorSheet: View {
         self.onCancel = onCancel
         self.onDelete = onDelete
         self.onSave = onSave
+        _isSaving = isSaving
         _projectName = State(initialValue: projectName)
         _projectDescription = State(initialValue: projectDescription)
         _parentProjectId = State(initialValue: parentProjectId)
@@ -48,7 +51,7 @@ struct ProjectEditorSheet: View {
 
     var body: some View {
         ZStack {
-            Button(action: dismissNameEditing) {
+            Button(action: { isProjectNameFocused = false }) {
                 Color.clear
                     .contentShape(.rect)
             }
@@ -57,63 +60,70 @@ struct ProjectEditorSheet: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 22) {
-                ProjectEditorSheetHeader(title: title, isDisabled: isSaving, onClose: cancel)
+                ProjectEditorSheetHeader(title: title, isDisabled: isSaving, onClose: onCancel)
 
-                Group {
-                    ProjectNameAppearanceField(
-                        projectName: $projectName,
-                        appearance: $appearance,
-                        isProjectNameFocused: $isProjectNameFocused
-                    )
+                ScrollView {
+                    ZStack {
+                        Button(action: { isProjectNameFocused = false }) {
+                            Color.clear
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .accessibilityHidden(true)
 
-                    ProjectEditorDescriptionField(description: $projectDescription)
+                        VStack(alignment: .leading, spacing: 22) {
+                            if !errorMessage.isEmpty {
+                                SettingsStatusMessage(
+                                    text: errorMessage,
+                                    systemImage: "exclamationmark.triangle",
+                                    tint: .orange
+                                )
+                            }
 
-                    ProjectEditorHierarchyFields(
-                        parentProjects: parentProjects,
-                        parentProjectId: $parentProjectId,
-                        projectType: $projectType
-                    )
+                            ProjectNameAppearanceField(
+                                projectName: $projectName,
+                                appearance: $appearance,
+                                isProjectNameFocused: $isProjectNameFocused,
+                                onSubmit: save
+                            )
+
+                            ProjectEditorDescriptionField(
+                                description: $projectDescription,
+                                isFocused: $isProjectDescriptionFocused
+                            )
+
+                            ProjectEditorHierarchyFields(
+                                parentProjects: parentProjects,
+                                parentProjectId: $parentProjectId,
+                                projectType: $projectType
+                            )
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .disabled(isSaving)
-
-                if !errorMessage.isEmpty {
-                    SettingsStatusMessage(
-                        text: errorMessage,
-                        systemImage: "exclamationmark.triangle",
-                        tint: .orange
-                    )
-                }
-
-                Spacer(minLength: 0)
 
                 ProjectEditorActions(
                     actionTitle: actionTitle,
                     isSaving: isSaving,
                     isSaveDisabled: trimmedProjectName.isEmpty,
-                    onCancel: cancel,
+                    onCancel: onCancel,
                     onDelete: onDelete,
                     onSave: save
                 )
             }
         }
         .padding(24)
-        .frame(minWidth: 560, minHeight: 500)
+        .frame(width: 560, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
-        .dahliaSimpleWindowStyle()
+        .clipShape(.rect(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
         .defaultFocus($isProjectNameFocused, initiallyFocusesName)
     }
 
     private var trimmedProjectName: String {
         projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func cancel() {
-        guard !isSaving else { return }
-        onCancel()
-    }
-
-    private func dismissNameEditing() {
-        isProjectNameFocused = false
     }
 
     private func save() {

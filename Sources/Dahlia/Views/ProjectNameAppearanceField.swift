@@ -4,12 +4,13 @@ struct ProjectNameAppearanceField: View {
     @Binding var projectName: String
     @Binding var appearance: ProjectAppearance
     @FocusState.Binding var isProjectNameFocused: Bool
+    let onSubmit: () -> Void
     @State private var isAppearancePickerPresented = false
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: showAppearancePicker) {
-                Label(L10n.appearance, systemImage: appearance.icon.rawValue)
+            Button(action: { isAppearancePickerPresented = true }) {
+                Label(L10n.appearance, systemImage: appearance.icon.systemImageName)
                     .labelStyle(.iconOnly)
                     .foregroundStyle(appearance.color.color)
                     .frame(width: 40, height: 36)
@@ -27,6 +28,7 @@ struct ProjectNameAppearanceField: View {
                 .textFieldStyle(.plain)
                 .padding(.horizontal, 10)
                 .focused($isProjectNameFocused)
+                .onSubmit(onSubmit)
         }
         .frame(height: 52)
         .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 9))
@@ -36,7 +38,4 @@ struct ProjectNameAppearanceField: View {
         }
     }
 
-    private func showAppearancePicker() {
-        isAppearancePickerPresented = true
-    }
 }

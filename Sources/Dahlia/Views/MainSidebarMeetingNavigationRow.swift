@@ -19,7 +19,7 @@ struct MainSidebarMeetingNavigationRow: View {
 
             MainSidebarNavigationAccessoryButton(
                 title: L10n.quickRecording,
-                systemImage: "bolt.circle",
+                systemImage: "bolt",
                 isEnabled: canStartQuickRecording,
                 action: onStartQuickRecording
             )

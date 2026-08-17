@@ -18,6 +18,15 @@
             #expect(groups[1].isLimited)
         }
 
+        @Test
+        func findsSelectedMeetingInPinnedGroups() throws {
+            let group = group(vaultID: UUID.v7(), meetingCount: 1)
+            let meetingID = try #require(group.meetings.first?.meetingId)
+
+            #expect(MeetingListSidebarView.containsMeeting(meetingID, in: [group]))
+            #expect(!MeetingListSidebarView.containsMeeting(UUID.v7(), in: [group]))
+        }
+
         private func group(vaultID: UUID, meetingCount: Int) -> MeetingProjectGroup {
             MeetingProjectGroup(
                 key: .project(UUID.v7()),

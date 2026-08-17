@@ -385,31 +385,47 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(3)))
-        func keepsUnassignedMeetingsAfterProjects() async throws {
+        func ordersProjectsByNameAndKeepsUnassignedLast() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer { fixture.stop() }
-            let projectID = UUID.v7()
+            let alphaProjectID = UUID.v7()
+            let zuluProjectID = UUID.v7()
             let now = Date.now
             try await fixture.manager.dbQueue.write { db in
                 try ProjectRecord(
-                    id: projectID,
+                    id: alphaProjectID,
                     vaultId: fixture.vault.id,
                     parentProjectId: nil,
-                    name: "Project",
+                    name: "Alpha",
+                    createdAt: now,
+                    projectType: .undefined
+                ).insert(db)
+                try ProjectRecord(
+                    id: zuluProjectID,
+                    vaultId: fixture.vault.id,
+                    parentProjectId: nil,
+                    name: "Zulu",
                     createdAt: now,
                     projectType: .undefined
                 ).insert(db)
                 try insertMeeting(
                     vaultId: fixture.vault.id,
-                    projectId: projectID,
-                    name: "Project meeting",
+                    projectId: alphaProjectID,
+                    name: "Alpha meeting",
                     createdAt: now.addingTimeInterval(-60),
                     in: db
                 )
                 try insertMeeting(
                     vaultId: fixture.vault.id,
-                    name: "Newer unassigned meeting",
+                    projectId: zuluProjectID,
+                    name: "Zulu newest",
                     createdAt: now,
+                    in: db
+                )
+                try insertMeeting(
+                    vaultId: fixture.vault.id,
+                    name: "Newer unassigned meeting",
+                    createdAt: now.addingTimeInterval(60),
                     in: db
                 )
             }
@@ -420,9 +436,11 @@ import GRDB
             #expect(await waitUntil {
                 viewModel.isProjectMeetingProjectionLoaded
                     && viewModel.isProjectCatalogLoaded
-                    && viewModel.projectMeetingGroups.count == 2
+                    && viewModel.projectMeetingGroups.count == 3
             })
-            #expect(viewModel.projectMeetingGroups.map(\.key) == [.project(projectID), .unassigned])
+            #expect(viewModel.projectMeetingGroups.map(\.key) == [
+                .project(alphaProjectID), .project(zuluProjectID), .unassigned,
+            ])
         }
 
         @Test(.timeLimit(.minutes(3)))

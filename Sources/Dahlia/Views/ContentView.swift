@@ -27,7 +27,6 @@ struct ContentView: View {
     @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var usesMeetingSidebarForProjectManagement = false
     @State private var projectPendingDeletion: ProjectOverviewItem?
-    @State private var projectDeletionAfterEditorDismissal: ProjectOverviewItem?
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -63,6 +62,7 @@ struct ContentView: View {
                                 expectedRevision: expectedRevision
                             )
                         },
+                        onRequestProjectDeletion: { projectPendingDeletion = $0 },
                         isProjectEditorPresented: projectEditorRequest != nil,
                         usesMeetingSidebar: usesMeetingSidebarForProjectManagement,
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
@@ -195,51 +195,19 @@ struct ContentView: View {
                 .accessibilityHidden(isShowingSettings)
             }
         }
-        .sheet(item: $projectEditorRequest, onDismiss: presentQueuedProjectDeletion) { request in
-            let project = request.project
-            ProjectEditorSheet(
-                title: project == nil ? L10n.createProject : L10n.editProject,
-                actionTitle: project == nil ? L10n.createProject : L10n.save,
-                parentProjects: projectEditorParentProjects(for: project),
-                projectName: project.map(projectDisplayName) ?? "",
-                projectDescription: request.initialDescription,
-                parentProjectId: project?.parentProjectId,
-                projectType: project?.effectiveProjectType ?? .undefined,
-                appearance: project.map(projectAppearance) ?? .default,
-                initiallyFocusesName: project == nil,
-                onCancel: dismissProjectEditor,
-                onDelete: project.map { project in
-                    { requestProjectDeletionFromEditor(project) }
-                },
-                onSave: { name, description, parentProjectId, projectType, appearance in
-                    await saveProjectEditor(
-                        request: request,
-                        name: name,
-                        description: description,
-                        parentProjectId: parentProjectId,
-                        projectType: projectType,
-                        appearance: appearance
-                    )
-                }
-            )
-        }
-        .sheet(item: $projectPendingDeletion) { project in
-            let hierarchy = projectHierarchy(for: project)
-            ProjectDeletionDialog(
-                project: project,
-                projectCount: hierarchy.count,
-                meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
-                moveDestinations: ProjectDestinationOptions.meetingMoveCandidates(
-                    whenDeleting: project,
-                    projects: sidebarViewModel.allProjectItems
-                ),
-                onConfirm: { disposition, deletesSummaryFiles in
-                    await deleteProject(
-                        project,
-                        meetingDisposition: disposition,
-                        deletesSummaryFiles: deletesSummaryFiles
-                    )
-                }
+        .disabled(projectEditorRequest != nil || projectPendingDeletion != nil)
+        .accessibilityHidden(projectEditorRequest != nil || projectPendingDeletion != nil)
+        .overlay {
+            ProjectModalPresentation(
+                editorRequest: projectEditorRequest,
+                deletionProject: projectPendingDeletion,
+                projects: sidebarViewModel.allProjectItems,
+                appearanceForProject: projectAppearance,
+                onCancelEditor: dismissProjectEditor,
+                onDeleteFromEditor: requestProjectDeletionFromEditor,
+                onSave: saveProjectEditor,
+                onCancelDeletion: dismissProjectDeletion,
+                onConfirmDeletion: deleteProject
             )
         }
         .task {
@@ -565,14 +533,11 @@ private extension ContentView {
     }
 
     private func requestProjectDeletionFromEditor(_ project: ProjectOverviewItem) {
-        projectDeletionAfterEditorDismissal = project
-        dismissProjectEditor()
+        projectPendingDeletion = project
     }
 
-    private func presentQueuedProjectDeletion() {
-        guard let project = projectDeletionAfterEditorDismissal else { return }
-        projectDeletionAfterEditorDismissal = nil
-        projectPendingDeletion = project
+    private func dismissProjectDeletion() {
+        projectPendingDeletion = nil
     }
 
     private func saveProjectEditor(
@@ -691,16 +656,6 @@ private extension ContentView {
         )
         dismissProjectEditor()
         return nil
-    }
-
-    private func projectEditorParentProjects(for project: ProjectOverviewItem?) -> [ProjectOverviewItem] {
-        guard let project else {
-            return sidebarViewModel.allProjectItems.filter { $0.parentProjectId == nil }
-        }
-        return ProjectDestinationOptions.reparentCandidates(
-            for: project,
-            projects: sidebarViewModel.allProjectItems
-        )
     }
 
     private func projectAppearance(_ project: ProjectOverviewItem) -> ProjectAppearance {
@@ -838,6 +793,7 @@ private extension ContentView {
         if hierarchy.contains(where: { $0.projectId == mainWindowNavigation.selectedProjectId }) {
             mainWindowNavigation.selectedProjectId = nil
         }
+        dismissProjectEditor()
         return nil
     }
 

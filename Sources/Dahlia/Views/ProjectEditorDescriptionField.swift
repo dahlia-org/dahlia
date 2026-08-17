@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProjectEditorDescriptionField: View {
     @Binding var description: String
+    @FocusState.Binding var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -10,18 +11,18 @@ struct ProjectEditorDescriptionField: View {
                 .bold()
 
             ZStack(alignment: .topLeading) {
-                if description.isEmpty {
+                ProjectDescriptionTextView(text: $description, isFocused: $isFocused)
+                    .accessibilityLabel(L10n.projectDescription)
+
+                if description.isEmpty, !isFocused {
                     Text(L10n.projectDescriptionPlaceholder)
+                        .font(.body)
                         .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 8)
+                        .padding(.leading, 8)
+                        .padding(.top, 6)
+                        .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-
-                TextEditor(text: $description)
-                    .scrollContentBackground(.hidden)
-                    .padding(4)
-                    .accessibilityLabel(L10n.projectDescription)
             }
             .frame(minHeight: 120, maxHeight: 150)
             .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 10))

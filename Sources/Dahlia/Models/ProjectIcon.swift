@@ -46,6 +46,15 @@ enum ProjectIcon: String, CaseIterable, Codable, Sendable {
         .tools, .animals, .science, .ideas, .favorite, .plant,
     ]
 
+    var systemImageName: String {
+        switch self {
+        case .notes: "note.text"
+        case .balance: "scalemass"
+        case .plant: "leaf"
+        default: rawValue
+        }
+    }
+
     var localizedName: String {
         switch self {
         case .folder: L10n.projectIconFolder
