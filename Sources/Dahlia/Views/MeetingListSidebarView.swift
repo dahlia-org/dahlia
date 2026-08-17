@@ -185,7 +185,33 @@ struct MeetingListSidebarView: View {
         let groups = Dictionary(uniqueKeysWithValues: sidebarViewModel.projectMeetingGroups.compactMap { group in
             group.project.map { ($0.projectId, group) }
         })
-        return mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).compactMap { groups[$0] }
+        let pinnedGroups = mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).compactMap { groups[$0] }
+        guard mainWindowNavigation.meetingSidebarDisplayMode == .chronological else { return pinnedGroups }
+        return Self.limitMeetingCount(
+            in: pinnedGroups,
+            to: max(SidebarViewModel.maximumVisibleMeetings - sidebarViewModel.displayedMeetingItems.count, 0)
+        )
+    }
+
+    static func limitMeetingCount(
+        in groups: [MeetingProjectGroup],
+        to maximumCount: Int
+    ) -> [MeetingProjectGroup] {
+        var remainingCount = max(maximumCount, 0)
+        return groups.map { group in
+            let meetings = Array(group.meetings.prefix(remainingCount))
+            remainingCount -= meetings.count
+            guard meetings.count < group.meetings.count else { return group }
+            return MeetingProjectGroup(
+                key: group.key,
+                project: group.project,
+                meetings: meetings,
+                hasMore: false,
+                isLoadingMore: group.isLoadingMore,
+                loadError: group.loadError,
+                isLimited: true
+            )
+        }
     }
 
     private var unpinnedProjectGroups: [MeetingProjectGroup] {
