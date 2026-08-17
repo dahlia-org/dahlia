@@ -29,23 +29,8 @@ struct MeetingSidebarHeader: View {
             Spacer()
 
             HStack(spacing: 8) {
-                Menu {
-                    Picker(L10n.sidebarOrganization, selection: $displayMode) {
-                        Label(L10n.chronological, systemImage: "clock")
-                            .tag(MeetingSidebarDisplayMode.chronological)
-                        Label(L10n.groupByProject, systemImage: "folder")
-                            .tag(MeetingSidebarDisplayMode.byProject)
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    Label(L10n.sidebarOrganization, systemImage: "ellipsis")
-                        .labelStyle(.iconOnly)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .focused($isMenuFocused)
-                .help(L10n.sidebarOrganization)
+                MeetingSidebarOrganizationMenu(displayMode: $displayMode)
+                    .focused($isMenuFocused)
 
                 if displayMode == .byProject {
                     Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
@@ -60,7 +45,7 @@ struct MeetingSidebarHeader: View {
         }
         .contentShape(.rect)
         .onHover { isHovered = $0 }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
     }
 }

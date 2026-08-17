@@ -24,11 +24,7 @@ struct ContentView: View {
     @State private var isShowingChatHistory = false
     @State private var isShowingChatConfiguration = false
     @State private var searchModel = MainSearchModel()
-    @State private var isShowingProjectCreation = false
-    @State private var projectCreationParentId: UUID?
-    @State private var newProjectName = ""
-    @State private var newProjectType = ProjectType.undefined
-    @State private var projectCreationErrorMessage = ""
+    @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var usesMeetingSidebarForProjectManagement = false
     @State private var projectPendingDeletion: ProjectOverviewItem?
 
@@ -59,6 +55,15 @@ struct ContentView: View {
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                         onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                         onCreateProject: presentProjectCreation,
+                        onEditProject: { project, description, expectedRevision in
+                            presentProjectEditor(
+                                project,
+                                initialDescription: description,
+                                expectedRevision: expectedRevision
+                            )
+                        },
+                        onRequestProjectDeletion: { projectPendingDeletion = $0 },
+                        isProjectEditorPresented: projectEditorRequest != nil,
                         usesMeetingSidebar: usesMeetingSidebarForProjectManagement,
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
                         onSelectVault: onSelectVault
@@ -190,34 +195,19 @@ struct ContentView: View {
                 .accessibilityHidden(isShowingSettings)
             }
         }
-        .sheet(isPresented: $isShowingProjectCreation) {
-            ProjectCreationSheet(
-                parentProjects: projectCreationParentProjects,
-                parentProjectId: $projectCreationParentId,
-                projectName: $newProjectName,
-                projectType: $newProjectType,
-                errorMessage: projectCreationErrorMessage,
-                onCancel: dismissProjectCreation,
-                onCreate: createProject
-            )
-        }
-        .sheet(item: $projectPendingDeletion) { project in
-            let hierarchy = projectHierarchy(for: project)
-            ProjectDeletionDialog(
-                project: project,
-                projectCount: hierarchy.count,
-                meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
-                moveDestinations: ProjectDestinationOptions.meetingMoveCandidates(
-                    whenDeleting: project,
-                    projects: sidebarViewModel.allProjectItems
-                ),
-                onConfirm: { disposition, deletesSummaryFiles in
-                    await deleteProject(
-                        project,
-                        meetingDisposition: disposition,
-                        deletesSummaryFiles: deletesSummaryFiles
-                    )
-                }
+        .disabled(projectEditorRequest != nil || projectPendingDeletion != nil)
+        .accessibilityHidden(projectEditorRequest != nil || projectPendingDeletion != nil)
+        .overlay {
+            ProjectModalPresentation(
+                editorRequest: projectEditorRequest,
+                deletionProject: projectPendingDeletion,
+                projects: sidebarViewModel.allProjectItems,
+                appearanceForProject: projectAppearance,
+                onCancelEditor: dismissProjectEditor,
+                onDeleteFromEditor: requestProjectDeletionFromEditor,
+                onSave: saveProjectEditor,
+                onCancelDeletion: dismissProjectDeletion,
+                onConfirmDeletion: deleteProject
             )
         }
         .task {
@@ -356,8 +346,7 @@ private extension ContentView {
         case .open:
             break
         case .edit:
-            usesMeetingSidebarForProjectManagement = true
-            mainWindowNavigation.openProject(id, intent: .edit)
+            presentProjectEditor(project, initialDescription: nil, expectedRevision: nil)
         case .delete:
             projectPendingDeletion = project
         }
@@ -523,37 +512,87 @@ private extension ContentView {
         mainWindowNavigation.showProjects()
     }
 
-    private var projectCreationParentProjects: [ProjectOverviewItem] {
-        sidebarViewModel.allProjectItems.filter { $0.parentProjectId == nil }
-    }
-
     private func presentProjectCreation() {
-        projectCreationParentId = nil
-        newProjectName = ""
-        newProjectType = .undefined
-        projectCreationErrorMessage = ""
-        isShowingProjectCreation = true
+        projectEditorRequest = .create
     }
 
-    private func dismissProjectCreation() {
-        isShowingProjectCreation = false
-        projectCreationParentId = nil
-        projectCreationErrorMessage = ""
+    private func presentProjectEditor(
+        _ project: ProjectOverviewItem,
+        initialDescription: String?,
+        expectedRevision: Int?
+    ) {
+        projectEditorRequest = .edit(
+            project,
+            initialDescription: initialDescription,
+            expectedRevision: expectedRevision
+        )
     }
 
-    private func createProject() {
-        let projectName = newProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !projectName.isEmpty else { return }
+    private func dismissProjectEditor() {
+        projectEditorRequest = nil
+    }
+
+    private func requestProjectDeletionFromEditor(_ project: ProjectOverviewItem) {
+        projectPendingDeletion = project
+    }
+
+    private func dismissProjectDeletion() {
+        projectPendingDeletion = nil
+    }
+
+    private func saveProjectEditor(
+        request: ProjectEditorRequest,
+        name: String,
+        description: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        appearance: ProjectAppearance
+    ) async -> String? {
+        switch request {
+        case .create:
+            createProject(
+                name: name,
+                description: description,
+                parentProjectId: parentProjectId,
+                projectType: projectType,
+                appearance: appearance
+            )
+        case let .edit(project, _, _):
+            await updateProject(
+                project,
+                name: name,
+                description: description,
+                parentProjectId: parentProjectId,
+                projectType: projectType,
+                appearance: appearance,
+                expectedRevision: request.expectedRevision ?? project.revision,
+                clearsDescriptionDraftOnNoChange: request.hasInitialDescription
+            )
+        }
+    }
+
+    private func createProject(
+        name: String,
+        description: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        appearance: ProjectAppearance
+    ) -> String? {
 
         guard let project = sidebarViewModel.createProject(
-            name: projectName,
-            parentProjectId: projectCreationParentId,
-            projectType: projectCreationParentId == nil ? newProjectType : nil
+            name: name,
+            parentProjectId: parentProjectId,
+            projectType: parentProjectId == nil ? projectType : nil,
+            description: description
         ) else {
-            projectCreationErrorMessage = sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
-            return
+            return sidebarViewModel.lastError ?? L10n.projectCreationFailedDescription
         }
 
+        mainWindowNavigation.setProjectAppearance(
+            appearance,
+            projectId: project.id,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
         mainWindowNavigation.selectCreatedProject(project.id)
         mainWindowNavigation.expandedProjectIds.formUnion(
             ProjectManagementSelection.ancestorIDs(
@@ -561,8 +600,75 @@ private extension ContentView {
                 projects: sidebarViewModel.allProjectItems
             )
         )
-        dismissProjectCreation()
+        dismissProjectEditor()
         showProjectManagement()
+        return nil
+    }
+
+    private func updateProject(
+        _ project: ProjectOverviewItem,
+        name: String,
+        description: String,
+        parentProjectId: UUID?,
+        projectType: ProjectType,
+        appearance: ProjectAppearance,
+        expectedRevision: Int,
+        clearsDescriptionDraftOnNoChange: Bool
+    ) async -> String? {
+        let projectDataChanged = name != projectDisplayName(project)
+            || description != project.projectDescription
+            || parentProjectId != project.parentProjectId
+            || (parentProjectId == nil && projectType != project.effectiveProjectType)
+        var updatedPath = project.projectName
+
+        if projectDataChanged {
+            guard let updated = await sidebarViewModel.updateProject(
+                id: project.projectId,
+                name: name,
+                parentProjectId: parentProjectId,
+                projectType: projectType,
+                description: description,
+                expectedRevision: expectedRevision
+            ) else {
+                return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
+            }
+            updatedPath = updated.path
+            if mainWindowNavigation.section == .projects {
+                mainWindowNavigation.recordLocalProjectRevision(
+                    projectId: project.projectId,
+                    revision: updated.revision
+                )
+            }
+        } else if clearsDescriptionDraftOnNoChange {
+            sidebarViewModel.clearProjectDescriptionDraft(id: project.projectId)
+        }
+
+        mainWindowNavigation.setProjectAppearance(
+            appearance,
+            projectId: project.projectId,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
+        mainWindowNavigation.expandedProjectIds.formUnion(
+            ProjectManagementSelection.ancestorIDs(
+                toReveal: updatedPath,
+                projects: sidebarViewModel.allProjectItems
+            )
+        )
+        dismissProjectEditor()
+        return nil
+    }
+
+    private func projectAppearance(_ project: ProjectOverviewItem) -> ProjectAppearance {
+        mainWindowNavigation.projectAppearance(
+            projectId: project.projectId,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
+    }
+
+    private func projectDisplayName(_ project: ProjectOverviewItem) -> String {
+        project.projectDisplayName.nilIfBlank
+            ?? project.projectName.split(separator: "/").last.map(String.init)
+            ?? project.projectName
     }
 
     private func prepareProjectManagement() {
@@ -687,6 +793,7 @@ private extension ContentView {
         if hierarchy.contains(where: { $0.projectId == mainWindowNavigation.selectedProjectId }) {
             mainWindowNavigation.selectedProjectId = nil
         }
+        dismissProjectEditor()
         return nil
     }
 

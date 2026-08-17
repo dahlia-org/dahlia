@@ -23,7 +23,8 @@ struct MeetingListSidebarView: View {
     @State private var collapsedProjectKeys: Set<MeetingProjectKey> = []
     @State private var collapsedDateGroupIDs: Set<String> = []
     @State private var isPinnedSectionExpanded = true
-    @State private var isMainSectionExpanded = true
+    @State private var isProjectSectionExpanded = true
+    @State private var isRecentSectionExpanded = true
     @FocusState private var isRenameFieldFocused: Bool
 
     private var meetingSelection: Binding<Set<UUID>> {
@@ -67,14 +68,15 @@ struct MeetingListSidebarView: View {
 
                 MeetingSidebarHeader(
                     displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
-                    isExpanded: isMainSectionExpanded,
+                    isExpanded: primarySectionExpanded,
                     canCreateProject: sidebarViewModel.currentVault != nil,
-                    onToggleExpansion: { isMainSectionExpanded.toggle() },
+                    onToggleExpansion: togglePrimarySection,
                     onCreateProject: onCreateProject
                 )
                 .listRowSeparator(.hidden)
 
-                if isMainSectionExpanded {
+                if mainWindowNavigation.meetingSidebarDisplayMode == .chronological,
+                   isRecentSectionExpanded {
                     if let selectedMeeting = selectedMeetingOutsideVisibleItems {
                         Section {
                             meetingRow(selectedMeeting)
@@ -84,36 +86,62 @@ struct MeetingListSidebarView: View {
                         }
                     }
 
-                    if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
-                        ForEach(sidebarViewModel.displayedMeetingGroups) { group in
-                            MeetingSidebarListGroupLabel(
-                                title: group.title,
-                                isExpanded: !collapsedDateGroupIDs.contains(group.id),
-                                onToggleExpansion: { collapsedDateGroupIDs.toggle(group.id) }
-                            )
-                            if !collapsedDateGroupIDs.contains(group.id) {
-                                ForEach(group.meetings) { item in
-                                    meetingRow(item)
-                                }
+                    ForEach(sidebarViewModel.displayedMeetingGroups) { group in
+                        MeetingSidebarListGroupLabel(
+                            title: group.title,
+                            isExpanded: !collapsedDateGroupIDs.contains(group.id),
+                            onToggleExpansion: { collapsedDateGroupIDs.toggle(group.id) }
+                        )
+                        if !collapsedDateGroupIDs.contains(group.id) {
+                            ForEach(group.meetings) { item in
+                                meetingRow(item)
+                            }
+                        }
+                    }
+
+                    MeetingListPaginationRow(
+                        error: sidebarViewModel.displayedMeetingListLoadError,
+                        hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
+                        isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
+                        hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
+                        limitMessage: meetingListLimitMessage,
+                        loadTrigger: """
+                        meeting-page-\(sidebarViewModel.meetingSearchCriteria.identity)\
+                        -\(sidebarViewModel.displayedMeetingItems.count)
+                        """,
+                        onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
+                        onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
+                    )
+                } else if mainWindowNavigation.meetingSidebarDisplayMode == .byProject {
+                    if isProjectSectionExpanded {
+                        if let selectedMeeting = selectedMeetingOutsideVisibleItems {
+                            Section {
+                                meetingRow(selectedMeeting)
+                            } header: {
+                                Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
+                                    .font(DahliaDesign.sidebarFont)
                             }
                         }
 
-                        MeetingListPaginationRow(
-                            error: sidebarViewModel.displayedMeetingListLoadError,
-                            hasItems: !sidebarViewModel.displayedMeetingItems.isEmpty,
-                            isLoadingMore: sidebarViewModel.isDisplayedMeetingListLoadingMore,
-                            hasMore: sidebarViewModel.hasMoreDisplayedMeetings,
-                            limitMessage: meetingListLimitMessage,
-                            loadTrigger: """
-                            meeting-page-\(sidebarViewModel.meetingSearchCriteria.identity)\
-                            -\(sidebarViewModel.displayedMeetingItems.count)
-                            """,
-                            onRetry: sidebarViewModel.retryDisplayedMeetingLoading,
-                            onLoadMore: sidebarViewModel.loadMoreDisplayedMeetings
-                        )
-                    } else {
                         ForEach(unpinnedProjectGroups) { group in
                             projectSection(group, isPinned: false)
+                        }
+                    }
+
+                    if let unassignedProjectGroup {
+                        MeetingSidebarListGroupLabel(
+                            title: L10n.recent,
+                            isExpanded: isRecentSectionExpanded,
+                            onToggleExpansion: { isRecentSectionExpanded.toggle() },
+                            displayMode: $mainWindowNavigation.meetingSidebarDisplayMode
+                        )
+                        if isRecentSectionExpanded {
+                            projectSection(
+                                unassignedProjectGroup,
+                                isPinned: false,
+                                showsHeader: false,
+                                isExpanded: true
+                            )
                         }
                     }
                 }
@@ -123,7 +151,7 @@ struct MeetingListSidebarView: View {
             .tint(DahliaDesign.sidebarSelectionColor)
             .scrollContentBackground(.hidden)
             .overlay {
-                if !isMainSectionExpanded {
+                if !hasExpandedContent {
                     EmptyView()
                 } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
                     MeetingListStatusOverlay(
@@ -164,6 +192,7 @@ struct MeetingListSidebarView: View {
             )
         }
         .font(DahliaDesign.sidebarFont)
+        .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
@@ -191,6 +220,26 @@ struct MeetingListSidebarView: View {
     private var needsProjectMeetingProjection: Bool {
         mainWindowNavigation.meetingSidebarDisplayMode == .byProject
             || !mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).isEmpty
+    }
+
+    private var primarySectionExpanded: Bool {
+        mainWindowNavigation.meetingSidebarDisplayMode == .chronological
+            ? isRecentSectionExpanded
+            : isProjectSectionExpanded
+    }
+
+    private var hasExpandedContent: Bool {
+        mainWindowNavigation.meetingSidebarDisplayMode == .chronological
+            ? isRecentSectionExpanded
+            : isProjectSectionExpanded || isRecentSectionExpanded
+    }
+
+    private func togglePrimarySection() {
+        if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
+            isRecentSectionExpanded.toggle()
+        } else {
+            isProjectSectionExpanded.toggle()
+        }
     }
 
     private var pinnedProjectGroups: [MeetingProjectGroup] {
@@ -226,11 +275,21 @@ struct MeetingListSidebarView: View {
         }
     }
 
+    static func containsMeeting(_ meetingID: UUID, in groups: [MeetingProjectGroup]) -> Bool {
+        groups.contains { group in
+            group.meetings.contains { $0.meetingId == meetingID }
+        }
+    }
+
     private var unpinnedProjectGroups: [MeetingProjectGroup] {
         let pinnedIDs = Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id))
         return sidebarViewModel.projectMeetingGroups.filter { group in
-            group.project.map { !pinnedIDs.contains($0.projectId) } ?? true
+            group.project.map { !pinnedIDs.contains($0.projectId) } ?? false
         }
+    }
+
+    private var unassignedProjectGroup: MeetingProjectGroup? {
+        sidebarViewModel.projectMeetingGroups.first { $0.key == .unassigned }
     }
 
     private var meetingListLimitMessage: String? {
@@ -242,10 +301,9 @@ struct MeetingListSidebarView: View {
 
     private var selectedMeetingOutsideVisibleItems: MeetingSidebarItem? {
         guard let item = sidebarViewModel.selectedMeetingOutsideDisplayedItems else { return nil }
+        guard !Self.containsMeeting(item.meetingId, in: pinnedProjectGroups) else { return nil }
         if mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
-           sidebarViewModel.projectMeetingGroups.contains(where: { group in
-               group.meetings.contains(where: { $0.meetingId == item.meetingId })
-           }) {
+           Self.containsMeeting(item.meetingId, in: sidebarViewModel.projectMeetingGroups) {
             return nil
         }
         return item
@@ -267,11 +325,23 @@ struct MeetingListSidebarView: View {
         .tag(item.meetingId)
     }
 
-    private func projectSection(_ group: MeetingProjectGroup, isPinned: Bool) -> some View {
+    private func projectSection(
+        _ group: MeetingProjectGroup,
+        isPinned: Bool,
+        showsHeader: Bool = true,
+        isExpanded: Bool? = nil
+    ) -> some View {
         MeetingSidebarProjectSection(
             group: group,
+            showsHeader: showsHeader,
+            projectAppearance: group.project.map {
+                mainWindowNavigation.projectAppearance(
+                    projectId: $0.projectId,
+                    vaultId: sidebarViewModel.currentVault?.id
+                )
+            } ?? .default,
             isPinned: isPinned,
-            isExpanded: !collapsedProjectKeys.contains(group.key),
+            isExpanded: isExpanded ?? !collapsedProjectKeys.contains(group.key),
             selectedProjectID: mainWindowNavigation.section == .projects
                 ? mainWindowNavigation.selectedProjectId
                 : nil,

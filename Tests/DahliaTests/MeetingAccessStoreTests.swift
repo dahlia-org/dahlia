@@ -1454,6 +1454,16 @@ import ImageIO
             #expect(!FileManager.default.fileExists(
                 atPath: fixture.primaryVaultURL.appending(path: "Denied").path
             ))
+            let appearanceKeys: Set<String> = ["icon", "color", "theme", "theme_color"]
+            for name in ["query_projects", "get_project"] {
+                let definition = try #require(readOnlyDefinitions.first { $0["name"] as? String == name })
+                let outputSchema = try #require(definition["outputSchema"] as? [String: Any])
+                let outputProperties = try #require(outputSchema["properties"] as? [String: Any])
+                let projectsSchema = try #require(outputProperties["projects"] as? [String: Any])
+                let projectSchema = try #require(projectsSchema["items"] as? [String: Any])
+                let projectProperties = try #require(projectSchema["properties"] as? [String: Any])
+                #expect(appearanceKeys.isDisjoint(with: projectProperties.keys))
+            }
 
             let writeServer = try DahliaMCPServer(
                 store: fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -1516,6 +1526,12 @@ import ImageIO
             #expect(destructiveByName["delete_conversation_topic"] == true)
             #expect(destructiveByName["delete_insight"] == true)
             #expect(destructiveByName["remove_contact_organization_membership"] == true)
+            for name in ["create_project", "update_project"] {
+                let definition = try #require(writeDefinitions.first { $0["name"] as? String == name })
+                let inputSchema = try #require(definition["inputSchema"] as? [String: Any])
+                let inputProperties = try #require(inputSchema["properties"] as? [String: Any])
+                #expect(appearanceKeys.isDisjoint(with: inputProperties.keys))
+            }
             for name in customerWriteNames where name.hasPrefix("set_") {
                 #expect(destructiveByName[name] == true)
             }
@@ -1567,6 +1583,32 @@ import ImageIO
             )
             let projectID = try #require(created["project_id"] as? String)
             let revision = try #require(created["revision"] as? Int)
+            #expect(appearanceKeys.isDisjoint(with: created.keys))
+
+            let projectKeys: Set<String> = [
+                "project_id", "name", "path", "root_project_id", "explicit_type", "effective_type",
+                "type_owner_project_id", "is_type_inherited", "direct_meeting_count",
+                "descendant_meeting_count", "description", "revision",
+            ]
+            for response in [
+                try Self.json(readOnlyServer.handleLine("""
+                {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"query_projects","arguments":{
+                    "project_id":"\(projectID)"
+                }}}
+                """)),
+                try Self.json(readOnlyServer.handleLine("""
+                {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"get_project","arguments":{
+                    "project_id":"\(projectID)"
+                }}}
+                """)),
+            ] {
+                let projects = try #require(
+                    ((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["projects"]
+                        as? [[String: Any]]
+                )
+                let project = try #require(projects.first)
+                #expect(Set(project.keys) == projectKeys)
+            }
 
             let rename = try Self.json(writeServer.handleLine("""
             {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"update_project","arguments":{
@@ -1578,6 +1620,7 @@ import ImageIO
                     as? [String: Any]
             )
             #expect(renamed["path"] as? String == "Renamed Root")
+            #expect(appearanceKeys.isDisjoint(with: renamed.keys))
 
             let childResponse = try Self.json(writeServer.handleLine("""
             {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"create_project","arguments":{

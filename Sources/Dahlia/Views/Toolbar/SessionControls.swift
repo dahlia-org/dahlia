@@ -18,11 +18,11 @@ struct RecordButton: View {
         Button(label, systemImage: iconName, action: toggle)
             .labelStyle(.titleAndIcon)
             .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.large)
             .tint(.red)
             .overlay {
-                Capsule()
+                RoundedRectangle(cornerRadius: 8)
                     .fill(.white.opacity(isHovered && state.isEnabled ? 0.12 : 0))
                     .allowsHitTesting(false)
             }

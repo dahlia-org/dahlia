@@ -626,14 +626,16 @@ final class SidebarViewModel {
     func createProject(
         name: String,
         parentProjectId: UUID?,
-        projectType: ProjectType? = nil
+        projectType: ProjectType? = nil,
+        description: String = ""
     ) -> ProjectRecord? {
         guard let projectWorkspaceService else { return nil }
         do {
             let project = try projectWorkspaceService.createProject(
                 name: name,
                 parentProjectId: parentProjectId,
-                projectType: projectType
+                projectType: projectType,
+                description: description
             )
             lastError = nil
             return project

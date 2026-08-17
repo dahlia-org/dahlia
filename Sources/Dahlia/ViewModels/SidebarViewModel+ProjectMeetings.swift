@@ -208,14 +208,10 @@ extension SidebarViewModel {
         _ lhs: MeetingProjectGroup,
         _ rhs: MeetingProjectGroup
     ) -> Bool {
-        let lhsLatest = lhs.project?.latestMeetingDate ?? lhs.meetings.first?.effectiveRecordingStartedAt
-        let rhsLatest = rhs.project?.latestMeetingDate ?? rhs.meetings.first?.effectiveRecordingStartedAt
-        if lhsLatest != rhsLatest {
-            return lhsLatest.map { lhsDate in rhsLatest.map { lhsDate > $0 } ?? true } ?? false
-        }
-        let lhsCreatedAt = lhs.project?.createdAt ?? .distantPast
-        let rhsCreatedAt = rhs.project?.createdAt ?? .distantPast
-        if lhsCreatedAt != rhsCreatedAt { return lhsCreatedAt > rhsCreatedAt }
+        let lhsName = lhs.project?.projectName ?? ""
+        let rhsName = rhs.project?.projectName ?? ""
+        let comparison = lhsName.localizedStandardCompare(rhsName)
+        if comparison != .orderedSame { return comparison == .orderedAscending }
         return String(describing: lhs.key) < String(describing: rhs.key)
     }
 }

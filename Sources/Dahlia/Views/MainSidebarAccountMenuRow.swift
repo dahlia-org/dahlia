@@ -48,7 +48,8 @@ struct MainSidebarAccountMenuRow: View {
                 (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.hoverHighlightColor : .clear,
                 in: .rect(cornerRadius: 7)
             )
-            .foregroundStyle(.primary)
+            .font(DahliaDesign.sidebarFont)
+            .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)

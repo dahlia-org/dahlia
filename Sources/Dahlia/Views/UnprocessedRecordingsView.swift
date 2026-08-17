@@ -26,6 +26,7 @@ struct UnprocessedRecordingsView: View {
                         errorBanner(error)
                     }
                 }
+                .padding(.top, DahliaDesign.detailTopPadding)
             }
         }
         .confirmationDialog(

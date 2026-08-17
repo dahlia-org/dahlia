@@ -14,14 +14,16 @@ struct MainSidebarNavigationLabel: View {
 
             if badgeCount > 0 {
                 Text(badgeCount, format: .number)
-                    .font(DahliaDesign.sidebarFont)
+                    .font(DahliaDesign.sidebarBadgeFont)
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(.quaternary, in: Capsule())
             }
         }
+        .font(DahliaDesign.sidebarFont)
+        .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .contentShape(Rectangle())
         .modifier(SidebarNavigationRowModifier(isSelected: isSelected))

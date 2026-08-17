@@ -40,6 +40,20 @@ struct ProjectDescriptionEditingStateTests {
         #expect(state.text == "Unsaved description")
         #expect(state.persistedText == "Externally updated description")
         #expect(state.expectedRevision == 1)
+
+        let request = ProjectEditorRequest.edit(
+            ProjectOverviewItem(
+                projectId: projectId,
+                projectName: "Project",
+                revision: 2,
+                createdAt: .now,
+                meetingCount: 0,
+                latestMeetingDate: nil
+            ),
+            initialDescription: state.text,
+            expectedRevision: state.expectedRevision
+        )
+        #expect(request.expectedRevision == 1)
     }
 
     @Test
@@ -73,6 +87,28 @@ struct ProjectDescriptionEditingStateTests {
         viewModel.clearProjectDescriptionDraft(id: projectId)
 
         #expect(viewModel.projectDescriptionDraft(id: projectId) == nil)
+    }
+
+    @Test
+    func clearingRevertedModalDraftRestoresPersistedDescription() {
+        let viewModel = SidebarViewModel()
+        let projectId = UUID.v7()
+        viewModel.stageProjectDescriptionDraft(
+            id: projectId,
+            description: "Unsaved description",
+            baseRevision: 1
+        )
+
+        viewModel.clearProjectDescriptionDraft(id: projectId)
+        let state = ProjectDescriptionEditingState(
+            persistedText: "Saved description",
+            draftText: viewModel.projectDescriptionDraft(id: projectId),
+            persistedRevision: 1,
+            draftRevision: viewModel.projectDescriptionDraftBaseRevision(id: projectId)
+        )
+
+        #expect(state.text == "Saved description")
+        #expect(state.expectedRevision == 1)
     }
 
     @Test

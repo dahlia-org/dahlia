@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeetingSidebarProjectHeader: View {
     let project: ProjectOverviewItem
+    let appearance: ProjectAppearance
     let isPinned: Bool
     let isExpanded: Bool
     let isSelected: Bool
@@ -20,13 +21,17 @@ struct MeetingSidebarProjectHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: onToggleExpansion) {
-                Label(project.projectName, systemImage: isExpanded ? "folder" : "folder.fill")
-                    .font(DahliaDesign.sidebarFont)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Label {
+                    Text(project.projectName)
+                } icon: {
+                    ProjectAppearanceIcon(appearance: appearance, isSelected: isSelected)
+                }
+                .font(DahliaDesign.sidebarFont)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
             .layoutPriority(1)
             .accessibilityLabel(project.projectName)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
@@ -38,9 +43,7 @@ struct MeetingSidebarProjectHeader: View {
                         systemImage: isPinned ? "pin.slash" : "pin",
                         action: onTogglePin
                     )
-                    Divider()
                     Button(L10n.editProject, systemImage: "gearshape", action: { onOpen(.edit) })
-                    Divider()
                     Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: { onOpen(.delete) })
                 } label: {
                     Label(L10n.projectOptions, systemImage: "ellipsis")

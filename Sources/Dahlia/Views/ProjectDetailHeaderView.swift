@@ -4,20 +4,32 @@ struct ProjectDetailHeaderView: View {
     let projectName: String
     let projectPath: String
     let vaultName: String
+    let appearance: ProjectAppearance
+    let onEdit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(projectName)
+        HStack(alignment: .top, spacing: 12) {
+            ProjectAppearanceIcon(appearance: appearance)
                 .font(.title2)
-                .bold()
+                .padding(.top, 2)
 
-            Label {
-                Text("\(vaultName) › \(displayPath)")
-            } icon: {
-                Image(systemName: "externaldrive")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(projectName)
+                    .font(.title2)
+                    .bold()
+
+                Label {
+                    Text("\(vaultName) › \(displayPath)")
+                } icon: {
+                    Image(systemName: "externaldrive")
+                }
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             }
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
+
+            Spacer(minLength: 12)
+
+            Button(L10n.editProject, systemImage: "pencil", action: onEdit)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)

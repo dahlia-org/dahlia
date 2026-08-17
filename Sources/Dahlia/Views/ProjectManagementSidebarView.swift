@@ -9,6 +9,7 @@ struct ProjectManagementSidebarView: View {
     @Binding var expandedProjectIds: Set<UUID>
     let onRetry: () -> Void
     let onCreateProject: () -> Void
+    let appearanceForProject: (UUID) -> ProjectAppearance
 
     private var projectNodes: [ProjectTreeNode] {
         ProjectTreeNode.buildNodes(from: projects)
@@ -24,7 +25,8 @@ struct ProjectManagementSidebarView: View {
                 selectedProjectId: selectedProjectId,
                 expandedProjectIds: $expandedProjectIds,
                 onRetry: onRetry,
-                onCreateProject: onCreateProject
+                onCreateProject: onCreateProject,
+                appearanceForProject: appearanceForProject
             )
         }
         .listStyle(.sidebar)

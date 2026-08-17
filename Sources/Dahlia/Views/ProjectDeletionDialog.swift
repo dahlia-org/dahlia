@@ -5,9 +5,9 @@ struct ProjectDeletionDialog: View {
     let projectCount: Int
     let meetingCount: Int
     let moveDestinations: [ProjectOverviewItem]
+    let onCancel: () -> Void
     let onConfirm: (ProjectMeetingDisposition, Bool) async -> String?
 
-    @Environment(\.dismiss) private var dismiss
     @State private var deletesMeetings: Bool
     @State private var selectedDestinationId: UUID?
     @State private var deletesSummaryFiles = false
@@ -19,110 +19,145 @@ struct ProjectDeletionDialog: View {
         projectCount: Int,
         meetingCount: Int,
         moveDestinations: [ProjectOverviewItem],
+        onCancel: @escaping () -> Void,
         onConfirm: @escaping (ProjectMeetingDisposition, Bool) async -> String?
     ) {
         self.project = project
         self.projectCount = projectCount
         self.meetingCount = meetingCount
         self.moveDestinations = moveDestinations
+        self.onCancel = onCancel
         self.onConfirm = onConfirm
         _deletesMeetings = State(initialValue: moveDestinations.isEmpty)
         _selectedDestinationId = State(initialValue: moveDestinations.first?.projectId)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            DahliaSheetHeader(title: L10n.deleteProjectConfirmation(project.projectName))
+        ZStack {
+            Button(action: cancel) {
+                Color.black.opacity(0.16)
+                    .ignoresSafeArea()
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .accessibilityHidden(true)
 
-            Divider()
+            VStack(alignment: .leading, spacing: 20) {
+                ProjectEditorSheetHeader(
+                    title: L10n.deleteProjectConfirmation(project.projectName),
+                    isDisabled: isDeleting,
+                    onClose: cancel
+                )
 
-            Form {
-                Section {
-                    Label {
-                        Text(project.projectName)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    } icon: {
-                        Image(systemName: "folder")
+                Form {
+                    Section {
+                        Label {
+                            Text(project.projectName)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        } icon: {
+                            Image(systemName: "folder")
+                        }
+
+                        Label(
+                            L10n.projectDeletionSummary(projectCount: projectCount, meetingCount: meetingCount),
+                            systemImage: "trash"
+                        )
+
+                        Text(L10n.projectDirectoriesAreKept)
+                            .foregroundStyle(.secondary)
+
+                        if meetingCount > 0 {
+                            Label(deletionImpactDescription, systemImage: deletionImpactSystemImage)
+                                .foregroundStyle(deletesMeetings ? .red : .secondary)
+                        }
                     }
-
-                    Label(
-                        L10n.projectDeletionSummary(projectCount: projectCount, meetingCount: meetingCount),
-                        systemImage: "trash"
-                    )
-
-                    Text(L10n.projectDirectoriesAreKept)
-                        .foregroundStyle(.secondary)
 
                     if meetingCount > 0 {
-                        Label(deletionImpactDescription, systemImage: deletionImpactSystemImage)
-                            .foregroundStyle(deletesMeetings ? .red : .secondary)
-                    }
-                }
-
-                if meetingCount > 0 {
-                    Section(L10n.meetingHandling) {
-                        Picker(L10n.meetingHandling, selection: $deletesMeetings) {
-                            if !moveDestinations.isEmpty {
-                                Text(L10n.moveMeetingsBeforeDeletingProject)
-                                    .tag(false)
-                            }
-                            Text(L10n.deleteMeetingsWithProject)
-                                .tag(true)
-                        }
-                        .pickerStyle(.radioGroup)
-
-                        if !deletesMeetings, !moveDestinations.isEmpty {
-                            Picker(L10n.moveMeetingsTo, selection: $selectedDestinationId) {
-                                ForEach(moveDestinations) { destination in
-                                    Text(destination.projectName)
-                                        .tag(destination.projectId as UUID?)
+                        Section(L10n.meetingHandling) {
+                            Picker(L10n.meetingHandling, selection: $deletesMeetings) {
+                                if !moveDestinations.isEmpty {
+                                    Text(L10n.moveMeetingsBeforeDeletingProject)
+                                        .tag(false)
                                 }
+                                Text(L10n.deleteMeetingsWithProject)
+                                    .tag(true)
                             }
-                        } else if moveDestinations.isEmpty {
-                            Label(L10n.noProjectMoveDestination, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.secondary)
-                        }
+                            .pickerStyle(.radioGroup)
 
-                        if deletesMeetings {
-                            Toggle(L10n.deleteExportedSummaries, isOn: $deletesSummaryFiles)
-                            Text(L10n.deleteExportedSummariesHelp)
-                                .foregroundStyle(.secondary)
+                            if !deletesMeetings, !moveDestinations.isEmpty {
+                                Picker(L10n.moveMeetingsTo, selection: $selectedDestinationId) {
+                                    ForEach(moveDestinations) { destination in
+                                        Text(destination.projectName)
+                                            .tag(destination.projectId as UUID?)
+                                    }
+                                }
+                            } else if moveDestinations.isEmpty {
+                                Label(L10n.noProjectMoveDestination, systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if deletesMeetings {
+                                Toggle(L10n.deleteExportedSummaries, isOn: $deletesSummaryFiles)
+                                Text(L10n.deleteExportedSummariesHelp)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
-            }
-            .formStyle(.grouped)
-            .disabled(isDeleting)
+                .formStyle(.grouped)
+                .disabled(isDeleting)
 
-            if let deletionErrorMessage {
-                Label(deletionErrorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                if let deletionErrorMessage {
+                    SettingsStatusMessage(
+                        text: deletionErrorMessage,
+                        systemImage: "exclamationmark.triangle.fill",
+                        tint: .red
+                    )
                     .accessibilityLabel("\(L10n.projectOperationFailed): \(deletionErrorMessage)")
-            }
-
-            Divider()
-
-            DahliaSheetActionBar(alignsActionsTrailing: false) {
-                if isDeleting {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(L10n.deletingProjects)
-                        .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 12)
-                Button(L10n.cancel, role: .cancel, action: dismiss.callAsFunction)
+
+                HStack(spacing: 12) {
+                    Spacer()
+
+                    Button(role: .cancel, action: cancel) {
+                        Text(L10n.cancel)
+                            .frame(minWidth: 72)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.roundedRectangle(radius: 8))
+                    .controlSize(.extraLarge)
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
-                Button(confirmButtonTitle, role: .destructive, action: confirmDeletion)
+
+                    Button(role: .destructive, action: confirmDeletion) {
+                        HStack {
+                            if isDeleting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(isDeleting ? L10n.deletingProjects : confirmButtonTitle)
+                        }
+                        .frame(minWidth: 160)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.roundedRectangle(radius: 8))
+                    .tint(.red)
+                    .controlSize(.extraLarge)
                     .disabled(!canConfirmDeletion)
+                }
             }
+            .padding(24)
+            .frame(width: 560, height: dialogHeight)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(.rect(cornerRadius: 14))
+            .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
         }
-        .frame(minWidth: 520, minHeight: 390)
-        .dahliaSimpleWindowStyle()
-        .interactiveDismissDisabled(isDeleting)
+        .transition(.identity)
+    }
+
+    private var dialogHeight: CGFloat {
+        meetingCount > 0 ? 480 : 400
     }
 
     private var confirmButtonTitle: String {
@@ -176,9 +211,14 @@ struct ProjectDeletionDialog: View {
                 deletionErrorMessage = errorMessage
                 isDeleting = false
             } else {
-                dismiss()
+                onCancel()
             }
         }
+    }
+
+    private func cancel() {
+        guard !isDeleting else { return }
+        onCancel()
     }
 
     static func meetingDisposition(

@@ -3,6 +3,7 @@ import SwiftUI
 struct ProjectManagementRowContent: View {
     let node: ProjectTreeNode
     let isSelected: Bool
+    let appearance: ProjectAppearance
 
     @State private var isHovered = false
 
@@ -12,8 +13,7 @@ struct ProjectManagementRowContent: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         } icon: {
-            Image(systemName: folderSystemImage)
-                .foregroundStyle(folderColor)
+            ProjectAppearanceIcon(appearance: appearance, isSelected: isSelected)
         }
         .badge(node.meetingCount)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -26,22 +26,6 @@ struct ProjectManagementRowContent: View {
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var folderSystemImage: String {
-        if node.project.parentProjectId == nil {
-            "externaldrive"
-        } else {
-            "folder"
-        }
-    }
-
-    private var folderColor: Color {
-        if isSelected {
-            .white
-        } else {
-            .secondary
-        }
     }
 
     private var accessibilityLabel: String {
