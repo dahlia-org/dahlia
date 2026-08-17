@@ -4232,6 +4232,10 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func saveNote(text: String) {
+        if currentMeetingId == nil, hasDraftMeeting, !text.isEmpty {
+            _ = materializeDraftMeeting(customerIntelligenceIngestion: .afterMeetingPersistence)
+            return
+        }
         guard let meetingId = currentMeetingId,
               let dbQueue = currentDbQueue else { return }
         let now = Date()

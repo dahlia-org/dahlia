@@ -25,6 +25,43 @@ import GRDB
         }
 
         @Test
+        func noteMaterializesDraftBeforeNavigation() throws {
+            let viewModel = CaptionViewModel()
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: vaultURL.path,
+                name: "Test Vault",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            try database.dbQueue.write { db in
+                try vault.insert(db)
+            }
+            let previousVault = AppSettings.shared.currentVault
+            AppSettings.shared.currentVault = vault
+            defer { AppSettings.shared.currentVault = previousVault }
+
+            viewModel.beginDraftMeeting(
+                dbQueue: database.dbQueue,
+                vaultURL: vaultURL
+            )
+            viewModel.noteText = "Keep this note"
+
+            viewModel.clearCurrentMeeting()
+
+            let persisted = try database.dbQueue.read { db in
+                try (
+                    MeetingRecord.fetchCount(db),
+                    MeetingNoteRecord.fetchOne(db)?.text
+                )
+            }
+            #expect(persisted.0 == 1)
+            #expect(persisted.1 == "Keep this note")
+        }
+
+        @Test
         func draftPreservesActiveRecordingContext() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
