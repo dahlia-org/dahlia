@@ -31,7 +31,7 @@ struct MeetingSidebarProjectHeader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
+            .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
             .layoutPriority(1)
             .accessibilityLabel(project.projectName)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
@@ -43,9 +43,7 @@ struct MeetingSidebarProjectHeader: View {
                         systemImage: isPinned ? "pin.slash" : "pin",
                         action: onTogglePin
                     )
-                    Divider()
                     Button(L10n.editProject, systemImage: "gearshape", action: { onOpen(.edit) })
-                    Divider()
                     Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: { onOpen(.delete) })
                 } label: {
                     Label(L10n.projectOptions, systemImage: "ellipsis")

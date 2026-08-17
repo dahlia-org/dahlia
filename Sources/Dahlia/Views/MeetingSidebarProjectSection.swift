@@ -52,7 +52,7 @@ struct MeetingSidebarProjectSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.primary)
+                .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
                 .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
                 .dahliaSidebarHoverHighlight(isHovered: isNoProjectHovered)
                 .contentShape(.rect)
@@ -76,7 +76,7 @@ struct MeetingSidebarProjectSection: View {
             limitMessage
         } else if group.meetings.isEmpty, group.loadError == nil {
             Text(L10n.noMeetingsInProject)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         } else {
             ForEach(group.meetings) { item in
                 meetingRow(item)
@@ -99,7 +99,7 @@ struct MeetingSidebarProjectSection: View {
                     .padding(.leading, 25)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .contentShape(.rect)
             .dahliaSidebarHoverHighlight(isHovered: isLoadMoreHovered)
             .onHover { isLoadMoreHovered = $0 }
@@ -111,7 +111,7 @@ struct MeetingSidebarProjectSection: View {
     private var limitMessage: some View {
         Text(L10n.searchForOlderMeetings)
             .font(DahliaDesign.sidebarFont)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .padding(.leading, 25)
     }
 

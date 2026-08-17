@@ -124,9 +124,9 @@ private struct MeetingTimestampBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(DahliaDesign.sidebarBadgeFont)
             .monospacedDigit()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .fixedSize()
             .padding(.horizontal, 5)
             .padding(.vertical, 1)

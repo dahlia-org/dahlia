@@ -1,13 +1,21 @@
+import AppKit
 import SwiftUI
 
 enum DahliaDesign {
     static let hoverHighlightColor = Color.gray.opacity(0.16)
     static let sidebarSelectionColor = Color.gray
     static let sidebarSelectionHighlightColor = sidebarSelectionColor.opacity(0.32)
-    static let sidebarPrimaryTextColor = Color.primary.opacity(0.78)
-    static let sidebarSecondaryTextColor = Color.primary.opacity(0.38)
-    static let sidebarFontScale: CGFloat = 1.1
-    static let sidebarFont = Font.body.scaled(by: sidebarFontScale)
+    static let sidebarPrimaryTextColor = adaptiveSidebarColor(
+        light: NSColor(srgbRed: 58 / 255, green: 60 / 255, blue: 62 / 255, alpha: 1),
+        dark: NSColor(srgbRed: 198 / 255, green: 197 / 255, blue: 198 / 255, alpha: 1)
+    )
+    static let sidebarSecondaryTextColor = adaptiveSidebarColor(
+        light: NSColor(srgbRed: 165 / 255, green: 165 / 255, blue: 165 / 255, alpha: 1),
+        dark: NSColor(srgbRed: 135 / 255, green: 129 / 255, blue: 129 / 255, alpha: 1)
+    )
+    static let sidebarFontSize: CGFloat = 14
+    static let sidebarFont = Font.system(size: sidebarFontSize)
+    static let sidebarBadgeFont = Font.system(size: sidebarFontSize - 2)
     static let sidebarRowVerticalPadding: CGFloat = 3
     static let sidebarNavigationVerticalPadding: CGFloat = 8
 
@@ -44,6 +52,12 @@ enum DahliaDesign {
     static let detailHorizontalPadding: CGFloat = 24
     static let detailTopPadding = windowHeaderHeight + sidebarNavigationVerticalPadding
     static let tabContentInset: CGFloat = 16
+
+    private static func adaptiveSidebarColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
 }
 
 private struct DahliaChipSurface: ViewModifier {

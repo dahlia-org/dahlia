@@ -27,7 +27,7 @@ struct MeetingListPaginationRow: View {
         } else if let limitMessage {
             Text(limitMessage)
                 .font(DahliaDesign.sidebarFont)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
     }
@@ -38,7 +38,7 @@ struct MeetingListPaginationRow: View {
             ProgressView()
                 .controlSize(.small)
             Text(L10n.loadingMoreMeetings)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             Spacer()
         }
     }

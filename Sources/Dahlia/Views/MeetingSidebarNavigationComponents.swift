@@ -6,7 +6,7 @@ struct SidebarSectionHeader: View {
     var body: some View {
         Text(title)
             .font(DahliaDesign.sidebarFont.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 6)
