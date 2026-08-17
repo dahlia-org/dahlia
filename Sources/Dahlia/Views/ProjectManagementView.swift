@@ -16,6 +16,7 @@ struct ProjectManagementView: View {
     let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
     let onEditProject: (ProjectOverviewItem, String?, Int?) -> Void
+    let isProjectEditorPresented: Bool
     let usesMeetingSidebar: Bool
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
@@ -81,6 +82,10 @@ struct ProjectManagementView: View {
         }
         .onChange(of: projectDescription) {
             stageProjectDescriptionDraft(for: mainWindowNavigation.selectedProjectId)
+        }
+        .onChange(of: isProjectEditorPresented) { wasPresented, isPresented in
+            guard wasPresented, !isPresented else { return }
+            loadProjectDetails(for: mainWindowNavigation.selectedProjectId)
         }
         .onDisappear {
             stageProjectDescriptionDraft(for: mainWindowNavigation.selectedProjectId)

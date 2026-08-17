@@ -90,6 +90,28 @@ struct ProjectDescriptionEditingStateTests {
     }
 
     @Test
+    func clearingRevertedModalDraftRestoresPersistedDescription() {
+        let viewModel = SidebarViewModel()
+        let projectId = UUID.v7()
+        viewModel.stageProjectDescriptionDraft(
+            id: projectId,
+            description: "Unsaved description",
+            baseRevision: 1
+        )
+
+        viewModel.clearProjectDescriptionDraft(id: projectId)
+        let state = ProjectDescriptionEditingState(
+            persistedText: "Saved description",
+            draftText: viewModel.projectDescriptionDraft(id: projectId),
+            persistedRevision: 1,
+            draftRevision: viewModel.projectDescriptionDraftBaseRevision(id: projectId)
+        )
+
+        #expect(state.text == "Saved description")
+        #expect(state.expectedRevision == 1)
+    }
+
+    @Test
     func missingProjectDoesNotRemainAFailedDraft() throws {
         let database = try AppDatabaseManager(path: ":memory:")
         let viewModel = SidebarViewModel()

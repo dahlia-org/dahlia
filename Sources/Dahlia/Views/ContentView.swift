@@ -63,6 +63,7 @@ struct ContentView: View {
                                 expectedRevision: expectedRevision
                             )
                         },
+                        isProjectEditorPresented: projectEditorRequest != nil,
                         usesMeetingSidebar: usesMeetingSidebarForProjectManagement,
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
                         onSelectVault: onSelectVault
@@ -599,7 +600,8 @@ private extension ContentView {
                 parentProjectId: parentProjectId,
                 projectType: projectType,
                 appearance: appearance,
-                expectedRevision: request.expectedRevision ?? project.revision
+                expectedRevision: request.expectedRevision ?? project.revision,
+                clearsDescriptionDraftOnNoChange: request.hasInitialDescription
             )
         }
     }
@@ -645,7 +647,8 @@ private extension ContentView {
         parentProjectId: UUID?,
         projectType: ProjectType,
         appearance: ProjectAppearance,
-        expectedRevision: Int
+        expectedRevision: Int,
+        clearsDescriptionDraftOnNoChange: Bool
     ) async -> String? {
         let projectDataChanged = name != projectDisplayName(project)
             || description != project.projectDescription
@@ -671,6 +674,8 @@ private extension ContentView {
                     revision: updated.revision
                 )
             }
+        } else if clearsDescriptionDraftOnNoChange {
+            sidebarViewModel.clearProjectDescriptionDraft(id: project.projectId)
         }
 
         mainWindowNavigation.setProjectAppearance(

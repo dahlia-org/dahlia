@@ -27,4 +27,9 @@ enum ProjectEditorRequest: Identifiable {
         guard case let .edit(project, _, expectedRevision) = self else { return nil }
         return expectedRevision ?? project.revision
     }
+
+    var hasInitialDescription: Bool {
+        guard case let .edit(_, description, _) = self else { return false }
+        return description != nil
+    }
 }
