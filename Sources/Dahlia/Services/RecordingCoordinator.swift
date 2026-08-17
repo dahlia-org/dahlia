@@ -88,6 +88,22 @@ final class RecordingCoordinator {
         }
     }
 
+    func createDraftMeeting() {
+        guard !viewModel.isRecordingStartPending, !viewModel.isFinalizingRecording else { return }
+        mainWindowNavigation.showMeetings()
+        guard let dbQueue = sidebarViewModel.dbQueue,
+              let vault = sidebarViewModel.currentVault else {
+            MainWindowOpener.shared.openMainWindow()
+            return
+        }
+
+        sidebarViewModel.clearMeetingSelection()
+        viewModel.beginDraftMeeting(
+            dbQueue: dbQueue,
+            vaultURL: vault.url
+        )
+    }
+
     func createEmptyMeeting() {
         mainWindowNavigation.showMeetings()
         guard let dbQueue = sidebarViewModel.dbQueue,
