@@ -53,9 +53,12 @@ struct ContentView: View {
                         onSelectVault: onSelectVault
                     )
                 } else {
-                    HSplitView {
+                    MainSidebarSplitView(
+                        width: mainWindowNavigation.sidebarWidth,
+                        isVisible: isSidebarVisible || isShowingSettings,
+                        onWidthChange: mainWindowNavigation.updateSidebarWidth
+                    ) {
                         MainWindowPaneContent(
-                            isMainContentVisible: isSidebarVisible,
                             isShowingSettings: isShowingSettings,
                             settingsBackground: .sidebar
                         ) {
@@ -80,13 +83,8 @@ struct ContentView: View {
                                 onReturnToApp: mainWindowNavigation.dismissSettings
                             )
                         }
-                        .mainSidebarPane(
-                            width: mainWindowNavigation.sidebarWidth,
-                            isVisible: isSidebarVisible || isShowingSettings,
-                            onWidthChange: mainWindowNavigation.updateSidebarWidth
-                        )
-
-                        MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
+                    } detail: {
+                        MainWindowPaneContent(isShowingSettings: isShowingSettings) {
                             detailView
                         } settingsContent: {
                             SettingsDetailView(

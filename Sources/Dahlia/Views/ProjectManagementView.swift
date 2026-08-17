@@ -34,9 +34,12 @@ struct ProjectManagementView: View {
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
-        HSplitView {
+        MainSidebarSplitView(
+            width: mainWindowNavigation.sidebarWidth,
+            isVisible: isSidebarVisible || isShowingSettings,
+            onWidthChange: mainWindowNavigation.updateSidebarWidth
+        ) {
             MainWindowPaneContent(
-                isMainContentVisible: isSidebarVisible,
                 isShowingSettings: isShowingSettings,
                 settingsBackground: .sidebar
             ) {
@@ -84,13 +87,8 @@ struct ProjectManagementView: View {
                     onReturnToApp: mainWindowNavigation.dismissSettings
                 )
             }
-            .mainSidebarPane(
-                width: mainWindowNavigation.sidebarWidth,
-                isVisible: isSidebarVisible || isShowingSettings,
-                onWidthChange: mainWindowNavigation.updateSidebarWidth
-            )
-
-            MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
+        } detail: {
+            MainWindowPaneContent(isShowingSettings: isShowingSettings) {
                 selectedProjectDetail
             } settingsContent: {
                 SettingsDetailView(

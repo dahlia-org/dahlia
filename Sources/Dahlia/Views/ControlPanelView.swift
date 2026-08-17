@@ -162,7 +162,7 @@ struct ControlPanelView: View {
                 detailErrorBanner(message: googleDocsExportError, tint: .orange)
             }
         }
-        .frame(minWidth: 500, minHeight: 500)
+        .frame(minWidth: MainSidebarLayout.minimumDetailWidth, minHeight: 500)
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()
