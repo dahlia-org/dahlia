@@ -33,26 +33,53 @@ struct ProjectDescriptionNSTextViewTests {
 
     @Test
     func editorBecomesNonEditableWhenDisabled() throws {
-        let hostingView = NSHostingView(rootView: ProjectDescriptionTextViewFixture().disabled(false))
+        let model = ProjectDescriptionTextViewFixtureModel()
+        let hostingView = NSHostingView(rootView: ProjectDescriptionTextViewFixture(model: model).disabled(false))
         hostingView.frame = NSRect(x: 0, y: 0, width: 320, height: 160)
         hostingView.layoutSubtreeIfNeeded()
 
         let textView = try #require(hostingView.firstDescendant(ofType: ProjectDescriptionNSTextView.self))
         #expect(textView.isEditable)
 
-        hostingView.rootView = ProjectDescriptionTextViewFixture().disabled(true)
+        hostingView.rootView = ProjectDescriptionTextViewFixture(model: model).disabled(true)
         hostingView.layoutSubtreeIfNeeded()
 
         #expect(!textView.isEditable)
     }
+
+    @Test
+    func externalUpdatePreservesSelection() throws {
+        let model = ProjectDescriptionTextViewFixtureModel(text: "abcdef")
+        let hostingView = NSHostingView(rootView: ProjectDescriptionTextViewFixture(model: model))
+        hostingView.frame = NSRect(x: 0, y: 0, width: 320, height: 160)
+        hostingView.layoutSubtreeIfNeeded()
+
+        let textView = try #require(hostingView.firstDescendant(ofType: ProjectDescriptionNSTextView.self))
+        textView.setSelectedRange(NSRange(location: 2, length: 3))
+
+        model.text = "abcdefgh"
+        hostingView.layoutSubtreeIfNeeded()
+
+        #expect(textView.string == "abcdefgh")
+        #expect(textView.selectedRange() == NSRange(location: 2, length: 3))
+    }
+}
+
+@MainActor
+private final class ProjectDescriptionTextViewFixtureModel: ObservableObject {
+    @Published var text: String
+
+    init(text: String = "") {
+        self.text = text
+    }
 }
 
 private struct ProjectDescriptionTextViewFixture: View {
-    @State private var text = ""
+    @ObservedObject var model: ProjectDescriptionTextViewFixtureModel
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        ProjectDescriptionTextView(text: $text, isFocused: $isFocused)
+        ProjectDescriptionTextView(text: $model.text, isFocused: $isFocused)
     }
 }
 

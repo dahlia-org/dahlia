@@ -128,19 +128,21 @@ struct MeetingListSidebarView: View {
                         }
                     }
 
-                    MeetingSidebarListGroupLabel(
-                        title: L10n.recent,
-                        isExpanded: isRecentSectionExpanded,
-                        onToggleExpansion: { isRecentSectionExpanded.toggle() },
-                        displayMode: $mainWindowNavigation.meetingSidebarDisplayMode
-                    )
-                    if isRecentSectionExpanded, let unassignedProjectGroup {
-                        projectSection(
-                            unassignedProjectGroup,
-                            isPinned: false,
-                            showsHeader: false,
-                            isExpanded: isRecentSectionExpanded
+                    if let unassignedProjectGroup {
+                        MeetingSidebarListGroupLabel(
+                            title: L10n.recent,
+                            isExpanded: isRecentSectionExpanded,
+                            onToggleExpansion: { isRecentSectionExpanded.toggle() },
+                            displayMode: $mainWindowNavigation.meetingSidebarDisplayMode
                         )
+                        if isRecentSectionExpanded {
+                            projectSection(
+                                unassignedProjectGroup,
+                                isPinned: false,
+                                showsHeader: false,
+                                isExpanded: true
+                            )
+                        }
                     }
                 }
             }

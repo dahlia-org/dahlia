@@ -61,7 +61,11 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
 
         let selection = textView.selectedRange()
         textView.string = text
-        textView.setSelectedRange(NSRange(location: min(selection.location, text.utf16.count), length: 0))
+        let location = min(selection.location, text.utf16.count)
+        textView.setSelectedRange(NSRange(
+            location: location,
+            length: min(selection.length, text.utf16.count - location)
+        ))
     }
 
     @MainActor

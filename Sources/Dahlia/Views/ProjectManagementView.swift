@@ -322,11 +322,20 @@ private extension ProjectManagementView {
             projectId: selectedProjectId,
             revision: current.revision
         ) {
-            projectDescription = current.projectDescription
+            let hasNewerDraft = projectDescription != lastSavedProjectDescription
             lastSavedProjectDescription = current.projectDescription
             lastLoadedProjectRevision = current.revision
             projectDescriptionExpectedRevision = current.revision
-            sidebarViewModel.clearProjectDescriptionDraft(id: selectedProjectId)
+            if hasNewerDraft {
+                sidebarViewModel.stageProjectDescriptionDraft(
+                    id: selectedProjectId,
+                    description: projectDescription,
+                    baseRevision: current.revision
+                )
+            } else {
+                projectDescription = current.projectDescription
+                sidebarViewModel.clearProjectDescriptionDraft(id: selectedProjectId)
+            }
             descriptionStatusMessage = nil
             descriptionSaveFailed = false
             requestExpansion(toReveal: current.projectName)
