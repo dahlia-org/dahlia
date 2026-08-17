@@ -35,7 +35,7 @@ struct ContentView: View {
 
         MainChatSplitView(
             width: mainWindowNavigation.chatSidebarWidth,
-            contentMinimumWidth: isSidebarVisible
+            contentMinimumWidth: isSidebarVisible || isShowingSettings
                 ? MainSidebarLayout.minimumSplitWidth
                 : MainSidebarLayout.minimumDetailWidth,
             isVisible: chatCoordinator.isDockedVisible && !isShowingSettings,
