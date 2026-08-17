@@ -40,6 +40,20 @@ struct ProjectDescriptionEditingStateTests {
         #expect(state.text == "Unsaved description")
         #expect(state.persistedText == "Externally updated description")
         #expect(state.expectedRevision == 1)
+
+        let request = ProjectEditorRequest.edit(
+            ProjectOverviewItem(
+                projectId: projectId,
+                projectName: "Project",
+                revision: 2,
+                createdAt: .now,
+                meetingCount: 0,
+                latestMeetingDate: nil
+            ),
+            initialDescription: state.text,
+            expectedRevision: state.expectedRevision
+        )
+        #expect(request.expectedRevision == 1)
     }
 
     @Test

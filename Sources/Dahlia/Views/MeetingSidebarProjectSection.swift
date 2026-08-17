@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeetingSidebarProjectSection: View {
     let group: MeetingProjectGroup
+    let projectAppearance: ProjectAppearance
     let isPinned: Bool
     let isExpanded: Bool
     let selectedProjectID: UUID?
@@ -29,6 +30,7 @@ struct MeetingSidebarProjectSection: View {
         if let project = group.project {
             MeetingSidebarProjectHeader(
                 project: project,
+                appearance: projectAppearance,
                 isPinned: isPinned,
                 isExpanded: isExpanded,
                 isSelected: selectedProjectID == project.projectId,

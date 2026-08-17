@@ -15,13 +15,11 @@ struct ProjectManagementView: View {
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
+    let onEditProject: (ProjectOverviewItem, String?, Int?) -> Void
     let usesMeetingSidebar: Bool
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
 
-    @State private var projectName = ""
-    @State private var projectParentId: UUID?
-    @State private var projectType = ProjectType.undefined
     @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var isShowingProjectOperationError = false
     @State private var projectOperationErrorMessage = ""
@@ -31,7 +29,6 @@ struct ProjectManagementView: View {
     @State private var lastSavedProjectDescription = ""
     @State private var lastLoadedProjectRevision: Int?
     @State private var projectDescriptionExpectedRevision: Int?
-    @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
@@ -166,7 +163,8 @@ struct ProjectManagementView: View {
                     selectedProjectId: $mainWindowNavigation.selectedProjectId,
                     expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
                     onRetry: sidebarViewModel.retryProjectCatalogLoading,
-                    onCreateProject: onCreateProject
+                    onCreateProject: onCreateProject,
+                    appearanceForProject: projectAppearance
                 )
 
                 MainSidebarBottomArea(
@@ -229,13 +227,15 @@ private extension ProjectManagementView {
             ProjectDetailHeaderView(
                 projectName: displayName(for: project.projectName),
                 projectPath: project.projectName,
-                vaultName: vaultName
+                vaultName: vaultName,
+                appearance: projectAppearance(project.projectId),
+                onEdit: {
+                    onEditProject(project, projectDescription, projectDescriptionExpectedRevision)
+                }
             )
 
             Form {
-                projectNameSection(for: project)
                 descriptionSection
-                hierarchySection(for: project)
                 ProjectContextSectionView(
                     project: project,
                     includedSubprojectCount: max(hierarchy.count - 1, 0),
@@ -245,66 +245,6 @@ private extension ProjectManagementView {
                 projectDeletionSection
             }
             .formStyle(.grouped)
-        }
-    }
-
-    private func hierarchySection(for project: ProjectOverviewItem) -> some View {
-        Section {
-            Picker(L10n.parentProject, selection: $projectParentId) {
-                Text(L10n.vaultRoot).tag(UUID?.none)
-                ForEach(projectReparentDestinations(for: project)) { candidate in
-                    Text(candidate.projectName).tag(Optional(candidate.projectId))
-                }
-            }
-            Button(L10n.moveProject, action: applyParentChange)
-                .disabled(projectParentId == project.parentProjectId)
-
-            if projectParentId == nil {
-                Picker(L10n.projectType, selection: $projectType) {
-                    ForEach(ProjectType.allCases, id: \.self) { type in
-                        Text(L10n.projectTypeName(type)).tag(type)
-                    }
-                }
-                Button(L10n.updateProjectType, action: applyTypeChange)
-                    .disabled(
-                        project.parentProjectId != nil
-                            || projectType == projectedProjectType(for: project)
-                    )
-            } else {
-                LabeledContent(L10n.projectType) {
-                    VStack(alignment: .trailing) {
-                        Text(L10n.projectTypeName(projectedProjectType(for: project)))
-                        if let ownerName = projectedTypeOwnerProjectId(for: project).flatMap(projectName(id:)) {
-                            Text(L10n.inheritedFromProject(ownerName))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-        } header: {
-            Text(L10n.projectHierarchyAndType)
-        } footer: {
-            Text(L10n.projectHierarchyChangeHelp)
-        }
-    }
-
-    private func projectNameSection(for project: ProjectOverviewItem) -> some View {
-        Section {
-            LabeledContent(L10n.projectName) {
-                HStack {
-                    TextField("", text: $projectName)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel(L10n.projectName)
-                        .onSubmit(renameSelectedProject)
-
-                    Button(L10n.renameProject, action: renameSelectedProject)
-                        .disabled(!canRename(project))
-                }
-            }
-        } footer: {
-            Text(L10n.projectNameHelp)
         }
     }
 
@@ -392,19 +332,23 @@ private extension ProjectManagementView {
               previous.revision != current.revision else {
             return
         }
-        if projectRevisionObservationTracker.consume(
+        if mainWindowNavigation.consumeLocalProjectRevision(
             projectId: selectedProjectId,
             revision: current.revision
         ) {
+            projectDescription = current.projectDescription
+            lastSavedProjectDescription = current.projectDescription
+            lastLoadedProjectRevision = current.revision
+            projectDescriptionExpectedRevision = current.revision
+            sidebarViewModel.clearProjectDescriptionDraft(id: selectedProjectId)
+            descriptionStatusMessage = nil
+            descriptionSaveFailed = false
             requestExpansion(toReveal: current.projectName)
             return
         }
 
-        projectRevisionObservationTracker.discard(projectId: selectedProjectId)
-        let hadUnsavedFields = projectName != displayName(for: previous.projectName)
-            || projectParentId != previous.parentProjectId
-            || projectType != previous.effectiveProjectType
-            || projectDescription != lastSavedProjectDescription
+        mainWindowNavigation.discardLocalProjectRevisions(projectId: selectedProjectId)
+        let hadUnsavedFields = projectDescription != lastSavedProjectDescription
         loadProjectDetails(for: selectedProjectId)
         requestExpansion(toReveal: current.projectName)
         if hadUnsavedFields {
@@ -457,10 +401,7 @@ private extension ProjectManagementView {
         projectDescriptionExpectedRevision = editingState.expectedRevision
         descriptionStatusMessage = nil
         descriptionSaveFailed = false
-        projectName = project.map { displayName(for: $0.projectName) } ?? ""
         lastLoadedProjectRevision = project?.revision
-        projectParentId = project?.parentProjectId
-        projectType = project?.effectiveProjectType ?? .undefined
     }
 
     private func stageProjectDescriptionDraft(for projectId: UUID?) {
@@ -526,32 +467,6 @@ private extension ProjectManagementView {
         }
     }
 
-    private func canRename(_ project: ProjectOverviewItem) -> Bool {
-        let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmedName.isEmpty
-            && trimmedName != displayName(for: project.projectName)
-    }
-
-    private func renameSelectedProject() {
-        guard let selectedProject else { return }
-        let previousRevision = lastLoadedProjectRevision
-        guard let renamed = sidebarViewModel.renameProject(
-            id: selectedProject.projectId,
-            newName: projectName,
-            expectedRevision: lastLoadedProjectRevision
-        ) else {
-            showProjectOperationError()
-            return
-        }
-        projectName = displayName(for: renamed.path)
-        recordLocalProjectRevision(
-            projectId: selectedProject.projectId,
-            previousRevision: previousRevision,
-            revision: renamed.revision
-        )
-        requestExpansion(toReveal: renamed.path)
-    }
-
     private func requestSelectedProjectDeletion() {
         guard let selectedProject else { return }
         projectPendingDeletion = selectedProject
@@ -559,11 +474,13 @@ private extension ProjectManagementView {
 
     private func handlePendingProjectNavigationIntent() {
         guard let projectId = mainWindowNavigation.selectedProjectId,
-              selectedProject != nil,
+              let project = selectedProject,
               let intent = mainWindowNavigation.consumeProjectNavigationIntent(for: projectId) else { return }
         switch intent {
-        case .open, .edit:
+        case .open:
             break
+        case .edit:
+            onEditProject(project, projectDescription, projectDescriptionExpectedRevision)
         case .delete:
             requestSelectedProjectDeletion()
         }
@@ -597,66 +514,6 @@ private extension ProjectManagementView {
         )
     }
 
-    private func projectReparentDestinations(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {
-        ProjectDestinationOptions.reparentCandidates(
-            for: project,
-            projects: sidebarViewModel.allProjectItems
-        )
-    }
-
-    private func projectedProjectType(for project: ProjectOverviewItem) -> ProjectType {
-        guard let projectParentId else { return project.effectiveProjectType }
-        return sidebarViewModel.allProjectItems
-            .first(where: { $0.projectId == projectParentId })?
-            .effectiveProjectType ?? .undefined
-    }
-
-    private func projectedTypeOwnerProjectId(for project: ProjectOverviewItem) -> UUID? {
-        guard let projectParentId else { return project.projectId }
-        return sidebarViewModel.allProjectItems
-            .first(where: { $0.projectId == projectParentId })?
-            .typeOwnerProjectId
-    }
-
-    private func applyParentChange() {
-        guard let selectedProject else { return }
-        let previousRevision = lastLoadedProjectRevision
-        guard let moved = sidebarViewModel.reparentProject(
-            id: selectedProject.projectId,
-            parentProjectId: projectParentId,
-            expectedRevision: lastLoadedProjectRevision
-        ) else {
-            showProjectOperationError()
-            loadProjectDetails(for: selectedProject.projectId)
-            return
-        }
-        recordLocalProjectRevision(
-            projectId: selectedProject.projectId,
-            previousRevision: previousRevision,
-            revision: moved.revision
-        )
-        requestExpansion(toReveal: moved.path)
-    }
-
-    private func applyTypeChange() {
-        guard let selectedProject else { return }
-        let previousRevision = lastLoadedProjectRevision
-        guard let updated = sidebarViewModel.updateRootProjectType(
-            id: selectedProject.projectId,
-            projectType: projectType,
-            expectedRevision: lastLoadedProjectRevision
-        ) else {
-            showProjectOperationError()
-            loadProjectDetails(for: mainWindowNavigation.selectedProjectId)
-            return
-        }
-        recordLocalProjectRevision(
-            projectId: selectedProject.projectId,
-            previousRevision: previousRevision,
-            revision: updated.revision
-        )
-    }
-
     private func recordLocalProjectRevision(
         projectId: UUID,
         previousRevision: Int?,
@@ -673,11 +530,7 @@ private extension ProjectManagementView {
                 )
             }
         }
-        projectRevisionObservationTracker.record(projectId: projectId, revision: revision)
-    }
-
-    private func projectName(id: UUID) -> String? {
-        sidebarViewModel.allProjectItems.first(where: { $0.projectId == id })?.projectName
+        mainWindowNavigation.recordLocalProjectRevision(projectId: projectId, revision: revision)
     }
 
     private func requestExpansion(toReveal projectName: String) {
@@ -692,8 +545,10 @@ private extension ProjectManagementView {
         projectName.split(separator: "/").last.map(String.init) ?? projectName
     }
 
-    private func showProjectOperationError() {
-        projectOperationErrorMessage = sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
-        isShowingProjectOperationError = true
+    private func projectAppearance(_ projectId: UUID) -> ProjectAppearance {
+        mainWindowNavigation.projectAppearance(
+            projectId: projectId,
+            vaultId: sidebarViewModel.currentVault?.id
+        )
     }
 }

@@ -649,6 +649,7 @@ enum L10n {
     static var me: String { String(localized: "Me", bundle: bundle) }
     static var ask: String { String(localized: "Ask", bundle: bundle) }
     static var newProject: String { String(localized: "New Project", bundle: bundle) }
+    static var createProject: String { String(localized: "Create Project", bundle: bundle) }
     static var newSubproject: String { String(localized: "New Subproject", bundle: bundle) }
     static var newTopLevelProject: String { String(localized: "New Project at Vault Top", bundle: bundle) }
 
@@ -671,6 +672,31 @@ enum L10n {
     }
 
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
+    static var projectIcon: String { String(localized: "Project Icon", bundle: bundle) }
+    static var projectThemeColor: String { String(localized: "Theme Color", bundle: bundle) }
+    static var projectColorNeutral: String { String(localized: "Neutral", bundle: bundle) }
+    static var projectColorRed: String { String(localized: "Red", bundle: bundle) }
+    static var projectColorOrange: String { String(localized: "Orange", bundle: bundle) }
+    static var projectColorYellow: String { String(localized: "Yellow", bundle: bundle) }
+    static var projectColorGreen: String { String(localized: "Green", bundle: bundle) }
+    static var projectColorBlue: String { String(localized: "Blue", bundle: bundle) }
+    static var projectColorPurple: String { String(localized: "Purple", bundle: bundle) }
+    static var projectColorPink: String { String(localized: "Pink", bundle: bundle) }
+    static var projectIconFolder: String { String(localized: "Folder", bundle: bundle) }
+    static var projectIconFinance: String { String(localized: "Finance", bundle: bundle) }
+    static var projectIconBook: String { String(localized: "Book", bundle: bundle) }
+    static var projectIconEducation: String { String(localized: "Education", bundle: bundle) }
+    static var projectIconWriting: String { String(localized: "Writing", bundle: bundle) }
+    static var projectIconCode: String { String(localized: "Code", bundle: bundle) }
+    static var projectIconTerminal: String { String(localized: "Terminal", bundle: bundle) }
+    static var projectIconMusic: String { String(localized: "Music", bundle: bundle) }
+    static var projectIconFilm: String { String(localized: "Film", bundle: bundle) }
+    static var projectIconArt: String { String(localized: "Art", bundle: bundle) }
+    static var projectIconHealth: String { String(localized: "Health", bundle: bundle) }
+    static var projectIconPuzzle: String { String(localized: "Puzzle", bundle: bundle) }
+    static var projectIconNature: String { String(localized: "Nature", bundle: bundle) }
+    static var projectIconWork: String { String(localized: "Work", bundle: bundle) }
+    static var projectIconAnalytics: String { String(localized: "Analytics", bundle: bundle) }
     static var parentProject: String { String(localized: "Parent Project", bundle: bundle) }
     static var vaultRoot: String { String(localized: "Vault Root", bundle: bundle) }
     static var projectType: String { String(localized: "Project Type", bundle: bundle) }

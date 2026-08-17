@@ -30,6 +30,7 @@ final class MainWindowNavigation {
     private static let historyLimit = 50
     private static let meetingSidebarDisplayModeDefaultsKey = "meetingSidebarDisplayMode"
     private static let pinnedProjectIDsDefaultsKey = "meetingSidebarPinnedProjectIDs"
+    private static let projectAppearancesDefaultsKey = "projectAppearances"
 
     private(set) var section: MainWindowSection = .meetings
     private(set) var currentLocation: MainWindowLocation = .upcomingSchedule
@@ -62,6 +63,8 @@ final class MainWindowNavigation {
     private(set) var pendingProjectNavigationIntent: PendingProjectNavigationIntent?
 
     private var pinnedProjectIDsByVault: [String: [String]]
+    private var projectAppearancesByVault: [String: [String: ProjectAppearance]]
+    private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
 
     private var projectVaultId: UUID?
     private var pendingCreatedProjectId: UUID?
@@ -105,6 +108,7 @@ final class MainWindowNavigation {
         meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)
             .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
         pinnedProjectIDsByVault = Self.loadPinnedProjectIDs(from: settingsDefaults)
+        projectAppearancesByVault = Self.loadProjectAppearances(from: settingsDefaults)
     }
 
     func showMeetings() {
@@ -161,6 +165,29 @@ final class MainWindowNavigation {
         savePinnedProjectIDs()
     }
 
+    func projectAppearance(projectId: UUID, vaultId: UUID?) -> ProjectAppearance {
+        guard let vaultId else { return .default }
+        return projectAppearancesByVault[vaultId.uuidString]?[projectId.uuidString] ?? .default
+    }
+
+    func setProjectAppearance(_ appearance: ProjectAppearance, projectId: UUID, vaultId: UUID?) {
+        guard let vaultId else { return }
+        projectAppearancesByVault[vaultId.uuidString, default: [:]][projectId.uuidString] = appearance
+        saveProjectAppearances()
+    }
+
+    func recordLocalProjectRevision(projectId: UUID, revision: Int) {
+        projectRevisionObservationTracker.record(projectId: projectId, revision: revision)
+    }
+
+    func consumeLocalProjectRevision(projectId: UUID, revision: Int) -> Bool {
+        projectRevisionObservationTracker.consume(projectId: projectId, revision: revision)
+    }
+
+    func discardLocalProjectRevisions(projectId: UUID) {
+        projectRevisionObservationTracker.discard(projectId: projectId)
+    }
+
     func openMeetings() {
         dismissSettings()
         showMeetings()
@@ -208,6 +235,17 @@ final class MainWindowNavigation {
     private func savePinnedProjectIDs() {
         guard let data = try? JSONEncoder().encode(pinnedProjectIDsByVault) else { return }
         settingsDefaults.set(data, forKey: Self.pinnedProjectIDsDefaultsKey)
+    }
+
+    private static func loadProjectAppearances(from defaults: UserDefaults) -> [String: [String: ProjectAppearance]] {
+        guard let data = defaults.data(forKey: projectAppearancesDefaultsKey),
+              let values = try? JSONDecoder().decode([String: [String: ProjectAppearance]].self, from: data) else { return [:] }
+        return values
+    }
+
+    private func saveProjectAppearances() {
+        guard let data = try? JSONEncoder().encode(projectAppearancesByVault) else { return }
+        settingsDefaults.set(data, forKey: Self.projectAppearancesDefaultsKey)
     }
 
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }

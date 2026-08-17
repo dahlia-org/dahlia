@@ -25,6 +25,25 @@ import GRDB
             #expect(!FileManager.default.fileExists(atPath: context.vaultURL.appending(path: child.path).path))
         }
 
+        @Test
+        func localAppearanceChangeDoesNotChangeProjectRevision() throws {
+            let context = try makeContext()
+            defer { try? FileManager.default.removeItem(at: context.rootURL) }
+            let suiteName = "ProjectWorkspaceServiceTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let project = try context.service.createProject(name: "Project", parentProjectId: nil)
+            let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+
+            navigation.setProjectAppearance(
+                ProjectAppearance(icon: .music, color: .purple),
+                projectId: project.id,
+                vaultId: context.vault.id
+            )
+
+            #expect(try context.repository.fetchProject(id: project.id)?.revision == project.revision)
+        }
+
         @Test(arguments: ["", ".hidden", "_internal", "a/b", "a:b", "..", "../Outside", "A/../../Outside"])
         func rejectsInvalidNames(name: String) throws {
             let context = try makeContext()

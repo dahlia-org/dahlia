@@ -9,6 +9,7 @@ struct ProjectManagementSidebarContent: View {
     @Binding var expandedProjectIds: Set<UUID>
     let onRetry: () -> Void
     let onCreateProject: () -> Void
+    let appearanceForProject: (UUID) -> ProjectAppearance
 
     var body: some View {
         if !hasVault {
@@ -39,7 +40,8 @@ struct ProjectManagementSidebarContent: View {
                     node: node,
                     selectedProjectId: selectedProjectId,
                     expandedProjectIds: $expandedProjectIds,
-                    expandsAllDescendants: false
+                    expandsAllDescendants: false,
+                    appearanceForProject: appearanceForProject
                 )
             }
         }

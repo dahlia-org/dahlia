@@ -41,6 +41,36 @@
         }
 
         @Test
+        func persistsVaultScopedProjectAppearancesAndDefaultsInvalidValues() throws {
+            let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let firstVault = UUID.v7()
+            let secondVault = UUID.v7()
+            let project = UUID.v7()
+            let validProject = UUID.v7()
+            let appearance = ProjectAppearance(icon: .music, color: .purple)
+            let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+
+            #expect(navigation.projectAppearance(projectId: project, vaultId: firstVault) == .default)
+            navigation.setProjectAppearance(appearance, projectId: project, vaultId: firstVault)
+
+            let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+            #expect(restored.projectAppearance(projectId: project, vaultId: firstVault) == appearance)
+            #expect(restored.projectAppearance(projectId: project, vaultId: secondVault) == .default)
+
+            defaults.set(
+                Data(
+                    #"{"\#(firstVault.uuidString)":{"\#(project.uuidString)":{"icon":"unknown","color":"blue"},"\#(validProject.uuidString)":{"icon":"music.note","color":"purple"}}}"#.utf8
+                ),
+                forKey: "projectAppearances"
+            )
+            let invalidRestored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+            #expect(invalidRestored.projectAppearance(projectId: project, vaultId: firstVault) == .default)
+            #expect(invalidRestored.projectAppearance(projectId: validProject, vaultId: firstVault) == appearance)
+        }
+
+        @Test
         func opensProjectWithConsumableEditAndDeleteIntents() {
             for intent in [ProjectNavigationIntent.edit, .delete] {
                 let navigation = MainWindowNavigation(openMainWindow: {})

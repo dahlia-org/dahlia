@@ -270,6 +270,12 @@ struct MeetingListSidebarView: View {
     private func projectSection(_ group: MeetingProjectGroup, isPinned: Bool) -> some View {
         MeetingSidebarProjectSection(
             group: group,
+            projectAppearance: group.project.map {
+                mainWindowNavigation.projectAppearance(
+                    projectId: $0.projectId,
+                    vaultId: sidebarViewModel.currentVault?.id
+                )
+            } ?? .default,
             isPinned: isPinned,
             isExpanded: !collapsedProjectKeys.contains(group.key),
             selectedProjectID: mainWindowNavigation.section == .projects

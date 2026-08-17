@@ -5,6 +5,7 @@ struct ProjectManagementTreeRow: View {
     let selectedProjectId: UUID?
     @Binding var expandedProjectIds: Set<UUID>
     let expandsAllDescendants: Bool
+    let appearanceForProject: (UUID) -> ProjectAppearance
 
     var body: some View {
         if let children = node.children {
@@ -14,20 +15,23 @@ struct ProjectManagementTreeRow: View {
                         node: child,
                         selectedProjectId: selectedProjectId,
                         expandedProjectIds: $expandedProjectIds,
-                        expandsAllDescendants: expandsAllDescendants
+                        expandsAllDescendants: expandsAllDescendants,
+                        appearanceForProject: appearanceForProject
                     )
                 }
             } label: {
                 ProjectManagementRowContent(
                     node: node,
-                    isSelected: selectedProjectId == node.id
+                    isSelected: selectedProjectId == node.id,
+                    appearance: appearanceForProject(node.id)
                 )
             }
             .tag(node.id)
         } else {
             ProjectManagementRowContent(
                 node: node,
-                isSelected: selectedProjectId == node.id
+                isSelected: selectedProjectId == node.id,
+                appearance: appearanceForProject(node.id)
             )
             .tag(node.id)
         }
