@@ -8,7 +8,7 @@ struct CodexChatHeader: View {
     let onShowHistory: () -> Void
     let onNewChat: () -> Void
     let onPopOut: (() -> Void)?
-    let onClose: (() -> Void)?
+    let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
 
     var body: some View {
@@ -55,12 +55,13 @@ struct CodexChatHeader: View {
                 )
             }
 
-            if let onClose {
-                DahliaWindowHeaderIconButton(
-                    label: L10n.hideChat,
-                    systemImage: "sidebar.right",
-                    action: onClose
-                )
+            if reservesSidebarToggle {
+                Color.clear
+                    .frame(
+                        width: DahliaDesign.windowHeaderControlSize,
+                        height: DahliaDesign.windowHeaderControlSize
+                    )
+                    .accessibilityHidden(true)
             }
         }
     }

@@ -6,7 +6,6 @@ struct CodexChatSidebarView: View {
     @Binding var showsHistory: Bool
     @Binding var showsConfiguration: Bool
     let onPopOut: () -> Void
-    let onClose: () -> Void
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
 
     var body: some View {
@@ -21,7 +20,7 @@ struct CodexChatSidebarView: View {
             onNewChat: startNewChat,
             onOpenHistory: openHistory,
             onPopOut: onPopOut,
-            onClose: onClose,
+            reservesSidebarToggle: true,
             reservesWindowControls: false
         )
         .task(id: sidebarViewModel.currentVault?.id) {

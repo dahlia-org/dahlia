@@ -33,7 +33,14 @@ struct ContentView: View {
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
-        HSplitView {
+        MainChatSplitView(
+            width: mainWindowNavigation.chatSidebarWidth,
+            contentMinimumWidth: isSidebarVisible || isShowingSettings
+                ? MainSidebarLayout.minimumSplitWidth
+                : MainSidebarLayout.minimumDetailWidth,
+            isVisible: chatCoordinator.isDockedVisible && !isShowingSettings,
+            onWidthChange: mainWindowNavigation.updateChatSidebarWidth
+        ) {
             Group {
                 if mainWindowNavigation.section == .projects {
                     ProjectManagementView(
@@ -104,35 +111,39 @@ struct ContentView: View {
                 MainWorkspaceHeader(
                     isVisible: !isShowingSettings,
                     isSidebarVisible: isSidebarVisible,
-                    isChatSidebarVisible: chatCoordinator.isDockedVisible,
                     canGoBack: canGoBack,
                     canGoForward: canGoForward,
                     onToggleSidebar: toggleSidebar,
                     onSearch: showSearch,
                     onGoBack: goBack,
-                    onGoForward: goForward,
-                    onToggleChat: toggleChat
+                    onGoForward: goForward
                 )
             }
 
-            if chatCoordinator.isDockedVisible {
-                CodexChatSidebarView(
-                    coordinator: chatCoordinator,
-                    sidebarViewModel: sidebarViewModel,
-                    showsHistory: $isShowingChatHistory,
-                    showsConfiguration: $isShowingChatConfiguration,
-                    onPopOut: popOutDockedChat,
-                    onClose: toggleChat,
-                    onOpenDetachedSession: openDetachedChat
-                )
-                .mainChatSidebarPane(
-                    width: mainWindowNavigation.chatSidebarWidth,
-                    isVisible: !isShowingSettings,
-                    onWidthChange: mainWindowNavigation.updateChatSidebarWidth
-                )
-            }
+        } sidebar: {
+            CodexChatSidebarView(
+                coordinator: chatCoordinator,
+                sidebarViewModel: sidebarViewModel,
+                showsHistory: $isShowingChatHistory,
+                showsConfiguration: $isShowingChatConfiguration,
+                onPopOut: popOutDockedChat,
+                onOpenDetachedSession: openDetachedChat
+            )
         }
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
+        .overlay(alignment: .topTrailing) {
+            if !isShowingSettings {
+                DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
+                    Spacer()
+                    DahliaWindowHeaderIconButton(
+                        label: chatCoordinator.isDockedVisible ? L10n.hideChat : L10n.showChat,
+                        systemImage: "sidebar.right",
+                        action: toggleChat
+                    )
+                    .accessibilityValue(chatCoordinator.isDockedVisible ? L10n.shown : L10n.hidden)
+                }
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if !viewModel.summaryGenerationJobs.isEmpty {
                 SummaryProgressToastView(

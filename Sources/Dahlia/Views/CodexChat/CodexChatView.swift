@@ -11,7 +11,7 @@ struct CodexChatView: View {
     let onNewChat: () -> Void
     let onOpenHistory: (CodexChatThreadSummary) -> Void
     let onPopOut: (() -> Void)?
-    let onClose: (() -> Void)?
+    let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
 
     var body: some View {
@@ -24,7 +24,7 @@ struct CodexChatView: View {
                 onShowHistory: showHistory,
                 onNewChat: startNewChat,
                 onPopOut: onPopOut,
-                onClose: onClose,
+                reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls
             )
 

@@ -94,6 +94,17 @@
             )
         }
 
+        @Test
+        func chatSidebarReservesTheVisibleMainSidebarWidth() {
+            let width = MainChatSidebarLayout.effectiveWidth(
+                MainChatSidebarLayout.maximumWidth,
+                availableWidth: MainSidebarLayout.minimumSplitWidth + MainChatSidebarLayout.defaultWidth,
+                contentMinimumWidth: MainSidebarLayout.minimumSplitWidth
+            )
+
+            #expect(width == MainChatSidebarLayout.defaultWidth)
+        }
+
         private func temporarySidebarDefaults() throws -> (defaults: UserDefaults, suiteName: String) {
             let suiteName = "MainWindowNavigationTests.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
