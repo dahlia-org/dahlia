@@ -58,6 +58,16 @@
         }
 
         @Test
+        func sidebarReservesTheDetailMinimumWidth() {
+            let width = MainSidebarLayout.effectiveWidth(
+                MainSidebarLayout.maximumWidth,
+                availableWidth: MainSidebarLayout.minimumSplitWidth
+            )
+
+            #expect(width == MainSidebarLayout.minimumWidth)
+        }
+
+        @Test
         func chatSidebarUsesDefaultWidthWhenNoWidthIsStored() throws {
             let (defaults, suiteName) = try temporarySidebarDefaults()
             defer { defaults.removePersistentDomain(forName: suiteName) }

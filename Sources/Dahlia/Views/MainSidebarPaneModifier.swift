@@ -1,6 +1,17 @@
 import SwiftUI
 
 extension View {
+    func mainSidebarBackground() -> some View {
+        background {
+            SidebarMaterialBackground()
+                .overlay {
+                    Color(nsColor: .windowBackgroundColor)
+                        .opacity(MainSidebarLayout.tintOpacity)
+                }
+                .ignoresSafeArea()
+        }
+    }
+
     func mainSidebarPane(
         width: CGFloat,
         minimumWidth: CGFloat = MainSidebarLayout.minimumWidth,
@@ -14,14 +25,7 @@ extension View {
             idealWidth: isVisible ? width : 0,
             maxWidth: isVisible ? maximumWidth : 0
         )
-        .background {
-            SidebarMaterialBackground()
-                .overlay {
-                    Color(nsColor: .windowBackgroundColor)
-                        .opacity(MainSidebarLayout.tintOpacity)
-                }
-                .ignoresSafeArea()
-        }
+        .mainSidebarBackground()
         .background {
             if isVisible {
                 SplitViewWidthSyncView(

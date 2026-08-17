@@ -35,7 +35,6 @@ struct VaultPickerView: View {
 
         HSplitView {
             MainWindowPaneContent(
-                isMainContentVisible: true,
                 isShowingSettings: isShowingSettings,
                 settingsBackground: .sidebar
             ) {
@@ -63,7 +62,7 @@ struct VaultPickerView: View {
                 onWidthChange: updateSidebarWidth
             )
 
-            MainWindowPaneContent(isMainContentVisible: true, isShowingSettings: isShowingSettings) {
+            MainWindowPaneContent(isShowingSettings: isShowingSettings) {
                 VStack(spacing: 0) {
                     DahliaWindowHeader {
                         Text(selectedVault?.name ?? L10n.vaultDetails)

@@ -7,7 +7,6 @@ struct MainWindowPaneContent<MainContent: View, SettingsContent: View>: View {
         case sidebar
     }
 
-    let isMainContentVisible: Bool
     let isShowingSettings: Bool
     var settingsBackground = SettingsBackground.detail
     @ViewBuilder let mainContent: MainContent
@@ -16,10 +15,9 @@ struct MainWindowPaneContent<MainContent: View, SettingsContent: View>: View {
     var body: some View {
         ZStack {
             mainContent
-                .opacity(isMainContentVisible ? 1 : 0)
-                .allowsHitTesting(isMainContentVisible && !isShowingSettings)
-                .disabled(!isMainContentVisible || isShowingSettings)
-                .accessibilityHidden(!isMainContentVisible || isShowingSettings)
+                .allowsHitTesting(!isShowingSettings)
+                .disabled(isShowingSettings)
+                .accessibilityHidden(isShowingSettings)
 
             if isShowingSettings {
                 settingsContent
