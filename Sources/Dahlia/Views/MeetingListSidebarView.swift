@@ -164,6 +164,7 @@ struct MeetingListSidebarView: View {
             )
         }
         .font(DahliaDesign.sidebarFont)
+        .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
         }
