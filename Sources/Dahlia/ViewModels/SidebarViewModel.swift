@@ -114,6 +114,7 @@ final class SidebarViewModel {
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
     @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
     @ObservationIgnored var projectMeetingObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var isProjectMeetingProjectionRequested = false
     @ObservationIgnored var projectMeetingLoadTasks: [MeetingProjectKey: Task<Void, Never>] = [:]
     @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
     @ObservationIgnored var meetingSearchCursor: MeetingSidebarCursor?
@@ -273,7 +274,9 @@ final class SidebarViewModel {
 
         startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
         startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
-        startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+        if isProjectMeetingProjectionRequested {
+            startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+        }
         startTagsObservation(dbQueue: dbQueue)
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
         startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
@@ -290,7 +293,9 @@ final class SidebarViewModel {
                 self.startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
                 self.resetMeetingListPagination()
                 self.startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
-                self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+                if self.isProjectMeetingProjectionRequested {
+                    self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+                }
                 if self.isMeetingCatalogRequested {
                     self.startMeetingReferencesObservation(dbQueue: dbQueue, vaultId: vaultId)
                 }

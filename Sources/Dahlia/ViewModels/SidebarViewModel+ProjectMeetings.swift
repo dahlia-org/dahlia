@@ -16,6 +16,28 @@ extension SidebarViewModel {
         return groups
     }
 
+    func setProjectMeetingProjectionNeeded(_ isNeeded: Bool) {
+        guard isProjectMeetingProjectionRequested != isNeeded else { return }
+        isProjectMeetingProjectionRequested = isNeeded
+        guard isNeeded else {
+            projectMeetingObservation?.cancel()
+            projectMeetingObservation = nil
+            projectMeetingObservationGeneration &+= 1
+            cancelProjectMeetingPageLoads()
+            projectMeetingItemsByKey.removeAll()
+            projectMeetingHasMoreByKey.removeAll()
+            projectMeetingLoadErrors.removeAll()
+            projectMeetingLimitedKeys.removeAll()
+            isProjectMeetingProjectionLoaded = false
+            isProjectMeetingProjectionLimited = false
+            projectMeetingProjectionLoadError = nil
+            projectMeetingUnassignedCount = 0
+            return
+        }
+        guard let dbQueue, let vaultId = currentVault?.id else { return }
+        startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+    }
+
     func startProjectMeetingObservation(dbQueue: DatabaseQueue, vaultId: UUID) {
         projectMeetingObservation?.cancel()
         projectMeetingObservationGeneration &+= 1

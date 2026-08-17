@@ -344,6 +344,9 @@ import GRDB
             defer { viewModel.setAppDatabase(nil) }
             let key = MeetingProjectKey.project(projectID)
 
+            #expect(viewModel.projectMeetingObservation == nil)
+            #expect(!viewModel.isProjectMeetingProjectionLoaded)
+            viewModel.setProjectMeetingProjectionNeeded(true)
             #expect(await waitUntil {
                 viewModel.isProjectMeetingProjectionLoaded
                     && viewModel.projectMeetingItemsByKey[key]?.count == 5
@@ -412,6 +415,7 @@ import GRDB
             }
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }
+            viewModel.setProjectMeetingProjectionNeeded(true)
 
             #expect(await waitUntil {
                 viewModel.isProjectMeetingProjectionLoaded
@@ -448,6 +452,7 @@ import GRDB
             let viewModel = fixture.makeViewModel()
             defer { viewModel.setAppDatabase(nil) }
             let key = MeetingProjectKey.project(projectID)
+            viewModel.setProjectMeetingProjectionNeeded(true)
             #expect(await waitUntil { viewModel.isProjectMeetingProjectionLoaded })
 
             let loaded = try await fixture.manager.dbQueue.read { db in

@@ -169,6 +169,10 @@ struct MeetingListSidebarView: View {
         }
         .onAppear {
             renderedMeetingSelection = sidebarViewModel.selectedMeetingIds
+            sidebarViewModel.setProjectMeetingProjectionNeeded(needsProjectMeetingProjection)
+        }
+        .onDisappear {
+            sidebarViewModel.setProjectMeetingProjectionNeeded(false)
         }
         .onChange(of: sidebarViewModel.selectedMeetingIds) { _, selection in
             renderedMeetingSelection = selection
@@ -176,9 +180,17 @@ struct MeetingListSidebarView: View {
         .onChange(of: mainWindowNavigation.meetingSidebarDisplayMode) {
             sidebarViewModel.cancelProjectMeetingPageLoads()
         }
+        .onChange(of: needsProjectMeetingProjection) { _, isNeeded in
+            sidebarViewModel.setProjectMeetingProjectionNeeded(isNeeded)
+        }
         .meetingDeletionConfirmation(request: $pendingDeletion) { meetingIds in
             sidebarViewModel.deleteMeetings(ids: meetingIds)
         }
+    }
+
+    private var needsProjectMeetingProjection: Bool {
+        mainWindowNavigation.meetingSidebarDisplayMode == .byProject
+            || !mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id).isEmpty
     }
 
     private var pinnedProjectGroups: [MeetingProjectGroup] {
