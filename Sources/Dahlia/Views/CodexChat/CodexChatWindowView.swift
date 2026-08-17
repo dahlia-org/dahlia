@@ -30,7 +30,7 @@ struct CodexChatWindowView: View {
                     onNewChat: startNewChat,
                     onOpenHistory: openHistory,
                     onPopOut: nil,
-                    onClose: nil,
+                    reservesSidebarToggle: false,
                     reservesWindowControls: true
                 )
             } else {
