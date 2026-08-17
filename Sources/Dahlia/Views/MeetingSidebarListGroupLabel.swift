@@ -19,7 +19,7 @@ struct MeetingSidebarListGroupLabel: View {
         }
         .buttonStyle(.plain)
         .font(DahliaDesign.sidebarFont)
-        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
+        .foregroundStyle(.secondary)
         .accessibilityAddTraits(.isHeader)
         .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
         .listRowSeparator(.hidden)
