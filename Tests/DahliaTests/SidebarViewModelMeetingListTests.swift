@@ -315,6 +315,167 @@ import GRDB
             })
         }
 
+        @Test(.timeLimit(.minutes(3)))
+        func loadsFiveProjectMeetingsThenTenMore() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            let projectID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            try await fixture.manager.dbQueue.write { db in
+                try ProjectRecord(
+                    id: projectID,
+                    vaultId: fixture.vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                for index in 0 ..< 16 {
+                    try insertMeeting(
+                        vaultId: fixture.vault.id,
+                        projectId: projectID,
+                        name: "Meeting \(index)",
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        in: db
+                    )
+                }
+            }
+            let viewModel = fixture.makeViewModel()
+            defer { viewModel.setAppDatabase(nil) }
+            let key = MeetingProjectKey.project(projectID)
+
+            #expect(viewModel.projectMeetingObservation == nil)
+            #expect(!viewModel.isProjectMeetingProjectionLoaded)
+            viewModel.setProjectMeetingProjectionNeeded(true)
+            #expect(await waitUntil {
+                viewModel.isProjectMeetingProjectionLoaded
+                    && viewModel.projectMeetingItemsByKey[key]?.count == 5
+            })
+
+            viewModel.loadMoreProjectMeetings(key: key)
+
+            #expect(await waitUntil {
+                viewModel.projectMeetingItemsByKey[key]?.count == 15
+                    && !viewModel.projectMeetingLoadingKeys.contains(key)
+            })
+            #expect(viewModel.projectMeetingHasMoreByKey[key] == true)
+
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM meetings WHERE projectId = ? AND name = ?",
+                    arguments: [projectID, "Meeting 8"]
+                )
+            }
+            #expect(await waitUntil {
+                viewModel.projectMeetingItemsByKey[key]?.count == 15
+                    && viewModel.projectMeetingItemsByKey[key]?.contains(where: { $0.meetingName == "Meeting 0" }) == true
+                    && viewModel.projectMeetingHasMoreByKey[key] == false
+            })
+
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "DELETE FROM meetings WHERE projectId = ? AND createdAt < ?",
+                    arguments: [projectID, start.addingTimeInterval(10)]
+                )
+            }
+            #expect(await waitUntil {
+                viewModel.projectMeetingItemsByKey[key]?.count == 6
+                    && viewModel.projectMeetingHasMoreByKey[key] == false
+            })
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func keepsUnassignedMeetingsAfterProjects() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            let projectID = UUID.v7()
+            let now = Date.now
+            try await fixture.manager.dbQueue.write { db in
+                try ProjectRecord(
+                    id: projectID,
+                    vaultId: fixture.vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: now,
+                    projectType: .undefined
+                ).insert(db)
+                try insertMeeting(
+                    vaultId: fixture.vault.id,
+                    projectId: projectID,
+                    name: "Project meeting",
+                    createdAt: now.addingTimeInterval(-60),
+                    in: db
+                )
+                try insertMeeting(
+                    vaultId: fixture.vault.id,
+                    name: "Newer unassigned meeting",
+                    createdAt: now,
+                    in: db
+                )
+            }
+            let viewModel = fixture.makeViewModel()
+            defer { viewModel.setAppDatabase(nil) }
+            viewModel.setProjectMeetingProjectionNeeded(true)
+
+            #expect(await waitUntil {
+                viewModel.isProjectMeetingProjectionLoaded
+                    && viewModel.isProjectCatalogLoaded
+                    && viewModel.projectMeetingGroups.count == 2
+            })
+            #expect(viewModel.projectMeetingGroups.map(\.key) == [.project(projectID), .unassigned])
+        }
+
+        @Test(.timeLimit(.minutes(3)))
+        func capsProjectMeetingsAtFiveHundred() async throws {
+            let fixture = try SidebarViewModelMeetingListFixture()
+            defer { fixture.stop() }
+            let projectID = UUID.v7()
+            try await fixture.manager.dbQueue.write { db in
+                try ProjectRecord(
+                    id: projectID,
+                    vaultId: fixture.vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    projectType: .undefined
+                ).insert(db)
+                for index in 0 ... SidebarViewModel.maximumVisibleMeetings {
+                    try insertMeeting(
+                        vaultId: fixture.vault.id,
+                        projectId: projectID,
+                        name: "Meeting \(index)",
+                        createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(index)),
+                        in: db
+                    )
+                }
+            }
+            let viewModel = fixture.makeViewModel()
+            defer { viewModel.setAppDatabase(nil) }
+            let key = MeetingProjectKey.project(projectID)
+            viewModel.setProjectMeetingProjectionNeeded(true)
+            #expect(await waitUntil { viewModel.isProjectMeetingProjectionLoaded })
+
+            let loaded = try await fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectPage(
+                    key: key,
+                    vaultId: fixture.vault.id,
+                    after: nil,
+                    limit: SidebarViewModel.maximumVisibleMeetings - 5,
+                    in: db
+                ).items
+            }
+            viewModel.projectMeetingItemsByKey[key] = loaded
+            viewModel.projectMeetingHasMoreByKey[key] = true
+            viewModel.loadMoreProjectMeetings(key: key)
+
+            #expect(await waitUntil {
+                !viewModel.projectMeetingLoadingKeys.contains(key)
+                    && viewModel.projectMeetingItemsByKey[key]?.count == SidebarViewModel.maximumVisibleMeetings
+            })
+            #expect(viewModel.projectMeetingLimitedKeys.contains(key))
+            #expect(viewModel.projectMeetingHasMoreByKey[key] == false)
+        }
+
         private func waitUntil(
             timeout: Duration = testPollTimeout,
             _ predicate: @MainActor () -> Bool
@@ -416,6 +577,7 @@ import GRDB
     func insertMeeting(
         id: UUID = .v7(),
         vaultId: UUID,
+        projectId: UUID? = nil,
         name: String,
         createdAt: Date = .now,
         in db: Database
@@ -423,7 +585,7 @@ import GRDB
         try MeetingRecord(
             id: id,
             vaultId: vaultId,
-            projectId: nil,
+            projectId: projectId,
             name: name,
             createdAt: createdAt,
             updatedAt: createdAt

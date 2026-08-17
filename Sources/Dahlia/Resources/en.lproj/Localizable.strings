@@ -102,6 +102,15 @@
 "Good evening" = "Good evening";
 "Meetings" = "Meetings";
 "Projects" = "Projects";
+"Organize Sidebar" = "Organize Sidebar";
+"Chronological" = "Chronological";
+"Group by Project" = "Group by Project";
+"Pinned" = "Pinned";
+"Project Options" = "Project Options";
+"Pin Project" = "Pin Project";
+"Unpin Project" = "Unpin Project";
+"Open Project" = "Open Project";
+"No meetings in this project" = "No meetings in this project";
 "Project Management" = "Project Management";
 "Instructions" = "Instructions";
 "Context" = "Context";
@@ -1081,7 +1090,6 @@
 "Add" = "Add";
 "Save" = "Save";
 "Name" = "Name";
-"Project" = "Project";
 "Past %lld days" = "Past %lld days";
 "%lld meetings · %lld departments" = "%lld meetings · %lld departments";
 "%lld references" = "%lld references";

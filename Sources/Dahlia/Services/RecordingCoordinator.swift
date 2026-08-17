@@ -89,6 +89,14 @@ final class RecordingCoordinator {
     }
 
     func createDraftMeeting() {
+        createDraftMeeting(project: nil)
+    }
+
+    func createDraftMeeting(in project: ProjectOverviewItem) {
+        createDraftMeeting(project: project)
+    }
+
+    private func createDraftMeeting(project: ProjectOverviewItem?) {
         guard !viewModel.isRecordingStartPending, !viewModel.isFinalizingRecording else { return }
         mainWindowNavigation.showMeetings()
         guard let dbQueue = sidebarViewModel.dbQueue,
@@ -100,6 +108,9 @@ final class RecordingCoordinator {
         sidebarViewModel.clearMeetingSelection()
         viewModel.beginDraftMeeting(
             dbQueue: dbQueue,
+            projectURL: project.map { vault.url.appending(path: $0.projectName, directoryHint: .isDirectory) },
+            projectId: project?.projectId,
+            projectName: project?.projectName,
             vaultURL: vault.url
         )
     }

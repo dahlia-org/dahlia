@@ -29,6 +29,8 @@ struct ContentView: View {
     @State private var newProjectName = ""
     @State private var newProjectType = ProjectType.undefined
     @State private var projectCreationErrorMessage = ""
+    @State private var usesMeetingSidebarForProjectManagement = false
+    @State private var projectPendingDeletion: ProjectOverviewItem?
 
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -57,6 +59,8 @@ struct ContentView: View {
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                         onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                         onCreateProject: presentProjectCreation,
+                        usesMeetingSidebar: usesMeetingSidebarForProjectManagement,
+                        onOpenSidebarProject: handleMeetingSidebarProjectAction,
                         onSelectVault: onSelectVault
                     )
                 } else {
@@ -73,15 +77,16 @@ struct ContentView: View {
                                 viewModel: viewModel,
                                 updateController: updateController,
                                 sidebarViewModel: sidebarViewModel,
+                                mainWindowNavigation: mainWindowNavigation,
                                 recordingCoordinator: recordingCoordinator,
                                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                                 onShowUpcomingSchedule: returnToCalendarSchedule,
-                                onOpenProjectManagement: showProjectManagement,
                                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                                 onShowUnprocessedRecordings: showUnprocessedRecordings,
                                 showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                                 onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                                 onCreateProject: presentProjectCreation,
+                                onOpenProject: handleMeetingSidebarProjectAction,
                                 onSelectVault: onSelectVault
                             )
                         } settingsContent: {
@@ -194,6 +199,25 @@ struct ContentView: View {
                 errorMessage: projectCreationErrorMessage,
                 onCancel: dismissProjectCreation,
                 onCreate: createProject
+            )
+        }
+        .sheet(item: $projectPendingDeletion) { project in
+            let hierarchy = projectHierarchy(for: project)
+            ProjectDeletionDialog(
+                project: project,
+                projectCount: hierarchy.count,
+                meetingCount: hierarchy.reduce(0) { $0 + $1.meetingCount },
+                moveDestinations: ProjectDestinationOptions.meetingMoveCandidates(
+                    whenDeleting: project,
+                    projects: sidebarViewModel.allProjectItems
+                ),
+                onConfirm: { disposition, deletesSummaryFiles in
+                    await deleteProject(
+                        project,
+                        meetingDisposition: disposition,
+                        deletesSummaryFiles: deletesSummaryFiles
+                    )
+                }
             )
         }
         .task {
@@ -317,6 +341,29 @@ private extension ContentView {
     }
 
     private func openSearchProject(_ id: UUID) {
+        openProject(id, .open)
+    }
+
+    private func openProject(_ id: UUID, _ intent: ProjectNavigationIntent) {
+        usesMeetingSidebarForProjectManagement = false
+        revealProjectInManagementSidebar(id)
+        mainWindowNavigation.openProject(id, intent: intent)
+    }
+
+    private func handleMeetingSidebarProjectAction(_ id: UUID, _ intent: ProjectNavigationIntent) {
+        guard let project = sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) else { return }
+        switch intent {
+        case .open:
+            break
+        case .edit:
+            usesMeetingSidebarForProjectManagement = true
+            mainWindowNavigation.openProject(id, intent: .edit)
+        case .delete:
+            projectPendingDeletion = project
+        }
+    }
+
+    private func revealProjectInManagementSidebar(_ id: UUID) {
         if let project = sidebarViewModel.allProjectItems.first(where: { $0.projectId == id }) {
             let ancestorIds = ProjectManagementSelection.ancestorIDs(
                 toReveal: project.projectName,
@@ -324,8 +371,6 @@ private extension ContentView {
             )
             mainWindowNavigation.expandedProjectIds.formUnion(ancestorIds)
         }
-        mainWindowNavigation.selectedProjectId = id
-        mainWindowNavigation.recordNavigation(to: .project(id))
     }
 
     private func presentPermissionGuideIfNeeded() {
@@ -473,6 +518,7 @@ private extension ContentView {
     }
 
     private func showProjectManagement() {
+        usesMeetingSidebarForProjectManagement = false
         mainWindowNavigation.recordNavigation(to: .project(mainWindowNavigation.selectedProjectId))
         mainWindowNavigation.showProjects()
     }
@@ -619,9 +665,36 @@ private extension ContentView {
             isShowingUnprocessedRecordings = false
             sidebarViewModel.selectMeeting(meetingID)
         case let .project(projectID):
+            usesMeetingSidebarForProjectManagement = false
             mainWindowNavigation.showProjects()
             mainWindowNavigation.selectedProjectId = projectID
         }
+    }
+
+    private func deleteProject(
+        _ project: ProjectOverviewItem,
+        meetingDisposition: ProjectMeetingDisposition,
+        deletesSummaryFiles: Bool
+    ) async -> String? {
+        let hierarchy = projectHierarchy(for: project)
+        guard await sidebarViewModel.deleteProjectHierarchy(
+            id: project.projectId,
+            meetingDisposition: meetingDisposition,
+            deletesSummaryFiles: deletesSummaryFiles
+        ) else {
+            return sidebarViewModel.lastError ?? L10n.projectOperationFailedDescription
+        }
+        if hierarchy.contains(where: { $0.projectId == mainWindowNavigation.selectedProjectId }) {
+            mainWindowNavigation.selectedProjectId = nil
+        }
+        return nil
+    }
+
+    private func projectHierarchy(for project: ProjectOverviewItem) -> [ProjectOverviewItem] {
+        ProjectDestinationOptions.hierarchy(
+            for: project,
+            projects: sidebarViewModel.allProjectItems
+        )
     }
 
     private func handleMeetingSelection(_ detail: MeetingDetailItem) {

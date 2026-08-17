@@ -25,6 +25,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         button.imageScaling = .scaleProportionallyDown
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
+        button.font = .systemFont(ofSize: NSFont.systemFontSize * DahliaDesign.sidebarFontScale)
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         context.coordinator.button = button
         configure(button)

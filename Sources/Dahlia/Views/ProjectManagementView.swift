@@ -15,6 +15,8 @@ struct ProjectManagementView: View {
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
+    let usesMeetingSidebar: Bool
+    let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
     let onSelectVault: (VaultRecord) -> Void
 
     @State private var projectName = ""
@@ -30,7 +32,6 @@ struct ProjectManagementView: View {
     @State private var lastLoadedProjectRevision: Int?
     @State private var projectDescriptionExpectedRevision: Int?
     @State private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
-
     var body: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
 
@@ -43,44 +44,7 @@ struct ProjectManagementView: View {
                 isShowingSettings: isShowingSettings,
                 settingsBackground: .sidebar
             ) {
-                VStack(spacing: 0) {
-                    MainSidebarNavigationView(
-                        onCreateMeeting: recordingCoordinator.createDraftMeeting,
-                        canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
-                        canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
-                        onStartQuickRecording: recordingCoordinator.startQuickRecording,
-                        isShowingUpcomingSchedule: false,
-                        onShowUpcomingSchedule: onShowUpcomingSchedule,
-                        isShowingProjectManagement: true,
-                        onShowProjectManagement: {},
-                        canCreateProject: sidebarViewModel.currentVault != nil,
-                        onCreateProject: onCreateProject,
-                        isShowingUnprocessedRecordings: false,
-                        unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
-                        onShowUnprocessedRecordings: onShowUnprocessedRecordings,
-                        showsCustomerIntelligence: showsCustomerIntelligence,
-                        onOpenCustomerIntelligence: onOpenCustomerIntelligence
-                    )
-                    SidebarSectionHeader(title: L10n.projects)
-                    ProjectManagementSidebarView(
-                        projects: sidebarViewModel.allProjectItems,
-                        hasVault: AppSettings.shared.currentVault != nil,
-                        isLoaded: sidebarViewModel.isProjectCatalogLoaded,
-                        loadFailed: sidebarViewModel.projectCatalogLoadFailed,
-                        selectedProjectId: $mainWindowNavigation.selectedProjectId,
-                        expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
-                        onRetry: sidebarViewModel.retryProjectCatalogLoading,
-                        onCreateProject: onCreateProject
-                    )
-
-                    MainSidebarBottomArea(
-                        viewModel: captionViewModel,
-                        sidebarViewModel: sidebarViewModel,
-                        recordingCoordinator: recordingCoordinator,
-                        updateController: updateController,
-                        onSelectVault: onSelectVault
-                    )
-                }
+                sidebarContent
             } settingsContent: {
                 SettingsSidebarView(
                     selection: $mainWindowNavigation.settingsCategory,
@@ -104,14 +68,19 @@ struct ProjectManagementView: View {
         .onAppear {
             reconcileSelection(with: sidebarViewModel.allProjectItems)
             loadProjectDetails(for: mainWindowNavigation.selectedProjectId)
+            handlePendingProjectNavigationIntent()
         }
         .onChange(of: sidebarViewModel.allProjectItems) { previousProjects, projects in
             reconcileSelection(with: projects)
             refreshSelectedProjectAfterExternalChange(from: previousProjects, to: projects)
+            handlePendingProjectNavigationIntent()
         }
         .onChange(of: mainWindowNavigation.selectedProjectId) { oldProjectId, newProjectId in
             stageProjectDescriptionDraft(for: oldProjectId)
             loadProjectDetails(for: newProjectId)
+        }
+        .onChange(of: mainWindowNavigation.pendingProjectNavigationIntent) {
+            handlePendingProjectNavigationIntent()
         }
         .onChange(of: projectDescription) {
             stageProjectDescriptionDraft(for: mainWindowNavigation.selectedProjectId)
@@ -152,6 +121,63 @@ struct ProjectManagementView: View {
     private var selectedProject: ProjectOverviewItem? {
         guard let selectedProjectId = mainWindowNavigation.selectedProjectId else { return nil }
         return sidebarViewModel.allProjectItems.first(where: { $0.projectId == selectedProjectId })
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        if usesMeetingSidebar {
+            MeetingListSidebarView(
+                viewModel: captionViewModel,
+                updateController: updateController,
+                sidebarViewModel: sidebarViewModel,
+                mainWindowNavigation: mainWindowNavigation,
+                recordingCoordinator: recordingCoordinator,
+                isShowingUpcomingSchedule: false,
+                onShowUpcomingSchedule: onShowUpcomingSchedule,
+                isShowingUnprocessedRecordings: false,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                showsCustomerIntelligence: showsCustomerIntelligence,
+                onOpenCustomerIntelligence: onOpenCustomerIntelligence,
+                onCreateProject: onCreateProject,
+                onOpenProject: onOpenSidebarProject,
+                onSelectVault: onSelectVault
+            )
+        } else {
+            VStack(spacing: 0) {
+                MainSidebarNavigationView(
+                    onCreateMeeting: recordingCoordinator.createDraftMeeting,
+                    canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
+                    canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
+                    onStartQuickRecording: recordingCoordinator.startQuickRecording,
+                    isShowingUpcomingSchedule: false,
+                    onShowUpcomingSchedule: onShowUpcomingSchedule,
+                    isShowingUnprocessedRecordings: false,
+                    unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
+                    onShowUnprocessedRecordings: onShowUnprocessedRecordings,
+                    showsCustomerIntelligence: showsCustomerIntelligence,
+                    onOpenCustomerIntelligence: onOpenCustomerIntelligence
+                )
+                SidebarSectionHeader(title: L10n.projects)
+                ProjectManagementSidebarView(
+                    projects: sidebarViewModel.allProjectItems,
+                    hasVault: AppSettings.shared.currentVault != nil,
+                    isLoaded: sidebarViewModel.isProjectCatalogLoaded,
+                    loadFailed: sidebarViewModel.projectCatalogLoadFailed,
+                    selectedProjectId: $mainWindowNavigation.selectedProjectId,
+                    expandedProjectIds: $mainWindowNavigation.expandedProjectIds,
+                    onRetry: sidebarViewModel.retryProjectCatalogLoading,
+                    onCreateProject: onCreateProject
+                )
+
+                MainSidebarBottomArea(
+                    viewModel: captionViewModel,
+                    sidebarViewModel: sidebarViewModel,
+                    recordingCoordinator: recordingCoordinator,
+                    updateController: updateController,
+                    onSelectVault: onSelectVault
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -529,6 +555,18 @@ private extension ProjectManagementView {
     private func requestSelectedProjectDeletion() {
         guard let selectedProject else { return }
         projectPendingDeletion = selectedProject
+    }
+
+    private func handlePendingProjectNavigationIntent() {
+        guard let projectId = mainWindowNavigation.selectedProjectId,
+              selectedProject != nil,
+              let intent = mainWindowNavigation.consumeProjectNavigationIntent(for: projectId) else { return }
+        switch intent {
+        case .open, .edit:
+            break
+        case .delete:
+            requestSelectedProjectDeletion()
+        }
     }
 
     private func deleteProject(

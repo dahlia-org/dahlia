@@ -52,6 +52,15 @@ final class SidebarViewModel {
     var hasMoreMeetingSearchResults = false
     var isMeetingListLimited = false
     var isMeetingSearchLimited = false
+    var projectMeetingItemsByKey: [MeetingProjectKey: [MeetingSidebarItem]] = [:]
+    var projectMeetingHasMoreByKey: [MeetingProjectKey: Bool] = [:]
+    var projectMeetingLoadingKeys: Set<MeetingProjectKey> = []
+    var projectMeetingLoadErrors: [MeetingProjectKey: String] = [:]
+    var projectMeetingLimitedKeys: Set<MeetingProjectKey> = []
+    var isProjectMeetingProjectionLoaded = false
+    var isProjectMeetingProjectionLimited = false
+    var projectMeetingProjectionLoadError: String?
+    var projectMeetingUnassignedCount = 0
     var selectedMeetingDetail: MeetingDetailItem?
     var selectedMeetingDetailLoadError: String?
     var meetingReferences: [CodexChatMeetingReference] = []
@@ -104,6 +113,9 @@ final class SidebarViewModel {
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
     @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
+    @ObservationIgnored var projectMeetingObservation: AnyDatabaseCancellable?
+    @ObservationIgnored var isProjectMeetingProjectionRequested = false
+    @ObservationIgnored var projectMeetingLoadTasks: [MeetingProjectKey: Task<Void, Never>] = [:]
     @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
     @ObservationIgnored var meetingSearchCursor: MeetingSidebarCursor?
     @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
@@ -114,6 +126,8 @@ final class SidebarViewModel {
     @ObservationIgnored var meetingPageLoadGeneration = 0
     @ObservationIgnored var selectedMeetingObservationGeneration = 0
     @ObservationIgnored var meetingReferencesObservationGeneration = 0
+    @ObservationIgnored var projectMeetingObservationGeneration = 0
+    @ObservationIgnored var projectMeetingLoadGenerations: [MeetingProjectKey: Int] = [:]
     @ObservationIgnored private var projectObservationGeneration = 0
     @ObservationIgnored private var tagObservationGeneration = 0
 
@@ -154,8 +168,11 @@ final class SidebarViewModel {
         additionalMeetingRowsObservation?.cancel()
         selectedMeetingObservation?.cancel()
         meetingReferencesObservation?.cancel()
+        projectMeetingObservation?.cancel()
         meetingSearchTask?.cancel()
         meetingPageLoadTask?.cancel()
+        projectMeetingLoadTasks.values.forEach { $0.cancel() }
+        projectMeetingLoadTasks.removeAll()
         allTagsObservation?.cancel()
         allProjectsObservation?.cancel()
         projectCatalogObservationTracker.invalidate()
@@ -185,6 +202,15 @@ final class SidebarViewModel {
         hasMoreMeetingSearchResults = false
         isMeetingListLimited = false
         isMeetingSearchLimited = false
+        projectMeetingItemsByKey.removeAll()
+        projectMeetingHasMoreByKey.removeAll()
+        projectMeetingLoadingKeys.removeAll()
+        projectMeetingLoadErrors.removeAll()
+        projectMeetingLimitedKeys.removeAll()
+        isProjectMeetingProjectionLoaded = false
+        isProjectMeetingProjectionLimited = false
+        projectMeetingProjectionLoadError = nil
+        projectMeetingUnassignedCount = 0
         selectedMeetingDetail = nil
         selectedMeetingDetailLoadError = nil
         meetingReferences.removeAll()
@@ -199,6 +225,8 @@ final class SidebarViewModel {
         meetingPageLoadGeneration &+= 1
         selectedMeetingObservationGeneration &+= 1
         meetingReferencesObservationGeneration &+= 1
+        projectMeetingObservationGeneration &+= 1
+        projectMeetingLoadGenerations.removeAll()
         projectObservationGeneration &+= 1
         tagObservationGeneration &+= 1
         unprocessedRecordingsContextGeneration &+= 1
@@ -246,6 +274,9 @@ final class SidebarViewModel {
 
         startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
         startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+        if isProjectMeetingProjectionRequested {
+            startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+        }
         startTagsObservation(dbQueue: dbQueue)
         startProjectOverviewObservation(dbQueue: dbQueue, vaultId: vaultId)
         startInstructionsObservation(dbQueue: dbQueue, vaultId: vaultId)
@@ -262,6 +293,9 @@ final class SidebarViewModel {
                 self.startProjectObservation(dbQueue: dbQueue, vaultId: vaultId)
                 self.resetMeetingListPagination()
                 self.startMeetingListObservation(dbQueue: dbQueue, vaultId: vaultId)
+                if self.isProjectMeetingProjectionRequested {
+                    self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
+                }
                 if self.isMeetingCatalogRequested {
                     self.startMeetingReferencesObservation(dbQueue: dbQueue, vaultId: vaultId)
                 }

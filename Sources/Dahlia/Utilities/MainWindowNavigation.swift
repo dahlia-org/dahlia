@@ -28,6 +28,8 @@ final class MainWindowNavigation {
     static let shared = MainWindowNavigation()
 
     private static let historyLimit = 50
+    private static let meetingSidebarDisplayModeDefaultsKey = "meetingSidebarDisplayMode"
+    private static let pinnedProjectIDsDefaultsKey = "meetingSidebarPinnedProjectIDs"
 
     private(set) var section: MainWindowSection = .meetings
     private(set) var currentLocation: MainWindowLocation = .upcomingSchedule
@@ -51,6 +53,15 @@ final class MainWindowNavigation {
     }
 
     var expandedProjectIds: Set<UUID> = []
+    var meetingSidebarDisplayMode: MeetingSidebarDisplayMode {
+        didSet {
+            settingsDefaults.set(meetingSidebarDisplayMode.rawValue, forKey: Self.meetingSidebarDisplayModeDefaultsKey)
+        }
+    }
+
+    private(set) var pendingProjectNavigationIntent: PendingProjectNavigationIntent?
+
+    private var pinnedProjectIDsByVault: [String: [String]]
 
     private var projectVaultId: UUID?
     private var pendingCreatedProjectId: UUID?
@@ -91,6 +102,9 @@ final class MainWindowNavigation {
         }
         settingsCategory = initialSettingsCategory.map(SettingsNavigation.visibleSelection)
             ?? SettingsNavigation.savedSelection(in: settingsDefaults)
+        meetingSidebarDisplayMode = settingsDefaults.string(forKey: Self.meetingSidebarDisplayModeDefaultsKey)
+            .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
+        pinnedProjectIDsByVault = Self.loadPinnedProjectIDs(from: settingsDefaults)
     }
 
     func showMeetings() {
@@ -111,6 +125,40 @@ final class MainWindowNavigation {
         recordNavigation(to: .project(selectedProjectId))
         showProjects()
         openMainWindow()
+    }
+
+    func openProject(_ projectId: UUID, intent: ProjectNavigationIntent = .open) {
+        selectedProjectId = projectId
+        pendingProjectNavigationIntent = intent == .open
+            ? nil
+            : PendingProjectNavigationIntent(projectId: projectId, intent: intent)
+        recordNavigation(to: .project(projectId))
+        showProjects()
+    }
+
+    func consumeProjectNavigationIntent(for projectId: UUID) -> ProjectNavigationIntent? {
+        guard pendingProjectNavigationIntent?.projectId == projectId else { return nil }
+        defer { pendingProjectNavigationIntent = nil }
+        return pendingProjectNavigationIntent?.intent
+    }
+
+    func pinnedProjectIDs(vaultId: UUID?) -> [UUID] {
+        guard let vaultId else { return [] }
+        return pinnedProjectIDsByVault[vaultId.uuidString, default: []].compactMap(UUID.init(uuidString:))
+    }
+
+    func toggleProjectPin(_ projectId: UUID, vaultId: UUID?) {
+        guard let vaultId else { return }
+        let vaultKey = vaultId.uuidString
+        var ids = pinnedProjectIDsByVault[vaultKey, default: []]
+        let id = projectId.uuidString
+        if let index = ids.firstIndex(of: id) {
+            ids.remove(at: index)
+        } else {
+            ids.insert(id, at: 0)
+        }
+        pinnedProjectIDsByVault[vaultKey] = ids
+        savePinnedProjectIDs()
     }
 
     func openMeetings() {
@@ -149,6 +197,17 @@ final class MainWindowNavigation {
         guard clampedWidth != chatSidebarWidth else { return }
         chatSidebarWidth = clampedWidth
         settingsDefaults.set(clampedWidth, forKey: MainChatSidebarLayout.widthDefaultsKey)
+    }
+
+    private static func loadPinnedProjectIDs(from defaults: UserDefaults) -> [String: [String]] {
+        guard let data = defaults.data(forKey: pinnedProjectIDsDefaultsKey),
+              let values = try? JSONDecoder().decode([String: [String]].self, from: data) else { return [:] }
+        return values
+    }
+
+    private func savePinnedProjectIDs() {
+        guard let data = try? JSONEncoder().encode(pinnedProjectIDsByVault) else { return }
+        settingsDefaults.set(data, forKey: Self.pinnedProjectIDsDefaultsKey)
     }
 
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }
