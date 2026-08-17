@@ -12,7 +12,7 @@ A macOS native real-time transcription app. Captures microphone and system audio
 - **Codex Summaries** — Generate structured summaries through the bundled Codex app-server (optional)
 - **Optional Dahlia Server** — Self-host an authenticated Responses gateway for the bundled Codex without distributing provider credentials to each user. The official managed offering is Dahlia Cloud.
 - **AI Meeting Access** — Explore meeting evidence and optionally reorganize Projects or correct summaries through a vault-scoped local MCP server
-- **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy
+- **Project Management** — Organize meetings in a database-backed root/subproject workspace hierarchy, with chronological or Project-grouped sidebar views and Vault-scoped pinned Projects
 - **Customer Intelligence Workspace** — Scope every Overview, Organization, People, Projects, Topics, and Insights view to one customer or the whole Vault, then inspect related records without mixing reading and editing
 - **Conversation Analytics (Beta)** — Compare speaking pace, speaking-time balance, conversation occupancy, and overlapping speech from confirmed microphone and system-audio transcripts
 - **Meeting Detection** — Combine microphone activity with supported app or meeting-window evidence and offer to start recording

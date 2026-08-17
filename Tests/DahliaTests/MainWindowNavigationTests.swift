@@ -17,6 +17,43 @@
             navigation.showMeetings()
             #expect(navigation.section == .meetings)
         }
+
+        @Test
+        func persistsSidebarModeAndVaultScopedPinOrder() throws {
+            let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let firstVault = UUID.v7()
+            let secondVault = UUID.v7()
+            let firstProject = UUID.v7()
+            let secondProject = UUID.v7()
+            let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+
+            navigation.meetingSidebarDisplayMode = .byProject
+            navigation.toggleProjectPin(firstProject, vaultId: firstVault)
+            navigation.toggleProjectPin(secondProject, vaultId: firstVault)
+            navigation.toggleProjectPin(firstProject, vaultId: secondVault)
+
+            let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+            #expect(restored.meetingSidebarDisplayMode == .byProject)
+            #expect(restored.pinnedProjectIDs(vaultId: firstVault) == [secondProject, firstProject])
+            #expect(restored.pinnedProjectIDs(vaultId: secondVault) == [firstProject])
+        }
+
+        @Test
+        func opensProjectWithConsumableEditAndDeleteIntents() {
+            for intent in [ProjectNavigationIntent.edit, .delete] {
+                let navigation = MainWindowNavigation(openMainWindow: {})
+                let projectID = UUID.v7()
+
+                navigation.openProject(projectID, intent: intent)
+
+                #expect(navigation.section == .projects)
+                #expect(navigation.selectedProjectId == projectID)
+                #expect(navigation.consumeProjectNavigationIntent(for: projectID) == intent)
+                #expect(navigation.consumeProjectNavigationIntent(for: projectID) == nil)
+            }
+        }
     }
 
     extension MainWindowNavigationTests {

@@ -230,6 +230,84 @@ import GRDB
             #expect(references.map(\.name) == [L10n.newMeeting, "Unrecorded"])
             #expect(references.map(\.recordingStartedAt) == [start.addingTimeInterval(2), start.addingTimeInterval(1)])
         }
+
+        @Test
+        func fetchesFiveRecentMeetingsPerProjectAndUnassigned() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            let projectID = try fixture.manager.dbQueue.write { db in
+                let projectID = try fixture.insertProject(name: "Project", in: db)
+                for index in 0 ..< 7 {
+                    _ = try fixture.insertMeeting(
+                        name: "Project \(index)",
+                        projectId: projectID,
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        in: db
+                    )
+                }
+                for index in 0 ..< 2 {
+                    _ = try fixture.insertMeeting(
+                        name: "Unassigned \(index)",
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        in: db
+                    )
+                }
+                return projectID
+            }
+
+            let projection = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectProjection(
+                    vaultId: fixture.vault.id,
+                    recentLimit: 5,
+                    in: db
+                )
+            }
+
+            #expect(projection[.project(projectID)]?.map(\.meetingName) == [
+                "Project 6", "Project 5", "Project 4", "Project 3", "Project 2", "Project 1",
+            ])
+            #expect(projection[.unassigned]?.map(\.meetingName) == ["Unassigned 1", "Unassigned 0"])
+        }
+
+        @Test
+        func paginatesOneProjectTenMeetingsAtATime() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            let projectID = try fixture.manager.dbQueue.write { db in
+                let projectID = try fixture.insertProject(name: "Project", in: db)
+                for index in 0 ..< 16 {
+                    _ = try fixture.insertMeeting(
+                        name: "Meeting \(index)",
+                        projectId: projectID,
+                        createdAt: start.addingTimeInterval(TimeInterval(index)),
+                        in: db
+                    )
+                }
+                return projectID
+            }
+            let firstFive = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectProjection(
+                    vaultId: fixture.vault.id,
+                    recentLimit: 4,
+                    in: db
+                )[.project(projectID)] ?? []
+            }
+            let page = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectPage(
+                    key: .project(projectID),
+                    vaultId: fixture.vault.id,
+                    after: firstFive.last.map(MeetingSidebarCursor.init),
+                    limit: 10,
+                    in: db
+                )
+            }
+
+            #expect(firstFive.count == 5)
+            #expect(page.items.count == 10)
+            let expectedNames: [String] = (1 ... 10).reversed().map { "Meeting \($0)" }
+            #expect(page.items.map(\.meetingName) == expectedNames)
+            #expect(page.hasMore)
+        }
     }
 
     private struct MeetingSidebarRepositoryFixture {
@@ -428,7 +506,7 @@ import GRDB
             return child.id
         }
 
-        private func insertProject(
+        func insertProject(
             name: String,
             parentID: UUID? = nil,
             type: ProjectType? = nil,
@@ -440,7 +518,7 @@ import GRDB
                 parentProjectId: parentID,
                 name: name,
                 createdAt: .now,
-                projectType: type
+                projectType: parentID == nil ? type ?? .undefined : nil
             )
             try project.insert(db)
             return project.id

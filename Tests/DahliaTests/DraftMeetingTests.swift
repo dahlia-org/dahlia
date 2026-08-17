@@ -133,5 +133,47 @@ import GRDB
             #expect(!viewModel.hasDraftMeeting)
             #expect(sidebarViewModel.selectedMeetingId == selectedMeetingID)
         }
+
+        @Test
+        func createsDraftInSelectedProject() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vaultURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-project-draft-\(UUID.v7())", directoryHint: .isDirectory)
+            let vault = VaultRecord(
+                id: .v7(),
+                path: vaultURL.path,
+                name: "Test",
+                createdAt: .now,
+                lastOpenedAt: .now
+            )
+            let settings = AppSettings()
+            settings.currentVault = vault
+            let sidebarViewModel = SidebarViewModel(settings: settings)
+            sidebarViewModel.setAppDatabase(database)
+            defer { sidebarViewModel.setAppDatabase(nil) }
+            let viewModel = CaptionViewModel()
+            let coordinator = RecordingCoordinator(
+                viewModel: viewModel,
+                sidebarViewModel: sidebarViewModel,
+                mainWindowNavigation: MainWindowNavigation(
+                    openMainWindow: {},
+                    openMainWindowWithoutActivation: {}
+                ),
+                onRecordingDidStart: {},
+                onRecordingDidStop: {}
+            )
+            let project = ProjectOverviewItem(
+                projectId: .v7(),
+                projectName: "Parent/Project",
+                createdAt: .now,
+                meetingCount: 0
+            )
+
+            coordinator.createDraftMeeting(in: project)
+
+            #expect(viewModel.draftMeeting?.projectId == project.projectId)
+            #expect(viewModel.draftMeeting?.projectName == project.projectName)
+            #expect(viewModel.draftMeeting?.projectURL == vaultURL.appending(path: project.projectName, directoryHint: .isDirectory))
+        }
     }
 #endif

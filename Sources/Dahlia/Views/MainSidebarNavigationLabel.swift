@@ -14,7 +14,7 @@ struct MainSidebarNavigationLabel: View {
 
             if badgeCount > 0 {
                 Text(badgeCount, format: .number)
-                    .font(.caption)
+                    .font(DahliaDesign.sidebarFont)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)

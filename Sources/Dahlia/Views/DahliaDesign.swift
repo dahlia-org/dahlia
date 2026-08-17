@@ -4,6 +4,9 @@ enum DahliaDesign {
     static let hoverHighlightColor = Color.gray.opacity(0.16)
     static let sidebarSelectionColor = Color.gray
     static let sidebarSelectionHighlightColor = sidebarSelectionColor.opacity(0.32)
+    static let sidebarFontScale: CGFloat = 1.1
+    static let sidebarFont = Font.body.scaled(by: sidebarFontScale)
+    static let sidebarRowVerticalPadding: CGFloat = 3
 
     static let windowHeaderHeight: CGFloat = 32
     static let windowHeaderHorizontalPadding: CGFloat = 12
@@ -66,6 +69,23 @@ private struct DahliaChipSurface: ViewModifier {
 }
 
 extension View {
+    func dahliaSidebarHoverHighlight(isHovered: Bool, isSelected: Bool = false) -> some View {
+        let color = if isSelected {
+            DahliaDesign.sidebarSelectionHighlightColor
+        } else if isHovered {
+            DahliaDesign.hoverHighlightColor
+        } else {
+            Color.clear
+        }
+
+        return background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(color)
+                .padding(.vertical, -4)
+                .padding(.horizontal, -6)
+        }
+    }
+
     func dahliaChipSurface(isHovered: Bool = false, tint: Color? = nil) -> some View {
         modifier(DahliaChipSurface(isHovered: isHovered, tint: tint))
     }

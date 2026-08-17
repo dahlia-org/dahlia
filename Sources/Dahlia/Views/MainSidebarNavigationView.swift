@@ -7,10 +7,6 @@ struct MainSidebarNavigationView: View {
     let onStartQuickRecording: () -> Void
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
-    let isShowingProjectManagement: Bool
-    let onShowProjectManagement: () -> Void
-    let canCreateProject: Bool
-    let onCreateProject: () -> Void
     let isShowingUnprocessedRecordings: Bool
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
@@ -36,13 +32,6 @@ struct MainSidebarNavigationView: View {
             .buttonStyle(.plain)
             .help(L10n.showUpcomingSchedule)
             .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
-
-            MainSidebarProjectNavigationRow(
-                isSelected: isShowingProjectManagement,
-                canCreateProject: canCreateProject,
-                onShowProjectManagement: onShowProjectManagement,
-                onCreateProject: onCreateProject
-            )
 
             if showsCustomerIntelligence {
                 Button(action: onOpenCustomerIntelligence) {

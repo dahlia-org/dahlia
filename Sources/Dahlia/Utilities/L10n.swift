@@ -169,6 +169,16 @@ enum L10n {
     static var home: String { String(localized: "Home", bundle: bundle) }
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
+    static var sidebarOrganization: String { String(localized: "Organize Sidebar", bundle: bundle) }
+    static var chronological: String { String(localized: "Chronological", bundle: bundle) }
+    static var groupByProject: String { String(localized: "Group by Project", bundle: bundle) }
+    static var pinned: String { String(localized: "Pinned", bundle: bundle) }
+    static var projectOptions: String { String(localized: "Project Options", bundle: bundle) }
+    static var pinProject: String { String(localized: "Pin Project", bundle: bundle) }
+    static var unpinProject: String { String(localized: "Unpin Project", bundle: bundle) }
+    static var openProject: String { String(localized: "Open Project", bundle: bundle) }
+    static var editProject: String { String(localized: "Edit Project", bundle: bundle) }
+    static var noMeetingsInProject: String { String(localized: "No meetings in this project", bundle: bundle) }
     static var projectManagement: String { String(localized: "Project Management", bundle: bundle) }
     static var organizations: String { String(localized: "Organizations", bundle: bundle) }
     static var department: String { String(localized: "Department", bundle: bundle) }

@@ -1,0 +1,138 @@
+import SwiftUI
+
+struct MeetingSidebarProjectSection: View {
+    let group: MeetingProjectGroup
+    let isPinned: Bool
+    let isExpanded: Bool
+    let selectedProjectID: UUID?
+    let canCreateMeeting: Bool
+    let showsMeetingDate: Bool
+    let selectedMeetingIDs: Set<UUID>
+    let activeRecordingID: UUID?
+    let editingMeetingId: UUID?
+    @Binding var editingMeetingName: String
+    @FocusState.Binding var isRenameFieldFocused: Bool
+    let onCommitRename: () -> Void
+    let onCancelRename: () -> Void
+    let onToggleExpansion: () -> Void
+    let allowsListSelection: Bool
+    let onSelectMeeting: (UUID) -> Void
+    let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
+    let onTogglePin: (UUID) -> Void
+    let onCreateMeeting: (ProjectOverviewItem) -> Void
+    let onLoadMore: (MeetingProjectKey) -> Void
+
+    @State private var isLoadMoreHovered = false
+    @State private var isNoProjectHovered = false
+
+    var body: some View {
+        if let project = group.project {
+            MeetingSidebarProjectHeader(
+                project: project,
+                isPinned: isPinned,
+                isExpanded: isExpanded,
+                isSelected: selectedProjectID == project.projectId,
+                canCreateMeeting: canCreateMeeting,
+                onToggleExpansion: onToggleExpansion,
+                onOpen: { onOpenProject(project.projectId, $0) },
+                onTogglePin: { onTogglePin(project.projectId) },
+                onCreateMeeting: { onCreateMeeting(project) }
+            )
+        } else {
+            Button(action: onToggleExpansion) {
+                Label(
+                    L10n.noProject,
+                    systemImage: isExpanded ? "questionmark.folder" : "questionmark.folder.fill"
+                )
+                .font(DahliaDesign.sidebarFont)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
+            .dahliaSidebarHoverHighlight(isHovered: isNoProjectHovered)
+            .contentShape(.rect)
+            .onHover { isNoProjectHovered = $0 }
+            .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+        }
+
+        if isExpanded {
+            projectContents
+        }
+    }
+
+    @ViewBuilder
+    private var projectContents: some View {
+        if group.meetings.isEmpty, group.loadError == nil, group.isLoadingMore {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+        } else if group.meetings.isEmpty, group.loadError == nil {
+            Text(L10n.noMeetingsInProject)
+                .foregroundStyle(.tertiary)
+        } else {
+            ForEach(group.meetings) { item in
+                meetingRow(item)
+            }
+        }
+
+        if let error = group.loadError {
+            Button(L10n.retry, systemImage: "arrow.clockwise") {
+                onLoadMore(group.key)
+            }
+            .help(error)
+        } else if group.isLoadingMore, !group.meetings.isEmpty {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+        } else if group.hasMore {
+            Button(action: { onLoadMore(group.key) }) {
+                Text(L10n.loadMore)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 25)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .contentShape(.rect)
+            .dahliaSidebarHoverHighlight(isHovered: isLoadMoreHovered)
+            .onHover { isLoadMoreHovered = $0 }
+        } else if group.isLimited {
+            Text(L10n.searchForOlderMeetings)
+                .font(DahliaDesign.sidebarFont)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func meetingRow(_ item: MeetingSidebarItem) -> some View {
+        if allowsListSelection {
+            meetingRowContent(item)
+                .tag(item.meetingId)
+        } else {
+            Button(action: { onSelectMeeting(item.meetingId) }) {
+                meetingRowContent(item)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selectedMeetingIDs.contains(item.meetingId) ? .isSelected : [])
+        }
+    }
+
+    private func meetingRowContent(_ item: MeetingSidebarItem) -> some View {
+        var item = item
+        item.projectName = nil
+        return MeetingSidebarRow(
+            item: item,
+            contentLeadingPadding: 20,
+            showsDateInTimestamp: showsMeetingDate,
+            searchText: "",
+            isSelected: selectedMeetingIDs.contains(item.meetingId),
+            usesNativeSelectionHighlight: allowsListSelection,
+            isActiveRecording: item.meetingId == activeRecordingID,
+            isEditing: allowsListSelection && editingMeetingId == item.meetingId,
+            editingName: $editingMeetingName,
+            isFocused: $isRenameFieldFocused,
+            onCommitRename: onCommitRename,
+            onCancelRename: onCancelRename
+        )
+    }
+}

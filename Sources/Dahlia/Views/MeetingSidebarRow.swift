@@ -2,8 +2,11 @@ import SwiftUI
 
 struct MeetingSidebarRow: View {
     let item: MeetingSidebarItem
+    var contentLeadingPadding: CGFloat = 0
+    let showsDateInTimestamp: Bool
     let searchText: String
     let isSelected: Bool
+    var usesNativeSelectionHighlight = true
     let isActiveRecording: Bool
     let isEditing: Bool
     @Binding var editingName: String
@@ -13,130 +16,58 @@ struct MeetingSidebarRow: View {
 
     @State private var isHovered = false
 
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }()
-
     var body: some View {
         HStack(spacing: 10) {
-            statusIndicator
-
-            VStack(alignment: .leading, spacing: 3) {
-                if isEditing {
-                    TextField(L10n.title, text: $editingName)
-                        .textFieldStyle(.plain)
-                        .focused($isFocused)
-                        .onSubmit(onCommitRename)
-                        .onExitCommand(perform: onCancelRename)
-                } else {
-                    MeetingTitleMarquee(
-                        isHovered: isHovered,
-                        title: highlightedText(item.displayTitle)
-                    )
-                }
-
-                HStack(spacing: 6) {
-                    Text(startTimeText)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: true, vertical: false)
-
-                    Text(durationText)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: true, vertical: false)
-
-                    if let projectName {
-                        ProjectPill(name: projectName, isSelected: isSelected)
-                            .layoutPriority(-1)
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-                if let matchContext = visibleMatchContext {
-                    searchMatchRow(matchContext)
-                }
+            if isEditing {
+                TextField(L10n.title, text: $editingName)
+                    .textFieldStyle(.plain)
+                    .focused($isFocused)
+                    .onSubmit(onCommitRename)
+                    .onExitCommand(perform: onCancelRename)
+            } else {
+                MeetingTitleMarquee(
+                    isHovered: isHovered,
+                    title: highlightedText(item.displayTitle)
+                )
+                .font(DahliaDesign.sidebarFont)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if isActiveRecording {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+            } else {
+                MeetingTimestampBadge(text: timestampText)
+            }
         }
+        .padding(.leading, contentLeadingPadding)
+        .font(DahliaDesign.sidebarFont)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 3)
+        .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.horizontal, 5)
-        .background {
-            if isHovered {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(DahliaDesign.hoverHighlightColor)
-            }
-        }
+        .dahliaSidebarHoverHighlight(
+            isHovered: isHovered && !isSelected,
+            isSelected: isSelected && !usesNativeSelectionHighlight
+        )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .accessibilityLabel(accessibilityLabel)
     }
 
-    @ViewBuilder
-    private var statusIndicator: some View {
-        if isActiveRecording {
-            Circle()
-                .fill(.red)
-                .frame(width: 8, height: 8)
-                .accessibilityLabel(L10n.recordingNow)
-        } else {
-            Image(systemName: item.calendarEventTitle == nil ? "waveform" : "calendar")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 12)
-                .accessibilityHidden(true)
+    private var timestampText: String {
+        if showsDateInTimestamp {
+            return item.effectiveRecordingStartedAt.formatted(
+                Date.VerbatimFormatStyle(
+                    format: "\(month: .defaultDigits)/\(day: .defaultDigits)",
+                    locale: Locale(identifier: "en_US_POSIX"),
+                    timeZone: .current,
+                    calendar: .current
+                )
+            )
         }
-    }
-
-    private var projectName: String? {
-        guard let projectName = item.projectName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !projectName.isEmpty else { return nil }
-        return projectName
-    }
-
-    private var startTimeText: String {
-        Self.timeFormatter.string(from: item.effectiveRecordingStartedAt)
-    }
-
-    private var durationText: String {
-        guard let duration = item.duration else { return "00:00" }
-        let totalSeconds = max(0, Int(duration.rounded()))
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    private var visibleMatchContext: MeetingSearchMatchContext? {
-        guard !searchText.isEmpty,
-              let context = item.searchMatchContext,
-              context.kind != .title,
-              context.kind != .project else { return nil }
-        return context
-    }
-
-    private func searchMatchRow(_ context: MeetingSearchMatchContext) -> some View {
-        HStack(spacing: 5) {
-            if context.kind == .tag {
-                Circle()
-                    .fill(context.colorHex.map(Color.init(hex:)) ?? Color.secondary)
-                    .frame(width: 6, height: 6)
-            } else {
-                Image(systemName: context.kind == .calendar ? "calendar" : "text.alignleft")
-                    .frame(width: 8)
-            }
-
-            Text(matchContextPrefix(context.kind))
-                .foregroundStyle(.tertiary)
-            highlightedText(context.text)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .font(.caption)
-        .accessibilityElement(children: .combine)
+        return item.effectiveRecordingStartedAt.formatted(date: .omitted, time: .shortened)
     }
 
     private func matchContextPrefix(_ kind: MeetingSearchMatchContext.Kind) -> String {
@@ -173,6 +104,8 @@ struct MeetingSidebarRow: View {
         var components = [item.displayTitle]
         if isActiveRecording {
             components.append(L10n.recordingNow)
+        } else {
+            components.append(timestampText)
         }
         if let calendarEventTitle = item.calendarEventTitle {
             components.append(L10n.calendarEventOrigin(calendarEventTitle.nilIfBlank ?? L10n.newMeeting))
@@ -186,35 +119,18 @@ struct MeetingSidebarRow: View {
     }
 }
 
-private struct ProjectPill: View {
-    let name: String
-    let isSelected: Bool
+private struct MeetingTimestampBadge: View {
+    let text: String
 
     var body: some View {
-        Text(name)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(foregroundColor)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.horizontal, 6)
+        Text(text)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize()
+            .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(backgroundColor, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(borderColor, lineWidth: 0.5)
-            }
-            .accessibilityLabel(name)
-    }
-
-    private var foregroundColor: Color {
-        isSelected ? Color(nsColor: .controlAccentColor) : Color(nsColor: .secondaryLabelColor)
-    }
-
-    private var backgroundColor: Color {
-        isSelected ? Color(nsColor: .controlBackgroundColor).opacity(0.95) : Color(nsColor: .secondaryLabelColor).opacity(0.10)
-    }
-
-    private var borderColor: Color {
-        isSelected ? Color(nsColor: .controlAccentColor).opacity(0.24) : Color(nsColor: .secondaryLabelColor).opacity(0.16)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+            .accessibilityHidden(true)
     }
 }
