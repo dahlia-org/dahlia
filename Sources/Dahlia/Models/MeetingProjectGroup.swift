@@ -11,3 +11,11 @@ struct MeetingProjectGroup: Identifiable, Equatable, Sendable {
 
     var id: MeetingProjectKey { key }
 }
+
+struct MeetingProjectProjection: Equatable, Sendable {
+    let itemsByKey: [MeetingProjectKey: [MeetingSidebarItem]]
+    let hasMoreKeys: Set<MeetingProjectKey>
+    let truncatedKeys: Set<MeetingProjectKey>
+    let isLimited: Bool
+    let unassignedMeetingCount: Int
+}

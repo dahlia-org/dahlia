@@ -105,8 +105,9 @@ extension MeetingRepository {
         vaultId: UUID,
         recentLimit: Int,
         expandedLimits: [MeetingProjectKey: Int] = [:],
+        totalLimit: Int,
         in db: Database
-    ) throws -> [MeetingProjectKey: [MeetingSidebarItem]] {
+    ) throws -> MeetingProjectProjection {
         let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
         let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
         var rowLimitClauses: [String] = []
@@ -123,9 +124,9 @@ extension MeetingRepository {
         let rowLimitSQL = rowLimitClauses.isEmpty
             ? "?"
             : "CASE \(rowLimitClauses.joined(separator: " ")) ELSE ? END"
-        arguments += [recentLimit, vaultId]
+        arguments += [recentLimit, vaultId, totalLimit + 1]
 
-        var items = try MeetingSidebarItem.fetchAll(
+        var rows = try Row.fetchAll(
             db,
             sql: """
             WITH ranked AS (
@@ -144,6 +145,7 @@ extension MeetingRepository {
                         PARTITION BY meetings.projectId
                         ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
                     ) AS projectRowNumber,
+                    COUNT(*) OVER (PARTITION BY meetings.projectId) AS projectRowCount,
                     \(rowLimitSQL) AS projectRowLimit
                 FROM meetings
                 LEFT JOIN calendar_events
@@ -153,17 +155,49 @@ extension MeetingRepository {
             )
             SELECT *
             FROM ranked
-            WHERE projectRowNumber <= projectRowLimit + 1
+            WHERE projectRowNumber <= projectRowLimit
             ORDER BY COALESCE(recordingStartedAt, createdAt) DESC, meetingId DESC
+            LIMIT ?
             """,
             arguments: arguments
         )
-        for index in items.indices {
-            items[index].projectName = items[index].projectId.flatMap { projectPaths[$0] }
+        let exceededTotalLimit = rows.count > totalLimit
+        if exceededTotalLimit {
+            rows.removeLast()
         }
-        return Dictionary(grouping: items) { item in
-            item.projectId.map(MeetingProjectKey.project) ?? .unassigned
+
+        var itemsByKey: [MeetingProjectKey: [MeetingSidebarItem]] = [:]
+        var hasMoreKeys: Set<MeetingProjectKey> = []
+        var expectedCounts: [MeetingProjectKey: Int] = [:]
+        for row in rows {
+            var item = try MeetingSidebarItem(row: row)
+            item.projectName = item.projectId.flatMap { projectPaths[$0] }
+            let key = item.projectId.map(MeetingProjectKey.project) ?? .unassigned
+            itemsByKey[key, default: []].append(item)
+            let rowCount: Int = row["projectRowCount"]
+            let rowLimit: Int = row["projectRowLimit"]
+            expectedCounts[key] = min(rowCount, rowLimit)
+            if rowCount > rowLimit {
+                hasMoreKeys.insert(key)
+            }
         }
+        let truncatedKeys = Set(expectedCounts.compactMap { key, expectedCount in
+            itemsByKey[key, default: []].count < expectedCount ? key : nil
+        })
+        let isLimited = exceededTotalLimit
+            || (rows.count == totalLimit && (!hasMoreKeys.isEmpty || !truncatedKeys.isEmpty))
+        let unassignedMeetingCount = try Int.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) FROM meetings WHERE vaultId = ? AND projectId IS NULL",
+            arguments: [vaultId]
+        ) ?? 0
+        return MeetingProjectProjection(
+            itemsByKey: itemsByKey,
+            hasMoreKeys: hasMoreKeys,
+            truncatedKeys: truncatedKeys,
+            isLimited: isLimited,
+            unassignedMeetingCount: unassignedMeetingCount
+        )
     }
 
     nonisolated static func fetchMeetingProjectPage(

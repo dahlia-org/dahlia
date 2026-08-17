@@ -58,7 +58,9 @@ final class SidebarViewModel {
     var projectMeetingLoadErrors: [MeetingProjectKey: String] = [:]
     var projectMeetingLimitedKeys: Set<MeetingProjectKey> = []
     var isProjectMeetingProjectionLoaded = false
+    var isProjectMeetingProjectionLimited = false
     var projectMeetingProjectionLoadError: String?
+    var projectMeetingUnassignedCount = 0
     var selectedMeetingDetail: MeetingDetailItem?
     var selectedMeetingDetailLoadError: String?
     var meetingReferences: [CodexChatMeetingReference] = []
@@ -205,7 +207,9 @@ final class SidebarViewModel {
         projectMeetingLoadErrors.removeAll()
         projectMeetingLimitedKeys.removeAll()
         isProjectMeetingProjectionLoaded = false
+        isProjectMeetingProjectionLimited = false
         projectMeetingProjectionLoadError = nil
+        projectMeetingUnassignedCount = 0
         selectedMeetingDetail = nil
         selectedMeetingDetailLoadError = nil
         meetingReferences.removeAll()

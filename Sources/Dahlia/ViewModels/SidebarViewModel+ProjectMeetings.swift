@@ -10,7 +10,7 @@ extension SidebarViewModel {
             projectMeetingGroup(key: .project(project.projectId), project: project)
         }
         groups.sort(by: projectMeetingGroupComesFirst)
-        if projectMeetingItemsByKey[.unassigned]?.isEmpty == false {
+        if projectMeetingUnassignedCount > 0 {
             groups.append(projectMeetingGroup(key: .unassigned, project: nil))
         }
         return groups
@@ -28,6 +28,7 @@ extension SidebarViewModel {
                 vaultId: vaultId,
                 recentLimit: Self.projectMeetingInitialLimit,
                 expandedLimits: expandedLimits,
+                totalLimit: Self.maximumVisibleMeetings,
                 in: db
             )
         }
@@ -106,17 +107,28 @@ extension SidebarViewModel {
                       self.currentVault?.id == vaultId,
                       self.projectMeetingLoadGenerations[key] == generation else { return }
                 var items = self.projectMeetingItemsByKey[key, default: []]
-                let remaining = max(Self.maximumVisibleMeetings - items.count, 0)
+                let totalVisibleCount = self.projectMeetingItemsByKey.values.reduce(0) { $0 + $1.count }
+                let remaining = max(Self.maximumVisibleMeetings - totalVisibleCount, 0)
                 let omittedByLimit = page.items.count > remaining
                 items.append(contentsOf: page.items.prefix(remaining))
                 self.projectMeetingItemsByKey[key] = items
                 let isLimited = (page.hasMore || omittedByLimit)
-                    && items.count >= Self.maximumVisibleMeetings
+                    && totalVisibleCount + min(page.items.count, remaining) >= Self.maximumVisibleMeetings
                 self.projectMeetingHasMoreByKey[key] = page.hasMore && !isLimited
                 if isLimited {
                     self.projectMeetingLimitedKeys.insert(key)
                 } else {
                     self.projectMeetingLimitedKeys.remove(key)
+                }
+                if totalVisibleCount + min(page.items.count, remaining) >= Self.maximumVisibleMeetings {
+                    let keysWithMore = self.projectMeetingHasMoreByKey.compactMap { $0.value ? $0.key : nil }
+                    if !keysWithMore.isEmpty || isLimited {
+                        self.isProjectMeetingProjectionLimited = true
+                        self.projectMeetingLimitedKeys.formUnion(keysWithMore)
+                        for keyWithMore in keysWithMore {
+                            self.projectMeetingHasMoreByKey[keyWithMore] = false
+                        }
+                    }
                 }
                 self.projectMeetingLoadingKeys.remove(key)
                 self.startProjectMeetingObservation(dbQueue: dbQueue, vaultId: vaultId)
@@ -133,19 +145,20 @@ extension SidebarViewModel {
     }
 
     private func applyProjectMeetingProjection(
-        _ projection: [MeetingProjectKey: [MeetingSidebarItem]]
+        _ projection: MeetingProjectProjection
     ) {
-        let knownKeys = Set(projectMeetingItemsByKey.keys).union(projection.keys)
+        let knownKeys = Set(projectMeetingItemsByKey.keys).union(projection.itemsByKey.keys)
+        projectMeetingLimitedKeys = projection.truncatedKeys
+        if projection.isLimited {
+            projectMeetingLimitedKeys.formUnion(projection.hasMoreKeys)
+        }
         for key in knownKeys {
-            let projectedItems = projection[key, default: []]
-            let visibleCount = max(
-                projectMeetingItemsByKey[key]?.count ?? 0,
-                Self.projectMeetingInitialLimit
-            )
-            projectMeetingItemsByKey[key] = Array(projectedItems.prefix(visibleCount))
-            projectMeetingHasMoreByKey[key] = projectedItems.count > visibleCount
+            projectMeetingItemsByKey[key] = projection.itemsByKey[key, default: []]
+            projectMeetingHasMoreByKey[key] = projection.hasMoreKeys.contains(key)
                 && !projectMeetingLimitedKeys.contains(key)
         }
+        isProjectMeetingProjectionLimited = projection.isLimited
+        projectMeetingUnassignedCount = projection.unassignedMeetingCount
         isProjectMeetingProjectionLoaded = true
         projectMeetingProjectionLoadError = nil
     }
@@ -154,14 +167,18 @@ extension SidebarViewModel {
         key: MeetingProjectKey,
         project: ProjectOverviewItem?
     ) -> MeetingProjectGroup {
-        MeetingProjectGroup(
+        let meetings = projectMeetingItemsByKey[key, default: []]
+        let meetingCount = project?.meetingCount ?? projectMeetingUnassignedCount
+        let isLimited = projectMeetingLimitedKeys.contains(key)
+            || (isProjectMeetingProjectionLimited && meetingCount > meetings.count)
+        return MeetingProjectGroup(
             key: key,
             project: project,
-            meetings: projectMeetingItemsByKey[key, default: []],
-            hasMore: projectMeetingHasMoreByKey[key] == true,
+            meetings: meetings,
+            hasMore: projectMeetingHasMoreByKey[key] == true && !isLimited,
             isLoadingMore: !isProjectMeetingProjectionLoaded || projectMeetingLoadingKeys.contains(key),
             loadError: projectMeetingProjectionLoadError ?? projectMeetingLoadErrors[key],
-            isLimited: projectMeetingLimitedKeys.contains(key)
+            isLimited: isLimited
         )
     }
 

@@ -67,6 +67,8 @@ struct MeetingSidebarProjectSection: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity)
+        } else if group.meetings.isEmpty, group.isLimited {
+            limitMessage
         } else if group.meetings.isEmpty, group.loadError == nil {
             Text(L10n.noMeetingsInProject)
                 .foregroundStyle(.tertiary)
@@ -97,10 +99,15 @@ struct MeetingSidebarProjectSection: View {
             .dahliaSidebarHoverHighlight(isHovered: isLoadMoreHovered)
             .onHover { isLoadMoreHovered = $0 }
         } else if group.isLimited {
-            Text(L10n.searchForOlderMeetings)
-                .font(DahliaDesign.sidebarFont)
-                .foregroundStyle(.secondary)
+            limitMessage
         }
+    }
+
+    private var limitMessage: some View {
+        Text(L10n.searchForOlderMeetings)
+            .font(DahliaDesign.sidebarFont)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 25)
     }
 
     @ViewBuilder

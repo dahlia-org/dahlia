@@ -14,7 +14,7 @@ import GRDB
 
             try fixture.manager.dbQueue.write { db in
                 for index in 0 ..< 52 {
-                    insertedIDs.append(try fixture.insertMeeting(
+                    try insertedIDs.append(fixture.insertMeeting(
                         name: "Meeting \(index)",
                         createdAt: start.addingTimeInterval(TimeInterval(index)),
                         in: db
@@ -125,7 +125,7 @@ import GRDB
         func filtersByProjectHierarchyTagsAndDateBounds() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let startDate = Date(timeIntervalSince1970: 1_800_000_000)
-            let endDate = startDate.addingTimeInterval(86_400)
+            let endDate = startDate.addingTimeInterval(86400)
             let values = try fixture.insertAdvancedSearchFixtures(
                 startDate: startDate,
                 endDate: endDate
@@ -259,14 +259,16 @@ import GRDB
                 try MeetingRepository.fetchMeetingProjectProjection(
                     vaultId: fixture.vault.id,
                     recentLimit: 5,
+                    totalLimit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
                 )
             }
 
-            #expect(projection[.project(projectID)]?.map(\.meetingName) == [
-                "Project 6", "Project 5", "Project 4", "Project 3", "Project 2", "Project 1",
+            #expect(projection.itemsByKey[.project(projectID)]?.map(\.meetingName) == [
+                "Project 6", "Project 5", "Project 4", "Project 3", "Project 2",
             ])
-            #expect(projection[.unassigned]?.map(\.meetingName) == ["Unassigned 1", "Unassigned 0"])
+            #expect(projection.hasMoreKeys.contains(.project(projectID)))
+            #expect(projection.itemsByKey[.unassigned]?.map(\.meetingName) == ["Unassigned 1", "Unassigned 0"])
         }
 
         @Test
@@ -288,9 +290,10 @@ import GRDB
             let firstFive = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectProjection(
                     vaultId: fixture.vault.id,
-                    recentLimit: 4,
+                    recentLimit: 5,
+                    totalLimit: SidebarViewModel.maximumVisibleMeetings,
                     in: db
-                )[.project(projectID)] ?? []
+                ).itemsByKey[.project(projectID)] ?? []
             }
             let page = try fixture.manager.dbQueue.read { db in
                 try MeetingRepository.fetchMeetingProjectPage(
@@ -307,6 +310,36 @@ import GRDB
             let expectedNames: [String] = (1 ... 10).reversed().map { "Meeting \($0)" }
             #expect(page.items.map(\.meetingName) == expectedNames)
             #expect(page.hasMore)
+        }
+
+        @Test
+        func capsProjectProjectionAcrossGroups() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            try fixture.manager.dbQueue.write { db in
+                for projectIndex in 0 ..< 101 {
+                    let projectID = try fixture.insertProject(name: "Project \(projectIndex)", in: db)
+                    for meetingIndex in 0 ..< 6 {
+                        _ = try fixture.insertMeeting(
+                            name: "Meeting \(projectIndex)-\(meetingIndex)",
+                            projectId: projectID,
+                            createdAt: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(projectIndex * 10 + meetingIndex)),
+                            in: db
+                        )
+                    }
+                }
+            }
+
+            let projection = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingProjectProjection(
+                    vaultId: fixture.vault.id,
+                    recentLimit: 5,
+                    totalLimit: SidebarViewModel.maximumVisibleMeetings,
+                    in: db
+                )
+            }
+
+            #expect(projection.itemsByKey.values.reduce(0) { $0 + $1.count } == SidebarViewModel.maximumVisibleMeetings)
+            #expect(projection.isLimited)
         }
     }
 
@@ -476,7 +509,7 @@ import GRDB
         }
 
         func resultIDs(query: String) async throws -> Set<UUID> {
-            Set(try await MeetingRepository.searchMeetingSidebarPage(
+            try await Set(MeetingRepository.searchMeetingSidebarPage(
                 vaultId: vault.id,
                 query: query,
                 limit: 50,
