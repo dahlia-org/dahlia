@@ -31,7 +31,7 @@ struct MeetingSidebarListGroupLabel: View {
             }
         }
         .font(DahliaDesign.sidebarFont)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .listRowSeparator(.hidden)
         .contentShape(.rect)
         .onHover { isHovered = $0 }

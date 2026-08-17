@@ -4,6 +4,8 @@ enum DahliaDesign {
     static let hoverHighlightColor = Color.gray.opacity(0.16)
     static let sidebarSelectionColor = Color.gray
     static let sidebarSelectionHighlightColor = sidebarSelectionColor.opacity(0.32)
+    static let sidebarPrimaryTextColor = Color.primary.opacity(0.78)
+    static let sidebarSecondaryTextColor = Color.primary.opacity(0.38)
     static let sidebarFontScale: CGFloat = 1.1
     static let sidebarFont = Font.body.scaled(by: sidebarFontScale)
     static let sidebarRowVerticalPadding: CGFloat = 3

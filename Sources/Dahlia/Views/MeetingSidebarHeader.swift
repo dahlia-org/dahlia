@@ -45,7 +45,7 @@ struct MeetingSidebarHeader: View {
         }
         .contentShape(.rect)
         .onHover { isHovered = $0 }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
     }
 }
