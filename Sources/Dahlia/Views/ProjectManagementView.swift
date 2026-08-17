@@ -42,8 +42,8 @@ struct ProjectManagementView: View {
             ) {
                 VStack(spacing: 0) {
                     MainSidebarNavigationView(
-                        onCreateMeeting: recordingCoordinator.createEmptyMeeting,
-                        canCreateMeeting: !captionViewModel.isRecordingStartPending,
+                        onCreateMeeting: recordingCoordinator.createDraftMeeting,
+                        canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
                         canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
                         onStartQuickRecording: recordingCoordinator.startQuickRecording,
                         isShowingUpcomingSchedule: false,

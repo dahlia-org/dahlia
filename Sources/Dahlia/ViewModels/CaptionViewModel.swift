@@ -1943,7 +1943,7 @@ final class CaptionViewModel: ObservableObject {
     }
 
     func beginDraftMeeting(
-        from event: CalendarEvent,
+        from event: CalendarEvent? = nil,
         dbQueue: DatabaseQueue,
         projectURL: URL? = nil,
         projectId: UUID? = nil,
@@ -1952,7 +1952,7 @@ final class CaptionViewModel: ObservableObject {
     ) {
         guard !isRecordingStartPending, !isFinalizingRecording else { return }
 
-        resetMeetingState()
+        clearCurrentMeeting()
         let draftId = UUID.v7()
         currentMeetingId = nil
         currentProjectURL = projectURL
@@ -1962,7 +1962,7 @@ final class CaptionViewModel: ObservableObject {
         currentDbQueue = dbQueue
         draftMeeting = DraftMeeting(
             id: draftId,
-            title: event.title,
+            title: event?.title ?? "",
             linkedCalendarEvent: event,
             projectURL: projectURL,
             projectId: projectId,
@@ -2071,6 +2071,7 @@ final class CaptionViewModel: ObservableObject {
 
         if isListening {
             saveRecordingContextIfNeeded()
+            saveNoteImmediately()
             store = TranscriptStore()
             screenshotStore.clear()
             resetNoteState()
