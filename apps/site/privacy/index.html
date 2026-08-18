@@ -86,7 +86,8 @@
             Dahlia sends low-frequency workflow events to TelemetryDeck, such as whether recording, transcription,
             summary generation, or export started, completed, or failed, whether AI chat was used, and whether Dahlia's
             built-in AI used a Dahlia MCP tool. These events can include fixed categories for transcription mode, audio
-            sources enabled when recording starts, new or continued recording, trigger, destination, failure stage,
+            sources enabled when recording starts, new or continued recording, a fixed Quick Recording or scheduled
+            calendar recording trigger, destination, failure stage,
             built-in AI origin, read or write operation, and coarse feature area. For completed recordings, Dahlia also
             sends the duration rounded to whole minutes and capped at 360 minutes. Dahlia does not collect MCP usage by
             external clients or send MCP tool names, arguments, or results. TelemetryDeck's SDK also

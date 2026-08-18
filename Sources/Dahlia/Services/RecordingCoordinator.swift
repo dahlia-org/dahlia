@@ -41,14 +41,16 @@ final class RecordingCoordinator {
         startNewMeeting(
             opensMainWindowOnFailure: true,
             initialMeetingName: QuickRecordingMeetingTitle.make(at: .now),
-            usesDraftMeeting: false
+            usesDraftMeeting: false,
+            recordingTrigger: .quick
         )
     }
 
     private func startNewMeeting(
         opensMainWindowOnFailure: Bool,
         initialMeetingName: String = "",
-        usesDraftMeeting: Bool = true
+        usesDraftMeeting: Bool = true,
+        recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil
     ) {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
@@ -79,6 +81,7 @@ final class RecordingCoordinator {
                 vaultURL: vault.url,
                 initialMeetingName: initialMeetingName,
                 usesDraftMeeting: usesDraftMeeting,
+                recordingTrigger: recordingTrigger,
                 reservation: reservation
             )
             recordingDidStart()
@@ -180,7 +183,11 @@ final class RecordingCoordinator {
 
     func startAutomaticRecording(forCalendarEvent event: CalendarEvent) {
         mainWindowNavigation.openMeetingsWithoutActivation()
-        startRecording(forCalendarEvent: event, opensMainWindowOnFailure: false)
+        startRecording(
+            forCalendarEvent: event,
+            opensMainWindowOnFailure: false,
+            recordingTrigger: .scheduled
+        )
     }
 
     @discardableResult
@@ -199,7 +206,8 @@ final class RecordingCoordinator {
     private func startRecording(
         appendingTo meetingId: UUID,
         customerIntelligenceEvent: CalendarEvent? = nil,
-        opensMainWindowOnFailure: Bool
+        opensMainWindowOnFailure: Bool,
+        recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil
     ) -> Bool {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
@@ -239,6 +247,7 @@ final class RecordingCoordinator {
                 projectId: item.projectId,
                 projectName: item.projectName,
                 vaultURL: vault.url,
+                recordingTrigger: recordingTrigger,
                 appendingTo: meetingId,
                 reservation: reservation
             )
@@ -272,7 +281,8 @@ final class RecordingCoordinator {
     @discardableResult
     private func startRecording(
         forCalendarEvent event: CalendarEvent,
-        opensMainWindowOnFailure: Bool = true
+        opensMainWindowOnFailure: Bool = true,
+        recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil
     ) -> Bool {
         mainWindowNavigation.showMeetings()
         guard canStartNewMeeting,
@@ -293,7 +303,8 @@ final class RecordingCoordinator {
                 return startRecording(
                     appendingTo: existingMeetingId,
                     customerIntelligenceEvent: event,
-                    opensMainWindowOnFailure: opensMainWindowOnFailure
+                    opensMainWindowOnFailure: opensMainWindowOnFailure,
+                    recordingTrigger: recordingTrigger
                 )
             }
         } catch {
@@ -308,7 +319,10 @@ final class RecordingCoordinator {
             dbQueue: dbQueue,
             vaultURL: vault.url
         )
-        startNewMeeting(opensMainWindowOnFailure: opensMainWindowOnFailure)
+        startNewMeeting(
+            opensMainWindowOnFailure: opensMainWindowOnFailure,
+            recordingTrigger: recordingTrigger
+        )
         return true
     }
 

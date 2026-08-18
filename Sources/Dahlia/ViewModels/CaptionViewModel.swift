@@ -90,6 +90,7 @@ struct RecordingTelemetryContext {
     let mode: UsageTelemetryEvent.TranscriptionModeValue
     let audioSources: UsageTelemetryEvent.AudioSources
     let meetingScope: UsageTelemetryEvent.MeetingScope
+    let trigger: UsageTelemetryEvent.RecordingTrigger?
     var recordingFailureStage: UsageTelemetryEvent.RecordingFailureStage?
     var transcriptionFailureStage: UsageTelemetryEvent.TranscriptionFailureStage?
 
@@ -102,7 +103,8 @@ struct RecordingTelemetryContext {
                 mode: mode,
                 sources: audioSources,
                 meetingScope: meetingScope,
-                duration: recordingLifecycle == .completed ? recordingDuration : nil
+                duration: recordingLifecycle == .completed ? recordingDuration : nil,
+                trigger: trigger
             ),
         ]
         if mode == .realtime {
@@ -2799,6 +2801,7 @@ final class CaptionViewModel: ObservableObject {
         vaultURL: URL,
         initialMeetingName: String = "",
         usesDraftMeeting: Bool = true,
+        recordingTrigger: UsageTelemetryEvent.RecordingTrigger? = nil,
         appendingTo existingMeetingId: UUID? = nil,
         reservation: RecordingStartReservation? = nil
     ) async {
@@ -2933,14 +2936,16 @@ final class CaptionViewModel: ObservableObject {
                 activeRecordingTelemetryContext = RecordingTelemetryContext(
                     mode: mode,
                     audioSources: sources,
-                    meetingScope: meetingScope
+                    meetingScope: meetingScope,
+                    trigger: recordingTrigger
                 )
                 usageTelemetryReporter(.recording(
                     .started,
                     mode: mode,
                     sources: sources,
                     meetingScope: meetingScope,
-                    duration: nil
+                    duration: nil,
+                    trigger: recordingTrigger
                 ))
                 if transcriptionMode == .realtime {
                     usageTelemetryReporter(.transcription(.started, mode: mode))

@@ -24,7 +24,7 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 
 | Event | Allowed parameters |
 | --- | --- |
-| `Dahlia.Recording.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; `audioSources`: 録音開始時の `microphone` / `systemAudio` / `microphoneAndSystemAudio`（terminal でも同値）; `meetingScope`: 最初の録音 session なら `new`、再開なら `continued`; 失敗時のみ `stage`: `start` / `capture` / `stop` / `persistence`; 完了時のみ `floatValue`: 永続化済み録音時間を分単位に四捨五入して 0〜360 に制限した値 |
+| `Dahlia.Recording.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; `audioSources`: 録音開始時の `microphone` / `systemAudio` / `microphoneAndSystemAudio`（terminal でも同値）; `meetingScope`: 最初の録音 session なら `new`、再開なら `continued`; Quick Recording またはカレンダー自動録音のみ `trigger`: `quick` / `scheduled`（開始成功後の terminal でも同値）; 失敗時のみ `stage`: `start` / `capture` / `stop` / `persistence`; 完了時のみ `floatValue`: 永続化済み録音時間を分単位に四捨五入して 0〜360 に制限した値 |
 | `Dahlia.Transcription.started`, `.completed`, `.failed` | `transcriptionMode`: `realtime` / `batch`; 失敗時のみ `stage`: `start` / `persistence` / `transcription` |
 | `Dahlia.Summary.started`, `.completed`, `.failed` | `trigger`: `manual` / `automaticAfterBatch`; 失敗時のみ `stage`: `generation` |
 | `Dahlia.Export.started`, `.completed`, `.failed` | `destination`: `vault` / `googleDocs` / `localFiles`; `trigger`: `manual` / `summaryGeneration`; 失敗時のみ `stage`: `export` |
@@ -40,6 +40,8 @@ Dahlia が追加できるイベントとパラメータは以下だけとする�
 - `App DAU`: `TelemetryDeck.Session.started` の unique user 数を `runtime=app` で集計する。
 - `Recording DAU`: `Dahlia.Recording.started` の unique user 数。一般の DAU と同一視しない。
 - 新規録音 meeting 数: `Dahlia.Recording.started` のうち `meetingScope=new` の event count。
+- Quick Recording による録音 meeting 数: `Dahlia.Recording.started` のうち `meetingScope=new` かつ `trigger=quick` の event count。
+- 予約録音による録音 meeting 数: `Dahlia.Recording.started` のうち `meetingScope=new` かつ `trigger=scheduled` の event count。
 - 録音 session 数: `Dahlia.Recording.started` の全 event count。meeting 数とは呼ばない。
 - 完了録音の平均時間: `Dahlia.Recording.completed.floatValue` の mean。failed recording は含めない。
 - AI Chat DAU: `Dahlia.AIChat.promptSubmitted` または `.liveModeEnabled` の unique user 数。
