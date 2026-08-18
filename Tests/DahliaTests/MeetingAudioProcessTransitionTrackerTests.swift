@@ -52,6 +52,11 @@ import Foundation
         }
 
         @Test
+        func recognizesChromePWAAsChromeAudioContext() {
+            #expect(MeetingAudioProcessCatalog.context(for: Self.chromeWebAppBundleIdentifier) == .chrome)
+        }
+
+        @Test
         func initialSnapshotDoesNotReportMeetingStart() {
             let now = ContinuousClock.now
             var tracker = MeetingAudioProcessTransitionTracker()
@@ -183,14 +188,18 @@ import Foundation
             var tracker = MeetingAudioProcessTransitionTracker(disappearanceGracePeriod: .seconds(4))
 
             _ = tracker.observe([.zoom], at: now)
-            _ = tracker.observe([], at: now.advanced(by: .seconds(1)))
+            let disappearedAt = now.advanced(by: .seconds(1))
+            let disappeared = tracker.observe([], at: disappearedAt)
             let beforeGrace = tracker.observe([], at: now.advanced(by: .milliseconds(4999)))
             let afterGrace = tracker.observe([], at: now.advanced(by: .seconds(5)))
 
+            #expect(disappeared.lastSeenAt[.zoom] == disappearedAt)
+            #expect(tracker.nextDisappearanceDeadline == nil)
             #expect(beforeGrace.activeContexts == [.zoom])
             #expect(beforeGrace.endedContexts.isEmpty)
             #expect(afterGrace.activeContexts.isEmpty)
             #expect(afterGrace.endedContexts == [.zoom])
+            #expect(afterGrace.lastSeenAt[.zoom] == disappearedAt)
         }
 
         @Test
@@ -201,7 +210,9 @@ import Foundation
             _ = tracker.observe([.teams], at: now)
             _ = tracker.observe([], at: now.advanced(by: .seconds(3)))
             _ = tracker.observe([.teams], at: now.advanced(by: .seconds(4)))
+            #expect(tracker.nextDisappearanceDeadline == nil)
             let retained = tracker.observe([], at: now.advanced(by: .seconds(7)))
+            #expect(tracker.nextDisappearanceDeadline == now.advanced(by: .seconds(11)))
             let ended = tracker.observe([], at: now.advanced(by: .seconds(11)))
 
             #expect(retained.activeContexts == [.teams])
@@ -209,20 +220,23 @@ import Foundation
         }
 
         @Test
-        func queryFailureRestartsDisappearanceGracePeriod() {
+        func queryFailureInvalidatesActiveObservationEpoch() {
             let now = ContinuousClock.now
             var tracker = MeetingAudioProcessTransitionTracker(disappearanceGracePeriod: .seconds(4))
 
             _ = tracker.observe([.zoom], at: now)
             _ = tracker.observe([], at: now.advanced(by: .seconds(1)))
             tracker.queryFailed()
+            #expect(tracker.nextDisappearanceDeadline == nil)
             let recovered = tracker.observe([], at: now.advanced(by: .seconds(10)))
-            let beforeGrace = tracker.observe([], at: now.advanced(by: .milliseconds(13999)))
-            let afterGrace = tracker.observe([], at: now.advanced(by: .seconds(14)))
+            let later = tracker.observe([], at: now.advanced(by: .seconds(14)))
 
-            #expect(recovered.activeContexts == [.zoom])
-            #expect(beforeGrace.activeContexts == [.zoom])
-            #expect(afterGrace.endedContexts == [.zoom])
+            #expect(recovered.isInitial)
+            #expect(recovered.activeContexts.isEmpty)
+            #expect(recovered.endedContexts.isEmpty)
+            #expect(recovered.firstSeenAt[.zoom] == nil)
+            #expect(recovered.lastSeenAt[.zoom] == nil)
+            #expect(later.endedContexts.isEmpty)
         }
 
         @Test

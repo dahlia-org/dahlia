@@ -95,6 +95,7 @@ enum MeetingAudioProcessCatalog {
         Entry(prefix: "com.cisco.webexmeetingsapp", context: .webex),
         Entry(prefix: "com.apple.facetime", context: .faceTime),
         Entry(prefix: "com.google.chrome.helper", context: .chrome),
+        Entry(prefix: "com.google.chrome.app", context: .chrome),
         Entry(prefix: "com.microsoft.edgemac.helper", context: .edge),
         Entry(prefix: "com.brave.browser.helper", context: .brave),
         Entry(prefix: "company.thebrowser.browser.helper", context: .arc),

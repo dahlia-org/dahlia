@@ -3,20 +3,41 @@ import Foundation
 /// 録音中に観測した会議コンテキストを追跡し、安全条件を満たした全コンテキストの終了だけを停止候補にする。
 struct MeetingRecordingActivityTracker: Sendable {
     private let minimumRuntime: Duration
+    private let browserTransitionGracePeriod: Duration
     private var recordingStartedAt: ContinuousClock.Instant?
     private var contextStartedAt: [MeetingAudioContext: ContinuousClock.Instant] = [:]
+    private var browserCorroborationLostAt: [MeetingAudioContext: ContinuousClock.Instant] = [:]
     private var qualifiedBrowserContexts = Set<MeetingAudioContext>()
     private var hasEligibleEndedContext = false
 
     var isArmed: Bool { recordingStartedAt != nil }
 
-    init(minimumRuntime: Duration = .seconds(30)) {
+    init(
+        minimumRuntime: Duration = .seconds(30),
+        browserTransitionGracePeriod: Duration = .seconds(4)
+    ) {
         self.minimumRuntime = minimumRuntime
+        self.browserTransitionGracePeriod = browserTransitionGracePeriod
     }
 
     mutating func recordingDidStart(at instant: ContinuousClock.Instant) {
         reset()
         recordingStartedAt = instant
+    }
+
+    mutating func audioObservationFailed(at instant: ContinuousClock.Instant) {
+        hasEligibleEndedContext = false
+        let unqualifiedContexts = contextStartedAt.keys.filter { context in
+            if context.isBrowser {
+                return !qualifiedBrowserContexts.contains(context)
+            }
+            guard let startedAt = contextStartedAt[context] else { return true }
+            return startedAt.duration(to: instant) < minimumRuntime
+        }
+        for context in unqualifiedContexts {
+            contextStartedAt.removeValue(forKey: context)
+            browserCorroborationLostAt.removeValue(forKey: context)
+        }
     }
 
     mutating func observeBrowserCorroboration(
@@ -30,6 +51,11 @@ struct MeetingRecordingActivityTracker: Sendable {
             .filter(\.isBrowser)
 
         for context in corroboratedContexts {
+            if let lostAt = browserCorroborationLostAt.removeValue(forKey: context),
+               lostAt.duration(to: instant) >= browserTransitionGracePeriod,
+               !qualifiedBrowserContexts.contains(context) {
+                contextStartedAt[context] = instant
+            }
             let startedAt = contextStartedAt[context] ?? instant
             contextStartedAt[context] = startedAt
             if startedAt.duration(to: instant) >= minimumRuntime {
@@ -37,7 +63,11 @@ struct MeetingRecordingActivityTracker: Sendable {
             }
         }
 
-        disarmUnqualifiedBrowserContexts(notIn: corroboratedContexts)
+        retainUnqualifiedBrowserTransitions(
+            corroboratedContexts: corroboratedContexts,
+            observedAudioContexts: observedAudioContexts,
+            at: instant
+        )
     }
 
     mutating func shouldStop(after snapshot: MeetingAudioActivityMonitor.Snapshot) -> Bool {
@@ -76,6 +106,7 @@ struct MeetingRecordingActivityTracker: Sendable {
     mutating func reset() {
         recordingStartedAt = nil
         contextStartedAt.removeAll()
+        browserCorroborationLostAt.removeAll()
         qualifiedBrowserContexts.removeAll()
         hasEligibleEndedContext = false
     }
@@ -100,6 +131,33 @@ struct MeetingRecordingActivityTracker: Sendable {
         }
         for context in unobservedContexts {
             contextStartedAt.removeValue(forKey: context)
+            browserCorroborationLostAt.removeValue(forKey: context)
+        }
+    }
+
+    private mutating func retainUnqualifiedBrowserTransitions(
+        corroboratedContexts: Set<MeetingAudioContext>,
+        observedAudioContexts: Set<MeetingAudioContext>,
+        at instant: ContinuousClock.Instant
+    ) {
+        let uncorroboratedContexts = contextStartedAt.keys.filter { context in
+            context.isBrowser
+                && !qualifiedBrowserContexts.contains(context)
+                && !corroboratedContexts.contains(context)
+        }
+        for context in uncorroboratedContexts {
+            guard observedAudioContexts.contains(context) else {
+                contextStartedAt.removeValue(forKey: context)
+                browserCorroborationLostAt.removeValue(forKey: context)
+                continue
+            }
+
+            let lostAt = browserCorroborationLostAt[context] ?? instant
+            browserCorroborationLostAt[context] = lostAt
+            if lostAt.duration(to: instant) >= browserTransitionGracePeriod {
+                contextStartedAt.removeValue(forKey: context)
+                browserCorroborationLostAt.removeValue(forKey: context)
+            }
         }
     }
 }

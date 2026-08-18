@@ -494,7 +494,6 @@ private struct RecordingInputLevelMeter: View {
         }
         .frame(width: 23, height: 12, alignment: .bottom)
         .opacity(isActive ? 1 : 0.45)
-        .animation(.linear(duration: 0.12), value: activeSegmentCount)
         .accessibilityLabel(L10n.inputLevel)
         .accessibilityValue(Text(level, format: .percent.precision(.fractionLength(0))))
     }

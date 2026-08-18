@@ -533,11 +533,8 @@ final class MeetingDetectionService: ObservableObject {
     private func handleMeetingAudioQueryFailure(generation: UInt64) {
         guard isMeetingAudioMonitoringRunning,
               generation == meetingAudioMonitoringGeneration else { return }
-        recordingActivityTracker.observeBrowserCorroboration(
-            browserContexts: [],
-            observedAudioContexts: [],
-            at: ContinuousClock.now
-        )
+        meetingAudioSnapshot = nil
+        recordingActivityTracker.audioObservationFailed(at: ContinuousClock.now)
         guard isRecordingLifecycleActive, !isActivelyRecording() else { return }
         isRecordingLifecycleActive = false
         recordingActivityTracker.reset()
