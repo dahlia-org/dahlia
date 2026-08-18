@@ -6,6 +6,26 @@ import Testing
 @MainActor
 struct DahliaWindowHeaderHelpControllerTests {
     @Test
+    func storesContainerOverlayPresentation() {
+        let controller = DahliaWindowHeaderHelpController()
+        let id = UUID.v7()
+        let buttonFrame = CGRect(x: 100, y: 80, width: 28, height: 28)
+
+        controller.hoverBegan(
+            for: id,
+            label: "Quick Recording",
+            shortcut: nil,
+            buttonFrame: buttonFrame,
+            presentsInContainerOverlay: true
+        )
+
+        #expect(controller.helpLabel == "Quick Recording")
+        #expect(controller.helpShortcut == nil)
+        #expect(controller.helpButtonFrame == buttonFrame)
+        #expect(controller.presentsHelpInContainerOverlay)
+    }
+
+    @Test
     func waitsSevenTenthsOfASecondBeforeInitialPresentation() async {
         let sleeper = HeaderHelpTestSleeper()
         let controller = DahliaWindowHeaderHelpController(sleep: sleeper.sleep)

@@ -11,6 +11,8 @@ struct MainSidebarSplitView<Sidebar: View, Detail: View>: View {
     @ViewBuilder let detail: Detail
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var helpController = DahliaWindowHeaderHelpController()
+    @State private var containerOrigin: CGPoint = .zero
     @GestureState private var resizeTranslation: CGFloat = 0
 
     var body: some View {
@@ -38,6 +40,7 @@ struct MainSidebarSplitView<Sidebar: View, Detail: View>: View {
                     .allowsHitTesting(isVisible)
                     .disabled(!isVisible)
                     .accessibilityHidden(!isVisible)
+                    .environment(helpController)
 
                 detail
                     .frame(
@@ -83,6 +86,19 @@ struct MainSidebarSplitView<Sidebar: View, Detail: View>: View {
             .background {
                 Color(nsColor: .windowBackgroundColor)
                     .ignoresSafeArea()
+            }
+            .onGeometryChange(for: CGPoint.self) { geometry in
+                geometry.frame(in: .global).origin
+            } action: { origin in
+                containerOrigin = origin
+            }
+            .overlay {
+                if isVisible {
+                    DahliaWindowHeaderHelpOverlay(
+                        helpController: helpController,
+                        containerOrigin: containerOrigin
+                    )
+                }
             }
         }
         .frame(minWidth: isVisible ? MainSidebarLayout.minimumSplitWidth : MainSidebarLayout.minimumDetailWidth)

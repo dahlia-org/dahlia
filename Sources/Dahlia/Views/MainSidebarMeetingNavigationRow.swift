@@ -6,8 +6,6 @@ struct MainSidebarMeetingNavigationRow: View {
     let onCreateMeeting: () -> Void
     let onStartQuickRecording: () -> Void
 
-    @State private var helpController = DahliaWindowHeaderHelpController()
-
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onCreateMeeting) {
@@ -29,12 +27,5 @@ struct MainSidebarMeetingNavigationRow: View {
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .modifier(SidebarNavigationRowModifier(isSelected: false))
         .coordinateSpace(name: DahliaWindowHeaderHelpLayout.coordinateSpaceName)
-        .onGeometryChange(for: CGFloat.self) { geometry in
-            geometry.size.width
-        } action: { width in
-            helpController.updateContainerWidth(width)
-        }
-        .environment(helpController)
-        .zIndex(helpController.visibleHelpID == nil ? 0 : 1)
     }
 }

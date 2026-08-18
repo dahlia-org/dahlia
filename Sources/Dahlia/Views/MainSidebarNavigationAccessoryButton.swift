@@ -13,6 +13,7 @@ struct MainSidebarNavigationAccessoryButton: View {
             label: title,
             systemImage: systemImage,
             showsHoverHighlight: false,
+            presentsHelpInContainerOverlay: true,
             action: action
         )
         .foregroundStyle(foregroundColor)

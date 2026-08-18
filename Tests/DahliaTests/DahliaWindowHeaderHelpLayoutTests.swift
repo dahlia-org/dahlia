@@ -1,4 +1,5 @@
 #if canImport(Testing)
+import CoreGraphics
 import Testing
 @testable import Dahlia
 
@@ -19,6 +20,17 @@ struct DahliaWindowHeaderHelpLayoutTests {
         )
 
         #expect(offset == 0)
+    }
+
+    @Test
+    func placesUnconstrainedHelpRelativeToContainer() {
+        let origin = DahliaWindowHeaderHelpLayout.unconstrainedOrigin(
+            buttonFrame: CGRect(x: 100, y: 80, width: 28, height: 28),
+            helpSize: CGSize(width: 100, height: 32),
+            containerOrigin: CGPoint(x: 10, y: 20)
+        )
+
+        #expect(origin == CGPoint(x: 54, y: 24))
     }
 
     @Test
