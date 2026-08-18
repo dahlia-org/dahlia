@@ -116,7 +116,7 @@ struct RecordingStatusBar: View {
                     .foregroundStyle(.red)
 
                 Text(recordingTitle)
-                    .dahliaFont(.secondary)
+                    .dahliaFont(.metadata)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
@@ -130,7 +130,7 @@ struct RecordingStatusBar: View {
     private var elapsedText: some View {
         TimelineView(.periodic(from: recordingTimelineStart, by: 1)) { context in
             Text(formatElapsedTime(at: context.date))
-                .dahliaFont(.secondary, design: .monospaced)
+                .dahliaFont(.metadata, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -433,13 +433,13 @@ private struct RecordingSourceControlLabel: View {
                 .frame(width: 14)
 
             Text(title)
-                .dahliaFont(.secondary, weight: .semibold)
+                .dahliaFont(.metadata, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 58, alignment: .leading)
                 .lineLimit(1)
 
             Text(value)
-                .dahliaFont(.secondary)
+                .dahliaFont(.metadata)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
