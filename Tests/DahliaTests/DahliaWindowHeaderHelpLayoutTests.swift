@@ -9,6 +9,7 @@ struct DahliaWindowHeaderHelpLayoutTests {
     func placesHelpAboveOnlyWhenItFits() {
         #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 80, helpHeight: 32) == -34)
         #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 20, helpHeight: 32) == 34)
+        #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 80, helpHeight: 32, buttonHeight: 30) == -35)
     }
 
     @Test

@@ -7,9 +7,10 @@ enum DahliaWindowHeaderHelpLayout {
 
     static func verticalOffset(
         buttonMinY: CGFloat,
-        helpHeight: CGFloat
+        helpHeight: CGFloat,
+        buttonHeight: CGFloat = DahliaDesign.windowHeaderControlSize
     ) -> CGFloat {
-        let distance = (DahliaDesign.windowHeaderControlSize + helpHeight) / 2 + spacing
+        let distance = (buttonHeight + helpHeight) / 2 + spacing
         return buttonMinY >= helpHeight + spacing ? -distance : distance
     }
 
