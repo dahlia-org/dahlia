@@ -94,7 +94,7 @@ struct DahliaWindowHeaderIconButton: View {
         DahliaWindowHeaderHelpLayout.horizontalOffset(
             buttonMidX: buttonMidX,
             helpWidth: helpSize.width,
-            containerWidth: helpController.containerWidth
+            windowBounds: helpController.windowBounds
         )
     }
 

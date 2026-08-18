@@ -27,10 +27,11 @@ struct DahliaWindowHeaderHelpOverlay: View {
     }
 
     private var helpOrigin: CGPoint {
-        DahliaWindowHeaderHelpLayout.unconstrainedOrigin(
+        DahliaWindowHeaderHelpLayout.origin(
             buttonFrame: helpController.helpButtonFrame,
             helpSize: helpSize,
-            containerOrigin: containerOrigin
+            containerOrigin: containerOrigin,
+            windowBounds: helpController.windowBounds
         )
     }
 }

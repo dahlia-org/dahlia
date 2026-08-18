@@ -2,6 +2,7 @@ import CoreGraphics
 
 enum DahliaWindowHeaderHelpLayout {
     static let coordinateSpaceName = "DahliaWindowHeader"
+    static let windowCoordinateSpaceName = "DahliaWindowHeaderHelpWindow"
     static let spacing: CGFloat = 4
 
     static func verticalOffset(
@@ -12,13 +13,19 @@ enum DahliaWindowHeaderHelpLayout {
         return buttonMinY >= helpHeight + spacing ? -distance : distance
     }
 
-    static func unconstrainedOrigin(
+    static func origin(
         buttonFrame: CGRect,
         helpSize: CGSize,
-        containerOrigin: CGPoint
+        containerOrigin: CGPoint,
+        windowBounds: CGRect
     ) -> CGPoint {
-        CGPoint(
-            x: buttonFrame.midX - containerOrigin.x - helpSize.width / 2,
+        let centeredMinX = buttonFrame.midX - containerOrigin.x - helpSize.width / 2
+        return CGPoint(
+            x: constrainedMinX(
+                centeredMinX,
+                helpWidth: helpSize.width,
+                windowBounds: windowBounds
+            ),
             y: buttonFrame.midY - containerOrigin.y
                 + verticalOffset(buttonMinY: buttonFrame.minY, helpHeight: helpSize.height)
                 - helpSize.height / 2
@@ -28,24 +35,37 @@ enum DahliaWindowHeaderHelpLayout {
     static func horizontalOffset(
         buttonMidX: CGFloat,
         helpWidth: CGFloat,
-        containerWidth: CGFloat
+        windowBounds: CGRect
     ) -> CGFloat {
-        guard buttonMidX.isFinite,
+        let centeredMinX = buttonMidX - helpWidth / 2
+        return constrainedMinX(
+            centeredMinX,
+            helpWidth: helpWidth,
+            windowBounds: windowBounds
+        ) - centeredMinX
+    }
+
+    private static func constrainedMinX(
+        _ centeredMinX: CGFloat,
+        helpWidth: CGFloat,
+        windowBounds: CGRect
+    ) -> CGFloat {
+        guard centeredMinX.isFinite,
               helpWidth.isFinite,
-              containerWidth.isFinite,
+              windowBounds.minX.isFinite,
+              windowBounds.width.isFinite,
               helpWidth > 0,
-              containerWidth > 0
-        else { return 0 }
+              windowBounds.width > 0
+        else { return centeredMinX }
 
         let inset = DahliaDesign.windowHeaderHelpHorizontalInset
-        let centeredMinX = buttonMidX - helpWidth / 2
-        let availableWidth = containerWidth - inset * 2
+        let availableWidth = windowBounds.width - inset * 2
         guard helpWidth <= availableWidth else {
-            return containerWidth / 2 - buttonMidX
+            return windowBounds.midX - helpWidth / 2
         }
 
-        let maximumMinX = containerWidth - inset - helpWidth
-        let clampedMinX = min(max(centeredMinX, inset), maximumMinX)
-        return clampedMinX - centeredMinX
+        let minimumMinX = windowBounds.minX + inset
+        let maximumMinX = windowBounds.maxX - inset - helpWidth
+        return min(max(centeredMinX, minimumMinX), maximumMinX)
     }
 }

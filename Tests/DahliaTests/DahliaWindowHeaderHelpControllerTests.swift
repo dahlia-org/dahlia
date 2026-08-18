@@ -7,7 +7,7 @@ import Testing
 struct DahliaWindowHeaderHelpControllerTests {
     @Test
     func storesContainerOverlayPresentation() {
-        let controller = DahliaWindowHeaderHelpController()
+        let controller = DahliaWindowHeaderHelpController(timeline: DahliaWindowHeaderHelpTimeline())
         let id = UUID.v7()
         let buttonFrame = CGRect(x: 100, y: 80, width: 28, height: 28)
 
@@ -26,7 +26,10 @@ struct DahliaWindowHeaderHelpControllerTests {
     @Test
     func waitsSevenTenthsOfASecondBeforeInitialPresentation() async {
         let sleeper = HeaderHelpTestSleeper()
-        let controller = DahliaWindowHeaderHelpController(sleep: sleeper.sleep)
+        let controller = DahliaWindowHeaderHelpController(
+            sleep: sleeper.sleep,
+            timeline: DahliaWindowHeaderHelpTimeline()
+        )
         let id = UUID.v7()
 
         controller.hoverBegan(for: id)
@@ -43,7 +46,11 @@ struct DahliaWindowHeaderHelpControllerTests {
     func startsImmediateSwitchWindowWhenPresentedHelpIsDismissed() async {
         let clock = HeaderHelpTestClock()
         let sleeper = HeaderHelpTestSleeper()
-        let controller = DahliaWindowHeaderHelpController(now: clock.now, sleep: sleeper.sleep)
+        let controller = DahliaWindowHeaderHelpController(
+            now: clock.now,
+            sleep: sleeper.sleep,
+            timeline: DahliaWindowHeaderHelpTimeline()
+        )
         let sidebarID = UUID.v7()
         let searchID = UUID.v7()
 
@@ -60,9 +67,80 @@ struct DahliaWindowHeaderHelpControllerTests {
     }
 
     @Test
+    func sharesImmediateSwitchWindowAcrossControllersUntilItExpires() async {
+        let clock = HeaderHelpTestClock()
+        let firstSleeper = HeaderHelpTestSleeper()
+        let secondSleeper = HeaderHelpTestSleeper()
+        let timeline = DahliaWindowHeaderHelpTimeline()
+        let firstController = DahliaWindowHeaderHelpController(
+            now: clock.now,
+            sleep: firstSleeper.sleep,
+            timeline: timeline
+        )
+        let secondController = DahliaWindowHeaderHelpController(
+            now: clock.now,
+            sleep: secondSleeper.sleep,
+            timeline: timeline
+        )
+        let firstID = UUID.v7()
+        let secondID = UUID.v7()
+
+        firstController.hoverBegan(for: firstID)
+        #expect(await pollUntil { firstSleeper.requestedDuration != nil })
+        firstSleeper.resume()
+        #expect(await pollUntil { firstController.visibleHelpID == firstID })
+
+        firstController.hoverEnded(for: firstID)
+        secondController.hoverBegan(for: secondID)
+
+        #expect(secondController.visibleHelpID == secondID)
+        #expect(secondSleeper.requestedDuration == nil)
+
+        secondController.hoverEnded(for: secondID)
+        clock.advance(by: .milliseconds(701))
+        secondController.hoverBegan(for: UUID.v7())
+
+        #expect(secondController.visibleHelpID == nil)
+        #expect(await pollUntil { secondSleeper.requestedDuration == .milliseconds(700) })
+        secondController.dismissAll()
+        secondSleeper.resume()
+    }
+
+    @Test
+    func switchesImmediatelyWhenNextControllerEntersBeforePreviousControllerExits() async {
+        let firstSleeper = HeaderHelpTestSleeper()
+        let secondSleeper = HeaderHelpTestSleeper()
+        let timeline = DahliaWindowHeaderHelpTimeline()
+        let firstController = DahliaWindowHeaderHelpController(
+            sleep: firstSleeper.sleep,
+            timeline: timeline
+        )
+        let secondController = DahliaWindowHeaderHelpController(
+            sleep: secondSleeper.sleep,
+            timeline: timeline
+        )
+        let firstID = UUID.v7()
+        let secondID = UUID.v7()
+
+        firstController.hoverBegan(for: firstID)
+        #expect(await pollUntil { firstSleeper.requestedDuration != nil })
+        firstSleeper.resume()
+        #expect(await pollUntil { firstController.visibleHelpID == firstID })
+
+        secondController.hoverBegan(for: secondID)
+        firstController.hoverEnded(for: firstID)
+
+        #expect(secondController.visibleHelpID == secondID)
+        #expect(secondSleeper.requestedDuration == nil)
+    }
+
+    @Test
     func cancelsPendingPresentationWhenHoverEnds() async {
         let sleeper = HeaderHelpTestSleeper()
-        let controller = DahliaWindowHeaderHelpController(sleep: sleeper.sleep)
+        let controller = DahliaWindowHeaderHelpController(
+            sleep: sleeper.sleep,
+            timeline: DahliaWindowHeaderHelpTimeline()
+        )
         let id = UUID.v7()
 
         controller.hoverBegan(for: id)
@@ -77,7 +155,10 @@ struct DahliaWindowHeaderHelpControllerTests {
     @Test
     func dismissAllCancelsPendingPresentation() async {
         let sleeper = HeaderHelpTestSleeper()
-        let controller = DahliaWindowHeaderHelpController(sleep: sleeper.sleep)
+        let controller = DahliaWindowHeaderHelpController(
+            sleep: sleeper.sleep,
+            timeline: DahliaWindowHeaderHelpTimeline()
+        )
         let id = UUID.v7()
 
         controller.hoverBegan(for: id)
@@ -91,7 +172,10 @@ struct DahliaWindowHeaderHelpControllerTests {
 
     @Test
     func dismissAllClearsVisiblePresentation() async {
-        let controller = DahliaWindowHeaderHelpController(displayDelay: .zero)
+        let controller = DahliaWindowHeaderHelpController(
+            displayDelay: .zero,
+            timeline: DahliaWindowHeaderHelpTimeline()
+        )
         let id = UUID.v7()
 
         controller.hoverBegan(for: id)

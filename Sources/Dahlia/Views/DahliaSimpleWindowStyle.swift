@@ -38,5 +38,6 @@ extension View {
             .background {
                 DahliaSimpleWindowStyle()
             }
+            .coordinateSpace(name: DahliaWindowHeaderHelpLayout.windowCoordinateSpaceName)
     }
 }
