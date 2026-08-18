@@ -129,6 +129,7 @@ struct ContentView: View {
                     onGoForward: goForward
                 )
             }
+            .mainSidebarHelpOverlay(isVisible: isSidebarVisible && !isShowingSettings)
 
         } sidebar: {
             CodexChatSidebarView(

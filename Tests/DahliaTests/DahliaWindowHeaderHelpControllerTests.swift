@@ -73,6 +73,33 @@ struct DahliaWindowHeaderHelpControllerTests {
 
         #expect(controller.visibleHelpID == nil)
     }
+
+    @Test
+    func dismissAllCancelsPendingPresentation() async {
+        let sleeper = HeaderHelpTestSleeper()
+        let controller = DahliaWindowHeaderHelpController(sleep: sleeper.sleep)
+        let id = UUID.v7()
+
+        controller.hoverBegan(for: id)
+        #expect(await pollUntil { sleeper.requestedDuration != nil })
+        controller.dismissAll()
+        sleeper.resume()
+        #expect(await pollUntil { sleeper.didReturnFromSleep })
+
+        #expect(controller.visibleHelpID == nil)
+    }
+
+    @Test
+    func dismissAllClearsVisiblePresentation() async {
+        let controller = DahliaWindowHeaderHelpController(displayDelay: .zero)
+        let id = UUID.v7()
+
+        controller.hoverBegan(for: id)
+        #expect(await pollUntil { controller.visibleHelpID == id })
+        controller.dismissAll()
+
+        #expect(controller.visibleHelpID == nil)
+    }
 }
 
 @MainActor
@@ -92,10 +119,12 @@ private final class HeaderHelpTestClock {
 private final class HeaderHelpTestSleeper {
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var requestedDuration: Duration?
+    private(set) var didReturnFromSleep = false
 
     func sleep(for duration: Duration) async {
         requestedDuration = duration
         await withCheckedContinuation { continuation = $0 }
+        didReturnFromSleep = true
     }
 
     func resume() {

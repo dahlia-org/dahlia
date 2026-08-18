@@ -69,6 +69,14 @@ final class DahliaWindowHeaderHelpController {
         containerWidth = width
     }
 
+    func dismissAll() {
+        hoveredHelpID = nil
+        pendingPresentationTask?.cancel()
+        pendingPresentationTask = nil
+        visibleHelpID = nil
+        lastDismissalInstant = nil
+    }
+
     func hoverEnded(for id: UUID) {
         guard hoveredHelpID == id else { return }
         hoveredHelpID = nil
