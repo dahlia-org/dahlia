@@ -374,6 +374,7 @@ import Foundation
             }?.objectValue?["params"]?.objectValue)
             #expect(resumeParams["approvalPolicy"] == .string("on-request"))
             #expect(resumeParams["sandbox"] == .string("workspace-write"))
+            expectDeveloperInstructions(resumeParams["developerInstructions"]?.stringValue)
             await appServer.shutdown()
         }
 
@@ -714,6 +715,13 @@ import Foundation
             #expect(instructions?.contains("get_meeting with each UUID directly") == true)
             #expect(instructions?.contains("use web search") == true)
             #expect(instructions?.contains("cite the sources") == true)
+            #expect(instructions?.contains("ambient conversation, not as a user request") == true)
+            #expect(instructions?.contains("<live_transcript source=\"dahlia\">") == true)
+            #expect(instructions?.contains("whether or not the same message includes <context>") == true)
+            #expect(instructions?.contains("otherwise remain silent") == true)
+            #expect(instructions?.contains("proactively search relevant past Dahlia meetings") == true)
+            #expect(instructions?.contains("abbreviation or technical term") == true)
+            #expect(instructions?.contains("past meetings and the web") == true)
             #expect(instructions?.contains("Select Dahlia preset skills automatically") == true)
             #expect(instructions?.contains("solely to read that preset's SKILL.md") == true)
             #expect(instructions?.contains("unless the user's request cannot be completed without them") == true)

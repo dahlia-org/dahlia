@@ -2606,7 +2606,6 @@ enum L10n {
     static var enableChatLiveMode: String { String(localized: "Turn on live mode", bundle: bundle) }
     static var disableChatLiveMode: String { String(localized: "Turn off live mode", bundle: bundle) }
     static var chatLiveModeOn: String { String(localized: "Live mode on", bundle: bundle) }
-    static var chatLiveModeOff: String { String(localized: "Live mode off", bundle: bundle) }
     static var chatLiveTranscriptBacklogTruncated: String {
         String(localized: "Some older live transcript was skipped because the chat backlog was too large.", bundle: bundle)
     }
