@@ -9,6 +9,7 @@ struct MeetingRecordingActivityTracker: Sendable {
     private var browserCorroborationLostAt: [MeetingAudioContext: ContinuousClock.Instant] = [:]
     private var qualifiedBrowserContexts = Set<MeetingAudioContext>()
     private var hasEligibleEndedContext = false
+    private(set) var nextEvaluationDeadline: ContinuousClock.Instant?
 
     var isArmed: Bool { recordingStartedAt != nil }
 
@@ -20,24 +21,19 @@ struct MeetingRecordingActivityTracker: Sendable {
         self.browserTransitionGracePeriod = browserTransitionGracePeriod
     }
 
-    mutating func recordingDidStart(at instant: ContinuousClock.Instant) {
+    mutating func recordingDidStart(
+        at instant: ContinuousClock.Instant,
+        currentSnapshot: MeetingAudioActivityMonitor.Snapshot? = nil
+    ) {
         reset()
         recordingStartedAt = instant
+        if let currentSnapshot {
+            _ = shouldStop(after: currentSnapshot)
+        }
     }
 
-    mutating func audioObservationFailed(at instant: ContinuousClock.Instant) {
-        hasEligibleEndedContext = false
-        let unqualifiedContexts = contextStartedAt.keys.filter { context in
-            if context.isBrowser {
-                return !qualifiedBrowserContexts.contains(context)
-            }
-            guard let startedAt = contextStartedAt[context] else { return true }
-            return startedAt.duration(to: instant) < minimumRuntime
-        }
-        for context in unqualifiedContexts {
-            contextStartedAt.removeValue(forKey: context)
-            browserCorroborationLostAt.removeValue(forKey: context)
-        }
+    mutating func audioObservationFailed() {
+        reset()
     }
 
     mutating func observeBrowserCorroboration(
@@ -68,10 +64,12 @@ struct MeetingRecordingActivityTracker: Sendable {
             observedAudioContexts: observedAudioContexts,
             at: instant
         )
+        updatePendingEvaluationDeadline()
     }
 
     mutating func shouldStop(after snapshot: MeetingAudioActivityMonitor.Snapshot) -> Bool {
         guard let recordingStartedAt else { return false }
+        nextEvaluationDeadline = nil
         disarmUnqualifiedBrowserContexts(notIn: snapshot.observedContexts)
         armNativeContexts(
             snapshot.observedContexts,
@@ -95,10 +93,21 @@ struct MeetingRecordingActivityTracker: Sendable {
             qualifiedBrowserContexts.remove(context)
         }
 
-        guard recordingStartedAt.duration(to: snapshot.observedAt) >= minimumRuntime,
-              hasEligibleEndedContext,
+        guard hasEligibleEndedContext,
               snapshot.activeContexts.isDisjoint(with: contextStartedAt.keys) else { return false }
+        let minimumRuntimeDeadline = recordingStartedAt.advanced(by: minimumRuntime)
+        guard snapshot.observedAt >= minimumRuntimeDeadline else {
+            nextEvaluationDeadline = minimumRuntimeDeadline
+            return false
+        }
 
+        reset()
+        return true
+    }
+
+    mutating func shouldStop(at instant: ContinuousClock.Instant) -> Bool {
+        guard let nextEvaluationDeadline,
+              instant >= nextEvaluationDeadline else { return false }
         reset()
         return true
     }
@@ -109,6 +118,7 @@ struct MeetingRecordingActivityTracker: Sendable {
         browserCorroborationLostAt.removeAll()
         qualifiedBrowserContexts.removeAll()
         hasEligibleEndedContext = false
+        nextEvaluationDeadline = nil
     }
 
     private mutating func armNativeContexts(
@@ -159,5 +169,15 @@ struct MeetingRecordingActivityTracker: Sendable {
                 browserCorroborationLostAt.removeValue(forKey: context)
             }
         }
+    }
+
+    private mutating func updatePendingEvaluationDeadline() {
+        guard let recordingStartedAt,
+              hasEligibleEndedContext,
+              contextStartedAt.isEmpty else {
+            nextEvaluationDeadline = nil
+            return
+        }
+        nextEvaluationDeadline = recordingStartedAt.advanced(by: minimumRuntime)
     }
 }

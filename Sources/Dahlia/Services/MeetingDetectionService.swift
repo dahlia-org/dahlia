@@ -30,6 +30,7 @@ final class MeetingDetectionService: ObservableObject {
     private var notificationAuthorizationTask: Task<Void, Never>?
     private var meetingAudioMonitorCommandTask: Task<Void, Never>?
     private var meetingAudioMonitorCommandID: UUID?
+    private var recordingActivityEvaluationTask: Task<Void, Never>?
     private var meetingAudioMonitoringGeneration: UInt64 = 0
     private var isStarted = false
     private var isRecordingLifecycleActive = false
@@ -424,13 +425,13 @@ final class MeetingDetectionService: ObservableObject {
 
     func recordingDidStart() {
         isRecordingLifecycleActive = true
-        recordingActivityTracker.reset()
+        armRecordingActivity(at: ContinuousClock.now)
         reconcileMeetingAudioMonitoring()
     }
 
     func recordingDidStop() {
         isRecordingLifecycleActive = false
-        recordingActivityTracker.reset()
+        resetRecordingActivityTracking()
         reconcileMeetingAudioMonitoring()
     }
 
@@ -454,7 +455,7 @@ final class MeetingDetectionService: ObservableObject {
             armRecordingActivityIfNeeded()
             startWindowTitleScanning()
         } else {
-            recordingActivityTracker.reset()
+            resetRecordingActivityTracking()
             stopWindowTitleScanning()
         }
     }
@@ -481,7 +482,7 @@ final class MeetingDetectionService: ObservableObject {
         isMeetingAudioMonitoringRunning = false
         meetingAudioMonitoringGeneration &+= 1
         meetingAudioSnapshot = nil
-        recordingActivityTracker.reset()
+        resetRecordingActivityTracking()
         enqueueMeetingAudioMonitorCommand { [meetingAudioActivityMonitor] in
             await meetingAudioActivityMonitor.stop()
         }
@@ -520,12 +521,14 @@ final class MeetingDetectionService: ObservableObject {
 
         if AppSettings.shared.automaticMeetingEndRecordingStopEnabled, recordingIsActive {
             armRecordingActivityIfNeeded(at: snapshot.observedAt)
-            if recordingActivityTracker.shouldStop(after: snapshot) {
+            let shouldStop = recordingActivityTracker.shouldStop(after: snapshot)
+            updateRecordingActivityEvaluationTask()
+            if shouldStop {
                 onAutomaticRecordingStop()
             }
         } else if isRecordingLifecycleActive, !recordingIsActive {
             isRecordingLifecycleActive = false
-            recordingActivityTracker.reset()
+            resetRecordingActivityTracking()
             reconcileMeetingAudioMonitoring()
         }
     }
@@ -534,10 +537,11 @@ final class MeetingDetectionService: ObservableObject {
         guard isMeetingAudioMonitoringRunning,
               generation == meetingAudioMonitoringGeneration else { return }
         meetingAudioSnapshot = nil
-        recordingActivityTracker.audioObservationFailed(at: ContinuousClock.now)
+        cancelRecordingActivityEvaluation()
+        recordingActivityTracker.audioObservationFailed()
         guard isRecordingLifecycleActive, !isActivelyRecording() else { return }
         isRecordingLifecycleActive = false
-        recordingActivityTracker.reset()
+        resetRecordingActivityTracking()
         reconcileMeetingAudioMonitoring()
     }
 
@@ -547,18 +551,56 @@ final class MeetingDetectionService: ObservableObject {
     }
 
     private func armRecordingActivity(at instant: ContinuousClock.Instant) {
-        recordingActivityTracker.recordingDidStart(at: instant)
+        cancelRecordingActivityEvaluation()
+        recordingActivityTracker.recordingDidStart(
+            at: instant,
+            currentSnapshot: meetingAudioSnapshot
+        )
+    }
+
+    private func updateRecordingActivityEvaluationTask() {
+        cancelRecordingActivityEvaluation()
+        guard let deadline = recordingActivityTracker.nextEvaluationDeadline else { return }
+
+        recordingActivityEvaluationTask = Task { @MainActor [weak self] in
+            do {
+                try await ContinuousClock().sleep(until: deadline)
+            } catch {
+                return
+            }
+            guard let self,
+                  isRecordingLifecycleActive,
+                  isActivelyRecording() else { return }
+            recordingActivityEvaluationTask = nil
+            if recordingActivityTracker.shouldStop(at: ContinuousClock.now) {
+                onAutomaticRecordingStop()
+            }
+        }
+    }
+
+    private func cancelRecordingActivityEvaluation() {
+        recordingActivityEvaluationTask?.cancel()
+        recordingActivityEvaluationTask = nil
+    }
+
+    private func resetRecordingActivityTracking() {
+        cancelRecordingActivityEvaluation()
+        recordingActivityTracker.reset()
     }
 
     private func updateBrowserCorroboration(at instant: ContinuousClock.Instant) {
         guard AppSettings.shared.automaticMeetingEndRecordingStopEnabled,
               isRecordingLifecycleActive,
               isActivelyRecording() else { return }
+        let previousEvaluationDeadline = recordingActivityTracker.nextEvaluationDeadline
         recordingActivityTracker.observeBrowserCorroboration(
             browserContexts: windowDetectedBrowserContexts,
             observedAudioContexts: meetingAudioSnapshot?.observedContexts ?? [],
             at: instant
         )
+        if recordingActivityTracker.nextEvaluationDeadline != previousEvaluationDeadline {
+            updateRecordingActivityEvaluationTask()
+        }
     }
 
     private func recentCalendarEvent() -> CalendarEvent? {
