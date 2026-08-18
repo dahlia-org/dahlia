@@ -330,7 +330,7 @@
 "No action items match the current filter." = "No action items match the current filter.";
 "Action items extracted from summaries will appear here." = "Action items extracted from summaries will appear here.";
 "We couldn't detect any conversation in this meeting." = "We couldn't detect any conversation in this meeting.";
-"Recording now" = "Recording now";
+"Recording now" = "Recording";
 "Recording Settings" = "Recording Settings";
 "Starts or stops recording for the selected meeting." = "Starts or stops recording for the selected meeting.";
 "Transcribing now" = "Live transcription";
