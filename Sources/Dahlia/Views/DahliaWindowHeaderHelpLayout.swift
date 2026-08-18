@@ -2,6 +2,15 @@ import CoreGraphics
 
 enum DahliaWindowHeaderHelpLayout {
     static let coordinateSpaceName = "DahliaWindowHeader"
+    static let spacing: CGFloat = 4
+
+    static func verticalOffset(
+        buttonMinY: CGFloat,
+        helpHeight: CGFloat
+    ) -> CGFloat {
+        let distance = (DahliaDesign.windowHeaderControlSize + helpHeight) / 2 + spacing
+        return buttonMinY >= helpHeight + spacing ? -distance : distance
+    }
 
     static func horizontalOffset(
         buttonMidX: CGFloat,

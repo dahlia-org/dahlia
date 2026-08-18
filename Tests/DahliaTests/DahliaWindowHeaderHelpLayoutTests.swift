@@ -5,6 +5,12 @@ import Testing
 @MainActor
 struct DahliaWindowHeaderHelpLayoutTests {
     @Test
+    func placesHelpAboveOnlyWhenItFits() {
+        #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 80, helpHeight: 32) == -34)
+        #expect(DahliaWindowHeaderHelpLayout.verticalOffset(buttonMinY: 20, helpHeight: 32) == 34)
+    }
+
+    @Test
     func keepsHelpCenteredWhenItFits() {
         let offset = DahliaWindowHeaderHelpLayout.horizontalOffset(
             buttonMidX: 200,

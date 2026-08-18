@@ -4,23 +4,27 @@ struct DahliaWindowHeaderIconButton: View {
     let label: String
     let systemImage: String
     let helpShortcut: String?
+    let showsHoverHighlight: Bool
     let action: () -> Void
 
     @Environment(DahliaWindowHeaderHelpController.self) private var helpController
     @State private var helpID = UUID()
-    @State private var helpWidth: CGFloat = 0
+    @State private var helpSize: CGSize = .zero
     @State private var buttonMidX: CGFloat = 0
+    @State private var buttonMinY: CGFloat = 0
     @State private var isHovering = false
 
     init(
         label: String,
         systemImage: String,
         helpShortcut: String? = nil,
+        showsHoverHighlight: Bool = true,
         action: @escaping () -> Void
     ) {
         self.label = label
         self.systemImage = systemImage
         self.helpShortcut = helpShortcut
+        self.showsHoverHighlight = showsHoverHighlight
         self.action = action
     }
 
@@ -37,25 +41,30 @@ struct DahliaWindowHeaderIconButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering ? DahliaDesign.hoverHighlightColor : .clear,
+            isHovering && showsHoverHighlight ? DahliaDesign.hoverHighlightColor : .clear,
             in: .rect(cornerRadius: 8)
         )
-        .overlay(alignment: .bottom) {
+        .overlay {
             if helpController.visibleHelpID == helpID {
                 DahliaWindowHeaderHelp(label: label, shortcut: helpShortcut)
-                    .onGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.size.width
-                    } action: { width in
-                        helpWidth = width
+                    .onGeometryChange(for: CGSize.self) { geometry in
+                        geometry.size
+                    } action: { size in
+                        helpSize = size
                     }
-                    .offset(x: helpHorizontalOffset, y: 42)
-                    .opacity(helpWidth > 0 ? 1 : 0)
+                    .offset(x: helpHorizontalOffset, y: helpVerticalOffset)
+                    .opacity(helpSize != .zero ? 1 : 0)
             }
         }
         .onGeometryChange(for: CGFloat.self) { geometry in
             geometry.frame(in: .named(DahliaWindowHeaderHelpLayout.coordinateSpaceName)).midX
         } action: { midX in
             buttonMidX = midX
+        }
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            geometry.frame(in: .global).minY
+        } action: { minY in
+            buttonMinY = minY
         }
         .onHover(perform: updateHoverState)
         .onDisappear { helpController.hoverEnded(for: helpID) }
@@ -75,8 +84,15 @@ struct DahliaWindowHeaderIconButton: View {
     private var helpHorizontalOffset: CGFloat {
         DahliaWindowHeaderHelpLayout.horizontalOffset(
             buttonMidX: buttonMidX,
-            helpWidth: helpWidth,
+            helpWidth: helpSize.width,
             containerWidth: helpController.containerWidth
+        )
+    }
+
+    private var helpVerticalOffset: CGFloat {
+        DahliaWindowHeaderHelpLayout.verticalOffset(
+            buttonMinY: buttonMinY,
+            helpHeight: helpSize.height
         )
     }
 }
