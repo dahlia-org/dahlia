@@ -1,6 +1,6 @@
 ---
 name: generate-release-notes
-description: Generate concise, human-friendly GitHub Release notes for Dahlia by interpreting user-visible changes between releases. Use when drafting or revising Dahlia release notes, or when scripts/create-github-release.sh invokes Codex to replace GitHub's mechanical generated notes.
+description: Generate concise, human-friendly GitHub Release notes for Dahlia by interpreting user-visible changes between releases. Use when independently drafting or revising a single-language Dahlia release note; use release-dahlia instead for the complete bilingual app-release workflow.
 ---
 
 # Generate Release Notes
