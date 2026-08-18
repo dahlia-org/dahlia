@@ -23,6 +23,7 @@ struct SettingsDetailView: View {
             }
             .formStyle(.grouped)
             .frame(height: 64)
+            .padding(.top, DahliaDesign.windowHeaderHeight)
 
             selectedSettings
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
