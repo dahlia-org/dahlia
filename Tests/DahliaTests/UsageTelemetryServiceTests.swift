@@ -97,6 +97,7 @@ import Foundation
                 "persistence",
             ])
             #expect(UsageTelemetryEvent.MeetingScope.allCases.map(\.rawValue) == ["new", "continued"])
+            #expect(UsageTelemetryEvent.RecordingTrigger.allCases.map(\.rawValue) == ["quick", "scheduled"])
             #expect(UsageTelemetryEvent.TranscriptionFailureStage.allCases.map(\.rawValue) == [
                 "start",
                 "persistence",
@@ -136,6 +137,14 @@ import Foundation
                 destination: .localFiles,
                 trigger: .manual
             ).parameters["stage"] == nil)
+            #expect(UsageTelemetryEvent.recording(
+                .started,
+                mode: .realtime,
+                sources: .microphone,
+                meetingScope: .new,
+                duration: nil,
+                trigger: .quick
+            ).parameters["trigger"] == "quick")
         }
 
         @Test
@@ -143,7 +152,8 @@ import Foundation
             var context = RecordingTelemetryContext(
                 mode: .realtime,
                 audioSources: .microphoneAndSystemAudio,
-                meetingScope: .continued
+                meetingScope: .continued,
+                trigger: .scheduled
             )
             context.recordingFailureStage = .capture
             context.transcriptionFailureStage = .transcription
@@ -154,7 +164,8 @@ import Foundation
                     mode: .realtime,
                     sources: .microphoneAndSystemAudio,
                     meetingScope: .continued,
-                    duration: nil
+                    duration: nil,
+                    trigger: .scheduled
                 ),
                 .transcription(.failed(.transcription), mode: .realtime),
             ])

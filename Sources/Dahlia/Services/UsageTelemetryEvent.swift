@@ -44,6 +44,11 @@ enum UsageTelemetryEvent: Equatable, Sendable {
         case continued
     }
 
+    enum RecordingTrigger: String, CaseIterable, Sendable {
+        case quick
+        case scheduled
+    }
+
     enum TranscriptionFailureStage: String, CaseIterable, Sendable {
         case start
         case persistence
@@ -80,7 +85,8 @@ enum UsageTelemetryEvent: Equatable, Sendable {
         mode: TranscriptionModeValue,
         sources: AudioSources,
         meetingScope: MeetingScope,
-        duration: TimeInterval?
+        duration: TimeInterval?,
+        trigger: RecordingTrigger? = nil
     )
     case transcription(Lifecycle<TranscriptionFailureStage>, mode: TranscriptionModeValue)
     case summary(Lifecycle<SummaryFailureStage>, trigger: SummaryTrigger)
@@ -90,7 +96,7 @@ enum UsageTelemetryEvent: Equatable, Sendable {
 
     var signalName: String {
         switch self {
-        case let .recording(lifecycle, _, _, _, _):
+        case let .recording(lifecycle, _, _, _, _, _):
             "Dahlia.Recording.\(lifecycle.signalSuffix)"
         case let .transcription(lifecycle, _):
             "Dahlia.Transcription.\(lifecycle.signalSuffix)"
@@ -107,13 +113,14 @@ enum UsageTelemetryEvent: Equatable, Sendable {
 
     var parameters: [String: String] {
         switch self {
-        case let .recording(lifecycle, mode, sources, meetingScope, _):
+        case let .recording(lifecycle, mode, sources, meetingScope, _, trigger):
             parameters(
                 [
                     "transcriptionMode": mode.rawValue,
                     "audioSources": sources.rawValue,
                     "meetingScope": meetingScope.rawValue,
-                ],
+                    "trigger": trigger?.rawValue,
+                ].compactMapValues { $0 },
                 failureStage: lifecycle.failureStage
             )
         case let .transcription(lifecycle, mode):
@@ -131,7 +138,7 @@ enum UsageTelemetryEvent: Equatable, Sendable {
     }
 
     var floatValue: Double? {
-        guard case let .recording(.completed, _, _, _, duration?) = self else { return nil }
+        guard case let .recording(.completed, _, _, _, duration?, _) = self else { return nil }
         return min(360, max(0, (duration / 60).rounded()))
     }
 
