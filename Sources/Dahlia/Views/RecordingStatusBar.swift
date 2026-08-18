@@ -112,7 +112,7 @@ struct RecordingStatusBar: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(recordingLabels.activity)
-                    .dahliaFont(.secondary, weight: .bold)
+                    .dahliaFont(.metadata, weight: .bold)
                     .foregroundStyle(.red)
 
                 Text(recordingTitle)
