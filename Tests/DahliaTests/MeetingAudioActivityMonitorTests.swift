@@ -39,13 +39,13 @@ import Foundation
         func recordingStartedDuringMeetingUsesExistingContext() {
             let now = ContinuousClock.now
             var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
-            tracker.recordingDidStart(at: now)
-            _ = tracker.shouldStop(after: snapshot(
+            let currentSnapshot = snapshot(
                 active: [.zoom],
                 firstSeenAt: [.zoom: now.advanced(by: .seconds(-10))],
                 lastSeenAt: [.zoom: now],
                 at: now
-            ))
+            )
+            tracker.recordingDidStart(at: now, currentSnapshot: currentSnapshot)
 
             let ended = snapshot(
                 ended: [.zoom],
@@ -103,8 +103,158 @@ import Foundation
                 lastSeenAt: [.zoom: now.advanced(by: .seconds(10))],
                 at: now.advanced(by: .seconds(10))
             ))
+            let scheduledDeadline = tracker.nextEvaluationDeadline
+            let beforeDeadline = tracker.shouldStop(at: now.advanced(by: .milliseconds(29999)))
+            let atDeadline = tracker.shouldStop(at: now.advanced(by: .seconds(30)))
 
             #expect(!result)
+            #expect(scheduledDeadline == now.advanced(by: .seconds(30)))
+            #expect(!beforeDeadline)
+            #expect(atDeadline)
+        }
+
+        @Test
+        func browserCorroborationCancelsAndExpiredGapRestoresPendingStopDeadline() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.chrome, .zoom],
+                observed: [.chrome, .zoom],
+                firstSeenAt: [.chrome: now, .zoom: now.advanced(by: .seconds(-20))],
+                lastSeenAt: [.chrome: now, .zoom: now],
+                at: now
+            ))
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.chrome],
+                observed: [.chrome],
+                ended: [.zoom],
+                firstSeenAt: [.chrome: now, .zoom: now.advanced(by: .seconds(-20))],
+                lastSeenAt: [.chrome: now.advanced(by: .seconds(10)), .zoom: now.advanced(by: .seconds(10))],
+                at: now.advanced(by: .seconds(10))
+            ))
+            let scheduledDeadline = tracker.nextEvaluationDeadline
+
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(11))
+            )
+            let deadlineDuringBrowserMeeting = tracker.nextEvaluationDeadline
+            tracker.observeBrowserCorroboration(
+                browserContexts: [],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(12))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(16))
+            )
+            let restoredDeadline = tracker.nextEvaluationDeadline
+            let stopAfterBrowserGap = tracker.shouldStop(at: now.advanced(by: .seconds(30)))
+
+            #expect(scheduledDeadline == now.advanced(by: .seconds(30)))
+            #expect(deadlineDuringBrowserMeeting == nil)
+            #expect(restoredDeadline == now.advanced(by: .seconds(30)))
+            #expect(stopAfterBrowserGap)
+        }
+
+        @Test
+        func queryFailureDoesNotQualifyShortNativeContextDuringOutage() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.zoom],
+                firstSeenAt: [.zoom: now],
+                lastSeenAt: [.zoom: now],
+                at: now
+            ))
+
+            tracker.audioObservationFailed()
+            let recovered = snapshot(
+                active: [.zoom],
+                firstSeenAt: [.zoom: now.advanced(by: .seconds(40))],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(40))],
+                at: now.advanced(by: .seconds(40))
+            )
+            tracker.recordingDidStart(
+                at: now.advanced(by: .seconds(40)),
+                currentSnapshot: recovered
+            )
+            let result = tracker.shouldStop(after: snapshot(
+                ended: [.zoom],
+                firstSeenAt: [.zoom: now.advanced(by: .seconds(40))],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(50))],
+                at: now.advanced(by: .seconds(54))
+            ))
+
+            #expect(!result)
+        }
+
+        @Test
+        func queryFailureRequiresNativeContextToQualifyAgain() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.zoom],
+                firstSeenAt: [.zoom: now],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(30))],
+                at: now.advanced(by: .seconds(30))
+            ))
+
+            tracker.audioObservationFailed()
+            let recovered = snapshot(
+                active: [.zoom],
+                firstSeenAt: [.zoom: now.advanced(by: .seconds(32))],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(32))],
+                at: now.advanced(by: .seconds(32))
+            )
+            tracker.recordingDidStart(
+                at: now.advanced(by: .seconds(32)),
+                currentSnapshot: recovered
+            )
+            let result = tracker.shouldStop(after: snapshot(
+                ended: [.zoom],
+                firstSeenAt: [.zoom: now.advanced(by: .seconds(32))],
+                lastSeenAt: [.zoom: now.advanced(by: .seconds(33))],
+                at: now.advanced(by: .seconds(37))
+            ))
+
+            #expect(!result)
+        }
+
+        @Test
+        func queryFailureClearsEndedContextFromPreviousObservationEpoch() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(minimumRuntime: .seconds(30))
+            tracker.recordingDidStart(at: now)
+            _ = tracker.shouldStop(after: snapshot(
+                active: [.teams, .zoom],
+                firstSeenAt: [.teams: now, .zoom: now],
+                lastSeenAt: [.teams: now.advanced(by: .seconds(30)), .zoom: now.advanced(by: .seconds(30))],
+                at: now.advanced(by: .seconds(30))
+            ))
+
+            let zoomEnded = tracker.shouldStop(after: snapshot(
+                active: [.teams],
+                ended: [.zoom],
+                firstSeenAt: [.teams: now, .zoom: now],
+                lastSeenAt: [.teams: now.advanced(by: .seconds(31)), .zoom: now.advanced(by: .seconds(31))],
+                at: now.advanced(by: .seconds(35))
+            ))
+            tracker.audioObservationFailed()
+            let recovered = snapshot(at: now.advanced(by: .seconds(37)))
+            tracker.recordingDidStart(
+                at: now.advanced(by: .seconds(37)),
+                currentSnapshot: recovered
+            )
+            let recoveryResult = tracker.shouldStop(after: recovered)
+
+            #expect(!zoomEnded)
+            #expect(!recoveryResult)
         }
 
         @Test
@@ -302,6 +452,88 @@ import Foundation
                 firstSeenAt: [.chrome: rawAudioStartedAt],
                 lastSeenAt: [.chrome: now.advanced(by: .seconds(40))],
                 at: now.advanced(by: .seconds(44))
+            ))
+
+            #expect(!result)
+        }
+
+        @Test
+        func chromeTabToPWATransitionKeepsQualificationAcrossShortWindowGap() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(
+                minimumRuntime: .seconds(30),
+                browserTransitionGracePeriod: .seconds(4)
+            )
+            tracker.recordingDidStart(at: now)
+
+            _ = tracker.shouldStop(after: snapshot(active: [.chrome], started: [.chrome], at: now))
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(15))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(18))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(30))
+            )
+
+            let result = tracker.shouldStop(after: snapshot(
+                ended: [.chrome],
+                firstSeenAt: [.chrome: now],
+                lastSeenAt: [.chrome: now.advanced(by: .seconds(31))],
+                at: now.advanced(by: .seconds(35))
+            ))
+
+            #expect(result)
+        }
+
+        @Test
+        func chromeTabToPWAGapBeyondGraceRestartsQualification() {
+            let now = ContinuousClock.now
+            var tracker = MeetingRecordingActivityTracker(
+                minimumRuntime: .seconds(30),
+                browserTransitionGracePeriod: .seconds(4)
+            )
+            tracker.recordingDidStart(at: now)
+
+            _ = tracker.shouldStop(after: snapshot(active: [.chrome], started: [.chrome], at: now))
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(15))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(20))
+            )
+            tracker.observeBrowserCorroboration(
+                browserContexts: [.chrome],
+                observedAudioContexts: [.chrome],
+                at: now.advanced(by: .seconds(30))
+            )
+
+            let result = tracker.shouldStop(after: snapshot(
+                ended: [.chrome],
+                firstSeenAt: [.chrome: now],
+                lastSeenAt: [.chrome: now.advanced(by: .seconds(31))],
+                at: now.advanced(by: .seconds(35))
             ))
 
             #expect(!result)

@@ -4,6 +4,7 @@ import Foundation
 struct AudioProcessObjectQueries: Sendable {
     struct QueryFailure: Error, Equatable, Sendable, CustomStringConvertible {
         enum Operation: String, Sendable {
+            case addListener = "add-listener"
             case readData = "read-data"
             case readDataSize = "read-data-size"
         }
@@ -92,23 +93,6 @@ struct AudioProcessObjectQueries: Sendable {
 
     func isRunningOutput(for objectID: AudioObjectID) -> Result<Bool, QueryFailure> {
         runningState(for: objectID, selector: kAudioProcessPropertyIsRunningOutput)
-    }
-
-    func runningInputBundleIDs(excludingPID excludedPID: pid_t) -> Result<Set<String>, QueryFailure> {
-        do {
-            let objectIDs = try processObjectIDs().get()
-            var bundleIDs = Set<String>()
-            for objectID in objectIDs {
-                guard try pid(for: objectID).get() != excludedPID,
-                      try isRunningInput(for: objectID).get(),
-                      let bundleID = try bundleID(for: objectID).get(),
-                      !bundleID.isEmpty else { continue }
-                bundleIDs.insert(bundleID)
-            }
-            return .success(bundleIDs)
-        } catch {
-            return .failure(error)
-        }
     }
 
     private func runningState(
