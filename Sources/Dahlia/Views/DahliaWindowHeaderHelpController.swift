@@ -6,6 +6,9 @@ import Observation
 final class DahliaWindowHeaderHelpController {
     private(set) var visibleHelpID: UUID?
     private(set) var containerWidth: CGFloat = 0
+    private(set) var helpLabel = ""
+    private(set) var helpShortcut: String?
+    private(set) var helpButtonFrame: CGRect = .zero
 
     @ObservationIgnored private let displayDelay: Duration
     @ObservationIgnored private let immediateSwitchWindow: Duration
@@ -50,8 +53,28 @@ final class DahliaWindowHeaderHelpController {
         }
     }
 
+    func hoverBegan(
+        for id: UUID,
+        label: String,
+        shortcut: String?,
+        buttonFrame: CGRect
+    ) {
+        helpLabel = label
+        helpShortcut = shortcut
+        helpButtonFrame = buttonFrame
+        hoverBegan(for: id)
+    }
+
     func updateContainerWidth(_ width: CGFloat) {
         containerWidth = width
+    }
+
+    func dismissAll() {
+        hoveredHelpID = nil
+        pendingPresentationTask?.cancel()
+        pendingPresentationTask = nil
+        visibleHelpID = nil
+        lastDismissalInstant = nil
     }
 
     func hoverEnded(for id: UUID) {

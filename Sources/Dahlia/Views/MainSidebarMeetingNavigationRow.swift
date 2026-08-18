@@ -26,5 +26,6 @@ struct MainSidebarMeetingNavigationRow: View {
         }
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .modifier(SidebarNavigationRowModifier(isSelected: false))
+        .coordinateSpace(name: DahliaWindowHeaderHelpLayout.coordinateSpaceName)
     }
 }

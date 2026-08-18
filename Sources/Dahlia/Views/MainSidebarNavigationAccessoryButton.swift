@@ -9,16 +9,16 @@ struct MainSidebarNavigationAccessoryButton: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
-            .dahliaFixedSymbol()
-            .buttonStyle(.plain)
-            .foregroundStyle(foregroundColor)
-            .frame(width: 28, height: 28)
-            .contentShape(Rectangle())
-            .disabled(!isEnabled)
-            .help(title)
-            .onHover { isHovered = $0 }
+        DahliaWindowHeaderIconButton(
+            label: title,
+            systemImage: systemImage,
+            showsHoverHighlight: false,
+            presentsHelpInContainerOverlay: true,
+            action: action
+        )
+        .foregroundStyle(foregroundColor)
+        .disabled(!isEnabled)
+        .onHover { isHovered = $0 }
     }
 
     private var foregroundColor: Color {
