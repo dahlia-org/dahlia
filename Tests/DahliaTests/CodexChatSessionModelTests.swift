@@ -7,6 +7,24 @@ import Foundation
     @MainActor
     struct CodexChatSessionModelTests {
         @Test
+        func composerContentIncludesTextMeetingReferencesAndImages() {
+            let session = CodexChatSessionModel()
+
+            #expect(!session.hasComposerContent)
+
+            session.draft = "Question"
+            #expect(session.hasComposerContent)
+
+            session.draft = ""
+            session.selectedMeetingReferenceIDs = [UUID.v7()]
+            #expect(session.hasComposerContent)
+
+            session.selectedMeetingReferenceIDs = []
+            session.attachedImages = [CodexChatImageAttachment(data: Data([0x01]), mimeType: "image/png")]
+            #expect(session.hasComposerContent)
+        }
+
+        @Test
         func telemetryCountsManualPromptsAndLiveModeTransitionsWithoutCountingRetriesOrTranscripts() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()

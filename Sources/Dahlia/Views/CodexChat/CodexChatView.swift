@@ -87,12 +87,11 @@ struct CodexChatView: View {
                 .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
                 .padding(.bottom, CodexChatDesign.composerBottomPadding)
             } else {
-                CodexChatLiveModeStatusView(
-                    isEnabled: $session.liveModeEnabled,
-                    isAvailable: session.isBoundToCurrentVault
-                )
-                .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)
-                .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+                if session.liveModeEnabled {
+                    CodexChatLiveModeStatusView(onDisable: session.disableLiveMode)
+                        .padding(.horizontal, CodexChatDesign.liveModeStatusOuterHorizontalPadding)
+                        .padding(.bottom, CodexChatDesign.liveModeStatusBottomPadding)
+                }
 
                 CodexChatComposer(
                     session: session,

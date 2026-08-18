@@ -1017,7 +1017,6 @@
 "Turn on live mode" = "ライブモードをオンにする";
 "Turn off live mode" = "ライブモードをオフにする";
 "Live mode on" = "ライブモード：オン";
-"Live mode off" = "ライブモード：オフ";
 "Some older live transcript was skipped because the chat backlog was too large." = "チャットの待機量が上限を超えたため、古いライブ文字起こしの一部をスキップしました。";
 "The assistant wants to run a command." = "アシスタントがコマンドの実行を求めています。";
 "The assistant wants to change files." = "アシスタントがファイルの変更を求めています。";

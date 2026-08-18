@@ -7,7 +7,11 @@ extension CodexChatSessionModel {
         isBoundToCurrentVault
             && pendingImagePreparationCount == 0
             && (attachedImages.isEmpty || selectedModelSupportsImages)
-            && (draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty)
+            && hasComposerContent
+    }
+
+    var hasComposerContent: Bool {
+        draft.nilIfBlank != nil || !selectedMeetingReferenceIDs.isEmpty || !attachedImages.isEmpty
     }
 
     var selectedModelSupportsImages: Bool {

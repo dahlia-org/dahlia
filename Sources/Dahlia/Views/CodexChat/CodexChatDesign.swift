@@ -6,6 +6,8 @@ enum CodexChatDesign {
     static let liveModeStatusVerticalPadding: CGFloat = 3
     static let liveModeStatusCornerRadius: CGFloat = 8
     static let liveModeStatusBottomPadding: CGFloat = 4
+    static let liveModeStatusOuterHorizontalPadding: CGFloat = 16
+    static let liveModeCloseButtonSize: CGFloat = 24
     static let contentHorizontalPadding: CGFloat = 16
     static let composerHorizontalPadding: CGFloat = 8
     static let composerBottomPadding: CGFloat = 8

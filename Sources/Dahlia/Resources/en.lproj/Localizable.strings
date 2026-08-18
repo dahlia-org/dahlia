@@ -1017,7 +1017,6 @@
 "Turn on live mode" = "Turn on live mode";
 "Turn off live mode" = "Turn off live mode";
 "Live mode on" = "Live mode on";
-"Live mode off" = "Live mode off";
 "Some older live transcript was skipped because the chat backlog was too large." = "Some older live transcript was skipped because the chat backlog was too large.";
 "The assistant wants to run a command." = "The assistant wants to run a command.";
 "The assistant wants to change files." = "The assistant wants to change files.";
