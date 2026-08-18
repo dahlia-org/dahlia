@@ -82,7 +82,7 @@ struct MeetingListSidebarView: View {
                             meetingRow(selectedMeeting)
                         } header: {
                             Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                .font(DahliaDesign.sidebarFont)
+                                .dahliaFont(.body)
                         }
                     }
 
@@ -119,7 +119,7 @@ struct MeetingListSidebarView: View {
                                 meetingRow(selectedMeeting)
                             } header: {
                                 Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                    .font(DahliaDesign.sidebarFont)
+                                    .dahliaFont(.body)
                             }
                         }
 
@@ -191,7 +191,7 @@ struct MeetingListSidebarView: View {
                 onSelectVault: onSelectVault
             )
         }
-        .font(DahliaDesign.sidebarFont)
+        .dahliaFont(.body)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)
@@ -312,6 +312,12 @@ struct MeetingListSidebarView: View {
     private func meetingRow(_ item: MeetingSidebarItem) -> some View {
         MeetingSidebarRow(
             item: item,
+            projectTint: item.projectId.map {
+                mainWindowNavigation.projectAppearance(
+                    projectId: $0,
+                    vaultId: sidebarViewModel.currentVault?.id
+                ).color.color
+            },
             showsDateInTimestamp: mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             searchText: sidebarViewModel.meetingSearchCriteria.text,
             isSelected: renderedMeetingSelection.contains(item.meetingId),

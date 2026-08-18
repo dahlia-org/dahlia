@@ -10,7 +10,7 @@ struct SummaryActionItemsView: View {
         if !displayableItems.isEmpty {
             VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
                 Text(L10n.actionItems)
-                    .font(.title3.bold())
+                    .dahliaFont(.sectionTitle, weight: .bold)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, DahliaDesign.sectionHeadingTopPadding)
 
@@ -18,6 +18,7 @@ struct SummaryActionItemsView: View {
                     ForEach(displayableItems.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "square")
+                                .dahliaFixedSymbol()
                                 .foregroundStyle(.tertiary)
                                 .accessibilityHidden(true)
 
@@ -31,7 +32,7 @@ struct SummaryActionItemsView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .font(.body)
+                        .dahliaFont(.body)
                         .accessibilityElement(children: .combine)
                     }
                 }

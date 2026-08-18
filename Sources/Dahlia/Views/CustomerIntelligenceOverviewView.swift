@@ -41,7 +41,7 @@ struct CustomerIntelligenceOverviewView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(scopeTitle)
-                .font(.largeTitle.bold())
+                .dahliaFont(.displayTitle, weight: .bold)
             Text(scope == .all
                 ? L10n.customerIntelligenceOverviewAllDescription
                 : L10n.customerIntelligenceOverviewCustomerDescription)
@@ -87,7 +87,7 @@ struct CustomerIntelligenceOverviewView: View {
     private var customers: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.organizations)
-                .font(.title2.bold())
+                .dahliaFont(.displayTitle, weight: .bold)
             LazyVGrid(
                 columns: CustomerIntelligenceCustomerCardLayout.columns,
                 alignment: .leading,
@@ -173,7 +173,7 @@ struct CustomerIntelligenceOverviewView: View {
             .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
         } label: {
             Label(title, systemImage: systemImage)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
         }
         .frame(maxWidth: .infinity)
     }
@@ -189,7 +189,7 @@ struct CustomerIntelligenceOverviewView: View {
                     .lineLimit(2)
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

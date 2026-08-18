@@ -7,7 +7,7 @@ struct CodexChatLiveModeStatusView: View {
     var body: some View {
         HStack(spacing: CodexChatDesign.liveModeStatusSpacing) {
             Label(statusText, systemImage: "waveform")
-                .font(.subheadline)
+                .dahliaFont(.body)
                 .foregroundStyle(isEnabled ? Color.accentColor : .secondary)
                 .accessibilityHidden(true)
 

@@ -13,7 +13,7 @@ struct MultipleMeetingSelectionView: View {
                 .foregroundStyle(.secondary)
 
             Text(L10n.selectedCount(sidebarViewModel.selectedMeetingIds.count))
-                .font(.title2.weight(.semibold))
+                .dahliaFont(.displayTitle, weight: .semibold)
 
             HStack(spacing: 10) {
                 Button(

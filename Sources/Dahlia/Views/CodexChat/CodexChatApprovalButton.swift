@@ -21,12 +21,13 @@ struct CodexChatApprovalButton: View {
                 Text(title)
                 if let helpText {
                     Image(systemName: "info.circle")
+                        .dahliaFixedSymbol()
                         .imageScale(.small)
                         .foregroundStyle(.secondary)
                         .onHover(perform: showHelpOnHover)
                         .popover(isPresented: $isHelpPresented, arrowEdge: .bottom) {
                             Text(helpText)
-                                .font(.callout)
+                                .dahliaFont(.body)
                                 .padding(12)
                         }
                         .accessibilityLabel(helpText)

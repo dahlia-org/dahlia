@@ -16,6 +16,7 @@ struct CodexChatAttachmentThumbnail: View {
                 action: { onRemove(attachment.id) }
             )
             .labelStyle(.iconOnly)
+            .dahliaFixedSymbol()
             .buttonStyle(.plain)
             .symbolRenderingMode(.palette)
             .foregroundStyle(.white, .black.opacity(0.65))

@@ -14,6 +14,7 @@ struct CodexChatIconButton: View {
             // グリフの矩形しか反応せず、minus のように背の低い記号はほとんど押せなくなる。
             Label(label, systemImage: systemImage)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .frame(width: size, height: size)
                 .contentShape(Rectangle())
         }

@@ -11,7 +11,7 @@ struct MCPPreviewOptionsView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading) {
                 Text(L10n.mcpClient)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
 
                 Picker(L10n.mcpClient, selection: $selectedClient) {
@@ -26,7 +26,7 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.vault)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
 
                 Picker(L10n.vault, selection: $selectedVaultID) {
@@ -42,7 +42,7 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.mcpAllowWriteAccess)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
 
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)

@@ -21,6 +21,7 @@ struct DatabricksAccountSettingsView: View {
                         action: refreshProfiles
                     )
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .disabled(controller.isBusy)
                 }
             } label: {

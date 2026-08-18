@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct MainSidebarAccountMenuButton: NSViewRepresentable {
+    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+
     let vaults: [VaultRecord]
     let currentVault: VaultRecord?
     let onSelectVault: (VaultRecord) -> Void
@@ -25,7 +27,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         button.imageScaling = .scaleProportionallyDown
         button.alignment = .left
         button.lineBreakMode = .byTruncatingTail
-        button.font = .systemFont(ofSize: DahliaDesign.sidebarFontSize)
+        button.font = .systemFont(ofSize: baseFontSize)
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         context.coordinator.button = button
         configure(button)
@@ -49,6 +51,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
 
     private func configure(_ button: NSButton) {
         let title = currentVault?.name ?? L10n.noVaultSelected
+        button.font = .systemFont(ofSize: baseFontSize)
         button.title = title
         button.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: nil)
         button.setAccessibilityLabel("\(L10n.currentVault), \(title)")

@@ -8,13 +8,13 @@ struct MCPReRegistrationHelpView: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(L10n.mcpReRegistrationHelp)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
 
             Text(L10n.mcpReRegistrationHelpDescription)
                 .foregroundStyle(.secondary)
 
             Text(removalCommand)
-                .font(.callout.monospaced())
+                .dahliaFont(.body, design: .monospaced)
                 .textSelection(.enabled)
 
             Button(

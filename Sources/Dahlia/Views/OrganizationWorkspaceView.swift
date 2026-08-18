@@ -162,6 +162,7 @@ struct OrganizationHierarchyView: View {
             }
         }
         .labelStyle(.iconOnly)
+        .dahliaFixedSymbol()
         .buttonStyle(.borderless)
     }
 
@@ -303,14 +304,14 @@ struct OrganizationHierarchyView: View {
                 VStack(alignment: .leading) {
                     Text(contact.displayName ?? contact.email ?? L10n.unnamedPerson)
                     if let email = contact.email {
-                        Text(email).font(.caption).foregroundStyle(.secondary)
+                        Text(email).dahliaFont(.secondary).foregroundStyle(.secondary)
                     } else {
                         Text(L10n.customerIntelligenceEmailNotSet)
-                            .font(.caption)
+                            .dahliaFont(.secondary)
                             .foregroundStyle(.secondary)
                     }
                     if let roleLabel = member.roleLabel {
-                        Text(roleLabel).font(.caption).foregroundStyle(.secondary)
+                        Text(roleLabel).dahliaFont(.secondary).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -353,7 +354,7 @@ struct OrganizationHierarchyView: View {
             onOpenTopic(topic.id)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(topic.topic.title).font(.headline)
+                Text(topic.topic.title).dahliaFont(.subsectionTitle, weight: .semibold)
                 Text(topic.topic.currentState)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -366,7 +367,7 @@ struct OrganizationHierarchyView: View {
                         Text(date, style: .date)
                     }
                 }
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,7 +385,7 @@ struct OrganizationHierarchyView: View {
                     VStack(alignment: .leading) {
                         Text(meeting.name)
                         Text(meeting.effectiveRecordingStartedAt, style: .date)
-                            .font(.caption)
+                            .dahliaFont(.secondary)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -404,10 +405,10 @@ struct OrganizationHierarchyView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(evidence.meeting.name)
                         Text(evidence.meeting.effectiveRecordingStartedAt, style: .date)
-                            .font(.caption)
+                            .dahliaFont(.secondary)
                             .foregroundStyle(.secondary)
                         Text(evidence.note)
-                            .font(.caption)
+                            .dahliaFont(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(.rect)

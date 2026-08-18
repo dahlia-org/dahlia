@@ -39,9 +39,10 @@ struct TranscriptTabView: View {
             if let pageLoadError = store.pageLoadError {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(.orange)
                     Text(L10n.transcriptLoadFailed(pageLoadError))
-                        .font(.caption)
+                        .dahliaFont(.secondary)
                         .lineLimit(2)
                     Spacer()
                     Button(L10n.retry) {
@@ -63,7 +64,7 @@ struct TranscriptTabView: View {
                     loadLatest()
                 } label: {
                     Label(L10n.newerTranscriptAvailable, systemImage: "arrow.down.circle.fill")
-                        .font(.caption)
+                        .dahliaFont(.secondary)
                 }
                 .buttonStyle(.borderless)
                 .padding(.vertical, 6)

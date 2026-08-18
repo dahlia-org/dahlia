@@ -69,7 +69,7 @@ struct MeetingMetadataBar: View {
                 Image(systemName: "tag.badge.plus")
                     .font(.caption2)
                 Text(L10n.addTag)
-                    .font(.caption.weight(.medium))
+                    .dahliaFont(.metadata, weight: .medium)
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, DahliaDesign.chipHorizontalPadding)
@@ -115,7 +115,7 @@ struct MeetingMetadataBar: View {
                 VStack {
                     Spacer()
                     Text(L10n.noResultsFound)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.tertiary)
                     Spacer()
                 }
@@ -144,7 +144,7 @@ struct MeetingMetadataBar: View {
                         .frame(width: 8, height: 8)
                 }
                 Text(name)
-                    .font(.callout)
+                    .dahliaFont(.body)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -179,7 +179,7 @@ private struct MeetingMetadataPill: View {
     var body: some View {
         Label {
             Text(text)
-                .font(.caption.weight(.medium))
+                .dahliaFont(.metadata, weight: .medium)
                 .lineLimit(1)
         } icon: {
             Image(systemName: systemImage)
@@ -227,7 +227,7 @@ private struct TagChip: View {
             .frame(width: 16, height: 16)
 
             Text(tag.name)
-                .font(.caption.weight(.medium))
+                .dahliaFont(.metadata, weight: .medium)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }

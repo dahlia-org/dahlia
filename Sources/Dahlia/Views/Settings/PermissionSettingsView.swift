@@ -84,6 +84,7 @@ private struct PermissionSettingsRow: View {
                 }
             } icon: {
                 Image(systemName: permission.systemImage)
+                    .dahliaFixedSymbol()
             }
         }
     }

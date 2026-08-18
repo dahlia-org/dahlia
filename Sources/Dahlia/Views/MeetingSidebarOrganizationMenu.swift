@@ -15,6 +15,7 @@ struct MeetingSidebarOrganizationMenu: View {
         } label: {
             Label(L10n.sidebarOrganization, systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

@@ -8,7 +8,7 @@ struct ProjectEditorSheetHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.title2)
+                .dahliaFont(.displayTitle)
                 .bold()
                 .accessibilityAddTraits(.isHeader)
 
@@ -16,6 +16,7 @@ struct ProjectEditorSheetHeader: View {
 
             Button(L10n.close, systemImage: "xmark", action: onClose)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .buttonStyle(.plain)
                 .disabled(isDisabled)
                 .help(L10n.close)

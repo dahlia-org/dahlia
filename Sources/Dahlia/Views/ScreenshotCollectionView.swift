@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 struct ScreenshotCollectionView: NSViewRepresentable {
+    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+
     let meetingID: UUID?
     let screenshots: [MeetingScreenshotRecord]
     var contentRevision: UInt64?
@@ -143,7 +145,8 @@ extension ScreenshotCollectionView {
                 selectedScreenshotIDs: parent.selectedScreenshotIDs,
                 referencedScreenshotIDs: parent.referencedScreenshotIDs,
                 isDeletionDisabled: parent.isDeletionDisabled,
-                timestampCacheGeneration: timestampCacheGeneration
+                timestampCacheGeneration: timestampCacheGeneration,
+                metadataFontSize: DahliaFontRole.metadata.pointSize(baseSize: parent.baseFontSize)
             )
             if Self.requiresVisibleItemUpdate(previous: lastPresentationState, current: presentationState) {
                 reconfigureVisibleItems(in: collectionView)
@@ -252,6 +255,7 @@ extension ScreenshotCollectionView {
                     isReferencedBySummary: parent.referencedScreenshotIDs.contains(id),
                     isDeletionDisabled: parent.isDeletionDisabled
                 ),
+                metadataFontSize: DahliaFontRole.metadata.pointSize(baseSize: parent.baseFontSize),
                 actions: .init(
                     activate: { [weak self] previewImage in
                         self?.activate(id: id, previewImage: previewImage)
@@ -361,6 +365,7 @@ extension ScreenshotCollectionView {
             let referencedScreenshotIDs: Set<UUID>
             let isDeletionDisabled: Bool
             let timestampCacheGeneration: UInt64
+            let metadataFontSize: CGFloat
         }
 
         private struct TimestampContext: Equatable {

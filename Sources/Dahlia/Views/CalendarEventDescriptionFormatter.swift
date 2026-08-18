@@ -9,8 +9,13 @@ enum CalendarEventDescriptionFormatter {
     ])
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
-    static func attributedString(from description: String) -> AttributedString {
-        let attributedDescription = NSMutableAttributedString(attributedString: source(from: description))
+    static func attributedString(
+        from description: String,
+        baseFontSize: CGFloat = CGFloat(AppSettings.defaultInterfaceFontSize)
+    ) -> AttributedString {
+        let attributedDescription = NSMutableAttributedString(
+            attributedString: source(from: description, baseFontSize: baseFontSize)
+        )
         addDetectedLinks(to: attributedDescription)
 
         var attributed = AttributedString(attributedDescription)
@@ -20,9 +25,9 @@ enum CalendarEventDescriptionFormatter {
         return attributed
     }
 
-    private static func source(from description: String) -> NSAttributedString {
+    private static func source(from description: String, baseFontSize: CGFloat) -> NSAttributedString {
         guard containsHTML(description),
-              let data = styledHTML(description).data(using: .utf8),
+              let data = styledHTML(description, baseFontSize: baseFontSize).data(using: .utf8),
               let attributedHTML = try? NSAttributedString(
                   data: data,
                   options: [
@@ -49,9 +54,8 @@ enum CalendarEventDescriptionFormatter {
         }
     }
 
-    private static func styledHTML(_ html: String) -> String {
-        let bodyFontSize = NSFont.preferredFont(forTextStyle: .body).pointSize
-        return "<style>body { font-family: -apple-system; font-size: \(bodyFontSize)px; }</style>\(html)"
+    private static func styledHTML(_ html: String, baseFontSize: CGFloat) -> String {
+        "<style>body { font-family: -apple-system; font-size: \(baseFontSize)px; }</style>\(html)"
     }
 
     private static func containsHTML(_ text: String) -> Bool {

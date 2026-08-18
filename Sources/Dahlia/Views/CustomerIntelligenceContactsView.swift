@@ -306,13 +306,14 @@ private struct CustomerIntelligenceMembershipSheet: View {
                                     Task { _ = await model.removeMembership(organizationID: membership.id) }
                                 }
                                 .labelStyle(.iconOnly)
+                                .dahliaFixedSymbol()
                                 .disabled(model.isSaving)
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(membership.organization.name)
                                     if let role = membership.roleLabel {
                                         Text(role)
-                                            .font(.callout)
+                                            .dahliaFont(.body)
                                             .foregroundStyle(.secondary)
                                     }
                                 }

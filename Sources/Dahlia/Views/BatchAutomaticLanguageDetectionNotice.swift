@@ -14,6 +14,7 @@ struct BatchAutomaticLanguageDetectionNotice: View {
                 }
             } icon: {
                 Image(systemName: "character.bubble")
+                    .dahliaFixedSymbol()
             }
 
             Label {
@@ -25,6 +26,7 @@ struct BatchAutomaticLanguageDetectionNotice: View {
                 }
             } icon: {
                 Image(systemName: "text.badge.checkmark")
+                    .dahliaFixedSymbol()
             }
 
             Label {
@@ -35,9 +37,10 @@ struct BatchAutomaticLanguageDetectionNotice: View {
                 }
             } icon: {
                 Image(systemName: "clock")
+                    .dahliaFixedSymbol()
             }
         }
-        .font(.callout)
+        .dahliaFont(.body)
         .foregroundStyle(.secondary)
         .padding(.vertical, 4)
     }

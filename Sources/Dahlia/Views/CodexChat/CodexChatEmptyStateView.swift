@@ -31,12 +31,12 @@ struct CodexChatEmptyStateView: View {
     private var projectOrganizationPresetSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.chatPresets)
-                .font(.subheadline)
+                .dahliaFont(.body)
                 .foregroundStyle(.tertiary)
 
             Button(action: onOrganizeRecentMeetingsAndProjects) {
                 Label(CodexChatProjectOrganizationShortcut.title, systemImage: "sparkles")
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
@@ -51,7 +51,7 @@ struct CodexChatEmptyStateView: View {
     private var recentChatsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.recentChats)
-                .font(.subheadline)
+                .dahliaFont(.body)
                 .foregroundStyle(.tertiary)
 
             ForEach(recentThreads) { thread in

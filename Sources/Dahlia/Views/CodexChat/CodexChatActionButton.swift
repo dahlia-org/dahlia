@@ -10,6 +10,7 @@ struct CodexChatActionButton: View {
         Button(action: action) {
             Label(label, systemImage: systemImage)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
                 .contentShape(Circle())
         }

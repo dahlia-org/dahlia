@@ -10,13 +10,14 @@ struct ConversationAnalyticsSourceRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: systemImage)
+                .dahliaFixedSymbol()
                 .foregroundStyle(color)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline)
+                    .dahliaFont(.body)
                 Text(facts)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)

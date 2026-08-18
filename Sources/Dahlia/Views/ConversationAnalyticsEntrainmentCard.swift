@@ -8,9 +8,9 @@ struct ConversationAnalyticsEntrainmentCard: View {
         let entrainment = metrics.voiceAnalytics.pitchEntrainment
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsPitchEntrainment)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             Text(L10n.conversationAnalyticsPitchEntrainmentDescription)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
             if let entrainment {
                 Chart(entrainment.distanceSamples) { sample in
@@ -53,14 +53,14 @@ struct ConversationAnalyticsEntrainmentCard: View {
                         : L10n.conversationAnalyticsPitchEntrainmentNeutral,
                     systemImage: entrainment.isConverging ? "arrow.down.right" : "arrow.right"
                 )
-                .font(.subheadline)
+                .dahliaFont(.body)
             } else {
                 Text(L10n.conversationAnalyticsPitchEntrainmentUnavailable)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 150)
             }
             Label(L10n.conversationAnalyticsPitchEntrainmentExperimental, systemImage: "flask")
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

@@ -13,18 +13,22 @@ struct SummaryProgressStepRow: View {
                     switch status {
                     case .pending:
                         Image(systemName: "circle")
+                            .dahliaFixedSymbol()
                             .foregroundStyle(.tertiary)
                     case .running:
                         ProgressView()
                             .controlSize(.mini)
                     case .completed:
                         Image(systemName: "checkmark.circle.fill")
+                            .dahliaFixedSymbol()
                             .foregroundStyle(.green)
                     case .skipped:
                         Image(systemName: "minus.circle")
+                            .dahliaFixedSymbol()
                             .foregroundStyle(.tertiary)
                     case .failed:
                         Image(systemName: "xmark.circle.fill")
+                            .dahliaFixedSymbol()
                             .foregroundStyle(.red)
                     }
                 }
@@ -32,13 +36,13 @@ struct SummaryProgressStepRow: View {
                 .accessibilityHidden(true)
 
                 Text(label)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(textColor)
             }
 
             if let failureMessage = status.failureMessage {
                 Text(failureMessage)
-                    .font(.caption2)
+                    .dahliaFont(.metadata)
                     .foregroundStyle(.red)
                     .lineLimit(2)
                     .padding(.leading, 22)

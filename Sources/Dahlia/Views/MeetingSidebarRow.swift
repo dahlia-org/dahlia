@@ -3,6 +3,7 @@ import SwiftUI
 struct MeetingSidebarRow: View {
     let item: MeetingSidebarItem
     var contentLeadingPadding: CGFloat = 0
+    var projectTint: Color?
     let showsDateInTimestamp: Bool
     let searchText: String
     let isSelected: Bool
@@ -15,35 +16,19 @@ struct MeetingSidebarRow: View {
     let onCancelRename: () -> Void
 
     @State private var isHovered = false
+    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
+    private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
 
     var body: some View {
-        HStack(spacing: 10) {
-            if isEditing {
-                TextField(L10n.title, text: $editingName)
-                    .textFieldStyle(.plain)
-                    .focused($isFocused)
-                    .onSubmit(onCommitRename)
-                    .onExitCommand(perform: onCancelRename)
+        Group {
+            if rowStyle == .standard {
+                standardContent
             } else {
-                MeetingTitleMarquee(
-                    isHovered: isHovered,
-                    title: highlightedText(item.displayTitle)
-                )
-                .font(DahliaDesign.sidebarFont)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if isActiveRecording {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-            } else {
-                MeetingTimestampBadge(text: timestampText)
+                compactContent
             }
         }
         .padding(.leading, contentLeadingPadding)
-        .font(DahliaDesign.sidebarFont)
+        .dahliaFont(.body)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.horizontal, 5)
@@ -56,18 +41,94 @@ struct MeetingSidebarRow: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    private var rowStyle: MeetingSidebarRowStyle {
+        MeetingSidebarRowStyle.resolved(rawValue: rowStyleRawValue)
+    }
+
+    private var compactContent: some View {
+        HStack(spacing: 10) {
+            titleContent
+
+            if isActiveRecording {
+                recordingIndicator
+            } else {
+                MeetingTimestampBadge(text: timestampText)
+            }
+        }
+    }
+
+    private var standardContent: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                titleContent
+
+                if isActiveRecording {
+                    recordingIndicator
+                }
+            }
+
+            HStack(spacing: 6) {
+                Text(timestampText)
+                    .dahliaFont(.metadata)
+                    .monospacedDigit()
+                    .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
+
+                if let projectName = item.projectName?.nilIfBlank {
+                    Text(projectName)
+                        .dahliaFont(.metadata, weight: .medium)
+                        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
+                        .lineLimit(1)
+                        .dahliaChipSurface(tint: projectTint)
+                }
+            }
+        }
+    }
+
+    private var titleContent: some View {
+        Group {
+            if isEditing {
+                TextField(L10n.title, text: $editingName)
+                    .textFieldStyle(.plain)
+                    .focused($isFocused)
+                    .onSubmit(onCommitRename)
+                    .onExitCommand(perform: onCancelRename)
+            } else {
+                MeetingTitleMarquee(
+                    isHovered: isHovered,
+                    title: highlightedText(item.displayTitle)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var recordingIndicator: some View {
+        Circle()
+            .fill(.red)
+            .frame(width: 8, height: 8)
+            .accessibilityHidden(true)
+    }
+
     private var timestampText: String {
         if showsDateInTimestamp {
-            return item.effectiveRecordingStartedAt.formatted(
-                Date.VerbatimFormatStyle(
-                    format: "\(month: .defaultDigits)/\(day: .defaultDigits)",
-                    locale: Locale(identifier: "en_US_POSIX"),
-                    timeZone: .current,
-                    calendar: .current
-                )
-            )
+            return Self.projectTimestamp(for: item.effectiveRecordingStartedAt)
         }
         return item.effectiveRecordingStartedAt.formatted(date: .omitted, time: .shortened)
+    }
+
+    static func projectTimestamp(for date: Date, timeZone: TimeZone = .current) -> String {
+        let format: Date.FormatString = """
+        \(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \
+        \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits)
+        """
+        return date.formatted(
+            Date.VerbatimFormatStyle(
+                format: format,
+                locale: Locale(identifier: "en_US_POSIX"),
+                timeZone: timeZone,
+                calendar: Calendar(identifier: .gregorian)
+            )
+        )
     }
 
     private func matchContextPrefix(_ kind: MeetingSearchMatchContext.Kind) -> String {
@@ -104,8 +165,10 @@ struct MeetingSidebarRow: View {
         var components = [item.displayTitle]
         if isActiveRecording {
             components.append(L10n.recordingNow)
-        } else {
-            components.append(timestampText)
+        }
+        components.append(timestampText)
+        if let projectName = item.projectName?.nilIfBlank {
+            components.append(projectName)
         }
         if let calendarEventTitle = item.calendarEventTitle {
             components.append(L10n.calendarEventOrigin(calendarEventTitle.nilIfBlank ?? L10n.newMeeting))
@@ -124,7 +187,7 @@ private struct MeetingTimestampBadge: View {
 
     var body: some View {
         Text(text)
-            .font(DahliaDesign.sidebarBadgeFont)
+            .dahliaFont(.metadata)
             .monospacedDigit()
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .fixedSize()

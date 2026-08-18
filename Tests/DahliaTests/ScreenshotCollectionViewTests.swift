@@ -37,18 +37,28 @@ struct ScreenshotCollectionViewTests {
             selectedScreenshotIDs: [],
             referencedScreenshotIDs: [],
             isDeletionDisabled: false,
-            timestampCacheGeneration: 1
+            timestampCacheGeneration: 1,
+            metadataFontSize: 10
         )
         let selected = ScreenshotCollectionView.Coordinator.PresentationState(
             isSelecting: true,
             selectedScreenshotIDs: [screenshotID],
             referencedScreenshotIDs: [],
             isDeletionDisabled: false,
-            timestampCacheGeneration: 1
+            timestampCacheGeneration: 1,
+            metadataFontSize: 10
         )
-
+        let largerFont = ScreenshotCollectionView.Coordinator.PresentationState(
+            isSelecting: false,
+            selectedScreenshotIDs: [],
+            referencedScreenshotIDs: [],
+            isDeletionDisabled: false,
+            timestampCacheGeneration: 1,
+            metadataFontSize: 16
+        )
         #expect(!ScreenshotCollectionView.Coordinator.requiresVisibleItemUpdate(previous: unchanged, current: unchanged))
         #expect(ScreenshotCollectionView.Coordinator.requiresVisibleItemUpdate(previous: unchanged, current: selected))
+        #expect(ScreenshotCollectionView.Coordinator.requiresVisibleItemUpdate(previous: unchanged, current: largerFont))
     }
 
     @Test

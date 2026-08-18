@@ -190,6 +190,9 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     func configure(
         _ configuration: Configuration,
         thumbnailProvider: @escaping ThumbnailProvider = defaultThumbnailProvider,
+        metadataFontSize: CGFloat = DahliaFontRole.metadata.pointSize(
+            baseSize: CGFloat(AppSettings.defaultInterfaceFontSize)
+        ),
         actions: Actions
     ) {
         loadViewIfNeeded()
@@ -202,6 +205,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         representedImageIdentity = imageIdentity
         timestampLabel.stringValue = configuration.timestamp
         timestampLabel.toolTip = configuration.timestamp
+        timestampLabel.font = .systemFont(ofSize: metadataFontSize)
         activationHandler = actions.activate
         copyHandler = actions.copy
         downloadHandler = actions.download

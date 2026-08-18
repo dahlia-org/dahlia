@@ -14,12 +14,13 @@ struct CodexChatConfigurationRow: View {
             HStack(spacing: 4) {
                 if let leadingSystemImage {
                     Image(systemName: leadingSystemImage)
+                        .dahliaFixedSymbol()
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                 }
 
                 Text(title)
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -28,6 +29,7 @@ struct CodexChatConfigurationRow: View {
 
                 if isSelected || trailingSystemImage != nil {
                     Image(systemName: trailingSystemImage ?? "checkmark")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                 }

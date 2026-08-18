@@ -23,7 +23,7 @@ private struct MeetingNameHeader: View {
             if isEditing {
                 TextField(L10n.title, text: $editingName)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 22, weight: .semibold))
+                    .dahliaFont(.displayTitle, weight: .semibold)
                     .focused($isFocused)
                     .onSubmit(onCommit)
                     .onExitCommand(perform: onCancel)
@@ -46,7 +46,7 @@ private struct MeetingNameHeader: View {
                 Button(action: onBeginEditing) {
                     HStack(spacing: 6) {
                         Text(displayName)
-                            .font(.system(size: 22, weight: .semibold))
+                            .dahliaFont(.displayTitle, weight: .semibold)
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                         Image(systemName: "pencil")

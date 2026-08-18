@@ -42,10 +42,10 @@ struct DetailTabBar: View {
                     } label: {
                         ZStack {
                             Text(tab.label)
-                                .font(.body.weight(.semibold))
+                                .dahliaFont(.body, weight: .semibold)
                                 .hidden()
                             Text(tab.label)
-                                .font(.body.weight(isSelected ? .semibold : .regular))
+                                .dahliaFont(.body, weight: isSelected ? .semibold : .regular)
                         }
                         .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
                         .padding(.vertical, DahliaDesign.tabVerticalPadding)

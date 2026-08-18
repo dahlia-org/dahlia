@@ -14,7 +14,7 @@ struct MainSidebarNavigationLabel: View {
 
             if badgeCount > 0 {
                 Text(badgeCount, format: .number)
-                    .font(DahliaDesign.sidebarBadgeFont)
+                    .dahliaFont(.metadata)
                     .monospacedDigit()
                     .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                     .padding(.horizontal, 6)
@@ -22,7 +22,7 @@ struct MainSidebarNavigationLabel: View {
                     .background(.quaternary, in: Capsule())
             }
         }
-        .font(DahliaDesign.sidebarFont)
+        .dahliaFont(.body)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .contentShape(Rectangle())

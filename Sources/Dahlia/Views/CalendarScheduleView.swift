@@ -16,7 +16,7 @@ struct CalendarScheduleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(L10n.calendarScheduleTitle)
-                    .font(.title.weight(.semibold))
+                    .dahliaFont(.displayTitle, weight: .semibold)
                     .foregroundStyle(.primary)
 
                 content
@@ -269,11 +269,11 @@ struct CalendarScheduleView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.title3.weight(.semibold))
+                .dahliaFont(.sectionTitle, weight: .semibold)
                 .foregroundStyle(.primary)
 
             Text(message)
-                .font(.body)
+                .dahliaFont(.body)
                 .foregroundStyle(.secondary)
 
             if let actionTitle, let action {
@@ -329,7 +329,7 @@ private struct CalendarScheduleSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(section.title)
-                .font(.title3.weight(.semibold))
+                .dahliaFont(.sectionTitle, weight: .semibold)
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
@@ -368,12 +368,12 @@ private struct CalendarScheduleEventRow: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(event.title)
-                            .font(.headline)
+                            .dahliaFont(.subsectionTitle, weight: .semibold)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
 
                         Text(subtitle)
-                            .font(.callout)
+                            .dahliaFont(.body)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -397,6 +397,7 @@ private struct CalendarScheduleEventRow: View {
                 if !event.isAllDay {
                     Toggle(isOn: autoRecordingBinding) {
                         Image(systemName: "timer")
+                            .dahliaFixedSymbol()
                     }
                     .toggleStyle(.switch)
                     .controlSize(.small)

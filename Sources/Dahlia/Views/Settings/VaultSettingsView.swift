@@ -29,7 +29,7 @@ struct VaultSettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(vault.name)
                                     Text(vault.path)
-                                        .font(.caption)
+                                        .dahliaFont(.secondary)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
@@ -37,6 +37,7 @@ struct VaultSettingsView: View {
                                 }
                             } icon: {
                                 Image(systemName: "externaldrive")
+                                    .dahliaFixedSymbol()
                                     .foregroundStyle(.secondary)
                             }
                             .help(vault.path)
@@ -125,6 +126,7 @@ struct VaultSettingsView: View {
             }
         }
         .labelStyle(.iconOnly)
+        .dahliaFixedSymbol()
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .help(L10n.actions)

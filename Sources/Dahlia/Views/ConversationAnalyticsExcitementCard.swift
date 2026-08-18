@@ -8,9 +8,9 @@ struct ConversationAnalyticsExcitementCard: View {
         let excitement = metrics.voiceAnalytics.excitement
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsExcitement)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             Text(L10n.conversationAnalyticsExcitementDescription)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
             if excitement.samples.isEmpty {
                 Text(L10n.conversationAnalyticsExcitementUnavailable)
@@ -22,7 +22,7 @@ struct ConversationAnalyticsExcitementCard: View {
             hotspotList(excitement.hotspots)
             if !availableSources.isSubset(of: excitement.sourcesUsingPitch) {
                 Label(L10n.conversationAnalyticsLoudnessOnly, systemImage: "waveform.badge.minus")
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
             }
         }
@@ -91,10 +91,10 @@ struct ConversationAnalyticsExcitementCard: View {
     @ViewBuilder
     private func hotspotList(_ hotspots: [MeetingVoiceAnalytics.Hotspot]) -> some View {
         Text(L10n.conversationAnalyticsHotspots)
-            .font(.subheadline.weight(.semibold))
+            .dahliaFont(.body, weight: .semibold)
         if hotspots.isEmpty {
             Text(L10n.conversationAnalyticsNoHotspots)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
         } else {
             ForEach(hotspots) { hotspot in
@@ -108,9 +108,10 @@ struct ConversationAnalyticsExcitementCard: View {
                     ))
                 } icon: {
                     Image(systemName: "flame.fill")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(hotspot.source == .microphone ? .blue : .orange)
                 }
-                .font(.caption)
+                .dahliaFont(.secondary)
             }
         }
     }

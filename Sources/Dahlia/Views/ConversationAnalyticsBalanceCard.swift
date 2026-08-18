@@ -9,7 +9,7 @@ struct ConversationAnalyticsBalanceCard: View {
         let system = metrics.source(.system)
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsSpeechBalance)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 18) {
                     balanceChart(microphone: microphone, system: system)
@@ -22,7 +22,7 @@ struct ConversationAnalyticsBalanceCard: View {
             }
             if microphone.segmentCount == 0 || system.segmentCount == 0 {
                 Label(L10n.conversationAnalyticsMissingSourceNote, systemImage: "info.circle")
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
             }
         }
@@ -54,10 +54,10 @@ struct ConversationAnalyticsBalanceCard: View {
         .overlay {
             VStack(spacing: 0) {
                 Text(L10n.conversationAnalyticsYou)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
                 Text(percentage(metrics.speechShare(for: .microphone)))
-                    .font(.title2.bold())
+                    .dahliaFont(.displayTitle, weight: .bold)
                     .monospacedDigit()
             }
             .accessibilityHidden(true)

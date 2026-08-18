@@ -57,6 +57,7 @@ struct ProjectDeletionDialog: View {
                                 .textSelection(.enabled)
                         } icon: {
                             Image(systemName: "folder")
+                                .dahliaFixedSymbol()
                         }
 
                         Label(

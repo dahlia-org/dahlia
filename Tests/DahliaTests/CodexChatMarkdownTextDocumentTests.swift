@@ -162,6 +162,20 @@
             ) as? Bool == true)
         }
 
+        @Test func resizesFontsWithoutRebuildingTheDocument() {
+            let textView = CodexChatSelectableTextView()
+            let blocks: [CodexChatMarkdownRenderedBlock] = [.paragraph(AttributedString("Stable text"))]
+            textView.setBlocks(blocks, baseFontSize: 14)
+            let marker = NSAttributedString.Key("test.stable-font-resize")
+            textView.textStorage?.addAttribute(marker, value: true, range: NSRange(location: 0, length: 6))
+
+            textView.setBlocks(blocks, baseFontSize: 20)
+
+            let font = textView.attributedString().attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+            #expect(font?.pointSize == 20)
+            #expect(textView.attributedString().attribute(marker, at: 0, effectiveRange: nil) as? Bool == true)
+        }
+
         @Test func preservesLiteralZeroWidthSpacesWhenCopyingAcrossDivider() {
             let literalZeroWidthSpace = "\u{200B}"
             let document = CodexChatMarkdownTextDocument.attributedString(for: [

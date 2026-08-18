@@ -9,6 +9,7 @@ import Foundation
         func categoriesAreOrderedByUserWorkflow() {
             #expect(SettingsCategory.allCases == [
                 .general,
+                .appearance,
                 .vault,
                 .permissions,
                 .backups,
@@ -98,7 +99,7 @@ import Foundation
         @Test
         func advancedSettingsRemainAtTheEnd() {
             #expect(SettingsGroup.allCases.last == .advanced)
-            #expect(SettingsGroup.app.categories == [.general, .vault, .permissions, .backups])
+            #expect(SettingsGroup.app.categories == [.general, .appearance, .vault, .permissions, .backups])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
             #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])
