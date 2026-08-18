@@ -8,8 +8,7 @@ struct DahliaWindowHeaderHelpOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if helpController.presentsHelpInContainerOverlay,
-               helpController.visibleHelpID != nil {
+            if helpController.visibleHelpID != nil {
                 DahliaWindowHeaderHelp(
                     label: helpController.helpLabel,
                     shortcut: helpController.helpShortcut

@@ -15,14 +15,12 @@ struct DahliaWindowHeaderHelpControllerTests {
             for: id,
             label: "Quick Recording",
             shortcut: nil,
-            buttonFrame: buttonFrame,
-            presentsInContainerOverlay: true
+            buttonFrame: buttonFrame
         )
 
         #expect(controller.helpLabel == "Quick Recording")
         #expect(controller.helpShortcut == nil)
         #expect(controller.helpButtonFrame == buttonFrame)
-        #expect(controller.presentsHelpInContainerOverlay)
     }
 
     @Test

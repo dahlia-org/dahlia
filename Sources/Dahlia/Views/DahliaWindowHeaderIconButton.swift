@@ -83,8 +83,7 @@ struct DahliaWindowHeaderIconButton: View {
                 for: helpID,
                 label: label,
                 shortcut: helpShortcut,
-                buttonFrame: buttonFrame,
-                presentsInContainerOverlay: presentsHelpInContainerOverlay
+                buttonFrame: buttonFrame
             )
         } else {
             helpController.hoverEnded(for: helpID)
