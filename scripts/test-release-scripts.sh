@@ -29,6 +29,8 @@ write_appcast() {
     local enclosure_signature="$4"
     local build_version="$5"
     local marketing_version="$6"
+    local notes_ja_length="$7"
+    local notes_en_length="$8"
 
     printf '%s\n' \
         '<?xml version="1.0" encoding="utf-8"?>' \
@@ -37,6 +39,8 @@ write_appcast() {
         '    <item>' \
         "      <sparkle:version>${build_version}</sparkle:version>" \
         "      <sparkle:shortVersionString>${marketing_version}</sparkle:shortVersionString>" \
+        "      <sparkle:releaseNotesLink xml:lang=\"ja\" length=\"${notes_ja_length}\" sparkle:edSignature=\"ja-signature\">https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.ja.md</sparkle:releaseNotesLink>" \
+        "      <sparkle:releaseNotesLink xml:lang=\"en\" length=\"${notes_en_length}\" sparkle:edSignature=\"en-signature\">https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.en.md</sparkle:releaseNotesLink>" \
         "      <enclosure url=\"${enclosure_url}\" length=\"${enclosure_length}\" sparkle:edSignature=\"${enclosure_signature}\"/>" \
         '    </item>' \
         '  </channel>' \
@@ -89,6 +93,35 @@ test_latest_release_build_validation() {
     expect_failure validate_build_version_against_latest_release
 }
 
+test_release_notes_validation_and_snapshot() {
+    local source_ja="${TEST_DIR}/source-notes.ja.md"
+    local source_en="${TEST_DIR}/source-notes.en.md"
+    local snapshot_dir
+
+    printf '%s\n' 'Japanese notes' > "$source_ja"
+    printf '%s\n' 'English notes' > "$source_en"
+    validate_release_notes_files "$source_ja" "$source_en"
+
+    NOTES_FILE_JA="$source_ja"
+    NOTES_FILE_EN="$source_en"
+    snapshot_release_notes
+    snapshot_dir="$NOTES_SNAPSHOT_DIR"
+    cmp "$source_ja" "$NOTES_FILE_JA"
+    cmp "$source_en" "$NOTES_FILE_EN"
+
+    printf '%s\n' 'Changed Japanese notes' > "$source_ja"
+    grep -Fxq 'Japanese notes' "$NOTES_FILE_JA" \
+        || fail "release notes snapshot changed with its source"
+
+    cleanup
+    [ ! -e "$snapshot_dir" ] || fail "release notes snapshot was not cleaned up"
+    NOTES_SNAPSHOT_DIR=""
+
+    printf '%s\n' 'Same notes' > "$source_ja"
+    printf '%s\n' 'Same notes' > "$source_en"
+    expect_failure validate_release_notes_files "$source_ja" "$source_en"
+}
+
 test_sparkle_configuration_validation() {
     local fake_project="${TEST_DIR}/configuration-project"
     local generate_keys="${fake_project}/.build/artifacts/sparkle/Sparkle/bin/generate_keys"
@@ -139,7 +172,11 @@ test_appcast_validation() {
     local appcast_path="${TEST_DIR}/appcast.xml"
     local sign_update_log="${TEST_DIR}/sign-update.log"
     local expected_sign_update_log="${TEST_DIR}/expected-sign-update.log"
+    local notes_file_ja="${TEST_DIR}/validation-Dahlia.ja.md"
+    local notes_file_en="${TEST_DIR}/validation-Dahlia.en.md"
     local archive_length
+    local notes_ja_length
+    local notes_en_length
     local expected_url="https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.dmg"
 
     mkdir -p "$(dirname "$sign_update")"
@@ -151,7 +188,11 @@ test_appcast_validation() {
         > "$sign_update"
     chmod +x "$sign_update"
     printf '%s' 'archive fixture' > "$archive_path"
+    printf '%s' 'Japanese notes fixture' > "$notes_file_ja"
+    printf '%s' 'English notes fixture' > "$notes_file_en"
     archive_length="$(stat -f '%z' "$archive_path")"
+    notes_ja_length="$(stat -f '%z' "$notes_file_ja")"
+    notes_en_length="$(stat -f '%z' "$notes_file_en")"
 
     PROJECT_DIR="$fake_project"
     RELEASE_REPOSITORY="dahlia-org/dahlia"
@@ -161,8 +202,10 @@ test_appcast_validation() {
     MARKETING_VERSION="1.2.3"
     export SIGN_UPDATE_LOG="$sign_update_log"
 
-    write_appcast "$appcast_path" "$expected_url" "$archive_length" "test-signature" "$BUILD_VERSION" "$MARKETING_VERSION"
-    validate_sparkle_appcast "$appcast_path" "$archive_path"
+    write_appcast \
+        "$appcast_path" "$expected_url" "$archive_length" "test-signature" \
+        "$BUILD_VERSION" "$MARKETING_VERSION" "$notes_ja_length" "$notes_en_length"
+    validate_sparkle_appcast "$appcast_path" "$archive_path" "$notes_file_ja" "$notes_file_en"
     printf '%s\n' \
         'call' \
         '<--account>' \
@@ -175,16 +218,34 @@ test_appcast_validation() {
         '<--verify>' \
         "<${archive_path}>" \
         '<test-signature>' \
+        'call' \
+        '<--account>' \
+        '<com.dahlia.app>' \
+        '<--verify>' \
+        "<${notes_file_ja}>" \
+        '<ja-signature>' \
+        'call' \
+        '<--account>' \
+        '<com.dahlia.app>' \
+        '<--verify>' \
+        "<${notes_file_en}>" \
+        '<en-signature>' \
         > "$expected_sign_update_log"
     diff -u "$expected_sign_update_log" "$sign_update_log"
 
-    write_appcast "$appcast_path" "https://example.com/Dahlia.dmg" "$archive_length" "test-signature" "$BUILD_VERSION" "$MARKETING_VERSION"
-    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path"
-    write_appcast "$appcast_path" "$expected_url" "$archive_length" "" "$BUILD_VERSION" "$MARKETING_VERSION"
-    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path"
-    write_appcast "$appcast_path" "$expected_url" "$archive_length" "test-signature" "$BUILD_VERSION" "$MARKETING_VERSION"
+    write_appcast \
+        "$appcast_path" "https://example.com/Dahlia.dmg" "$archive_length" "test-signature" \
+        "$BUILD_VERSION" "$MARKETING_VERSION" "$notes_ja_length" "$notes_en_length"
+    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path" "$notes_file_ja" "$notes_file_en"
+    write_appcast \
+        "$appcast_path" "$expected_url" "$archive_length" "" \
+        "$BUILD_VERSION" "$MARKETING_VERSION" "$notes_ja_length" "$notes_en_length"
+    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path" "$notes_file_ja" "$notes_file_en"
+    write_appcast \
+        "$appcast_path" "$expected_url" "$archive_length" "test-signature" \
+        "$BUILD_VERSION" "$MARKETING_VERSION" "$notes_ja_length" "$notes_en_length"
     export FAIL_SIGN_UPDATE=1
-    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path"
+    expect_failure validate_sparkle_appcast "$appcast_path" "$archive_path" "$notes_file_ja" "$notes_file_en"
     unset FAIL_SIGN_UPDATE
     unset SIGN_UPDATE_LOG
 }
@@ -206,11 +267,15 @@ test_sparkle_appcast_creation() {
         'for argument in "$@"; do release_dir="$argument"; done' \
         'archive_path="${release_dir}/Dahlia.dmg"' \
         'archive_length="$(stat -f "%z" "$archive_path")"' \
+        'notes_ja_length="$(stat -f "%z" "${release_dir}/Dahlia.ja.md")"' \
+        'notes_en_length="$(stat -f "%z" "${release_dir}/Dahlia.en.md")"' \
         'cat > "${release_dir}/appcast.xml" <<EOF' \
         '<?xml version="1.0" encoding="utf-8"?>' \
         '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><item>' \
         '<sparkle:version>24</sparkle:version>' \
         '<sparkle:shortVersionString>1.2.3</sparkle:shortVersionString>' \
+        '<sparkle:releaseNotesLink xml:lang="ja" length="${notes_ja_length}" sparkle:edSignature="ja-signature">https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.ja.md</sparkle:releaseNotesLink>' \
+        '<sparkle:releaseNotesLink xml:lang="en" length="${notes_en_length}" sparkle:edSignature="en-signature">https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.en.md</sparkle:releaseNotesLink>' \
         '<enclosure url="https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/Dahlia.dmg" length="${archive_length}" sparkle:edSignature="test-signature"/>' \
         '</item></channel></rss>' \
         'EOF' \
@@ -219,7 +284,8 @@ test_sparkle_appcast_creation() {
     chmod +x "$generate_appcast" "$sign_update"
 
     printf '%s' 'signed archive fixture' > "$source_archive"
-    printf '%s' 'release notes fixture' > "${TEST_DIR}/release-notes.md"
+    printf '%s' 'Japanese release notes fixture' > "${TEST_DIR}/release-notes.ja.md"
+    printf '%s' 'English release notes fixture' > "${TEST_DIR}/release-notes.en.md"
 
     PROJECT_DIR="$fake_project"
     RELEASE_REPOSITORY="dahlia-org/dahlia"
@@ -228,7 +294,8 @@ test_sparkle_appcast_creation() {
     BUILD_VERSION="24"
     MARKETING_VERSION="1.2.3"
     DMG_PATH="$source_archive"
-    NOTES_FILE="${TEST_DIR}/release-notes.md"
+    NOTES_FILE_JA="${TEST_DIR}/release-notes.ja.md"
+    NOTES_FILE_EN="${TEST_DIR}/release-notes.en.md"
     DMG_CHECKSUM="$(sha256_digest "$source_archive")"
     SPARKLE_RELEASE_DIR=""
     export GENERATE_APPCAST_LOG="$generate_appcast_log"
@@ -236,14 +303,16 @@ test_sparkle_appcast_creation() {
     create_sparkle_appcast
     release_dir="$SPARKLE_RELEASE_DIR"
     cmp "$source_archive" "${release_dir}/Dahlia.dmg"
-    [ -s "${release_dir}/Dahlia.md" ] || fail "release notes were not copied"
+    cmp "$NOTES_FILE_JA" "${release_dir}/Dahlia.ja.md"
+    cmp "$NOTES_FILE_EN" "${release_dir}/Dahlia.en.md"
     [ -s "${release_dir}/appcast.xml" ] || fail "appcast was not generated"
     printf '%s\n' \
         '<--account>' \
         '<com.dahlia.app>' \
         '<--download-url-prefix>' \
         '<https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/>' \
-        '<--embed-release-notes>' \
+        '<--release-notes-url-prefix>' \
+        '<https://github.com/dahlia-org/dahlia/releases/download/v1.2.3/>' \
         "<${release_dir}>" \
         > "$expected_generate_appcast_log"
     diff -u "$expected_generate_appcast_log" "$generate_appcast_log"
@@ -262,14 +331,16 @@ test_release_upload_arguments() {
     mkdir -p "$release_dir"
     printf '%s' 'archive' > "${release_dir}/Dahlia.dmg"
     printf '%s' 'appcast' > "${release_dir}/appcast.xml"
-    printf '%s' 'notes' > "${TEST_DIR}/upload-notes.md"
+    printf '%s' 'Japanese notes' > "${release_dir}/Dahlia.ja.md"
+    printf '%s' 'English notes' > "${release_dir}/Dahlia.en.md"
+    printf '%s' 'Japanese notes' > "${TEST_DIR}/upload-notes.ja.md"
 
     APP_NAME="Dahlia"
     TAG_NAME="v1.2.3"
     MARKETING_VERSION="1.2.3"
     EXPECTED_DMG_NAME="Dahlia.dmg"
     SPARKLE_RELEASE_DIR="$release_dir"
-    NOTES_FILE="${TEST_DIR}/upload-notes.md"
+    NOTES_FILE_JA="${TEST_DIR}/upload-notes.ja.md"
     RELEASE_TARGET_ARGS=(--target test-commit)
     gh() {
         printf '<%s>\n' "$@" > "$gh_log"
@@ -282,10 +353,12 @@ test_release_upload_arguments() {
         '<v1.2.3>' \
         "<${release_dir}/Dahlia.dmg>" \
         "<${release_dir}/appcast.xml>" \
+        "<${release_dir}/Dahlia.ja.md>" \
+        "<${release_dir}/Dahlia.en.md>" \
         '<--title>' \
         '<Dahlia 1.2.3>' \
         '<--notes-file>' \
-        "<${TEST_DIR}/upload-notes.md>" \
+        "<${TEST_DIR}/upload-notes.ja.md>" \
         '<--target>' \
         '<test-commit>' \
         > "$expected_gh_log"
@@ -464,6 +537,7 @@ test_codesigning_keychain_unlock() {
 
 test_build_version_validation
 test_latest_release_build_validation
+test_release_notes_validation_and_snapshot
 test_sparkle_configuration_validation
 test_appcast_validation
 test_sparkle_appcast_creation

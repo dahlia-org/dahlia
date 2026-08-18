@@ -10,9 +10,9 @@ INFO_PLIST="${PROJECT_DIR}/Resources/Info.plist"
 
 source "${SCRIPT_DIR}/common.sh"
 
-GENERATED_NOTES_FILE=""
 DMG_MOUNT_DIR=""
 SPARKLE_RELEASE_DIR=""
+NOTES_SNAPSHOT_DIR=""
 PREVIOUS_RELEASE_INFO_PLIST=""
 DMG_BUILD_VERSION=""
 DMG_SPARKLE_FEED_URL=""
@@ -29,11 +29,11 @@ cleanup() {
         hdiutil detach "$DMG_MOUNT_DIR" >/dev/null 2>&1 || true
         rmdir "$DMG_MOUNT_DIR" >/dev/null 2>&1 || true
     fi
-    if [ -n "$GENERATED_NOTES_FILE" ]; then
-        rm -f "$GENERATED_NOTES_FILE"
-    fi
     if [ -n "$SPARKLE_RELEASE_DIR" ]; then
         rm -rf "$SPARKLE_RELEASE_DIR"
+    fi
+    if [ -n "$NOTES_SNAPSHOT_DIR" ]; then
+        rm -rf "$NOTES_SNAPSHOT_DIR"
     fi
     if [ -n "$PREVIOUS_RELEASE_INFO_PLIST" ]; then
         rm -f "$PREVIOUS_RELEASE_INFO_PLIST"
@@ -42,12 +42,11 @@ cleanup() {
 
 usage() {
     cat <<EOF
-Usage: $0 [--notes-file path] [path-to-dmg]
+Usage: $0 --notes-file-ja path --notes-file-en path [path-to-dmg]
 
 Create the GitHub Release for the version in Resources/Info.plist and attach
-its signed and notarized DMG. The default path is Dahlia.dmg. By default,
-Codex uses \$generate-release-notes to write human-friendly release notes.
-Pass --notes-file to publish reviewed Markdown instead.
+its signed and notarized DMG. The default path is Dahlia.dmg. Both reviewed
+Markdown files are required and are published as localized Sparkle notes.
 EOF
 }
 
@@ -214,6 +213,37 @@ has_release_notes() {
     [ -s "$notes_file" ] && grep -q '[^[:space:]]' "$notes_file"
 }
 
+validate_release_notes_files() {
+    local notes_file
+
+    for notes_file in "$1" "$2"; do
+        if ! has_release_notes "$notes_file"; then
+            echo "error: release notes file is missing or empty: ${notes_file}" >&2
+            return 1
+        fi
+    done
+
+    if cmp -s "$1" "$2"; then
+        echo "error: Japanese and English release notes must differ" >&2
+        return 1
+    fi
+}
+
+snapshot_release_notes() {
+    NOTES_SNAPSHOT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-release-notes.XXXXXX")"
+    cp "$NOTES_FILE_JA" "${NOTES_SNAPSHOT_DIR}/${APP_NAME}.ja.md"
+    cp "$NOTES_FILE_EN" "${NOTES_SNAPSHOT_DIR}/${APP_NAME}.en.md"
+    NOTES_FILE_JA="${NOTES_SNAPSHOT_DIR}/${APP_NAME}.ja.md"
+    NOTES_FILE_EN="${NOTES_SNAPSHOT_DIR}/${APP_NAME}.en.md"
+}
+
+resolve_invocation_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s\n' "${INVOCATION_DIR}/$1" ;;
+    esac
+}
+
 sha256_digest() {
     local checksum
 
@@ -221,9 +251,43 @@ sha256_digest() {
     printf '%s\n' "${checksum%% *}"
 }
 
+validate_localized_sparkle_release_notes() {
+    local appcast_path="$1"
+    local sign_update="$2"
+    local sparkle_key_account="$3"
+    local language="$4"
+    local notes_path="$5"
+    local notes_xpath="//*[local-name()='releaseNotesLink' and @xml:lang='${language}']"
+    local notes_count
+    local notes_length
+    local notes_signature
+    local notes_url
+    local expected_notes_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/${APP_NAME}.${language}.md"
+    local expected_notes_length
+
+    notes_count="$(xmllint --xpath "count(${notes_xpath})" "$appcast_path")"
+    notes_url="$(xmllint --xpath "string(${notes_xpath})" "$appcast_path")"
+    notes_length="$(xmllint --xpath "string(${notes_xpath}/@*[local-name()='length'])" "$appcast_path")"
+    notes_signature="$(xmllint --xpath "string(${notes_xpath}/@*[local-name()='edSignature'])" "$appcast_path")"
+    expected_notes_length="$(stat -f '%z' "$notes_path")"
+
+    if [ "$notes_count" != "1" ] || [ "$notes_url" != "$expected_notes_url" ]; then
+        echo "error: Sparkle ${language} release notes URL is ${notes_url}, expected ${expected_notes_url}" >&2
+        return 1
+    fi
+    if [ "$notes_length" != "$expected_notes_length" ] || [ -z "$notes_signature" ]; then
+        echo "error: Sparkle ${language} release notes are not signed with the expected length" >&2
+        return 1
+    fi
+
+    "$sign_update" --account "$sparkle_key_account" --verify "$notes_path" "$notes_signature"
+}
+
 validate_sparkle_appcast() {
     local appcast_path="$1"
     local archive_path="$2"
+    local notes_file_ja="$3"
+    local notes_file_en="$4"
     local sign_update="${PROJECT_DIR}/.build/artifacts/sparkle/Sparkle/bin/sign_update"
     local sparkle_key_account="${SPARKLE_KEY_ACCOUNT:-com.dahlia.app}"
     local expected_archive_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/${EXPECTED_DMG_NAME}"
@@ -234,6 +298,7 @@ validate_sparkle_appcast() {
     local appcast_build_version
     local appcast_marketing_version
     local archive_length
+    local notes_count
 
     if [ ! -x "$sign_update" ]; then
         echo "error: Sparkle's sign_update tool was not found" >&2
@@ -273,6 +338,17 @@ validate_sparkle_appcast() {
     fi
 
     "$sign_update" --account "$sparkle_key_account" --verify "$archive_path" "$enclosure_signature"
+
+    notes_count="$(xmllint --xpath 'count(//*[local-name()="releaseNotesLink"])' "$appcast_path")"
+    if [ "$notes_count" != "2" ]; then
+        echo "error: Sparkle appcast must contain exactly two localized release notes" >&2
+        return 1
+    fi
+
+    validate_localized_sparkle_release_notes \
+        "$appcast_path" "$sign_update" "$sparkle_key_account" ja "$notes_file_ja"
+    validate_localized_sparkle_release_notes \
+        "$appcast_path" "$sign_update" "$sparkle_key_account" en "$notes_file_en"
 }
 
 create_sparkle_appcast() {
@@ -291,7 +367,8 @@ EOF
 
     SPARKLE_RELEASE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-sparkle-release.XXXXXX")"
     cp "$DMG_PATH" "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}"
-    cp "$NOTES_FILE" "${SPARKLE_RELEASE_DIR}/${APP_NAME}.md"
+    cp "$NOTES_FILE_JA" "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md"
+    cp "$NOTES_FILE_EN" "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md"
 
     if [ "$(sha256_digest "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}")" != "$DMG_CHECKSUM" ]; then
         echo "error: Sparkle release DMG does not match the validated DMG" >&2
@@ -301,7 +378,7 @@ EOF
     "$generate_appcast" \
         --account "$sparkle_key_account" \
         --download-url-prefix "https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/" \
-        --embed-release-notes \
+        --release-notes-url-prefix "https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/" \
         "$SPARKLE_RELEASE_DIR"
 
     if [ ! -s "${SPARKLE_RELEASE_DIR}/appcast.xml" ]; then
@@ -310,7 +387,9 @@ EOF
     fi
     validate_sparkle_appcast \
         "${SPARKLE_RELEASE_DIR}/appcast.xml" \
-        "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}"
+        "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}" \
+        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md" \
+        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md"
 }
 
 publish_github_release() {
@@ -318,8 +397,10 @@ publish_github_release() {
         "$TAG_NAME" \
         "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}" \
         "${SPARKLE_RELEASE_DIR}/appcast.xml" \
+        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md" \
+        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md" \
         --title "${APP_NAME} ${MARKETING_VERSION}" \
-        --notes-file "$NOTES_FILE" \
+        --notes-file "$NOTES_FILE_JA" \
         "${RELEASE_TARGET_ARGS[@]}"
 }
 
@@ -329,7 +410,8 @@ fi
 
 trap cleanup EXIT
 
-NOTES_FILE=""
+NOTES_FILE_JA=""
+NOTES_FILE_EN=""
 DMG_ARGUMENT=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -337,29 +419,29 @@ while [ $# -gt 0 ]; do
             usage
             exit 0
             ;;
-        --notes-file)
+        --notes-file-ja)
             if [ $# -lt 2 ]; then
-                echo "error: --notes-file requires a path" >&2
+                echo "error: --notes-file-ja requires a path" >&2
                 exit 1
             fi
-            if [ -n "$NOTES_FILE" ]; then
-                echo "error: --notes-file may only be specified once" >&2
+            if [ -n "$NOTES_FILE_JA" ]; then
+                echo "error: --notes-file-ja may only be specified once" >&2
                 exit 1
             fi
-            NOTES_FILE="$2"
+            NOTES_FILE_JA="$2"
             shift 2
             ;;
-        --notes-file=*)
-            if [ -n "$NOTES_FILE" ]; then
-                echo "error: --notes-file may only be specified once" >&2
+        --notes-file-en)
+            if [ $# -lt 2 ]; then
+                echo "error: --notes-file-en requires a path" >&2
                 exit 1
             fi
-            NOTES_FILE="${1#*=}"
-            if [ -z "$NOTES_FILE" ]; then
-                echo "error: --notes-file requires a path" >&2
+            if [ -n "$NOTES_FILE_EN" ]; then
+                echo "error: --notes-file-en may only be specified once" >&2
                 exit 1
             fi
-            shift
+            NOTES_FILE_EN="$2"
+            shift 2
             ;;
         -*)
             echo "error: unknown option: $1" >&2
@@ -380,9 +462,12 @@ done
 
 cd "$PROJECT_DIR"
 
-require_commands codesign gh git hdiutil shasum stat xmllint xcrun
-if [ -z "$NOTES_FILE" ]; then
-    require_commands codex
+require_commands cmp codesign gh git hdiutil shasum stat xmllint xcrun
+
+if [ -z "$NOTES_FILE_JA" ] || [ -z "$NOTES_FILE_EN" ]; then
+    echo "error: --notes-file-ja and --notes-file-en are required" >&2
+    usage >&2
+    exit 1
 fi
 
 MARKETING_VERSION="$(read_marketing_version "$INFO_PLIST")"
@@ -395,17 +480,10 @@ case "$DMG_ARGUMENT" in
     *) DMG_PATH="${INVOCATION_DIR}/${DMG_ARGUMENT}" ;;
 esac
 
-if [ -n "$NOTES_FILE" ]; then
-    case "$NOTES_FILE" in
-        /*) ;;
-        *) NOTES_FILE="${INVOCATION_DIR}/${NOTES_FILE}" ;;
-    esac
-
-    if ! has_release_notes "$NOTES_FILE"; then
-        echo "error: release notes file is missing or empty: ${NOTES_FILE}" >&2
-        exit 1
-    fi
-fi
+NOTES_FILE_JA="$(resolve_invocation_path "$NOTES_FILE_JA")"
+NOTES_FILE_EN="$(resolve_invocation_path "$NOTES_FILE_EN")"
+validate_release_notes_files "$NOTES_FILE_JA" "$NOTES_FILE_EN"
+snapshot_release_notes
 
 if [ ! -f "$DMG_PATH" ]; then
     cat >&2 <<EOF
@@ -469,45 +547,13 @@ else
     RELEASE_TARGET_ARGS=(--target "$HEAD_COMMIT")
 fi
 
-if [ -z "$NOTES_FILE" ]; then
-    GENERATED_NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/dahlia-release-notes.XXXXXX")"
-    NOTES_FILE="$GENERATED_NOTES_FILE"
-
-    echo "=== Generating release notes with Codex ==="
-    codex exec \
-        --cd "$PROJECT_DIR" \
-        --sandbox danger-full-access \
-        --ignore-user-config \
-        --model gpt-5.6-terra \
-        --config 'approval_policy="untrusted"' \
-        --config 'model_reasoning_effort="medium"' \
-        --config 'web_search="disabled"' \
-        --ephemeral \
-        --color never \
-        --output-last-message "$NOTES_FILE" \
-        "Use \$generate-release-notes to draft the GitHub Release notes for ${TAG_NAME}. Inspect the repository and return only the final Markdown. Do not modify files, use the network or MCP tools, or change any external state."
-
-    if ! has_release_notes "$NOTES_FILE"; then
-        echo "error: Codex did not generate release notes" >&2
-        exit 1
-    fi
-
-    if [ "$(sha256_digest "$DMG_PATH")" != "$DMG_CHECKSUM" ]; then
-        echo "error: release DMG changed while Codex generated release notes; refusing to publish" >&2
-        exit 1
-    fi
-
-    if [ "$(git rev-parse HEAD)" != "$HEAD_COMMIT" ] || [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-        echo "error: Codex changed the repository while generating release notes; refusing to publish" >&2
-        exit 1
-    fi
-fi
-
 echo "=== Generating signed Sparkle appcast ==="
 create_sparkle_appcast
 
-echo "=== Release notes ==="
-sed 's/^/  /' "$NOTES_FILE"
+echo "=== Japanese release notes ==="
+sed 's/^/  /' "$NOTES_FILE_JA"
+echo "=== English release notes ==="
+sed 's/^/  /' "$NOTES_FILE_EN"
 
 if [ "$(sha256_digest "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}")" != "$DMG_CHECKSUM" ]; then
     echo "error: signed Sparkle release DMG changed before upload; refusing to publish" >&2
