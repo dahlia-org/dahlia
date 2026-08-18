@@ -42,6 +42,7 @@ struct MainSidebarFooterView: View {
             } label: {
                 Label(L10n.settings, systemImage: "gearshape")
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .frame(width: 30, height: 30)
                     .background(isSettingsHovered ? DahliaDesign.hoverHighlightColor : .clear, in: Circle())
                     .contentShape(Circle())

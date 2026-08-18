@@ -29,7 +29,7 @@ struct ConversationAnalyticsNotesView: View {
             Text(L10n.conversationAnalyticsVoiceCaveat)
             Text(L10n.conversationAnalyticsBatchFeatureCaveat)
         }
-        .font(.caption)
+        .dahliaFont(.secondary)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

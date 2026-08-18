@@ -486,6 +486,11 @@
 "No vault selected" = "保管庫が選択されていません";
 "Appearance" = "外観";
 "Display" = "表示";
+"Typography" = "文字";
+"Font Size" = "フォントサイズ";
+"%lld pt" = "%lld pt";
+"Meeting List" = "ミーティング一覧";
+"Display Style" = "表示スタイル";
 "App Language" = "表示言語";
 "Set the display language for the app." = "アプリの表示言語を設定します。";
 "Follow System" = "システムに従う";

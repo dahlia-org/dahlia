@@ -8,12 +8,12 @@ struct CustomerIntelligenceCustomerCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 Label(customer.root.organization.name, systemImage: "building.2")
-                    .font(.headline)
+                    .dahliaFont(.subsectionTitle, weight: .semibold)
                     .lineLimit(2)
 
                 if let description = customer.root.organization.description.nilIfBlank {
                     Text(description)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -30,12 +30,13 @@ struct CustomerIntelligenceCustomerCard: View {
                         Text(date, format: .relative(presentation: .named))
                     } icon: {
                         Image(systemName: "clock")
+                            .dahliaFixedSymbol()
                     }
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .foregroundStyle(.secondary)
                 } else {
                     Text(L10n.customerIntelligenceNoRecentInteraction)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.tertiary)
                 }
             }

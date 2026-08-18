@@ -40,6 +40,7 @@ struct CodexChatComposerInputRow: View {
             Button(action: onToggleAddPanel) {
                 Label(L10n.addToChat, systemImage: "plus")
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .frame(width: CodexChatDesign.controlSize, height: CodexChatDesign.controlSize)
                     .contentShape(Circle())
             }
@@ -118,7 +119,7 @@ struct CodexChatComposerTextEditor: View {
                 .lineLimit(Self.maximumLineCount)
             Text(verbatim: " \n ")
         }
-        .font(.body)
+        .dahliaFont(.body)
         .padding(.leading, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -127,7 +128,7 @@ struct CodexChatComposerTextEditor: View {
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
-                    .font(.body)
+                    .dahliaFont(.body)
                     .focused($isFocused)
                     .scrollContentBackground(.hidden)
                     .padding(.leading, 3)
@@ -144,7 +145,7 @@ struct CodexChatComposerTextEditor: View {
 
                 if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
                     Text(L10n.messageCodex)
-                        .font(.body)
+                        .dahliaFont(.body)
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 8)
                         .padding(.top, 6)

@@ -117,6 +117,7 @@ struct DahliaApp: App {
                     )
                 }
             }
+            .dahliaAppearance()
             .frame(
                 minWidth: MainWindowMetrics.minimumWidth,
                 minHeight: MainWindowMetrics.minimumHeight
@@ -213,6 +214,7 @@ struct DahliaApp: App {
                 }
             }
             .environment(mainWindowNavigation)
+            .dahliaAppearance()
             .dahliaSimpleWindowStyle()
         }
         .windowStyle(.hiddenTitleBar)
@@ -227,6 +229,7 @@ struct DahliaApp: App {
                 chatCoordinator: chatCoordinator,
                 mainWindowNavigation: mainWindowNavigation
             )
+            .dahliaAppearance()
             .dahliaSimpleWindowStyle()
         }
         .windowStyle(.hiddenTitleBar)
@@ -242,6 +245,7 @@ struct DahliaApp: App {
                 }
                 MicrophoneRecognitionTestView(captionViewModel: viewModel)
             }
+            .dahliaAppearance()
             .dahliaSimpleWindowStyle()
         }
         .windowStyle(.hiddenTitleBar)
@@ -252,6 +256,7 @@ struct DahliaApp: App {
 
         Window(L10n.applicationLogs, id: WindowID.applicationLogs) {
             ApplicationLogView()
+                .dahliaAppearance()
                 .dahliaSimpleWindowStyle()
         }
         .windowStyle(.hiddenTitleBar)
@@ -267,6 +272,7 @@ struct DahliaApp: App {
                 }
                 PermissionGuideWindowView()
             }
+            .dahliaAppearance()
             .dahliaSimpleWindowStyle()
         }
         .windowStyle(.hiddenTitleBar)

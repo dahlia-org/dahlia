@@ -3,13 +3,14 @@ import SwiftUI
 
 struct CodexChatMarkdownTextView: NSViewRepresentable {
     let blocks: [CodexChatMarkdownRenderedBlock]
+    @Environment(\.dahliaBaseFontSize) private var baseFontSize
 
     func makeNSView(context _: Context) -> CodexChatSelectableTextView {
         CodexChatSelectableTextView.makeConfigured()
     }
 
     func updateNSView(_ textView: CodexChatSelectableTextView, context _: Context) {
-        textView.setBlocks(blocks)
+        textView.setBlocks(blocks, baseFontSize: baseFontSize)
     }
 
     func sizeThatFits(
@@ -23,7 +24,7 @@ struct CodexChatMarkdownTextView: NSViewRepresentable {
 
         return CGSize(
             width: width,
-            height: max(measuredHeight, NSFont.preferredFont(forTextStyle: .body).pointSize)
+            height: max(measuredHeight, baseFontSize)
         )
     }
 }
@@ -35,6 +36,7 @@ final class CodexChatSelectableTextView: NSTextView {
     private static let batchInterval = Duration.milliseconds(1)
 
     private var renderedBlocks: [CodexChatMarkdownRenderedBlock] = []
+    private var renderedBaseFontSize = CGFloat(AppSettings.defaultInterfaceFontSize)
     private var blockOffsets: [Int] = []
     private var measuredDocumentHeight: CGFloat = 0
     private var measuredWidth: CGFloat?
@@ -58,7 +60,14 @@ final class CodexChatSelectableTextView: NSTextView {
         return textView
     }
 
-    func setBlocks(_ blocks: [CodexChatMarkdownRenderedBlock]) {
+    func setBlocks(
+        _ blocks: [CodexChatMarkdownRenderedBlock],
+        baseFontSize: CGFloat = CGFloat(AppSettings.defaultInterfaceFontSize)
+    ) {
+        if renderedBaseFontSize != baseFontSize {
+            resizeFonts(by: baseFontSize - renderedBaseFontSize)
+            renderedBaseFontSize = baseFontSize
+        }
         let reusableBlockCount = zip(renderedBlocks, blocks)
             .prefix { $0 == $1 }
             .count
@@ -75,7 +84,8 @@ final class CodexChatSelectableTextView: NSTextView {
         }
         let fragment = CodexChatMarkdownTextDocument.fragment(
             for: Array(blocks.dropFirst(reusableBlockCount)),
-            startsAfterBlock: reusableBlockCount > 0
+            startsAfterBlock: reusableBlockCount > 0,
+            baseFontSize: baseFontSize
         )
         let replacementRange = NSRange(
             location: replacementLocation,
@@ -115,6 +125,23 @@ final class CodexChatSelectableTextView: NSTextView {
         } else {
             self.selectedRanges = clippedRanges
         }
+        invalidateIntrinsicContentSize()
+    }
+
+    private func resizeFonts(by pointSizeDelta: CGFloat) {
+        guard pointSizeDelta != 0, let textStorage, textStorage.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        textStorage.beginEditing()
+        textStorage.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            guard let font = value as? NSFont else { return }
+            textStorage.addAttribute(
+                .font,
+                value: NSFontManager.shared.convert(font, toSize: font.pointSize + pointSizeDelta),
+                range: range
+            )
+        }
+        textStorage.endEditing()
+        resetLayout(from: 0)
         invalidateIntrinsicContentSize()
     }
 
@@ -246,14 +273,16 @@ enum CodexChatMarkdownTextDocument {
     )
 
     static func attributedString(
-        for blocks: [CodexChatMarkdownRenderedBlock]
+        for blocks: [CodexChatMarkdownRenderedBlock],
+        baseFontSize: CGFloat = CGFloat(AppSettings.defaultInterfaceFontSize)
     ) -> NSAttributedString {
-        fragment(for: blocks, startsAfterBlock: false).attributedString
+        fragment(for: blocks, startsAfterBlock: false, baseFontSize: baseFontSize).attributedString
     }
 
     static func fragment(
         for blocks: [CodexChatMarkdownRenderedBlock],
-        startsAfterBlock: Bool
+        startsAfterBlock: Bool,
+        baseFontSize: CGFloat = CGFloat(AppSettings.defaultInterfaceFontSize)
     ) -> Fragment {
         let document = NSMutableAttributedString()
         var blockOffsets: [Int] = []
@@ -263,10 +292,10 @@ enum CodexChatMarkdownTextDocument {
             if startsAfterBlock || index > 0 {
                 document.append(NSAttributedString(string: "\n"))
             }
-            append(block, to: document)
+            append(block, to: document, baseFontSize: baseFontSize)
         }
 
-        applyInlinePresentationStyles(to: document)
+        applyInlinePresentationStyles(to: document, baseFontSize: baseFontSize)
         return Fragment(
             attributedString: document,
             blockOffsets: blockOffsets
@@ -305,21 +334,22 @@ enum CodexChatMarkdownTextDocument {
 
     private static func append(
         _ block: CodexChatMarkdownRenderedBlock,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         switch block {
         case let .paragraph(text):
-            appendParagraph(text, to: document)
+            appendParagraph(text, to: document, baseFontSize: baseFontSize)
         case let .heading(level, text):
-            appendHeading(level: level, text: text, to: document)
+            appendHeading(level: level, text: text, to: document, baseFontSize: baseFontSize)
         case let .unorderedList(items):
-            appendUnorderedList(items, to: document)
+            appendUnorderedList(items, to: document, baseFontSize: baseFontSize)
         case let .orderedList(items):
-            appendOrderedList(items, to: document)
+            appendOrderedList(items, to: document, baseFontSize: baseFontSize)
         case let .blockquote(text):
-            appendBlockquote(text, to: document)
+            appendBlockquote(text, to: document, baseFontSize: baseFontSize)
         case let .table(table):
-            appendTable(table, to: document)
+            appendTable(table, to: document, baseFontSize: baseFontSize)
         case .divider:
             appendDivider(to: document)
         case .code:
@@ -329,31 +359,29 @@ enum CodexChatMarkdownTextDocument {
 
     private static func appendParagraph(
         _ text: AttributedString,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let range = append(text, to: document)
-        applyBodyFont(to: document, range: range)
+        applyBodyFont(to: document, range: range, baseFontSize: baseFontSize)
         applyParagraphStyle(to: document, range: range)
     }
 
     private static func appendHeading(
         level: Int,
         text: AttributedString,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let range = append(text, to: document)
-        let style: NSFont.TextStyle = switch level {
-        case 1: .title1
-        case 2: .title2
-        case 3: .title3
-        default: .headline
+        let role: DahliaFontRole = switch level {
+        case 1: .displayTitle
+        case 2: .sectionTitle
+        default: .subsectionTitle
         }
         document.addAttribute(
             .font,
-            value: NSFontManager.shared.convert(
-                NSFont.preferredFont(forTextStyle: style),
-                toHaveTrait: .boldFontMask
-            ),
+            value: NSFont.systemFont(ofSize: role.pointSize(baseSize: baseFontSize), weight: .bold),
             range: range
         )
         applyParagraphStyle(to: document, range: range)
@@ -361,32 +389,35 @@ enum CodexChatMarkdownTextDocument {
 
     private static func appendUnorderedList(
         _ items: [AttributedString],
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         for (index, item) in items.enumerated() {
             if index > 0 {
                 document.append(NSAttributedString(string: "\n"))
             }
-            appendListItem(marker: "•", text: item, to: document)
+            appendListItem(marker: "•", text: item, to: document, baseFontSize: baseFontSize)
         }
     }
 
     private static func appendOrderedList(
         _ items: [CodexChatMarkdownRenderedOrderedItem],
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         for (index, item) in items.enumerated() {
             if index > 0 {
                 document.append(NSAttributedString(string: "\n"))
             }
-            appendListItem(marker: item.marker, text: item.text, to: document)
+            appendListItem(marker: item.marker, text: item.text, to: document, baseFontSize: baseFontSize)
         }
     }
 
     private static func appendListItem(
         marker: String,
         text: AttributedString,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let location = document.length
         document.append(NSAttributedString(string: "\(marker)\t"))
@@ -398,12 +429,13 @@ enum CodexChatMarkdownTextDocument {
         style.headIndent = 22
         style.tabStops = [NSTextTab(textAlignment: .left, location: 22)]
         document.addAttribute(.paragraphStyle, value: style, range: range)
-        applyBodyFont(to: document, range: range)
+        applyBodyFont(to: document, range: range, baseFontSize: baseFontSize)
     }
 
     private static func appendBlockquote(
         _ text: AttributedString,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let range = append(text, to: document)
         let block = NSTextBlock()
@@ -416,7 +448,7 @@ enum CodexChatMarkdownTextDocument {
         style.textBlocks = [block]
         document.addAttribute(.paragraphStyle, value: style, range: range)
         document.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
-        applyBodyFont(to: document, range: range)
+        applyBodyFont(to: document, range: range, baseFontSize: baseFontSize)
     }
 
     private static func appendDivider(to document: NSMutableAttributedString) {
@@ -468,17 +500,19 @@ enum CodexChatMarkdownTextDocument {
 
     static func applyBodyFont(
         to document: NSMutableAttributedString,
-        range: NSRange
+        range: NSRange,
+        baseFontSize: CGFloat = CGFloat(AppSettings.defaultInterfaceFontSize)
     ) {
         document.addAttribute(
             .font,
-            value: NSFont.preferredFont(forTextStyle: .body),
+            value: NSFont.systemFont(ofSize: DahliaFontRole.body.pointSize(baseSize: baseFontSize)),
             range: range
         )
     }
 
     private static func applyInlinePresentationStyles(
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let fullRange = NSRange(location: 0, length: document.length)
         document.enumerateAttribute(
@@ -488,7 +522,7 @@ enum CodexChatMarkdownTextDocument {
             guard let rawValue = value as? NSNumber else { return }
             let intent = InlinePresentationIntent(rawValue: rawValue.uintValue)
             let currentFont = document.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-                ?? NSFont.preferredFont(forTextStyle: .body)
+                ?? NSFont.systemFont(ofSize: DahliaFontRole.body.pointSize(baseSize: baseFontSize))
             var font = currentFont
 
             if intent.contains(.code) {

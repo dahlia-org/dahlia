@@ -12,7 +12,7 @@ struct CustomerIntelligenceMetricTile: View {
                 Label(title, systemImage: systemImage)
                     .foregroundStyle(.secondary)
                 Text(value, format: .number)
-                    .font(.title.bold())
+                    .dahliaFont(.displayTitle, weight: .bold)
                     .monospacedDigit()
                 Spacer(minLength: 0)
             }

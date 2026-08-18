@@ -16,7 +16,7 @@ struct SettingsDetailView: View {
                     EmptyView()
                 } header: {
                     Text(selection.label)
-                        .font(.title2)
+                        .dahliaFont(.displayTitle)
                         .foregroundStyle(.primary)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -34,6 +34,8 @@ struct SettingsDetailView: View {
         switch selection {
         case .general:
             GeneralSettingsView()
+        case .appearance:
+            AppearanceSettingsView()
         case .vault:
             VaultSettingsView(
                 appDatabase: appDatabase,

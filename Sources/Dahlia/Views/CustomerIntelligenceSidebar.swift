@@ -35,10 +35,12 @@ struct CustomerIntelligenceSidebar: View {
         DahliaWindowHeader(reservesWindowControls: true) {
             Button(L10n.back, systemImage: "chevron.backward", action: onGoBack)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .disabled(!canGoBack)
                 .help(L10n.back)
             Button(L10n.forward, systemImage: "chevron.forward", action: onGoForward)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .disabled(!canGoForward)
                 .help(L10n.forward)
             Spacer()
@@ -52,7 +54,7 @@ struct CustomerIntelligenceSidebar: View {
             Spacer()
             if unacceptedInsightCount > 0 {
                 Text(unacceptedInsightCount, format: .number)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(.quaternary, in: .capsule)

@@ -11,12 +11,13 @@ struct CustomerIntelligenceInspectorHeader: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 Image(systemName: systemImage)
+                    .dahliaFixedSymbol()
                     .font(.title2)
                     .foregroundStyle(.tint)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.title2.bold())
+                        .dahliaFont(.displayTitle, weight: .bold)
                         .textSelection(.enabled)
                     if let subtitle {
                         Text(subtitle)
@@ -25,7 +26,7 @@ struct CustomerIntelligenceInspectorHeader: View {
                     }
                     if let badge {
                         Text(badge)
-                            .font(.callout)
+                            .dahliaFont(.body)
                             .foregroundStyle(.orange)
                     }
                 }
@@ -46,7 +47,7 @@ struct CustomerIntelligenceInspectorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             content
         }
     }
@@ -70,7 +71,7 @@ struct CustomerIntelligenceLinkRow: View {
                         .lineLimit(2)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.callout)
+                            .dahliaFont(.body)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
@@ -98,9 +99,9 @@ struct CustomerIntelligenceDangerSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
             Text(L10n.customerIntelligenceDangerZone)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             Text(message)
-                .font(.callout)
+                .dahliaFont(.body)
                 .foregroundStyle(.secondary)
             Button(title, systemImage: "trash", role: .destructive, action: action)
         }

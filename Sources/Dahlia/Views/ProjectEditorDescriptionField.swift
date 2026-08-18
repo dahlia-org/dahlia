@@ -7,7 +7,7 @@ struct ProjectEditorDescriptionField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L10n.projectDescription, systemImage: "text.alignleft")
-                .font(.subheadline)
+                .dahliaFont(.body)
                 .bold()
 
             ZStack(alignment: .topLeading) {
@@ -16,7 +16,7 @@ struct ProjectEditorDescriptionField: View {
 
                 if description.isEmpty, !isFocused {
                     Text(L10n.projectDescriptionPlaceholder)
-                        .font(.body)
+                        .dahliaFont(.body)
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 8)
                         .padding(.top, 6)

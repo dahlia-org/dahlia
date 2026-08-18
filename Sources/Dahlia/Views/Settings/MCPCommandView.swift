@@ -12,7 +12,7 @@ struct MCPCommandView: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(command)
-                .font(.callout.monospaced())
+                .dahliaFont(.body, design: .monospaced)
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
                 .accessibilityLabel(L10n.registrationCommand(title))
@@ -26,6 +26,7 @@ struct MCPCommandView: View {
                     action: showReRegistrationHelp
                 )
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .buttonStyle(.borderless)
                 .help(L10n.mcpReRegistrationHelp)
                 .popover(isPresented: $isReRegistrationHelpPresented, arrowEdge: .bottom) {

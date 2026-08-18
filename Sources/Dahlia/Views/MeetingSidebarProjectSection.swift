@@ -48,7 +48,7 @@ struct MeetingSidebarProjectSection: View {
                         L10n.noProject,
                         systemImage: isExpanded ? "questionmark.folder" : "questionmark.folder.fill"
                     )
-                    .font(DahliaDesign.sidebarFont)
+                    .dahliaFont(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
@@ -110,7 +110,7 @@ struct MeetingSidebarProjectSection: View {
 
     private var limitMessage: some View {
         Text(L10n.searchForOlderMeetings)
-            .font(DahliaDesign.sidebarFont)
+            .dahliaFont(.body)
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .padding(.leading, 25)
     }
@@ -135,6 +135,7 @@ struct MeetingSidebarProjectSection: View {
         return MeetingSidebarRow(
             item: item,
             contentLeadingPadding: 20,
+            projectTint: nil,
             showsDateInTimestamp: showsMeetingDate,
             searchText: "",
             isSelected: selectedMeetingIDs.contains(item.meetingId),

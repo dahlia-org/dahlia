@@ -20,7 +20,7 @@ struct CodexChatHeader: View {
                     action: onBack
                 )
                 Text(L10n.chatHistory)
-                    .font(.body)
+                    .dahliaFont(.body)
             } else {
                 if hasConversation {
                     DahliaWindowHeaderIconButton(
@@ -32,7 +32,7 @@ struct CodexChatHeader: View {
                         .frame(height: 16)
                 }
                 Text(title)
-                    .font(.body)
+                    .dahliaFont(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

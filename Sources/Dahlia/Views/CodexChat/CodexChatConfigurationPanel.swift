@@ -18,7 +18,7 @@ struct CodexChatConfigurationPanel: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.responsePerformance)
-                    .font(.subheadline)
+                    .dahliaFont(.body)
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 2)

@@ -75,7 +75,7 @@ struct InstructionsSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(L10n.instructions)
-                    .font(.title2.weight(.semibold))
+                    .dahliaFont(.displayTitle, weight: .semibold)
 
                 Spacer(minLength: 0)
 
@@ -83,6 +83,7 @@ struct InstructionsSettingsView: View {
                     createInstruction()
                 }
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .help(L10n.addInstruction)
             }
             .padding(.horizontal, 16)
@@ -115,11 +116,11 @@ struct InstructionsSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         TextField(L10n.title, text: $draftName)
                             .textFieldStyle(.plain)
-                            .font(.largeTitle.weight(.semibold))
+                            .dahliaFont(.displayTitle, weight: .semibold)
                             .focused($isNameFieldFocused)
 
                         Text(editorStatusText(for: selectedInstruction))
-                            .font(.callout)
+                            .dahliaFont(.body)
                             .foregroundStyle(isInstructionTitleValid ? Color.secondary : Color.red)
                     }
 
@@ -149,7 +150,7 @@ struct InstructionsSettingsView: View {
                 Divider()
 
                 TextEditor(text: $draftContent)
-                    .font(.body)
+                    .dahliaFont(.body)
                     .scrollContentBackground(.hidden)
                     .padding(InstructionsEditorLayout.editorPadding)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -198,7 +199,7 @@ struct InstructionsSettingsView: View {
                 }
 
                 Text(preview(for: instruction.content))
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }

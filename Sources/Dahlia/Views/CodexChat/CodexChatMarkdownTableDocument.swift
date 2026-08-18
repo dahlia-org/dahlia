@@ -3,7 +3,8 @@ import AppKit
 extension CodexChatMarkdownTextDocument {
     static func appendTable(
         _ renderedTable: CodexChatMarkdownRenderedTable,
-        to document: NSMutableAttributedString
+        to document: NSMutableAttributedString,
+        baseFontSize: CGFloat
     ) {
         let rows = [renderedTable.header] + renderedTable.rows
         guard let columnCount = rows.first?.count, columnCount > 0 else { return }
@@ -46,9 +47,9 @@ extension CodexChatMarkdownTextDocument {
                 style.textBlocks = [cell]
                 style.alignment = textAlignment(renderedTable.alignments[columnIndex])
                 document.addAttribute(.paragraphStyle, value: style, range: range)
-                applyBodyFont(to: document, range: range)
+                applyBodyFont(to: document, range: range, baseFontSize: baseFontSize)
                 if isHeaderRow {
-                    let font = NSFont.preferredFont(forTextStyle: .body)
+                    let font = NSFont.systemFont(ofSize: DahliaFontRole.body.pointSize(baseSize: baseFontSize))
                     document.addAttribute(
                         .font,
                         value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask),

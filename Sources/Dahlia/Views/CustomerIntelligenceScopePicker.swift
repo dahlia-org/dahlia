@@ -13,6 +13,7 @@ struct CustomerIntelligenceScopePicker: View {
             label: {
                 HStack(spacing: 6) {
                     Image(systemName: scope == .all ? "building.2.crop.circle" : "building.2")
+                        .dahliaFixedSymbol()
                     Text(scopeTitle)
                         .lineLimit(1)
                 }
@@ -95,6 +96,7 @@ private struct CustomerIntelligenceScopePopover: View {
                 Spacer()
                 if value == scope {
                     Image(systemName: "checkmark")
+                        .dahliaFixedSymbol()
                         .accessibilityHidden(true)
                 }
             }

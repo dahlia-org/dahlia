@@ -13,12 +13,12 @@ struct SummaryProgressToastView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Text(L10n.runningTasks)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .bold()
                         .foregroundStyle(.primary)
 
                     Text(jobs.count, format: .number)
-                        .font(.caption2.weight(.semibold))
+                        .dahliaFont(.metadata, weight: .semibold)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 6)
@@ -39,6 +39,7 @@ struct SummaryProgressToastView: View {
                         systemImage: isExpanded ? "minus" : "chevron.up"
                     )
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
                 }
@@ -90,12 +91,13 @@ private struct SummaryGenerationJobProgressView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.meetingName)
-                    .font(.caption.weight(.semibold))
+                    .dahliaFont(.secondary, weight: .semibold)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if job.hasFailure, job.isFinished {
                     Button(L10n.close, systemImage: "xmark", action: { onDismiss(job.id) })
                         .labelStyle(.iconOnly)
+                        .dahliaFixedSymbol()
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                 }

@@ -229,9 +229,10 @@ struct ControlPanelView: View {
     private func detailErrorBanner(message: String, tint: Color) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
+                .dahliaFixedSymbol()
                 .foregroundStyle(.orange)
             Text(message)
-                .font(.callout)
+                .dahliaFont(.body)
                 .foregroundStyle(tint)
             Spacer()
         }
@@ -269,7 +270,7 @@ struct ControlPanelView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $viewModel.noteText)
-                        .font(.body)
+                        .dahliaFont(.body)
                         .focused($isNotesFieldFocused)
                         .scrollContentBackground(.hidden)
                         .frame(height: notesEditorHeight(for: proxy.size.height))
@@ -282,7 +283,7 @@ struct ControlPanelView: View {
 
                     if viewModel.noteText.isEmpty {
                         Text(L10n.notesPlaceholder)
-                            .font(.body)
+                            .dahliaFont(.body)
                             .foregroundStyle(.tertiary)
                             .padding(NotesEditorLayout.placeholderPadding)
                             .allowsHitTesting(false)

@@ -13,13 +13,13 @@ struct RecordingLiveSubtitleToggle: View {
                     .accessibilityHidden(true)
 
                 Text(L10n.subtitles)
-                    .font(.caption.weight(.semibold))
+                    .dahliaFont(.secondary, weight: .semibold)
                     .foregroundStyle(.primary)
                     .frame(width: 58, alignment: .leading)
                     .lineLimit(1)
 
                 Text(isEnabled ? L10n.liveSubtitlesOnStatus : L10n.liveSubtitlesOffStatus)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)

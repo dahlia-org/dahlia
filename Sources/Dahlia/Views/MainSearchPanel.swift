@@ -14,14 +14,16 @@ struct MainSearchPanel: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
+                    .dahliaFixedSymbol()
                     .foregroundStyle(.secondary)
                 TextField(L10n.searchMeetingsAndProjects, text: $model.inputText)
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .dahliaFont(.sectionTitle)
                     .focused($isSearchFocused)
                     .onSubmit(activateSelectionOrSubmit)
                 Button(L10n.close, systemImage: "xmark", action: onDismiss)
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help(L10n.close)
@@ -177,7 +179,7 @@ struct MainSearchPanel: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.subheadline)
+            .dahliaFont(.body)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

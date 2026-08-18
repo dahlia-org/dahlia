@@ -6,6 +6,7 @@ struct ProjectAppearanceIcon: View {
 
     var body: some View {
         Image(systemName: appearance.icon.systemImageName)
+            .dahliaFixedSymbol()
             .foregroundStyle(isSelected ? Color.white : appearance.color.color)
             .frame(width: 18)
             .accessibilityHidden(true)

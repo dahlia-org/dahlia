@@ -134,6 +134,7 @@ struct MainSearchSuggestions: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
+                    .dahliaFixedSymbol()
                     .foregroundStyle(.secondary)
                 Text(title)
                     .lineLimit(1)
@@ -141,6 +142,7 @@ struct MainSearchSuggestions: View {
                 Spacer(minLength: 8)
                 if isSelected {
                     Image(systemName: "checkmark")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(.secondary)
                 }
             }

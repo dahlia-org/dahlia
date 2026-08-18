@@ -67,6 +67,7 @@ struct RecordingStatusBar: View {
 
                 Button(recordingLabels.stop, systemImage: "stop.fill", action: recordingCoordinator.stopRecording)
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                     .controlSize(.small)
@@ -111,11 +112,11 @@ struct RecordingStatusBar: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(recordingLabels.activity)
-                    .font(.caption.bold())
+                    .dahliaFont(.secondary, weight: .bold)
                     .foregroundStyle(.red)
 
                 Text(recordingTitle)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
@@ -129,7 +130,7 @@ struct RecordingStatusBar: View {
     private var elapsedText: some View {
         TimelineView(.periodic(from: recordingTimelineStart, by: 1)) { context in
             Text(formatElapsedTime(at: context.date))
-                .font(.caption.monospacedDigit())
+                .dahliaFont(.secondary, design: .monospaced)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -432,13 +433,13 @@ private struct RecordingSourceControlLabel: View {
                 .frame(width: 14)
 
             Text(title)
-                .font(.caption.weight(.semibold))
+                .dahliaFont(.secondary, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 58, alignment: .leading)
                 .lineLimit(1)
 
             Text(value)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)

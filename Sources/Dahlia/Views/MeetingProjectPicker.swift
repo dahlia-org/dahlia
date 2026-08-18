@@ -107,7 +107,7 @@ struct MeetingProjectPicker: View {
             HStack(spacing: 4) {
                 if style == .regular {
                     Text(currentProjectName ?? L10n.noProject)
-                        .font(.caption.weight(.medium))
+                        .dahliaFont(.metadata, weight: .medium)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.down")
@@ -172,7 +172,7 @@ struct MeetingProjectPicker: View {
                 VStack {
                     Spacer()
                     Text(emptyProjectMessage)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.tertiary)
                     Spacer()
                 }
@@ -195,11 +195,11 @@ struct MeetingProjectPicker: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.callout)
+                    .font(.body)
                     .foregroundStyle(.secondary)
 
                 Text(name)
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 

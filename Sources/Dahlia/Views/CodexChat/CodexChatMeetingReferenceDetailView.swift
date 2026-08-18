@@ -7,6 +7,7 @@ struct CodexChatMeetingReferenceDetailView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "calendar")
+                .dahliaFixedSymbol()
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 

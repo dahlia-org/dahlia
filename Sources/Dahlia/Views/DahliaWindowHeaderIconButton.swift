@@ -28,6 +28,7 @@ struct DahliaWindowHeaderIconButton: View {
         Button(action: action) {
             Label(label, systemImage: systemImage)
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .frame(
                     width: DahliaDesign.windowHeaderControlSize,
                     height: DahliaDesign.windowHeaderControlSize

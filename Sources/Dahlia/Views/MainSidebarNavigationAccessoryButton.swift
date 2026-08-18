@@ -11,6 +11,7 @@ struct MainSidebarNavigationAccessoryButton: View {
     var body: some View {
         Button(title, systemImage: systemImage, action: action)
             .labelStyle(.iconOnly)
+            .dahliaFixedSymbol()
             .buttonStyle(.plain)
             .foregroundStyle(foregroundColor)
             .frame(width: 28, height: 28)

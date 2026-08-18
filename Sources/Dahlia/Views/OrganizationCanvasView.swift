@@ -148,9 +148,10 @@ struct OrganizationCanvasView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: node.organization.nodeKind == .organization ? "building.2" : "rectangle.3.group")
+                    .dahliaFixedSymbol()
                     .foregroundStyle(.tint)
                 Text(node.organization.name)
-                    .font(.headline)
+                    .dahliaFont(.subsectionTitle, weight: .semibold)
                     .lineLimit(2)
                 Spacer(minLength: 0)
             }
@@ -171,6 +172,7 @@ struct OrganizationCanvasView: View {
                 } label: {
                     Image(systemName: model.expandedNodeIDs.contains(node.id)
                         ? "chevron.down.circle" : "chevron.right.circle")
+                        .dahliaFixedSymbol()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(
@@ -183,11 +185,11 @@ struct OrganizationCanvasView: View {
                     Task { await model.loadMoreChildren(of: node.id) }
                 }
                 .buttonStyle(.link)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .disabled(model.loadingChildNodeIDs.contains(node.id))
             }
         }
-        .font(.caption)
+        .dahliaFont(.secondary)
         .foregroundStyle(.secondary)
     }
 }

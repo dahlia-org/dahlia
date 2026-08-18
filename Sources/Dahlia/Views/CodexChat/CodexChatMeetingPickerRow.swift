@@ -7,6 +7,7 @@ struct CodexChatMeetingPickerRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: isHighlighted ? "chevron.right" : "calendar")
+                .dahliaFixedSymbol()
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
@@ -14,7 +15,7 @@ struct CodexChatMeetingPickerRow: View {
                 Text(reference.name)
                     .lineLimit(1)
                 Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

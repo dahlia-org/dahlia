@@ -36,6 +36,7 @@ struct MainSidebarAccountMenuRow: View {
                         .accessibilityHidden(true)
                 } else if let selectionState {
                     Image(systemName: "checkmark")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(.tint)
                         .opacity(selectionState ? 1 : 0)
                         .accessibilityHidden(true)
@@ -48,7 +49,7 @@ struct MainSidebarAccountMenuRow: View {
                 (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.hoverHighlightColor : .clear,
                 in: .rect(cornerRadius: 7)
             )
-            .font(DahliaDesign.sidebarFont)
+            .dahliaFont(.body)
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         }
         .buttonStyle(.plain)

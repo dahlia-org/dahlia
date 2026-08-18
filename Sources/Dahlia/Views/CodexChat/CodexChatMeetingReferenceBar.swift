@@ -22,6 +22,7 @@ struct CodexChatMeetingReferenceBar: View {
                         onRemove(id)
                     }
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .buttonStyle(.plain)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)

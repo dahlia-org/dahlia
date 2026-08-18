@@ -26,7 +26,7 @@ struct MeetingSidebarProjectHeader: View {
                 } icon: {
                     ProjectAppearanceIcon(appearance: appearance, isSelected: isSelected)
                 }
-                .font(DahliaDesign.sidebarFont)
+                .dahliaFont(.body)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -48,6 +48,7 @@ struct MeetingSidebarProjectHeader: View {
                 } label: {
                     Label(L10n.projectOptions, systemImage: "ellipsis")
                         .labelStyle(.iconOnly)
+                        .dahliaFixedSymbol()
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -59,6 +60,7 @@ struct MeetingSidebarProjectHeader: View {
 
                 Button(L10n.createNewMeeting, systemImage: "plus", action: onCreateMeeting)
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .buttonStyle(.plain)
                     .fixedSize()
                     .focused($isCreateMeetingFocused)

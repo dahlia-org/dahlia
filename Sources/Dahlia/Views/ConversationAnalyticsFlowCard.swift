@@ -9,7 +9,7 @@ struct ConversationAnalyticsFlowCard: View {
         let systemIntervals = metrics.timelineIntervals.filter { $0.source == .system }
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.conversationAnalyticsConversationFlow)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             summary
             timelineChart(
                 microphoneIntervals: microphoneIntervals,

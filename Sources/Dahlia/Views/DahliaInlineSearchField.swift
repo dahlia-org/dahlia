@@ -8,6 +8,7 @@ struct DahliaInlineSearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
+                .dahliaFixedSymbol()
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
@@ -28,6 +29,7 @@ struct DahliaInlineSearchField: View {
                     isFocused = true
                 }
                 .labelStyle(.iconOnly)
+                .dahliaFixedSymbol()
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help(L10n.clearSearch)

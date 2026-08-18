@@ -20,7 +20,7 @@ struct VaultSidebarView: View {
         VStack(spacing: 0) {
             DahliaWindowHeader(reservesWindowControls: true) {
                 Text(L10n.vault)
-                    .font(.headline)
+                    .dahliaFont(.subsectionTitle, weight: .semibold)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -69,19 +69,21 @@ struct VaultSidebarView: View {
                             VStack(alignment: .leading) {
                                 Text(vault.name)
                                 Text(vault.path)
-                                    .font(.caption)
+                                    .dahliaFont(.secondary)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
                         } icon: {
                             Image(systemName: "externaldrive")
+                                .dahliaFixedSymbol()
                         }
 
                         Spacer()
 
                         if vault.id == currentVaultId {
                             Image(systemName: "checkmark.circle.fill")
+                                .dahliaFixedSymbol()
                                 .foregroundStyle(.secondary)
                                 .accessibilityLabel(L10n.currentVault)
                         }

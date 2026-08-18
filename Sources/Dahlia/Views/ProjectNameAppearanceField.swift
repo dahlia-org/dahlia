@@ -12,6 +12,7 @@ struct ProjectNameAppearanceField: View {
             Button(action: { isAppearancePickerPresented = true }) {
                 Label(L10n.appearance, systemImage: appearance.icon.systemImageName)
                     .labelStyle(.iconOnly)
+                    .dahliaFixedSymbol()
                     .foregroundStyle(appearance.color.color)
                     .frame(width: 40, height: 36)
             }

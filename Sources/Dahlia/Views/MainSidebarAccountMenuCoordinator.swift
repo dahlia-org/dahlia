@@ -131,7 +131,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     }
 
     private func makePanel(content: some View) -> NSPanel {
-        let hostingView = NSHostingView(rootView: content.fixedSize())
+        let hostingView = NSHostingView(rootView: content.fixedSize().dahliaAppearance())
         hostingView.frame.size = hostingView.fittingSize
 
         let panel = NSPanel(

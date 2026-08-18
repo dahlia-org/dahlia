@@ -10,18 +10,19 @@ struct ProjectDetailHeaderView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ProjectAppearanceIcon(appearance: appearance)
-                .font(.title2)
+                .dahliaFont(.displayTitle)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(projectName)
-                    .font(.title2)
+                    .dahliaFont(.displayTitle)
                     .bold()
 
                 Label {
                     Text("\(vaultName) › \(displayPath)")
                 } icon: {
                     Image(systemName: "externaldrive")
+                        .dahliaFixedSymbol()
                 }
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)

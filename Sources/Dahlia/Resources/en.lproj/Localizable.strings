@@ -486,6 +486,11 @@
 "No vault selected" = "No vault selected";
 "Appearance" = "Appearance";
 "Display" = "Display";
+"Typography" = "Typography";
+"Font Size" = "Font Size";
+"%lld pt" = "%lld pt";
+"Meeting List" = "Meeting List";
+"Display Style" = "Display Style";
 "App Language" = "App Language";
 "Set the display language for the app." = "Set the display language for the app.";
 "Follow System" = "Follow System";

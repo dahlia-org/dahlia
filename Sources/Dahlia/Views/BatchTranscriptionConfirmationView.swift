@@ -52,7 +52,7 @@ struct BatchTranscriptionConfirmationView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(isRetranscription ? L10n.batchRetranscriptionConfirmationTitle : L10n.batchTranscriptionConfirmationTitle)
-                    .font(.headline)
+                    .dahliaFont(.subsectionTitle, weight: .semibold)
 
                 Text(isRetranscription
                     ? L10n.batchRetranscriptionConfirmationDescription
@@ -79,7 +79,7 @@ struct BatchTranscriptionConfirmationView: View {
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)

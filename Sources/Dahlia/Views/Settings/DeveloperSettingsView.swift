@@ -11,7 +11,7 @@ struct DeveloperSettingsView: View {
                 VStack(alignment: .leading) {
                     Text(L10n.googleOAuthClientIDOverride)
                     Text(L10n.googleOAuthClientIDOverrideDescription)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.secondary)
 
                     TextField(
@@ -19,7 +19,7 @@ struct DeveloperSettingsView: View {
                         text: $settings.googleOAuthClientIDOverride,
                         prompt: Text("1234567890-abcdef.apps.googleusercontent.com")
                     )
-                    .font(.callout.monospaced())
+                    .dahliaFont(.body, design: .monospaced)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(Text(L10n.googleOAuthClientIDOverride))
                     .onSubmit {
@@ -30,7 +30,7 @@ struct DeveloperSettingsView: View {
                 VStack(alignment: .leading) {
                     Text(L10n.googleOAuthClientSecretOverride)
                     Text(L10n.googleOAuthClientSecretOverrideDescription)
-                        .font(.callout)
+                        .dahliaFont(.body)
                         .foregroundStyle(.secondary)
 
                     SecureField("", text: $clientSecretOverride)

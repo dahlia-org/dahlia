@@ -13,6 +13,7 @@ struct MainSearchResultRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
+                    .dahliaFixedSymbol()
                     .foregroundStyle(.secondary)
                     .frame(width: 22)
 
@@ -21,7 +22,7 @@ struct MainSearchResultRow: View {
                         .lineLimit(1)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.callout)
+                            .dahliaFont(.body)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }

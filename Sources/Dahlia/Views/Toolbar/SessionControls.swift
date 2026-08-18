@@ -16,7 +16,7 @@ struct RecordButton: View {
 
     var body: some View {
         Button(label, systemImage: iconName, action: toggle)
-            .labelStyle(.titleAndIcon)
+            .labelStyle(DahliaFixedSymbolTitleAndIconLabelStyle())
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.large)
@@ -79,6 +79,7 @@ struct GenerateSummaryFloatingButton: View {
                         .tint(.purple)
                 } else {
                     Image(systemName: "sparkles")
+                        .dahliaFixedSymbol()
                         .foregroundStyle(viewModel.canGenerateSummary ? Color.purple : .secondary)
                 }
             }
@@ -120,6 +121,7 @@ struct ShareSummaryFloatingButton: View {
                 Text(L10n.share)
             } icon: {
                 Image(systemName: "square.and.arrow.up")
+                    .dahliaFixedSymbol()
                     .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : .secondary)
             }
         }
@@ -145,6 +147,7 @@ private struct FloatingSummaryButtonModifier: ViewModifier {
 
         content
             .labelStyle(.iconOnly)
+            .dahliaFixedSymbol()
             .buttonStyle(.bordered)
             .buttonBorderShape(.circle)
             .controlSize(.large)
@@ -187,10 +190,10 @@ private struct SummarySharePopover: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline)
+                        .dahliaFont(.subsectionTitle, weight: .semibold)
                         .lineLimit(1)
                     Text(L10n.summary)
-                        .font(.subheadline)
+                        .dahliaFont(.body)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -229,7 +232,7 @@ private struct SummarySharePopover: View {
 
             if let errorMessage = googleDocsErrorMessage {
                 Text(errorMessage)
-                    .font(.caption)
+                    .dahliaFont(.secondary)
                     .foregroundStyle(.red)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 10)
@@ -315,7 +318,7 @@ private struct SummarySharePopoverRow: View {
                         .frame(width: 22)
                 }
                 Text(title)
-                    .font(.body)
+                    .dahliaFont(.body)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())

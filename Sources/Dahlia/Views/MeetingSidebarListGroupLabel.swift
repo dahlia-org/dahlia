@@ -30,7 +30,7 @@ struct MeetingSidebarListGroupLabel: View {
                     .opacity(isHovered || isMenuFocused ? 1 : 0)
             }
         }
-        .font(DahliaDesign.sidebarFont)
+        .dahliaFont(.body)
         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .listRowSeparator(.hidden)
         .contentShape(.rect)

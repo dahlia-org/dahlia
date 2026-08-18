@@ -7,7 +7,7 @@ struct MainSidebarUpdateBadge: View {
 
     var body: some View {
         Button(L10n.update, action: updateController.showUpdateDialog)
-            .font(DahliaDesign.sidebarFont.weight(.medium))
+            .dahliaFont(.metadata, weight: .medium)
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .foregroundStyle(.white)

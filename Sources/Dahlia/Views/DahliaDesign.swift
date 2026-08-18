@@ -13,9 +13,6 @@ enum DahliaDesign {
         light: NSColor(srgbRed: 165 / 255, green: 165 / 255, blue: 165 / 255, alpha: 1),
         dark: NSColor(srgbRed: 135 / 255, green: 129 / 255, blue: 129 / 255, alpha: 1)
     )
-    static let sidebarFontSize: CGFloat = 14
-    static let sidebarFont = Font.system(size: sidebarFontSize)
-    static let sidebarBadgeFont = Font.system(size: sidebarFontSize - 2)
     static let sidebarRowVerticalPadding: CGFloat = 3
     static let sidebarNavigationVerticalPadding: CGFloat = 8
 

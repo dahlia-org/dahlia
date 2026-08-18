@@ -18,9 +18,11 @@ struct ScreenshotManagementToolbar: View {
                 Text(L10n.layout)
             } minimumValueLabel: {
                 Image(systemName: "square.grid.3x3")
+                    .dahliaFixedSymbol()
                     .accessibilityLabel(L10n.small)
             } maximumValueLabel: {
                 Image(systemName: "rectangle.grid.1x2")
+                    .dahliaFixedSymbol()
                     .accessibilityLabel(L10n.large)
             }
             .frame(minWidth: 140, maxWidth: 220)

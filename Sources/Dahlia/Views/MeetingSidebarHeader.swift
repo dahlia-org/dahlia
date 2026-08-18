@@ -22,7 +22,7 @@ struct MeetingSidebarHeader: View {
                 }
             }
             .buttonStyle(.plain)
-            .font(DahliaDesign.sidebarFont)
+            .dahliaFont(.body)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
 
@@ -35,6 +35,7 @@ struct MeetingSidebarHeader: View {
                 if displayMode == .byProject {
                     Button(L10n.newProject, systemImage: "plus", action: onCreateProject)
                         .labelStyle(.iconOnly)
+                        .dahliaFixedSymbol()
                         .buttonStyle(.plain)
                         .focused($isCreateProjectFocused)
                         .disabled(!canCreateProject)

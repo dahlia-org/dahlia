@@ -3,22 +3,17 @@ import SwiftUI
 struct CalendarEventMetadataButton: View {
     let text: String
     let event: CalendarEventDisplayInfo
-    private let attributedDescription: AttributedString?
 
+    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+    @State private var attributedDescription: AttributedString?
     @State private var isPresented = false
     @State private var isHovered = false
-
-    init(text: String, event: CalendarEventDisplayInfo) {
-        self.text = text
-        self.event = event
-        attributedDescription = event.description.nilIfBlank.map(CalendarEventDescriptionFormatter.attributedString)
-    }
 
     var body: some View {
         Button(action: togglePresentation) {
             Label {
                 Text(text)
-                    .font(.caption.weight(.medium))
+                    .dahliaFont(.metadata, weight: .medium)
                     .lineLimit(1)
             } icon: {
                 Image(systemName: "calendar")
@@ -36,6 +31,12 @@ struct CalendarEventMetadataButton: View {
         .help(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityLabel(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityValue(detailLines.joined(separator: ", "))
+        .onChange(of: baseFontSize, initial: true) { _, _ in
+            updateAttributedDescription()
+        }
+        .onChange(of: event.description) { _, _ in
+            updateAttributedDescription()
+        }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             CalendarEventPopoverContent(
                 title: event.resolvedTitle,
@@ -47,6 +48,12 @@ struct CalendarEventMetadataButton: View {
 
     private func togglePresentation() {
         isPresented.toggle()
+    }
+
+    private func updateAttributedDescription() {
+        attributedDescription = event.description.nilIfBlank.map {
+            CalendarEventDescriptionFormatter.attributedString(from: $0, baseFontSize: baseFontSize)
+        }
     }
 
     private var detailLines: [String] {

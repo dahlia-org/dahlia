@@ -8,9 +8,9 @@ struct ConversationAnalyticsEnergyTrendCard: View {
         let energy = metrics.voiceAnalytics.energyTrend
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsEnergyTrend)
-                .font(.headline)
+                .dahliaFont(.subsectionTitle, weight: .semibold)
             Text(L10n.conversationAnalyticsEnergyTrendDescription)
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
             if energy.samples.isEmpty {
                 Text(L10n.conversationAnalyticsEnergyTrendUnavailable)
@@ -64,7 +64,7 @@ struct ConversationAnalyticsEnergyTrendCard: View {
                     "\(sourceTitle(source)): \(L10n.conversationAnalyticsEnergyDeclining)",
                     systemImage: "chart.line.downtrend.xyaxis"
                 )
-                .font(.caption)
+                .dahliaFont(.secondary)
                 .foregroundStyle(.secondary)
             }
         }

@@ -24,7 +24,7 @@ struct OrganizationAIScopeView: View {
                     }
                 }
                 Text(L10n.aiScopeDoesNotSend)
-                    .font(.callout)
+                    .dahliaFont(.body)
                     .foregroundStyle(.secondary)
             }
             .formStyle(.grouped)
