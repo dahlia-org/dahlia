@@ -27,6 +27,7 @@ struct CodexChatView: View {
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls
             )
+            .zIndex(1)
 
             if showsHistory {
                 CodexChatHistoryView(

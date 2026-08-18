@@ -145,7 +145,6 @@ struct ContentView: View {
         .overlay(alignment: .topTrailing) {
             if !isShowingSettings {
                 DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
-                    Spacer()
                     DahliaWindowHeaderIconButton(
                         label: chatCoordinator.isDockedVisible ? L10n.hideChat : L10n.showChat,
                         systemImage: "sidebar.right",
@@ -153,6 +152,7 @@ struct ContentView: View {
                     )
                     .accessibilityValue(chatCoordinator.isDockedVisible ? L10n.shown : L10n.hidden)
                 }
+                .frame(width: DahliaDesign.windowHeaderControlSize + 2 * DahliaDesign.windowHeaderHorizontalPadding)
             }
         }
         .overlay(alignment: .bottomTrailing) {

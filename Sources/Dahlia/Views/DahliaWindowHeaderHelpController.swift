@@ -2,10 +2,27 @@ import Foundation
 import Observation
 
 @MainActor
+final class DahliaWindowHeaderHelpTimeline {
+    static let shared = DahliaWindowHeaderHelpTimeline()
+
+    fileprivate var lastDismissalInstant: ContinuousClock.Instant?
+    fileprivate var visibleHelpIDs: Set<UUID> = []
+
+    fileprivate func shouldPresentImmediately(
+        at instant: ContinuousClock.Instant,
+        within immediateSwitchWindow: Duration
+    ) -> Bool {
+        guard visibleHelpIDs.isEmpty else { return true }
+        guard let lastDismissalInstant else { return false }
+        return lastDismissalInstant.duration(to: instant) <= immediateSwitchWindow
+    }
+}
+
+@MainActor
 @Observable
 final class DahliaWindowHeaderHelpController {
     private(set) var visibleHelpID: UUID?
-    private(set) var containerWidth: CGFloat = 0
+    private(set) var windowBounds: CGRect = .zero
     private(set) var helpLabel = ""
     private(set) var helpShortcut: String?
     private(set) var helpButtonFrame: CGRect = .zero
@@ -14,20 +31,22 @@ final class DahliaWindowHeaderHelpController {
     @ObservationIgnored private let immediateSwitchWindow: Duration
     @ObservationIgnored private let now: () -> ContinuousClock.Instant
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
+    @ObservationIgnored private let timeline: DahliaWindowHeaderHelpTimeline
     @ObservationIgnored private var hoveredHelpID: UUID?
-    @ObservationIgnored private var lastDismissalInstant: ContinuousClock.Instant?
     @ObservationIgnored private var pendingPresentationTask: Task<Void, Never>?
 
     init(
         displayDelay: Duration = .milliseconds(700),
         immediateSwitchWindow: Duration = .milliseconds(700),
         now: @escaping () -> ContinuousClock.Instant = { .now },
-        sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        timeline: DahliaWindowHeaderHelpTimeline = .shared
     ) {
         self.displayDelay = displayDelay
         self.immediateSwitchWindow = immediateSwitchWindow
         self.now = now
         self.sleep = sleep
+        self.timeline = timeline
     }
 
     func hoverBegan(for id: UUID) {
@@ -35,8 +54,10 @@ final class DahliaWindowHeaderHelpController {
         pendingPresentationTask?.cancel()
 
         let currentInstant = now()
-        if let lastDismissalInstant,
-           lastDismissalInstant.duration(to: currentInstant) <= immediateSwitchWindow {
+        if timeline.shouldPresentImmediately(
+            at: currentInstant,
+            within: immediateSwitchWindow
+        ) {
             presentHelp(for: id)
             return
         }
@@ -65,16 +86,15 @@ final class DahliaWindowHeaderHelpController {
         hoverBegan(for: id)
     }
 
-    func updateContainerWidth(_ width: CGFloat) {
-        containerWidth = width
+    func updateWindowBounds(_ bounds: CGRect) {
+        windowBounds = bounds
     }
 
     func dismissAll() {
         hoveredHelpID = nil
         pendingPresentationTask?.cancel()
         pendingPresentationTask = nil
-        visibleHelpID = nil
-        lastDismissalInstant = nil
+        dismissVisibleHelp()
     }
 
     func hoverEnded(for id: UUID) {
@@ -83,13 +103,23 @@ final class DahliaWindowHeaderHelpController {
         pendingPresentationTask?.cancel()
         pendingPresentationTask = nil
         if visibleHelpID == id {
-            visibleHelpID = nil
-            lastDismissalInstant = now()
+            dismissVisibleHelp()
         }
     }
 
     private func presentHelp(for id: UUID) {
         pendingPresentationTask = nil
+        if let visibleHelpID {
+            timeline.visibleHelpIDs.remove(visibleHelpID)
+        }
         visibleHelpID = id
+        timeline.visibleHelpIDs.insert(id)
+    }
+
+    private func dismissVisibleHelp() {
+        guard let visibleHelpID else { return }
+        timeline.visibleHelpIDs.remove(visibleHelpID)
+        self.visibleHelpID = nil
+        timeline.lastDismissalInstant = now()
     }
 }

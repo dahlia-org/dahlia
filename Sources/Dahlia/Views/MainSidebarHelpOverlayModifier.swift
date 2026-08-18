@@ -14,6 +14,12 @@ private struct MainSidebarHelpOverlayModifier: ViewModifier {
             } action: { origin in
                 containerOrigin = origin
             }
+            .onGeometryChange(for: CGRect.self) { geometry in
+                geometry.bounds(of: .named(DahliaWindowHeaderHelpLayout.windowCoordinateSpaceName))
+                    ?? geometry.frame(in: .local)
+            } action: { bounds in
+                helpController.updateWindowBounds(bounds)
+            }
             .overlay {
                 if isVisible {
                     DahliaWindowHeaderHelpOverlay(
