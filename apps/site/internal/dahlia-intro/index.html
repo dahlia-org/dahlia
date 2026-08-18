@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow,noarchive" />
+    <meta name="theme-color" content="#17141c" />
+    <link rel="icon" type="image/png" href="../../assets/app-icon.png" />
+    <title>Dahlia — デスクトップアプリ紹介</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f7f5f1;
+        --card: #fffefa;
+        --ink: #17141c;
+        --muted: #69636f;
+        --line: rgba(31, 24, 37, 0.13);
+        --violet: #7041e6;
+        --violet-deep: #4b1eaa;
+        --violet-soft: #eee8ff;
+        --magenta: #c840d5;
+        --green: #267d68;
+        --shadow: 0 24px 70px rgba(35, 25, 45, 0.13);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+
+      * { box-sizing: border-box; }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-snap-type: y mandatory;
+        overflow-x: clip;
+        scrollbar-width: none;
+      }
+
+      html::-webkit-scrollbar { display: none; }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: #ded9e4;
+        overflow-x: clip;
+      }
+
+      button { font: inherit; }
+      svg { display: block; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1, h2, h3 { text-wrap: balance; }
+      p { text-wrap: pretty; }
+
+      .slide {
+        position: relative;
+        width: 100%;
+        height: 100svh;
+        min-height: 100svh;
+        display: grid;
+        place-items: center;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+        overflow: hidden;
+      }
+
+      .slide-frame {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1280px;
+        height: 720px;
+        padding: 52px 76px 60px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+        background: var(--paper);
+        transform: translate(-50%, -50%) scale(var(--deck-scale, 1));
+        transform-origin: center;
+      }
+
+      .slide-frame::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -2;
+        background-image:
+          linear-gradient(rgba(31, 24, 37, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(31, 24, 37, 0.025) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: linear-gradient(to bottom, black, transparent 78%);
+      }
+
+      .slide-number {
+        position: absolute;
+        top: 40px;
+        right: 52px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 760;
+        letter-spacing: 0.12em;
+      }
+
+      .eyebrow,
+      .micro {
+        color: var(--violet);
+        font-size: 11px;
+        font-weight: 780;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .eyebrow { margin-bottom: 16px; }
+
+      h1 {
+        margin-bottom: 26px;
+        font-size: 86px;
+        line-height: 0.98;
+        letter-spacing: -0.065em;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 52px;
+        line-height: 1.04;
+        letter-spacing: -0.052em;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 22px;
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+      }
+
+      .lead {
+        max-width: 900px;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 19px;
+        line-height: 1.6;
+      }
+
+      .accent { color: var(--violet); }
+      .magenta { color: var(--magenta); }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: rgba(255, 254, 250, 0.9);
+        box-shadow: var(--shadow);
+      }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--violet);
+      }
+
+      .arrow svg { width: 32px; height: 24px; }
+
+      .deck-progress {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 100;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      .deck-progress span {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, var(--violet), var(--magenta));
+        transform: scaleX(0.1);
+        transform-origin: left;
+        transition: transform 220ms ease;
+      }
+
+      .deck-nav {
+        position: fixed;
+        right: 22px;
+        bottom: 18px;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 999px;
+        color: white;
+        background: rgba(23, 20, 28, 0.84);
+        box-shadow: 0 12px 40px rgba(23, 20, 28, 0.24);
+        backdrop-filter: blur(16px);
+      }
+
+      .deck-nav button {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 50%;
+        color: white;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .deck-nav button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+      .deck-nav button:focus-visible { outline: 2px solid #d9caff; outline-offset: 2px; }
+      .deck-nav button:disabled { opacity: 0.28; cursor: default; }
+
+      .deck-nav output {
+        min-width: 54px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 740;
+      }
+
+      .keyboard-hint {
+        position: fixed;
+        left: 18px;
+        bottom: 16px;
+        z-index: 100;
+        margin: 0;
+        padding: 7px 10px;
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.78);
+        background: rgba(23, 20, 28, 0.72);
+        font-size: 10px;
+        backdrop-filter: blur(10px);
+        opacity: 0;
+        transition: opacity 200ms ease;
+      }
+
+      body:not(.has-navigated) .keyboard-hint { opacity: 1; }
+
+      /* 01 — cover */
+      .cover .slide-frame {
+        color: white;
+        background:
+          radial-gradient(circle at 88% 20%, rgba(200, 64, 213, 0.3), transparent 29%),
+          radial-gradient(circle at 70% 80%, rgba(112, 65, 230, 0.3), transparent 32%),
+          #17141c;
+      }
+
+      .cover .slide-frame::before {
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      }
+
+      .cover-brand {
+        position: absolute;
+        top: 48px;
+        left: 76px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 20px;
+        font-weight: 760;
+      }
+
+      .cover-brand img { width: 52px; height: 52px; border-radius: 13px; }
+      .cover-copy { width: 760px; }
+      .cover h1 span { display: block; }
+      .cover .lead { color: rgba(255, 255, 255, 0.66); }
+
+      .cover-visual {
+        position: absolute;
+        right: 70px;
+        bottom: 84px;
+        width: 360px;
+        height: 360px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 50%;
+      }
+
+      .cover-visual::before,
+      .cover-visual::after {
+        content: "";
+        position: absolute;
+        inset: 56px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 50%;
+      }
+
+      .cover-visual::after { inset: 116px; background: linear-gradient(135deg, var(--violet), var(--magenta)); }
+
+      .orbit-label {
+        position: absolute;
+        z-index: 1;
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.82);
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 11px;
+        font-weight: 700;
+        backdrop-filter: blur(8px);
+      }
+
+      .orbit-label:nth-child(1) { top: 34px; left: 116px; }
+      .orbit-label:nth-child(2) { top: 156px; right: -30px; }
+      .orbit-label:nth-child(3) { bottom: 26px; left: 87px; }
+      .cover-meta { position: absolute; left: 76px; bottom: 46px; margin: 0; color: rgba(255, 255, 255, 0.4); font-size: 10px; letter-spacing: 0.14em; }
+      .cover .slide-number { color: rgba(255, 255, 255, 0.55); }
+
+      /* 02 — overview */
+      .three-act {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+        margin-top: 48px;
+      }
+
+      .three-act::before {
+        content: "";
+        position: absolute;
+        top: 48px;
+        left: 15%;
+        right: 15%;
+        height: 2px;
+        background: linear-gradient(90deg, var(--violet), var(--magenta));
+      }
+
+      .act {
+        position: relative;
+        min-height: 218px;
+        padding: 80px 28px 28px;
+        border-top: 1px solid var(--line);
+      }
+
+      .act-number {
+        position: absolute;
+        top: 25px;
+        left: 28px;
+        z-index: 1;
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 7px solid var(--paper);
+        border-radius: 50%;
+        color: white;
+        background: var(--violet);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .act:nth-child(3) .act-number { background: #6b42b8; }
+      .act:nth-child(4) .act-number { background: var(--magenta); }
+      .act h3 { font-size: 30px; }
+      .act p { margin: 12px 0 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
+
+      /* 03 — capture */
+      .capture .slide-frame { background: #f1edf6; }
+
+      .capture-timeline {
+        display: grid;
+        grid-template-columns: 0.8fr 2.15fr 0.95fr;
+        gap: 16px;
+        margin-top: 34px;
+      }
+
+      .time-phase {
+        min-height: 270px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: rgba(255, 254, 250, 0.82);
+      }
+
+      .time-phase.is-live {
+        border-color: rgba(112, 65, 230, 0.28);
+        background: white;
+        box-shadow: var(--shadow);
+      }
+
+      .phase-time { display: block; margin-bottom: 18px; color: var(--violet); font-size: 11px; font-weight: 780; letter-spacing: 0.1em; }
+      .phase-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .phase-title h3 { margin: 0; }
+      .recording-badge { padding: 6px 9px; border-radius: 999px; color: white; background: var(--magenta); font-size: 9px; font-weight: 800; letter-spacing: 0.08em; }
+
+      .capture-sources {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .capture-source {
+        min-height: 146px;
+        padding: 18px;
+        border-radius: 16px;
+        color: white;
+        background: var(--ink);
+      }
+
+      .capture-source b,
+      .capture-source small { display: block; }
+      .capture-source b { margin-top: 20px; font-size: 17px; }
+      .capture-source small { margin-top: 7px; color: rgba(255, 255, 255, 0.57); font-size: 10px; line-height: 1.45; }
+      .source-mark { width: 34px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, var(--violet), var(--magenta)); }
+
+      .phase-list { display: grid; gap: 9px; margin-top: 20px; }
+      .phase-list span { padding: 10px 12px; border-radius: 10px; color: var(--muted); background: rgba(31, 24, 37, 0.055); font-size: 12px; line-height: 1.4; }
+      .batch-step { margin-top: 20px; padding: 16px; border-radius: 14px; color: var(--violet-deep); background: var(--violet-soft); }
+      .batch-step b, .batch-step small { display: block; }
+      .batch-step b { font-size: 15px; }
+      .batch-step small { margin-top: 6px; font-size: 10px; line-height: 1.45; }
+      .capture-note { margin: 16px 0 0; color: var(--muted); font-size: 13px; }
+      .capture-note strong { color: var(--violet-deep); }
+
+      /* 04 — summary */
+      .summary-layout {
+        display: grid;
+        grid-template-columns: 0.88fr 44px 1.12fr;
+        gap: 22px;
+        align-items: center;
+        margin-top: 32px;
+      }
+
+      .evidence-stack { display: grid; gap: 12px; }
+      .evidence-card { display: grid; grid-template-columns: 42px 1fr; gap: 14px; align-items: center; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+      .evidence-card span { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: var(--violet); background: var(--violet-soft); font-size: 9px; font-weight: 800; }
+      .evidence-card b { display: block; font-size: 15px; }
+      .evidence-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+      .summary-sheet { overflow: hidden; }
+      .sheet-bar { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--line); color: var(--muted); background: #f1edf3; font-size: 10px; }
+      .sheet-body { padding: 27px 30px; }
+      .sheet-body h3 { margin: 10px 0 12px; font-size: 29px; }
+      .sheet-body > p { margin-bottom: 20px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+      .summary-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .summary-facts div { padding: 14px; border-radius: 13px; background: #f2edf9; }
+      .summary-facts strong { display: block; margin-bottom: 6px; color: var(--violet); font-size: 10px; }
+      .summary-facts span { font-size: 12px; line-height: 1.4; }
+      .source-remains { margin: 18px 0 0 !important; padding: 12px 14px; border-left: 3px solid var(--green); color: var(--green) !important; background: rgba(38, 125, 104, 0.08); font-size: 12px !important; font-weight: 700; }
+
+      /* 05 — end to end */
+      .end-to-end h2 { font-size: 48px; }
+
+      .flow-line {
+        display: grid;
+        grid-template-columns: 0.96fr 34px 1.05fr 34px 0.92fr 34px 0.82fr;
+        align-items: stretch;
+        margin-top: 32px;
+      }
+
+      .flow-stage {
+        min-height: 250px;
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 14px 40px rgba(35, 25, 45, 0.08);
+      }
+
+      .flow-stage.is-primary { border-color: rgba(112, 65, 230, 0.3); background: var(--violet-soft); }
+      .flow-stage.is-summary { color: white; border-color: transparent; background: var(--ink); }
+      .flow-stage.is-export { border-color: rgba(200, 64, 213, 0.28); }
+      .flow-stage .micro { display: block; margin-bottom: 19px; }
+      .flow-stage.is-summary .micro { color: #c7b2ff; }
+      .flow-items { display: grid; gap: 8px; margin-top: 15px; }
+      .flow-items span { padding: 8px 10px; border-radius: 9px; color: var(--muted); background: rgba(31, 24, 37, 0.055); font-size: 10px; line-height: 1.35; }
+      .flow-stage.is-primary .flow-items span { color: var(--violet-deep); background: rgba(112, 65, 230, 0.1); }
+      .flow-stage.is-summary .flow-items span { color: rgba(255, 255, 255, 0.75); background: rgba(255, 255, 255, 0.08); }
+      .flow-stage.is-export .flow-items span { color: #7d297f; background: rgba(200, 64, 213, 0.09); }
+      .flow-note { margin: 15px 0 0; color: var(--muted); font-size: 12px; }
+
+      /* 06 — storage boundary */
+      .storage .slide-frame { background: #ece8f0; }
+
+      .boundary-map {
+        display: grid;
+        grid-template-columns: 1.45fr 60px 0.72fr;
+        gap: 18px;
+        align-items: center;
+        margin-top: 30px;
+      }
+
+      .mac-boundary {
+        position: relative;
+        min-height: 292px;
+        padding: 32px 28px 23px;
+        border: 2px solid var(--violet);
+        border-radius: 28px;
+        background: rgba(255, 254, 250, 0.82);
+        box-shadow: var(--shadow);
+      }
+
+      .boundary-label {
+        position: absolute;
+        top: -13px;
+        left: 26px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        color: white;
+        background: var(--violet);
+        font-size: 10px;
+        font-weight: 780;
+      }
+
+      .local-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      .local-card { min-height: 151px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: white; }
+      .local-card span { display: inline-block; margin-bottom: 18px; padding: 6px 8px; border-radius: 7px; color: var(--violet); background: var(--violet-soft); font-size: 9px; font-weight: 800; }
+      .local-card h3 { font-size: 17px; }
+      .local-card p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .local-foot { margin: 17px 0 0; color: var(--violet-deep); font-size: 12px; font-weight: 700; }
+
+      .boundary-arrow { display: grid; place-items: center; gap: 9px; color: var(--violet); text-align: center; }
+      .boundary-arrow span { font-size: 9px; font-weight: 800; line-height: 1.35; }
+      .external-stack { display: grid; gap: 12px; }
+      .external-card { padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 254, 250, 0.9); }
+      .external-card b { display: block; font-size: 15px; }
+      .external-card small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+      .not-cloud { margin: 14px 0 0; color: var(--violet-deep); font-size: 13px; font-weight: 730; }
+
+      /* 07 — hybrid search */
+      .hybrid .slide-frame { background: #f1edf6; }
+
+      .hybrid-map {
+        display: grid;
+        grid-template-columns: 0.82fr 44px 1.22fr 44px 0.94fr;
+        gap: 18px;
+        align-items: center;
+        margin-top: 34px;
+      }
+
+      .search-query,
+      .search-result {
+        min-height: 238px;
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--card);
+        box-shadow: 0 14px 40px rgba(35, 25, 45, 0.08);
+      }
+
+      .search-query h3 { margin: 28px 0 12px; font-size: 24px; }
+      .search-query p,
+      .search-result p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+      .search-branches { display: grid; gap: 12px; }
+      .search-engine { min-height: 113px; padding: 18px 20px; border: 1px solid rgba(112, 65, 230, 0.24); border-radius: 17px; background: rgba(255, 254, 250, 0.86); }
+      .search-engine:last-child { border-color: rgba(200, 64, 213, 0.24); }
+      .search-engine header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+      .search-engine h3 { margin: 0; font-size: 18px; }
+      .search-engine span { color: var(--violet); font-size: 9px; font-weight: 800; letter-spacing: 0.08em; }
+      .search-engine:last-child span { color: var(--magenta); }
+      .search-engine p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .search-result { color: white; border-color: transparent; background: var(--ink); }
+      .search-result .micro { color: #c7b2ff; }
+      .search-result h3 { margin: 24px 0 16px; font-size: 22px; }
+      .search-result p { color: rgba(255, 255, 255, 0.6); }
+      .result-signals { display: grid; gap: 8px; margin-top: 18px; }
+      .result-signals span { padding: 9px 11px; border-radius: 9px; color: rgba(255, 255, 255, 0.76); background: rgba(255, 255, 255, 0.08); font-size: 10px; }
+      .preparation-note { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+      .preparation-note strong { color: var(--violet-deep); }
+
+      /* 08 — browse */
+      .browse-layout { display: grid; grid-template-columns: 0.7fr 1.3fr; gap: 44px; align-items: center; }
+      .browse h2 { font-size: 42px; }
+      .browse-steps { display: grid; gap: 12px; margin-top: 26px; }
+      .browse-step { display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+      .browse-step span { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--violet); background: var(--violet-soft); font-size: 11px; font-weight: 800; }
+      .browse-step b { display: block; font-size: 14px; }
+      .browse-step small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+
+      .app-window { overflow: hidden; }
+      .app-toolbar { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid var(--line); background: #f1edf3; font-size: 10px; }
+      .search-box { width: 190px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: rgba(255, 255, 255, 0.7); }
+      .app-body { display: grid; grid-template-columns: 180px 1fr; min-height: 410px; background: var(--card); }
+      .meeting-list { padding: 16px 12px; border-right: 1px solid var(--line); background: #f5f1f6; }
+      .list-label { display: block; margin: 4px 9px 10px; color: var(--muted); font-size: 9px; font-weight: 760; letter-spacing: 0.08em; }
+      .meeting-item { padding: 11px 10px; border-radius: 10px; color: var(--muted); }
+      .meeting-item.is-active { color: var(--violet-deep); background: rgba(112, 65, 230, 0.12); }
+      .meeting-item b, .meeting-item small { display: block; }
+      .meeting-item b { font-size: 10px; }
+      .meeting-item small { margin-top: 4px; font-size: 8px; opacity: 0.68; }
+      .meeting-detail { padding: 24px 26px; }
+      .event-line { color: var(--muted); font-size: 10px; }
+      .detail-tabs { display: flex; gap: 6px; margin-top: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+      .detail-tabs span { padding: 7px 10px; border-radius: 8px; color: var(--muted); background: rgba(31, 24, 37, 0.05); font-size: 9px; }
+      .detail-tabs .is-active { color: white; background: var(--violet); }
+      .detail-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; margin-top: 16px; }
+      .timeline-card, .detail-summary { padding: 16px; border-radius: 14px; }
+      .timeline-card { border: 1px solid var(--line); }
+      .timeline-row { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 9px; line-height: 1.45; }
+      .timeline-row:last-child { border-bottom: 0; }
+      .timeline-row b { color: var(--violet); }
+      .detail-summary { color: white; background: var(--ink); }
+      .detail-summary .micro { color: #c7b2ff; }
+      .detail-summary h3 { margin-top: 12px; font-size: 17px; }
+      .detail-summary p { margin: 0; color: rgba(255, 255, 255, 0.62); font-size: 9px; line-height: 1.55; }
+
+      /* 09 — AI */
+      .ai .slide-frame { color: white; background: var(--ink); }
+      .ai .slide-frame::before {
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      }
+      .ai .eyebrow, .ai .slide-number { color: #c7b2ff; }
+      .ai .lead { color: rgba(255, 255, 255, 0.6); }
+
+      .ai-map {
+        display: grid;
+        grid-template-columns: 0.9fr 54px 1.45fr;
+        gap: 18px;
+        align-items: center;
+        margin-top: 32px;
+      }
+
+      .ai-entrances { display: grid; gap: 12px; }
+      .ai-entrance { padding: 18px 20px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; background: rgba(255, 255, 255, 0.055); }
+      .ai-entrance b { display: block; font-size: 16px; }
+      .ai-entrance small { display: block; margin-top: 5px; color: rgba(255, 255, 255, 0.5); font-size: 10px; line-height: 1.45; }
+      .ai-entrance code { display: inline-block; margin-top: 10px; padding: 6px 8px; border-radius: 7px; color: #d9caff; background: rgba(112, 65, 230, 0.18); font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 9px; }
+
+      .read-order { padding: 22px 24px; border: 1px solid rgba(199, 178, 255, 0.26); border-radius: 22px; background: rgba(112, 65, 230, 0.12); }
+      .vault-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+      .vault-header b { font-size: 15px; }
+      .vault-header span { padding: 6px 8px; border-radius: 7px; color: #d9caff; background: rgba(199, 178, 255, 0.12); font-size: 9px; font-weight: 800; }
+      .read-steps { display: grid; grid-template-columns: 1fr 42px 1fr; align-items: stretch; }
+      .read-step { padding: 18px; border-radius: 15px; background: rgba(255, 255, 255, 0.07); }
+      .read-step.is-first { color: var(--ink); background: white; }
+      .read-step strong { display: block; font-size: 18px; }
+      .read-step p { margin: 7px 0 0; color: rgba(255, 255, 255, 0.54); font-size: 10px; line-height: 1.45; }
+      .read-step.is-first p { color: var(--muted); }
+      .read-steps .arrow { color: #c7b2ff; }
+      .ai-note { margin: 14px 0 0; color: rgba(255, 255, 255, 0.54); font-size: 11px; }
+
+      /* 10 — close */
+      .close .slide-frame {
+        color: white;
+        text-align: center;
+        background: linear-gradient(135deg, #4b1eaa 0%, #7041e6 48%, #9f3dbf 100%);
+      }
+
+      .close .slide-frame::before { opacity: 0.25; }
+      .close-brand { width: 84px; height: 84px; margin: 0 auto 26px; border-radius: 20px; box-shadow: 0 18px 52px rgba(20, 10, 35, 0.28); }
+      .close h2 { margin-bottom: 18px; font-size: 62px; }
+      .close .lead { margin-inline: auto; color: rgba(255, 255, 255, 0.7); }
+      .closing-flow { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 42px; }
+      .closing-flow strong { min-width: 180px; padding: 16px 20px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 16px; background: rgba(255, 255, 255, 0.1); font-size: 16px; }
+      .closing-flow span { color: rgba(255, 255, 255, 0.65); }
+      .close .slide-number { color: rgba(255, 255, 255, 0.62); }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+        }
+      }
+
+      @media print {
+        @page { size: 16in 9in; margin: 0; }
+
+        html, body {
+          width: 16in;
+          background: white;
+          scroll-snap-type: none;
+        }
+
+        .slide {
+          width: 16in;
+          height: 9in;
+          min-height: 0;
+          page-break-after: always;
+          break-after: page;
+        }
+
+        .slide-frame {
+          position: relative;
+          top: 0;
+          left: 0;
+          width: 16in;
+          height: 9in;
+          transform: none;
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+
+        .slide:last-of-type { page-break-after: auto; break-after: auto; }
+        .deck-progress, .deck-nav, .keyboard-hint { display: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="deck-progress" aria-hidden="true"><span data-progress></span></div>
+    <p class="keyboard-hint">矢印キー / Space で移動</p>
+
+    <main aria-label="Dahlia デスクトップアプリ紹介スライド">
+      <section class="slide cover" id="slide-1" aria-labelledby="slide-1-title" data-slide>
+        <div class="slide-frame">
+          <div class="cover-brand">
+            <img src="../../assets/app-icon.png" alt="" width="52" height="52" />
+            <span>Dahlia</span>
+          </div>
+          <div class="cover-copy">
+            <h1 id="slide-1-title"><span>会議の記憶を、</span><span>次の仕事へ。</span></h1>
+            <p class="lead">音声・画面・予定をひとつの記録にまとめ、必要なときに根拠まで振り返れるmacOSアプリです。</p>
+          </div>
+          <div class="cover-visual" aria-hidden="true">
+            <span class="orbit-label">音声</span>
+            <span class="orbit-label">画面</span>
+            <span class="orbit-label">予定</span>
+          </div>
+          <p class="cover-meta">DESKTOP APP INTRODUCTION · INTERNAL</p>
+          <span class="slide-number">01 / 10</span>
+        </div>
+      </section>
+
+      <section class="slide overview" id="slide-2" aria-labelledby="slide-2-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">02 / 10</span>
+          <p class="eyebrow">02 · Dahliaとは</p>
+          <h2 id="slide-2-title">会議を<span class="accent">録る・残す・活かす</span>を、<br />ひとつの流れに。</h2>
+          <p class="lead">Dahliaは、ひとりで使うmacOSの会議記録アプリです。会議中のメモを減らし、あとから確かな情報へ戻れる状態をつくります。</p>
+          <div class="three-act" aria-label="Dahliaの3つの役割">
+            <article class="act"><span class="act-number">1</span><h3>録る</h3><p>マイクとシステム音声を録音し、画面の変化とカレンダー予定も会議にまとめます。</p></article>
+            <article class="act"><span class="act-number">2</span><h3>残す</h3><p>音声と画像を一次ソースとして保持し、会議後に精度を優先してバッチ文字起こしします。</p></article>
+            <article class="act"><span class="act-number">3</span><h3>活かす</h3><p>Summaryを読み、必要なら根拠をたどり、ObsidianやGoogle Docsへ書き出します。</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide capture" id="slide-3" aria-labelledby="slide-3-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">03 / 10</span>
+          <p class="eyebrow">03 · 会議中</p>
+          <h2 id="slide-3-title">会議中は、<span class="accent">音声と画面を並行して保存。</span></h2>
+          <p class="lead">Dahliaは録音音声と自動取得した画像を、同じMeeting・同じ時間軸の一次ソースとして残します。</p>
+          <div class="capture-timeline" aria-label="会議前から会議後までの記録の流れ">
+            <article class="time-phase">
+              <span class="phase-time">会議の前</span>
+              <h3>予定を確認</h3>
+              <div class="phase-list"><span>会議名・日時</span><span>参加者・会議リンク</span><span>予定から録音を開始</span></div>
+            </article>
+            <article class="time-phase is-live">
+              <span class="phase-time">会議中</span>
+              <div class="phase-title"><h3>2つの一次ソース</h3><span class="recording-badge">RECORDING</span></div>
+              <div class="capture-sources">
+                <div class="capture-source"><span class="source-mark"></span><b>録音音声</b><small>マイク ＋ システム音声<br />自分と相手の会話を保存</small></div>
+                <div class="capture-source"><span class="source-mark"></span><b>スクリーンショット</b><small>画面の変化を自動取得<br />撮影時刻とともに保存</small></div>
+              </div>
+            </article>
+            <article class="time-phase">
+              <span class="phase-time">会議の後</span>
+              <h3>音声を文字に</h3>
+              <div class="batch-step"><b>バッチ文字起こし</b><small>録音後にまとめて処理し、精度を優先したTranscriptを作成</small></div>
+              <div class="phase-list"><span>必要ならSummaryを生成</span></div>
+            </article>
+          </div>
+          <p class="capture-note"><strong>ポイント：</strong> リアルタイム文字起こしではなく、録音後のバッチ処理を基本にしています。</p>
+        </div>
+      </section>
+
+      <section class="slide summary" id="slide-4" aria-labelledby="slide-4-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">04 / 10</span>
+          <p class="eyebrow">04 · 会議後</p>
+          <h2 id="slide-4-title">保存した情報から、<span class="accent">読みやすいSummaryへ。</span></h2>
+          <p class="lead">Summaryは会議の入口です。短く把握したあと、気になる点は文字起こしや画像で確かめられます。</p>
+          <div class="summary-layout">
+            <div class="evidence-stack" aria-label="Summaryの元になる保存済み情報">
+              <article class="evidence-card"><span>TEXT</span><div><b>バッチ文字起こし</b><small>録音音声から作成したTranscript</small></div></article>
+              <article class="evidence-card"><span>IMAGE</span><div><b>スクリーンショット</b><small>その時に見ていた画面</small></div></article>
+              <article class="evidence-card"><span>EVENT</span><div><b>カレンダー予定</b><small>会議名・日時・参加情報</small></div></article>
+            </div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <article class="summary-sheet panel" aria-label="生成される会議Summaryの例">
+              <div class="sheet-bar"><span>プロダクト定例</span><b>SUMMARY</b></div>
+              <div class="sheet-body">
+                <span class="micro">AIで生成</span>
+                <h3>共有フローの改善を優先</h3>
+                <p>次期リリースでは、招待から初回共有までの迷いを減らすことを優先します。</p>
+                <div class="summary-facts">
+                  <div><strong>決定事項</strong><span>案内を1画面にまとめる</span></div>
+                  <div><strong>次のアクション</strong><span>金曜までに試作を更新</span></div>
+                </div>
+                <p class="source-remains">画像・予定情報と文字起こしから根拠へ戻れます。音声保持は設定に従います。</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide end-to-end" id="slide-5" aria-labelledby="slide-5-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">05 / 10</span>
+          <p class="eyebrow">05 · 全体の流れ</p>
+          <h2 id="slide-5-title">取得 → 一次ソース → Summary → <span class="magenta">書き出し。</span></h2>
+          <p class="lead">Dahliaは元の記録を残したまま、会議を読みやすくし、必要な場所へ持ち出せる形にします。</p>
+          <div class="flow-line" aria-label="Dahliaのデータフロー全体像">
+            <article class="flow-stage"><span class="micro">1 · 取得</span><h3>会議を記録</h3><div class="flow-items"><span>マイク ＋ システム音声</span><span>画面の自動取得</span><span>カレンダー予定</span></div></article>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <article class="flow-stage is-primary"><span class="micro">2 · 一次ソース</span><h3>根拠を保持</h3><div class="flow-items"><span>録音音声</span><span>スクリーンショット</span><span>会議の予定情報</span><span>音声からバッチ文字起こし</span></div></article>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <article class="flow-stage is-summary"><span class="micro">3 · 生成</span><h3>Summary</h3><div class="flow-items"><span>概要</span><span>決定事項</span><span>次のアクション</span></div></article>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <article class="flow-stage is-export"><span class="micro">4 · 書き出し</span><h3>外部で活用</h3><div class="flow-items"><span>Obsidian / Markdown</span><span>Google Docs</span></div></article>
+          </div>
+          <p class="flow-note">Summary生成・Google連携・外部への書き出しは任意です。使わない場合も、保存済みの記録はDahliaから参照できます。</p>
+        </div>
+      </section>
+
+      <section class="slide storage" id="slide-6" aria-labelledby="slide-6-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">06 / 10</span>
+          <p class="eyebrow">06 · 保存場所</p>
+          <h2 id="slide-6-title">記録は<span class="accent">まずMacの中。</span><br />外へ出すのは、自分で選んだとき。</h2>
+          <p class="lead">クラウドへ常時保存する仕組みではありません。Dahliaの基本の記録と参照は、Mac内のデータを中心に動きます。</p>
+          <div class="boundary-map" aria-label="Mac内の保存と任意の外部出力">
+            <div class="mac-boundary">
+              <span class="boundary-label">YOUR MAC · DAHLIA</span>
+              <div class="local-grid">
+                <article class="local-card"><span>SOURCES</span><h3>一次ソース</h3><p>録音音声、スクリーンショット、会議の予定情報</p></article>
+                <article class="local-card"><span>PROCESSED</span><h3>Transcript</h3><p>録音音声からバッチ処理した、確定文字起こし</p></article>
+                <article class="local-card"><span>GENERATED</span><h3>Summary</h3><p>任意で生成した概要、決定事項、次のアクション</p></article>
+              </div>
+              <p class="local-foot">音声を残す期間は保持設定に従います。画像・文字・予定情報はMeetingから参照できます。</p>
+            </div>
+            <div class="boundary-arrow" aria-hidden="true">
+              <span>明示的に<br />実行した時だけ</span>
+              <svg width="44" height="24" viewBox="0 0 44 24" fill="none"><path d="M2 12h36m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="external-stack">
+              <article class="external-card"><b>Obsidian / Markdown</b><small>選んだVaultやフォルダへSummaryを書き出す</small></article>
+              <article class="external-card"><b>Google Docs</b><small>Google連携を設定した場合のみ作成・更新</small></article>
+              <article class="external-card"><b>AI機能</b><small>質問や要約を実行したときだけ必要な文脈を利用</small></article>
+            </div>
+          </div>
+          <p class="not-cloud">AI・Google連携は任意の付加機能です。未設定でも、録音・バッチ文字起こし・検索は使えます。</p>
+        </div>
+      </section>
+
+      <section class="slide hybrid" id="slide-7" aria-labelledby="slide-7-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">07 / 10</span>
+          <p class="eyebrow">07 · 検索 · 準備中</p>
+          <h2 id="slide-7-title">同じ言葉も、<span class="accent">近い意味も探せるように。</span></h2>
+          <p class="lead">全文検索とベクトル検索を組み合わせ、言葉が一致する記録と、内容が近い記録の両方を見つけるハイブリッドサーチを準備しています。</p>
+          <div class="hybrid-map" aria-label="FTS5全文検索とGemma Embeddingベクトル検索を組み合わせる流れ">
+            <article class="search-query">
+              <span class="micro">SEARCH</span>
+              <h3>「あの会議で決めた共有方法」</h3>
+              <p>会議名や発言を正確に思い出せなくても、覚えている言葉から検索します。</p>
+            </article>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="search-branches">
+              <article class="search-engine"><header><h3>FTS5 全文検索</h3><span>同じ言葉</span></header><p>名前や用語など、入力した言葉が含まれる記録を素早く探します。</p></article>
+              <article class="search-engine"><header><h3>Gemma Embedding</h3><span>近い意味</span></header><p>言い換えや似た内容をベクトルで比較し、意味が近い記録を探します。</p></article>
+            </div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <article class="search-result">
+              <span class="micro">HYBRID SEARCH</span>
+              <h3>2つの結果をまとめて、見つけやすい順に。</h3>
+              <p>言葉の一致と意味の近さを組み合わせ、目的のMeetingへ案内します。</p>
+              <div class="result-signals"><span>言葉が一致した記録</span><span>内容が近い記録</span></div>
+            </article>
+          </div>
+          <p class="preparation-note"><strong>準備中の機能です。</strong> 検索対象や結果の並べ方など、仕様・表示は変更になる場合があります。</p>
+        </div>
+      </section>
+
+      <section class="slide browse" id="slide-8" aria-labelledby="slide-8-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">08 / 10</span>
+          <div class="browse-layout">
+            <div>
+              <p class="eyebrow">08 · アプリから参照</p>
+              <h2 id="slide-8-title">探して、開いて、<span class="accent">根拠まで確認。</span></h2>
+              <p class="lead">Meetingをひとつ開けば、予定情報・文字起こし・画面・Summaryが同じ場所にそろいます。</p>
+              <div class="browse-steps">
+                <div class="browse-step"><span>1</span><div><b>一覧・検索でMeetingを探す</b><small>タイトル、期間、Projectなどで絞り込み</small></div></div>
+                <div class="browse-step"><span>2</span><div><b>Summaryで要点をつかむ</b><small>概要、決定事項、次のアクション</small></div></div>
+                <div class="browse-step"><span>3</span><div><b>時間軸で元情報へ戻る</b><small>発言とスクリーンショットを照らし合わせる</small></div></div>
+              </div>
+            </div>
+            <div class="app-window panel" aria-label="Dahliaで会議を振り返る画面イメージ">
+              <div class="app-toolbar"><b>Dahlia · Meetings</b><span class="search-box">⌕ 会議を検索</span></div>
+              <div class="app-body">
+                <aside class="meeting-list">
+                  <span class="list-label">MEETINGS</span>
+                  <div class="meeting-item is-active"><b>プロダクト定例</b><small>今日 · 10:00</small></div>
+                  <div class="meeting-item"><b>お客様との相談</b><small>昨日 · 15:30</small></div>
+                  <div class="meeting-item"><b>週次ふりかえり</b><small>8月14日 · 17:00</small></div>
+                </aside>
+                <div class="meeting-detail">
+                  <span class="micro">MEETING</span>
+                  <h3>プロダクト定例</h3>
+                  <p class="event-line">今日 10:00–10:45 · 予定情報</p>
+                  <div class="detail-tabs"><span class="is-active">すべて</span><span>文字起こし</span><span>画面</span><span>Summary</span></div>
+                  <div class="detail-grid">
+                    <div class="timeline-card">
+                      <div class="timeline-row"><b>10:12</b><span>共有までの流れを改善しましょう。</span></div>
+                      <div class="timeline-row"><b>10:18</b><span>設計画面を自動取得</span></div>
+                      <div class="timeline-row"><b>10:25</b><span>担当と期限を金曜日に確認します。</span></div>
+                    </div>
+                    <aside class="detail-summary"><span class="micro">SUMMARY</span><h3>共有フローの改善を優先</h3><p>初回共有までの迷いを減らし、担当と期限を金曜日に再確認します。</p></aside>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide ai" id="slide-9" aria-labelledby="slide-9-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">09 / 10</span>
+          <p class="eyebrow">09 · AIから参照</p>
+          <h2 id="slide-9-title">まずSummary。必要なときだけ、<span style="color:#d9caff">元の記録へ。</span></h2>
+          <p class="lead">アプリ内AIとMCPは、同じ保存済みMeetingを参照します。短い答えから始め、詳細が必要な場合だけ根拠をたどります。</p>
+          <div class="ai-map" aria-label="AIが会議記録を参照する順序">
+            <div class="ai-entrances">
+              <article class="ai-entrance"><b>Dahliaアプリ内AI</b><small>アプリの中で、その会議や過去の記録に質問</small><code>先週から何が変わった？</code></article>
+              <article class="ai-entrance"><b>MCP</b><small>選んだVault内を、既定で読み取り専用に参照</small><code>Claude Code / Codex</code></article>
+            </div>
+            <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="read-order">
+              <div class="vault-header"><b>選択したVault内の保存済み記録</b><span>READ ONLY by default</span></div>
+              <div class="read-steps">
+                <article class="read-step is-first"><span class="micro">STEP 1</span><strong>Summaryを読む</strong><p>まず少ない情報で、要点と答えをつくる</p></article>
+                <div class="arrow" aria-hidden="true"><svg viewBox="0 0 32 24" fill="none"><path d="M2 12h24m-7-7 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <article class="read-step"><span class="micro">STEP 2 · 必要時</span><strong>根拠を確認</strong><p>確定した文字起こしやスクリーンショットを参照</p></article>
+              </div>
+              <p class="ai-note">録音音声や未確定の処理結果は、MCPの参照対象に含みません。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide close" id="slide-10" aria-labelledby="slide-10-title" data-slide>
+        <div class="slide-frame">
+          <span class="slide-number">10 / 10</span>
+          <img class="close-brand" src="../../assets/app-icon.png" alt="Dahlia" width="84" height="84" />
+          <h2 id="slide-10-title">会話に集中。<br />必要な記憶は、あとからたどれる。</h2>
+          <p class="lead">Dahliaは、会議の一次ソースをMacに残し、Summaryから根拠へ戻り、次の仕事へつなげます。</p>
+          <div class="closing-flow" aria-label="Dahliaの利用の流れ"><strong>記録する</strong><span>→</span><strong>根拠をたどる</strong><span>→</span><strong>仕事に活かす</strong></div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="deck-nav" aria-label="スライド操作">
+      <button type="button" data-previous aria-label="前のスライド">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="m11 4-5 5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <output data-counter aria-live="polite">1 / 10</output>
+      <button type="button" data-next aria-label="次のスライド">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><path d="m7 4 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </nav>
+
+    <script>
+      const slides = [...document.querySelectorAll("[data-slide]")];
+      const previousButton = document.querySelector("[data-previous]");
+      const nextButton = document.querySelector("[data-next]");
+      const counter = document.querySelector("[data-counter]");
+      const progress = document.querySelector("[data-progress]");
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      let currentIndex = 0;
+
+      function updateDeckScale() {
+        const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+        document.documentElement.style.setProperty("--deck-scale", scale);
+      }
+
+      function updateControls(index) {
+        currentIndex = index;
+        const position = index + 1;
+        counter.value = `${position} / ${slides.length}`;
+        counter.textContent = counter.value;
+        progress.style.transform = `scaleX(${position / slides.length})`;
+        previousButton.disabled = index === 0;
+        nextButton.disabled = index === slides.length - 1;
+        history.replaceState(null, "", `#${slides[index].id}`);
+      }
+
+      function goTo(index, behavior = reducedMotion.matches ? "instant" : "smooth") {
+        const targetIndex = Math.max(0, Math.min(slides.length - 1, index));
+        document.body.classList.add("has-navigated");
+        slides[targetIndex].scrollIntoView({ behavior, block: "start" });
+        updateControls(targetIndex);
+      }
+
+      const observer = new IntersectionObserver(
+        entries => {
+          const visible = entries
+            .filter(entry => entry.isIntersecting)
+            .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+          if (visible) updateControls(slides.indexOf(visible.target));
+        },
+        { threshold: [0.55, 0.75] }
+      );
+
+      previousButton.addEventListener("click", () => goTo(currentIndex - 1));
+      nextButton.addEventListener("click", () => goTo(currentIndex + 1));
+
+      document.addEventListener("keydown", event => {
+        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+        if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) {
+          event.preventDefault();
+          goTo(currentIndex + 1);
+        } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) {
+          event.preventDefault();
+          goTo(currentIndex - 1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          goTo(0, "instant");
+        } else if (event.key === "End") {
+          event.preventDefault();
+          goTo(slides.length - 1, "instant");
+        }
+      });
+
+      window.addEventListener("hashchange", () => {
+        const index = slides.findIndex(slide => `#${slide.id}` === location.hash);
+        if (index >= 0 && index !== currentIndex) goTo(index, "instant");
+      });
+
+      updateDeckScale();
+      window.addEventListener("resize", updateDeckScale);
+
+      const initialIndex = slides.findIndex(slide => `#${slide.id}` === location.hash);
+      if (initialIndex >= 0) goTo(initialIndex, "instant");
+      else updateControls(0);
+      slides.forEach(slide => observer.observe(slide));
+    </script>
+  </body>
+</html>
