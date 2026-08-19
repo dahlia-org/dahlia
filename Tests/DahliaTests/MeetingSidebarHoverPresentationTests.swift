@@ -64,6 +64,7 @@ struct MeetingSidebarHoverPresentationTests {
             project: project,
             appearance: .default,
             isPinned: true,
+            onOpen: {},
             onTogglePin: {},
             onEdit: {}
         )

@@ -5,23 +5,39 @@ import GRDB
 final class CodexChatContextProvider: CodexChatContextProviding {
     private var vaultID: UUID?
     private var meetingID: UUID?
+    private var projectID: UUID?
     private var draftMeeting: DraftMeeting?
     private var dbQueue: DatabaseQueue?
 
     func update(
         vaultID: UUID?,
         meetingID: UUID?,
+        projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
         self.vaultID = vaultID
         self.meetingID = meetingID
+        self.projectID = projectID
         self.draftMeeting = draftMeeting
         self.dbQueue = dbQueue
     }
 
     func currentContext(vaultID: UUID) async throws -> CodexChatContext? {
         guard self.vaultID == vaultID else { return nil }
+        if let projectID {
+            guard let dbQueue else { throw CodexChatContextError.selectedProjectUnavailable }
+            let project = try await Task.detached(priority: .userInitiated) {
+                try dbQueue.read { db in
+                    try ProjectRecord.fetchResolved(id: projectID, in: db)
+                }
+            }.value
+            guard let project,
+                  project.vaultId == vaultID else {
+                throw CodexChatContextError.selectedProjectUnavailable
+            }
+            return .project(id: project.id, name: project.name, description: project.description)
+        }
         if let draftMeeting {
             return .meetingDraft(
                 id: draftMeeting.id,
@@ -68,11 +84,14 @@ final class CodexChatContextProvider: CodexChatContextProviding {
 
 enum CodexChatContextError: LocalizedError, Equatable {
     case selectedMeetingUnavailable
+    case selectedProjectUnavailable
 
     var errorDescription: String? {
         switch self {
         case .selectedMeetingUnavailable:
             L10n.chatSelectedMeetingUnavailable
+        case .selectedProjectUnavailable:
+            L10n.chatSelectedProjectUnavailable
         }
     }
 }

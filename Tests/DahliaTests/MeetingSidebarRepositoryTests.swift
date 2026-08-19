@@ -371,6 +371,66 @@ import GRDB
             #expect(projection.itemsByKey.values.reduce(0) { $0 + $1.count } == SidebarViewModel.maximumVisibleMeetings)
             #expect(projection.isLimited)
         }
+
+        @Test
+        func fetchesProjectAndDirectChildMeetingsWithinHalfOpenDateRange() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let start = Date(timeIntervalSince1970: 1_800_000_000)
+            let end = start.addingTimeInterval(100)
+            let values = try fixture.manager.dbQueue.write { db in
+                let rootID = try fixture.insertProject(name: "Root", in: db)
+                let childID = try fixture.insertProject(name: "Child", parentID: rootID, in: db)
+                let otherID = try fixture.insertProject(name: "Other", in: db)
+                _ = try fixture.insertMeeting(name: "Root", projectId: rootID, createdAt: start, in: db)
+                _ = try fixture.insertMeeting(name: "Child", projectId: childID, createdAt: end.addingTimeInterval(-1), in: db)
+                _ = try fixture.insertMeeting(name: "Excluded end", projectId: rootID, createdAt: end, in: db)
+                _ = try fixture.insertMeeting(name: "Other", projectId: otherID, createdAt: start, in: db)
+                return (rootID, childID)
+            }
+
+            let page = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchProjectHierarchyMeetingPage(
+                    projectIds: [values.0, values.1],
+                    vaultId: fixture.vault.id,
+                    dateInterval: DateInterval(start: start, end: end),
+                    limit: 50,
+                    in: db
+                )
+            }
+
+            #expect(page.items.map(\.meetingName) == ["Child", "Root"])
+            #expect(page.items.map(\.projectName) == ["Root/Child", "Root"])
+            #expect(!page.hasMore)
+        }
+
+        @Test
+        func capsProjectHierarchyMeetingPage() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let projectID = try fixture.manager.dbQueue.write { db in
+                let projectID = try fixture.insertProject(name: "Project", in: db)
+                for index in 0 ... SidebarViewModel.maximumVisibleMeetings {
+                    _ = try fixture.insertMeeting(
+                        name: "Meeting \(index)",
+                        projectId: projectID,
+                        createdAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                        in: db
+                    )
+                }
+                return projectID
+            }
+
+            let page = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchProjectHierarchyMeetingPage(
+                    projectIds: [projectID],
+                    vaultId: fixture.vault.id,
+                    limit: SidebarViewModel.maximumVisibleMeetings,
+                    in: db
+                )
+            }
+
+            #expect(page.items.count == SidebarViewModel.maximumVisibleMeetings)
+            #expect(page.hasMore)
+        }
     }
 
     private struct MeetingSidebarRepositoryFixture {

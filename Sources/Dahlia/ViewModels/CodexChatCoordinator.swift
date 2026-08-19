@@ -64,7 +64,7 @@ final class CodexChatCoordinator {
 
     func activateVault(_ vaultID: UUID) {
         guard dockedSession.vaultID != vaultID else { return }
-        contextProvider.update(vaultID: vaultID, meetingID: nil, draftMeeting: nil, dbQueue: nil)
+        contextProvider.update(vaultID: vaultID, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
         let session = makeSession(vaultID: vaultID)
         replaceDockedSession(with: session, isVisible: isDockedVisible)
         historyGeneration += 1
@@ -166,12 +166,14 @@ final class CodexChatCoordinator {
     func updateCurrentContext(
         vaultID: UUID?,
         meetingID: UUID?,
+        projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
         dbQueue: DatabaseQueue?
     ) {
         contextProvider.update(
             vaultID: vaultID,
             meetingID: meetingID,
+            projectID: projectID,
             draftMeeting: draftMeeting,
             dbQueue: dbQueue
         )

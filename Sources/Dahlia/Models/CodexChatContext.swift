@@ -1,6 +1,7 @@
 import Foundation
 
 enum CodexChatContext: Equatable {
+    case project(id: UUID, name: String, description: String)
     case meeting(
         id: UUID,
         name: String,
@@ -12,15 +13,21 @@ enum CodexChatContext: Equatable {
         calendarEvent: CodexChatCalendarEventContext?
     )
 
-    var meetingName: String {
+    var displayName: String {
         switch self {
+        case let .project(_, name, _):
+            name
         case let .meeting(_, name, _), let .meetingDraft(_, name, _):
             name
         }
     }
 
+    var meetingName: String { displayName }
+
     var calendarEvent: CodexChatCalendarEventContext? {
         switch self {
+        case .project:
+            nil
         case let .meeting(_, _, calendarEvent), let .meetingDraft(_, _, calendarEvent):
             calendarEvent
         }
@@ -36,6 +43,8 @@ enum CodexChatContext: Equatable {
 
     func sharesConversationSection(with other: Self) -> Bool {
         switch (self, other) {
+        case let (.project(id, _, _), .project(otherID, _, _)):
+            return id == otherID
         case let (.meeting(id, _, _), .meeting(otherID, _, _)):
             return id == otherID
         case let (.meetingDraft(id?, _, _), .meetingDraft(otherID?, _, _)):
@@ -50,6 +59,8 @@ enum CodexChatContext: Equatable {
             guard let calendarIdentity,
                   let otherIdentity = other.calendarIdentity else { return false }
             return calendarIdentity == otherIdentity
+        case (.project, _), (_, .project):
+            return false
         default:
             return false
         }

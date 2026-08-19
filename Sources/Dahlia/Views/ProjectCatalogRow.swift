@@ -5,6 +5,7 @@ struct ProjectCatalogRow: View {
     let appearance: ProjectAppearance
     let isPinned: Bool
     let canCreateMeeting: Bool
+    let onOpen: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onTogglePin: () -> Void
@@ -14,18 +15,24 @@ struct ProjectCatalogRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Label {
-                Text(project.projectName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                ProjectAppearanceIcon(appearance: appearance)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: onOpen) {
+                HStack(spacing: 12) {
+                    Label {
+                        Text(project.projectName)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } icon: {
+                        ProjectAppearanceIcon(appearance: appearance)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(activityDate, format: .relative(presentation: .numeric, unitsStyle: .wide))
-                .foregroundStyle(.secondary)
-                .frame(width: 120, alignment: .leading)
+                    Text(activityDate, format: .relative(presentation: .numeric, unitsStyle: .wide))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 120, alignment: .leading)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
 
             HStack(spacing: 4) {
                 Menu(L10n.projectOptions, systemImage: "ellipsis") {

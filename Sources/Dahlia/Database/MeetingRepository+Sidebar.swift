@@ -272,6 +272,75 @@ extension MeetingRepository {
         )
     }
 
+    nonisolated static func fetchProjectHierarchyMeetingPage(
+        projectIds: [UUID],
+        vaultId: UUID,
+        dateInterval: DateInterval? = nil,
+        after cursor: MeetingSidebarCursor? = nil,
+        limit: Int,
+        in db: Database
+    ) throws -> MeetingSidebarPage {
+        guard !projectIds.isEmpty else {
+            return MeetingSidebarPage(items: [], groups: [], hasMore: false, nextCursor: nil)
+        }
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let projectPaths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0.path) })
+        let placeholders = Array(repeating: "?", count: projectIds.count).joined(separator: ", ")
+        let cursorFilter = sidebarCursorFilter(cursor)
+        let dateFilter = dateInterval == nil
+            ? ""
+            : "AND \(sidebarRecordingStartedAtSQL) >= ? AND \(sidebarRecordingStartedAtSQL) < ?"
+
+        var arguments: StatementArguments = [vaultId]
+        arguments += StatementArguments(projectIds)
+        if let dateInterval {
+            arguments += [dateInterval.start, dateInterval.end]
+        }
+        arguments += cursorFilter.arguments
+        arguments += [limit + 1]
+
+        var items = try MeetingSidebarItem.fetchAll(
+            db,
+            sql: """
+            SELECT
+                meetings.id AS meetingId,
+                meetings.vaultId AS vaultId,
+                meetings.projectId AS projectId,
+                NULL AS projectName,
+                meetings.name AS meetingName,
+                meetings.status AS status,
+                meetings.duration AS duration,
+                meetings.createdAt AS createdAt,
+                meetings.recordingStartedAt AS recordingStartedAt,
+                calendar_events.title AS calendarEventTitle
+            FROM meetings
+            LEFT JOIN calendar_events
+              ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
+             AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
+            WHERE meetings.vaultId = ?
+              AND meetings.projectId IN (\(placeholders))
+              \(dateFilter)
+              \(cursorFilter.condition)
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
+            LIMIT ?
+            """,
+            arguments: arguments
+        )
+        let hasMore = items.count > limit
+        if hasMore {
+            items.removeLast()
+        }
+        for index in items.indices {
+            items[index].projectName = items[index].projectId.flatMap { projectPaths[$0] }
+        }
+        return MeetingSidebarPage(
+            items: items,
+            groups: MeetingDateGrouping.groups(from: items),
+            hasMore: hasMore,
+            nextCursor: items.last.map(MeetingSidebarCursor.init)
+        )
+    }
+
     nonisolated static func fetchMeetingDetail(
         id meetingId: UUID,
         vaultId: UUID,

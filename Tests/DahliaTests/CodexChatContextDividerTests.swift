@@ -28,5 +28,14 @@ import Foundation
             #expect(meetingDivider.accessibilityLabel == L10n.chatContextChanged("Planning"))
             #expect(clearedDivider.accessibilityLabel == L10n.chatContextChanged(L10n.noMeetingSelected))
         }
+
+        @Test
+        func projectDividerUsesProjectName() {
+            let context = CodexChatContext.project(id: .v7(), name: "Customer/Project", description: "Facts")
+            let divider = CodexChatContextDivider(context: context)
+
+            #expect(divider.title == "Customer/Project")
+            #expect(divider.accessibilityLabel == L10n.chatContextChanged("Customer/Project"))
+        }
     }
 #endif

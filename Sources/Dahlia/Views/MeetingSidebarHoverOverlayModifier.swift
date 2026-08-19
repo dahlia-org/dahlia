@@ -3,6 +3,7 @@ import SwiftUI
 private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
     let isVisible: Bool
     let vaultID: UUID?
+    let onOpenProject: (UUID) -> Void
     let onEditProject: (UUID) -> Void
     let onToggleProjectPin: (UUID) -> Void
 
@@ -13,10 +14,12 @@ private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
     init(
         sidebarViewModel: SidebarViewModel,
         isVisible: Bool,
+        onOpenProject: @escaping (UUID) -> Void,
         onEditProject: @escaping (UUID) -> Void,
         onToggleProjectPin: @escaping (UUID) -> Void
     ) {
         self.isVisible = isVisible
+        self.onOpenProject = onOpenProject
         self.onEditProject = onEditProject
         self.onToggleProjectPin = onToggleProjectPin
         vaultID = sidebarViewModel.currentVault?.id
@@ -44,6 +47,7 @@ private struct MeetingSidebarHoverOverlayModifier: ViewModifier {
                         controller: controller,
                         containerOrigin: containerOrigin,
                         windowBounds: windowBounds,
+                        onOpenProject: onOpenProject,
                         onEditProject: onEditProject,
                         onToggleProjectPin: onToggleProjectPin
                     )
@@ -64,12 +68,14 @@ extension View {
     func meetingSidebarHoverOverlay(
         sidebarViewModel: SidebarViewModel,
         isVisible: Bool,
+        onOpenProject: @escaping (UUID) -> Void,
         onEditProject: @escaping (UUID) -> Void,
         onToggleProjectPin: @escaping (UUID) -> Void
     ) -> some View {
         modifier(MeetingSidebarHoverOverlayModifier(
             sidebarViewModel: sidebarViewModel,
             isVisible: isVisible,
+            onOpenProject: onOpenProject,
             onEditProject: onEditProject,
             onToggleProjectPin: onToggleProjectPin
         ))
