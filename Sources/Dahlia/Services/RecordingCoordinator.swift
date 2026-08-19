@@ -116,6 +116,7 @@ final class RecordingCoordinator {
             projectName: project?.projectName,
             vaultURL: vault.url
         )
+        recordDraftNavigation()
     }
 
     func createEmptyMeeting() {
@@ -169,6 +170,7 @@ final class RecordingCoordinator {
             dbQueue: dbQueue,
             vaultURL: vault.url
         )
+        recordDraftNavigation()
     }
 
     func joinCalendarEventAndStartRecording(_ event: CalendarEvent) {
@@ -329,5 +331,10 @@ final class RecordingCoordinator {
     private func openMainWindowOnFailure(if shouldOpen: Bool) {
         guard shouldOpen else { return }
         MainWindowOpener.shared.openMainWindow()
+    }
+
+    private func recordDraftNavigation() {
+        guard let draftMeeting = viewModel.draftMeeting else { return }
+        mainWindowNavigation.recordNavigation(to: .meetingDraft(draftMeeting, noteText: viewModel.noteText))
     }
 }

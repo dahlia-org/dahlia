@@ -9,3 +9,8 @@ struct DraftMeeting: Equatable {
     var projectName: String?
     var allowsCalendarSeriesProjectInheritance = true
 }
+
+struct DraftMeetingMaterialization: Equatable {
+    let draftID: UUID
+    let meetingID: UUID
+}

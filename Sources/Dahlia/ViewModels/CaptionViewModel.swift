@@ -217,6 +217,7 @@ final class CaptionViewModel: ObservableObject {
     var currentProjectName: String?
     var currentVaultURL: URL?
     @Published private(set) var draftMeeting: DraftMeeting?
+    @Published private(set) var pendingDraftMaterializations: [DraftMeetingMaterialization] = []
 
     // MARK: - Summary State
 
@@ -1973,6 +1974,26 @@ final class CaptionViewModel: ObservableObject {
         setupNoteAutoSave()
     }
 
+    func restoreDraftMeeting(
+        _ draftMeeting: DraftMeeting,
+        noteText: String,
+        dbQueue: DatabaseQueue,
+        vaultURL: URL
+    ) {
+        beginDraftMeeting(
+            from: draftMeeting.linkedCalendarEvent,
+            dbQueue: dbQueue,
+            projectURL: draftMeeting.projectURL,
+            projectId: draftMeeting.projectId,
+            projectName: draftMeeting.projectName,
+            vaultURL: vaultURL
+        )
+        guard self.draftMeeting != nil else { return }
+        self.draftMeeting = draftMeeting
+        self.noteText = noteText
+        setupNoteAutoSave()
+    }
+
     func updateDraftMeetingTitle(_ title: String) {
         guard draftMeeting != nil else { return }
         draftMeeting?.title = title
@@ -2039,6 +2060,10 @@ final class CaptionViewModel: ObservableObject {
             dbQueue: dbQueue,
             vaultURL: vaultURL
         )
+        pendingDraftMaterializations.append(DraftMeetingMaterialization(
+            draftID: draftMeeting.id,
+            meetingID: meetingId
+        ))
         setMeetingContext(
             id: meetingId,
             dbQueue: dbQueue,
@@ -2699,6 +2724,12 @@ final class CaptionViewModel: ObservableObject {
 
     private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
         guard existingMeetingId == nil else { return }
+        if let activeDraftMeeting, let currentMeetingId {
+            pendingDraftMaterializations.append(DraftMeetingMaterialization(
+                draftID: activeDraftMeeting.id,
+                meetingID: currentMeetingId
+            ))
+        }
         if activeDraftMeeting == nil, draftMeeting != nil {
             resetNoteState()
         }
@@ -2707,6 +2738,11 @@ final class CaptionViewModel: ObservableObject {
         if activeDraftMeeting != nil {
             saveNoteImmediately()
         }
+    }
+
+    func consumeDraftMaterializations() -> [DraftMeetingMaterialization] {
+        defer { pendingDraftMaterializations.removeAll() }
+        return pendingDraftMaterializations
     }
 
     private func handleRecordingStartFailure(

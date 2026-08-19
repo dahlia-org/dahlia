@@ -144,6 +144,62 @@
         }
 
         @Test
+        func draftNavigationRestoresUpdatedDraftAfterReturningToProjects() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let projectID = UUID.v7()
+            var draft = DraftMeeting(
+                id: .v7(),
+                title: "Planning",
+                projectId: projectID,
+                projectName: "Customer"
+            )
+            navigation.resetNavigationHistory(to: .projects)
+            navigation.recordNavigation(to: .meetingDraft(draft, noteText: ""))
+            draft.title = "Updated planning"
+            navigation.updateDraftNavigation(draft, noteText: "Keep this note")
+
+            await navigateBack(navigation)
+            #expect(navigation.currentLocation == .projects)
+
+            await navigateForward(navigation)
+            guard case let .meetingDraft(restoredDraft, noteText) = navigation.currentLocation else {
+                Issue.record("Expected meeting draft")
+                return
+            }
+            #expect(restoredDraft == draft)
+            #expect(restoredDraft.projectId == projectID)
+            #expect(noteText == "Keep this note")
+        }
+
+        @Test
+        func materializedDraftIsReplacedThroughoutHistory() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let draft = DraftMeeting(id: .v7(), title: "Planning")
+            let meetingID = UUID.v7()
+            navigation.recordNavigation(to: .meetingDraft(draft, noteText: "Note"))
+            navigation.recordNavigation(to: .projects)
+
+            navigation.replaceDraftNavigation(draftID: draft.id, with: meetingID)
+            await navigateBack(navigation)
+
+            #expect(navigation.currentLocation == .meeting(meetingID))
+        }
+
+        @Test
+        func materializedDraftDoesNotLeaveTheCurrentMeetingAsTheNextBackEntry() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let draft = DraftMeeting(id: .v7(), title: "Planning")
+            let meetingID = UUID.v7()
+            navigation.recordNavigation(to: .meetingDraft(draft, noteText: "Note"))
+            navigation.recordNavigation(to: .meeting(meetingID))
+
+            navigation.replaceDraftNavigation(draftID: draft.id, with: meetingID)
+            await navigateBack(navigation)
+
+            #expect(navigation.currentLocation == .upcomingSchedule)
+        }
+
+        @Test
         func resettingHistoryForVaultChangeClearsBothDirections() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             let vaultId = UUID.v7()

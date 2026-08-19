@@ -23,6 +23,39 @@ import GRDB
             ))
         }
 
+        @Test
+        func draftMaterializationOnlyChangesNavigationForTheVisibleDraft() {
+            let meetingID = UUID.v7()
+            let otherMeetingID = UUID.v7()
+            let draft = DraftMeeting(id: .v7(), title: "Draft")
+
+            #expect(ContentView.shouldSelectCurrentMeeting(
+                meetingID,
+                at: .meetingDraft(draft, noteText: "")
+            ))
+            #expect(ContentView.shouldSelectCurrentMeeting(meetingID, at: .meeting(meetingID)))
+            #expect(!ContentView.shouldSelectCurrentMeeting(meetingID, at: .meeting(otherMeetingID)))
+            #expect(!ContentView.shouldSelectCurrentMeeting(meetingID, at: .projects))
+            #expect(!ContentView.shouldSelectCurrentMeeting(meetingID, at: .upcomingSchedule))
+            #expect(!ContentView.shouldSelectCurrentMeeting(meetingID, at: .unprocessedRecordings))
+        }
+
+        @Test
+        func transientDraftRecordingSelectionIsNotRecorded() {
+            #expect(!ContentView.shouldRecordMeetingNavigation(
+                isRecordingStartPending: true,
+                hasDraftMeeting: true
+            ))
+            #expect(ContentView.shouldRecordMeetingNavigation(
+                isRecordingStartPending: true,
+                hasDraftMeeting: false
+            ))
+            #expect(ContentView.shouldRecordMeetingNavigation(
+                isRecordingStartPending: false,
+                hasDraftMeeting: true
+            ))
+        }
+
         @Test(.timeLimit(.minutes(3)))
         func rapidSelectionChangePublishesOnlyLatestMeetingDetail() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
