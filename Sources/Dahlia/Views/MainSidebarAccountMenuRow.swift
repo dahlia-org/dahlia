@@ -44,10 +44,14 @@ struct MainSidebarAccountMenuRow: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 30)
-            .contentShape(.rect(cornerRadius: 7))
+            .contentShape(.rect(corners: .concentric(
+                minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+            )))
             .background(
                 (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.sidebarHighlightColor : .clear,
-                in: .rect(cornerRadius: 7)
+                in: .rect(corners: .concentric(
+                    minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+                ))
             )
             .font(.callout)
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)

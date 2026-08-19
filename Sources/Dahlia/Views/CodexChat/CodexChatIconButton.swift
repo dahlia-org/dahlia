@@ -21,7 +21,7 @@ struct CodexChatIconButton: View {
         .buttonStyle(.plain)
         .background(
             isHovering ? DahliaDesign.contentHighlightColor : .clear,
-            in: RoundedRectangle(cornerRadius: 8)
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
         )
         .onHover { isHovering = $0 }
         .help(label)

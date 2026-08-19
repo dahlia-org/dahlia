@@ -18,7 +18,7 @@ struct CustomerIntelligenceMetricTile: View {
             }
             .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
             .padding()
-            .customerIntelligenceCardSurface()
+            .dahliaCardSurface()
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

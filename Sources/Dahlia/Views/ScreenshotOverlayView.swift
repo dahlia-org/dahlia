@@ -161,7 +161,7 @@ struct ScreenshotOverlayView: View {
         return Image(decorative: image, scale: 1)
             .resizable()
             .frame(width: imageSize.width, height: imageSize.height)
-            .clipShape(.rect(cornerRadius: 8))
+            .clipShape(.rect(cornerRadius: DahliaDesign.Media.cornerRadius))
             .overlay(alignment: .topTrailing) {
                 ScreenshotOverlayControlButton(
                     title: L10n.copyImage,

@@ -63,7 +63,7 @@ struct SummaryProgressToastView: View {
         }
         .padding(12)
         .frame(minWidth: 260, idealWidth: 300, maxWidth: 340)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: DahliaDesign.Card.regularCornerRadius))
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
         .onChange(of: jobs.map(\.id)) { oldIDs, newIDs in
@@ -121,6 +121,9 @@ private struct SummaryGenerationJobProgressView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            Color.primary.opacity(0.055),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+        )
     }
 }

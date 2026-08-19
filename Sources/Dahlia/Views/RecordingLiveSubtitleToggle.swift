@@ -33,10 +33,10 @@ struct RecordingLiveSubtitleToggle: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                 .fill(Color.primary.opacity(0.06))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius))
         .accessibilityLabel(L10n.liveSubtitles)
         .accessibilityValue(isEnabled ? L10n.liveSubtitlesOnStatus : L10n.liveSubtitlesOffStatus)
         .help(isEnabled ? L10n.hideLiveSubtitles : L10n.showLiveSubtitles)

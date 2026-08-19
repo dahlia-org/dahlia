@@ -24,7 +24,12 @@ struct CodexChatMeetingPickerRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isHighlighted ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            isHighlighted ? Color.accentColor.opacity(0.14) : .clear,
+            in: .rect(corners: .concentric(
+                minimum: .fixed(DahliaDesign.Highlight.regularCornerRadius)
+            ))
+        )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isHighlighted ? .isSelected : [])

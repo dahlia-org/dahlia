@@ -32,11 +32,13 @@ struct ProjectNameAppearanceField: View {
                 .onSubmit(onSubmit)
         }
         .frame(height: 52)
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 9))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .stroke(isProjectNameFocused ? Color.accentColor : Color.secondary.opacity(0.25))
+            RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
+                .stroke(Color.secondary.opacity(0.25))
         }
     }
-
 }

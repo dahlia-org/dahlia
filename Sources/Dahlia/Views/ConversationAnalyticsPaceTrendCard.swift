@@ -73,7 +73,7 @@ struct ConversationAnalyticsPaceTrendCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(16)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 
     private func sourceTitle(_ source: RecordingAudioSource) -> String {

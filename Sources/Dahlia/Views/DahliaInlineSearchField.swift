@@ -37,9 +37,9 @@ struct DahliaInlineSearchField: View {
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: 280, minHeight: 24)
-        .background(.background, in: .rect(cornerRadius: 6))
+        .background(.background, in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
                 .stroke(.separator, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)

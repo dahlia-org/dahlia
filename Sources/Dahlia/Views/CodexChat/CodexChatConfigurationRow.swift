@@ -41,7 +41,9 @@ struct CodexChatConfigurationRow: View {
         .buttonStyle(.plain)
         .background(
             isHovering || isSelected ? DahliaDesign.contentHighlightColor : .clear,
-            in: RoundedRectangle(cornerRadius: 8)
+            in: .rect(corners: .concentric(
+                minimum: .fixed(DahliaDesign.Highlight.regularCornerRadius)
+            ))
         )
         .onHover { isHovering = $0 }
         .accessibilityValue(isSelected ? L10n.selected : "")

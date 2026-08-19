@@ -35,7 +35,9 @@ struct MainSearchResultRow: View {
             .contentShape(.rect)
             .background(
                 backgroundColor,
-                in: .rect(cornerRadius: MainSearchDesign.rowCornerRadius)
+                in: .rect(corners: .concentric(
+                    minimum: .fixed(MainSearchDesign.rowCornerRadius)
+                ))
             )
         }
         .buttonStyle(.plain)

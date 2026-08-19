@@ -129,6 +129,6 @@ private extension View {
     func approvalDetailRegion() -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
-            .background(.quaternary, in: .rect(cornerRadius: 10))
+            .background(.quaternary, in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius))
     }
 }

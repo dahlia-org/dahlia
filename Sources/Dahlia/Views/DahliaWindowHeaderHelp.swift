@@ -19,7 +19,7 @@ struct DahliaWindowHeaderHelp: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.black.opacity(0.88), in: .rect(cornerRadius: 10))
+        .background(.black.opacity(0.88), in: .rect(cornerRadius: DahliaDesign.HoverHelp.cornerRadius))
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .fixedSize()
         .allowsHitTesting(false)

@@ -1,6 +1,7 @@
 import CoreGraphics
 
 enum CodexChatDesign {
+    static let panelCornerRadius: CGFloat = 18
     static let liveModeStatusSpacing: CGFloat = 6
     static let liveModeStatusHorizontalPadding: CGFloat = 10
     static let liveModeStatusVerticalPadding: CGFloat = 3
@@ -13,6 +14,7 @@ enum CodexChatDesign {
     static let composerBottomPadding: CGFloat = 8
     static let composerContentPadding: CGFloat = 6
     static let composerCornerRadius: CGFloat = 22
+    static let messageCornerRadius: CGFloat = 14
     static let floatingPanelSpacing: CGFloat = 8
     static let controlSize: CGFloat = 30
     static let headerControlSize: CGFloat = 28

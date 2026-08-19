@@ -68,6 +68,7 @@ struct MainSearchPanel: View {
             RoundedRectangle(cornerRadius: MainSearchDesign.panelCornerRadius)
                 .stroke(.separator, lineWidth: 1)
         }
+        .containerShape(.rect(cornerRadius: MainSearchDesign.panelCornerRadius))
         .shadow(color: .black.opacity(0.18), radius: 28, y: 12)
         .onAppear {
             isSearchFocused = true

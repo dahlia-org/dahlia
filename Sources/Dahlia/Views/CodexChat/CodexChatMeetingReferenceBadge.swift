@@ -10,9 +10,12 @@ struct CodexChatMeetingReferenceBadge: View {
             .frame(maxWidth: 240, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.background.opacity(0.72), in: RoundedRectangle(cornerRadius: 6))
+            .background(
+                .background.opacity(0.72),
+                in: RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     .stroke(.separator, lineWidth: 1)
             }
             .contentShape(.rect)

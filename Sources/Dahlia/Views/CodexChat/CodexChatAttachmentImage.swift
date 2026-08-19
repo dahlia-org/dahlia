@@ -24,7 +24,7 @@ struct CodexChatAttachmentImage: View {
         }
         .frame(width: size, height: size)
         .background(.quaternary)
-        .clipShape(.rect(cornerRadius: 8))
+        .clipShape(.rect(cornerRadius: DahliaDesign.Media.cornerRadius))
         .accessibilityElement()
         .accessibilityLabel(accessibilityLabel)
         .task(id: attachment.id) {

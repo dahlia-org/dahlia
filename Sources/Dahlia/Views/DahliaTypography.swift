@@ -6,6 +6,7 @@ private struct DahliaAppearanceModifier: ViewModifier {
             .font(.body)
             .foregroundStyle(DahliaDesign.primaryTextColor)
             .labelStyle(DahliaFixedSymbolLabelStyle())
+            .buttonBorderShape(.roundedRectangle(radius: DahliaDesign.Button.cornerRadius))
     }
 }
 

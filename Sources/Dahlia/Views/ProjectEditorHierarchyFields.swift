@@ -49,9 +49,12 @@ struct ProjectEditorHierarchyFields: View {
             }
             .padding(12)
         }
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
                 .stroke(Color.secondary.opacity(0.2))
         }
     }

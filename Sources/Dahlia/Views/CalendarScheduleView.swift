@@ -283,9 +283,12 @@ struct CalendarScheduleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
         }
     }
@@ -391,7 +394,6 @@ private struct CalendarScheduleEventRow: View {
                         Label(L10n.join, systemImage: "video.fill")
                     }
                     .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
                 }
 
                 if !event.isAllDay {
@@ -411,10 +413,16 @@ private struct CalendarScheduleEventRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            isHovered ? DahliaDesign.contentHighlightColor : .clear,
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+        )
+        .background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.4), lineWidth: 1)
         }
         .contentShape(Rectangle())

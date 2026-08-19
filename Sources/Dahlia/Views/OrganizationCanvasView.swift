@@ -116,7 +116,7 @@ struct OrganizationCanvasView: View {
             nodeCardContent(node)
         }
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.regularCornerRadius)
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .stroke(
                     isSelected ? Color.accentColor : Color(nsColor: .separatorColor),

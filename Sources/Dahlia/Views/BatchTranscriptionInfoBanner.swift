@@ -23,7 +23,10 @@ struct BatchTranscriptionInfoBanner: View {
             }
         }
         .padding()
-        .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            .blue.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Feedback.cornerRadius)
+        )
         .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
         .padding(.vertical, 4)
     }

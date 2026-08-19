@@ -237,7 +237,10 @@ struct ControlPanelView: View {
             Spacer()
         }
         .padding(8)
-        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            Color.orange.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Feedback.cornerRadius)
+        )
         .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
         .padding(.vertical, 4)
     }

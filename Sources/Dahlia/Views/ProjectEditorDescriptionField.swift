@@ -25,9 +25,12 @@ struct ProjectEditorDescriptionField: View {
                 }
             }
             .frame(minHeight: 120, maxHeight: 150)
-            .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 10))
+            .background(
+                Color(nsColor: .controlBackgroundColor),
+                in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
                     .stroke(Color.secondary.opacity(0.2))
             }
         }

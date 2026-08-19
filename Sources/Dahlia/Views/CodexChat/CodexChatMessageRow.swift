@@ -25,7 +25,10 @@ struct CodexChatMessageRow: View {
                     )
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
+                    .background(
+                        .quaternary,
+                        in: RoundedRectangle(cornerRadius: CodexChatDesign.messageCornerRadius)
+                    )
 
                     if !displayText.isEmpty {
                         CodexChatCopyButton(text: displayText)

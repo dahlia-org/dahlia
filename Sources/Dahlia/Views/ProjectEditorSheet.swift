@@ -117,8 +117,6 @@ struct ProjectEditorSheet: View {
         .padding(24)
         .frame(width: 560, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(.rect(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
         .defaultFocus($isProjectNameFocused, initiallyFocusesName)
     }
 
