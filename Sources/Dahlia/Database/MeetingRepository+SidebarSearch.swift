@@ -87,7 +87,7 @@ extension MeetingRepository {
         in db: Database
     ) throws -> MeetingSearchPage {
         let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
-        guard phase != "failed" else { return .empty(replacesResults: cursor != nil) }
+        guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
 
         let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
         guard !tokens.isEmpty else { return .empty(replacesResults: cursor != nil) }
@@ -183,6 +183,7 @@ extension MeetingRepository {
                         rows: rows,
                         field: field,
                         ordinal: queryToken.ordinal,
+                        token: queryToken.token,
                         into: &meetingHits
                     )
                 }
@@ -274,12 +275,14 @@ extension MeetingRepository {
         rows: [Row],
         field: SearchField,
         ordinal: Int,
+        token: String,
         into meetingHits: inout [UUID: [Int: SearchTokenHit]]
     ) {
         for row in rows {
             let meetingID: UUID = row["meetingId"]
             let hit = SearchTokenHit(
                 field: field,
+                token: token,
                 relevance: row["relevance"],
                 meetingDate: row["meetingDate"]
             )
@@ -426,7 +429,10 @@ extension MeetingRepository {
         case .title:
             return try .init(kind: .title, text: meetingText("name", meetingID: meetingID, in: db))
         case .description:
-            return try .init(kind: .description, text: meetingText("description", meetingID: meetingID, in: db))
+            return try .init(
+                kind: .description,
+                text: snippet(meetingText("description", meetingID: meetingID, in: db), matching: hit.token)
+            )
         case .calendar:
             let calendar = try Row.fetchOne(
                 db,
@@ -444,12 +450,20 @@ extension MeetingRepository {
                 .joined(separator: " ")
             return .init(kind: .calendar, text: value)
         case .tags:
-            let value = try String.fetchAll(
+            let tags = try Row.fetchAll(
                 db,
-                sql: "SELECT tags.name FROM tags JOIN meeting_tags ON tags.id = meeting_tags.tagId WHERE meeting_tags.meetingId = ?",
+                sql: """
+                SELECT tags.name, tags.colorHex
+                FROM tags JOIN meeting_tags ON tags.id = meeting_tags.tagId
+                WHERE meeting_tags.meetingId = ? ORDER BY tags.id
+                """,
                 arguments: [meetingID]
-            ).joined(separator: ", ")
-            return .init(kind: .tag, text: value)
+            )
+            let tag = tags.first(where: { row in
+                let name: String = row["name"]
+                return name.localizedStandardContains(hit.token)
+            }) ?? tags.first
+            return .init(kind: .tag, text: tag?["name"] ?? "", colorHex: tag?["colorHex"])
         case .projectPath:
             let projectID = try UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
             return .init(kind: .project, text: projectID.flatMap { id in projects.first { $0.id == id }?.path } ?? "")
@@ -462,6 +476,19 @@ extension MeetingRepository {
         in db: Database
     ) throws -> String {
         try String.fetchOne(db, sql: "SELECT \(column) FROM meetings WHERE id = ?", arguments: [meetingID]) ?? ""
+    }
+
+    private nonisolated static func snippet(_ text: String, matching token: String) -> String {
+        let maximumLength = 180
+        guard text.count > maximumLength else { return text }
+        guard let match = text.range(
+            of: token,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        ) else { return String(text.prefix(maximumLength)) }
+        let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
+        let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
+        return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
     }
 
     private nonisolated static func searchPlaceholders(_ count: Int) -> String {
@@ -491,7 +518,7 @@ extension MeetingRepository {
         in db: Database
     ) throws -> [UUID] {
         let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
-        guard phase != "failed" else { return [] }
+        guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
         let tokens = try SearchFTS5Tokenizer.queryTokens(for: query, in: db)
         guard !tokens.isEmpty else { return [] }
         let tokenQuery = tokens.enumerated().map { ordinal, token in
@@ -545,6 +572,7 @@ private struct FTSQueryToken {
 
 private struct SearchTokenHit {
     let field: SearchField
+    let token: String
     let relevance: Double
     let meetingDate: Date
 }
@@ -564,9 +592,13 @@ private extension MeetingSearchPage {
 }
 
 private enum MeetingSearchError: LocalizedError {
+    case indexUnavailable
     case queryTooBroad
 
     var errorDescription: String? {
-        L10n.searchQueryTooBroad
+        switch self {
+        case .indexUnavailable: L10n.searchUnavailable
+        case .queryTooBroad: L10n.searchQueryTooBroad
+        }
     }
 }

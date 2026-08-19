@@ -27,22 +27,19 @@ final class AppDatabaseManager: Sendable {
                 withIntermediateDirectories: true
             )
         }
-        var configuration = Configuration()
-        configuration.busyMode = .timeout(5)
-        configuration.prepareDatabase { db in
-            try SearchFTS5Tokenizer.register(in: db)
-        }
+        var configuration = Self.configuration()
         dbQueue = try DatabaseQueue(path: path, configuration: configuration)
+        let usesConcurrentSearch: Bool
         if enablesConcurrentSearch, path != ":memory:" {
-            let journalMode = try dbQueue.writeWithoutTransaction {
+            let journalMode = try? dbQueue.writeWithoutTransaction {
                 try String.fetchOne($0, sql: "PRAGMA journal_mode = WAL")
             }
-            guard journalMode?.lowercased() == "wal" else {
-                throw DatabaseError(message: "Dahlia requires WAL mode for isolated search reads")
-            }
+            usesConcurrentSearch = journalMode?.lowercased() == "wal"
+        } else {
+            usesConcurrentSearch = false
         }
         try Self.migrator.migrate(dbQueue)
-        if !enablesConcurrentSearch || path == ":memory:" {
+        if !usesConcurrentSearch {
             searchDBQueue = dbQueue
         } else {
             configuration.readonly = true
@@ -55,6 +52,16 @@ final class AppDatabaseManager: Sendable {
                 ofItemAtPath: path
             )
         }
+    }
+
+    static func configuration(readonly: Bool = false) -> Configuration {
+        var configuration = Configuration()
+        configuration.readonly = readonly
+        configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try SearchFTS5Tokenizer.register(in: db)
+        }
+        return configuration
     }
 
     func close() throws {

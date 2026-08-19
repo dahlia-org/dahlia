@@ -46,9 +46,44 @@ import GRDB
             #expect(snapshot.0)
             #expect(snapshot.1)
             #expect(snapshot.2 == 0)
-            #expect(snapshot.3?.contains("detail=column") == true)
+            #expect(snapshot.3?.contains("detail=full") == true)
             #expect(snapshot.3?.contains("contentless_delete=1") == true)
             #expect(snapshot.3?.contains("transcript") == false)
+        }
+
+        @Test
+        func fullDetailPreservesBM25TermFrequency() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = Self.makeVault()
+            try database.dbQueue.write { db in
+                try vault.insert(db)
+                for title in ["検索", "検索 検索 検索"] {
+                    let id = UUID.v7()
+                    try upsertDocument(
+                        SearchDocumentProjection(
+                            kind: "project",
+                            sourceID: id,
+                            vaultID: vault.id,
+                            meetingID: nil,
+                            projectID: id,
+                            fields: SearchDocumentFields(
+                                title: title,
+                                description: "",
+                                calendar: "",
+                                tags: "",
+                                projectPath: ""
+                            )
+                        ),
+                        generation: 1,
+                        in: db
+                    )
+                }
+                let scores = try Double.fetchAll(
+                    db,
+                    sql: "SELECT bm25(search_documents_fts) FROM search_documents_fts WHERE search_documents_fts MATCH '検索'"
+                )
+                #expect(Set(scores).count == 2)
+            }
         }
 
         @Test
@@ -419,6 +454,47 @@ import GRDB
             }
             #expect(resumed.0 == "ready")
             #expect(resumed.1 == 0)
+        }
+
+        @Test
+        func permanentlyInvalidJobStopsAfterFiveAttempts() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let targetID = UUID.v7()
+            try await database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'ready' WHERE indexKind = 'fts'")
+                try db.execute(
+                    sql: """
+                    INSERT INTO search_index_jobs(
+                        indexKind, targetKind, targetKey, availableAt, updatedAt
+                    ) VALUES('fts', 'invalid', ?, ?, ?)
+                    """,
+                    arguments: [targetID, Date(), Date()]
+                )
+            }
+
+            for _ in 0 ..< 4 {
+                await database.searchIndexer.drain()
+                try await database.dbQueue.write { db in
+                    try db.execute(
+                        sql: "UPDATE search_index_jobs SET availableAt = ? WHERE targetKey = ?",
+                        arguments: [Date.distantPast, targetID]
+                    )
+                }
+            }
+            let attempts = try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT attempts FROM search_index_jobs WHERE targetKey = ?", arguments: [targetID])
+            }
+            #expect(attempts == 4)
+            await database.searchIndexer.drain()
+
+            let result = try await database.dbQueue.read { db in
+                try (
+                    Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_index_jobs WHERE targetKey = ?", arguments: [targetID]),
+                    String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+                )
+            }
+            #expect(result.0 == 0)
+            #expect(result.1 == "failed")
         }
 
         @Test

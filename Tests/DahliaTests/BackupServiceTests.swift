@@ -66,6 +66,7 @@ import GRDB
                 ).insert(db)
                 try transcript.insert(db)
             }
+            await fixture.database.searchIndexer.drain()
 
             let service = BackupService(
                 dbQueue: fixture.database.dbQueue,

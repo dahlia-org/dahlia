@@ -81,7 +81,7 @@ public final class MeetingAccessStore: Sendable {
             throw MeetingAccessError.searchUnavailable
         }
         let phase: String = row["phase"]
-        guard phase != "failed" else { throw MeetingAccessError.searchUnavailable }
+        guard phase == "ready" else { throw MeetingAccessError.searchUnavailable }
         return row["indexRevision"]
     }
 
@@ -104,7 +104,7 @@ public final class MeetingAccessStore: Sendable {
         )
         defer { sqlite3_progress_handler(db.sqliteConnection, 0, nil, nil) }
         do {
-            return try operation()
+            return try withExtendedLifetime(deadline, operation)
         } catch DatabaseError.SQLITE_INTERRUPT {
             throw MeetingAccessError.searchTimedOut
         }

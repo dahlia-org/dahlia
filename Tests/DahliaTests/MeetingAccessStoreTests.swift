@@ -550,6 +550,13 @@ import ImageIO
             }
 
             try await fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'metadata' WHERE indexKind = 'fts'")
+            }
+            #expect(throws: MeetingAccessError.searchUnavailable) {
+                try store.queryMeetings(.init(query: "planning"))
+            }
+
+            try await fixture.manager.dbQueue.write { db in
                 try db.execute(sql: "UPDATE search_index_state SET phase = 'failed' WHERE indexKind = 'fts'")
             }
             #expect(throws: MeetingAccessError.searchUnavailable) {
@@ -792,7 +799,7 @@ import ImageIO
             let detail = try store.meeting(id: fixture.firstMeetingID)
             #expect(detail.meeting.project == nil)
             #expect(detail.meeting.projectID == nil)
-            #expect(try store.queryMeetings(MeetingQuery(query: "Other vault project")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "Other vault project", simple: true)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
             let transcript = try store.transcript(meetingID: fixture.firstMeetingID)
             let segment = try #require(transcript.segments.first(where: { $0.id == fixture.firstSegmentID }))
@@ -1085,7 +1092,7 @@ import ImageIO
             #expect((originalProperties["limit"] as? [String: Any])?["maximum"] as? Int == 1)
 
             let queryCall = try Self.json(server.handleLine(#"""
-            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning"}}}
+            {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"query_meetings","arguments":{"query":"planning","simple":true}}}
             """#))
             let queryResult = try #require(queryCall["result"] as? [String: Any])
             #expect(queryResult["isError"] as? Bool == false)

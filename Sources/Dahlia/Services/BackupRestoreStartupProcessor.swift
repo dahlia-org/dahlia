@@ -134,9 +134,10 @@ enum BackupRestoreStartupProcessor {
     }
 
     private static func validateRestoredDatabase(at url: URL) throws {
-        var configuration = Configuration()
-        configuration.readonly = true
-        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
+        let queue = try DatabaseQueue(
+            path: url.path,
+            configuration: AppDatabaseManager.configuration(readonly: true)
+        )
         try queue.read { db in
             let quickCheck = try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
             guard quickCheck == "ok",
@@ -154,7 +155,10 @@ enum BackupRestoreStartupProcessor {
         for databaseURL: URL,
         fileManager: FileManager
     ) throws {
-        let queue = try DatabaseQueue(path: databaseURL.path)
+        let queue = try DatabaseQueue(
+            path: databaseURL.path,
+            configuration: AppDatabaseManager.configuration()
+        )
         try queue.writeWithoutTransaction { db in
             _ = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)")
         }

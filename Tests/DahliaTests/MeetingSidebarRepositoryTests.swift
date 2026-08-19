@@ -166,6 +166,16 @@ import GRDB
             #expect(page.items.count == 1)
             #expect(page.items.first?.searchMatchContext?.kind == .description)
             #expect(page.items.first?.searchMatchContext?.text.contains("budget") == true)
+            #expect(page.items.first?.searchMatchContext?.text.hasPrefix("…") == true)
+
+            let tagPage = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: fixture.vault.id,
+                criteria: MeetingSearchCriteria(text: "Customer"),
+                limit: 50,
+                dbQueue: fixture.manager.dbQueue
+            )
+            #expect(tagPage.items.first?.searchMatchContext?.text == "Important Customer")
+            #expect(tagPage.items.first?.searchMatchContext?.colorHex == "#808080")
         }
 
         @Test
@@ -467,7 +477,7 @@ import GRDB
                 let titleID = try insertMeeting(name: "Quarterly Plan", in: db)
                 let descriptionID = try insertMeeting(
                     name: "Description match",
-                    description: "Discuss the budget forecast",
+                    description: String(repeating: "Introductory context. ", count: 12) + "Discuss the budget forecast",
                     in: db
                 )
                 let childProjectID = try insertNestedProject(childName: "Zephyr", in: db)

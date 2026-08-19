@@ -15,13 +15,14 @@
 - FTS5 tokenizer は Lindera 2.0.1 と埋め込み IPADIC を使う arm64 static XCFramework とする。YAML 設定は Rust バイナリへ埋め込み、version と hash を DB に永続化する。release panic は unwind とし、全 C ABI を panic boundary で保護する。
 - source table の trigger は `search_index_jobs` の upsert だけを行う。calendar/tag 更新は参照する meeting、project の階層更新は変更 subtree だけを enqueue・再索引する。transcript 更新は job を生成しない。形態素解析と FTS 更新は utility-priority の `SearchIndexer` actor が非同期に処理し、録音中は停止する。cleanup job は analyzer failure 中も処理する。
 - 通常更新は source hash が同じ FTS 行の再処理を省略する。明示的な再構築と乖離修復は source hash にかかわらず全行を再トークナイズする。
-- v35 適用後は meeting metadata と project を backfill する。初期構築中は完成済みの部分結果だけを返し、旧 metadata 部分一致へはフォールバックしない。
-- query は2文字以上、最大16 token とし、最後の token だけ prefix にする。各 token は独立に検索し、meeting metadata の異なる field に分散していても全 token が揃えば一致とする。phrase や隣接性は要求しないため FTS は `detail=column` とする。
+- v35 適用後は meeting metadata と project を backfill する。初期構築・再構築中は検索 unavailable とし、旧 metadata 部分一致へはフォールバックしない。
+- query は2文字以上、最大16 token とし、最後の token だけ prefix にする。各 token は独立に検索し、meeting metadata の異なる field に分散していても全 token が揃えば一致とする。phrase や隣接性は要求しないが、BM25 の語頻度を保持するため FTS は `detail=full` とする。
 - MCP の `query_meetings` も既定で同じ FTS projection を使う。`simple: true` の場合だけ、metadata に対する literal substring (`LIKE`) 検索を使う。
 - `fts5vocab` の文書頻度が最小の token から候補 meeting を作り、残りの token と evidence ranking は候補文書内で評価する。token 集合を交差させてから pagination し、候補数によって全 token 一致を取りこぼさない。SQLite read は 30 秒でキャンセルし、時間内に完了しない広い query には絞り込みを求める。
 - 順位は title、tag/path/calendar、description の証拠クラスを優先し、全 token のうち最も弱い証拠と BM25 を使う。hit 数は加算しない。cursor は FTS revision と offset を持つ。source job の enqueue と projection の各変更で revision を同じ transaction 内に進め、revision が変われば active query と pagination を先頭から置換する。
 - FTS secure-delete と一時的な SQLite `secure_delete=ON` を索引削除に使う。
 - Settings の検索カテゴリで phase、進捗、pending/processing job、error を表示し、全件再構築を要求できるようにする。
+- 同じ job が5回失敗した場合は queue から除去して index を failed にし、無制限 retry を行わない。
 
 ## Consequences
 

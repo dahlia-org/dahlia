@@ -69,7 +69,7 @@ enum SearchDocumentsMigration {
         projectPath,
         content='',
         contentless_delete=1,
-        detail=column,
+        detail=full,
         prefix='2 3',
         tokenize='dahlia_lindera_ipadic_v1'
     );

@@ -7,8 +7,11 @@ actor SearchIndexer {
     private let dbQueue: DatabaseQueue
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
     private var workerTask: Task<Void, Never>?
+    private var observationDrainTask: Task<Void, Never>?
     private var jobObservation: AnyDatabaseCancellable?
     private var isDraining = false
+    private var isPaused = false
+    private var drainWaiters: [CheckedContinuation<Void, Never>] = []
     private var didValidateAnalyzer = false
     private var lastDivergenceCheckAt: Date?
 
@@ -20,6 +23,7 @@ actor SearchIndexer {
 
     func start() {
         guard workerTask == nil else { return }
+        isPaused = false
         let observation = ValueObservation.tracking { db in
             try Int.fetchOne(
                 db,
@@ -34,7 +38,7 @@ actor SearchIndexer {
             scheduling: .async(onQueue: observationQueue),
             onError: { _ in },
             onChange: { [weak self] _ in
-                Task { await self?.drainScheduledWork() }
+                Task { await self?.scheduleObservationDrain() }
             }
         )
         workerTask = Task(priority: .utility) { [weak self] in
@@ -46,14 +50,18 @@ actor SearchIndexer {
     }
 
     func stop() async {
-        let task = workerTask
-        task?.cancel()
+        isPaused = true
+        let tasks = [workerTask, observationDrainTask].compactMap(\.self)
+        tasks.forEach { $0.cancel() }
         workerTask = nil
+        observationDrainTask = nil
         jobObservation?.cancel()
         jobObservation = nil
-        await task?.value
-        while isDraining {
-            await Task.yield()
+        for task in tasks {
+            await task.value
+        }
+        if isDraining {
+            await withCheckedContinuation { drainWaiters.append($0) }
         }
     }
 
@@ -78,7 +86,7 @@ actor SearchIndexer {
     }
 
     private func drainScheduledWork() async {
-        guard workerTask != nil else { return }
+        guard workerTask != nil, !isPaused else { return }
         let now = Date()
         let checksDivergence = lastDivergenceCheckAt.map {
             now.timeIntervalSince($0) >= Self.divergenceCheckInterval
@@ -87,9 +95,13 @@ actor SearchIndexer {
     }
 
     private func drain(checksDivergence: Bool) async {
-        guard !isDraining else { return }
+        guard !isDraining, !isPaused else { return }
         isDraining = true
-        defer { isDraining = false }
+        defer {
+            isDraining = false
+            drainWaiters.forEach { $0.resume() }
+            drainWaiters.removeAll()
+        }
         do {
             let phase = try await indexPhase()
             if phase == "failed" {
@@ -100,7 +112,7 @@ actor SearchIndexer {
             if try await needsRebuild(phase: phase, checksDivergence: checksDivergence) {
                 try await rebuild()
             }
-            while let job = try await claimNextJob() {
+            while !isPaused, let job = try await claimNextJob() {
                 do {
                     try await process(job)
                     try await complete(job)
@@ -117,7 +129,7 @@ actor SearchIndexer {
     }
 
     private func drainCleanupJobs() async throws {
-        while let job = try await claimNextJob(cleanupOnly: true) {
+        while !isPaused, let job = try await claimNextJob(cleanupOnly: true) {
             do {
                 try await process(job)
                 try await complete(job)
@@ -127,6 +139,18 @@ actor SearchIndexer {
                 try await fail(job, error: error)
             }
         }
+    }
+
+    private func scheduleObservationDrain() {
+        guard !isPaused, observationDrainTask == nil else { return }
+        observationDrainTask = Task(priority: .utility) { [weak self] in
+            await self?.runObservationDrain()
+        }
+    }
+
+    private func runObservationDrain() async {
+        await drainScheduledWork()
+        observationDrainTask = nil
     }
 
     private func indexPhase() async throws -> String? {
@@ -220,7 +244,7 @@ actor SearchIndexer {
             try UUID.fetchAll(db, sql: "SELECT id FROM projects ORDER BY rowid")
         }
         for id in projectIDs {
-            try Task.checkCancellation()
+            try checkCanContinue()
             try await indexProject(id: id, generation: generation, forceFTSUpdate: true)
             try await incrementRebuildProgress()
         }
@@ -229,7 +253,7 @@ actor SearchIndexer {
             try UUID.fetchAll(db, sql: "SELECT id FROM meetings ORDER BY rowid")
         }
         for id in meetingIDs {
-            try Task.checkCancellation()
+            try checkCanContinue()
             try await indexMeeting(id: id, generation: generation, forceFTSUpdate: true)
             try await incrementRebuildProgress()
         }
@@ -250,6 +274,11 @@ actor SearchIndexer {
             )
         }
         lastDivergenceCheckAt = .now
+    }
+
+    private func checkCanContinue() throws {
+        guard !isPaused else { throw CancellationError() }
+        try Task.checkCancellation()
     }
 
     private func incrementRebuildProgress(by count: Int = 1) async throws {
@@ -274,7 +303,7 @@ actor SearchIndexer {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT targetKind, targetKey, generation
+                SELECT targetKind, targetKey, generation, attempts
                 FROM search_index_jobs
                 WHERE indexKind = 'fts'
                   AND availableAt <= ?
@@ -285,10 +314,12 @@ actor SearchIndexer {
                 """,
                 arguments: [now, now]
             ) else { return nil }
+            let previousAttempts: Int = row["attempts"]
             let job = SearchIndexJob(
                 targetKind: row["targetKind"],
                 targetID: row["targetKey"],
-                generation: row["generation"]
+                generation: row["generation"],
+                attempts: previousAttempts + 1
             )
             try db.execute(
                 sql: """
@@ -559,6 +590,22 @@ private extension SearchIndexer {
     }
 
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
+        if job.attempts >= 5 {
+            try await dbQueue.write { db in
+                try db.execute(
+                    sql: """
+                    DELETE FROM search_index_jobs
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
+                    """,
+                    arguments: [
+                        job.targetKind,
+                        job.targetID,
+                        job.generation,
+                    ]
+                )
+            }
+            throw SearchIndexError.retryLimitReached
+        }
         try await dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -596,10 +643,12 @@ private struct SearchIndexJob: Sendable {
     let targetKind: String
     let targetID: UUID
     let generation: Int
+    let attempts: Int
 }
 
 private enum SearchIndexError: Error {
     case analyzerMismatch
+    case retryLimitReached
     case unknownJob(String)
 }
 

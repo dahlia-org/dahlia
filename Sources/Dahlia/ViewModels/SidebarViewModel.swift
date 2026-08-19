@@ -105,7 +105,8 @@ final class SidebarViewModel {
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
-    @ObservationIgnored private var searchIndexPollTask: Task<Void, Never>?
+    @ObservationIgnored private var searchIndexObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var searchIndexRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
@@ -161,7 +162,8 @@ final class SidebarViewModel {
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
         vaultObservation?.cancel()
-        searchIndexPollTask?.cancel()
+        searchIndexObservation?.cancel()
+        searchIndexRefreshTask?.cancel()
         meetingListObservation?.cancel()
         additionalMeetingRowsObservation?.cancel()
         selectedMeetingObservation?.cancel()
@@ -250,7 +252,7 @@ final class SidebarViewModel {
         }
 
         startVaultObservation(dbQueue: dbQueue)
-        startSearchIndexPolling(dbQueue: dbQueue)
+        startSearchIndexObservation(dbQueue: dbQueue)
 
         guard let vault = currentVault else {
             settings.selectedInstructionID = nil
@@ -307,21 +309,32 @@ final class SidebarViewModel {
         }
     }
 
-    private func startSearchIndexPolling(dbQueue: DatabaseQueue) {
-        searchIndexPollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                if let revision = try? await dbQueue.read({ db in
-                    try Int.fetchOne(
-                        db,
-                        sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
-                    ) ?? 0
-                }), let self, revision != self.searchIndexRevision {
-                    self.searchIndexRevision = revision
-                    self.restartCurrentMeetingSearch()
+    private func startSearchIndexObservation(dbQueue: DatabaseQueue) {
+        searchIndexObservation?.cancel()
+        searchIndexRefreshTask?.cancel()
+        let observation = ValueObservation.tracking { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+            ) ?? 0
+        }.removeDuplicates()
+        searchIndexObservation = observation.start(
+            in: dbQueue,
+            scheduling: .async(onQueue: .main),
+            onError: { _ in },
+            onChange: { [weak self] revision in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.searchIndexRefreshTask?.cancel()
+                    self.searchIndexRefreshTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled, let self, revision != self.searchIndexRevision else { return }
+                        self.searchIndexRevision = revision
+                        self.restartCurrentMeetingSearch()
+                    }
                 }
-                try? await Task.sleep(for: .milliseconds(500))
             }
-        }
+        )
     }
 
     func refreshUnprocessedRecordings() async {
