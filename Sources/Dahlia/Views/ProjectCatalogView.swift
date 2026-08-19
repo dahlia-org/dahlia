@@ -80,7 +80,7 @@ struct ProjectCatalogView: View {
             }
         }
         .padding(.top, DahliaDesign.detailTopPadding)
-        .padding(.horizontal, 48)
+        .padding(.horizontal, 28)
         .padding(.bottom, 24)
         .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)

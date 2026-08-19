@@ -65,7 +65,6 @@ private struct MeetingNameHeader: View {
                 .help(L10n.rename)
             }
         }
-        .bold()
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: title) { _, newTitle in
             isEditing = false
