@@ -21,7 +21,7 @@ struct CodexChatConfigurationButton: View {
                 in: Capsule()
             )
             .onHover { isHovering = $0 }
-            .help(L10n.model)
+            .codexChatHoverHelp(label: L10n.selectModel)
             .overlay(alignment: .bottomTrailing) {
                 if externalPresentation == nil, isPresented {
                     CodexChatConfigurationPanel(

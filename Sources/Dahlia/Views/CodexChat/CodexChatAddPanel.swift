@@ -32,9 +32,9 @@ struct CodexChatAddPanel: View {
                     )
                 }
                 .padding(10)
-                .frame(width: CodexChatDesign.addPanelWidth)
             }
         }
+        .frame(maxWidth: .infinity)
         .codexChatPanelStyle()
     }
 }

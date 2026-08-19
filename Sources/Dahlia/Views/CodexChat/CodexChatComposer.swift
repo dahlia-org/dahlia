@@ -16,51 +16,59 @@ struct CodexChatComposer: View {
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !session.attachedImages.isEmpty {
-                CodexChatAttachmentStrip(
-                    attachments: session.attachedImages,
-                    onRemove: session.removeAttachedImage
+        VStack(alignment: .leading, spacing: CodexChatDesign.floatingPanelSpacing) {
+            if showsAddPanel {
+                CodexChatAddPanel(
+                    showsMeetingPicker: showsMeetingPicker,
+                    meetingReferences: suggestions,
+                    highlightedMeetingID: highlightedMeetingID,
+                    onAttachImages: showImageImporter,
+                    onAddMeetingReference: showMeetingPicker,
+                    onSelectMeeting: selectMeeting
+                )
+                .codexChatDismissOnOutsideClick(perform: dismissAddPanel)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                if !session.attachedImages.isEmpty {
+                    CodexChatAttachmentStrip(
+                        attachments: session.attachedImages,
+                        onRemove: session.removeAttachedImage
+                    )
+                }
+
+                if !session.selectedMeetingReferenceIDs.isEmpty {
+                    CodexChatMeetingReferenceBar(
+                        referenceIDs: session.selectedMeetingReferenceIDs,
+                        referencesByID: session.meetingReferencesByID,
+                        onRemove: session.removeMeetingReference
+                    )
+                }
+
+                if let validationMessage = session.attachmentValidationMessage {
+                    CodexChatAttachmentValidationView(message: validationMessage)
+                }
+
+                CodexChatComposerInputRow(
+                    session: session,
+                    configurationPresentation: configurationPresentation,
+                    isComposerFocused: $isComposerFocused,
+                    onToggleAddPanel: toggleAddPanel,
+                    onPasteImages: pasteImages,
+                    onSubmit: handleSubmit,
+                    onMoveCommand: handleMoveCommand,
+                    onExitCommand: dismissAddPanel,
+                    onHover: updateTextInputCursor
                 )
             }
-
-            if !session.selectedMeetingReferenceIDs.isEmpty {
-                CodexChatMeetingReferenceBar(
-                    referenceIDs: session.selectedMeetingReferenceIDs,
-                    referencesByID: session.meetingReferencesByID,
-                    onRemove: session.removeMeetingReference
-                )
+            .padding(CodexChatDesign.composerContentPadding)
+            .background {
+                CodexChatComposerBackground(isDropTargeted: isImageDropTargeted)
             }
-
-            if let validationMessage = session.attachmentValidationMessage {
-                CodexChatAttachmentValidationView(message: validationMessage)
-            }
-
-            CodexChatComposerInputRow(
-                session: session,
-                configurationPresentation: configurationPresentation,
-                isComposerFocused: $isComposerFocused,
-                showsAddPanel: showsAddPanel,
-                showsMeetingPicker: showsMeetingPicker,
-                suggestions: suggestions,
-                highlightedMeetingID: highlightedMeetingID,
-                onShowImageImporter: showImageImporter,
-                onToggleAddPanel: toggleAddPanel,
-                onShowMeetingPicker: showMeetingPicker,
-                onSelectMeeting: selectMeeting,
-                onPasteImages: pasteImages,
-                onSubmit: handleSubmit,
-                onMoveCommand: handleMoveCommand,
-                onExitCommand: dismissAddPanel,
-                onHover: updateTextInputCursor
-            )
+            .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         }
-        .padding(CodexChatDesign.composerContentPadding)
-        .background {
-            CodexChatComposerBackground(isDropTargeted: isImageDropTargeted)
-        }
+        .zIndex(showsAddPanel ? 1 : 0)
         .codexChatDismissOnOutsideClick(perform: dismissComposerFocus)
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
         .onChange(of: session.draft, handleDraftChange)
         .onChange(of: session.availableMeetingReferences) {
             refreshSuggestionsIfPresented()
@@ -81,8 +89,7 @@ struct CodexChatComposer: View {
         .pasteDestination(for: CodexChatTransferImage.self, action: addTransferImages)
     }
 
-    /// 追加パネルと候補リストは「+」ボタンの overlay としてコンポーザー上に描画される。
-    /// 表示中は候補のクリックが外側クリックに見えるため、フォーカスを保持して参照挿入後の入力を続けられるようにする。
+    /// 追加パネルの表示中は、参照挿入後も入力を続けられるようにコンポーザーのフォーカスを保持する。
     static func dismissesComposerFocus(showsAddPanel: Bool) -> Bool {
         !showsAddPanel
     }

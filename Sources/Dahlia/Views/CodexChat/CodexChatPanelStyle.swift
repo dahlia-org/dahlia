@@ -2,8 +2,7 @@ import SwiftUI
 
 extension View {
     func codexChatPanelStyle() -> some View {
-        fixedSize()
-            .background(.background, in: RoundedRectangle(cornerRadius: CodexChatDesign.panelCornerRadius))
+        background(.background, in: RoundedRectangle(cornerRadius: CodexChatDesign.panelCornerRadius))
             .clipShape(RoundedRectangle(cornerRadius: CodexChatDesign.panelCornerRadius))
             .overlay {
                 RoundedRectangle(cornerRadius: CodexChatDesign.panelCornerRadius)
