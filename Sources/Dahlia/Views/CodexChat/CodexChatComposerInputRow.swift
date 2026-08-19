@@ -43,7 +43,7 @@ struct CodexChatComposerInputRow: View {
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .background(isAddButtonHovered ? DahliaDesign.contentHighlightColor : .clear, in: Circle())
             .onHover { isAddButtonHovered = $0 }
-            .codexChatHoverHelp(label: L10n.addToChat, shortcut: "@")
+            .dahliaHoverHelp(label: L10n.addToChat, shortcut: "@")
             .onExitCommand(perform: onExitCommand)
 
             Spacer(minLength: 0)

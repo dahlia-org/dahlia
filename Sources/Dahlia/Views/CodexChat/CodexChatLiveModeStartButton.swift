@@ -25,7 +25,7 @@ struct CodexChatLiveModeStartButton: View {
             ),
             in: Circle()
         )
-        .codexChatHoverHelp(label: L10n.chatLiveMode)
+        .dahliaHoverHelp(label: L10n.chatLiveMode)
         .shadow(color: .purple.opacity(isEnabled ? 0.24 : 0), radius: 4, y: 1)
         .opacity(isEnabled ? 1 : 0.4)
         .disabled(!isEnabled)

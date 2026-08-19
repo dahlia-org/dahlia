@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct CodexChatHoverHelpModifier: ViewModifier {
+private struct DahliaHoverHelpModifier: ViewModifier {
     let label: String
     let shortcut: String?
 
@@ -71,7 +71,7 @@ private struct CodexChatHoverHelpModifier: ViewModifier {
 }
 
 extension View {
-    func codexChatHoverHelp(label: String, shortcut: String? = nil) -> some View {
-        modifier(CodexChatHoverHelpModifier(label: label, shortcut: shortcut))
+    func dahliaHoverHelp(label: String, shortcut: String? = nil) -> some View {
+        modifier(DahliaHoverHelpModifier(label: label, shortcut: shortcut))
     }
 }

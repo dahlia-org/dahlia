@@ -11,6 +11,7 @@ struct MainSearchPanel: View {
 
     @FocusState private var isSearchFocused: Bool
     @State private var suggestionMode: MainSearchSuggestions.Mode = .overview
+    @State private var hoveredFilterMode: MainSearchSuggestions.Mode?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -218,10 +219,17 @@ struct MainSearchPanel: View {
         .frame(width: 28, height: 28)
         .contentShape(.rect)
         .background(
-            suggestionMode == mode ? DahliaDesign.contentHighlightColor : .clear,
+            suggestionMode == mode || hoveredFilterMode == mode ? DahliaDesign.contentHighlightColor : .clear,
             in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
         )
-        .help(title)
+        .onHover { isHovered in
+            if isHovered {
+                hoveredFilterMode = mode
+            } else if hoveredFilterMode == mode {
+                hoveredFilterMode = nil
+            }
+        }
+        .dahliaHoverHelp(label: title)
         .accessibilityAddTraits(suggestionMode == mode ? .isSelected : [])
     }
 
