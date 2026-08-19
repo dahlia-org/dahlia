@@ -127,7 +127,7 @@ Deployment guides:
 - [Cloudflare Workers + D1](deploy/cloudflare/README.md)
 - [Databricks Apps](deploy/databricks/README.md)
 
-## Codex 0.146.0 manual configuration
+## Codex 0.148.0 manual configuration
 
 ```toml
 model = "<alias-configured-in-admin>"
@@ -151,7 +151,7 @@ With `accounts`, use an access token issued to `dahlia-macos`. With Databricks A
 pnpm check
 ```
 
-This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA builds, and a Workers dry-run. Live credentials are tested separately with a pinned Codex 0.146.0 tool-call session and, on Databricks Apps, an SSE streaming smoke test.
+This runs lint, TypeScript checks, unit and adapter contract tests, Node/SPA builds, and a Workers dry-run. Live credentials are tested separately with a pinned Codex 0.148.0 tool-call session and, on Databricks Apps, an SSE streaming smoke test.
 
 ## Package consumers
 
