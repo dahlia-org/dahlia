@@ -19,6 +19,7 @@ struct CalendarEventMetadataButton: View {
                 Image(systemName: "calendar")
                     .font(.caption2)
             }
+            .frame(minHeight: 16)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .dahliaChipSurface(isHovered: isHovered)
             .contentShape(Capsule())
