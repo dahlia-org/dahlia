@@ -51,6 +51,70 @@ struct MeetingSidebarHoverControllerTests {
     }
 
     @Test
+    func switchesImmediatelyAfterAnotherMeetingWasPresented() async {
+        let sleeper = MeetingHoverTestSleeper()
+        let firstItem = makeItem()
+        let secondItem = makeItem()
+        let controller = MeetingSidebarHoverController(
+            sleep: sleeper.sleep,
+            loadDescription: { _, _ in "Description" }
+        )
+
+        controller.hoverBegan(item: firstItem, isActiveRecording: false, rowFrame: .zero, rowID: UUID.v7())
+        #expect(await pollUntil { sleeper.requestedDuration == .milliseconds(700) })
+        sleeper.resume()
+        #expect(await pollUntil { controller.visibleItem?.meetingId == firstItem.meetingId })
+
+        controller.hoverBegan(item: secondItem, isActiveRecording: false, rowFrame: .zero, rowID: UUID.v7())
+
+        #expect(controller.visibleItem?.meetingId == secondItem.meetingId)
+        #expect(sleeper.sleepCallCount == 1)
+    }
+
+    @Test
+    func immediateSwitchWindowAppliesAcrossMeetingAndProjectCardsAndExpires() async {
+        let clock = MeetingHoverTestClock()
+        let sleeper = MeetingHoverTestSleeper()
+        let item = makeItem()
+        let project = makeProject()
+        let controller = MeetingSidebarHoverController(
+            dismissalDelay: .zero,
+            now: clock.now,
+            sleep: sleeper.sleep,
+            loadDescription: { _, _ in nil }
+        )
+
+        controller.hoverBegan(item: item, isActiveRecording: false, rowFrame: .zero, rowID: UUID.v7())
+        #expect(await pollUntil { sleeper.sleepCallCount == 1 })
+        sleeper.resume()
+        #expect(await pollUntil { controller.visibleItem?.meetingId == item.meetingId })
+
+        controller.projectHoverBegan(project: project, appearance: .default, isPinned: false, rowFrame: .zero)
+        #expect(controller.visibleProject?.projectId == project.projectId)
+        #expect(sleeper.sleepCallCount == 1)
+
+        controller.projectRowHoverEnded(for: project.projectId)
+        #expect(await pollUntil { controller.visibleProject == nil })
+        clock.advance(by: .milliseconds(700))
+        let nextItem = makeItem()
+        let nextRowID = UUID.v7()
+        controller.hoverBegan(item: nextItem, isActiveRecording: false, rowFrame: .zero, rowID: nextRowID)
+
+        #expect(controller.visibleItem?.meetingId == nextItem.meetingId)
+        #expect(sleeper.sleepCallCount == 1)
+
+        controller.hoverEnded(for: nextItem.meetingId, rowID: nextRowID)
+        #expect(await pollUntil { controller.visibleItem == nil })
+        clock.advance(by: .milliseconds(701))
+        controller.hoverBegan(item: makeItem(), isActiveRecording: false, rowFrame: .zero, rowID: UUID.v7())
+
+        #expect(controller.visibleItem == nil)
+        #expect(await pollUntil { sleeper.sleepCallCount == 2 })
+        controller.dismissAll()
+        sleeper.resume()
+    }
+
+    @Test
     func ignoresStaleDescriptionAfterMovingToAnotherMeeting() async {
         let loader = MeetingHoverTestDescriptionLoader()
         let firstItem = makeItem()
@@ -234,8 +298,10 @@ private final class MeetingHoverTestSleeper {
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var requestedDuration: Duration?
     private(set) var didReturnFromSleep = false
+    private(set) var sleepCallCount = 0
 
     func sleep(for duration: Duration) async {
+        sleepCallCount += 1
         requestedDuration = duration
         await withCheckedContinuation { continuation = $0 }
         didReturnFromSleep = true
@@ -244,6 +310,19 @@ private final class MeetingHoverTestSleeper {
     func resume() {
         continuation?.resume()
         continuation = nil
+    }
+}
+
+@MainActor
+private final class MeetingHoverTestClock {
+    private var instant = ContinuousClock.now
+
+    func now() -> ContinuousClock.Instant {
+        instant
+    }
+
+    func advance(by duration: Duration) {
+        instant += duration
     }
 }
 

@@ -21,7 +21,9 @@ final class MeetingSidebarHoverController {
     private(set) var visibleProjectIsPinned = false
 
     @ObservationIgnored private let displayDelay: Duration
+    @ObservationIgnored private let immediateSwitchWindow: Duration
     @ObservationIgnored private let dismissalDelay: Duration
+    @ObservationIgnored private let now: () -> ContinuousClock.Instant
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private let loadDescription: DescriptionLoader
     @ObservationIgnored private var hoveredMeetingID: UUID?
@@ -32,15 +34,20 @@ final class MeetingSidebarHoverController {
     @ObservationIgnored private var projectHoverSources: Set<HoverSource> = []
     @ObservationIgnored private var presentationTask: Task<Void, Never>?
     @ObservationIgnored private var dismissalTask: Task<Void, Never>?
+    @ObservationIgnored private var lastDismissalInstant: ContinuousClock.Instant?
 
     init(
         displayDelay: Duration = .milliseconds(700),
+        immediateSwitchWindow: Duration = .milliseconds(700),
         dismissalDelay: Duration = .milliseconds(150),
+        now: @escaping () -> ContinuousClock.Instant = { .now },
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         loadDescription: @escaping DescriptionLoader
     ) {
         self.displayDelay = displayDelay
+        self.immediateSwitchWindow = immediateSwitchWindow
         self.dismissalDelay = dismissalDelay
+        self.now = now
         self.sleep = sleep
         self.loadDescription = loadDescription
     }
@@ -72,11 +79,29 @@ final class MeetingSidebarHoverController {
         hoveredRowFrame = rowFrame
         dismissalTask?.cancel()
         presentationTask?.cancel()
+        let presentsImmediately = shouldPresentImmediately()
         dismissVisibleCard()
+
+        let loadDescription = loadDescription
+        if presentsImmediately {
+            visibleItem = item
+            visibleIsActiveRecording = isActiveRecording
+            visibleMeetingProjectAppearance = projectAppearance
+            visibleRowFrame = rowFrame
+            presentationTask = Task { [weak self] in
+                let loadedDescription = await loadDescription(item.meetingId, item.vaultId)
+                guard !Task.isCancelled,
+                      let self,
+                      hoveredMeetingID == item.meetingId,
+                      hoveredMeetingRowID == rowID else { return }
+                visibleDescription = loadedDescription ?? ""
+                presentationTask = nil
+            }
+            return
+        }
 
         let displayDelay = displayDelay
         let sleep = sleep
-        let loadDescription = loadDescription
         presentationTask = Task { [weak self] in
             async let description = loadDescription(item.meetingId, item.vaultId)
             do {
@@ -123,7 +148,16 @@ final class MeetingSidebarHoverController {
         hoveredRowFrame = rowFrame
         dismissalTask?.cancel()
         presentationTask?.cancel()
+        let presentsImmediately = shouldPresentImmediately()
         dismissVisibleCard()
+
+        if presentsImmediately {
+            visibleProject = project
+            visibleProjectAppearance = appearance
+            visibleProjectIsPinned = isPinned
+            visibleRowFrame = rowFrame
+            return
+        }
 
         let displayDelay = displayDelay
         let sleep = sleep
@@ -234,6 +268,7 @@ final class MeetingSidebarHoverController {
     }
 
     private func dismissVisibleCard() {
+        let hadVisibleCard = visibleItem != nil || visibleProject != nil
         meetingHoverSources.remove(.card)
         projectHoverSources.remove(.card)
         visibleItem = nil
@@ -244,6 +279,15 @@ final class MeetingSidebarHoverController {
         visibleProject = nil
         visibleProjectAppearance = .default
         visibleProjectIsPinned = false
+        if hadVisibleCard {
+            lastDismissalInstant = now()
+        }
+    }
+
+    private func shouldPresentImmediately() -> Bool {
+        guard visibleItem == nil, visibleProject == nil else { return true }
+        guard let lastDismissalInstant else { return false }
+        return lastDismissalInstant.duration(to: now()) <= immediateSwitchWindow
     }
 
     private func scheduleMeetingDismissal(for meetingID: UUID, rowID: UUID) {
