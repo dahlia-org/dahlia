@@ -5,19 +5,14 @@ struct CodexChatComposerInputRow: View {
     @Bindable var session: CodexChatSessionModel
     let configurationPresentation: Binding<Bool>?
     @FocusState.Binding var isComposerFocused: Bool
-    let showsAddPanel: Bool
-    let showsMeetingPicker: Bool
-    let suggestions: [CodexChatMeetingReference]
-    let highlightedMeetingID: UUID?
-    let onShowImageImporter: () -> Void
     let onToggleAddPanel: () -> Void
-    let onShowMeetingPicker: () -> Void
-    let onSelectMeeting: (CodexChatMeetingReference) -> Void
     let onPasteImages: () -> Bool
     let onSubmit: () -> Void
     let onMoveCommand: (MoveCommandDirection) -> Void
     let onExitCommand: () -> Void
     let onHover: (HoverPhase) -> Void
+
+    @State private var isAddButtonHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,27 +41,10 @@ struct CodexChatComposerInputRow: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
-            .background(.quaternary, in: Circle())
-            .help(L10n.addToChat)
-            .overlay(alignment: .bottomLeading) {
-                if showsAddPanel {
-                    CodexChatAddPanel(
-                        showsMeetingPicker: showsMeetingPicker,
-                        meetingReferences: suggestions,
-                        highlightedMeetingID: highlightedMeetingID,
-                        onAttachImages: onShowImageImporter,
-                        onAddMeetingReference: onShowMeetingPicker,
-                        onSelectMeeting: onSelectMeeting
-                    )
-                    .codexChatDismissOnOutsideClick(perform: onExitCommand)
-                    .offset(
-                        y: -(CodexChatDesign.controlSize + CodexChatDesign.floatingPanelSpacing)
-                    )
-                    .zIndex(1)
-                }
-            }
+            .background(isAddButtonHovered ? DahliaDesign.contentHighlightColor : .clear, in: Circle())
+            .onHover { isAddButtonHovered = $0 }
+            .codexChatHoverHelp(label: L10n.addToChat, shortcut: "@")
             .onExitCommand(perform: onExitCommand)
-            .zIndex(showsAddPanel ? 1 : 0)
 
             Spacer(minLength: 0)
 

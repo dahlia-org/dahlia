@@ -4,6 +4,8 @@ struct CodexChatThreadRow: View {
     let thread: CodexChatThreadSummary
     let meetingNamesByID: [UUID: String]
 
+    @State private var isHovering = false
+
     var body: some View {
         HStack(spacing: 12) {
             Text(CodexChatMeetingReference.displayText(
@@ -17,5 +19,10 @@ struct CodexChatThreadRow: View {
                 .lineLimit(1)
         }
         .contentShape(Rectangle())
+        .background(
+            isHovering ? DahliaDesign.contentHighlightColor : .clear,
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+        )
+        .onHover { isHovering = $0 }
     }
 }

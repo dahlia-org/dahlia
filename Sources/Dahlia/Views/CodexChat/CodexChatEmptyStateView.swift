@@ -9,6 +9,8 @@ struct CodexChatEmptyStateView: View {
     let onOpenThread: (CodexChatThreadSummary) -> Void
     let onShowAll: () -> Void
 
+    @State private var isPresetHovered = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 40)
@@ -39,11 +41,17 @@ struct CodexChatEmptyStateView: View {
                     .font(.body)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
-                    .frame(minHeight: 28)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
+            .buttonStyle(.plain)
+            .background(
+                isPresetHovered && isProjectOrganizationShortcutEnabled
+                    ? DahliaDesign.chipHoverColor
+                    : DahliaDesign.contentHighlightColor,
+                in: Capsule()
+            )
+            .onHover { isPresetHovered = $0 }
             .disabled(!isProjectOrganizationShortcutEnabled)
         }
     }
