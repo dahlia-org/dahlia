@@ -362,6 +362,7 @@ private struct CalendarScheduleEventRow: View {
     let onSetAutoRecording: (Bool) -> Void
 
     @State private var isHovered = false
+    @State private var isJoinHovered = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -394,8 +395,17 @@ private struct CalendarScheduleEventRow: View {
                 if let onJoin {
                     Button(action: onJoin) {
                         Label(L10n.join, systemImage: "video.fill")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                isJoinHovered ? DahliaDesign.sidebarHighlightColor : Color.primary.opacity(0.06),
+                                in: Capsule()
+                            )
+                            .contentShape(Capsule())
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .animation(.easeOut(duration: 0.12), value: isJoinHovered)
+                    .onHover { isJoinHovered = $0 }
                 }
 
                 if !event.isAllDay {
