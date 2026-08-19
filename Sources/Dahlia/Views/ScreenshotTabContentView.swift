@@ -36,8 +36,6 @@ struct ScreenshotTabContentView: View {
                 )
                 .padding(12)
 
-                Divider()
-
                 ScreenshotCollectionView(
                     meetingID: meetingID,
                     screenshots: screenshotStore.records,

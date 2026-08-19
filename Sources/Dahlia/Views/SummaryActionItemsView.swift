@@ -9,8 +9,6 @@ struct SummaryActionItemsView: View {
 
         if !displayableItems.isEmpty {
             VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
-                Divider()
-
                 Text(L10n.actionItems)
                     .font(.title2)
                     .bold()
