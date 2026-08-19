@@ -23,7 +23,7 @@ private struct MeetingNameHeader: View {
             if isEditing {
                 TextField(L10n.title, text: $editingName)
                     .textFieldStyle(.plain)
-                    .dahliaFont(.displayTitle, weight: .semibold)
+                    .font(.title)
                     .focused($isFocused)
                     .onSubmit(onCommit)
                     .onExitCommand(perform: onCancel)
@@ -46,12 +46,12 @@ private struct MeetingNameHeader: View {
                 Button(action: onBeginEditing) {
                     HStack(spacing: 6) {
                         Text(displayName)
-                            .dahliaFont(.displayTitle, weight: .semibold)
-                            .foregroundStyle(.primary)
+                            .font(.title)
+                            .foregroundStyle(DahliaDesign.primaryTextColor)
                             .lineLimit(2)
                         Image(systemName: "pencil")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(DahliaDesign.optionalTextColor)
                             .opacity(isHovered || isTitleButtonFocused ? 1 : 0)
                     }
                     .contentShape(Rectangle())
@@ -65,6 +65,7 @@ private struct MeetingNameHeader: View {
                 .help(L10n.rename)
             }
         }
+        .bold()
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: title) { _, newTitle in
             isEditing = false

@@ -16,8 +16,8 @@ struct CalendarScheduleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(L10n.calendarScheduleTitle)
-                    .dahliaFont(.displayTitle, weight: .semibold)
-                    .foregroundStyle(.primary)
+                    .font(.title2)
+                    .foregroundStyle(DahliaDesign.primaryTextColor)
 
                 content
             }
@@ -269,12 +269,12 @@ struct CalendarScheduleView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .dahliaFont(.sectionTitle, weight: .semibold)
-                .foregroundStyle(.primary)
+                .font(.headline)
+                .foregroundStyle(DahliaDesign.primaryTextColor)
 
             Text(message)
-                .dahliaFont(.body)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
@@ -329,8 +329,8 @@ private struct CalendarScheduleSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(section.title)
-                .dahliaFont(.sectionTitle, weight: .semibold)
-                .foregroundStyle(.secondary)
+                .font(.headline)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             VStack(spacing: 8) {
                 ForEach(section.events) { event in
@@ -368,13 +368,13 @@ private struct CalendarScheduleEventRow: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(event.title)
-                            .dahliaFont(.subsectionTitle, weight: .semibold)
-                            .foregroundStyle(.primary)
+                            .font(.headline)
+                            .foregroundStyle(DahliaDesign.primaryTextColor)
                             .lineLimit(1)
 
                         Text(subtitle)
-                            .dahliaFont(.body)
-                            .foregroundStyle(.secondary)
+                            .font(.body)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .lineLimit(1)
                     }
 
@@ -411,7 +411,7 @@ private struct CalendarScheduleEventRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(isHovered ? DahliaDesign.hoverHighlightColor : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: RoundedRectangle(cornerRadius: 8))
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)

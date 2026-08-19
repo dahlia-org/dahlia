@@ -46,9 +46,9 @@ struct SummaryGenerationConfirmationView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
                 Text(description)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,7 +72,7 @@ struct SummaryGenerationConfirmationView: View {
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .dahliaFont(.body)
+                    .font(.body)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)

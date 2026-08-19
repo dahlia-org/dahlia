@@ -22,13 +22,6 @@ struct SummaryDocumentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
-            if !document.title.isEmpty {
-                inlineMarkdownText(document.title)
-                    .dahliaFont(.displayTitle, weight: .bold)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 2)
-            }
-
             ForEach(document.sections) { section in
                 sectionView(section)
             }
@@ -42,7 +35,8 @@ struct SummaryDocumentView: View {
     private func sectionView(_ section: SummarySection) -> some View {
         if !section.heading.isEmpty {
             inlineMarkdownText(section.heading)
-                .dahliaFont(.sectionTitle, weight: .bold)
+                .font(.title2)
+                .bold()
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         }
@@ -59,20 +53,20 @@ struct SummaryDocumentView: View {
                 summaryTextView(text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
-                    .dahliaFont(.body)
+                    .font(.body)
                     .lineSpacing(DahliaDesign.paragraphLineSpacing)
             case let .bulletedList(items):
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(items.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("•")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                             summaryTextView(item)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
-                        .dahliaFont(.body)
+                        .font(.body)
                     }
                 }
                 .padding(.leading, 8)
@@ -87,7 +81,7 @@ struct SummaryDocumentView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
-                        .dahliaFont(.body)
+                        .font(.body)
                     }
                 }
                 .padding(.leading, 8)
@@ -97,13 +91,13 @@ struct SummaryDocumentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: item.checked ? "checkmark.square" : "square")
                                 .dahliaFixedSymbol()
-                                .foregroundStyle(item.checked ? .secondary : .tertiary)
+                                .foregroundStyle(item.checked ? DahliaDesign.secondaryTextColor : DahliaDesign.optionalTextColor)
                             summaryTextView(item.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(DahliaDesign.paragraphLineSpacing)
                         }
-                        .dahliaFont(.body)
+                        .font(.body)
                     }
                 }
                 .padding(.leading, 8)
@@ -113,8 +107,8 @@ struct SummaryDocumentView: View {
                         .fill(Color.secondary.opacity(0.4))
                         .frame(width: 3)
                     summaryTextView(text)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineSpacing(DahliaDesign.paragraphLineSpacing)
@@ -124,7 +118,7 @@ struct SummaryDocumentView: View {
             case let .code(_, content):
                 VStack(alignment: .leading, spacing: 4) {
                     Text(content.text)
-                        .dahliaFont(.body, design: .monospaced)
+                        .font(.body.monospaced())
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
@@ -143,17 +137,18 @@ struct SummaryDocumentView: View {
     @ViewBuilder
     private func headingView(level: Int, content: SummaryText) -> some View {
         switch level {
-        case 1, 2:
+        case 1:
             summaryTextView(content)
-                .dahliaFont(.sectionTitle, weight: .bold)
+                .font(.title2)
+                .bold()
                 .padding(.top, DahliaDesign.sectionHeadingTopPadding)
-        case 3:
+        case 2:
             summaryTextView(content)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
-                .padding(.top, 2)
+                .font(.title3)
+                .padding(.top, DahliaDesign.sectionHeadingTopPadding)
         default:
             summaryTextView(content)
-                .dahliaFont(.body, weight: .bold)
+                .font(.title3)
                 .padding(.top, 2)
         }
     }
@@ -168,8 +163,8 @@ struct SummaryDocumentView: View {
                 )
             } else {
                 Text(L10n.summaryImageUnavailable)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
@@ -177,8 +172,8 @@ struct SummaryDocumentView: View {
 
             if !caption.text.isEmpty {
                 summaryTextView(caption)
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -192,7 +187,7 @@ struct SummaryDocumentView: View {
             GridRow {
                 ForEach(headers.enumerated(), id: \.offset) { _, header in
                     tableCellView(header)
-                        .dahliaFont(.secondary, weight: .bold)
+                        .font(.body.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -204,7 +199,7 @@ struct SummaryDocumentView: View {
                 GridRow {
                     ForEach(row.enumerated(), id: \.offset) { _, cell in
                         tableCellView(cell)
-                            .dahliaFont(.secondary)
+                            .font(.body)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -297,8 +292,8 @@ struct SummaryScreenshotImageView: View {
                 }
             } else if case .failed = imageLoader.state {
                 Text(L10n.summaryImageUnavailable)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, minHeight: 120)
@@ -338,9 +333,9 @@ private struct TranscriptReferenceChip: View {
 
     var body: some View {
         Text(reference.time)
-            .dahliaFont(.metadata, weight: .medium)
+            .font(.caption2.weight(.medium))
             .monospacedDigit()
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, DahliaDesign.timestampChipHorizontalPadding)
             .padding(.vertical, DahliaDesign.timestampChipVerticalPadding)
             .background(Color.primary.opacity(DahliaDesign.timestampChipBackgroundOpacity), in: Capsule())
@@ -351,8 +346,8 @@ private struct TranscriptReferenceChip: View {
             .popover(isPresented: $isTranscriptPopoverPresented, arrowEdge: .bottom) {
                 if let transcriptText = transcriptText?.nilIfBlank {
                     Text(transcriptText)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.primary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.primaryTextColor)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(width: 280, alignment: .leading)

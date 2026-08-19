@@ -6,7 +6,7 @@ import Foundation
 
     struct MeetingSearchQueryParserTests {
         @Test
-        func parsesIdentifiersNamesAndDateBoundsIntoTypedTokens() throws {
+        func parsesIdentifiersNamesAndDateBoundsIntoTypedTokens() {
             let projectID = UUID.v7()
             let projects = [
                 FlatProjectRow(

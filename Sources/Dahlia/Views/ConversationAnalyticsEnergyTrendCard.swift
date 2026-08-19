@@ -8,13 +8,13 @@ struct ConversationAnalyticsEnergyTrendCard: View {
         let energy = metrics.voiceAnalytics.energyTrend
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsEnergyTrend)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(L10n.conversationAnalyticsEnergyTrendDescription)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             if energy.samples.isEmpty {
                 Text(L10n.conversationAnalyticsEnergyTrendUnavailable)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, minHeight: 150)
             } else {
                 Chart(energy.samples) { sample in
@@ -64,8 +64,8 @@ struct ConversationAnalyticsEnergyTrendCard: View {
                     "\(sourceTitle(source)): \(L10n.conversationAnalyticsEnergyDeclining)",
                     systemImage: "chart.line.downtrend.xyaxis"
                 )
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

@@ -11,7 +11,7 @@ struct DatabricksProfilePicker: View {
                 .controlSize(.small)
         } else if profiles.isEmpty {
             Text(L10n.noDatabricksProfiles)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
             Picker("", selection: $selection) {
                 ForEach(profiles) { profile in

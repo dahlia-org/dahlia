@@ -93,7 +93,7 @@ import GRDB
                         "referenceRole": InsightReferenceRole.evidence.rawValue,
                     ]
                 )
-                #expect(abs(try #require(reference?.createdAt).timeIntervalSince(createdAt)) < 0.001)
+                #expect(try abs(#require(reference?.createdAt).timeIntervalSince(createdAt)) < 0.001)
                 #expect(try !db.tableExists("customer_intelligence_proposals"))
                 #expect(try !db.tableExists("glossary_terms"))
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -368,7 +368,7 @@ import GRDB
             #expect(detail.0.meetingCount == 1)
             #expect(detail.0.organizationCount == 1)
             #expect(
-                abs(try #require(detail.0.lastDiscussedAt).timeIntervalSince(
+                try abs(#require(detail.0.lastDiscussedAt).timeIntervalSince(
                     try #require(meeting.recordingStartedAt)
                 )) < 0.001
             )

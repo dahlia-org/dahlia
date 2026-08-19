@@ -44,7 +44,7 @@ struct DahliaWindowHeaderIconButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering && showsHoverHighlight ? DahliaDesign.hoverHighlightColor : .clear,
+            isHovering && showsHoverHighlight ? DahliaDesign.contentHighlightColor : .clear,
             in: .rect(cornerRadius: 8)
         )
         .overlay {

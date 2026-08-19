@@ -102,7 +102,7 @@ struct ScreenshotOverlayView: View {
                     } else if case .failed = imageLoader.state {
                         placeholder(availableSize: proxy.size) {
                             Text(L10n.summaryImageUnavailable)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                         }
                     } else {
                         placeholder(availableSize: proxy.size) {

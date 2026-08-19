@@ -211,7 +211,7 @@ import os
             let firstRender = try makeBuffer(format: processor.format, frameCount: 257)
             let secondRender = try makeBuffer(format: processor.format, frameCount: 777)
             let firstCapture = try makeBuffer(format: processor.format, frameCount: 431)
-            let secondCapture = try makeBuffer(format: processor.format, frameCount: 1_337)
+            let secondCapture = try makeBuffer(format: processor.format, frameCount: 1337)
 
             try processor.processRender(firstRender)
             try processor.processRender(secondRender)
@@ -220,9 +220,9 @@ import os
             try processor.processCapture(secondCapture) { output.append($0) }
             try processor.finish { output.append($0) }
 
-            #expect(processor.format.sampleRate == 16_000)
+            #expect(processor.format.sampleRate == 16000)
             #expect(processor.latency == 0.01)
-            #expect(output.reduce(0) { $0 + Int($1.frameLength) } == 1_768)
+            #expect(output.reduce(0) { $0 + Int($1.frameLength) } == 1768)
             #expect(output.allSatisfy { $0.format == processor.format })
             #expect(output.allSatisfy { buffer in
                 guard let samples = buffer.floatChannelData?[0] else { return false }
@@ -233,7 +233,7 @@ import os
         @Test
         func echoCancellationAttenuatesDelayedRenderSignalAfterConvergence() throws {
             let processor = try WebRTCAEC3Processor()
-            let frameCount = 1_000
+            let frameCount = 1000
             let delayFrames = 8
             var renderHistory = Array(
                 repeating: [Float](repeating: 0, count: 160),
@@ -350,24 +350,24 @@ import os
 
         @Test
         func echoCaptureAlignmentWaitsForReferenceOrMaximumHold() {
-            let capturePTS = CMTime(seconds: 10, preferredTimescale: 1_000)
+            let capturePTS = CMTime(seconds: 10, preferredTimescale: 1000)
 
             #expect(!EchoCaptureAlignment.referenceCoversCapture(
-                referenceEnd: CMTime(seconds: 9.99, preferredTimescale: 1_000),
+                referenceEnd: CMTime(seconds: 9.99, preferredTimescale: 1000),
                 capturePresentationTimeStamp: capturePTS
             ))
             #expect(EchoCaptureAlignment.referenceCoversCapture(
-                referenceEnd: CMTime(seconds: 10.01, preferredTimescale: 1_000),
+                referenceEnd: CMTime(seconds: 10.01, preferredTimescale: 1000),
                 capturePresentationTimeStamp: capturePTS
             ))
             #expect(!EchoCaptureAlignment.holdExpired(
                 oldestCapturePresentationTimeStamp: capturePTS,
-                latestCapturePresentationTimeStamp: CMTime(seconds: 10.09, preferredTimescale: 1_000),
+                latestCapturePresentationTimeStamp: CMTime(seconds: 10.09, preferredTimescale: 1000),
                 maximumHold: 0.1
             ))
             #expect(EchoCaptureAlignment.holdExpired(
                 oldestCapturePresentationTimeStamp: capturePTS,
-                latestCapturePresentationTimeStamp: CMTime(seconds: 10.1, preferredTimescale: 1_000),
+                latestCapturePresentationTimeStamp: CMTime(seconds: 10.1, preferredTimescale: 1000),
                 maximumHold: 0.1
             ))
         }

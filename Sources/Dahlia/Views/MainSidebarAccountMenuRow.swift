@@ -32,7 +32,7 @@ struct MainSidebarAccountMenuRow: View {
                 if showsDisclosure {
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .accessibilityHidden(true)
                 } else if let selectionState {
                     Image(systemName: "checkmark")
@@ -46,10 +46,10 @@ struct MainSidebarAccountMenuRow: View {
             .frame(height: 30)
             .contentShape(.rect(cornerRadius: 7))
             .background(
-                (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.hoverHighlightColor : .clear,
+                (isHovered || isKeyboardHighlighted) && isEnabled ? DahliaDesign.sidebarHighlightColor : .clear,
                 in: .rect(cornerRadius: 7)
             )
-            .dahliaFont(.body)
+            .font(.callout)
             .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         }
         .buttonStyle(.plain)

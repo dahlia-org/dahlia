@@ -1232,7 +1232,7 @@ import ImageIO
 
             let onlyPrimaryNoOp = try store.setOrganizationDomain(
                 organizationID: first.resourceID,
-                expectedOrganizationRevision: try #require(firstDomain.revision),
+                expectedOrganizationRevision: #require(firstDomain.revision),
                 domainName: "shared.example",
                 isPrimary: false
             )
@@ -1240,13 +1240,13 @@ import ImageIO
 
             let secondDomain = try store.setOrganizationDomain(
                 organizationID: first.resourceID,
-                expectedOrganizationRevision: try #require(onlyPrimaryNoOp.revision),
+                expectedOrganizationRevision: #require(onlyPrimaryNoOp.revision),
                 domainName: "second.example",
                 isPrimary: false
             )
             _ = try store.setOrganizationDomain(
                 organizationID: first.resourceID,
-                expectedOrganizationRevision: try #require(secondDomain.revision),
+                expectedOrganizationRevision: #require(secondDomain.revision),
                 domainName: "alpha.example",
                 isPrimary: false
             )
@@ -1291,7 +1291,7 @@ import ImageIO
             #expect(throws: MeetingAccessError.invalidCustomerIntelligenceMutation) {
                 try store.setOrganizationDomain(
                     organizationID: second.resourceID,
-                    expectedOrganizationRevision: try #require(shared.revision),
+                    expectedOrganizationRevision: #require(shared.revision),
                     domainName: "not a domain",
                     isPrimary: false
                 )
@@ -1326,13 +1326,13 @@ import ImageIO
 
             let removed = try store.removeOrganizationDomain(
                 organizationID: second.resourceID,
-                expectedOrganizationRevision: try #require(shared.revision),
+                expectedOrganizationRevision: #require(shared.revision),
                 domainName: "shared.example"
             )
             #expect(removed.changed)
             let removeNoOp = try store.removeOrganizationDomain(
                 organizationID: second.resourceID,
-                expectedOrganizationRevision: try #require(removed.revision),
+                expectedOrganizationRevision: #require(removed.revision),
                 domainName: "shared.example"
             )
             #expect(!removeNoOp.changed)
@@ -1454,7 +1454,7 @@ import ImageIO
             #expect(!FileManager.default.fileExists(
                 atPath: fixture.primaryVaultURL.appending(path: "Denied").path
             ))
-            let appearanceKeys: Set<String> = ["icon", "color", "theme", "theme_color"]
+            let appearanceKeys: Set = ["icon", "color", "theme", "theme_color"]
             for name in ["query_projects", "get_project"] {
                 let definition = try #require(readOnlyDefinitions.first { $0["name"] as? String == name })
                 let outputSchema = try #require(definition["outputSchema"] as? [String: Any])
@@ -1473,7 +1473,7 @@ import ImageIO
             let writeTools = try Self.json(writeServer.handleLine(#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#))
             let writeDefinitions = ((writeTools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             let names = Set(writeDefinitions.compactMap { $0["name"] as? String })
-            let customerWriteNames: Set<String> = [
+            let customerWriteNames: Set = [
                 "create_organization", "update_organization", "delete_organization",
                 "create_contact", "update_contact", "delete_contact", "resolve_contact",
                 "create_conversation_topic", "update_conversation_topic", "delete_conversation_topic",
@@ -1557,7 +1557,7 @@ import ImageIO
                 projectReferenceProperties["resource_type"] as? [String: Any]
             )
             #expect(projectResourceTypeSchema["enum"] as? [String] == ["organization", "contact"])
-            let deleteNames: Set<String> = [
+            let deleteNames: Set = [
                 "delete_organization", "delete_contact", "delete_conversation_topic",
                 "delete_insight",
             ]
@@ -1585,18 +1585,18 @@ import ImageIO
             let revision = try #require(created["revision"] as? Int)
             #expect(appearanceKeys.isDisjoint(with: created.keys))
 
-            let projectKeys: Set<String> = [
+            let projectKeys: Set = [
                 "project_id", "name", "path", "root_project_id", "explicit_type", "effective_type",
                 "type_owner_project_id", "is_type_inherited", "direct_meeting_count",
                 "descendant_meeting_count", "description", "revision",
             ]
-            for response in [
-                try Self.json(readOnlyServer.handleLine("""
+            for response in try [
+                Self.json(readOnlyServer.handleLine("""
                 {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"query_projects","arguments":{
                     "project_id":"\(projectID)"
                 }}}
                 """)),
-                try Self.json(readOnlyServer.handleLine("""
+                Self.json(readOnlyServer.handleLine("""
                 {"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"get_project","arguments":{
                     "project_id":"\(projectID)"
                 }}}
@@ -1805,7 +1805,7 @@ import ImageIO
             )
             let deletedRoot = try store.deleteOrganization(
                 id: root.resourceID,
-                expectedRevision: try #require(removedMembership.revision)
+                expectedRevision: #require(removedMembership.revision)
             )
             #expect(deletedRoot.changed)
             #expect(throws: MeetingAccessError.organizationNotFound) {
@@ -1931,9 +1931,9 @@ import ImageIO
                 #expect(try store.contact(id: contactID).contact.id == contactID)
             }
 
-            for contact in [
-                try store.createContact(email: "unused@example.com", displayName: nil),
-                try store.createContact(email: nil, displayName: "Provisional"),
+            for contact in try [
+                store.createContact(email: "unused@example.com", displayName: nil),
+                store.createContact(email: nil, displayName: "Provisional"),
             ] {
                 let result = try store.deleteContact(
                     id: contact.resourceID,
@@ -1972,11 +1972,11 @@ import ImageIO
             }
             let deletedTopic = try store.deleteConversationTopic(
                 id: topic.resourceID,
-                expectedRevision: try #require(topicReference.revision)
+                expectedRevision: #require(topicReference.revision)
             )
             let deletedInsight = try store.deleteInsight(
                 id: insight.resourceID,
-                expectedRevision: try #require(insightReference.revision)
+                expectedRevision: #require(insightReference.revision)
             )
             #expect(deletedTopic.resourceType == .conversationTopic)
             #expect(deletedInsight.resourceType == .insight)
@@ -2034,20 +2034,20 @@ import ImageIO
             let sameMembership = try store.setContactOrganizationMembership(
                 contactID: contact.resourceID,
                 organizationID: unit.resourceID,
-                expectedOrganizationRevision: try #require(membership.revision),
+                expectedOrganizationRevision: #require(membership.revision),
                 roleLabel: "Lead"
             )
             #expect(!sameMembership.changed)
             let removedMembership = try store.removeContactOrganizationMembership(
                 contactID: contact.resourceID,
                 organizationID: unit.resourceID,
-                expectedOrganizationRevision: try #require(sameMembership.revision)
+                expectedOrganizationRevision: #require(sameMembership.revision)
             )
             #expect(removedMembership.changed)
             let missingMembership = try store.removeContactOrganizationMembership(
                 contactID: contact.resourceID,
                 organizationID: unit.resourceID,
-                expectedOrganizationRevision: try #require(removedMembership.revision)
+                expectedOrganizationRevision: #require(removedMembership.revision)
             )
             #expect(!missingMembership.changed)
 
@@ -2062,7 +2062,7 @@ import ImageIO
             #expect(topicReference.changed)
             let sameTopicReference = try store.setConversationTopicResourceReference(
                 topicID: topic.resourceID,
-                expectedTopicRevision: try #require(topicReference.revision),
+                expectedTopicRevision: #require(topicReference.revision),
                 resourceType: .organization,
                 resourceID: root.resourceID,
                 note: nil
@@ -2070,14 +2070,14 @@ import ImageIO
             #expect(!sameTopicReference.changed)
             let removedTopicReference = try store.removeConversationTopicResourceReference(
                 topicID: topic.resourceID,
-                expectedTopicRevision: try #require(sameTopicReference.revision),
+                expectedTopicRevision: #require(sameTopicReference.revision),
                 resourceType: .organization,
                 resourceID: root.resourceID
             )
             #expect(removedTopicReference.changed)
             let missingTopicReference = try store.removeConversationTopicResourceReference(
                 topicID: topic.resourceID,
-                expectedTopicRevision: try #require(removedTopicReference.revision),
+                expectedTopicRevision: #require(removedTopicReference.revision),
                 resourceType: .organization,
                 resourceID: root.resourceID
             )
@@ -2098,7 +2098,7 @@ import ImageIO
             #expect(insightReference.changed)
             let sameInsightReference = try store.setInsightResourceReference(
                 insightID: insight.resourceID,
-                expectedInsightRevision: try #require(insightReference.revision),
+                expectedInsightRevision: #require(insightReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID,
                 referenceRole: .evidence
@@ -2106,14 +2106,14 @@ import ImageIO
             #expect(!sameInsightReference.changed)
             let removedInsightReference = try store.removeInsightResourceReference(
                 insightID: insight.resourceID,
-                expectedInsightRevision: try #require(sameInsightReference.revision),
+                expectedInsightRevision: #require(sameInsightReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID
             )
             #expect(removedInsightReference.changed)
             let missingInsightReference = try store.removeInsightResourceReference(
                 insightID: insight.resourceID,
-                expectedInsightRevision: try #require(removedInsightReference.revision),
+                expectedInsightRevision: #require(removedInsightReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID
             )
@@ -2132,7 +2132,7 @@ import ImageIO
             #expect(projectReference.changed)
             let sameProjectReference = try store.setProjectResourceReference(
                 projectID: project.projectID,
-                expectedProjectRevision: try #require(projectReference.revision),
+                expectedProjectRevision: #require(projectReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID,
                 relationLabel: "Owner"
@@ -2140,14 +2140,14 @@ import ImageIO
             #expect(!sameProjectReference.changed)
             let removedProjectReference = try store.removeProjectResourceReference(
                 projectID: project.projectID,
-                expectedProjectRevision: try #require(sameProjectReference.revision),
+                expectedProjectRevision: #require(sameProjectReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID
             )
             #expect(removedProjectReference.changed)
             let missingProjectReference = try store.removeProjectResourceReference(
                 projectID: project.projectID,
-                expectedProjectRevision: try #require(removedProjectReference.revision),
+                expectedProjectRevision: #require(removedProjectReference.revision),
                 resourceType: .contact,
                 resourceID: contact.resourceID
             )
@@ -2255,7 +2255,7 @@ import ImageIO
             )
             let projectReference = try store.setProjectResourceReference(
                 projectID: project.projectID,
-                expectedProjectRevision: try #require(identifiedProjectReference.revision),
+                expectedProjectRevision: #require(identifiedProjectReference.revision),
                 resourceType: .contact,
                 resourceID: provisional.resourceID,
                 relationLabel: "Owner"
@@ -2270,7 +2270,7 @@ import ImageIO
             )
             let insightReference = try store.setInsightResourceReference(
                 insightID: insight.resourceID,
-                expectedInsightRevision: try #require(identifiedInsightReference.revision),
+                expectedInsightRevision: #require(identifiedInsightReference.revision),
                 resourceType: .contact,
                 resourceID: provisional.resourceID,
                 referenceRole: .evidence
@@ -2367,7 +2367,7 @@ import ImageIO
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
             let topic = try store.createConversationTopic(title: "Large topic", currentState: "Active")
             try fixture.manager.dbQueue.write { db in
-                for index in 0...100 {
+                for index in 0 ... 100 {
                     let organizationID = UUID.v7()
                     let now = Date.now.addingTimeInterval(TimeInterval(index))
                     try OrganizationRecord(

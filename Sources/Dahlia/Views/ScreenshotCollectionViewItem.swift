@@ -190,9 +190,6 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     func configure(
         _ configuration: Configuration,
         thumbnailProvider: @escaping ThumbnailProvider = defaultThumbnailProvider,
-        metadataFontSize: CGFloat = DahliaFontRole.metadata.pointSize(
-            baseSize: CGFloat(AppSettings.defaultInterfaceFontSize)
-        ),
         actions: Actions
     ) {
         loadViewIfNeeded()
@@ -205,7 +202,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         representedImageIdentity = imageIdentity
         timestampLabel.stringValue = configuration.timestamp
         timestampLabel.toolTip = configuration.timestamp
-        timestampLabel.font = .systemFont(ofSize: metadataFontSize)
+        timestampLabel.font = .preferredFont(forTextStyle: .caption1)
         activationHandler = actions.activate
         copyHandler = actions.copy
         downloadHandler = actions.download
@@ -282,8 +279,8 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
     }
 
     private func configureMetadataControls() {
-        timestampLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        timestampLabel.textColor = .secondaryLabelColor
+        timestampLabel.font = .preferredFont(forTextStyle: .caption1)
+        timestampLabel.textColor = DahliaDesign.secondaryTextNSColor
         timestampLabel.lineBreakMode = .byTruncatingTail
 
         lockImageView.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: L10n.screenshotUsedInSummary)

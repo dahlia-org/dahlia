@@ -32,7 +32,7 @@ import GRDB
         }
 
         @Test
-        func reloadIsIgnoredWithoutALoadedMeeting() async {
+        func reloadIsIgnoredWithoutALoadedMeeting() {
             let viewModel = CaptionViewModel()
             viewModel.reloadSummaryDocument()
             #expect(viewModel.currentSummaryDocument == nil)

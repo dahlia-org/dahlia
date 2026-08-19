@@ -14,10 +14,10 @@ struct CalendarEventPopoverContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: "calendar")
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
 
                 Text(dateText)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 if let attributedDescription {
                     Divider()

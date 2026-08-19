@@ -270,7 +270,7 @@ struct OrganizationHierarchyView: View {
                     Spacer()
                     if domain.isPrimary {
                         Text(L10n.primary)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                 }
             }
@@ -304,14 +304,14 @@ struct OrganizationHierarchyView: View {
                 VStack(alignment: .leading) {
                     Text(contact.displayName ?? contact.email ?? L10n.unnamedPerson)
                     if let email = contact.email {
-                        Text(email).dahliaFont(.secondary).foregroundStyle(.secondary)
+                        Text(email).font(.footnote).foregroundStyle(DahliaDesign.secondaryTextColor)
                     } else {
                         Text(L10n.customerIntelligenceEmailNotSet)
-                            .dahliaFont(.secondary)
-                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                     if let roleLabel = member.roleLabel {
-                        Text(roleLabel).dahliaFont(.secondary).foregroundStyle(.secondary)
+                        Text(roleLabel).font(.footnote).foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -354,9 +354,9 @@ struct OrganizationHierarchyView: View {
             onOpenTopic(topic.id)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Text(topic.topic.title).dahliaFont(.subsectionTitle, weight: .semibold)
+                Text(topic.topic.title).font(.headline)
                 Text(topic.topic.currentState)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(2)
                 HStack {
                     Text(L10n.topicDerivedSummary(
@@ -367,8 +367,8 @@ struct OrganizationHierarchyView: View {
                         Text(date, style: .date)
                     }
                 }
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
@@ -385,8 +385,8 @@ struct OrganizationHierarchyView: View {
                     VStack(alignment: .leading) {
                         Text(meeting.name)
                         Text(meeting.effectiveRecordingStartedAt, style: .date)
-                            .dahliaFont(.secondary)
-                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(.rect)
@@ -405,10 +405,10 @@ struct OrganizationHierarchyView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(evidence.meeting.name)
                         Text(evidence.meeting.effectiveRecordingStartedAt, style: .date)
-                            .dahliaFont(.secondary)
-                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                         Text(evidence.note)
-                            .dahliaFont(.secondary)
+                            .font(.callout)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(.rect)

@@ -152,7 +152,7 @@ struct TranscriptionSettingsView: View {
         let searchedLocales = searchFilteredLocales
         if searchedLocales.isEmpty {
             Text(L10n.noMatchingLanguages)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
             ForEach(searchedLocales, id: \.identifier) { locale in
                 localeRow(for: locale)

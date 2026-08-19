@@ -44,9 +44,12 @@
             """)
             let rendered = NSAttributedString(attributed)
             let agendaFont = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+            let agendaColor = rendered.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
             let hasAgendaFont = agendaFont != nil
             #expect(hasAgendaFont)
+            #expect(agendaColor == DahliaDesign.primaryTextNSColor)
             guard let agendaFont else { return }
+            #expect(agendaFont.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
             let isAgendaBold = agendaFont.fontDescriptor.symbolicTraits.contains(.bold)
             #expect(isAgendaBold)
             let link = try #require(attributed.runs.compactMap(\.link).first)
@@ -90,6 +93,9 @@
             let attributed = CalendarEventDescriptionFormatter.attributedString(from: description)
 
             #expect(attributed.runs.allSatisfy { $0.link == nil })
+            let rendered = NSAttributedString(attributed)
+            let color = rendered.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+            #expect(color == DahliaDesign.primaryTextNSColor)
         }
     }
 #endif

@@ -8,6 +8,7 @@ struct MeetingProjectPicker: View {
         case compact
     }
 
+    @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     var style: Style = .regular
@@ -35,6 +36,14 @@ struct MeetingProjectPicker: View {
         return sidebarViewModel.flatProjects.first(where: { $0.id == projectId })?.name
     }
 
+    private var currentProjectTint: Color? {
+        guard let projectId = viewModel.currentProjectId else { return nil }
+        return mainWindowNavigation.projectAppearance(
+            projectId: projectId,
+            vaultId: sidebarViewModel.currentVault?.id
+        ).color.color
+    }
+
     private var filteredProjects: [FlatProjectRow] {
         guard !trimmedProjectInput.isEmpty else { return sidebarViewModel.flatProjects }
         return sidebarViewModel.flatProjects.filter { project in
@@ -59,14 +68,14 @@ struct MeetingProjectPicker: View {
             ZStack {
                 Image(systemName: "folder")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .opacity(showsRemoveButton ? 0 : 1)
 
                 if hasProjectAssignment {
                     Button(action: clearProject) {
                         Image(systemName: "xmark")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .frame(minWidth: 16, minHeight: 16)
                             .contentShape(Rectangle())
                     }
@@ -82,8 +91,8 @@ struct MeetingProjectPicker: View {
 
             projectSelectionButton
         }
-        .foregroundStyle(.secondary)
-        .dahliaChipSurface(isHovered: isHovered)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
+        .dahliaChipSurface(isHovered: isHovered, tint: currentProjectTint)
         .contentShape(Capsule())
         .fixedSize(horizontal: true, vertical: false)
         .pointerStyle(.link)
@@ -107,7 +116,7 @@ struct MeetingProjectPicker: View {
             HStack(spacing: 4) {
                 if style == .regular {
                     Text(currentProjectName ?? L10n.noProject)
-                        .dahliaFont(.metadata, weight: .medium)
+                        .font(.caption2.weight(.medium))
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.down")
@@ -172,8 +181,8 @@ struct MeetingProjectPicker: View {
                 VStack {
                     Spacer()
                     Text(emptyProjectMessage)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.tertiary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -196,11 +205,11 @@ struct MeetingProjectPicker: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Text(name)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.primary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.primaryTextColor)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
@@ -208,7 +217,7 @@ struct MeetingProjectPicker: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

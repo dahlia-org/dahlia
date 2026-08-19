@@ -10,10 +10,10 @@ struct MultipleMeetingSelectionView: View {
         VStack(spacing: 18) {
             Image(systemName: "checklist")
                 .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             Text(L10n.selectedCount(sidebarViewModel.selectedMeetingIds.count))
-                .dahliaFont(.displayTitle, weight: .semibold)
+                .font(.title2)
 
             HStack(spacing: 10) {
                 Button(

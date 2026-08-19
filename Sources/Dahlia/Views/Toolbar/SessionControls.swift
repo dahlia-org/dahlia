@@ -80,7 +80,7 @@ struct GenerateSummaryFloatingButton: View {
                 } else {
                     Image(systemName: "sparkles")
                         .dahliaFixedSymbol()
-                        .foregroundStyle(viewModel.canGenerateSummary ? Color.purple : .secondary)
+                        .foregroundStyle(viewModel.canGenerateSummary ? Color.purple : DahliaDesign.secondaryTextColor)
                 }
             }
         }
@@ -122,7 +122,7 @@ struct ShareSummaryFloatingButton: View {
             } icon: {
                 Image(systemName: "square.and.arrow.up")
                     .dahliaFixedSymbol()
-                    .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : .secondary)
+                    .foregroundStyle(viewModel.canShareCurrentSummary ? Color.accentColor : DahliaDesign.secondaryTextColor)
             }
         }
         .modifier(FloatingSummaryButtonModifier(isEnabled: viewModel.canShareCurrentSummary))
@@ -148,9 +148,10 @@ private struct FloatingSummaryButtonModifier: ViewModifier {
         content
             .labelStyle(.iconOnly)
             .dahliaFixedSymbol()
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
+            .buttonStyle(.plain)
+            .frame(width: 28, height: 28)
+            .contentShape(Circle())
+            .background(DahliaDesign.contentHighlightColor, in: Circle())
             .scaleEffect(scalesOnHover ? 1.08 : 1)
             .shadow(
                 color: .black.opacity(respondsToHover ? 0.18 : 0.06),
@@ -190,11 +191,11 @@ private struct SummarySharePopover: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .dahliaFont(.subsectionTitle, weight: .semibold)
+                        .font(.headline)
                         .lineLimit(1)
                     Text(L10n.summary)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .padding(.horizontal, 20)
@@ -232,7 +233,7 @@ private struct SummarySharePopover: View {
 
             if let errorMessage = googleDocsErrorMessage {
                 Text(errorMessage)
-                    .dahliaFont(.secondary)
+                    .font(.callout)
                     .foregroundStyle(.red)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 10)
@@ -314,11 +315,11 @@ private struct SummarySharePopoverRow: View {
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 18))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(width: 22)
                 }
                 Text(title)
-                    .dahliaFont(.body)
+                    .font(.body)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -326,7 +327,7 @@ private struct SummarySharePopoverRow: View {
             .padding(.vertical, 8)
             .background {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovering ? DahliaDesign.hoverHighlightColor : .clear)
+                    .fill(isHovering ? DahliaDesign.contentHighlightColor : .clear)
             }
         }
         .buttonStyle(.plain)

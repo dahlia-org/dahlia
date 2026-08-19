@@ -15,17 +15,17 @@ struct MainSearchPanel: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .dahliaFixedSymbol()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 TextField(L10n.searchMeetingsAndProjects, text: $model.inputText)
                     .textFieldStyle(.plain)
-                    .dahliaFont(.sectionTitle)
+                    .font(.headline)
                     .focused($isSearchFocused)
                     .onSubmit(activateSelectionOrSubmit)
                 Button(L10n.close, systemImage: "xmark", action: onDismiss)
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .help(L10n.close)
             }
             .padding(.horizontal, 20)
@@ -151,7 +151,7 @@ struct MainSearchPanel: View {
                 sectionHeader(model.isRecent ? L10n.recentProjects : L10n.projects)
                     .padding(.top, model.meetings.isEmpty ? 0 : 12)
                 Label(L10n.searchUnavailable, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else if !model.projects.isEmpty {
@@ -179,8 +179,8 @@ struct MainSearchPanel: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .dahliaFont(.body)
-            .foregroundStyle(.secondary)
+            .font(.body)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .accessibilityAddTraits(.isHeader)

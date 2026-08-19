@@ -312,7 +312,7 @@ private struct CalendarSourceSelectionView: View {
                 ProgressView(loadingMessage)
             } else if calendars.isEmpty {
                 Text(emptyMessage)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             } else {
                 ForEach(calendars) { calendar in
                     Toggle(isOn: selectionBinding(calendar.id)) {

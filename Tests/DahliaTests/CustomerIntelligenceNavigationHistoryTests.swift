@@ -1,5 +1,5 @@
-@testable import Dahlia
 import Foundation
+@testable import Dahlia
 
 #if canImport(Testing)
     import Testing

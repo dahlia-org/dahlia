@@ -639,7 +639,7 @@
             try await audioStore.acquireSessionLease(meetingId: meeting.id, sessionId: session.id)
             let format = try #require(AVAudioFormat(
                 commonFormat: .pcmFormatInt16,
-                sampleRate: 16_000,
+                sampleRate: 16000,
                 channels: 1,
                 interleaved: false
             ))

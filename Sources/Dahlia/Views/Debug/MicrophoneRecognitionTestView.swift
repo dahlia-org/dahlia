@@ -180,7 +180,7 @@ struct MicrophoneRecognitionTestView: View {
             Section(L10n.recognizedText) {
                 if model.displayedTranscript.isEmpty {
                     Text(L10n.speakIntoSelectedMicrophone)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } else {
                     Text(model.displayedTranscript)
                         .textSelection(.enabled)

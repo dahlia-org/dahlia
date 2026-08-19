@@ -5,7 +5,7 @@ struct SidebarSectionHeader: View {
 
     var body: some View {
         Text(title)
-            .dahliaFont(.body, weight: .medium)
+            .font(.subheadline)
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -21,18 +21,9 @@ struct SidebarNavigationRowModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(backgroundColor)
-            }
+            .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
+            .dahliaSidebarHoverHighlight(isHovered: isHovered, isSelected: isSelected)
             .animation(.easeOut(duration: 0.12), value: isHovered)
             .onHover { isHovered = $0 }
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return DahliaDesign.sidebarSelectionHighlightColor
-        }
-        return isHovered ? DahliaDesign.hoverHighlightColor : .clear
     }
 }

@@ -134,7 +134,7 @@ import Foundation
                 if await appServer.codexOperationDrainWaiterCountForTesting == 1 {
                     return true
                 }
-                return !(await second.messages()).isEmpty
+                return await !(second.messages()).isEmpty
             })
             #expect(await appServer.codexOperationDrainWaiterCountForTesting == 1)
             #expect(await second.messages().isEmpty)

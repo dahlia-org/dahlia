@@ -4,7 +4,7 @@ struct CalendarEventMetadataButton: View {
     let text: String
     let event: CalendarEventDisplayInfo
 
-    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var attributedDescription: AttributedString?
     @State private var isPresented = false
     @State private var isHovered = false
@@ -13,13 +13,13 @@ struct CalendarEventMetadataButton: View {
         Button(action: togglePresentation) {
             Label {
                 Text(text)
-                    .dahliaFont(.metadata, weight: .medium)
+                    .font(.caption2.weight(.medium))
                     .lineLimit(1)
             } icon: {
                 Image(systemName: "calendar")
                     .font(.caption2)
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .dahliaChipSurface(isHovered: isHovered)
             .contentShape(Capsule())
         }
@@ -31,7 +31,7 @@ struct CalendarEventMetadataButton: View {
         .help(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityLabel(L10n.calendarEventOrigin(event.resolvedTitle))
         .accessibilityValue(detailLines.joined(separator: ", "))
-        .onChange(of: baseFontSize, initial: true) { _, _ in
+        .onChange(of: dynamicTypeSize, initial: true) { _, _ in
             updateAttributedDescription()
         }
         .onChange(of: event.description) { _, _ in
@@ -52,7 +52,7 @@ struct CalendarEventMetadataButton: View {
 
     private func updateAttributedDescription() {
         attributedDescription = event.description.nilIfBlank.map {
-            CalendarEventDescriptionFormatter.attributedString(from: $0, baseFontSize: baseFontSize)
+            CalendarEventDescriptionFormatter.attributedString(from: $0)
         }
     }
 

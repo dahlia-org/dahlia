@@ -5,25 +5,18 @@ struct ProjectManagementRowContent: View {
     let isSelected: Bool
     let appearance: ProjectAppearance
 
-    @State private var isHovered = false
-
     var body: some View {
         Label {
             Text(node.displayName)
                 .lineLimit(1)
                 .truncationMode(.middle)
         } icon: {
-            ProjectAppearanceIcon(appearance: appearance, isSelected: isSelected)
+            ProjectAppearanceIcon(appearance: appearance)
         }
         .badge(node.meetingCount)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
-        .background(
-            isHovered && !isSelected ? DahliaDesign.hoverHighlightColor : .clear,
-            in: .rect(cornerRadius: 6)
-        )
-        .animation(.easeOut(duration: 0.12), value: isHovered)
-        .onHover { isHovered = $0 }
+        .modifier(SidebarNavigationRowModifier(isSelected: isSelected))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }

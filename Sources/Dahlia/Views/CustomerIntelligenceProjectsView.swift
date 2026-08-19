@@ -110,12 +110,12 @@ struct CustomerIntelligenceProjectsView: View {
             .width(min: 90, ideal: 110)
             TableColumn(L10n.organizations, value: \.sortOrganizations) { summary in
                 Text(summary.organizationNames.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }
             TableColumn(L10n.people, value: \.sortContacts) { summary in
                 Text(summary.contactNames.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }
             TableColumn(L10n.meetings, value: \.meetingCount) { summary in
@@ -127,7 +127,7 @@ struct CustomerIntelligenceProjectsView: View {
                 if let date = summary.latestMeetingDate {
                     Text(date, format: .dateTime.year().month().day())
                 } else {
-                    Text("—").foregroundStyle(.tertiary)
+                    Text("—").foregroundStyle(DahliaDesign.optionalTextColor)
                 }
             }
             .width(min: 110, ideal: 130)

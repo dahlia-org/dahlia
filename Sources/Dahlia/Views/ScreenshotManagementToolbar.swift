@@ -32,7 +32,7 @@ struct ScreenshotManagementToolbar: View {
 
             if isSelecting {
                 Text(L10n.selectedCount(selectedCount))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Button(L10n.selectAll, action: selectAll)
                     .disabled(!canSelectAll)

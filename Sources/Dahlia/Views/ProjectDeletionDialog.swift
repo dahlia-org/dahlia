@@ -66,11 +66,11 @@ struct ProjectDeletionDialog: View {
                         )
 
                         Text(L10n.projectDirectoriesAreKept)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                         if meetingCount > 0 {
                             Label(deletionImpactDescription, systemImage: deletionImpactSystemImage)
-                                .foregroundStyle(deletesMeetings ? .red : .secondary)
+                                .foregroundStyle(deletesMeetings ? Color.red : DahliaDesign.secondaryTextColor)
                         }
                     }
 
@@ -95,13 +95,13 @@ struct ProjectDeletionDialog: View {
                                 }
                             } else if moveDestinations.isEmpty {
                                 Label(L10n.noProjectMoveDestination, systemImage: "exclamationmark.triangle")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
 
                             if deletesMeetings {
                                 Toggle(L10n.deleteExportedSummaries, isOn: $deletesSummaryFiles)
                                 Text(L10n.deleteExportedSummariesHelp)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                         }
                     }

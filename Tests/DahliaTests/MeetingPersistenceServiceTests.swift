@@ -152,7 +152,7 @@ import os
                     """,
                     arguments: [
                         UUID.v7(), placeholderSessionId, "microphone", 0, UUID.v7(), "recording",
-                        "empty.partial.caf", "empty.caf", 48_000, 1, 0, createdAt, createdAt,
+                        "empty.partial.caf", "empty.caf", 48000, 1, 0, createdAt, createdAt,
                     ]
                 )
             }
@@ -167,10 +167,10 @@ import os
 
             let afterCancellation = try await database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
-                return (
-                    try #require(meeting),
-                    try RecordingSessionRecord.fetchOne(db, key: failedService.recordingSessionId),
-                    try RecordingSessionRecord.fetchOne(db, key: placeholderSessionId)
+                return try (
+                    #require(meeting),
+                    RecordingSessionRecord.fetchOne(db, key: failedService.recordingSessionId),
+                    RecordingSessionRecord.fetchOne(db, key: placeholderSessionId)
                 )
             }
             #expect(afterCancellation.0.recordingStartedAt == nil)
@@ -435,7 +435,7 @@ import os
             let (persistedMeeting, persistedSession) = try await database.dbQueue.read { db in
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingId)
                 let session = try RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
-                return (try #require(meeting), try #require(session))
+                return try (#require(meeting), #require(session))
             }
 
             #expect(persistedMeeting.duration == 4)
@@ -552,10 +552,10 @@ import os
             await service.cancel()
 
             let persisted = try await database.dbQueue.read { db in
-                (
-                    try TranscriptSegmentRecord.fetchOne(db, key: legacySegment.id),
-                    try TranscriptSegmentRecord.fetchOne(db, key: appendedSegment.id),
-                    try RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
+                try (
+                    TranscriptSegmentRecord.fetchOne(db, key: legacySegment.id),
+                    TranscriptSegmentRecord.fetchOne(db, key: appendedSegment.id),
+                    RecordingSessionRecord.fetchOne(db, key: service.recordingSessionId)
                 )
             }
             #expect(persisted.0?.text == legacySegment.text)

@@ -60,7 +60,7 @@ import Foundation
             try await waitUntil { await clock.waiterCount == 0 }
 
             #expect(await probe.timeoutCount == 0)
-            #expect(!(await watchdog.didTimeOut))
+            #expect(await !(watchdog.didTimeOut))
         }
 
         @Test

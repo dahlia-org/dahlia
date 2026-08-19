@@ -8,7 +8,7 @@ struct CodexChatApprovalDetails: View {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if let reason = request.reason {
                     Text(reason)
-                        .dahliaFont(.body)
+                        .font(.body)
                 }
 
                 switch request.kind {
@@ -22,8 +22,8 @@ struct CodexChatApprovalDetails: View {
 
                 if request.reviewability != .ready {
                     Text(reviewabilityMessage)
-                        .dahliaFont(.secondary)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -49,12 +49,12 @@ private struct CodexChatCommandApprovalDetails: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let command = request.command {
                     Text(command)
-                        .dahliaFont(.body, design: .monospaced)
+                        .font(.body.monospaced())
                 }
                 if let cwd = request.cwd {
                     Text(cwd)
-                        .dahliaFont(.secondary, design: .monospaced)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .approvalDetailRegion()
@@ -71,12 +71,12 @@ private struct CodexChatMCPApprovalDetails: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let server = request.mcpServer, let tool = request.mcpTool {
                     Text("\(server).\(tool)")
-                        .dahliaFont(.body, weight: .medium, design: .monospaced)
+                        .font(.body.weight(.medium).monospaced())
                 }
                 if let arguments = request.mcpArguments {
                     Text(arguments)
-                        .dahliaFont(.secondary, design: .monospaced)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .approvalDetailRegion()
@@ -93,18 +93,18 @@ private struct CodexChatFileApprovalDetails: View {
                 ForEach(request.fileChanges.enumerated(), id: \.offset) { _, change in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title(for: change))
-                            .dahliaFont(.secondary, weight: .medium, design: .monospaced)
+                            .font(.footnote.weight(.medium).monospaced())
                         if !change.diff.isEmpty {
                             Text(change.diff)
-                                .dahliaFont(.secondary, design: .monospaced)
-                                .foregroundStyle(.secondary)
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                         }
                     }
                 }
                 if let grantRoot = request.grantRoot {
                     Text(grantRoot)
-                        .dahliaFont(.secondary, design: .monospaced)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .approvalDetailRegion()

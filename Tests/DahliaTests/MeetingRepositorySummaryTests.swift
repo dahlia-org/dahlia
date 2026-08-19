@@ -289,7 +289,7 @@ import GRDB
             try context.repo.upsertSummary(SummaryRecord(
                 meetingId: context.meeting.id,
                 title: document.title,
-                document: try document.databaseJSONString(),
+                document: document.databaseJSONString(),
                 createdAt: .now
             ))
 

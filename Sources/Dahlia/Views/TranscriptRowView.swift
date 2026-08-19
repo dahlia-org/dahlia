@@ -11,14 +11,14 @@ struct TranscriptRowView: View, Equatable {
         HStack(alignment: .top, spacing: 10) {
             // タイムスタンプ
             Text(timestamp)
-                .dahliaFont(.metadata, design: .monospaced)
-                .foregroundStyle(.tertiary)
+                .font(.caption.monospaced())
+                .foregroundStyle(DahliaDesign.optionalTextColor)
                 .frame(width: 56, alignment: .leading)
 
             // 話者ラベル
             if let speaker = segment.speakerLabel {
                 Text(speakerDisplayName(for: speaker))
-                    .dahliaFont(.metadata, weight: .semibold)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
@@ -41,12 +41,12 @@ struct TranscriptRowView: View, Equatable {
     private var transcriptText: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(segment.displayText)
-                .dahliaFont(.body)
-                .foregroundStyle(segment.isConfirmed ? .primary : .secondary)
+                .font(.body)
+                .foregroundStyle(segment.isConfirmed ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
 
             if let translatedText = segment.visibleTranslatedText(isEnabled: showsTranslatedText) {
                 Text(translatedText)
-                    .dahliaFont(.body)
+                    .font(.body)
                     .foregroundStyle(.blue)
             }
         }

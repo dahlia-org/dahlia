@@ -34,8 +34,8 @@ import Foundation
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
             settings.currentVault = Self.testVault()
-            let context = CodexChatContext.meeting(
-                id: try #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
+            let context = try CodexChatContext.meeting(
+                id: #require(UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")),
                 name: "Current meeting",
                 calendarEvent: nil
             )
@@ -60,7 +60,7 @@ import Foundation
             await waitUntil { !session.isGenerating }
 
             #expect(contextProvider.requestCount == 1)
-            #expect(await service.sentTextBlocks.suffix(2).map { $0.first } == [
+            #expect(await service.sentTextBlocks.suffix(2).map(\.first) == [
                 CodexChatPromptCodec.encodeTextBlocks(
                     text: nil,
                     context: context,

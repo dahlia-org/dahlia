@@ -42,21 +42,21 @@ struct DetailTabBar: View {
                     } label: {
                         ZStack {
                             Text(tab.label)
-                                .dahliaFont(.body, weight: .semibold)
+                                .font(.body.weight(.semibold))
                                 .hidden()
                             Text(tab.label)
-                                .dahliaFont(.body, weight: isSelected ? .semibold : .regular)
+                                .font(isSelected ? .body.weight(.semibold) : .body)
                         }
                         .padding(.horizontal, DahliaDesign.tabHorizontalPadding)
                         .padding(.vertical, DahliaDesign.tabVerticalPadding)
                         .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
                     .background {
                         if !isFolderOnly, hoveredTab == tab {
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(DahliaDesign.hoverHighlightColor)
+                                .fill(DahliaDesign.contentHighlightColor)
                         }
                     }
                     .overlay(alignment: .bottom) {

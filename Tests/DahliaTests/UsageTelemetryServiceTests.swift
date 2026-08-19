@@ -186,8 +186,8 @@ import Foundation
             #expect(event(duration: 29).floatValue == 0)
             #expect(event(duration: 30).floatValue == 1)
             #expect(event(duration: 90).floatValue == 2)
-            #expect(event(duration: 21_600).floatValue == 360)
-            #expect(event(duration: 86_400).floatValue == 360)
+            #expect(event(duration: 21600).floatValue == 360)
+            #expect(event(duration: 86400).floatValue == 360)
             #expect(UsageTelemetryEvent.recording(
                 .failed(.stop),
                 mode: .batch,

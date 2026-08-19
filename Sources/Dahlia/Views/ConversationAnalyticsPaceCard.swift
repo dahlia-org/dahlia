@@ -9,7 +9,7 @@ struct ConversationAnalyticsPaceCard: View {
         let system = metrics.source(.system)
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsSpeakingPace)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             paceChart(microphone: microphone, system: system)
             VStack(spacing: 8) {
                 sourceFacts(
@@ -26,7 +26,7 @@ struct ConversationAnalyticsPaceCard: View {
                 )
             }
             Text(paceComparison(microphone: microphone, system: system))
-                .dahliaFont(.body)
+                .font(.body)
         }
         .frame(maxWidth: .infinity, minHeight: 236, alignment: .topLeading)
         .padding(16)
@@ -75,7 +75,7 @@ struct ConversationAnalyticsPaceCard: View {
         .clipShape(.rect(cornerRadius: 4))
         .annotation(position: .trailing, alignment: .leading) {
             Text(pace(source))
-                .dahliaFont(.body, weight: .bold)
+                .font(.body.weight(.bold))
                 .monospacedDigit()
         }
         .accessibilityLabel(title)
@@ -100,8 +100,8 @@ struct ConversationAnalyticsPaceCard: View {
                 .dahliaFixedSymbol()
                 .foregroundStyle(color)
         }
-        .dahliaFont(.secondary)
-        .foregroundStyle(.secondary)
+        .font(.callout)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

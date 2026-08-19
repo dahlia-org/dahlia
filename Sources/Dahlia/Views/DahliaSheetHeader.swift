@@ -6,7 +6,7 @@ struct DahliaSheetHeader: View {
     var body: some View {
         DahliaWindowHeader(allowsWindowDragging: false) {
             Text(title)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
 

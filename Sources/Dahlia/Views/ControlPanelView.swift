@@ -232,7 +232,7 @@ struct ControlPanelView: View {
                 .dahliaFixedSymbol()
                 .foregroundStyle(.orange)
             Text(message)
-                .dahliaFont(.body)
+                .font(.body)
                 .foregroundStyle(tint)
             Spacer()
         }
@@ -247,6 +247,7 @@ struct ControlPanelView: View {
             SummaryTabContentView(
                 screenshotStore: viewModel.screenshotStore,
                 document: viewModel.currentSummaryDocument,
+                meetingDescription: currentMeetingItem?.meetingDescription,
                 hasSummary: viewModel.hasCurrentMeetingSummary,
                 openScreenshot: openSummaryScreenshot,
                 transcriptText: summaryTranscriptText
@@ -270,7 +271,7 @@ struct ControlPanelView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $viewModel.noteText)
-                        .dahliaFont(.body)
+                        .font(.body)
                         .focused($isNotesFieldFocused)
                         .scrollContentBackground(.hidden)
                         .frame(height: notesEditorHeight(for: proxy.size.height))
@@ -283,8 +284,8 @@ struct ControlPanelView: View {
 
                     if viewModel.noteText.isEmpty {
                         Text(L10n.notesPlaceholder)
-                            .dahliaFont(.body)
-                            .foregroundStyle(.tertiary)
+                            .font(.body)
+                            .foregroundStyle(DahliaDesign.optionalTextColor)
                             .padding(NotesEditorLayout.placeholderPadding)
                             .allowsHitTesting(false)
                     }

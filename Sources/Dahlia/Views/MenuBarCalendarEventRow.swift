@@ -40,7 +40,7 @@ struct MenuBarCalendarEventRow: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .foregroundStyle(event.isAttending ? Color.primary : Color.secondary)
+                .foregroundStyle(event.isAttending ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
             } icon: {
                 MenuBarCalendarParticipationIndicator(isAttending: event.isAttending)
             }

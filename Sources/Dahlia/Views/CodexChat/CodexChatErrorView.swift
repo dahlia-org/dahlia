@@ -9,7 +9,7 @@ struct CodexChatErrorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .dahliaFont(.body)
+                .font(.body)
                 .foregroundStyle(.red)
             HStack {
                 Button(L10n.retry, action: onRetry)

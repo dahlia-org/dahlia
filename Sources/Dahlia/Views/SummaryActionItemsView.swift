@@ -9,17 +9,19 @@ struct SummaryActionItemsView: View {
 
         if !displayableItems.isEmpty {
             VStack(alignment: .leading, spacing: DahliaDesign.blockSpacing) {
+                Divider()
+
                 Text(L10n.actionItems)
-                    .dahliaFont(.sectionTitle, weight: .bold)
+                    .font(.title2)
+                    .bold()
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, DahliaDesign.sectionHeadingTopPadding)
 
                 VStack(alignment: .leading, spacing: DahliaDesign.listItemSpacing) {
                     ForEach(displayableItems.enumerated(), id: \.offset) { _, item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "square")
                                 .dahliaFixedSymbol()
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(DahliaDesign.optionalTextColor)
                                 .accessibilityHidden(true)
 
                             Text(inlineMarkdown(item.title))
@@ -29,10 +31,11 @@ struct SummaryActionItemsView: View {
 
                             if let assignee = item.assignee.nilIfBlank {
                                 Text("(\(assignee))")
-                                    .foregroundStyle(.secondary)
+                                    .font(.callout)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                         }
-                        .dahliaFont(.body)
+                        .font(.body)
                         .accessibilityElement(children: .combine)
                     }
                 }

@@ -14,7 +14,7 @@ struct MainSearchResultRow: View {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .dahliaFixedSymbol()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -22,8 +22,8 @@ struct MainSearchResultRow: View {
                         .lineLimit(1)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .dahliaFont(.body)
-                            .foregroundStyle(.secondary)
+                            .font(.body)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .lineLimit(1)
                     }
                 }
@@ -43,12 +43,6 @@ struct MainSearchResultRow: View {
     }
 
     private var backgroundColor: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.14)
-        }
-        if isHovered {
-            return DahliaDesign.hoverHighlightColor
-        }
-        return .clear
+        isSelected || isHovered ? DahliaDesign.contentHighlightColor : .clear
     }
 }

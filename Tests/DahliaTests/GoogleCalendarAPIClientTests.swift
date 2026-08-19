@@ -2,369 +2,88 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
-import Testing
+    import Testing
 
-@MainActor
-struct GoogleCalendarAPIClientTests {
-    @Test
-    func calendarListDecodingAllowsMissingOptionalFields() throws {
-        let data = Data("""
-        {
-          "items": [
+    @MainActor
+    struct GoogleCalendarAPIClientTests {
+        @Test
+        func calendarListDecodingAllowsMissingOptionalFields() throws {
+            let data = Data("""
             {
-              "id": "primary"
-            }
-          ]
-        }
-        """.utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
-
-        #expect(response.items.count == 1)
-        #expect(response.items[0].id == "primary")
-        #expect(response.items[0].summary == nil)
-        #expect(response.items[0].primary == false)
-        #expect(response.items[0].deleted == false)
-    }
-
-    @Test
-    func calendarListDecodingAllowsMissingItemsArray() throws {
-        let data = Data("{}".utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
-
-        #expect(response.items.isEmpty)
-    }
-
-    @Test
-    func fetchUpcomingEventsRequestsOnlySupportedEventTypes() async throws {
-        let requestRecorder = RequestRecorderURLProtocol()
-        let session = makeRecordingSession(recorder: requestRecorder)
-        let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
-
-        _ = try await client.fetchUpcomingEvents(
-            accessToken: "token",
-            calendars: [
-                CalendarListItem(
-                    id: "primary",
-                    title: "Primary",
-                    colorHex: nil,
-                    isPrimary: true
-                ),
-            ],
-            now: Date(timeIntervalSince1970: 1_776_384_000),
-            daysAhead: 7
-        )
-
-        let request = try #require(requestRecorder.lastRequest)
-        let url = try #require(request.url)
-        let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-        let eventTypes = queryItems
-            .filter { $0.name == "eventTypes" }
-            .compactMap(\.value)
-
-        #expect(Set(eventTypes) == Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
-    }
-
-    @Test
-    func makeEventIncludesPersistenceFields() throws {
-        let item = GoogleCalendarAPIClient.EventItem(
-            id: "google-event-id",
-            summary: "Planning",
-            description: "Quarterly planning",
-            iCalUID: "planning@google.com",
-            htmlLink: "https://calendar.google.com/calendar/event?eid=planning",
-            hangoutLink: "https://meet.google.com/test-room",
-            start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
-            end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
-            originalStartTime: .init(date: nil, dateTime: "2026-04-17T00:30:00Z"),
-            recurringEventId: "series-id",
-            conferenceData: nil,
-            eventType: nil
-        )
-
-        let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(
-                id: "primary",
-                title: "Primary",
-                colorHex: "#4285F4",
-                isPrimary: true
-            ),
-            calendar: Calendar(identifier: .gregorian)
-        )
-        let event = try #require(transformedEvent)
-
-        #expect(event.platformId == "google-event-id")
-        #expect(event.description == "Quarterly planning")
-        #expect(event.icalUid == "planning@google.com")
-        #expect(event.recurrenceId == "20260417T003000Z")
-        #expect(event.conferenceURI?.absoluteString == "https://meet.google.com/test-room")
-        #expect(event.url?.absoluteString == "https://calendar.google.com/calendar/event?eid=planning")
-        #expect(event.startDate == Date(timeIntervalSince1970: 1_776_387_600))
-        #expect(event.endDate == Date(timeIntervalSince1970: 1_776_391_200))
-    }
-
-    @Test
-    func eventPayloadDecodesOriginalStartTimeAndEventURL() throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "recurring-instance",
-              "iCalUID": "series@google.com",
-              "htmlLink": "https://calendar.google.com/calendar/event?eid=instance",
-              "start": { "dateTime": "2026-04-17T01:00:00Z" },
-              "end": { "dateTime": "2026-04-17T02:00:00Z" },
-              "originalStartTime": { "dateTime": "2026-04-17T00:30:00Z" }
-            }
-          ]
-        }
-        """.utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
-        let item = try #require(response.items.first)
-        let transformed = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
-        )
-        let event = try #require(transformed)
-
-        #expect(event.recurrenceId == "20260417T003000Z")
-        #expect(event.url?.absoluteString == "https://calendar.google.com/calendar/event?eid=instance")
-    }
-
-    @Test
-    func eventPayloadIncludesAttendeeAndDeclineMetadata() throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "declined-meeting",
-              "start": { "dateTime": "2026-04-17T01:00:00Z" },
-              "end": { "dateTime": "2026-04-17T02:00:00Z" },
-              "attendees": [
-                { "email": "me@example.com", "self": true, "responseStatus": "declined" },
+              "items": [
                 {
-                  "email": "colleague@example.com",
-                  "displayName": "Colleague",
-                  "optional": true,
-                  "responseStatus": "accepted"
+                  "id": "primary"
                 }
               ]
             }
-          ]
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
+
+            #expect(response.items.count == 1)
+            #expect(response.items[0].id == "primary")
+            #expect(response.items[0].summary == nil)
+            #expect(response.items[0].primary == false)
+            #expect(response.items[0].deleted == false)
         }
-        """.utf8)
 
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
-        let item = try #require(response.items.first)
-        let transformed = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
-        )
-        let event = try #require(transformed)
+        @Test
+        func calendarListDecodingAllowsMissingItemsArray() throws {
+            let data = Data("{}".utf8)
 
-        #expect(event.hasOtherAttendees)
-        #expect(event.isDeclined)
-        #expect(!event.isAttending)
-        #expect(event.participants.count == 2)
-        #expect(event.participants.first?.isCurrentUser == true)
-        let colleague = try #require(event.participants.first { $0.email == "colleague@example.com" })
-        #expect(colleague.displayName == "Colleague")
-        #expect(colleague.role == .optional)
-        #expect(colleague.responseStatus == .accepted)
-        #expect(colleague.kind == .person)
-    }
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
 
-    @Test
-    func eventPayloadMarksAcceptedCurrentUserAsAttending() throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "accepted-meeting",
-              "start": { "dateTime": "2026-04-17T01:00:00Z" },
-              "end": { "dateTime": "2026-04-17T02:00:00Z" },
-              "attendees": [
-                { "email": "me@example.com", "self": true, "responseStatus": "accepted" },
-                { "email": "colleague@example.com", "responseStatus": "accepted" }
-              ]
-            }
-          ]
+            #expect(response.items.isEmpty)
         }
-        """.utf8)
 
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
-        let item = try #require(response.items.first)
-        let transformed = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
-        )
+        @Test
+        func fetchUpcomingEventsRequestsOnlySupportedEventTypes() async throws {
+            let requestRecorder = RequestRecorderURLProtocol()
+            let session = makeRecordingSession(recorder: requestRecorder)
+            let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
 
-        #expect(transformed?.isAttending == true)
-    }
+            _ = try await client.fetchUpcomingEvents(
+                accessToken: "token",
+                calendars: [
+                    CalendarListItem(
+                        id: "primary",
+                        title: "Primary",
+                        colorHex: nil,
+                        isPrimary: true
+                    ),
+                ],
+                now: Date(timeIntervalSince1970: 1_776_384_000),
+                daysAhead: 7
+            )
 
-    @Test(arguments: [
-        ", \"organizer\": { \"self\": true }",
-        "",
-    ])
-    func eventPayloadTreatsOrganizerOrMissingAttendeesAsAttending(_ participationJSON: String) throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "owned-meeting",
-              "start": { "dateTime": "2026-04-17T01:00:00Z" },
-              "end": { "dateTime": "2026-04-17T02:00:00Z" }
-              \(participationJSON)
-            }
-          ]
+            let request = try #require(requestRecorder.lastRequest)
+            let url = try #require(request.url)
+            let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            let eventTypes = queryItems
+                .filter { $0.name == "eventTypes" }
+                .compactMap(\.value)
+
+            #expect(Set(eventTypes) == Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
         }
-        """.utf8)
 
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
-        let item = try #require(response.items.first)
-        let transformed = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
-        )
+        @Test
+        func makeEventIncludesPersistenceFields() throws {
+            let item = GoogleCalendarAPIClient.EventItem(
+                id: "google-event-id",
+                summary: "Planning",
+                description: "Quarterly planning",
+                iCalUID: "planning@google.com",
+                htmlLink: "https://calendar.google.com/calendar/event?eid=planning",
+                hangoutLink: "https://meet.google.com/test-room",
+                start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
+                originalStartTime: .init(date: nil, dateTime: "2026-04-17T00:30:00Z"),
+                recurringEventId: "series-id",
+                conferenceData: nil,
+                eventType: nil
+            )
 
-        #expect(transformed?.isAttending == true)
-    }
-
-    @Test
-    func originalStartTimeUsesItsIANATimeZoneWhenOffsetIsOmitted() throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "recurring-instance",
-              "recurringEventId": "series-id",
-              "iCalUID": "series@google.com",
-              "start": { "dateTime": "2026-04-17T01:00:00-07:00" },
-              "end": { "dateTime": "2026-04-17T02:00:00-07:00" },
-              "originalStartTime": {
-                "dateTime": "2026-04-17T00:30:00",
-                "timeZone": "America/Los_Angeles"
-              }
-            }
-          ]
-        }
-        """.utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
-        let item = try #require(response.items.first)
-        let transformed = try GoogleCalendarAPIClient.makeEvent(
-            from: item,
-            calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
-        )
-
-        #expect(transformed?.recurrenceId == "20260417T073000Z")
-    }
-
-    @Test
-    func conferenceURIKeepsHTTPSHangoutAheadOfPhoneEntryPoint() {
-        let item = GoogleCalendarAPIClient.EventItem(
-            id: "google-event-id",
-            summary: "Planning",
-            description: nil,
-            iCalUID: "planning@google.com",
-            htmlLink: nil,
-            hangoutLink: "https://meet.google.com/test-room",
-            start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
-            end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
-            originalStartTime: nil,
-            conferenceData: .init(entryPoints: [
-                .init(uri: "tel:+1-555-0100", entryPointType: "phone"),
-            ]),
-            eventType: nil
-        )
-
-        #expect(GoogleCalendarAPIClient.conferenceURI(for: item)?.absoluteString == item.hangoutLink)
-    }
-}
-
-#elseif canImport(XCTest)
-import XCTest
-
-@MainActor
-final class GoogleCalendarAPIClientTests: XCTestCase {
-    func testCalendarListDecodingAllowsMissingOptionalFields() throws {
-        let data = Data("""
-        {
-          "items": [
-            {
-              "id": "primary"
-            }
-          ]
-        }
-        """.utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
-
-        XCTAssertEqual(response.items.count, 1)
-        XCTAssertEqual(response.items[0].id, "primary")
-        XCTAssertNil(response.items[0].summary)
-        XCTAssertFalse(response.items[0].primary)
-        XCTAssertFalse(response.items[0].deleted)
-    }
-
-    func testCalendarListDecodingAllowsMissingItemsArray() throws {
-        let data = Data("{}".utf8)
-
-        let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
-
-        XCTAssertTrue(response.items.isEmpty)
-    }
-
-    func testFetchUpcomingEventsRequestsOnlySupportedEventTypes() async throws {
-        let requestRecorder = RequestRecorderURLProtocol()
-        let session = makeRecordingSession(recorder: requestRecorder)
-        let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
-
-        _ = try await client.fetchUpcomingEvents(
-            accessToken: "token",
-            calendars: [
-                CalendarListItem(
-                    id: "primary",
-                    title: "Primary",
-                    colorHex: nil,
-                    isPrimary: true
-                ),
-            ],
-            now: Date(timeIntervalSince1970: 1_776_384_000),
-            daysAhead: 7
-        )
-
-        let request = try XCTUnwrap(requestRecorder.lastRequest)
-        let url = try XCTUnwrap(request.url)
-        let queryItems = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
-        let eventTypes = queryItems
-            .filter { $0.name == "eventTypes" }
-            .compactMap(\.value)
-
-        XCTAssertEqual(Set(eventTypes), Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
-    }
-
-    func testMakeEventIncludesPersistenceFields() throws {
-        let item = GoogleCalendarAPIClient.EventItem(
-            id: "google-event-id",
-            summary: "Planning",
-            description: "Quarterly planning",
-            iCalUID: "planning@google.com",
-            htmlLink: "https://calendar.google.com/calendar/event?eid=planning",
-            hangoutLink: "https://meet.google.com/test-room",
-            start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
-            end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
-            originalStartTime: .init(date: nil, dateTime: "2026-04-17T00:30:00Z"),
-            recurringEventId: "series-id",
-            conferenceData: nil,
-            eventType: nil
-        )
-
-        let event = try XCTUnwrap(
-            GoogleCalendarAPIClient.makeEvent(
+            let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
                 from: item,
                 calendarItem: CalendarListItem(
                     id: "primary",
@@ -374,18 +93,299 @@ final class GoogleCalendarAPIClientTests: XCTestCase {
                 ),
                 calendar: Calendar(identifier: .gregorian)
             )
-        )
+            let event = try #require(transformedEvent)
 
-        XCTAssertEqual(event.platformId, "google-event-id")
-        XCTAssertEqual(event.description, "Quarterly planning")
-        XCTAssertEqual(event.icalUid, "planning@google.com")
-        XCTAssertEqual(event.recurrenceId, "20260417T003000Z")
-        XCTAssertEqual(event.conferenceURI?.absoluteString, "https://meet.google.com/test-room")
-        XCTAssertEqual(event.url?.absoluteString, "https://calendar.google.com/calendar/event?eid=planning")
-        XCTAssertEqual(event.startDate, Date(timeIntervalSince1970: 1_776_387_600))
-        XCTAssertEqual(event.endDate, Date(timeIntervalSince1970: 1_776_391_200))
+            #expect(event.platformId == "google-event-id")
+            #expect(event.description == "Quarterly planning")
+            #expect(event.icalUid == "planning@google.com")
+            #expect(event.recurrenceId == "20260417T003000Z")
+            #expect(event.conferenceURI?.absoluteString == "https://meet.google.com/test-room")
+            #expect(event.url?.absoluteString == "https://calendar.google.com/calendar/event?eid=planning")
+            #expect(event.startDate == Date(timeIntervalSince1970: 1_776_387_600))
+            #expect(event.endDate == Date(timeIntervalSince1970: 1_776_391_200))
+        }
+
+        @Test
+        func eventPayloadDecodesOriginalStartTimeAndEventURL() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "recurring-instance",
+                  "iCalUID": "series@google.com",
+                  "htmlLink": "https://calendar.google.com/calendar/event?eid=instance",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" },
+                  "end": { "dateTime": "2026-04-17T02:00:00Z" },
+                  "originalStartTime": { "dateTime": "2026-04-17T00:30:00Z" }
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let transformed = try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            )
+            let event = try #require(transformed)
+
+            #expect(event.recurrenceId == "20260417T003000Z")
+            #expect(event.url?.absoluteString == "https://calendar.google.com/calendar/event?eid=instance")
+        }
+
+        @Test
+        func eventPayloadIncludesAttendeeAndDeclineMetadata() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "declined-meeting",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" },
+                  "end": { "dateTime": "2026-04-17T02:00:00Z" },
+                  "attendees": [
+                    { "email": "me@example.com", "self": true, "responseStatus": "declined" },
+                    {
+                      "email": "colleague@example.com",
+                      "displayName": "Colleague",
+                      "optional": true,
+                      "responseStatus": "accepted"
+                    }
+                  ]
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let transformed = try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            )
+            let event = try #require(transformed)
+
+            #expect(event.hasOtherAttendees)
+            #expect(event.isDeclined)
+            #expect(!event.isAttending)
+            #expect(event.participants.count == 2)
+            #expect(event.participants.first?.isCurrentUser == true)
+            let colleague = try #require(event.participants.first { $0.email == "colleague@example.com" })
+            #expect(colleague.displayName == "Colleague")
+            #expect(colleague.role == .optional)
+            #expect(colleague.responseStatus == .accepted)
+            #expect(colleague.kind == .person)
+        }
+
+        @Test
+        func eventPayloadMarksAcceptedCurrentUserAsAttending() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "accepted-meeting",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" },
+                  "end": { "dateTime": "2026-04-17T02:00:00Z" },
+                  "attendees": [
+                    { "email": "me@example.com", "self": true, "responseStatus": "accepted" },
+                    { "email": "colleague@example.com", "responseStatus": "accepted" }
+                  ]
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let transformed = try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            )
+
+            #expect(transformed?.isAttending == true)
+        }
+
+        @Test(arguments: [
+            ", \"organizer\": { \"self\": true }",
+            "",
+        ])
+        func eventPayloadTreatsOrganizerOrMissingAttendeesAsAttending(_ participationJSON: String) throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "owned-meeting",
+                  "start": { "dateTime": "2026-04-17T01:00:00Z" },
+                  "end": { "dateTime": "2026-04-17T02:00:00Z" }
+                  \(participationJSON)
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let transformed = try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            )
+
+            #expect(transformed?.isAttending == true)
+        }
+
+        @Test
+        func originalStartTimeUsesItsIANATimeZoneWhenOffsetIsOmitted() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "recurring-instance",
+                  "recurringEventId": "series-id",
+                  "iCalUID": "series@google.com",
+                  "start": { "dateTime": "2026-04-17T01:00:00-07:00" },
+                  "end": { "dateTime": "2026-04-17T02:00:00-07:00" },
+                  "originalStartTime": {
+                    "dateTime": "2026-04-17T00:30:00",
+                    "timeZone": "America/Los_Angeles"
+                  }
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let item = try #require(response.items.first)
+            let transformed = try GoogleCalendarAPIClient.makeEvent(
+                from: item,
+                calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+            )
+
+            #expect(transformed?.recurrenceId == "20260417T073000Z")
+        }
+
+        @Test
+        func conferenceURIKeepsHTTPSHangoutAheadOfPhoneEntryPoint() {
+            let item = GoogleCalendarAPIClient.EventItem(
+                id: "google-event-id",
+                summary: "Planning",
+                description: nil,
+                iCalUID: "planning@google.com",
+                htmlLink: nil,
+                hangoutLink: "https://meet.google.com/test-room",
+                start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
+                originalStartTime: nil,
+                conferenceData: .init(entryPoints: [
+                    .init(uri: "tel:+1-555-0100", entryPointType: "phone"),
+                ]),
+                eventType: nil
+            )
+
+            #expect(GoogleCalendarAPIClient.conferenceURI(for: item)?.absoluteString == item.hangoutLink)
+        }
     }
-}
+
+#elseif canImport(XCTest)
+    import XCTest
+
+    @MainActor
+    final class GoogleCalendarAPIClientTests: XCTestCase {
+        func testCalendarListDecodingAllowsMissingOptionalFields() throws {
+            let data = Data("""
+            {
+              "items": [
+                {
+                  "id": "primary"
+                }
+              ]
+            }
+            """.utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
+
+            XCTAssertEqual(response.items.count, 1)
+            XCTAssertEqual(response.items[0].id, "primary")
+            XCTAssertNil(response.items[0].summary)
+            XCTAssertFalse(response.items[0].primary)
+            XCTAssertFalse(response.items[0].deleted)
+        }
+
+        func testCalendarListDecodingAllowsMissingItemsArray() throws {
+            let data = Data("{}".utf8)
+
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.CalendarListResponse.self, from: data)
+
+            XCTAssertTrue(response.items.isEmpty)
+        }
+
+        func testFetchUpcomingEventsRequestsOnlySupportedEventTypes() async throws {
+            let requestRecorder = RequestRecorderURLProtocol()
+            let session = makeRecordingSession(recorder: requestRecorder)
+            let client = GoogleCalendarAPIClient(session: session, calendar: Calendar(identifier: .gregorian))
+
+            _ = try await client.fetchUpcomingEvents(
+                accessToken: "token",
+                calendars: [
+                    CalendarListItem(
+                        id: "primary",
+                        title: "Primary",
+                        colorHex: nil,
+                        isPrimary: true
+                    ),
+                ],
+                now: Date(timeIntervalSince1970: 1_776_384_000),
+                daysAhead: 7
+            )
+
+            let request = try XCTUnwrap(requestRecorder.lastRequest)
+            let url = try XCTUnwrap(request.url)
+            let queryItems = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+            let eventTypes = queryItems
+                .filter { $0.name == "eventTypes" }
+                .compactMap(\.value)
+
+            XCTAssertEqual(Set(eventTypes), Set(["default", "focusTime", "fromGmail", "outOfOffice"]))
+        }
+
+        func testMakeEventIncludesPersistenceFields() throws {
+            let item = GoogleCalendarAPIClient.EventItem(
+                id: "google-event-id",
+                summary: "Planning",
+                description: "Quarterly planning",
+                iCalUID: "planning@google.com",
+                htmlLink: "https://calendar.google.com/calendar/event?eid=planning",
+                hangoutLink: "https://meet.google.com/test-room",
+                start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
+                originalStartTime: .init(date: nil, dateTime: "2026-04-17T00:30:00Z"),
+                recurringEventId: "series-id",
+                conferenceData: nil,
+                eventType: nil
+            )
+
+            let event = try XCTUnwrap(
+                GoogleCalendarAPIClient.makeEvent(
+                    from: item,
+                    calendarItem: CalendarListItem(
+                        id: "primary",
+                        title: "Primary",
+                        colorHex: "#4285F4",
+                        isPrimary: true
+                    ),
+                    calendar: Calendar(identifier: .gregorian)
+                )
+            )
+
+            XCTAssertEqual(event.platformId, "google-event-id")
+            XCTAssertEqual(event.description, "Quarterly planning")
+            XCTAssertEqual(event.icalUid, "planning@google.com")
+            XCTAssertEqual(event.recurrenceId, "20260417T003000Z")
+            XCTAssertEqual(event.conferenceURI?.absoluteString, "https://meet.google.com/test-room")
+            XCTAssertEqual(event.url?.absoluteString, "https://calendar.google.com/calendar/event?eid=planning")
+            XCTAssertEqual(event.startDate, Date(timeIntervalSince1970: 1_776_387_600))
+            XCTAssertEqual(event.endDate, Date(timeIntervalSince1970: 1_776_391_200))
+        }
+    }
 #endif
 
 private final class RequestRecorderURLProtocol: @unchecked Sendable {

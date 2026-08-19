@@ -66,7 +66,7 @@ struct VaultPickerView: View {
                 VStack(spacing: 0) {
                     DahliaWindowHeader {
                         Text(selectedVault?.name ?? L10n.vaultDetails)
-                            .dahliaFont(.subsectionTitle, weight: .semibold)
+                            .font(.headline)
                             .lineLimit(1)
 
                         Spacer(minLength: 12)

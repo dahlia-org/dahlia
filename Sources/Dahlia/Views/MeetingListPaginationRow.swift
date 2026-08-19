@@ -26,7 +26,7 @@ struct MeetingListPaginationRow: View {
                 .onAppear(perform: onLoadMore)
         } else if let limitMessage {
             Text(limitMessage)
-                .dahliaFont(.body)
+                .font(.footnote)
                 .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                 .frame(maxWidth: .infinity, alignment: .center)
         }

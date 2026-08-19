@@ -6,14 +6,14 @@ struct ConversationAnalyticsExpressionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsExpression)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(L10n.conversationAnalyticsExpressionDescription)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             ForEach(analytics.expressions) { expression in
                 VStack(alignment: .leading, spacing: 8) {
                     Label(sourceTitle(expression.source), systemImage: sourceIcon(expression.source))
-                        .dahliaFont(.body, weight: .semibold)
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(expression.source == .microphone ? .blue : .orange)
                     Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
                         metricRow(
@@ -54,11 +54,11 @@ struct ConversationAnalyticsExpressionCard: View {
     ) -> some View {
         GridRow {
             Text(title)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             Text(formatted(value, unit: unit))
                 .monospacedDigit()
             Text(levelTitle(level, low: lowLevelTitle, high: highLevelTitle))
-                .dahliaFont(.secondary, weight: .semibold)
+                .font(.callout.weight(.semibold))
         }
     }
 

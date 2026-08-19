@@ -10,7 +10,7 @@
     struct TranscriptPagingTests {
         @Test
         func keysetPagingCoversTenThousandEqualTimestampsWithoutGaps() throws {
-            let fixture = try makePagingFixture(segmentCount: 10_000)
+            let fixture = try makePagingFixture(segmentCount: 10000)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
 
             var page = try repository.fetchTranscriptPage(
@@ -21,7 +21,7 @@
             var loaded = page.segments
 
             while page.hasEarlier {
-                let cursor = TranscriptPageCursor(segment: try #require(page.segments.first))
+                let cursor = try TranscriptPageCursor(segment: #require(page.segments.first))
                 page = try repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .before(cursor),
@@ -30,17 +30,17 @@
                 loaded.insert(contentsOf: page.segments, at: 0)
             }
 
-            #expect(loaded.count == 10_000)
-            #expect(Set(loaded.map(\.id)).count == 10_000)
+            #expect(loaded.count == 10000)
+            #expect(Set(loaded.map(\.id)).count == 10000)
             #expect(loaded.map(\.id) == fixture.orderedIds)
 
-            let middleCursor = TranscriptPageCursor(segment: loaded[4_999])
+            let middleCursor = TranscriptPageCursor(segment: loaded[4999])
             let forward = try repository.fetchTranscriptPage(
                 forMeetingId: fixture.meetingId,
                 direction: .after(middleCursor),
                 limit: 100
             )
-            #expect(forward.segments.map(\.id) == Array(fixture.orderedIds[5_000 ..< 5_100]))
+            #expect(forward.segments.map(\.id) == Array(fixture.orderedIds[5000 ..< 5100]))
         }
 
         @Test
@@ -91,7 +91,7 @@
 
             let earlier = try repository.fetchTranscriptPage(
                 forMeetingId: fixture.meetingId,
-                direction: .before(TranscriptPageCursor(segment: try #require(latest.segments.first))),
+                direction: .before(TranscriptPageCursor(segment: #require(latest.segments.first))),
                 limit: 2
             )
             #expect(earlier.segments.map(\.id) == [fixture.orderedIds[0]])
@@ -109,7 +109,7 @@
 
         @Test
         func storeKeepsAtMostThreeHundredConfirmedSegmentsAcrossPageShiftsAndLiveUpdates() async throws {
-            let fixture = try makePagingFixture(segmentCount: 1_000)
+            let fixture = try makePagingFixture(segmentCount: 1000)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let initialPage = try repository.fetchTranscriptPage(
                 forMeetingId: fixture.meetingId,
@@ -134,9 +134,9 @@
 
             _ = await store.reloadLatest()
             let liveStart = Date(timeIntervalSince1970: 1_776_400_000)
-            for index in 0 ..< 1_000 {
+            for index in 0 ..< 1000 {
                 store.addSegment(TranscriptSegment(
-                    id: deterministicUUID(index + 20_000),
+                    id: deterministicUUID(index + 20000),
                     startTime: liveStart.addingTimeInterval(Double(index)),
                     text: "live-\(index)",
                     isConfirmed: true
@@ -146,7 +146,7 @@
 
             store.setFollowingLatest(false)
             let deferred = TranscriptSegment(
-                startTime: liveStart.addingTimeInterval(2_000),
+                startTime: liveStart.addingTimeInterval(2000),
                 text: "deferred",
                 isConfirmed: true
             )
@@ -184,13 +184,13 @@
 
         @Test
         func compactionReloadWaitsForAnInFlightPageInsteadOfBeingDropped() async throws {
-            let fixture = try makePagingFixture(segmentCount: 1_000)
+            let fixture = try makePagingFixture(segmentCount: 1000)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let store = TranscriptStore()
-            store.configurePaging(
+            try store.configurePaging(
                 meetingId: fixture.meetingId,
                 loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
-                initialPage: try repository.fetchTranscriptPage(
+                initialPage: repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .latest,
                     limit: TranscriptStore.initialPageSize
@@ -225,10 +225,10 @@
             let fixture = try makePagingFixture(segmentCount: 3)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let store = TranscriptStore()
-            store.configurePaging(
+            try store.configurePaging(
                 meetingId: fixture.meetingId,
                 loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
-                initialPage: try repository.fetchTranscriptPage(
+                initialPage: repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .latest,
                     limit: TranscriptStore.initialPageSize
@@ -265,10 +265,10 @@
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let store = TranscriptStore()
             let loader = TranscriptPageLoader(dbQueue: fixture.database.dbQueue)
-            store.configurePaging(
+            try store.configurePaging(
                 meetingId: fixture.meetingId,
                 loader: loader,
-                initialPage: try repository.fetchTranscriptPage(
+                initialPage: repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .latest,
                     limit: TranscriptStore.initialPageSize
@@ -306,10 +306,10 @@
             let fixture = try makePagingFixture(segmentCount: 3)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let store = TranscriptStore()
-            store.configurePaging(
+            try store.configurePaging(
                 meetingId: fixture.meetingId,
                 loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
-                initialPage: try repository.fetchTranscriptPage(
+                initialPage: repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .latest,
                     limit: TranscriptStore.initialPageSize
@@ -346,10 +346,10 @@
             let fixture = try makePagingFixture(segmentCount: 3)
             let repository = MeetingRepository(dbQueue: fixture.database.dbQueue)
             let store = TranscriptStore()
-            store.configurePaging(
+            try store.configurePaging(
                 meetingId: fixture.meetingId,
                 loader: TranscriptPageLoader(dbQueue: fixture.database.dbQueue),
-                initialPage: try repository.fetchTranscriptPage(
+                initialPage: repository.fetchTranscriptPage(
                     forMeetingId: fixture.meetingId,
                     direction: .latest,
                     limit: TranscriptStore.initialPageSize
@@ -375,7 +375,7 @@
             #expect(!store.isLoadingPage)
             releaseDatabase.signal()
 
-            #expect(!(await staleReload.value))
+            #expect(await !(staleReload.value))
             try await blocker.value
             #expect(await store.reloadLatest())
             #expect(!store.isLoadingPage)

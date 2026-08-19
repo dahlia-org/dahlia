@@ -9,7 +9,7 @@ struct DahliaInlineSearchField: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .dahliaFixedSymbol()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .accessibilityHidden(true)
 
             TextField(placeholder, text: $text)
@@ -31,7 +31,7 @@ struct DahliaInlineSearchField: View {
                 .labelStyle(.iconOnly)
                 .dahliaFixedSymbol()
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .help(L10n.clearSearch)
             }
         }

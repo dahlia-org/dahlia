@@ -62,11 +62,11 @@ import GRDB
             try AppDatabaseManager.migrator.migrate(queue)
 
             let result = try queue.read { db in
-                (
-                    try MeetingRecord.fetchOne(db, key: meeting.id),
-                    try TranscriptSegmentRecord.fetchOne(db, key: segmentID),
-                    try db.tableExists(MeetingConversationMetricsRecord.databaseTableName),
-                    try db.tableExists(MeetingConversationSourceMetricsRecord.databaseTableName)
+                try (
+                    MeetingRecord.fetchOne(db, key: meeting.id),
+                    TranscriptSegmentRecord.fetchOne(db, key: segmentID),
+                    db.tableExists(MeetingConversationMetricsRecord.databaseTableName),
+                    db.tableExists(MeetingConversationSourceMetricsRecord.databaseTableName)
                 )
             }
 

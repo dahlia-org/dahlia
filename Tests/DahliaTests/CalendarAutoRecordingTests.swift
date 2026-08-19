@@ -54,7 +54,7 @@ import Foundation
                 platform: CalendarEventPlatform.macOSCalendar,
                 platformId: "event-kit-id::1776389400",
                 icalUid: nil,
-                startDate: initial.startDate.addingTimeInterval(1_800)
+                startDate: initial.startDate.addingTimeInterval(1800)
             )
 
             #expect(CalendarAutoRecordingEventID(event: initial) == CalendarAutoRecordingEventID(event: moved))
@@ -95,7 +95,7 @@ import Foundation
             let (defaults, suiteName) = try temporaryUserDefaults()
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let initialStart = Date(timeIntervalSince1970: 1_776_387_600)
-            let movedStart = initialStart.addingTimeInterval(1_800)
+            let movedStart = initialStart.addingTimeInterval(1800)
             let store = CalendarAutoRecordingStore(userDefaults: defaults)
             store.setEnabled(true, for: makeEvent(startDate: initialStart))
 
@@ -106,7 +106,7 @@ import Foundation
 
             #expect(store.selections.first?.startDate == movedStart)
 
-            store.synchronize(with: [], now: movedStart.addingTimeInterval(3_601))
+            store.synchronize(with: [], now: movedStart.addingTimeInterval(3601))
 
             #expect(store.selections.isEmpty)
         }
@@ -141,8 +141,8 @@ import Foundation
             let ended = makeEvent(
                 id: "ended",
                 icalUid: "ended@example.com",
-                startDate: now.addingTimeInterval(-4_000),
-                duration: 3_600
+                startDate: now.addingTimeInterval(-4000),
+                duration: 3600
             )
             let events = [second, ended, first]
 
@@ -172,7 +172,7 @@ import Foundation
 
         private func temporaryUserDefaults() throws -> (defaults: UserDefaults, suiteName: String) {
             let suiteName = "CalendarAutoRecordingTests.\(UUID().uuidString)"
-            return (try #require(UserDefaults(suiteName: suiteName)), suiteName)
+            return try (#require(UserDefaults(suiteName: suiteName)), suiteName)
         }
 
         private func makeEvent(
@@ -183,7 +183,7 @@ import Foundation
             icalUid: String? = "shared@example.com",
             recurrenceId: String = ICalendarRecurrenceID.singleEvent,
             startDate: Date = Date(timeIntervalSince1970: 1_776_387_600),
-            duration: TimeInterval = 3_600,
+            duration: TimeInterval = 3600,
             isAllDay: Bool = false
         ) -> CalendarEvent {
             CalendarEvent(

@@ -24,9 +24,9 @@ struct MeetingSidebarProjectHeader: View {
                 Label {
                     Text(project.projectName)
                 } icon: {
-                    ProjectAppearanceIcon(appearance: appearance, isSelected: isSelected)
+                    ProjectAppearanceIcon(appearance: appearance)
                 }
-                .dahliaFont(.body)
+                .font(.callout)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -54,7 +54,7 @@ struct MeetingSidebarProjectHeader: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .focused($isMenuFocused)
-                .foregroundStyle(isOptionsHovered ? Color.primary : Color.secondary.opacity(0.65))
+                .foregroundStyle(isOptionsHovered ? DahliaDesign.sidebarPrimaryTextColor : DahliaDesign.sidebarSecondaryTextColor)
                 .onHover { isOptionsHovered = $0 }
                 .help(L10n.projectOptions)
 
@@ -64,7 +64,7 @@ struct MeetingSidebarProjectHeader: View {
                     .buttonStyle(.plain)
                     .fixedSize()
                     .focused($isCreateMeetingFocused)
-                    .foregroundStyle(isCreateMeetingHovered ? Color.primary : Color.secondary.opacity(0.65))
+                    .foregroundStyle(isCreateMeetingHovered ? DahliaDesign.sidebarPrimaryTextColor : DahliaDesign.sidebarSecondaryTextColor)
                     .disabled(!canCreateMeeting)
                     .help(L10n.createNewMeeting)
                     .onHover { isCreateMeetingHovered = $0 }
@@ -73,7 +73,7 @@ struct MeetingSidebarProjectHeader: View {
         }
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.trailing, 8)
-        .dahliaSidebarHoverHighlight(isHovered: isHovered, isSelected: isSelected)
+        .dahliaSidebarHoverHighlight(isHovered: isHovered, isSelected: isSelected, verticalOutset: 2)
         .contentShape(.rect)
         .onHover { isHovered = $0 }
     }

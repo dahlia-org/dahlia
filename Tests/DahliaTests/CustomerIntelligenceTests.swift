@@ -233,9 +233,9 @@ import GRDB
                     .filter(Column("contactId") == contact.id)
                     .fetchAll(db)
             }
-            #expect(domains.map { $0.domainName } == ["acme.com"])
+            #expect(domains.map(\.domainName) == ["acme.com"])
             #expect(domains.first?.isPrimary == true)
-            #expect(Set(memberships.map { $0.organizationId }) == Set([platform.id, sales.id]))
+            #expect(Set(memberships.map(\.organizationId)) == Set([platform.id, sales.id]))
 
             #expect(throws: CustomerIntelligenceError.invalidOrganizationParent) {
                 try fixture.repository.createOrganization(

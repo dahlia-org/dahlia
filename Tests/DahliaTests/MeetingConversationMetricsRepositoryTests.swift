@@ -171,9 +171,9 @@ import GRDB
                 _ = try MeetingRecord.deleteOne(db, key: fixture.meeting.id)
             }
             let counts = try fixture.manager.dbQueue.read { db in
-                (
-                    try MeetingConversationMetricsRecord.fetchCount(db),
-                    try MeetingConversationSourceMetricsRecord.fetchCount(db)
+                try (
+                    MeetingConversationMetricsRecord.fetchCount(db),
+                    MeetingConversationSourceMetricsRecord.fetchCount(db)
                 )
             }
 

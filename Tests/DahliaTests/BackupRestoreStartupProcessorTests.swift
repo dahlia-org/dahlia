@@ -195,9 +195,9 @@ import GRDB
                 appBuild: "45",
                 reason: .manual
             )
-            let marker = PendingDatabaseRestore(
+            let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedURL.lastPathComponent,
-                sha256: try BackupService.sha256(of: stagedURL),
+                sha256: BackupService.sha256(of: stagedURL),
                 requestedAt: .now,
                 sourceMetadata: metadata
             )
@@ -247,9 +247,9 @@ import GRDB
                 appBuild: "45",
                 reason: .manual
             )
-            let marker = PendingDatabaseRestore(
+            let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedURL.lastPathComponent,
-                sha256: try BackupService.sha256(of: stagedURL),
+                sha256: BackupService.sha256(of: stagedURL),
                 requestedAt: .now,
                 sourceMetadata: metadata
             )

@@ -13,7 +13,7 @@ struct CodexChatCopyButton: View {
         }
         .buttonStyle(.plain)
         .font(.caption)
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(DahliaDesign.optionalTextColor)
         .help(title)
     }
 

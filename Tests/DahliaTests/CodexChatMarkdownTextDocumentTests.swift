@@ -88,6 +88,34 @@
             #expect(quoteStyle?.textBlocks.count == 1)
         }
 
+        @Test func appliesTypographyAndQuoteColorRoles() throws {
+            let document = CodexChatMarkdownTextDocument.attributedString(for: [
+                .heading(level: 1, text: AttributedString("Page heading")),
+                .heading(level: 2, text: AttributedString("Section heading")),
+                .paragraph(AttributedString("Body")),
+                .blockquote(AttributedString("Quote")),
+            ])
+            let source = document.string as NSString
+
+            func font(for text: String) throws -> NSFont {
+                let range = source.range(of: text)
+                return try #require(document.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont)
+            }
+
+            #expect(try font(for: "Page heading").pointSize == NSFont.preferredFont(forTextStyle: .title3).pointSize)
+            #expect(try font(for: "Section heading").pointSize == NSFont.preferredFont(forTextStyle: .headline).pointSize)
+            #expect(try font(for: "Body").pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(try font(for: "Quote").pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(try NSFontManager.shared.traits(of: font(for: "Page heading")).contains(.boldFontMask) == false)
+            #expect(try NSFontManager.shared.traits(of: font(for: "Section heading")).contains(.boldFontMask))
+
+            let quoteRange = source.range(of: "Quote")
+            let quoteColor = try #require(
+                document.attribute(.foregroundColor, at: quoteRange.location, effectiveRange: nil) as? NSColor
+            )
+            #expect(quoteColor == DahliaDesign.secondaryTextNSColor)
+        }
+
         @Test func rendersTableCellsAndCopiesRowsWithTabs() {
             let document = CodexChatMarkdownTextDocument.attributedString(for: [
                 .table(CodexChatMarkdownRenderedTable(
@@ -118,6 +146,12 @@
                 effectiveRange: nil
             ) as? NSParagraphStyle
             #expect(tableCellStyle?.textBlocks.first is NSTextTableBlock)
+            let tableCellFont = document.attribute(.font, at: tableCellRange.location, effectiveRange: nil) as? NSFont
+            #expect(tableCellFont?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+
+            let headerRange = source.range(of: "Item")
+            let headerFont = document.attribute(.font, at: headerRange.location, effectiveRange: nil) as? NSFont
+            #expect(headerFont.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true)
         }
 
         @Test func preservesAndClipsSelectionWhenStreamingDocumentChanges() {
@@ -162,18 +196,18 @@
             ) as? Bool == true)
         }
 
-        @Test func resizesFontsWithoutRebuildingTheDocument() {
+        @Test func rebuildsFontsWhenDynamicTypeSizeChanges() {
             let textView = CodexChatSelectableTextView()
             let blocks: [CodexChatMarkdownRenderedBlock] = [.paragraph(AttributedString("Stable text"))]
-            textView.setBlocks(blocks, baseFontSize: 14)
+            textView.setBlocks(blocks, dynamicTypeSize: .medium)
             let marker = NSAttributedString.Key("test.stable-font-resize")
             textView.textStorage?.addAttribute(marker, value: true, range: NSRange(location: 0, length: 6))
 
-            textView.setBlocks(blocks, baseFontSize: 20)
+            textView.setBlocks(blocks, dynamicTypeSize: .large)
 
             let font = textView.attributedString().attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-            #expect(font?.pointSize == 20)
-            #expect(textView.attributedString().attribute(marker, at: 0, effectiveRange: nil) as? Bool == true)
+            #expect(font?.pointSize == NSFont.preferredFont(forTextStyle: .body).pointSize)
+            #expect(textView.attributedString().attribute(marker, at: 0, effectiveRange: nil) == nil)
         }
 
         @Test func preservesLiteralZeroWidthSpacesWhenCopyingAcrossDivider() {

@@ -8,33 +8,6 @@ import SwiftUI
 
     struct DahliaTypographyTests {
         @Test
-        func rolesUseConfiguredOffsets() {
-            let expectedAtDefault: [DahliaFontRole: CGFloat] = [
-                .displayTitle: 22,
-                .sectionTitle: 18,
-                .subsectionTitle: 16,
-                .body: 14,
-                .secondary: 12,
-                .metadata: 10,
-            ]
-
-            for (role, expected) in expectedAtDefault {
-                #expect(role.pointSize(baseSize: 14) == expected)
-            }
-            #expect(DahliaFontRole.body.pointSize(baseSize: 12) == 12)
-            #expect(DahliaFontRole.metadata.pointSize(baseSize: 12) == 8)
-            #expect(DahliaFontRole.displayTitle.pointSize(baseSize: 20) == 28)
-        }
-
-        @Test
-        func baseSizeIsLimitedToSupportedRange() {
-            #expect(AppSettings.defaultInterfaceFontSize == 14)
-            #expect(DahliaTypography.normalizedBaseSize(8) == 12)
-            #expect(DahliaTypography.normalizedBaseSize(16) == 16)
-            #expect(DahliaTypography.normalizedBaseSize(24) == 20)
-        }
-
-        @Test
         func meetingSidebarRowStyleDefaultsToStandard() {
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "standard") == .standard)
             #expect(MeetingSidebarRowStyle.resolved(rawValue: "compact") == .compact)
@@ -62,16 +35,48 @@ import SwiftUI
 
         @Test
         @MainActor
-        func fixedSymbolsIgnoreConfiguredFontSize() {
-            func renderedSize(baseSize: CGFloat) -> CGSize {
+        func fixedSymbolsUseBodyStyleIndependentlyOfParentStyle() {
+            func renderedSize(parentStyle: Font) -> CGSize {
                 NSHostingView(rootView: VStack {
                     Image(systemName: "star.fill")
                         .dahliaFixedSymbol()
                 }
-                .font(.system(size: baseSize))).fittingSize
+                .font(parentStyle)).fittingSize
             }
 
-            #expect(renderedSize(baseSize: 12) == renderedSize(baseSize: 20))
+            #expect(renderedSize(parentStyle: .caption) == renderedSize(parentStyle: .title))
+        }
+
+        @Test
+        @MainActor
+        func lightSecondaryTextMeetsNormalTextContrast() throws {
+            let appearance = try #require(NSAppearance(named: .aqua))
+            let color = resolved(DahliaDesign.secondaryTextNSColor, with: appearance)
+
+            #expect(contrastAgainstWhite(color) >= 4.5)
+        }
+
+        @Test
+        func sidebarHighlightStrengthensWithIncreasedContrast() {
+            #expect(DahliaDesign.sidebarHighlightOpacity(for: .standard) == 0.10)
+            #expect(DahliaDesign.sidebarHighlightOpacity(for: .increased) == 0.20)
+        }
+
+        @MainActor
+        private func resolved(_ color: NSColor, with appearance: NSAppearance) -> NSColor {
+            var resolvedColor = color
+            appearance.performAsCurrentDrawingAppearance {
+                resolvedColor = color.usingColorSpace(.sRGB) ?? color
+            }
+            return resolvedColor
+        }
+
+        private func contrastAgainstWhite(_ color: NSColor) -> CGFloat {
+            let components = [color.redComponent, color.greenComponent, color.blueComponent].map { component in
+                component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+            }
+            let luminance = 0.2126 * components[0] + 0.7152 * components[1] + 0.0722 * components[2]
+            return 1.05 / (luminance + 0.05)
         }
     }
 #endif

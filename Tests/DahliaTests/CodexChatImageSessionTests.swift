@@ -386,7 +386,7 @@ import Foundation
             if sendBehavior == .failFirst, sentInputs.count == 1 {
                 throw CodexAppServerError.invalidProtocolResponse
             }
-            if (sendBehavior == .delayFirst || sendBehavior == .delayFirstWithoutTurn), sentInputs.count == 1 {
+            if sendBehavior == .delayFirst || sendBehavior == .delayFirstWithoutTurn, sentInputs.count == 1 {
                 await withCheckedContinuation { continuation in
                     delayedSendContinuation = continuation
                 }
@@ -413,6 +413,7 @@ import Foundation
                 }
             }
         }
+
         func interrupt(threadID _: String, turnID _: String) async {}
         func unsubscribe(threadID _: String) async {}
 

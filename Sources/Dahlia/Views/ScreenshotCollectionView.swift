@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 struct ScreenshotCollectionView: NSViewRepresentable {
-    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let meetingID: UUID?
     let screenshots: [MeetingScreenshotRecord]
@@ -52,6 +52,7 @@ struct ScreenshotCollectionView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        _ = dynamicTypeSize
         guard let collectionView = scrollView.documentView as? NSCollectionView,
               let layout = collectionView.collectionViewLayout as? ScreenshotCollectionLayout else { return }
         context.coordinator.update(parent: self, collectionView: collectionView, layout: layout)
@@ -146,7 +147,7 @@ extension ScreenshotCollectionView {
                 referencedScreenshotIDs: parent.referencedScreenshotIDs,
                 isDeletionDisabled: parent.isDeletionDisabled,
                 timestampCacheGeneration: timestampCacheGeneration,
-                metadataFontSize: DahliaFontRole.metadata.pointSize(baseSize: parent.baseFontSize)
+                metadataFontSize: NSFont.preferredFont(forTextStyle: .caption1).pointSize
             )
             if Self.requiresVisibleItemUpdate(previous: lastPresentationState, current: presentationState) {
                 reconfigureVisibleItems(in: collectionView)
@@ -255,7 +256,6 @@ extension ScreenshotCollectionView {
                     isReferencedBySummary: parent.referencedScreenshotIDs.contains(id),
                     isDeletionDisabled: parent.isDeletionDisabled
                 ),
-                metadataFontSize: DahliaFontRole.metadata.pointSize(baseSize: parent.baseFontSize),
                 actions: .init(
                     activate: { [weak self] previewImage in
                         self?.activate(id: id, previewImage: previewImage)

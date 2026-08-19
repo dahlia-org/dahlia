@@ -60,7 +60,7 @@ struct MCPSettingsView: View {
                 } else {
                     Section(L10n.mcpConfigurationOutput) {
                         Text(L10n.mcpHelperUnavailable)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                 }
             } else {

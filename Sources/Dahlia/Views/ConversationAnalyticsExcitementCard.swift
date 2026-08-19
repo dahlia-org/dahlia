@@ -8,13 +8,13 @@ struct ConversationAnalyticsExcitementCard: View {
         let excitement = metrics.voiceAnalytics.excitement
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsExcitement)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(L10n.conversationAnalyticsExcitementDescription)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             if excitement.samples.isEmpty {
                 Text(L10n.conversationAnalyticsExcitementUnavailable)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, minHeight: 150)
             } else {
                 chart(excitement.samples)
@@ -22,8 +22,8 @@ struct ConversationAnalyticsExcitementCard: View {
             hotspotList(excitement.hotspots)
             if !availableSources.isSubset(of: excitement.sourcesUsingPitch) {
                 Label(L10n.conversationAnalyticsLoudnessOnly, systemImage: "waveform.badge.minus")
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -40,7 +40,7 @@ struct ConversationAnalyticsExcitementCard: View {
     private func chart(_ samples: [MeetingVoiceAnalytics.SourceSample]) -> some View {
         Chart {
             RuleMark(y: .value(L10n.conversationAnalyticsHotspots, 1.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 4]))
                 .accessibilityHidden(true)
             ForEach(samples) { sample in
@@ -91,11 +91,11 @@ struct ConversationAnalyticsExcitementCard: View {
     @ViewBuilder
     private func hotspotList(_ hotspots: [MeetingVoiceAnalytics.Hotspot]) -> some View {
         Text(L10n.conversationAnalyticsHotspots)
-            .dahliaFont(.body, weight: .semibold)
+            .font(.body.weight(.semibold))
         if hotspots.isEmpty {
             Text(L10n.conversationAnalyticsNoHotspots)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
             ForEach(hotspots) { hotspot in
                 Label {
@@ -111,7 +111,7 @@ struct ConversationAnalyticsExcitementCard: View {
                         .dahliaFixedSymbol()
                         .foregroundStyle(hotspot.source == .microphone ? .blue : .orange)
                 }
-                .dahliaFont(.secondary)
+                .font(.callout)
             }
         }
     }

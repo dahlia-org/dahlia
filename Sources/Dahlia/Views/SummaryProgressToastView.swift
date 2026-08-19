@@ -13,14 +13,14 @@ struct SummaryProgressToastView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Text(L10n.runningTasks)
-                        .dahliaFont(.body)
+                        .font(.body)
                         .bold()
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(DahliaDesign.primaryTextColor)
 
                     Text(jobs.count, format: .number)
-                        .dahliaFont(.metadata, weight: .semibold)
+                        .font(.caption2.weight(.semibold))
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 20)
                         .background(Color.primary.opacity(0.1), in: Capsule())
@@ -44,7 +44,7 @@ struct SummaryProgressToastView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .help(isExpanded ? L10n.collapse : L10n.expand)
             }
 
@@ -91,7 +91,7 @@ private struct SummaryGenerationJobProgressView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.meetingName)
-                    .dahliaFont(.secondary, weight: .semibold)
+                    .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if job.hasFailure, job.isFinished {
@@ -99,7 +99,7 @@ private struct SummaryGenerationJobProgressView: View {
                         .labelStyle(.iconOnly)
                         .dahliaFixedSymbol()
                         .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
 

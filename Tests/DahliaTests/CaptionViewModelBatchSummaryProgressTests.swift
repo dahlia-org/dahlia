@@ -129,7 +129,7 @@ import Foundation
         }
 
         private func waitUntil(
-            attempts: Int = 10_000,
+            attempts: Int = 10000,
             condition: @escaping @MainActor () -> Bool
         ) async -> Bool {
             for _ in 0 ..< attempts {

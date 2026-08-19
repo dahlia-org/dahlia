@@ -22,7 +22,7 @@ struct MeetingSidebarHeader: View {
                 }
             }
             .buttonStyle(.plain)
-            .dahliaFont(.body)
+            .font(.body)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
 

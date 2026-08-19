@@ -8,7 +8,7 @@ struct SettingsStatusMessage: View {
 
     var body: some View {
         Label(text, systemImage: systemImage)
-            .dahliaFont(.body)
+            .font(.body)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

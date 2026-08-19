@@ -272,9 +272,9 @@ import GRDB
             ).value
 
             let counts = try await fixture.manager.dbQueue.read { db in
-                (
-                    organizations: try OrganizationRecord.fetchCount(db),
-                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                try (
+                    organizations: OrganizationRecord.fetchCount(db),
+                    memberships: OrganizationMembershipRecord.fetchCount(db)
                 )
             }
             #expect(counts.organizations == 1)
@@ -300,11 +300,11 @@ import GRDB
             ).value
 
             let counts = try await fixture.manager.dbQueue.read { db in
-                (
-                    contacts: try ContactRecord.fetchCount(db),
-                    organizations: try OrganizationRecord.fetchCount(db),
-                    participants: try MeetingParticipantRecord.fetchCount(db),
-                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                try (
+                    contacts: ContactRecord.fetchCount(db),
+                    organizations: OrganizationRecord.fetchCount(db),
+                    participants: MeetingParticipantRecord.fetchCount(db),
+                    memberships: OrganizationMembershipRecord.fetchCount(db)
                 )
             }
             #expect(counts.contacts == 1)
@@ -322,9 +322,9 @@ import GRDB
                 defaults: defaults
             ).value
             let enabledCounts = try await fixture.manager.dbQueue.read { db in
-                (
-                    organizations: try OrganizationRecord.fetchCount(db),
-                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                try (
+                    organizations: OrganizationRecord.fetchCount(db),
+                    memberships: OrganizationMembershipRecord.fetchCount(db)
                 )
             }
             #expect(enabledCounts.organizations == 1)
@@ -372,9 +372,9 @@ import GRDB
             ).value
 
             let counts = try await fixture.manager.dbQueue.read { db in
-                (
-                    organizations: try OrganizationRecord.fetchCount(db),
-                    memberships: try OrganizationMembershipRecord.fetchCount(db)
+                try (
+                    organizations: OrganizationRecord.fetchCount(db),
+                    memberships: OrganizationMembershipRecord.fetchCount(db)
                 )
             }
             #expect(counts.organizations == 2)

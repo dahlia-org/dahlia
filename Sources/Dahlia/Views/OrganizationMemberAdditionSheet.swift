@@ -17,7 +17,7 @@ struct OrganizationMemberAdditionSheet: View {
                 Section {
                     if availableContacts.isEmpty {
                         Text(L10n.customerIntelligenceNoPeopleToAdd)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     } else {
                         Picker(L10n.person, selection: $selectedContactID) {
                             Text(L10n.select).tag(UUID?.none)

@@ -45,7 +45,7 @@ struct CodexChatComposerInputRow: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .background(.quaternary, in: Circle())
             .help(L10n.addToChat)
             .overlay(alignment: .bottomLeading) {
@@ -124,7 +124,7 @@ struct CodexChatComposerTextEditor: View {
                 .lineLimit(Self.maximumLineCount)
             Text(verbatim: " \n ")
         }
-        .dahliaFont(.body)
+        .font(.body)
         .padding(.leading, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,7 +133,7 @@ struct CodexChatComposerTextEditor: View {
         .overlay(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
-                    .dahliaFont(.body)
+                    .font(.body)
                     .focused($isFocused)
                     .scrollContentBackground(.hidden)
                     .padding(.leading, 3)
@@ -150,8 +150,8 @@ struct CodexChatComposerTextEditor: View {
 
                 if Self.shouldShowPlaceholder(text: text, isFocused: isFocused) {
                     Text(L10n.messageCodex)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.tertiary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
                         .padding(.leading, 8)
                         .padding(.top, 6)
                         .allowsHitTesting(false)

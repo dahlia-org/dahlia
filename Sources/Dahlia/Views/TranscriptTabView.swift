@@ -42,7 +42,7 @@ struct TranscriptTabView: View {
                         .dahliaFixedSymbol()
                         .foregroundStyle(.orange)
                     Text(L10n.transcriptLoadFailed(pageLoadError))
-                        .dahliaFont(.secondary)
+                        .font(.callout)
                         .lineLimit(2)
                     Spacer()
                     Button(L10n.retry) {
@@ -64,7 +64,7 @@ struct TranscriptTabView: View {
                     loadLatest()
                 } label: {
                     Label(L10n.newerTranscriptAvailable, systemImage: "arrow.down.circle.fill")
-                        .dahliaFont(.secondary)
+                        .font(.callout)
                 }
                 .buttonStyle(.borderless)
                 .padding(.vertical, 6)

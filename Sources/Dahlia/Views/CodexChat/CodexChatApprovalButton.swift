@@ -23,11 +23,11 @@ struct CodexChatApprovalButton: View {
                     Image(systemName: "info.circle")
                         .dahliaFixedSymbol()
                         .imageScale(.small)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .onHover(perform: showHelpOnHover)
                         .popover(isPresented: $isHelpPresented, arrowEdge: .bottom) {
                             Text(helpText)
-                                .dahliaFont(.body)
+                                .font(.body)
                                 .padding(12)
                         }
                         .accessibilityLabel(helpText)
@@ -35,7 +35,9 @@ struct CodexChatApprovalButton: View {
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 36)
-            .foregroundStyle(prominence == .primary ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .foregroundStyle(
+                prominence == .primary ? AnyShapeStyle(.white) : AnyShapeStyle(DahliaDesign.primaryTextColor)
+            )
             .background(backgroundStyle, in: Capsule())
             .overlay {
                 if prominence == .secondary {
@@ -62,7 +64,7 @@ struct CodexChatApprovalButton: View {
             }
         case .secondary:
             if isHovering {
-                AnyShapeStyle(DahliaDesign.hoverHighlightColor)
+                AnyShapeStyle(DahliaDesign.contentHighlightColor)
             } else {
                 AnyShapeStyle(.background)
             }

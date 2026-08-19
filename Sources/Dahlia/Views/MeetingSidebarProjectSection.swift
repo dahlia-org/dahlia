@@ -48,13 +48,13 @@ struct MeetingSidebarProjectSection: View {
                         L10n.noProject,
                         systemImage: isExpanded ? "questionmark.folder" : "questionmark.folder.fill"
                     )
-                    .dahliaFont(.body)
+                    .font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
                 .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
-                .dahliaSidebarHoverHighlight(isHovered: isNoProjectHovered)
+                .dahliaSidebarHoverHighlight(isHovered: isNoProjectHovered, verticalOutset: 2)
                 .contentShape(.rect)
                 .onHover { isNoProjectHovered = $0 }
                 .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
@@ -110,7 +110,7 @@ struct MeetingSidebarProjectSection: View {
 
     private var limitMessage: some View {
         Text(L10n.searchForOlderMeetings)
-            .dahliaFont(.body)
+            .font(.footnote)
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .padding(.leading, 25)
     }
@@ -139,7 +139,6 @@ struct MeetingSidebarProjectSection: View {
             showsDateInTimestamp: showsMeetingDate,
             searchText: "",
             isSelected: selectedMeetingIDs.contains(item.meetingId),
-            usesNativeSelectionHighlight: allowsListSelection,
             isActiveRecording: item.meetingId == activeRecordingID,
             isEditing: allowsListSelection && editingMeetingId == item.meetingId,
             editingName: $editingMeetingName,

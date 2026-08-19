@@ -18,7 +18,7 @@ let testPollTimeout = Duration.seconds(120)
 func pollUntil(
     timeout: Duration = testPollTimeout,
     interval: Duration = .milliseconds(10),
-    isolation: isolated (any Actor)? = #isolation,
+    isolation _: isolated (any Actor)? = #isolation,
     _ condition: () async -> Bool
 ) async -> Bool {
     let deadline = ContinuousClock.now + timeout

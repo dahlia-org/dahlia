@@ -16,9 +16,10 @@ struct MainSearchTokenRow: View {
                         HStack(spacing: 4) {
                             MeetingSearchTokenLabel(token: token, projects: projects, tags: tags)
                             Image(systemName: "xmark")
-                                .font(.caption)
+                                .font(.caption2)
                         }
                     }
+                    .font(.caption2)
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help(L10n.removeSearchFilter)

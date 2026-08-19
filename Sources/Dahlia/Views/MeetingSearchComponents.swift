@@ -77,14 +77,14 @@ struct MeetingSearchDateRangeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.customDateRange)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
 
             DatePicker(L10n.startDate, selection: $startDate, displayedComponents: .date)
             DatePicker(L10n.endDate, selection: $endDate, displayedComponents: .date)
 
             if !isValid {
                 Label(L10n.invalidDateRange, systemImage: "exclamationmark.triangle")
-                    .dahliaFont(.secondary)
+                    .font(.callout)
                     .foregroundStyle(.red)
             }
 

@@ -8,15 +8,15 @@ struct CodexChatMeetingPickerRow: View {
         HStack(spacing: 10) {
             Image(systemName: isHighlighted ? "chevron.right" : "calendar")
                 .dahliaFixedSymbol()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(reference.name)
                     .lineLimit(1)
                 Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)

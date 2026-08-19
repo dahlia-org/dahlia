@@ -14,7 +14,7 @@ struct ApplicationLogView: View {
         VStack(spacing: 0) {
             DahliaWindowHeader(reservesWindowControls: true) {
                 Text(L10n.applicationLogs)
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
 
                 Spacer(minLength: 12)
 
@@ -45,7 +45,7 @@ struct ApplicationLogView: View {
 
             if let errorMessage = model.errorMessage, model.hasLogs {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
-                    .dahliaFont(.secondary)
+                    .font(.callout)
                     .foregroundStyle(.orange)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
@@ -71,7 +71,7 @@ struct ApplicationLogView: View {
             } else {
                 ScrollView([.horizontal, .vertical]) {
                     Text(displayedText)
-                        .dahliaFont(.body, design: .monospaced)
+                        .font(.body.monospaced())
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         .padding()

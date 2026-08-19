@@ -72,8 +72,8 @@ struct CodexChatView: View {
 
             if let noticeMessage = session.noticeMessage {
                 Label(noticeMessage, systemImage: "info.circle.fill")
-                    .dahliaFont(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
                     .padding(.vertical, 6)
