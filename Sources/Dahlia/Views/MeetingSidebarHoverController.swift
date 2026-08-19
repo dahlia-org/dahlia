@@ -6,6 +6,11 @@ import Observation
 final class MeetingSidebarHoverController {
     typealias DescriptionLoader = @MainActor @Sendable (UUID, UUID) async -> String?
 
+    private enum HoverSource {
+        case row
+        case card
+    }
+
     private(set) var visibleItem: MeetingSidebarItem?
     private(set) var visibleDescription = ""
     private(set) var visibleIsActiveRecording = false
@@ -16,21 +21,26 @@ final class MeetingSidebarHoverController {
     private(set) var visibleProjectIsPinned = false
 
     @ObservationIgnored private let displayDelay: Duration
+    @ObservationIgnored private let dismissalDelay: Duration
     @ObservationIgnored private let sleep: (Duration) async throws -> Void
     @ObservationIgnored private let loadDescription: DescriptionLoader
     @ObservationIgnored private var hoveredMeetingID: UUID?
     @ObservationIgnored private var hoveredMeetingRowID: UUID?
     @ObservationIgnored private var hoveredProjectID: UUID?
     @ObservationIgnored private var hoveredRowFrame: CGRect = .zero
+    @ObservationIgnored private var meetingHoverSources: Set<HoverSource> = []
+    @ObservationIgnored private var projectHoverSources: Set<HoverSource> = []
     @ObservationIgnored private var presentationTask: Task<Void, Never>?
     @ObservationIgnored private var dismissalTask: Task<Void, Never>?
 
     init(
         displayDelay: Duration = .milliseconds(700),
+        dismissalDelay: Duration = .milliseconds(150),
         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         loadDescription: @escaping DescriptionLoader
     ) {
         self.displayDelay = displayDelay
+        self.dismissalDelay = dismissalDelay
         self.sleep = sleep
         self.loadDescription = loadDescription
     }
@@ -42,6 +52,8 @@ final class MeetingSidebarHoverController {
         rowFrame: CGRect,
         rowID: UUID
     ) {
+        meetingHoverSources.insert(.row)
+        projectHoverSources.remove(.row)
         if hoveredMeetingID == item.meetingId,
            hoveredMeetingRowID == rowID,
            visibleItem?.meetingId == item.meetingId {
@@ -92,6 +104,8 @@ final class MeetingSidebarHoverController {
         isPinned: Bool,
         rowFrame: CGRect
     ) {
+        meetingHoverSources.remove(.row)
+        projectHoverSources.insert(.row)
         if hoveredProjectID == project.projectId,
            visibleProject?.projectId == project.projectId {
             dismissalTask?.cancel()
@@ -150,22 +164,12 @@ final class MeetingSidebarHoverController {
     func hoverEnded(for meetingID: UUID, rowID: UUID) {
         guard hoveredMeetingID == meetingID,
               hoveredMeetingRowID == rowID else { return }
+        meetingHoverSources.remove(.row)
         guard visibleItem?.meetingId == meetingID else {
             dismissAll()
             return
         }
-        dismissalTask?.cancel()
-        dismissalTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(150))
-            } catch {
-                return
-            }
-            guard let self,
-                  hoveredMeetingID == meetingID,
-                  hoveredMeetingRowID == rowID else { return }
-            dismissAll()
-        }
+        scheduleMeetingDismissal(for: meetingID, rowID: rowID)
     }
 
     func meetingDisappeared(for meetingID: UUID, rowID: UUID) {
@@ -176,30 +180,26 @@ final class MeetingSidebarHoverController {
 
     func meetingCardHoverChanged(_ isHovered: Bool) {
         if isHovered {
+            meetingHoverSources.insert(.card)
             dismissalTask?.cancel()
             dismissalTask = nil
-        } else if let meetingID = hoveredMeetingID,
-                  let rowID = hoveredMeetingRowID {
-            hoverEnded(for: meetingID, rowID: rowID)
+        } else {
+            meetingHoverSources.remove(.card)
+            if let meetingID = hoveredMeetingID,
+               let rowID = hoveredMeetingRowID {
+                scheduleMeetingDismissal(for: meetingID, rowID: rowID)
+            }
         }
     }
 
     func projectRowHoverEnded(for projectID: UUID) {
         guard hoveredProjectID == projectID else { return }
+        projectHoverSources.remove(.row)
         guard visibleProject?.projectId == projectID else {
             dismissAll()
             return
         }
-        dismissalTask?.cancel()
-        dismissalTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(150))
-            } catch {
-                return
-            }
-            guard let self, hoveredProjectID == projectID else { return }
-            dismissAll()
-        }
+        scheduleProjectDismissal(for: projectID)
     }
 
     func projectDisappeared(for projectID: UUID) {
@@ -209,10 +209,14 @@ final class MeetingSidebarHoverController {
 
     func projectCardHoverChanged(_ isHovered: Bool) {
         if isHovered {
+            projectHoverSources.insert(.card)
             dismissalTask?.cancel()
             dismissalTask = nil
-        } else if let projectID = hoveredProjectID {
-            projectRowHoverEnded(for: projectID)
+        } else {
+            projectHoverSources.remove(.card)
+            if let projectID = hoveredProjectID {
+                scheduleProjectDismissal(for: projectID)
+            }
         }
     }
 
@@ -220,6 +224,8 @@ final class MeetingSidebarHoverController {
         hoveredMeetingID = nil
         hoveredMeetingRowID = nil
         hoveredProjectID = nil
+        meetingHoverSources.removeAll()
+        projectHoverSources.removeAll()
         presentationTask?.cancel()
         presentationTask = nil
         dismissalTask?.cancel()
@@ -228,6 +234,8 @@ final class MeetingSidebarHoverController {
     }
 
     private func dismissVisibleCard() {
+        meetingHoverSources.remove(.card)
+        projectHoverSources.remove(.card)
         visibleItem = nil
         visibleDescription = ""
         visibleIsActiveRecording = false
@@ -236,5 +244,40 @@ final class MeetingSidebarHoverController {
         visibleProject = nil
         visibleProjectAppearance = .default
         visibleProjectIsPinned = false
+    }
+
+    private func scheduleMeetingDismissal(for meetingID: UUID, rowID: UUID) {
+        guard meetingHoverSources.isEmpty else { return }
+        dismissalTask?.cancel()
+        let dismissalDelay = dismissalDelay
+        dismissalTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: dismissalDelay)
+            } catch {
+                return
+            }
+            guard let self,
+                  hoveredMeetingID == meetingID,
+                  hoveredMeetingRowID == rowID,
+                  meetingHoverSources.isEmpty else { return }
+            dismissAll()
+        }
+    }
+
+    private func scheduleProjectDismissal(for projectID: UUID) {
+        guard projectHoverSources.isEmpty else { return }
+        dismissalTask?.cancel()
+        let dismissalDelay = dismissalDelay
+        dismissalTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: dismissalDelay)
+            } catch {
+                return
+            }
+            guard let self,
+                  hoveredProjectID == projectID,
+                  projectHoverSources.isEmpty else { return }
+            dismissAll()
+        }
     }
 }

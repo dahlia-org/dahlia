@@ -82,6 +82,7 @@ struct MeetingSidebarHoverControllerTests {
         let sleeper = MeetingHoverTestSleeper()
         let project = makeProject()
         let controller = MeetingSidebarHoverController(
+            dismissalDelay: .zero,
             sleep: sleeper.sleep,
             loadDescription: { _, _ in nil }
         )
@@ -106,10 +107,23 @@ struct MeetingSidebarHoverControllerTests {
         await Task.yield()
         #expect(controller.visibleProject?.projectId == project.projectId)
 
+        controller.projectHoverBegan(
+            project: project,
+            appearance: .default,
+            isPinned: true,
+            rowFrame: .zero
+        )
         controller.projectCardHoverChanged(false)
+        await Task.yield()
         #expect(controller.visibleProject?.projectId == project.projectId)
-        controller.dismissAll()
-        #expect(controller.visibleProject == nil)
+
+        controller.projectCardHoverChanged(true)
+        controller.projectRowHoverEnded(for: project.projectId)
+        await Task.yield()
+        #expect(controller.visibleProject?.projectId == project.projectId)
+
+        controller.projectCardHoverChanged(false)
+        #expect(await pollUntil { controller.visibleProject == nil })
     }
 
     @Test
@@ -119,6 +133,7 @@ struct MeetingSidebarHoverControllerTests {
         let rowID = UUID()
         let appearance = ProjectAppearance(icon: .code, color: .purple)
         let controller = MeetingSidebarHoverController(
+            dismissalDelay: .zero,
             sleep: sleeper.sleep,
             loadDescription: { _, _ in "Description" }
         )
@@ -140,7 +155,6 @@ struct MeetingSidebarHoverControllerTests {
         await Task.yield()
         #expect(controller.visibleItem?.meetingId == item.meetingId)
 
-        controller.meetingCardHoverChanged(false)
         controller.hoverBegan(
             item: item,
             isActiveRecording: false,
@@ -148,10 +162,17 @@ struct MeetingSidebarHoverControllerTests {
             rowFrame: .zero,
             rowID: rowID
         )
+        controller.meetingCardHoverChanged(false)
+        await Task.yield()
         #expect(controller.visibleItem?.meetingId == item.meetingId)
 
-        controller.dismissAll()
-        #expect(controller.visibleItem == nil)
+        controller.meetingCardHoverChanged(true)
+        controller.hoverEnded(for: item.meetingId, rowID: rowID)
+        await Task.yield()
+        #expect(controller.visibleItem?.meetingId == item.meetingId)
+
+        controller.meetingCardHoverChanged(false)
+        #expect(await pollUntil { controller.visibleItem == nil })
     }
 
     @Test
