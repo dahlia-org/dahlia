@@ -613,6 +613,7 @@ enum L10n {
     static var add: String { String(localized: "Add", bundle: bundle) }
     static var save: String { String(localized: "Save", bundle: bundle) }
     static var name: String { String(localized: "Name", bundle: bundle) }
+    static var updated: String { String(localized: "Updated", bundle: bundle) }
 
     static func pastDays(_ count: Int) -> String {
         String(localized: "Past \(count) days", bundle: bundle)

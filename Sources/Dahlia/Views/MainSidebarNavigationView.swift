@@ -1,12 +1,17 @@
 import SwiftUI
 
 struct MainSidebarNavigationView: View {
+    @Binding var meetingSidebarDisplayMode: MeetingSidebarDisplayMode
     let onCreateMeeting: () -> Void
     let canCreateMeeting: Bool
     let canStartQuickRecording: Bool
     let onStartQuickRecording: () -> Void
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
+    let isShowingProjects: Bool
+    let onShowProjects: () -> Void
+    let canCreateProject: Bool
+    let onCreateProject: () -> Void
     let isShowingUnprocessedRecordings: Bool
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
@@ -32,6 +37,16 @@ struct MainSidebarNavigationView: View {
             .buttonStyle(.plain)
             .help(L10n.showUpcomingSchedule)
             .accessibilityAddTraits(isShowingUpcomingSchedule ? .isSelected : [])
+
+            if meetingSidebarDisplayMode == .chronological {
+                MainSidebarProjectNavigationRow(
+                    displayMode: $meetingSidebarDisplayMode,
+                    isSelected: isShowingProjects,
+                    canCreateProject: canCreateProject,
+                    onOpen: onShowProjects,
+                    onCreateProject: onCreateProject
+                )
+            }
 
             if showsCustomerIntelligence {
                 Button(action: onOpenCustomerIntelligence) {

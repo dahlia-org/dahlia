@@ -6,11 +6,6 @@ import OSLog
 
 let sidebarViewModelLogger = Logger(subsystem: "com.dahlia", category: "SidebarViewModel")
 
-private struct ProjectDescriptionDraft {
-    let description: String
-    let baseRevision: Int?
-}
-
 /// サイドバーの状態管理。Vault 内のミーティング一覧と設定画面で使う補助データを監視する。
 @Observable
 @MainActor
@@ -109,7 +104,6 @@ final class SidebarViewModel {
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
-    @ObservationIgnored private var projectDescriptionDrafts: [UUID: ProjectDescriptionDraft] = [:]
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
     @ObservationIgnored var meetingPageLoadTask: Task<Void, Never>?
@@ -234,7 +228,6 @@ final class SidebarViewModel {
         allProjectItems.removeAll()
         isProjectCatalogLoaded = false
         projectCatalogLoadFailed = false
-        projectDescriptionDrafts.removeAll()
         allInstructions.removeAll()
         allTags.removeAll()
         areSearchTagsLoaded = false
@@ -763,94 +756,6 @@ final class SidebarViewModel {
             let record = try projectWorkspaceService.fetchOrCreateRootProject(name: name)
             let projectURL = vault.url.appending(path: record.path, directoryHint: .isDirectory)
             return (record, projectURL)
-        } catch {
-            lastError = error.localizedDescription
-            return nil
-        }
-    }
-
-}
-
-extension SidebarViewModel {
-    func updateProjectDescription(
-        id: UUID,
-        description: String,
-        expectedRevision: Int? = nil
-    ) -> ProjectDescriptionUpdateResult {
-        guard let meetingRepository else { return .failed }
-        do {
-            guard try meetingRepository.fetchProject(id: id) != nil else {
-                clearProjectDescriptionDraft(id: id)
-                return .projectNotFound
-            }
-            let updated: Bool
-            if let projectWorkspaceService {
-                updated = try projectWorkspaceService.updateProjectDescription(
-                    id: id,
-                    description: description,
-                    expectedRevision: expectedRevision
-                )
-            } else {
-                guard let vaultId = currentVault?.id else { return .failed }
-                updated = try meetingRepository.updateProjectDescription(
-                    id: id,
-                    vaultId: vaultId,
-                    description: description
-                )
-            }
-            guard updated else {
-                clearProjectDescriptionDraft(id: id)
-                return .projectNotFound
-            }
-            clearProjectDescriptionDraft(id: id)
-            return .saved
-        } catch ProjectWorkspaceError.projectNotFound {
-            clearProjectDescriptionDraft(id: id)
-            return .projectNotFound
-        } catch let ProjectWorkspaceError.staleRevision(current) {
-            stageProjectDescriptionDraft(
-                id: id,
-                description: description,
-                baseRevision: expectedRevision
-            )
-            return .staleRevision(current: current)
-        } catch {
-            stageProjectDescriptionDraft(
-                id: id,
-                description: description,
-                baseRevision: expectedRevision
-            )
-            lastError = error.localizedDescription
-            return .failed
-        }
-    }
-
-    func stageProjectDescriptionDraft(
-        id: UUID,
-        description: String,
-        baseRevision: Int? = nil
-    ) {
-        projectDescriptionDrafts[id] = ProjectDescriptionDraft(
-            description: description,
-            baseRevision: baseRevision
-        )
-    }
-
-    func clearProjectDescriptionDraft(id: UUID) {
-        projectDescriptionDrafts[id] = nil
-    }
-
-    func projectDescriptionDraft(id: UUID) -> String? {
-        projectDescriptionDrafts[id]?.description
-    }
-
-    func projectDescriptionDraftBaseRevision(id: UUID) -> Int? {
-        projectDescriptionDrafts[id]?.baseRevision
-    }
-
-    func projectDescription(id: UUID) -> String? {
-        do {
-            return try meetingRepository?.fetchProject(id: id)?.description
         } catch {
             lastError = error.localizedDescription
             return nil

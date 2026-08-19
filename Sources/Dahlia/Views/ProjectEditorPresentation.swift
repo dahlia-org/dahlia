@@ -27,7 +27,7 @@ struct ProjectEditorPresentation: View {
                 actionTitle: project == nil ? L10n.createProject : L10n.save,
                 parentProjects: parentProjects,
                 projectName: projectName,
-                projectDescription: request.initialDescription,
+                projectDescription: project?.projectDescription ?? "",
                 parentProjectId: project?.parentProjectId,
                 projectType: project?.effectiveProjectType ?? .undefined,
                 appearance: appearance,

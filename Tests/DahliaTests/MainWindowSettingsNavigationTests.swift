@@ -7,25 +7,24 @@
     struct MainWindowSettingsNavigationTests {
         @Test
         func settingsPresentationPreservesCurrentAppLocation() {
-            let projectId = UUID.v7()
             let navigation = MainWindowNavigation(
                 openMainWindow: {},
                 initialSettingsCategory: .general
             )
-            navigation.recordNavigation(to: .project(projectId))
+            navigation.recordNavigation(to: .projects)
 
             navigation.openSettings(category: .calendar)
 
             #expect(navigation.isShowingSettings)
             #expect(navigation.settingsCategory == .calendar)
             #expect(navigation.section == .projects)
-            #expect(navigation.currentLocation == .project(projectId))
+            #expect(navigation.currentLocation == .projects)
 
             navigation.dismissSettings()
 
             #expect(!navigation.isShowingSettings)
             #expect(navigation.section == .projects)
-            #expect(navigation.currentLocation == .project(projectId))
+            #expect(navigation.currentLocation == .projects)
         }
 
         @Test
