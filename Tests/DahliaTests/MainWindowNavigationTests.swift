@@ -71,20 +71,6 @@
             #expect(invalidRestored.projectAppearance(projectId: validProject, vaultId: firstVault) == appearance)
         }
 
-        @Test
-        func opensProjectWithConsumableEditAndDeleteIntents() {
-            for intent in [ProjectNavigationIntent.edit, .delete] {
-                let navigation = MainWindowNavigation(openMainWindow: {})
-                let projectID = UUID.v7()
-
-                navigation.openProject(projectID, intent: intent)
-
-                #expect(navigation.section == .projects)
-                #expect(navigation.selectedProjectId == projectID)
-                #expect(navigation.consumeProjectNavigationIntent(for: projectID) == intent)
-                #expect(navigation.consumeProjectNavigationIntent(for: projectID) == nil)
-            }
-        }
     }
 
     extension MainWindowNavigationTests {
@@ -92,13 +78,12 @@
         func navigatesBackwardAndForwardThroughMainLocations() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             let meetingId = UUID.v7()
-            let projectId = UUID.v7()
             navigation.recordNavigation(to: .meeting(meetingId))
-            navigation.recordNavigation(to: .project(projectId))
+            navigation.recordNavigation(to: .projects)
             navigation.recordNavigation(to: .unprocessedRecordings)
 
             await navigateBack(navigation)
-            #expect(navigation.currentLocation == .project(projectId))
+            #expect(navigation.currentLocation == .projects)
             #expect(navigation.section == .projects)
 
             await navigateBack(navigation)
@@ -134,7 +119,7 @@
             let meetingId = UUID.v7()
             navigation.initializeNavigationHistoryIfNeeded(to: .upcomingSchedule)
             navigation.recordNavigation(to: .meeting(meetingId))
-            navigation.recordNavigation(to: .project(.v7()))
+            navigation.recordNavigation(to: .projects)
             await navigateBack(navigation)
 
             navigation.initializeNavigationHistoryIfNeeded(to: .unprocessedRecordings)
@@ -148,7 +133,7 @@
         func newNavigationAfterGoingBackClearsForwardHistory() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             navigation.recordNavigation(to: .meeting(.v7()))
-            navigation.recordNavigation(to: .project(.v7()))
+            navigation.recordNavigation(to: .projects)
 
             await navigateBack(navigation)
             #expect(navigation.canGoForward)
@@ -163,18 +148,15 @@
             let navigation = MainWindowNavigation(openMainWindow: {})
             let vaultId = UUID.v7()
             navigation.recordNavigation(to: .meeting(.v7()))
-            navigation.recordNavigation(to: .project(.v7()))
+            navigation.recordNavigation(to: .projects)
             navigation.recordNavigation(to: .unprocessedRecordings)
-            navigation.expandedProjectIds = [.v7()]
             await navigateBack(navigation)
 
             navigation.changeVault(to: vaultId)
 
-            #expect(navigation.currentLocation == .project(nil))
+            #expect(navigation.currentLocation == .projects)
             #expect(!navigation.canGoBack)
             #expect(!navigation.canGoForward)
-            #expect(navigation.selectedProjectId == nil)
-            #expect(navigation.expandedProjectIds.isEmpty)
         }
 
         @Test
@@ -196,7 +178,7 @@
             let unavailableMeetingId = UUID.v7()
             navigation.recordNavigation(to: .meeting(availableMeetingId))
             navigation.recordNavigation(to: .meeting(unavailableMeetingId))
-            navigation.recordNavigation(to: .project(.v7()))
+            navigation.recordNavigation(to: .projects)
 
             await navigation.goBack(
                 validatingWith: { location in
@@ -211,9 +193,8 @@
         @Test
         func unavailableEntryDoesNotPublishItsSectionOrChangeCurrentLocation() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
-            let missingProjectId = UUID.v7()
             let meetingId = UUID.v7()
-            navigation.resetNavigationHistory(to: .project(missingProjectId))
+            navigation.resetNavigationHistory(to: .projects)
             navigation.recordNavigation(to: .meeting(meetingId))
             var restoredLocation: MainWindowLocation?
 
@@ -234,10 +215,9 @@
         func normalNavigationCancelsSuspendedHistoryWithoutDiscardingIt() async {
             let navigation = MainWindowNavigation(openMainWindow: {})
             let meetingId = UUID.v7()
-            let projectId = UUID.v7()
             let gate = NavigationValidationGate()
             navigation.recordNavigation(to: .meeting(meetingId))
-            navigation.recordNavigation(to: .project(projectId))
+            navigation.recordNavigation(to: .projects)
 
             let traversal = Task {
                 await navigation.goBack(
@@ -258,7 +238,7 @@
 
             #expect(navigation.currentLocation == .unprocessedRecordings)
             await navigateBack(navigation)
-            #expect(navigation.currentLocation == .project(projectId))
+            #expect(navigation.currentLocation == .projects)
         }
 
         @Test
@@ -316,7 +296,7 @@
                 observedSection = navigation?.section
             }
             navigation = subject
-            subject.resetNavigationHistory(to: .project(.v7()))
+            subject.resetNavigationHistory(to: .projects)
             subject.showMeetings()
 
             subject.openProjects()
@@ -357,65 +337,6 @@
             #expect(observedSection == .meetings)
         }
 
-        @Test
-        func projectPresentationStateSurvivesSectionRoundTrip() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let projectId = UUID.v7()
-            let expandedId = UUID.v7()
-            navigation.selectedProjectId = projectId
-            navigation.expandedProjectIds = [expandedId]
-
-            navigation.showMeetings()
-            navigation.showProjects()
-
-            #expect(navigation.selectedProjectId == projectId)
-            #expect(navigation.expandedProjectIds == [expandedId])
-        }
-
-        @Test
-        func changingVaultResetsProjectPresentationState() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let firstVaultId = UUID.v7()
-            let secondVaultId = UUID.v7()
-            let firstProject = project(named: "First")
-            let secondProject = project(named: "Second")
-            navigation.reconcileProjectCatalog(vaultId: firstVaultId, projects: [firstProject])
-            navigation.expandedProjectIds = [firstProject.projectId]
-
-            navigation.reconcileProjectCatalog(vaultId: secondVaultId, projects: [secondProject])
-
-            #expect(navigation.selectedProjectId == secondProject.projectId)
-            #expect(navigation.expandedProjectIds.isEmpty)
-        }
-
-        @Test
-        func deletingSelectedProjectSelectsFirstRemainingProjectInSameVault() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let vaultId = UUID.v7()
-            let first = project(named: "First")
-            let selected = project(named: "Selected")
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [first, selected])
-            navigation.selectedProjectId = selected.projectId
-
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [first])
-
-            #expect(navigation.selectedProjectId == first.projectId)
-        }
-
-        @Test
-        func automaticProjectSelectionReplacesCurrentLocationWithoutAddingHistory() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let vaultId = UUID.v7()
-            let first = project(named: "First")
-            navigation.resetNavigationHistory(to: .project(nil))
-
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [first])
-
-            #expect(navigation.selectedProjectId == first.projectId)
-            #expect(navigation.currentLocation == .project(first.projectId))
-            #expect(!navigation.canGoBack)
-        }
-
         private func navigateBack(_ navigation: MainWindowNavigation) async {
             await navigation.goBack(
                 validatingWith: { _ in true },
@@ -430,22 +351,6 @@
             )
         }
 
-        private func project(named name: String) -> ProjectOverviewItem {
-            ProjectOverviewItem(
-                projectId: .v7(),
-                projectName: name,
-                projectDisplayName: name,
-                parentProjectId: nil,
-                projectDescription: "",
-                explicitProjectType: .undefined,
-                effectiveProjectType: .undefined,
-                typeOwnerProjectId: nil,
-                revision: 0,
-                createdAt: .now,
-                meetingCount: 0,
-                latestMeetingDate: nil
-            )
-        }
     }
 
     extension MainWindowNavigationTests {
@@ -473,45 +378,6 @@
             #expect(navigation.currentLocation == .unprocessedRecordings)
         }
 
-        @Test
-        func deletingSelectedProjectRemovesRedundantAndUnavailableHistory() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let vaultId = UUID.v7()
-            let first = project(named: "First")
-            let selected = project(named: "Selected")
-            let unavailable = project(named: "Unavailable")
-            navigation.resetNavigationHistory(to: .project(first.projectId))
-            navigation.recordNavigation(to: .project(unavailable.projectId))
-            navigation.recordNavigation(to: .project(selected.projectId))
-            navigation.selectedProjectId = selected.projectId
-
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [first])
-
-            #expect(navigation.currentLocation == .project(first.projectId))
-            #expect(!navigation.canGoBack)
-            #expect(!navigation.canGoForward)
-        }
-
-        @Test
-        func createdProjectSelectionSurvivesAStaleCatalogUntilObserved() {
-            let navigation = MainWindowNavigation(openMainWindow: {})
-            let vaultId = UUID.v7()
-            let existing = project(named: "Existing")
-            let created = project(named: "Created")
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing])
-
-            navigation.selectCreatedProject(created.projectId)
-            navigation.recordNavigation(to: .project(created.projectId))
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing])
-
-            #expect(navigation.selectedProjectId == created.projectId)
-            #expect(navigation.currentLocation == .project(created.projectId))
-
-            navigation.reconcileProjectCatalog(vaultId: vaultId, projects: [existing, created])
-
-            #expect(navigation.selectedProjectId == created.projectId)
-            #expect(navigation.currentLocation == .project(created.projectId))
-        }
     }
 
     private actor NavigationValidationGate {

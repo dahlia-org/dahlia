@@ -5,13 +5,13 @@ enum MainWindowLocation: Equatable {
     case upcomingSchedule
     case unprocessedRecordings
     case meeting(UUID)
-    case project(UUID?)
+    case projects
 
     var section: MainWindowSection {
         switch self {
         case .upcomingSchedule, .unprocessedRecordings, .meeting:
             .meetings
-        case .project:
+        case .projects:
             .projects
         }
     }
@@ -45,29 +45,14 @@ final class MainWindowNavigation {
         }
     }
 
-    var selectedProjectId: UUID? {
-        didSet {
-            if selectedProjectId != pendingCreatedProjectId {
-                pendingCreatedProjectId = nil
-            }
-        }
-    }
-
-    var expandedProjectIds: Set<UUID> = []
     var meetingSidebarDisplayMode: MeetingSidebarDisplayMode {
         didSet {
             settingsDefaults.set(meetingSidebarDisplayMode.rawValue, forKey: Self.meetingSidebarDisplayModeDefaultsKey)
         }
     }
 
-    private(set) var pendingProjectNavigationIntent: PendingProjectNavigationIntent?
-
     private var pinnedProjectIDsByVault: [String: [String]]
     private var projectAppearancesByVault: [String: [String: ProjectAppearance]]
-    private var projectRevisionObservationTracker = ProjectRevisionObservationTracker()
-
-    private var projectVaultId: UUID?
-    private var pendingCreatedProjectId: UUID?
     private var navigationGeneration = 0
     private var backHistory: [MainWindowLocation] = []
     private var forwardHistory: [MainWindowLocation] = []
@@ -119,31 +104,10 @@ final class MainWindowNavigation {
         section = .projects
     }
 
-    func selectCreatedProject(_ projectId: UUID) {
-        pendingCreatedProjectId = projectId
-        selectedProjectId = projectId
-    }
-
     func openProjects() {
         dismissSettings()
-        recordNavigation(to: .project(selectedProjectId))
-        showProjects()
+        recordNavigation(to: .projects)
         openMainWindow()
-    }
-
-    func openProject(_ projectId: UUID, intent: ProjectNavigationIntent = .open) {
-        selectedProjectId = projectId
-        pendingProjectNavigationIntent = intent == .open
-            ? nil
-            : PendingProjectNavigationIntent(projectId: projectId, intent: intent)
-        recordNavigation(to: .project(projectId))
-        showProjects()
-    }
-
-    func consumeProjectNavigationIntent(for projectId: UUID) -> ProjectNavigationIntent? {
-        guard pendingProjectNavigationIntent?.projectId == projectId else { return nil }
-        defer { pendingProjectNavigationIntent = nil }
-        return pendingProjectNavigationIntent?.intent
     }
 
     func pinnedProjectIDs(vaultId: UUID?) -> [UUID] {
@@ -174,18 +138,6 @@ final class MainWindowNavigation {
         guard let vaultId else { return }
         projectAppearancesByVault[vaultId.uuidString, default: [:]][projectId.uuidString] = appearance
         saveProjectAppearances()
-    }
-
-    func recordLocalProjectRevision(projectId: UUID, revision: Int) {
-        projectRevisionObservationTracker.record(projectId: projectId, revision: revision)
-    }
-
-    func consumeLocalProjectRevision(projectId: UUID, revision: Int) -> Bool {
-        projectRevisionObservationTracker.consume(projectId: projectId, revision: revision)
-    }
-
-    func discardLocalProjectRevisions(projectId: UUID) {
-        projectRevisionObservationTracker.discard(projectId: projectId)
     }
 
     func openMeetings() {
@@ -285,13 +237,9 @@ final class MainWindowNavigation {
         resetNavigationHistory(to: location)
     }
 
-    func changeVault(to vaultId: UUID?) {
-        projectVaultId = vaultId
-        pendingCreatedProjectId = nil
-        selectedProjectId = nil
-        expandedProjectIds = []
+    func changeVault(to _: UUID?) {
         let location: MainWindowLocation = if section == .projects {
-            .project(nil)
+            .projects
         } else if currentLocation == .unprocessedRecordings {
             .unprocessedRecordings
         } else {
@@ -320,33 +268,6 @@ final class MainWindowNavigation {
         guard isNavigatingHistory else { return }
         navigationGeneration += 1
         isNavigatingHistory = false
-    }
-
-    func reconcileProjectCatalog(
-        vaultId: UUID?,
-        projects: [ProjectOverviewItem]
-    ) {
-        if projectVaultId != vaultId {
-            projectVaultId = vaultId
-            pendingCreatedProjectId = nil
-            selectedProjectId = nil
-            expandedProjectIds.removeAll()
-        }
-        if let pendingCreatedProjectId,
-           selectedProjectId == pendingCreatedProjectId,
-           !projects.contains(where: { $0.projectId == pendingCreatedProjectId }) {
-            return
-        }
-        pendingCreatedProjectId = nil
-        let reconciledProjectId = ProjectManagementSelection.reconciled(
-            selectedProjectId: selectedProjectId,
-            projects: projects
-        )
-        selectedProjectId = reconciledProjectId
-        if section == .projects {
-            currentLocation = .project(reconciledProjectId)
-            reconcileProjectHistory(with: projects)
-        }
     }
 
     private func navigate(
@@ -412,24 +333,4 @@ final class MainWindowNavigation {
         }
     }
 
-    private func reconcileProjectHistory(with projects: [ProjectOverviewItem]) {
-        if !projects.isEmpty {
-            let availableProjectIds = Set(projects.map(\.projectId))
-            backHistory.removeAll { $0.referencesUnavailableProject(in: availableProjectIds) }
-            forwardHistory.removeAll { $0.referencesUnavailableProject(in: availableProjectIds) }
-        }
-        while backHistory.last == currentLocation {
-            backHistory.removeLast()
-        }
-        while forwardHistory.last == currentLocation {
-            forwardHistory.removeLast()
-        }
-    }
-}
-
-private extension MainWindowLocation {
-    func referencesUnavailableProject(in availableProjectIds: Set<UUID>) -> Bool {
-        guard case let .project(projectId?) = self else { return false }
-        return !availableProjectIds.contains(projectId)
-    }
 }

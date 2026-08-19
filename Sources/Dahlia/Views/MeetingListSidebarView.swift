@@ -8,6 +8,8 @@ struct MeetingListSidebarView: View {
     let recordingCoordinator: RecordingCoordinator
     let isShowingUpcomingSchedule: Bool
     let onShowUpcomingSchedule: () -> Void
+    let isShowingProjects: Bool
+    let onShowProjects: () -> Void
     let isShowingUnprocessedRecordings: Bool
     let onShowUnprocessedRecordings: () -> Void
     let showsCustomerIntelligence: Bool
@@ -40,12 +42,17 @@ struct MeetingListSidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             MainSidebarNavigationView(
+                meetingSidebarDisplayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
                 onCreateMeeting: recordingCoordinator.createDraftMeeting,
                 canCreateMeeting: !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
                 canStartQuickRecording: recordingCoordinator.canStartNewMeeting,
                 onStartQuickRecording: recordingCoordinator.startQuickRecording,
                 isShowingUpcomingSchedule: isShowingUpcomingSchedule,
                 onShowUpcomingSchedule: onShowUpcomingSchedule,
+                isShowingProjects: isShowingProjects,
+                onShowProjects: onShowProjects,
+                canCreateProject: sidebarViewModel.currentVault != nil,
+                onCreateProject: onCreateProject,
                 isShowingUnprocessedRecordings: isShowingUnprocessedRecordings,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings,
@@ -350,9 +357,6 @@ struct MeetingListSidebarView: View {
             } ?? .default,
             isPinned: isPinned,
             isExpanded: isExpanded ?? !collapsedProjectKeys.contains(group.key),
-            selectedProjectID: mainWindowNavigation.section == .projects
-                ? mainWindowNavigation.selectedProjectId
-                : nil,
             canCreateMeeting: !viewModel.isRecordingStartPending && !viewModel.isFinalizingRecording,
             showsMeetingDate: mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             selectedMeetingIDs: renderedMeetingSelection,

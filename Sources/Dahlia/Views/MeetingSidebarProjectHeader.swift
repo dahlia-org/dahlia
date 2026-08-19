@@ -5,7 +5,6 @@ struct MeetingSidebarProjectHeader: View {
     let appearance: ProjectAppearance
     let isPinned: Bool
     let isExpanded: Bool
-    let isSelected: Bool
     let canCreateMeeting: Bool
     let onToggleExpansion: () -> Void
     let onOpen: (ProjectNavigationIntent) -> Void
@@ -77,7 +76,6 @@ struct MeetingSidebarProjectHeader: View {
         .padding(.trailing, 8)
         .dahliaSidebarHoverHighlight(
             isHovered: isHovered,
-            isSelected: isSelected,
             verticalOutset: DahliaDesign.projectSidebarRowHighlightVerticalOutset
         )
         .contentShape(.rect)

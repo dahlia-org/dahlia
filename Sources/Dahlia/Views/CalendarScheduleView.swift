@@ -16,15 +16,17 @@ struct CalendarScheduleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(L10n.calendarScheduleTitle)
-                    .font(.title2)
+                    .font(.title)
                     .foregroundStyle(DahliaDesign.primaryTextColor)
+                    .accessibilityAddTraits(.isHeader)
 
                 content
             }
             .padding(.horizontal, 28)
             .padding(.top, DahliaDesign.detailTopPadding)
             .padding(.bottom, 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: DahliaDesign.mainContentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(.background)
         .task {

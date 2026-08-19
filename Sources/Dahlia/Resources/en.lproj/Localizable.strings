@@ -1247,6 +1247,8 @@
 "This record changed. Reload it before saving again." = "This record changed. Reload it before saving again.";
 "Insight" = "Insight";
 "Updated" = "Updated";
+"Ascending" = "Ascending";
+"Descending" = "Descending";
 "Mark as Needs Review" = "Mark as Needs Review";
 "No Insights" = "No Insights";
 "Insights created by AI will appear here for review." = "Insights created by AI will appear here for review.";

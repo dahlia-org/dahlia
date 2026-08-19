@@ -163,6 +163,8 @@ struct ControlPanelView: View {
             }
         }
         .frame(minWidth: MainSidebarLayout.minimumDetailWidth, minHeight: 500)
+        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()

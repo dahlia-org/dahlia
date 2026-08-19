@@ -7,28 +7,39 @@ struct UnprocessedRecordingsView: View {
     @State private var pendingDiscardItem: BackupPreflightItem?
 
     var body: some View {
-        Group {
-            if items.isEmpty {
-                emptyContent
-            } else {
-                List(items) { item in
-                    LabeledContent {
-                        actions(for: item)
-                    } label: {
-                        Text(item.meetingName)
-                        Text(item.startedAt, format: .dateTime.year().month().day().hour().minute())
-                        Text(item.statusDescription)
-                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+        VStack(alignment: .leading, spacing: 22) {
+            Text(L10n.unprocessedRecordings)
+                .font(.title)
+                .accessibilityAddTraits(.isHeader)
+
+            Group {
+                if items.isEmpty {
+                    emptyContent
+                } else {
+                    List(items) { item in
+                        LabeledContent {
+                            actions(for: item)
+                        } label: {
+                            Text(item.meetingName)
+                            Text(item.startedAt, format: .dateTime.year().month().day().hour().minute())
+                            Text(item.statusDescription)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        }
+                    }
+                    .safeAreaInset(edge: .top) {
+                        if let error = sidebarViewModel.unprocessedRecordingsError {
+                            errorBanner(error)
+                        }
                     }
                 }
-                .safeAreaInset(edge: .top) {
-                    if let error = sidebarViewModel.unprocessedRecordingsError {
-                        errorBanner(error)
-                    }
-                }
-                .padding(.top, DahliaDesign.detailTopPadding)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(.horizontal, 28)
+        .padding(.top, DahliaDesign.detailTopPadding)
+        .padding(.bottom, 28)
+        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .top)
         .confirmationDialog(
             L10n.discardUnprocessedRecordingConfirmation,
             isPresented: Binding(

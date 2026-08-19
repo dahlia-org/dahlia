@@ -102,7 +102,7 @@
 "Good evening" = "こんばんは";
 "Meetings" = "ミーティング";
 "Recent" = "最近の項目";
-"Projects" = "Projects";
+"Projects" = "プロジェクト";
 "Organize Sidebar" = "サイドバーを整理";
 "Chronological" = "時系列";
 "Group by Project" = "プロジェクト別";
@@ -1247,6 +1247,8 @@
 "This record changed. Reload it before saving again." = "このレコードは変更されています。再読み込みしてから保存してください。";
 "Insight" = "インサイト";
 "Updated" = "更新日時";
+"Ascending" = "昇順";
+"Descending" = "降順";
 "Mark as Needs Review" = "未確認に戻す";
 "No Insights" = "インサイトがありません";
 "Insights created by AI will appear here for review." = "AIが作成したインサイトが確認のためにここへ表示されます。";
