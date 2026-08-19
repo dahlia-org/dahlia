@@ -10,6 +10,7 @@ struct MainSearchPanel: View {
     let onOpenProject: (UUID) -> Void
 
     @FocusState private var isSearchFocused: Bool
+    @State private var suggestionMode: MainSearchSuggestions.Mode = .overview
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +23,9 @@ struct MainSearchPanel: View {
                     .font(.headline)
                     .focused($isSearchFocused)
                     .onSubmit(activateSelectionOrSubmit)
+                filterButton(L10n.projectFilter, systemImage: "folder", mode: .projects)
+                filterButton(L10n.tagFilter, systemImage: "tag", mode: .tags)
+                filterButton(L10n.periodFilter, systemImage: "calendar", mode: .period)
                 Button(L10n.close, systemImage: "xmark", action: onDismiss)
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
@@ -43,9 +47,15 @@ struct MainSearchPanel: View {
                 .padding(.bottom, 12)
             }
 
-            MainSearchSuggestions(model: model, sidebarViewModel: sidebarViewModel)
+            if suggestionMode != .overview || !model.inputText.isEmpty || !model.tokens.isEmpty {
+                MainSearchSuggestions(
+                    model: model,
+                    sidebarViewModel: sidebarViewModel,
+                    mode: $suggestionMode
+                )
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
+            }
 
             Divider()
 
@@ -182,13 +192,37 @@ struct MainSearchPanel: View {
             title: meeting.displayTitle,
             projectBadge: meeting.projectName,
             projectTint: meeting.projectId.map { appearanceForProject($0).color.color },
-            dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .shortened),
+            dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .omitted),
             shortcutNumber: shortcutNumber,
             isSelected: model.selectedResultID == .meeting(meeting.id),
             action: { onOpenMeeting(meeting.id) }
         )
         .keyboardShortcut(shortcut)
         .id(MainSearchResultID.meeting(meeting.id))
+    }
+
+    private func filterButton(
+        _ title: String,
+        systemImage: String,
+        mode: MainSearchSuggestions.Mode
+    ) -> some View {
+        Button(title, systemImage: systemImage) {
+            suggestionMode = suggestionMode == mode ? .overview : mode
+        }
+        .labelStyle(.iconOnly)
+        .dahliaFixedSymbol()
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            suggestionMode == mode ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor
+        )
+        .frame(width: 28, height: 28)
+        .contentShape(.rect)
+        .background(
+            suggestionMode == mode ? DahliaDesign.contentHighlightColor : .clear,
+            in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
+        )
+        .help(title)
+        .accessibilityAddTraits(suggestionMode == mode ? .isSelected : [])
     }
 
     private func sectionHeader(_ title: String) -> some View {

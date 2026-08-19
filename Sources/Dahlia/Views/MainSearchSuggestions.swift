@@ -3,20 +3,14 @@ import SwiftUI
 struct MainSearchSuggestions: View {
     @Bindable var model: MainSearchModel
     var sidebarViewModel: SidebarViewModel
+    @Binding var mode: Mode
 
-    @State private var mode: Mode = .overview
     @State private var customDateStart = Calendar.current.startOfDay(for: .now)
     @State private var customDateEnd = Calendar.current.startOfDay(for: .now)
     @State private var isCustomDateRangePresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                categoryButton(L10n.project, systemImage: "folder", mode: .projects)
-                categoryButton(L10n.tag, systemImage: "tag", mode: .tags)
-                categoryButton(L10n.period, systemImage: "calendar", mode: .period)
-            }
-
             switch mode {
             case .overview:
                 EmptyView()
@@ -48,14 +42,6 @@ struct MainSearchSuggestions: View {
         }
     }
 
-    private func categoryButton(_ title: String, systemImage: String, mode: Mode) -> some View {
-        Button(title, systemImage: systemImage) {
-            self.mode = self.mode == mode ? .overview : mode
-        }
-        .buttonStyle(.bordered)
-        .accessibilityAddTraits(self.mode == mode ? .isSelected : [])
-    }
-
     @ViewBuilder
     private var projectSuggestions: some View {
         if !sidebarViewModel.areSearchProjectsLoaded {
@@ -66,7 +52,7 @@ struct MainSearchSuggestions: View {
         } else {
             suggestionList {
                 ForEach(sidebarViewModel.flatProjects) { project in
-                    selectionButton(
+                    MainSearchSuggestionButton(
                         title: project.name,
                         systemImage: "folder",
                         isSelected: model.tokens.contains {
@@ -91,7 +77,7 @@ struct MainSearchSuggestions: View {
             suggestionList {
                 ForEach(sidebarViewModel.allTags) { tag in
                     if let id = tag.id {
-                        selectionButton(
+                        MainSearchSuggestionButton(
                             title: tag.name,
                             systemImage: "tag",
                             isSelected: model.tokens.contains {
@@ -111,47 +97,21 @@ struct MainSearchSuggestions: View {
             periodButton(L10n.today, days: 1)
             periodButton(L10n.pastSevenDays, days: 7)
             periodButton(L10n.pastThirtyDays, days: 30)
-            Button(L10n.customDateRange, systemImage: "calendar.badge.plus") {
+            MainSearchSuggestionButton(
+                title: L10n.customDateRange,
+                systemImage: "calendar.badge.plus",
+                isSelected: false
+            ) {
                 prepareCustomDateRange()
                 isCustomDateRangePresented = true
             }
-            .buttonStyle(.plain)
         }
     }
 
     private func periodButton(_ title: String, days: Int) -> some View {
-        Button(title) {
+        MainSearchSuggestionButton(title: title, isSelected: false) {
             model.applyRecentPeriod(days, using: sidebarViewModel)
         }
-        .buttonStyle(.plain)
-    }
-
-    private func selectionButton(
-        title: String,
-        systemImage: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .dahliaFixedSymbol()
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                Text(title)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 8)
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .dahliaFixedSymbol()
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                }
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 3)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func suggestionList(@ViewBuilder content: () -> some View) -> some View {
@@ -193,7 +153,7 @@ struct MainSearchSuggestions: View {
         isCustomDateRangePresented = false
     }
 
-    private enum Mode: Equatable {
+    enum Mode: Equatable {
         case overview
         case projects
         case tags

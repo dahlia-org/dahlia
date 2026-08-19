@@ -233,6 +233,8 @@
 "Unknown project filter" = "不明なプロジェクトの絞り込み条件";
 "Unknown tag filter" = "不明なタグの絞り込み条件";
 "Period filter" = "期間の絞り込み";
+"Project filter" = "プロジェクトの絞り込み";
+"Tag filter" = "タグの絞り込み";
 "Description" = "概要";
 "Description:" = "説明:";
 "Event:" = "予定:";

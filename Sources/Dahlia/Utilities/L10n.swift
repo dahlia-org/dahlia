@@ -813,6 +813,8 @@ enum L10n {
     }
 
     static var periodFilter: String { String(localized: "Period filter", bundle: bundle) }
+    static var projectFilter: String { String(localized: "Project filter", bundle: bundle) }
+    static var tagFilter: String { String(localized: "Tag filter", bundle: bundle) }
     static var descriptionTitle: String { String(localized: "Description", bundle: bundle) }
     static var descriptionMatch: String { String(localized: "Description:", bundle: bundle) }
     static var calendarMatch: String { String(localized: "Event:", bundle: bundle) }
