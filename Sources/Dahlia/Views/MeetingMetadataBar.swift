@@ -71,6 +71,7 @@ struct MeetingMetadataBar: View {
                 Text(L10n.addTag)
                     .font(.caption2.weight(.medium))
             }
+            .frame(minHeight: 16)
             .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, DahliaDesign.chipHorizontalPadding)
             .padding(.vertical, DahliaDesign.chipVerticalPadding)
@@ -185,6 +186,7 @@ private struct MeetingMetadataPill: View {
             Image(systemName: systemImage)
                 .font(.caption2)
         }
+        .frame(minHeight: 16)
         .foregroundStyle(DahliaDesign.secondaryTextColor)
         .dahliaChipSurface()
     }
