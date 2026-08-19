@@ -4,9 +4,11 @@ struct ProjectCatalogRow: View {
     let project: ProjectOverviewItem
     let appearance: ProjectAppearance
     let isPinned: Bool
+    let canCreateMeeting: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onTogglePin: () -> Void
+    let onCreateMeeting: () -> Void
 
     @State private var isHovered = false
 
@@ -25,7 +27,7 @@ struct ProjectCatalogRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 120, alignment: .leading)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 4) {
                 Menu(L10n.projectOptions, systemImage: "ellipsis") {
                     Button(L10n.editProject, systemImage: "pencil", action: onEdit)
                     Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: onDelete)
@@ -34,19 +36,23 @@ struct ProjectCatalogRow: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .projectCatalogIconHoverHighlight()
 
                 Button(isPinned ? L10n.unpinProject : L10n.pinProject, systemImage: isPinned ? "pin.fill" : "pin", action: onTogglePin)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
                     .help(isPinned ? L10n.unpinProject : L10n.pinProject)
+                    .projectCatalogIconHoverHighlight()
 
-                Button(L10n.editProject, systemImage: "square.and.pencil", action: onEdit)
+                Button(L10n.createNewMeeting, systemImage: "plus", action: onCreateMeeting)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
-                    .help(L10n.editProject)
+                    .disabled(!canCreateMeeting)
+                    .help(L10n.createNewMeeting)
+                    .projectCatalogIconHoverHighlight()
             }
             .foregroundStyle(.secondary)
-            .frame(width: 88, alignment: .trailing)
+            .frame(width: 80, alignment: .trailing)
             .opacity(isHovered ? 1 : 0.72)
 
             Spacer()
@@ -54,7 +60,7 @@ struct ProjectCatalogRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 16)
         .contentShape(.rect)
-        .background(isHovered ? Color.primary.opacity(0.04) : .clear)
+        .background(isHovered ? DahliaDesign.contentHighlightColor : .clear)
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .contain)
     }

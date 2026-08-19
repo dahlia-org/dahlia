@@ -3,10 +3,12 @@ import SwiftUI
 struct ProjectCatalogView: View {
     let projects: [ProjectOverviewItem]
     let pinnedProjectIDs: Set<UUID>
+    let canCreateMeeting: Bool
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onEditProject: (ProjectOverviewItem) -> Void
     let onDeleteProject: (ProjectOverviewItem) -> Void
     let onTogglePin: (ProjectOverviewItem) -> Void
+    let onCreateMeeting: (ProjectOverviewItem) -> Void
     let onCreateProject: () -> Void
 
     @State private var searchText = ""
@@ -48,9 +50,11 @@ struct ProjectCatalogView: View {
                                     project: project,
                                     appearance: appearanceForProject(project.projectId),
                                     isPinned: pinnedProjectIDs.contains(project.projectId),
+                                    canCreateMeeting: canCreateMeeting,
                                     onEdit: { onEditProject(project) },
                                     onDelete: { onDeleteProject(project) },
-                                    onTogglePin: { onTogglePin(project) }
+                                    onTogglePin: { onTogglePin(project) },
+                                    onCreateMeeting: { onCreateMeeting(project) }
                                 )
                                 Divider()
                             }
@@ -62,7 +66,7 @@ struct ProjectCatalogView: View {
         .padding(.top, DahliaDesign.detailTopPadding)
         .padding(.horizontal, 48)
         .padding(.bottom, 24)
-        .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: DahliaDesign.readingMaxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)
     }
 

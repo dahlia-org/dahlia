@@ -8,7 +8,7 @@ struct ProjectCatalogHeader: View {
             Text(L10n.updated)
                 .frame(width: 120, alignment: .leading)
             Color.clear
-                .frame(width: 88, height: 1)
+                .frame(width: 80, height: 1)
             Spacer()
         }
         .font(.subheadline)

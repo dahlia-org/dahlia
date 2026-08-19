@@ -93,10 +93,12 @@ struct ProjectManagementView: View {
             ProjectCatalogView(
                 projects: sidebarViewModel.allProjectItems,
                 pinnedProjectIDs: Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id)),
+                canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
                 appearanceForProject: projectAppearance,
                 onEditProject: onEditProject,
                 onDeleteProject: onRequestProjectDeletion,
                 onTogglePin: toggleProjectPin,
+                onCreateMeeting: recordingCoordinator.createDraftMeeting,
                 onCreateProject: onCreateProject
             )
         }
