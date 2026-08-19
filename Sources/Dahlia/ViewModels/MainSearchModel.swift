@@ -17,7 +17,7 @@ final class MainSearchModel {
     private(set) var isRecent = true
     var selectedResultID: MainSearchResultID?
 
-    @ObservationIgnored private var meetingCursor: MeetingSidebarCursor?
+    @ObservationIgnored private var meetingCursor: MeetingSearchCursor?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var projectSearchTask: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
@@ -92,6 +92,11 @@ final class MainSearchModel {
         }
     }
 
+    func searchIndexDidChange(using sidebarViewModel: SidebarViewModel) {
+        guard isPresented else { return }
+        startSearch(using: sidebarViewModel, delay: nil, appending: false)
+    }
+
     func loadMore(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreMeetings, !isLoading else { return }
         startSearch(using: sidebarViewModel, delay: nil, appending: true)
@@ -150,7 +155,7 @@ final class MainSearchModel {
         generation &+= 1
         let requestGeneration = generation
         let vaultID = sidebarViewModel.currentVault?.id
-        let dbQueue = sidebarViewModel.dbQueue
+        let dbQueue = sidebarViewModel.searchDBQueue
         let criteria = searchCriteria(using: sidebarViewModel)
         activeMeetingCriteria = criteria
         let cursor = appending ? meetingCursor : nil
@@ -183,7 +188,7 @@ final class MainSearchModel {
                 guard let self,
                       self.generation == requestGeneration,
                       sidebarViewModel.currentVault?.id == vaultID else { return }
-                if appending {
+                if appending, !page.replacesResults {
                     self.meetings.append(contentsOf: page.items)
                 } else {
                     self.meetings = page.items
@@ -229,7 +234,8 @@ final class MainSearchModel {
         clearInvalidSelection()
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
-        guard sidebarViewModel.currentVault != nil else { return }
+        guard let vaultID = sidebarViewModel.currentVault?.id,
+              let dbQueue = sidebarViewModel.searchDBQueue else { return }
         guard !projectCatalogLoadFailed else { return }
         guard sidebarViewModel.isProjectCatalogLoaded else {
             isProjectCatalogLoading = true
@@ -239,11 +245,25 @@ final class MainSearchModel {
         isProjectCatalogLoading = true
         let projectItems = sidebarViewModel.allProjectItems
         projectSearchTask = Task { [weak self] in
-            let results = await Self.projectResults(
-                from: projectItems,
-                query: criteria.text,
-                isRecent: criteria.isEmpty
-            )
+            let results: [ProjectOverviewItem]
+            if criteria.isEmpty {
+                results = await Self.recentProjectResults(from: projectItems)
+            } else if criteria.text.isEmpty {
+                results = []
+            } else {
+                do {
+                    let ids = try await MeetingRepository.searchProjectIDs(
+                        vaultID: vaultID,
+                        query: criteria.text,
+                        limit: MainSearchDesign.projectResultLimit,
+                        dbQueue: dbQueue
+                    )
+                    let byID = Dictionary(uniqueKeysWithValues: projectItems.map { ($0.id, $0) })
+                    results = ids.compactMap { byID[$0] }
+                } catch {
+                    results = []
+                }
+            }
             guard let self, self.projectGeneration == requestGeneration else { return }
             self.projects = results
             self.isProjectCatalogLoading = false
@@ -318,30 +338,12 @@ final class MainSearchModel {
 }
 
 extension MainSearchModel {
-    @concurrent private nonisolated static func projectResults(
-        from projects: [ProjectOverviewItem],
-        query: String,
-        isRecent: Bool
+    @concurrent private nonisolated static func recentProjectResults(
+        from projects: [ProjectOverviewItem]
     ) async -> [ProjectOverviewItem] {
-        if isRecent {
-            return Array(projects.sorted {
-                ($0.latestMeetingDate ?? $0.createdAt) > ($1.latestMeetingDate ?? $1.createdAt)
-            }.prefix(MainSearchDesign.recentResultLimit))
-        }
-        guard !query.isEmpty else { return [] }
-
-        var results: [ProjectOverviewItem] = []
-        results.reserveCapacity(min(projects.count, MainSearchDesign.projectResultLimit))
-        for project in projects {
-            guard !Task.isCancelled else { return [] }
-            guard project.projectName.localizedStandardContains(query)
-                || project.projectDisplayName.localizedStandardContains(query) else { continue }
-            results.append(project)
-            if results.count == MainSearchDesign.projectResultLimit {
-                break
-            }
-        }
-        return results
+        Array(projects.sorted {
+            ($0.latestMeetingDate ?? $0.createdAt) > ($1.latestMeetingDate ?? $1.createdAt)
+        }.prefix(MainSearchDesign.recentResultLimit))
     }
 
     func toggleProject(_ project: FlatProjectRow, using sidebarViewModel: SidebarViewModel) {

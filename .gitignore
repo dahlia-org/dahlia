@@ -1,4 +1,5 @@
 .build/
+Vendor/DahliaLinderaSources/target/
 .codex-tmp/
 .swiftpm/
 *.app

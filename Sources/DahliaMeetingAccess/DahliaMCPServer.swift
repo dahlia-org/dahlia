@@ -166,6 +166,12 @@ public final class DahliaMCPServer {
                 errorCode: -32602,
                 message: MeetingAccessError.invalidLimit(maximum: maximum).localizedDescription
             )
+        } catch let MeetingAccessError.invalidSearchQuery(maximum) {
+            return response(
+                id: id,
+                errorCode: -32602,
+                message: MeetingAccessError.invalidSearchQuery(maximum: maximum).localizedDescription
+            )
         } catch let error as MeetingAccessError {
             return response(
                 id: id,
@@ -235,7 +241,7 @@ public final class DahliaMCPServer {
         case "query_meetings":
             try validate(arguments, allowedKeys: [
                 "query", "project", "project_id", "organization_id", "include_descendants", "topic_id",
-                "ical_uid", "created_from", "created_before", "limit", "cursor",
+                "ical_uid", "created_from", "created_before", "simple", "limit", "cursor",
             ])
             return try toolResult(queryMeetings(arguments))
         case "get_meeting":
@@ -658,6 +664,7 @@ public final class DahliaMCPServer {
         let limit = try integer(arguments, key: "limit") ?? 25
         return try store.queryMeetings(MeetingQuery(
             query: string(arguments, key: "query"),
+            simple: boolean(arguments, key: "simple") ?? false,
             project: string(arguments, key: "project"),
             projectID: optionalUUID(arguments, key: "project_id"),
             organizationID: optionalUUID(arguments, key: "organization_id"),
@@ -2492,11 +2499,16 @@ private extension DahliaMCPServer {
                 + "calendar title, project, or tag. Use ical_uid to find past meetings for the same calendar event, "
                 + "or exact project_id to find related meetings across different calendar events. Summary and transcript "
                 + "bodies are not searched. All parameters are optional filters. Omit unused properties entirely; do not "
-                + "send empty strings.",
+                + "send empty strings. Full-text search is used by default; set simple to true for literal substring matching.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "query": ["type": "string"],
+                    "query": ["type": "string", "maxLength": 1024],
+                    "simple": [
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Use literal substring matching instead of full-text search.",
+                    ],
                     "project": ["type": "string"],
                     "project_id": [
                         "type": "string",

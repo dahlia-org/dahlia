@@ -102,3 +102,16 @@ struct MeetingSidebarPage: Equatable, Sendable {
     let hasMore: Bool
     let nextCursor: MeetingSidebarCursor?
 }
+
+enum MeetingSearchCursor: Equatable, Sendable {
+    case chronological(MeetingSidebarCursor)
+    case relevance(indexRevision: Int, offset: Int)
+}
+
+struct MeetingSearchPage: Equatable, Sendable {
+    let items: [MeetingSidebarItem]
+    let groups: [MeetingDateGroup]
+    let hasMore: Bool
+    let nextCursor: MeetingSearchCursor?
+    let replacesResults: Bool
+}

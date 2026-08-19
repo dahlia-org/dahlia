@@ -13,6 +13,7 @@ import Foundation
                 .vault,
                 .permissions,
                 .backups,
+                .search,
                 .transcription,
                 .liveSubtitles,
                 .screenshots,
@@ -79,6 +80,8 @@ import Foundation
             #expect(SettingsCategory.permissions.label == L10n.permissions)
             #expect(SettingsCategory.permissions.systemImage == "hand.raised")
             #expect(SettingsCategory.backups.systemImage == "externaldrive.badge.timemachine")
+            #expect(SettingsCategory.search.label == L10n.search)
+            #expect(SettingsCategory.search.systemImage == "magnifyingglass")
             #expect(SettingsCategory.modelProvider.label == L10n.modelProvider)
             #expect(SettingsCategory.modelProvider.systemImage == "sparkles")
             #expect(SettingsCategory.aiSummary.systemImage == "list.bullet.clipboard")
@@ -99,7 +102,7 @@ import Foundation
         @Test
         func advancedSettingsRemainAtTheEnd() {
             #expect(SettingsGroup.allCases.last == .advanced)
-            #expect(SettingsGroup.app.categories == [.general, .appearance, .vault, .permissions, .backups])
+            #expect(SettingsGroup.app.categories == [.general, .appearance, .vault, .permissions, .backups, .search])
             #expect(SettingsGroup.meetings.label == L10n.meetings)
             #expect(SettingsGroup.meetings.categories == [.transcription, .liveSubtitles, .screenshots])
             #expect(SettingsGroup.advanced.categories == [.betaFeatures, .developer, .audioDiagnostics])

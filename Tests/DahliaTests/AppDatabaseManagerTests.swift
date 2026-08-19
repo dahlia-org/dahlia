@@ -24,6 +24,85 @@ import GRDB
         }
 
         @Test
+        func fileDatabaseUsesWALAndDedicatedSearchConnection() throws {
+            let databaseURL = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-database-search-reader-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+
+            let manager = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let writerMode = try manager.dbQueue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
+            let readerMode = try manager.searchDBQueue.read { try String.fetchOne($0, sql: "PRAGMA journal_mode") }
+
+            #expect(manager.dbQueue !== manager.searchDBQueue)
+            #expect(writerMode?.lowercased() == "wal")
+            #expect(readerMode?.lowercased() == "wal")
+        }
+
+        @Test
+        func walContentionFallsBackToThePrimaryConnection() throws {
+            let databaseDirectory = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-database-wal-contention-\(UUID.v7().uuidString)")
+            let databaseURL = databaseDirectory.appending(path: "dahlia.sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+
+            let lockingManager = try AppDatabaseManager(path: databaseURL.path)
+            try lockingManager.dbQueue.read { db in
+                _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
+                let fallbackManager = try AppDatabaseManager(
+                    path: databaseURL.path,
+                    enablesConcurrentSearch: true
+                )
+                #expect(fallbackManager.searchDBQueue === fallbackManager.dbQueue)
+            }
+        }
+
+        @Test
+        func searchReadTransactionDoesNotBlockDurableWrites() throws {
+            let databaseDirectory = FileManager.default.temporaryDirectory
+                .appending(path: "dahlia-database-search-concurrency-\(UUID.v7().uuidString)")
+            let databaseURL = databaseDirectory.appending(path: "dahlia.sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseDirectory) }
+
+            let manager = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let readStarted = DispatchSemaphore(value: 0)
+            let releaseRead = DispatchSemaphore(value: 0)
+            let readFinished = DispatchSemaphore(value: 0)
+            let writeFinished = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                do {
+                    try manager.searchDBQueue.read { db in
+                        _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meetings")
+                        readStarted.signal()
+                        releaseRead.wait()
+                    }
+                } catch {
+                    Issue.record(error)
+                }
+                readFinished.signal()
+            }
+            #expect(readStarted.wait(timeout: .now() + 5) == .success)
+
+            DispatchQueue.global().async {
+                do {
+                    try manager.dbQueue.write { db in
+                        try db.execute(
+                            sql: "UPDATE search_index_state SET updatedAt = updatedAt WHERE indexKind = 'fts'"
+                        )
+                    }
+                } catch {
+                    Issue.record(error)
+                }
+                writeFinished.signal()
+            }
+            let completedWhileReading = writeFinished.wait(timeout: .now() + 1) == .success
+            releaseRead.signal()
+            #expect(readFinished.wait(timeout: .now() + 5) == .success)
+
+            #expect(completedWhileReading)
+        }
+
+        @Test
         func initializesInMemoryDatabaseWithCanonicalProjectColumns() throws {
             let database = try AppDatabaseManager(path: ":memory:")
 

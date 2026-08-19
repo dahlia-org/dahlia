@@ -439,6 +439,27 @@ test_whisperkit_license_embedding_validation() {
     expect_failure embed_whisperkit_licenses "$fake_project" "$contents_dir"
 }
 
+test_lindera_license_embedding_validation() {
+    local fake_project="${TEST_DIR}/lindera-license-project"
+    local vendor_dir="${fake_project}/Vendor"
+    local contents_dir="${TEST_DIR}/LinderaContents"
+
+    mkdir -p "$vendor_dir"
+    printf '%s' 'Lindera and IPADIC license fixture' > "${vendor_dir}/DahliaLindera-LICENSE.txt"
+    printf '%s' 'Rust notices fixture' > "${vendor_dir}/DahliaLindera-THIRD-PARTY-NOTICES.txt"
+
+    embed_lindera_licenses "$fake_project" "$contents_dir"
+    cmp \
+        "${vendor_dir}/DahliaLindera-LICENSE.txt" \
+        "${contents_dir}/Resources/Licenses/DahliaLindera/LICENSE"
+    cmp \
+        "${vendor_dir}/DahliaLindera-THIRD-PARTY-NOTICES.txt" \
+        "${contents_dir}/Resources/Licenses/DahliaLindera/THIRD-PARTY-NOTICES.txt"
+
+    rm "${vendor_dir}/DahliaLindera-THIRD-PARTY-NOTICES.txt"
+    expect_failure embed_lindera_licenses "$fake_project" "$contents_dir"
+}
+
 test_telemetrydeck_configuration_and_embedding() {
     local plist_path="${TEST_DIR}/TelemetryInfo.plist"
     local fake_project="${TEST_DIR}/telemetrydeck-project"
@@ -565,6 +586,7 @@ test_release_upload_arguments
 test_cleanup_removes_previous_release_plist
 test_framework_embedding_validation
 test_whisperkit_license_embedding_validation
+test_lindera_license_embedding_validation
 test_telemetrydeck_configuration_and_embedding
 test_codex_code_mode_host_packaging
 test_telemetrydeck_adapter_allowlist

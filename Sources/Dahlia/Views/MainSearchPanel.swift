@@ -104,6 +104,9 @@ struct MainSearchPanel: View {
         .onChange(of: sidebarViewModel.areSearchTagsLoaded) {
             model.catalogDidChange(using: sidebarViewModel)
         }
+        .onChange(of: sidebarViewModel.searchIndexRevision) {
+            model.searchIndexDidChange(using: sidebarViewModel)
+        }
         .onKeyPress(.downArrow) {
             model.moveSelection(by: 1)
             return .handled

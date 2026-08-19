@@ -96,7 +96,11 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
     let text: String
     let colorHex: String?
 
-    init(kind: Kind, text: String, colorHex: String? = nil) {
+    init(
+        kind: Kind,
+        text: String,
+        colorHex: String? = nil
+    ) {
         self.kind = kind
         self.text = text
         self.colorHex = colorHex

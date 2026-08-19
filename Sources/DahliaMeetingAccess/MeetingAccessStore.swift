@@ -2,8 +2,11 @@ import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
+import GRDBSQLite
 
 public final class MeetingAccessStore: Sendable {
+    private static let maximumSearchQueryLength = 1024
+
     public static var defaultDatabaseURL: URL {
         DahliaApplicationSupport.currentDirectoryURL
             .appending(path: "dahlia.sqlite")
@@ -21,6 +24,9 @@ public final class MeetingAccessStore: Sendable {
         var configuration = Configuration()
         configuration.readonly = !allowsWrites
         configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try SearchFTS5Tokenizer.register(in: db)
+        }
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
         self.allowsWrites = allowsWrites
@@ -34,35 +40,87 @@ public final class MeetingAccessStore: Sendable {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
-        let cursorScope = meetingCursorScope(query)
-        let cursor = try query.cursor.map {
-            try MeetingCursor.decode($0, vaultID: vaultID, scope: cursorScope)
+        if let queryText = query.query, !queryText.dropFirst(Self.maximumSearchQueryLength).isEmpty {
+            throw MeetingAccessError.invalidSearchQuery(maximum: Self.maximumSearchQueryLength)
         }
-        let queryComponents = meetingQueryComponents(query, cursor: cursor)
 
         return try database.read { db in
             let vault = try fetchVault(in: db)
-            let rows = try meetingRows(in: db, components: queryComponents)
-            let hasMore = rows.count > query.limit
-            let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
-            let meetings = pageRows.map(Self.metadata(from:))
-            let nextCursor = hasMore ? meetings.last.map {
-                MeetingCursor(
-                    vaultID: vaultID,
-                    scope: cursorScope,
-                    createdAt: $0.createdAt,
-                    meetingID: $0.id
-                ).encoded()
-            } : nil
-            return MeetingQueryPage(vault: vault, meetings: meetings, nextCursor: nextCursor)
+            let usesTextSearch = query.query?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            return try withSearchDeadline(enabled: usesTextSearch, in: db) {
+                let usesFullTextSearch = usesTextSearch && !query.simple
+                let indexRevision = try usesFullTextSearch ? fullTextIndexRevision(in: db) : nil
+                let cursorScope = meetingCursorScope(query)
+                let cursor = try query.cursor.map {
+                    try MeetingCursor.decode($0, vaultID: vaultID, scope: cursorScope, indexRevision: indexRevision)
+                }
+                let queryComponents = try meetingQueryComponents(query, cursor: cursor, in: db)
+                let rows = try meetingRows(in: db, components: queryComponents)
+                let hasMore = rows.count > query.limit
+                let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
+                let meetings = pageRows.map(Self.metadata(from:))
+                let nextCursor = hasMore ? meetings.last.map {
+                    MeetingCursor(
+                        vaultID: vaultID,
+                        scope: cursorScope,
+                        indexRevision: indexRevision,
+                        createdAt: $0.createdAt,
+                        meetingID: $0.id
+                    ).encoded()
+                } : nil
+                return MeetingQueryPage(vault: vault, meetings: meetings, nextCursor: nextCursor)
+            }
         }
     }
 
-    private func meetingQueryComponents(_ query: MeetingQuery, cursor: MeetingCursor?) -> QueryComponents {
+    private func fullTextIndexRevision(in db: Database) throws -> Int {
+        guard let row = try Row.fetchOne(
+            db,
+            sql: "SELECT phase, indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+        ) else {
+            throw MeetingAccessError.searchUnavailable
+        }
+        let phase: String = row["phase"]
+        guard phase == "ready" else { throw MeetingAccessError.searchUnavailable }
+        return row["indexRevision"]
+    }
+
+    private func withSearchDeadline<Result>(
+        enabled: Bool,
+        in db: Database,
+        _ operation: () throws -> Result
+    ) throws -> Result {
+        guard enabled else { return try operation() }
+        let deadline = SearchDeadline()
+        sqlite3_progress_handler(
+            db.sqliteConnection,
+            1000,
+            { context in
+                guard let context else { return 0 }
+                let deadline = Unmanaged<SearchDeadline>.fromOpaque(context).takeUnretainedValue()
+                return deadline.hasExpired ? 1 : 0
+            },
+            Unmanaged.passUnretained(deadline).toOpaque()
+        )
+        defer { sqlite3_progress_handler(db.sqliteConnection, 0, nil, nil) }
+        do {
+            return try withExtendedLifetime(deadline, operation)
+        } catch DatabaseError.SQLITE_INTERRUPT {
+            throw MeetingAccessError.searchTimedOut
+        }
+    }
+
+    private func meetingQueryComponents(_ query: MeetingQuery, cursor: MeetingCursor?, in db: Database) throws -> QueryComponents {
         var components = QueryComponents(predicates: ["meetings.vaultId = ?"], arguments: [vaultID])
         let trimmedQuery = query.query?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedQuery, !trimmedQuery.isEmpty {
-            components.appendSearch(pattern: "%\(escapedLikePattern(trimmedQuery))%")
+            if query.simple {
+                components.appendSimpleSearch(pattern: "%\(escapedLikePattern(trimmedQuery))%")
+            } else if let fullTextQuery = try fullTextQuery(trimmedQuery, in: db) {
+                components.appendFullTextSearch(query: fullTextQuery)
+            } else {
+                components.predicates.append("0")
+            }
         }
         let trimmedProject = query.project?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedProject, !trimmedProject.isEmpty {
@@ -148,6 +206,7 @@ public final class MeetingAccessStore: Sendable {
     private func meetingCursorScope(_ query: MeetingQuery) -> String {
         let components = MeetingCursorFilterScope(
             query: query.query?.trimmingCharacters(in: .whitespacesAndNewlines),
+            simple: query.simple,
             project: query.project?.trimmingCharacters(in: .whitespacesAndNewlines),
             projectID: query.projectID,
             organizationID: query.organizationID,
@@ -161,6 +220,14 @@ public final class MeetingAccessStore: Sendable {
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(components) else { return "meetings" }
         return data.base64EncodedString()
+    }
+
+    private func fullTextQuery(_ value: String, in db: Database) throws -> String? {
+        let tokens = try SearchFTS5Tokenizer.queryTokens(for: value, in: db)
+        guard !tokens.isEmpty else { return nil }
+        return tokens.enumerated().map { index, token in
+            SearchFTS5Tokenizer.quotedQueryToken(token, isPrefix: index == tokens.count - 1)
+        }.joined(separator: " AND ")
     }
 
     private func meetingRows(in db: Database, components: QueryComponents) throws -> [Row] {
@@ -483,6 +550,7 @@ public final class MeetingAccessStore: Sendable {
 
 private struct MeetingCursorFilterScope: Codable {
     let query: String?
+    let simple: Bool
     let project: String?
     let projectID: UUID?
     let organizationID: UUID?
@@ -785,7 +853,11 @@ extension MeetingAccessStore {
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
-              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"])
+              projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
+              try Bool.fetchOne(
+                  db,
+                  sql: "SELECT COUNT(*) = 3 FROM sqlite_master WHERE type = 'table' AND name IN ('search_documents', 'search_documents_fts', 'search_index_state')"
+              ) == true
         else {
             throw MeetingAccessError.databaseUpgradeRequired
         }
@@ -889,7 +961,7 @@ private struct QueryComponents {
     var predicates: [String]
     var arguments: StatementArguments
 
-    mutating func appendSearch(pattern: String) {
+    mutating func appendSimpleSearch(pattern: String) {
         predicates.append("""
         (
             meetings.name LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -908,11 +980,27 @@ private struct QueryComponents {
             arguments += [pattern]
         }
     }
+
+    mutating func appendFullTextSearch(query: String) {
+        predicates.append("""
+        EXISTS (
+            SELECT 1
+            FROM search_documents
+            JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
+            WHERE search_documents.kind = 'meeting'
+              AND search_documents.meetingId = meetings.id
+              AND search_documents.vaultId = meetings.vaultId
+              AND search_documents_fts MATCH ?
+        )
+        """)
+        arguments += [query]
+    }
 }
 
 private struct MeetingCursor: Codable {
     let vaultID: UUID
     let scope: String
+    let indexRevision: Int?
     let createdAt: Date
     let meetingID: UUID
 
@@ -920,11 +1008,16 @@ private struct MeetingCursor: Codable {
         AccessCursorCodec.encode(self)
     }
 
-    static func decode(_ value: String, vaultID: UUID, scope: String) throws -> Self {
+    static func decode(_ value: String, vaultID: UUID, scope: String, indexRevision: Int?) throws -> Self {
         try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.vaultID == vaultID && cursor.scope == scope
+            cursor.vaultID == vaultID && cursor.scope == scope && cursor.indexRevision == indexRevision
         }
     }
+}
+
+private final class SearchDeadline {
+    private let deadline = ContinuousClock.now + .seconds(30)
+    var hasExpired: Bool { ContinuousClock.now >= deadline }
 }
 
 private struct TranscriptCursor: Codable {

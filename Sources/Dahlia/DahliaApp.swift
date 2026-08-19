@@ -319,12 +319,15 @@ struct DahliaApp: App {
             return
         }
         appDatabase = db
+        await db.searchIndexer.start()
         sidebarViewModel.setAppDatabase(db)
+        viewModel.configureSearchIndexer(db.searchIndexer)
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel] in
-            await viewModel?.prepareForTermination()
+        appDelegate.terminationHandler = { [weak viewModel, weak db] in
+            await db?.searchIndexer.stop()
+            return await viewModel?.prepareForTermination()
         }
 
         let resolution = await vaultManagementModel.resolveStartupVault(appDatabase: db)

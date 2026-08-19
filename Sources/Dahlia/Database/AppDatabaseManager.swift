@@ -1,6 +1,7 @@
 // Migration order and helpers remain colocated so the complete schema history can be audited sequentially.
 // swiftlint:disable file_length
 
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -10,13 +11,15 @@ import GRDB
 // swiftlint:disable:next type_body_length
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
+    let searchDBQueue: DatabaseQueue
+    let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init() throws {
-        try self.init(path: Self.databaseURL.path)
+        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
     }
 
-    init(path: String) throws {
+    init(path: String, enablesConcurrentSearch: Bool = false) throws {
         if path != ":memory:" {
             let dbURL = URL(fileURLWithPath: path)
             try FileManager.default.createDirectory(
@@ -24,16 +27,48 @@ final class AppDatabaseManager: Sendable {
                 withIntermediateDirectories: true
             )
         }
-        var configuration = Configuration()
-        configuration.busyMode = .timeout(5)
+        var configuration = Self.configuration()
         dbQueue = try DatabaseQueue(path: path, configuration: configuration)
+        let usesConcurrentSearch: Bool
+        if enablesConcurrentSearch, path != ":memory:" {
+            let journalMode = try? dbQueue.writeWithoutTransaction {
+                try String.fetchOne($0, sql: "PRAGMA journal_mode = WAL")
+            }
+            usesConcurrentSearch = journalMode?.lowercased() == "wal"
+        } else {
+            usesConcurrentSearch = false
+        }
         try Self.migrator.migrate(dbQueue)
+        if !usesConcurrentSearch {
+            searchDBQueue = dbQueue
+        } else {
+            configuration.readonly = true
+            searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
+        }
+        searchIndexer = SearchIndexer(dbQueue: dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
                 ofItemAtPath: path
             )
         }
+    }
+
+    static func configuration(readonly: Bool = false) -> Configuration {
+        var configuration = Configuration()
+        configuration.readonly = readonly
+        configuration.busyMode = .timeout(5)
+        configuration.prepareDatabase { db in
+            try SearchFTS5Tokenizer.register(in: db)
+        }
+        return configuration
+    }
+
+    func close() throws {
+        if searchDBQueue !== dbQueue {
+            try searchDBQueue.close()
+        }
+        try dbQueue.close()
     }
 
     /// DB ファイルの URL。
@@ -183,6 +218,11 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v34_meetingRecordingStartedAt") { db in
             try addMeetingRecordingStartedAt(in: db)
+        }
+
+        migrator.registerMigration("v35_searchDocuments") { db in
+            try SearchFTS5Tokenizer.register(in: db)
+            try SearchDocumentsMigration.migrate(in: db)
         }
 
         return migrator

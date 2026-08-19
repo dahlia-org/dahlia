@@ -31,6 +31,7 @@ final class SidebarViewModel {
     /// 別プロセスが同じ Vault を変更するたびに増える。
     /// GRDB の `ValueObservation` は他プロセスの書き込みを検知しないため、これが跨プロセス更新の合図になる。
     private(set) var workspaceChangeToken: UInt64 = 0
+    private(set) var searchIndexRevision = 0
 
     var meetingSidebarItems: [MeetingSidebarItem] = []
     var meetingSidebarGroups: [MeetingDateGroup] = []
@@ -87,6 +88,7 @@ final class SidebarViewModel {
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
     var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
+    var searchDBQueue: DatabaseQueue? { appDatabase?.searchDBQueue }
 
     @ObservationIgnored var meetingRepository: MeetingRepository?
     @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?
@@ -103,6 +105,8 @@ final class SidebarViewModel {
     @ObservationIgnored private var instructionsObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var projectObservation: AnyDatabaseCancellable?
     @ObservationIgnored private var vaultObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var searchIndexObservation: AnyDatabaseCancellable?
+    @ObservationIgnored private var searchIndexRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var vaultSyncService: VaultSyncService?
     @ObservationIgnored private var workspaceChangeObserver: NSObjectProtocol?
     @ObservationIgnored var meetingSearchTask: Task<Void, Never>?
@@ -111,7 +115,7 @@ final class SidebarViewModel {
     @ObservationIgnored var isProjectMeetingProjectionRequested = false
     @ObservationIgnored var projectMeetingLoadTasks: [MeetingProjectKey: Task<Void, Never>] = [:]
     @ObservationIgnored var meetingListCursor: MeetingSidebarCursor?
-    @ObservationIgnored var meetingSearchCursor: MeetingSidebarCursor?
+    @ObservationIgnored var meetingSearchCursor: MeetingSearchCursor?
     @ObservationIgnored var meetingInitialPageIDs: [UUID] = []
     @ObservationIgnored var isMeetingCatalogRequested = false
     @ObservationIgnored var meetingListObservationGeneration = 0
@@ -158,6 +162,8 @@ final class SidebarViewModel {
         vaultSyncService?.stopMonitoring()
         projectObservation?.cancel()
         vaultObservation?.cancel()
+        searchIndexObservation?.cancel()
+        searchIndexRefreshTask?.cancel()
         meetingListObservation?.cancel()
         additionalMeetingRowsObservation?.cancel()
         selectedMeetingObservation?.cancel()
@@ -179,6 +185,7 @@ final class SidebarViewModel {
 
         vaultSyncService = nil
         fileWatcher = nil
+        searchIndexRevision = 0
         flatProjects.removeAll()
         areSearchProjectsLoaded = false
         meetingSidebarItems.removeAll()
@@ -245,6 +252,7 @@ final class SidebarViewModel {
         }
 
         startVaultObservation(dbQueue: dbQueue)
+        startSearchIndexObservation(dbQueue: dbQueue)
 
         guard let vault = currentVault else {
             settings.selectedInstructionID = nil
@@ -299,6 +307,35 @@ final class SidebarViewModel {
                 self.workspaceChangeToken &+= 1
             }
         }
+    }
+
+    private func startSearchIndexObservation(dbQueue: DatabaseQueue) {
+        searchIndexObservation?.cancel()
+        searchIndexRefreshTask?.cancel()
+        let observation = ValueObservation.tracking { db in
+            try Int.fetchOne(
+                db,
+                sql: "SELECT indexRevision FROM search_index_state WHERE indexKind = 'fts'"
+            ) ?? 0
+        }.removeDuplicates()
+        searchIndexObservation = observation.start(
+            in: dbQueue,
+            scheduling: .async(onQueue: .main),
+            onError: { _ in },
+            onChange: { [weak self] revision in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard revision != self.searchIndexRevision else { return }
+                    self.searchIndexRevision = revision
+                    self.searchIndexRefreshTask?.cancel()
+                    self.searchIndexRefreshTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled, let self else { return }
+                        self.restartCurrentMeetingSearch()
+                    }
+                }
+            }
+        )
     }
 
     func refreshUnprocessedRecordings() async {

@@ -24,11 +24,17 @@ struct MeetingSidebarRow: View {
     private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
 
     var body: some View {
-        Group {
-            if rowStyle == .standard {
-                standardContent
-            } else {
-                compactContent
+        VStack(alignment: .leading, spacing: 3) {
+            Group {
+                if rowStyle == .standard {
+                    standardContent
+                } else {
+                    compactContent
+                }
+            }
+
+            if let matchContext = visibleMatchContext {
+                searchMatchRow(matchContext)
             }
         }
         .padding(.leading, contentLeadingPadding)
@@ -156,6 +162,35 @@ struct MeetingSidebarRow: View {
                 calendar: Calendar(identifier: .gregorian)
             )
         )
+    }
+
+    private var visibleMatchContext: MeetingSearchMatchContext? {
+        guard !searchText.isEmpty,
+              let context = item.searchMatchContext,
+              context.kind != .title,
+              context.kind != .project else { return nil }
+        return context
+    }
+
+    private func searchMatchRow(_ context: MeetingSearchMatchContext) -> some View {
+        HStack(spacing: 5) {
+            if context.kind == .tag {
+                Circle()
+                    .fill(context.colorHex.map(Color.init(hex:)) ?? Color.secondary)
+                    .frame(width: 6, height: 6)
+            } else {
+                Image(systemName: context.kind == .calendar ? "calendar" : "text.alignleft")
+                    .frame(width: 8)
+            }
+
+            Text(matchContextPrefix(context.kind))
+                .foregroundStyle(.tertiary)
+            highlightedText(context.text)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
     }
 
     private func matchContextPrefix(_ kind: MeetingSearchMatchContext.Kind) -> String {

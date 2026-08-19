@@ -106,9 +106,10 @@ import GRDB
         }
 
         @Test
-        func searchesSidebarMetadataButNotTranscriptText() async throws {
+        func searchesIndexedMetadataButNotTranscriptText() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let expected = try fixture.insertSearchFixtures()
+            await fixture.manager.searchIndexer.drain()
 
             #expect(try await fixture.resultIDs(query: "Quarterly") == [expected.title])
             #expect(try await fixture.resultIDs(query: "budget") == [expected.description])
@@ -130,6 +131,7 @@ import GRDB
                 startDate: startDate,
                 endDate: endDate
             )
+            await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
                 vaultId: fixture.vault.id,
@@ -152,6 +154,7 @@ import GRDB
         func reportsTheMetadataThatMatchedFreeText() async throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             _ = try fixture.insertSearchFixtures()
+            await fixture.manager.searchIndexer.drain()
 
             let page = try await MeetingRepository.searchMeetingSidebarPage(
                 vaultId: fixture.vault.id,
@@ -163,6 +166,16 @@ import GRDB
             #expect(page.items.count == 1)
             #expect(page.items.first?.searchMatchContext?.kind == .description)
             #expect(page.items.first?.searchMatchContext?.text.contains("budget") == true)
+            #expect(page.items.first?.searchMatchContext?.text.hasPrefix("…") == true)
+
+            let tagPage = try await MeetingRepository.searchMeetingSidebarPage(
+                vaultId: fixture.vault.id,
+                criteria: MeetingSearchCriteria(text: "Customer"),
+                limit: 50,
+                dbQueue: fixture.manager.dbQueue
+            )
+            #expect(tagPage.items.first?.searchMatchContext?.text == "Important Customer")
+            #expect(tagPage.items.first?.searchMatchContext?.colorHex == "#808080")
         }
 
         @Test
@@ -464,7 +477,7 @@ import GRDB
                 let titleID = try insertMeeting(name: "Quarterly Plan", in: db)
                 let descriptionID = try insertMeeting(
                     name: "Description match",
-                    description: "Discuss the budget forecast",
+                    description: String(repeating: "Introductory context. ", count: 12) + "Discuss the budget forecast",
                     in: db
                 )
                 let childProjectID = try insertNestedProject(childName: "Zephyr", in: db)

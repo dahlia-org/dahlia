@@ -204,7 +204,10 @@ actor BackupService {
         let temporaryURL = backupDirectoryURL.appending(path: ".\(metadata.generationId.uuidString).tmp.sqlite")
         defer { try? fileManager.removeItem(at: temporaryURL) }
 
-        let destinationQueue = try DatabaseQueue(path: temporaryURL.path)
+        let destinationQueue = try DatabaseQueue(
+            path: temporaryURL.path,
+            configuration: AppDatabaseManager.configuration()
+        )
         try dbQueue.backup(to: destinationQueue)
         try destinationQueue.write { db in
             let unresolvedCount = try Self.unresolvedAudioCount(in: db)
@@ -309,7 +312,7 @@ actor BackupService {
                 }
                 try Self.validateIntegrity(in: db)
             }
-            try stagedDatabase.dbQueue.close()
+            try stagedDatabase.close()
             let checksum = try Self.sha256(of: stagedURL)
             let marker = PendingDatabaseRestore(
                 stagedFilename: stagedFilename,
@@ -343,9 +346,10 @@ actor BackupService {
         at url: URL,
         validateIntegrity shouldValidateIntegrity: Bool
     ) throws -> BackupMetadata {
-        var configuration = Configuration()
-        configuration.readonly = true
-        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
+        let queue = try DatabaseQueue(
+            path: url.path,
+            configuration: AppDatabaseManager.configuration(readonly: true)
+        )
         return try queue.read { db in
             if shouldValidateIntegrity {
                 try validateIntegrity(in: db)
@@ -396,9 +400,10 @@ actor BackupService {
         let expectedVersion = AppDatabaseManager.schemaVersion(from: metadata.migrationIdentifier)
         guard expectedVersion == metadata.schemaVersion else { throw BackupServiceError.invalidBackup }
 
-        var configuration = Configuration()
-        configuration.readonly = true
-        let queue = try DatabaseQueue(path: url.path, configuration: configuration)
+        let queue = try DatabaseQueue(
+            path: url.path,
+            configuration: AppDatabaseManager.configuration(readonly: true)
+        )
         try queue.read { db in
             let completed = try AppDatabaseManager.migrator.completedMigrations(db)
             let expected = Array(AppDatabaseManager.migrationIdentifiers.prefix(index + 1))
