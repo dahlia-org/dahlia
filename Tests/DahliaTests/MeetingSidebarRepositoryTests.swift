@@ -188,6 +188,36 @@ import GRDB
         }
 
         @Test
+        func fetchesMeetingDescriptionForHoverWithinVault() throws {
+            let fixture = try MeetingSidebarRepositoryFixture()
+            let meetingID = try fixture.manager.dbQueue.write { db in
+                try fixture.insertMeeting(
+                    name: "Hover meeting",
+                    description: "Hover description",
+                    in: db
+                )
+            }
+
+            let description = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingDescription(
+                    id: meetingID,
+                    vaultId: fixture.vault.id,
+                    in: db
+                )
+            }
+            let outsideVault = try fixture.manager.dbQueue.read { db in
+                try MeetingRepository.fetchMeetingDescription(
+                    id: meetingID,
+                    vaultId: UUID.v7(),
+                    in: db
+                )
+            }
+
+            #expect(description == "Hover description")
+            #expect(outsideVault == nil)
+        }
+
+        @Test
         func fetchesRequestedSidebarItemOutsideMaterializedPages() throws {
             let fixture = try MeetingSidebarRepositoryFixture()
             let meetingID = try fixture.manager.dbQueue.write { db in

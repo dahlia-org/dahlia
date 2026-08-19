@@ -47,6 +47,18 @@ extension MeetingRepository {
         return items
     }
 
+    nonisolated static func fetchMeetingDescription(
+        id meetingId: UUID,
+        vaultId: UUID,
+        in db: Database
+    ) throws -> String? {
+        try String.fetchOne(
+            db,
+            sql: "SELECT description FROM meetings WHERE id = ? AND vaultId = ?",
+            arguments: [meetingId, vaultId]
+        )
+    }
+
     nonisolated static func fetchMeetingSidebarPage(
         vaultId: UUID,
         after cursor: MeetingSidebarCursor? = nil,

@@ -307,7 +307,7 @@
 "In Progress" = "進行中";
 "No meetings yet" = "まだ meeting がありません";
 "No meetings match the current filter." = "現在のフィルターに一致する meeting はありません。";
-"%lld meetings" = "%lld 件の meeting";
+"%lld meetings" = "%lld 件のミーティング";
 "%lld" = "%lld件";
 "%lld subprojects included" = "%lld件のサブプロジェクトを含む";
 "Search meetings..." = "ミーティングを検索...";

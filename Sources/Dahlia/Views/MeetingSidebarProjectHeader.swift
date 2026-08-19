@@ -12,9 +12,11 @@ struct MeetingSidebarProjectHeader: View {
     let onTogglePin: () -> Void
     let onCreateMeeting: () -> Void
 
+    @Environment(MeetingSidebarHoverController.self) private var hoverController
     @State private var isHovered = false
     @State private var isOptionsHovered = false
     @State private var isCreateMeetingHovered = false
+    @State private var rowFrame: CGRect = .zero
     @FocusState private var isMenuFocused: Bool
     @FocusState private var isCreateMeetingFocused: Bool
 
@@ -75,6 +77,27 @@ struct MeetingSidebarProjectHeader: View {
         .padding(.trailing, 8)
         .dahliaSidebarHoverHighlight(isHovered: isHovered, isSelected: isSelected, verticalOutset: 2)
         .contentShape(.rect)
-        .onHover { isHovered = $0 }
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.frame(in: .global)
+        } action: { frame in
+            rowFrame = frame
+            hoverController.updateProjectRowFrame(frame, for: project.projectId)
+        }
+        .onHover(perform: updateHoverState)
+        .onDisappear { hoverController.projectDisappeared(for: project.projectId) }
+    }
+
+    private func updateHoverState(_ isHovered: Bool) {
+        self.isHovered = isHovered
+        if isHovered {
+            hoverController.projectHoverBegan(
+                project: project,
+                appearance: appearance,
+                isPinned: isPinned,
+                rowFrame: rowFrame
+            )
+        } else {
+            hoverController.projectRowHoverEnded(for: project.projectId)
+        }
     }
 }

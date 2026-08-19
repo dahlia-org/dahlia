@@ -3,6 +3,18 @@ import GRDB
 import OSLog
 
 extension SidebarViewModel {
+    func meetingDescription(id meetingId: UUID, vaultId: UUID) async -> String? {
+        guard let dbQueue,
+              currentVault?.id == vaultId else { return nil }
+        return await (try? dbQueue.read { db in
+            try MeetingRepository.fetchMeetingDescription(
+                id: meetingId,
+                vaultId: vaultId,
+                in: db
+            )
+        })
+    }
+
     func containsMeeting(id meetingId: UUID) async -> Bool {
         guard let dbQueue,
               let vaultId = currentVault?.id else { return false }

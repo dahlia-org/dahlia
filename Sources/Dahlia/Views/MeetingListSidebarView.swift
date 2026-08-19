@@ -310,14 +310,16 @@ struct MeetingListSidebarView: View {
     }
 
     private func meetingRow(_ item: MeetingSidebarItem) -> some View {
-        MeetingSidebarRow(
+        let projectAppearance = item.projectId.map {
+            mainWindowNavigation.projectAppearance(
+                projectId: $0,
+                vaultId: sidebarViewModel.currentVault?.id
+            )
+        }
+        return MeetingSidebarRow(
             item: item,
-            projectTint: item.projectId.map {
-                mainWindowNavigation.projectAppearance(
-                    projectId: $0,
-                    vaultId: sidebarViewModel.currentVault?.id
-                ).color.color
-            },
+            projectTint: projectAppearance?.color.color,
+            projectAppearance: projectAppearance,
             showsDateInTimestamp: mainWindowNavigation.meetingSidebarDisplayMode == .byProject,
             searchText: sidebarViewModel.meetingSearchCriteria.text,
             isSelected: renderedMeetingSelection.contains(item.meetingId),

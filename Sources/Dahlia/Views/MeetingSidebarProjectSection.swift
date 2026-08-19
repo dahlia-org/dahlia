@@ -130,12 +130,12 @@ struct MeetingSidebarProjectSection: View {
     }
 
     private func meetingRowContent(_ item: MeetingSidebarItem) -> some View {
-        var item = item
-        item.projectName = nil
-        return MeetingSidebarRow(
+        MeetingSidebarRow(
             item: item,
             contentLeadingPadding: 20,
             projectTint: nil,
+            projectAppearance: projectAppearance,
+            showsProjectChip: false,
             showsDateInTimestamp: showsMeetingDate,
             searchText: "",
             isSelected: selectedMeetingIDs.contains(item.meetingId),
