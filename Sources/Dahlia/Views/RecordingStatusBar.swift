@@ -461,10 +461,13 @@ private struct RecordingSourceControlLabel: View {
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius, style: .continuous)
                 .fill(Color.primary.opacity(0.06))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(RoundedRectangle(
+            cornerRadius: DahliaDesign.Highlight.regularCornerRadius,
+            style: .continuous
+        ))
     }
 }
 

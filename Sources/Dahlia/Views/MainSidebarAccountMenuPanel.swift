@@ -8,10 +8,14 @@ struct MainSidebarAccountMenuPanel<Content: View>: View {
         content
             .padding(6)
             .frame(width: width)
-            .background(Color(nsColor: .windowBackgroundColor), in: .rect(cornerRadius: 12))
+            .background(
+                Color(nsColor: .windowBackgroundColor),
+                in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius)
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: DahliaDesign.Card.regularCornerRadius)
                     .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
             }
+            .containerShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
     }
 }

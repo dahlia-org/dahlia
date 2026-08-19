@@ -75,7 +75,11 @@ struct MeetingSidebarProjectHeader: View {
         }
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.trailing, 8)
-        .dahliaSidebarHoverHighlight(isHovered: isHovered, isSelected: isSelected, verticalOutset: 2)
+        .dahliaSidebarHoverHighlight(
+            isHovered: isHovered,
+            isSelected: isSelected,
+            verticalOutset: DahliaDesign.projectSidebarRowHighlightVerticalOutset
+        )
         .contentShape(.rect)
         .onGeometryChange(for: CGRect.self) { geometry in
             geometry.frame(in: .global)

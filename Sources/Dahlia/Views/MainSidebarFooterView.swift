@@ -25,9 +25,9 @@ struct MainSidebarFooterView: View {
             .frame(height: 30)
             .background(
                 isAccountMenuHovered ? DahliaDesign.sidebarHighlightColor : .clear,
-                in: .rect(cornerRadius: 6)
+                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
             )
-            .contentShape(.rect(cornerRadius: 6))
+            .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
             .onContinuousHover { phase in
                 isAccountMenuHovered = phase != .ended
             }

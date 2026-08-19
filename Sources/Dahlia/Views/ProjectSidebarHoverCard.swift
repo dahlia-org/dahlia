@@ -28,9 +28,13 @@ struct ProjectSidebarHoverCard: View {
                     .padding(5)
                     .background(
                         isPinHovered ? Color.black.opacity(0.08) : .clear,
-                        in: .rect(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
+                        in: .rect(corners: .concentric(
+                            minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+                        ))
                     )
-                    .contentShape(.rect(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius))
+                    .contentShape(.rect(corners: .concentric(
+                        minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+                    )))
                     .onHover { isPinHovered = $0 }
             }
 
@@ -45,9 +49,13 @@ struct ProjectSidebarHoverCard: View {
                 .padding(.vertical, 4)
                 .background(
                     isEditHovered ? Color.black.opacity(0.08) : .clear,
-                    in: .rect(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
+                    in: .rect(corners: .concentric(
+                        minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+                    ))
                 )
-                .contentShape(.rect)
+                .contentShape(.rect(corners: .concentric(
+                    minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
+                )))
                 .onHover { isEditHovered = $0 }
         }
         .dahliaSidebarHoverCard()

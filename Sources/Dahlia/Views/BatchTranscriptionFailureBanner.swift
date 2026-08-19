@@ -32,7 +32,10 @@ struct BatchTranscriptionFailureBanner: View {
             }
         }
         .padding()
-        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            .orange.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: DahliaDesign.Feedback.cornerRadius)
+        )
         .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
         .padding(.vertical, 4)
         .confirmationDialog(

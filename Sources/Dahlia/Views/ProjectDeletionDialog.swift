@@ -126,7 +126,6 @@ struct ProjectDeletionDialog: View {
                             .frame(minWidth: 72)
                     }
                     .buttonStyle(.bordered)
-                    .buttonBorderShape(.roundedRectangle(radius: 8))
                     .controlSize(.extraLarge)
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
@@ -142,7 +141,6 @@ struct ProjectDeletionDialog: View {
                         .frame(minWidth: 160)
                     }
                     .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.roundedRectangle(radius: 8))
                     .tint(.red)
                     .controlSize(.extraLarge)
                     .disabled(!canConfirmDeletion)
@@ -151,7 +149,7 @@ struct ProjectDeletionDialog: View {
             .padding(24)
             .frame(width: 560, height: dialogHeight)
             .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(.rect(cornerRadius: 14))
+            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
             .shadow(color: .black.opacity(0.24), radius: 28, y: 12)
         }
         .transition(.identity)

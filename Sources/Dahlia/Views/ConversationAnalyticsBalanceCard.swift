@@ -28,7 +28,7 @@ struct ConversationAnalyticsBalanceCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 236, alignment: .topLeading)
         .padding(16)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 
     private func balanceChart(

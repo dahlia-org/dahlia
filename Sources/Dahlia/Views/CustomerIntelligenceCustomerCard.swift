@@ -42,7 +42,7 @@ struct CustomerIntelligenceCustomerCard: View {
             }
             .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
             .padding()
-            .customerIntelligenceCardSurface()
+            .dahliaCardSurface()
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

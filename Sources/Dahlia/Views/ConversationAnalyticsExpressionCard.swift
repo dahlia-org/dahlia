@@ -41,7 +41,7 @@ struct ConversationAnalyticsExpressionCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(16)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 
     private func metricRow(

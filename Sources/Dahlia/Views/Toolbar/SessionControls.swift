@@ -18,11 +18,10 @@ struct RecordButton: View {
         Button(label, systemImage: iconName, action: toggle)
             .labelStyle(DahliaFixedSymbolTitleAndIconLabelStyle())
             .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 8))
             .controlSize(.large)
             .tint(.red)
             .overlay {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                     .fill(.white.opacity(isHovered && state.isEnabled ? 0.12 : 0))
                     .allowsHitTesting(false)
             }
@@ -181,7 +180,7 @@ private struct SummarySharePopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                         .fill(Color.accentColor.opacity(0.12))
                     Image(systemName: "list.bullet.clipboard")
                         .font(.system(size: 24, weight: .semibold))
@@ -326,7 +325,7 @@ private struct SummarySharePopoverRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     .fill(isHovering ? DahliaDesign.contentHighlightColor : .clear)
             }
         }

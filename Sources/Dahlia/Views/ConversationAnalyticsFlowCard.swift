@@ -18,7 +18,7 @@ struct ConversationAnalyticsFlowCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
         .padding(16)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 
     private var summary: some View {

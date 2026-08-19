@@ -3,7 +3,6 @@ import SwiftUI
 struct MeetingSidebarHoverOverlay: View {
     static let spacing: CGFloat = 9
     static let windowInset: CGFloat = 8
-    static let rowHighlightVerticalOutset: CGFloat = 2
 
     let controller: MeetingSidebarHoverController
     let containerOrigin: CGPoint
@@ -13,6 +12,8 @@ struct MeetingSidebarHoverOverlay: View {
 
     @State private var meetingCardSize: CGSize = .zero
     @State private var projectCardSize: CGSize = .zero
+    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
+    private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -69,7 +70,8 @@ struct MeetingSidebarHoverOverlay: View {
             rowFrame: controller.visibleRowFrame,
             cardSize: meetingCardSize,
             containerOrigin: containerOrigin,
-            windowBounds: windowBounds
+            windowBounds: windowBounds,
+            rowHighlightVerticalOutset: DahliaDesign.meetingSidebarRowHighlightVerticalOutset(for: rowStyle)
         )
     }
 
@@ -78,7 +80,8 @@ struct MeetingSidebarHoverOverlay: View {
             rowFrame: controller.visibleRowFrame,
             cardSize: projectCardSize,
             containerOrigin: containerOrigin,
-            windowBounds: windowBounds
+            windowBounds: windowBounds,
+            rowHighlightVerticalOutset: DahliaDesign.projectSidebarRowHighlightVerticalOutset
         )
     }
 
@@ -86,7 +89,8 @@ struct MeetingSidebarHoverOverlay: View {
         rowFrame: CGRect,
         cardSize: CGSize,
         containerOrigin: CGPoint,
-        windowBounds: CGRect
+        windowBounds: CGRect,
+        rowHighlightVerticalOutset: CGFloat = DahliaDesign.meetingSidebarRowHighlightVerticalOutset(for: .standard)
     ) -> CGPoint {
         let localRowFrame = rowFrame.offsetBy(dx: -containerOrigin.x, dy: -containerOrigin.y)
         let preferredOrigin = CGPoint(
@@ -119,5 +123,9 @@ struct MeetingSidebarHoverOverlay: View {
             return minimum + (maximum - minimum - length) / 2
         }
         return min(max(origin, minimum), maximum - length)
+    }
+
+    private var rowStyle: MeetingSidebarRowStyle {
+        MeetingSidebarRowStyle.resolved(rawValue: rowStyleRawValue)
     }
 }

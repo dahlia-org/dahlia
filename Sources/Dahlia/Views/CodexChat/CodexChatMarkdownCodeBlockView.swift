@@ -21,7 +21,10 @@ struct CodexChatMarkdownCodeBlockView: View {
                     .textSelection(.enabled)
                     .padding(10)
             }
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                .quaternary,
+                in: RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+            )
         }
     }
 }

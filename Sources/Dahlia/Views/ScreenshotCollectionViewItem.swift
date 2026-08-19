@@ -122,7 +122,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         let rootView = NSBox()
         rootView.boxType = .custom
         rootView.borderWidth = 0
-        rootView.cornerRadius = 8
+        rootView.cornerRadius = DahliaDesign.Media.cornerRadius
         rootView.fillColor = NSColor.labelColor.withAlphaComponent(0.05)
         rootView.contentViewMargins = NSSize(width: 6, height: 6)
 
@@ -272,7 +272,7 @@ final class ScreenshotCollectionViewItem: NSCollectionViewItem {
         thumbnailButton.target = self
         thumbnailButton.action = #selector(activateThumbnail)
         thumbnailButton.wantsLayer = true
-        thumbnailButton.layer?.cornerRadius = 6
+        thumbnailButton.layer?.cornerRadius = DahliaDesign.Highlight.compactCornerRadius
         thumbnailButton.layer?.masksToBounds = true
         thumbnailButton.updateBackgroundColor()
         configureContextMenu()

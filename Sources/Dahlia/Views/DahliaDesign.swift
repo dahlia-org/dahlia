@@ -2,6 +2,40 @@ import AppKit
 import SwiftUI
 
 enum DahliaDesign {
+    enum Button {
+        static let cornerRadius: CGFloat = 12
+    }
+
+    enum Highlight {
+        static let compactCornerRadius: CGFloat = 8
+        static let regularCornerRadius: CGFloat = 12
+    }
+
+    enum HoverHelp {
+        static let cornerRadius: CGFloat = 12
+    }
+
+    enum HoverCard {
+        static let cornerRadius: CGFloat = 12
+    }
+
+    enum Card {
+        static let compactCornerRadius: CGFloat = 8
+        static let regularCornerRadius: CGFloat = 12
+    }
+
+    enum Field {
+        static let cornerRadius: CGFloat = 8
+    }
+
+    enum Feedback {
+        static let cornerRadius: CGFloat = 6
+    }
+
+    enum Media {
+        static let cornerRadius: CGFloat = 8
+    }
+
     static let sidebarHighlightColor = Color.primary.opacity(0.10)
     static let contentHighlightColor = Color.primary.opacity(0.05)
     static let chipHoverColor = Color.primary.opacity(0.10)
@@ -35,8 +69,12 @@ enum DahliaDesign {
     ))
     static let sidebarRowVerticalPadding: CGFloat = 3
     static let sidebarNavigationVerticalPadding: CGFloat = 8
-    static let sidebarHighlightCornerRadius: CGFloat = 6
+    static let projectSidebarRowHighlightVerticalOutset: CGFloat = 4
     static let sidebarHoverCardWidth: CGFloat = 280
+
+    static func meetingSidebarRowHighlightVerticalOutset(for rowStyle: MeetingSidebarRowStyle) -> CGFloat {
+        rowStyle == .compact ? 4 : 3
+    }
 
     static let windowHeaderHeight: CGFloat = 32
     static let windowHeaderHorizontalPadding: CGFloat = 12
@@ -143,6 +181,17 @@ extension View {
     func dahliaSidebarHoverCard() -> some View {
         modifier(DahliaSidebarHoverCardModifier())
     }
+
+    func dahliaCardSurface() -> some View {
+        background(
+            Color(nsColor: .controlBackgroundColor),
+            in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.regularCornerRadius)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        }
+    }
 }
 
 private struct DahliaSidebarHoverCardModifier: ViewModifier {
@@ -152,11 +201,12 @@ private struct DahliaSidebarHoverCardModifier: ViewModifier {
             .foregroundStyle(.black.opacity(0.82))
             .padding(12)
             .frame(width: DahliaDesign.sidebarHoverCardWidth, alignment: .leading)
-            .background(.white, in: .rect(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius))
+            .background(.white, in: .rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
+                RoundedRectangle(cornerRadius: DahliaDesign.HoverCard.cornerRadius)
                     .stroke(.black.opacity(0.1), lineWidth: 0.5)
             }
+            .containerShape(.rect(cornerRadius: DahliaDesign.HoverCard.cornerRadius))
             .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -174,7 +224,7 @@ private struct DahliaSidebarHoverHighlightModifier: ViewModifier {
 
         content
             .background {
-                RoundedRectangle(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
+                RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     .fill(color)
                     .padding(.vertical, -verticalOutset)
                     .padding(.horizontal, -6)

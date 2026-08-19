@@ -204,21 +204,17 @@ struct ContentView: View {
                 .accessibilityHidden(isShowingSettings)
             }
         }
-        .disabled(projectEditorRequest != nil || projectPendingDeletion != nil)
-        .accessibilityHidden(projectEditorRequest != nil || projectPendingDeletion != nil)
-        .overlay {
-            ProjectModalPresentation(
-                editorRequest: projectEditorRequest,
-                deletionProject: projectPendingDeletion,
-                projects: sidebarViewModel.allProjectItems,
-                appearanceForProject: projectAppearance,
-                onCancelEditor: dismissProjectEditor,
-                onDeleteFromEditor: requestProjectDeletionFromEditor,
-                onSave: saveProjectEditor,
-                onCancelDeletion: dismissProjectDeletion,
-                onConfirmDeletion: deleteProject
-            )
-        }
+        .projectModalPresentation(
+            editorRequest: $projectEditorRequest,
+            deletionProject: $projectPendingDeletion,
+            projects: sidebarViewModel.allProjectItems,
+            appearanceForProject: projectAppearance,
+            onCancelEditor: dismissProjectEditor,
+            onDeleteFromEditor: requestProjectDeletionFromEditor,
+            onSave: saveProjectEditor,
+            onCancelDeletion: dismissProjectDeletion,
+            onConfirmDeletion: deleteProject
+        )
         .task {
             presentPermissionGuideIfNeeded()
         }

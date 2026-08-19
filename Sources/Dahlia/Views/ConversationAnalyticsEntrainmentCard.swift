@@ -65,6 +65,6 @@ struct ConversationAnalyticsEntrainmentCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(16)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 }

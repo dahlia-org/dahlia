@@ -55,7 +55,7 @@ struct DetailTabBar: View {
                     .foregroundStyle(isSelected ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
                     .background {
                         if !isFolderOnly, hoveredTab == tab {
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                                 .fill(DahliaDesign.contentHighlightColor)
                         }
                     }

@@ -10,7 +10,7 @@ struct ConversationAnalyticsVoiceAvailabilityCard: View {
             Text(description)
         }
         .frame(maxWidth: .infinity, minHeight: 180)
-        .conversationAnalyticsCard()
+        .dahliaCardSurface()
     }
 
     private var description: String {

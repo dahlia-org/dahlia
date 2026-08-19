@@ -58,10 +58,10 @@ struct ProjectAppearancePicker: View {
                 .frame(width: 44, height: 40)
                 .background(
                     appearance.icon == icon ? Color.accentColor.opacity(0.14) : .clear,
-                    in: .rect(cornerRadius: 8)
+                    in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
                         .stroke(appearance.icon == icon ? Color.accentColor : .clear)
                 }
         })

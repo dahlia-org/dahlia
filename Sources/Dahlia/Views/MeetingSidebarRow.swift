@@ -39,7 +39,7 @@ struct MeetingSidebarRow: View {
         .dahliaSidebarHoverHighlight(
             isHovered: isHovered && !isSelected,
             isSelected: isSelected,
-            verticalOutset: 2
+            verticalOutset: DahliaDesign.meetingSidebarRowHighlightVerticalOutset(for: rowStyle)
         )
         .contentShape(Rectangle())
         .onGeometryChange(for: CGRect.self) { geometry in

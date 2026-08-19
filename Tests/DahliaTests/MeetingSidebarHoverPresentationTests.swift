@@ -31,8 +31,24 @@ struct MeetingSidebarHoverPresentationTests {
             containerOrigin: .zero,
             windowBounds: CGRect(x: 0, y: 0, width: 800, height: 600)
         )
+        let compact = MeetingSidebarHoverOverlay.origin(
+            rowFrame: CGRect(x: 20, y: 100, width: 200, height: 30),
+            cardSize: CGSize(width: 280, height: 120),
+            containerOrigin: .zero,
+            windowBounds: CGRect(x: 0, y: 0, width: 800, height: 600),
+            rowHighlightVerticalOutset: DahliaDesign.meetingSidebarRowHighlightVerticalOutset(for: .compact)
+        )
+        let project = MeetingSidebarHoverOverlay.origin(
+            rowFrame: CGRect(x: 20, y: 100, width: 200, height: 30),
+            cardSize: CGSize(width: 280, height: 120),
+            containerOrigin: .zero,
+            windowBounds: CGRect(x: 0, y: 0, width: 800, height: 600),
+            rowHighlightVerticalOutset: DahliaDesign.projectSidebarRowHighlightVerticalOutset
+        )
 
-        #expect(normal == CGPoint(x: 229, y: 98))
+        #expect(normal == CGPoint(x: 229, y: 97))
+        #expect(compact == CGPoint(x: 229, y: 96))
+        #expect(project == CGPoint(x: 229, y: 96))
         #expect(constrained == CGPoint(x: 512, y: 472))
     }
 
