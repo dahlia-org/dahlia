@@ -55,12 +55,12 @@ swift build && swift run Dahlia
 swift test
 
 # Build, sign, notarize, and staple Dahlia.dmg
-./scripts/notarize.sh
+.agents/skills/release-dahlia-app/scripts/notarize.sh
 
-# After $release-dahlia prepares reviewed bilingual notes, create the GitHub Release
-./scripts/create-github-release.sh \
-  --notes-file-ja .build/release-notes/Dahlia.ja.md \
-  --notes-file-en .build/release-notes/Dahlia.en.md
+# After $release-dahlia-app prepares reviewed bilingual notes, create the GitHub Release
+.agents/skills/release-dahlia-app/scripts/create-github-release.sh \
+  --notes-file-ja .build/release-notes/release-note-ja.md \
+  --notes-file-en .build/release-notes/release-note-en.md
 
 # Format and lint
 ./scripts/lint.sh
@@ -96,9 +96,9 @@ xcrun notarytool store-credentials "dahlia-notary" \
   --password "APP_SPECIFIC_PASSWORD"
 ```
 
-`./scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
+`.agents/skills/release-dahlia-app/scripts/notarize.sh` uses `NOTARY_PROFILE` (default: `dahlia-notary`) and produces a signed, notarized, and stapled `Dahlia.dmg` ready for distribution.
 
-Dahlia uses Sparkle 2 for in-app updates. Production builds check for updates every hour and show a toolbar badge when one is available; clicking the badge opens the update dialog. Updates are never downloaded or installed automatically. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update, appcast, and localized release notes with this key, then uploads `Dahlia.dmg`, `appcast.xml`, `Dahlia.ja.md`, and `Dahlia.en.md` to the GitHub Release.
+Dahlia uses Sparkle 2 for in-app updates. Production builds check for updates every hour and show a toolbar badge when one is available; clicking the badge opens the update dialog. Updates are never downloaded or installed automatically. Its Ed25519 private key is stored in the login Keychain under the `com.dahlia.app` account and must be backed up securely. On a new release machine, import the existing private key with Sparkle's `generate_keys` tool; never generate a replacement key or commit the exported private key. `create-github-release.sh` signs the DMG update, appcast, and localized release notes with this key, then uploads `Dahlia.dmg`, `appcast.xml`, `release-note-ja.md`, and `release-note-en.md` to the GitHub Release.
 
 When replacing the release laptop, migrate the Sparkle key as follows. The exported file is an unencrypted private key with the same sensitivity as a password. Export it directly to encrypted offline storage, transfer it through a trusted channel, and never place it in the repository, cloud-synced folders, chat, or issue attachments.
 
@@ -124,13 +124,13 @@ swift package resolve
 
 After importing, remove any unencrypted transfer copy and retain one access-controlled, encrypted backup. Do not run `generate_keys` without `-f` on the new laptop: creating a different key would prevent installed Dahlia versions from accepting future updates.
 
-To publish a release, install and authenticate the GitHub CLI (`gh`), then use the repository's `$release-dahlia` skill in Codex. The skill determines the version from the complete release range, updates both version keys in `Resources/Info.plist`, and writes reviewed Japanese and English notes under `.build/release-notes`. Commit and push the version change and all other source changes before running:
+To publish a release, install and authenticate the GitHub CLI (`gh`), then use the repository's `$release-dahlia-app` skill in Codex. The skill determines the version from the complete release range, updates both version keys in `Resources/Info.plist`, and writes reviewed Japanese and English notes under `.build/release-notes`. Commit and push the version change and all other source changes before running:
 
 ```bash
-./scripts/notarize.sh
-./scripts/create-github-release.sh \
-  --notes-file-ja .build/release-notes/Dahlia.ja.md \
-  --notes-file-en .build/release-notes/Dahlia.en.md
+.agents/skills/release-dahlia-app/scripts/notarize.sh
+.agents/skills/release-dahlia-app/scripts/create-github-release.sh \
+  --notes-file-ja .build/release-notes/release-note-ja.md \
+  --notes-file-en .build/release-notes/release-note-en.md
 ```
 
 `create-github-release.sh` requires both reviewed note files and performs deterministic validation and publishing only. It verifies the DMG signature, notarization ticket, fixed `Dahlia.dmg` filename, embedded marketing/build versions, monotonic build number, Sparkle feed and signing configuration, disk image integrity, and the signatures and lengths of both localized note assets. It then creates `v<version>` at the current commit (or verifies an existing tag points there), creates the corresponding GitHub Release, and uploads the exact DMG and localized notes signed by the appcast. Sparkle selects the Japanese or English notes from the user's preferred app language. The script refuses to publish from a dirty working tree. The latest release is always available directly from <https://github.com/dahlia-org/dahlia/releases/latest/download/Dahlia.dmg>.

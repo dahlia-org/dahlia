@@ -4,11 +4,11 @@ set -euo pipefail
 APP_NAME="Dahlia"
 DMG_NAME="${APP_NAME}.dmg"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 APP_BUNDLE="${PROJECT_DIR}/${APP_NAME}.app"
 STAGING_DIR=""
 
-source "${SCRIPT_DIR}/common.sh"
+source "${PROJECT_DIR}/scripts/common.sh"
 
 cleanup() {
     if [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ]; then
@@ -49,7 +49,7 @@ require_commands xcrun codesign ditto hdiutil spctl
 check_notary_profile
 
 echo "=== Building signed app ==="
-"${SCRIPT_DIR}/build-app.sh"
+"${PROJECT_DIR}/scripts/build-app.sh"
 
 echo "=== Verifying signature ==="
 codesign -dvvv --entitlements - --xml "$APP_BUNDLE"
@@ -87,7 +87,7 @@ spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH"
 
 if [ -n "${SENTRY_DSN:-}" ]; then
     echo "=== Uploading release dSYM to Sentry ==="
-    "${SCRIPT_DIR}/upload-dsyms.sh" "${PROJECT_DIR}/.build/release" "$APP_NAME"
+    "${PROJECT_DIR}/scripts/upload-dsyms.sh" "${PROJECT_DIR}/.build/release" "$APP_NAME"
 else
     echo "=== Skipping Sentry dSYM upload: SENTRY_DSN is not configured ==="
 fi

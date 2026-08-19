@@ -3,12 +3,16 @@ set -euo pipefail
 
 APP_NAME="Dahlia"
 RELEASE_REPOSITORY="dahlia-org/dahlia"
+SPARKLE_NOTE_JA_NAME="${APP_NAME}.ja.md"
+SPARKLE_NOTE_EN_NAME="${APP_NAME}.en.md"
+RELEASE_NOTE_JA_NAME="release-note-ja.md"
+RELEASE_NOTE_EN_NAME="release-note-en.md"
 INVOCATION_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 INFO_PLIST="${PROJECT_DIR}/Resources/Info.plist"
 
-source "${SCRIPT_DIR}/common.sh"
+source "${PROJECT_DIR}/scripts/common.sh"
 
 DMG_MOUNT_DIR=""
 SPARKLE_RELEASE_DIR=""
@@ -262,7 +266,7 @@ validate_localized_sparkle_release_notes() {
     local notes_length
     local notes_signature
     local notes_url
-    local expected_notes_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/${APP_NAME}.${language}.md"
+    local expected_notes_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${TAG_NAME}/release-note-${language}.md"
     local expected_notes_length
 
     notes_count="$(xmllint --xpath "count(${notes_xpath})" "$appcast_path")"
@@ -351,8 +355,23 @@ validate_sparkle_appcast() {
         "$appcast_path" "$sign_update" "$sparkle_key_account" en "$notes_file_en"
 }
 
+prepare_release_note_assets() {
+    local appcast_path="$1"
+    local sign_update="$2"
+    local sparkle_key_account="$3"
+
+    sed -i '' \
+        -e "s|${SPARKLE_NOTE_JA_NAME}|${RELEASE_NOTE_JA_NAME}|g" \
+        -e "s|${SPARKLE_NOTE_EN_NAME}|${RELEASE_NOTE_EN_NAME}|g" \
+        "$appcast_path"
+    mv "${SPARKLE_RELEASE_DIR}/${SPARKLE_NOTE_JA_NAME}" "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_JA_NAME}"
+    mv "${SPARKLE_RELEASE_DIR}/${SPARKLE_NOTE_EN_NAME}" "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_EN_NAME}"
+    "$sign_update" --account "$sparkle_key_account" "$appcast_path"
+}
+
 create_sparkle_appcast() {
     local generate_appcast="${PROJECT_DIR}/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+    local sign_update="${PROJECT_DIR}/.build/artifacts/sparkle/Sparkle/bin/sign_update"
     local sparkle_key_account="${SPARKLE_KEY_ACCOUNT:-com.dahlia.app}"
 
     if [ ! -x "$generate_appcast" ]; then
@@ -367,8 +386,8 @@ EOF
 
     SPARKLE_RELEASE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dahlia-sparkle-release.XXXXXX")"
     cp "$DMG_PATH" "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}"
-    cp "$NOTES_FILE_JA" "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md"
-    cp "$NOTES_FILE_EN" "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md"
+    cp "$NOTES_FILE_JA" "${SPARKLE_RELEASE_DIR}/${SPARKLE_NOTE_JA_NAME}"
+    cp "$NOTES_FILE_EN" "${SPARKLE_RELEASE_DIR}/${SPARKLE_NOTE_EN_NAME}"
 
     if [ "$(sha256_digest "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}")" != "$DMG_CHECKSUM" ]; then
         echo "error: Sparkle release DMG does not match the validated DMG" >&2
@@ -385,11 +404,15 @@ EOF
         echo "error: Sparkle appcast was not generated" >&2
         exit 1
     fi
+    prepare_release_note_assets \
+        "${SPARKLE_RELEASE_DIR}/appcast.xml" \
+        "$sign_update" \
+        "$sparkle_key_account"
     validate_sparkle_appcast \
         "${SPARKLE_RELEASE_DIR}/appcast.xml" \
         "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}" \
-        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md" \
-        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md"
+        "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_JA_NAME}" \
+        "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_EN_NAME}"
 }
 
 publish_github_release() {
@@ -397,8 +420,8 @@ publish_github_release() {
         "$TAG_NAME" \
         "${SPARKLE_RELEASE_DIR}/${EXPECTED_DMG_NAME}" \
         "${SPARKLE_RELEASE_DIR}/appcast.xml" \
-        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.ja.md" \
-        "${SPARKLE_RELEASE_DIR}/${APP_NAME}.en.md" \
+        "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_JA_NAME}" \
+        "${SPARKLE_RELEASE_DIR}/${RELEASE_NOTE_EN_NAME}" \
         --title "${APP_NAME} ${MARKETING_VERSION}" \
         --notes-file "$NOTES_FILE_JA" \
         "${RELEASE_TARGET_ARGS[@]}"
@@ -490,7 +513,7 @@ if [ ! -f "$DMG_PATH" ]; then
 error: release DMG not found: ${DMG_PATH}
 
 Create and notarize it first with:
-  ./scripts/notarize.sh
+  .agents/skills/release-dahlia-app/scripts/notarize.sh
 EOF
     exit 1
 fi
