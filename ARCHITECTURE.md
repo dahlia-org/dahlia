@@ -130,7 +130,7 @@ Databricks Apps の header identity は sessionless だが、Model Alias と adm
 へ保存しない。
 
 ```text
-Dahlia macOS / bundled Codex 0.146.0
+Dahlia macOS / bundled Codex 0.148.0
     ↓ authenticated OpenAI Responses request
 /api/v1
     ├─ Better Auth OAuth access token
