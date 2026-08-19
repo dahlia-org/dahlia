@@ -217,7 +217,7 @@ final class CaptionViewModel: ObservableObject {
     var currentProjectName: String?
     var currentVaultURL: URL?
     @Published private(set) var draftMeeting: DraftMeeting?
-    @Published private(set) var latestDraftMaterialization: DraftMeetingMaterialization?
+    @Published private(set) var pendingDraftMaterializations: [DraftMeetingMaterialization] = []
 
     // MARK: - Summary State
 
@@ -2060,10 +2060,10 @@ final class CaptionViewModel: ObservableObject {
             dbQueue: dbQueue,
             vaultURL: vaultURL
         )
-        latestDraftMaterialization = DraftMeetingMaterialization(
+        pendingDraftMaterializations.append(DraftMeetingMaterialization(
             draftID: draftMeeting.id,
             meetingID: meetingId
-        )
+        ))
         setMeetingContext(
             id: meetingId,
             dbQueue: dbQueue,
@@ -2725,10 +2725,10 @@ final class CaptionViewModel: ObservableObject {
     private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
         guard existingMeetingId == nil else { return }
         if let activeDraftMeeting, let currentMeetingId {
-            latestDraftMaterialization = DraftMeetingMaterialization(
+            pendingDraftMaterializations.append(DraftMeetingMaterialization(
                 draftID: activeDraftMeeting.id,
                 meetingID: currentMeetingId
-            )
+            ))
         }
         if activeDraftMeeting == nil, draftMeeting != nil {
             resetNoteState()
@@ -2738,6 +2738,11 @@ final class CaptionViewModel: ObservableObject {
         if activeDraftMeeting != nil {
             saveNoteImmediately()
         }
+    }
+
+    func consumeDraftMaterializations() -> [DraftMeetingMaterialization] {
+        defer { pendingDraftMaterializations.removeAll() }
+        return pendingDraftMaterializations
     }
 
     private func handleRecordingStartFailure(

@@ -248,7 +248,12 @@ struct ContentView: View {
                 mainWindowNavigation.showMeetings()
                 isShowingUnprocessedRecordings = false
             }
-            if newValue.count == 1, let meetingID = newValue.first {
+            if newValue.count == 1,
+               let meetingID = newValue.first,
+               Self.shouldRecordMeetingNavigation(
+                   isRecordingStartPending: viewModel.isRecordingStartPending,
+                   hasDraftMeeting: viewModel.hasDraftMeeting
+               ) {
                 mainWindowNavigation.recordNavigation(to: .meeting(meetingID))
             }
             if newValue.count != 1 {
@@ -270,7 +275,9 @@ struct ContentView: View {
         }
         .onChange(of: viewModel.currentMeetingId) { oldId, newId in
             guard oldId != newId else { return }
-            if let newId, sidebarViewModel.selectedMeetingId != newId {
+            if let newId,
+               sidebarViewModel.selectedMeetingId != newId,
+               Self.shouldSelectCurrentMeeting(newId, at: mainWindowNavigation.currentLocation) {
                 sidebarViewModel.selectMeeting(newId)
             }
             syncChatContext()
@@ -281,12 +288,13 @@ struct ContentView: View {
             }
             syncChatContext()
         }
-        .onChange(of: viewModel.latestDraftMaterialization, initial: true) { _, materialization in
-            guard let materialization else { return }
-            mainWindowNavigation.replaceDraftNavigation(
-                draftID: materialization.draftID,
-                with: materialization.meetingID
-            )
+        .onChange(of: viewModel.pendingDraftMaterializations, initial: true) { _, _ in
+            for materialization in viewModel.consumeDraftMaterializations() {
+                mainWindowNavigation.replaceDraftNavigation(
+                    draftID: materialization.draftID,
+                    with: materialization.meetingID
+                )
+            }
         }
         .onChange(of: viewModel.noteText) { _, _ in
             syncDraftNavigation()
@@ -793,6 +801,27 @@ private extension ContentView {
 }
 
 extension ContentView {
+    static func shouldRecordMeetingNavigation(
+        isRecordingStartPending: Bool,
+        hasDraftMeeting: Bool
+    ) -> Bool {
+        !isRecordingStartPending || !hasDraftMeeting
+    }
+
+    static func shouldSelectCurrentMeeting(
+        _ meetingID: UUID,
+        at location: MainWindowLocation
+    ) -> Bool {
+        switch location {
+        case .meetingDraft:
+            true
+        case .meeting(meetingID):
+            true
+        default:
+            false
+        }
+    }
+
     static func canLoadMeetingSelection(
         isRecordingStartPending: Bool,
         isFinalizingRecording: Bool

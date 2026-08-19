@@ -51,7 +51,7 @@ import GRDB
             viewModel.noteText = "Keep this note"
 
             viewModel.clearCurrentMeeting()
-            let materialization = try #require(viewModel.latestDraftMaterialization)
+            let materialization = try #require(viewModel.consumeDraftMaterializations().first)
 
             let persisted = try database.dbQueue.read { db in
                 try (
@@ -67,7 +67,7 @@ import GRDB
         }
 
         @Test
-        func replacingNotedDraftPublishesMaterializationBeforeTheNextDraft() throws {
+        func consecutiveDraftMaterializationsAreDeliveredWithoutLoss() throws {
             let viewModel = CaptionViewModel()
             let database = try AppDatabaseManager(path: ":memory:")
             let vaultURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -90,14 +90,14 @@ import GRDB
             viewModel.noteText = "Persist the first draft"
 
             viewModel.beginDraftMeeting(dbQueue: database.dbQueue, vaultURL: vaultURL)
+            let secondDraftID = try #require(viewModel.draftMeeting?.id)
+            viewModel.noteText = "Persist the second draft"
+            viewModel.clearCurrentMeeting()
 
-            let materialization = try #require(viewModel.latestDraftMaterialization)
-            #expect(materialization.draftID == firstDraftID)
-            #expect(viewModel.draftMeeting?.id != firstDraftID)
-            #expect(try database.dbQueue.read(MeetingRecord.fetchCount) == 1)
-            #expect(try database.dbQueue.read { db in
-                try MeetingRecord.fetchOne(db)?.id
-            } == materialization.meetingID)
+            let materializations = viewModel.consumeDraftMaterializations()
+            #expect(materializations.map(\.draftID) == [firstDraftID, secondDraftID])
+            #expect(Set(materializations.map(\.meetingID)).count == 2)
+            #expect(try database.dbQueue.read(MeetingRecord.fetchCount) == 2)
         }
 
         @Test
