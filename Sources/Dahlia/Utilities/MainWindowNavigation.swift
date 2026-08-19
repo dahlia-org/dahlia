@@ -5,11 +5,12 @@ enum MainWindowLocation: Equatable {
     case upcomingSchedule
     case unprocessedRecordings
     case meeting(UUID)
+    case meetingDraft(DraftMeeting, noteText: String)
     case projects
 
     var section: MainWindowSection {
         switch self {
-        case .upcomingSchedule, .unprocessedRecordings, .meeting:
+        case .upcomingSchedule, .unprocessedRecordings, .meeting, .meetingDraft:
             .meetings
         case .projects:
             .projects
@@ -216,6 +217,38 @@ final class MainWindowNavigation {
         section = location.section
     }
 
+    func updateDraftNavigation(_ draftMeeting: DraftMeeting, noteText: String) {
+        guard case let .meetingDraft(currentDraft, _) = currentLocation,
+              currentDraft.id == draftMeeting.id else { return }
+        currentLocation = .meetingDraft(draftMeeting, noteText: noteText)
+    }
+
+    func replaceDraftNavigation(draftID: UUID, with meetingID: UUID) {
+        let replacement = MainWindowLocation.meeting(meetingID)
+        currentLocation = currentLocation.replacingDraft(id: draftID, with: replacement)
+        backHistory = replacingDraft(id: draftID, with: replacement, in: backHistory)
+        forwardHistory = replacingDraft(id: draftID, with: replacement, in: forwardHistory)
+        if backHistory.last == currentLocation {
+            backHistory.removeLast()
+        }
+        if forwardHistory.last == currentLocation {
+            forwardHistory.removeLast()
+        }
+    }
+
+    private func replacingDraft(
+        id: UUID,
+        with replacement: MainWindowLocation,
+        in history: [MainWindowLocation]
+    ) -> [MainWindowLocation] {
+        history.reduce(into: []) { result, location in
+            let location = location.replacingDraft(id: id, with: replacement)
+            if result.last != location {
+                result.append(location)
+            }
+        }
+    }
+
     func recordUpcomingScheduleIfVisible(_ isVisible: Bool) {
         guard isVisible, section == .meetings,
               case .meeting = currentLocation else { return }
@@ -333,4 +366,12 @@ final class MainWindowNavigation {
         }
     }
 
+}
+
+private extension MainWindowLocation {
+    func replacingDraft(id: UUID, with replacement: MainWindowLocation) -> MainWindowLocation {
+        guard case let .meetingDraft(draftMeeting, _) = self,
+              draftMeeting.id == id else { return self }
+        return replacement
+    }
 }

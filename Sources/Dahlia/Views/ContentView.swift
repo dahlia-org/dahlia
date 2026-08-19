@@ -275,8 +275,21 @@ struct ContentView: View {
             }
             syncChatContext()
         }
-        .onChange(of: viewModel.draftMeeting) {
+        .onChange(of: viewModel.draftMeeting) { _, newDraft in
+            if newDraft != nil {
+                syncDraftNavigation()
+            }
             syncChatContext()
+        }
+        .onChange(of: viewModel.latestDraftMaterialization, initial: true) { _, materialization in
+            guard let materialization else { return }
+            mainWindowNavigation.replaceDraftNavigation(
+                draftID: materialization.draftID,
+                with: materialization.meetingID
+            )
+        }
+        .onChange(of: viewModel.noteText) { _, _ in
+            syncDraftNavigation()
         }
         .onChange(of: mainWindowNavigation.section) { _, section in
             if section == .projects {
@@ -297,6 +310,11 @@ struct ContentView: View {
 }
 
 private extension ContentView {
+    private func syncDraftNavigation() {
+        guard let draftMeeting = viewModel.draftMeeting else { return }
+        mainWindowNavigation.updateDraftNavigation(draftMeeting, noteText: viewModel.noteText)
+    }
+
     private func toggleSidebar() {
         isSidebarVisible.toggle()
     }
@@ -410,8 +428,7 @@ private extension ContentView {
     }
 
     private var canNavigateHistory: Bool {
-        !viewModel.hasDraftMeeting
-            && !viewModel.isRecordingStartPending
+        !viewModel.isRecordingStartPending
             && !viewModel.isFinalizingRecording
     }
 
@@ -648,7 +665,7 @@ private extension ContentView {
     }
 
     private func restoreCurrentPresentation() {
-        if viewModel.hasDraftMeeting || sidebarViewModel.selectedMeetingIds.count > 1 {
+        if sidebarViewModel.selectedMeetingIds.count > 1 {
             mainWindowNavigation.showMeetings()
             isShowingUnprocessedRecordings = false
             syncChatContext()
@@ -700,6 +717,8 @@ private extension ContentView {
                 return false
             }
             return exists
+        case .meetingDraft:
+            return sidebarViewModel.dbQueue != nil && sidebarViewModel.currentVault != nil
         case .projects:
             return true
         }
@@ -715,6 +734,19 @@ private extension ContentView {
             mainWindowNavigation.showMeetings()
             isShowingUnprocessedRecordings = false
             sidebarViewModel.selectMeeting(meetingID)
+        case let .meetingDraft(draftMeeting, noteText):
+            guard let dbQueue = sidebarViewModel.dbQueue,
+                  let vault = sidebarViewModel.currentVault else { return }
+            mainWindowNavigation.showMeetings()
+            isShowingUnprocessedRecordings = false
+            guard viewModel.draftMeeting?.id != draftMeeting.id else { return }
+            sidebarViewModel.clearMeetingSelection()
+            viewModel.restoreDraftMeeting(
+                draftMeeting,
+                noteText: noteText,
+                dbQueue: dbQueue,
+                vaultURL: vault.url
+            )
         case .projects:
             mainWindowNavigation.showProjects()
         }
