@@ -85,7 +85,7 @@ enum DahliaDesign {
 
     static let readingMaxWidth: CGFloat = 720
     static let readingHorizontalPadding: CGFloat = 20
-    static let mainContentMaxWidth: CGFloat = 900
+    static let mainContentMaxWidth: CGFloat = 1000
 
     static let paragraphLineSpacing: CGFloat = 3
     static let listItemSpacing: CGFloat = 6
