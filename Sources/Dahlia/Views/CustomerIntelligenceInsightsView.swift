@@ -100,7 +100,7 @@ struct CustomerIntelligenceInsightsView: View {
             }
             TableColumn(L10n.customerIntelligenceRelatedResources, value: \.sortRelatedTitles) { summary in
                 Text(summary.relatedTitles.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }
             TableColumn(L10n.customerIntelligenceUpdatedAt, value: \.insight.updatedAt) { summary in
@@ -109,7 +109,7 @@ struct CustomerIntelligenceInsightsView: View {
             .width(min: 110, ideal: 130)
             TableColumn(L10n.status, value: \.sortAcceptance) { summary in
                 Text(acceptanceTitle(summary.insight.isAccepted))
-                    .foregroundStyle(summary.insight.isAccepted ? Color.secondary : Color.orange)
+                    .foregroundStyle(summary.insight.isAccepted ? DahliaDesign.secondaryTextColor : Color.orange)
             }
             .width(min: 90, ideal: 110)
         }

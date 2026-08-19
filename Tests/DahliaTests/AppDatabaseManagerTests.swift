@@ -153,7 +153,7 @@ import GRDB
                     """,
                     arguments: [
                         UUID.v7(), placeholderSessionID, "microphone", 0, UUID.v7(), "recording",
-                        "empty.partial.caf", "empty.caf", 48_000, 1, 0, createdAt, createdAt,
+                        "empty.partial.caf", "empty.caf", 48000, 1, 0, createdAt, createdAt,
                     ]
                 )
             }
@@ -173,11 +173,11 @@ import GRDB
                     sql: "SELECT sql FROM sqlite_master WHERE name = ?",
                     arguments: ["meetings_on_projectId_recordingStartedAt_createdAt_id"]
                 )
-                return (
-                    try #require(meeting),
-                    try #require(unrecordedMeeting),
-                    try #require(indexSQL),
-                    try #require(projectIndexSQL)
+                return try (
+                    #require(meeting),
+                    #require(unrecordedMeeting),
+                    #require(indexSQL),
+                    #require(projectIndexSQL)
                 )
             }
 

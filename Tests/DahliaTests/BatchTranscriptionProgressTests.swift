@@ -25,7 +25,7 @@ import GRDB
             await coordinator.enqueue(sessionId: fixture.session.id)
             try await waitUntil { await stateProbe.didComplete }
 
-            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 2)
+            await expectCompleteProgress(stateProbe.reportedProgress(), totalFileCount: 2)
         }
 
         @Test
@@ -46,7 +46,7 @@ import GRDB
             try await waitUntil { await stateProbe.didComplete }
 
             #expect(await recognizer.callCount == 0)
-            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 1)
+            await expectCompleteProgress(stateProbe.reportedProgress(), totalFileCount: 1)
         }
 
         @Test
@@ -65,7 +65,7 @@ import GRDB
             await coordinator.enqueue(sessionId: fixture.session.id)
             try await waitUntil { await stateProbe.didComplete }
 
-            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 2)
+            await expectCompleteProgress(stateProbe.reportedProgress(), totalFileCount: 2)
         }
 
         @Test
@@ -107,7 +107,7 @@ import GRDB
 
             await stateProbe.releaseProgressCallback()
             try await waitUntil { await stateProbe.didComplete }
-            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: fileCount)
+            await expectCompleteProgress(stateProbe.reportedProgress(), totalFileCount: fileCount)
         }
 
         private func makeFixture(name: String, duration: TimeInterval) throws -> BatchAudioTestFixture {
@@ -324,13 +324,13 @@ import GRDB
             try await waitUntil {
                 await stateProbe.reportedProgress().last?.completedFileCount == 1
             }
-            #expect(!(await stateProbe.didComplete))
+            #expect(await !(stateProbe.didComplete))
             await recognizer.releaseFirstSlice()
             try await waitUntil { await stateProbe.didComplete }
 
             #expect(await recognizer.fileCallCount == 0)
             #expect(await recognizer.sliceCounts == [2])
-            expectCompleteProgress(await stateProbe.reportedProgress(), totalFileCount: 2)
+            await expectCompleteProgress(stateProbe.reportedProgress(), totalFileCount: 2)
             let transcript = try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentRecord
                     .filter(Column("sessionId") == fixture.session.id)

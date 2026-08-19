@@ -25,7 +25,7 @@ struct CodexChatMeetingReferenceBar: View {
                     .dahliaFixedSymbol()
                     .buttonStyle(.plain)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(width: 24, height: 24)
                     .contentShape(Circle())
                     .offset(x: 5, y: -5)

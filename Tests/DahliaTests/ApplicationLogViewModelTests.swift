@@ -65,13 +65,13 @@
 
         @Test
         func refreshKeepsNewestTwoThousandLines() async {
-            let lines = (0 ..< 2_100).map(String.init)
+            let lines = (0 ..< 2100).map(String.init)
             let loader = ApplicationLogLoaderStub(responses: [.success(lines)])
             let model = ApplicationLogViewModel(loadLogs: { try await loader.load() })
 
             await model.refresh()
 
-            #expect(model.logLines.count == 2_000)
+            #expect(model.logLines.count == 2000)
             #expect(model.logLines.first == "100")
             #expect(model.logLines.last == "2099")
         }

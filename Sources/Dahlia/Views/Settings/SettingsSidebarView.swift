@@ -19,7 +19,8 @@ struct SettingsSidebarView: View {
                     ForEach(group.categories) { category in
                         MainSidebarNavigationLabel(
                             title: category.label,
-                            systemImage: category.systemImage
+                            systemImage: category.systemImage,
+                            isSelected: selection == category
                         )
                         .tag(category)
                     }
@@ -27,7 +28,6 @@ struct SettingsSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .tint(DahliaDesign.sidebarSelectionColor)
         .scrollContentBackground(.hidden)
     }
 }

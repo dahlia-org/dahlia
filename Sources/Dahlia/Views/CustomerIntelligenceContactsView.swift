@@ -118,25 +118,27 @@ struct CustomerIntelligenceContactsView: View {
                         .lineLimit(1)
                 } else {
                     Text(L10n.customerIntelligenceEmailNotSet)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .width(min: 150, ideal: 220)
             TableColumn(L10n.organizations, value: \.sortOrganizations) { summary in
                 Text(summary.organizationNames.joined(separator: ", "))
-                    .foregroundStyle(summary.organizationNames.isEmpty ? Color.secondary : Color.primary)
+                    .foregroundStyle(
+                        summary.organizationNames.isEmpty ? DahliaDesign.secondaryTextColor : DahliaDesign.primaryTextColor
+                    )
                     .lineLimit(1)
             }
             TableColumn(L10n.role, value: \.sortRoles) { summary in
                 Text(summary.roleLabels.joined(separator: ", "))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(1)
             }
             TableColumn(L10n.customerIntelligenceLastInteraction, value: \.sortLastInteraction) { summary in
                 if let date = summary.lastInteractionAt {
                     Text(date, format: .dateTime.year().month().day())
                 } else {
-                    Text("—").foregroundStyle(.tertiary)
+                    Text("—").foregroundStyle(DahliaDesign.optionalTextColor)
                 }
             }
             .width(min: 110, ideal: 130)
@@ -190,7 +192,7 @@ struct CustomerIntelligenceContactsView: View {
                     CustomerIntelligenceInspectorSection(title: L10n.organizations) {
                         if detail.memberships.isEmpty {
                             Text(L10n.customerIntelligenceNoMemberships)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                         } else {
                             ForEach(detail.memberships) { membership in
                                 CustomerIntelligenceLinkRow(
@@ -313,15 +315,15 @@ private struct CustomerIntelligenceMembershipSheet: View {
                                     Text(membership.organization.name)
                                     if let role = membership.roleLabel {
                                         Text(role)
-                                            .dahliaFont(.body)
-                                            .foregroundStyle(.secondary)
+                                            .font(.body)
+                                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     }
                                 }
                             }
                         }
                     } else {
                         Text(L10n.customerIntelligenceNoMemberships)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                 }
 

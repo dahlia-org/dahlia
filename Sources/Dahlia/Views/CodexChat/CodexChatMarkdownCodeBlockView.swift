@@ -9,15 +9,15 @@ struct CodexChatMarkdownCodeBlockView: View {
             HStack {
                 if let language {
                     Text(language)
-                        .dahliaFont(.secondary)
-                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
                 Spacer()
                 CodexChatCopyButton(text: text, title: L10n.copyCodeBlock)
             }
             ScrollView(.horizontal) {
                 Text(text)
-                    .dahliaFont(.body, design: .monospaced)
+                    .font(.body.monospaced())
                     .textSelection(.enabled)
                     .padding(10)
             }

@@ -10,9 +10,9 @@ struct CustomerIntelligenceMetricTile: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 Label(title, systemImage: systemImage)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 Text(value, format: .number)
-                    .dahliaFont(.displayTitle, weight: .bold)
+                    .font(.title3)
                     .monospacedDigit()
                 Spacer(minLength: 0)
             }

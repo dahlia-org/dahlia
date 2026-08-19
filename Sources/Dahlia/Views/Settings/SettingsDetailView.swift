@@ -16,8 +16,8 @@ struct SettingsDetailView: View {
                     EmptyView()
                 } header: {
                     Text(selection.label)
-                        .dahliaFont(.displayTitle)
-                        .foregroundStyle(.primary)
+                        .font(.title2)
+                        .foregroundStyle(DahliaDesign.primaryTextColor)
                         .accessibilityAddTraits(.isHeader)
                 }
             }

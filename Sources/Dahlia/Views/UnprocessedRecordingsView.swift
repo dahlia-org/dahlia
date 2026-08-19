@@ -18,7 +18,7 @@ struct UnprocessedRecordingsView: View {
                         Text(item.meetingName)
                         Text(item.startedAt, format: .dateTime.year().month().day().hour().minute())
                         Text(item.statusDescription)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                     }
                 }
                 .safeAreaInset(edge: .top) {

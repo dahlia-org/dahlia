@@ -69,15 +69,15 @@ struct MeetingMetadataBar: View {
                 Image(systemName: "tag.badge.plus")
                     .font(.caption2)
                 Text(L10n.addTag)
-                    .dahliaFont(.metadata, weight: .medium)
+                    .font(.caption2.weight(.medium))
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, DahliaDesign.chipHorizontalPadding)
             .padding(.vertical, DahliaDesign.chipVerticalPadding)
             .background(
                 Capsule()
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .foregroundStyle(Color.secondary.opacity(0.4))
+                    .foregroundStyle(DahliaDesign.optionalTextColor)
             )
         }
         .buttonStyle(.plain)
@@ -115,8 +115,8 @@ struct MeetingMetadataBar: View {
                 VStack {
                     Spacer()
                     Text(L10n.noResultsFound)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.tertiary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -137,14 +137,14 @@ struct MeetingMetadataBar: View {
                 if isNew {
                     Image(systemName: "plus")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } else {
                     Circle()
                         .fill(Color(hex: colorHex ?? "#808080"))
                         .frame(width: 8, height: 8)
                 }
                 Text(name)
-                    .dahliaFont(.body)
+                    .font(.body)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -179,13 +179,13 @@ private struct MeetingMetadataPill: View {
     var body: some View {
         Label {
             Text(text)
-                .dahliaFont(.metadata, weight: .medium)
+                .font(.caption2.weight(.medium))
                 .lineLimit(1)
         } icon: {
             Image(systemName: systemImage)
                 .font(.caption2)
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
         .dahliaChipSurface()
     }
 }
@@ -213,7 +213,7 @@ private struct TagChip: View {
                 Button(action: onRemove) {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(minWidth: 16, minHeight: 16)
                         .contentShape(Rectangle())
                 }
@@ -227,11 +227,11 @@ private struct TagChip: View {
             .frame(width: 16, height: 16)
 
             Text(tag.name)
-                .dahliaFont(.metadata, weight: .medium)
-                .foregroundStyle(.secondary)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(1)
         }
-        .dahliaChipSurface(isHovered: isHovered, tint: Color(hex: tag.colorHex))
+        .dahliaChipSurface(isHovered: isHovered)
         .frame(maxWidth: 220)
         .onHover { hovering in
             isHovered = hovering

@@ -7,7 +7,6 @@ struct MeetingSidebarRow: View {
     let showsDateInTimestamp: Bool
     let searchText: String
     let isSelected: Bool
-    var usesNativeSelectionHighlight = true
     let isActiveRecording: Bool
     let isEditing: Bool
     @Binding var editingName: String
@@ -28,13 +27,14 @@ struct MeetingSidebarRow: View {
             }
         }
         .padding(.leading, contentLeadingPadding)
-        .dahliaFont(.body)
+        .font(.body)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
         .padding(.horizontal, 5)
         .dahliaSidebarHoverHighlight(
             isHovered: isHovered && !isSelected,
-            isSelected: isSelected && !usesNativeSelectionHighlight
+            isSelected: isSelected,
+            verticalOutset: 2
         )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
@@ -69,13 +69,13 @@ struct MeetingSidebarRow: View {
 
             HStack(spacing: 6) {
                 Text(timestampText)
-                    .dahliaFont(.metadata)
+                    .font(.caption2.weight(.medium))
                     .monospacedDigit()
                     .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
 
                 if let projectName = item.projectName?.nilIfBlank {
                     Text(projectName)
-                        .dahliaFont(.metadata, weight: .medium)
+                        .font(.caption2.weight(.medium))
                         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
                         .lineLimit(1)
                         .dahliaChipSurface(tint: projectTint)
@@ -187,7 +187,7 @@ private struct MeetingTimestampBadge: View {
 
     var body: some View {
         Text(text)
-            .dahliaFont(.metadata)
+            .font(.caption2.weight(.medium))
             .monospacedDigit()
             .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
             .fixedSize()

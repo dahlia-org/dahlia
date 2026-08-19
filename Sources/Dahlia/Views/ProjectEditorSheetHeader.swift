@@ -8,7 +8,7 @@ struct ProjectEditorSheetHeader: View {
     var body: some View {
         HStack {
             Text(title)
-                .dahliaFont(.displayTitle)
+                .font(.title3)
                 .bold()
                 .accessibilityAddTraits(.isHeader)
 

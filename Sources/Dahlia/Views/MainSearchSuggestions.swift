@@ -61,7 +61,7 @@ struct MainSearchSuggestions: View {
             loadingLabel(L10n.loadingProjects)
         } else if sidebarViewModel.flatProjects.isEmpty {
             Text(L10n.noProjectsYet)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
             suggestionList {
                 ForEach(sidebarViewModel.flatProjects) { project in
@@ -85,7 +85,7 @@ struct MainSearchSuggestions: View {
             loadingLabel(L10n.loadingTags)
         } else if sidebarViewModel.allTags.isEmpty {
             Text(L10n.noTagsYet)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         } else {
             suggestionList {
                 ForEach(sidebarViewModel.allTags) { tag in
@@ -135,7 +135,7 @@ struct MainSearchSuggestions: View {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
                     .dahliaFixedSymbol()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 Text(title)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -143,7 +143,7 @@ struct MainSearchSuggestions: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .dahliaFixedSymbol()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
             .contentShape(.rect)
@@ -165,7 +165,7 @@ struct MainSearchSuggestions: View {
             ProgressView()
                 .controlSize(.small)
             Text(title)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         }
     }
 

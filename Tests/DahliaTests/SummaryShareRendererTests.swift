@@ -73,11 +73,11 @@ import Foundation
         @Test
         func embedsReferencedScreenshotAsJPEGOnlyInGoogleDocsHTML() throws {
             let screenshotID = UUID.v7()
-            let screenshot = MeetingScreenshotRecord(
+            let screenshot = try MeetingScreenshotRecord(
                 id: screenshotID,
                 meetingId: .v7(),
                 capturedAt: .now,
-                imageData: try makePNGData(),
+                imageData: makePNGData(),
                 mimeType: "image/png"
             )
             let document = SummaryDocument(

@@ -19,7 +19,7 @@ struct VaultSettingsView: View {
                     ProgressView(L10n.loadingVaults)
                 } else if model.vaults.isEmpty {
                     Label(L10n.noVaults, systemImage: "externaldrive.badge.plus")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } else {
                     ForEach(model.vaults) { vault in
                         LabeledContent {
@@ -29,8 +29,8 @@ struct VaultSettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(vault.name)
                                     Text(vault.path)
-                                        .dahliaFont(.secondary)
-                                        .foregroundStyle(.secondary)
+                                        .font(.footnote)
+                                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                         .textSelection(.enabled)
@@ -38,7 +38,7 @@ struct VaultSettingsView: View {
                             } icon: {
                                 Image(systemName: "externaldrive")
                                     .dahliaFixedSymbol()
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                             }
                             .help(vault.path)
                         }

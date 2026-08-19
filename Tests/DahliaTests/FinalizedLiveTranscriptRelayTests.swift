@@ -12,7 +12,7 @@ import Foundation
                 await recorder.append(delivery)
             }
             let sessionID = UUID.v7()
-            let expectedTexts = (0 ..< 1_000).map { "final-\($0)" }
+            let expectedTexts = (0 ..< 1000).map { "final-\($0)" }
 
             await relay.enqueue(sessionID: sessionID, text: expectedTexts[0])
             await recorder.waitForCount(1)
@@ -83,7 +83,7 @@ import Foundation
         }
 
         func waitForCount(_ count: Int) async {
-            for _ in 0 ..< 1_000 {
+            for _ in 0 ..< 1000 {
                 if deliveries.count >= count { return }
                 await Task.yield()
             }

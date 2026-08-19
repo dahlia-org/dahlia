@@ -24,7 +24,7 @@ struct MainSidebarFooterView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 30)
             .background(
-                isAccountMenuHovered ? DahliaDesign.hoverHighlightColor : .clear,
+                isAccountMenuHovered ? DahliaDesign.sidebarHighlightColor : .clear,
                 in: .rect(cornerRadius: 6)
             )
             .contentShape(.rect(cornerRadius: 6))
@@ -44,7 +44,7 @@ struct MainSidebarFooterView: View {
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
                     .frame(width: 30, height: 30)
-                    .background(isSettingsHovered ? DahliaDesign.hoverHighlightColor : .clear, in: Circle())
+                    .background(isSettingsHovered ? DahliaDesign.sidebarHighlightColor : .clear, in: Circle())
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)

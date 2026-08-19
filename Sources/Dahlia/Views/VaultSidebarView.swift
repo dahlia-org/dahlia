@@ -20,7 +20,7 @@ struct VaultSidebarView: View {
         VStack(spacing: 0) {
             DahliaWindowHeader(reservesWindowControls: true) {
                 Text(L10n.vault)
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -69,8 +69,8 @@ struct VaultSidebarView: View {
                             VStack(alignment: .leading) {
                                 Text(vault.name)
                                 Text(vault.path)
-                                    .dahliaFont(.secondary)
-                                    .foregroundStyle(.secondary)
+                                    .font(.footnote)
+                                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
@@ -84,15 +84,15 @@ struct VaultSidebarView: View {
                         if vault.id == currentVaultId {
                             Image(systemName: "checkmark.circle.fill")
                                 .dahliaFixedSymbol()
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                                 .accessibilityLabel(L10n.currentVault)
                         }
                     }
+                    .modifier(SidebarNavigationRowModifier(isSelected: selectedVaultId == vault.id))
                     .tag(vault.id)
                 }
             }
             .listStyle(.sidebar)
-            .tint(DahliaDesign.sidebarSelectionColor)
             .onDeleteCommand(perform: requestRemoval)
         }
     }

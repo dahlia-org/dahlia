@@ -1,6 +1,6 @@
 import Foundation
-@testable import DahliaRuntimeSupport
 @testable import Dahlia
+@testable import DahliaRuntimeSupport
 
 #if canImport(Testing)
     import Testing

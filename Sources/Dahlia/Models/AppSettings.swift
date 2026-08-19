@@ -105,7 +105,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let customerIntelligenceSectionUserDefaultsKey = "customerIntelligenceSection"
     nonisolated static let customerIntelligenceScopeUserDefaultsKey = "customerIntelligenceScope"
     nonisolated static let customerIntelligenceTableDensityUserDefaultsKey = "customerIntelligenceTableDensity"
-    nonisolated static let interfaceFontSizeUserDefaultsKey = "interfaceFontSize"
     nonisolated static let meetingSidebarRowStyleUserDefaultsKey = "meetingSidebarRowStyle"
     nonisolated static let defaultMeetingLinkOpenTargetUserDefaultsKey = "defaultMeetingLinkOpenTarget"
     nonisolated static let googleMeetMeetingLinkOpenTargetUserDefaultsKey = "googleMeetMeetingLinkOpenTarget"
@@ -114,9 +113,6 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
-    nonisolated static let defaultInterfaceFontSize = 14
-    nonisolated static let minimumInterfaceFontSize = 12
-    nonisolated static let maximumInterfaceFontSize = 20
     nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20

@@ -14,20 +14,25 @@ struct CustomerIntelligenceSidebar: View {
             Divider()
             List(selection: $selection) {
                 Label(L10n.customerIntelligenceOverview, systemImage: "rectangle.grid.2x2")
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .overview))
                     .tag(CustomerIntelligenceSection.overview)
                 Label(L10n.organizations, systemImage: "building.2")
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .organizations))
                     .tag(CustomerIntelligenceSection.organizations)
                 Label(L10n.people, systemImage: "person.2")
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .contacts))
                     .tag(CustomerIntelligenceSection.contacts)
                 Label(L10n.projects, systemImage: "folder")
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .projects))
                     .tag(CustomerIntelligenceSection.projects)
                 Label(L10n.topics, systemImage: "text.bubble")
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .topics))
                     .tag(CustomerIntelligenceSection.topics)
                 insightLabel
+                    .modifier(SidebarNavigationRowModifier(isSelected: selection == .insights))
                     .tag(CustomerIntelligenceSection.insights)
             }
             .listStyle(.sidebar)
-            .tint(DahliaDesign.sidebarSelectionColor)
         }
     }
 
@@ -54,7 +59,7 @@ struct CustomerIntelligenceSidebar: View {
             Spacer()
             if unacceptedInsightCount > 0 {
                 Text(unacceptedInsightCount, format: .number)
-                    .dahliaFont(.secondary)
+                    .font(.caption)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(.quaternary, in: .capsule)

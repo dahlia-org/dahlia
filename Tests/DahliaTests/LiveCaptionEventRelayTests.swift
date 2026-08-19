@@ -18,7 +18,7 @@
             )))
             await recorder.waitForDelivery()
 
-            for index in 0 ..< 1_000 {
+            for index in 0 ..< 1000 {
                 await relay.enqueue(.preview(makeSegment(
                     sessionID: sessionID,
                     text: "preview \(index)"

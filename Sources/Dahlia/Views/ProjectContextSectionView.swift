@@ -9,18 +9,18 @@ struct ProjectContextSectionView: View {
         Section(L10n.projectOverview) {
             LabeledContent(L10n.meetingsInThisProject) {
                 Text(L10n.meetingCount(project.meetingCount))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
 
             if includedSubprojectCount > 0 {
                 LabeledContent(L10n.includedSubprojects) {
                     Text(L10n.includedSubprojectCount(includedSubprojectCount))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
 
                 LabeledContent(L10n.meetingsInHierarchy) {
                     Text(L10n.meetingCount(hierarchyMeetingCount))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
         }

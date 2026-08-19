@@ -49,7 +49,7 @@ import GRDB
                 locale: Locale(identifier: "ja_JP"),
                 at: fixture.now
             )
-            writer.appendBuffer(try makeBuffer(format: recorder.targetFormat, frameCount: 160))
+            try writer.appendBuffer(makeBuffer(format: recorder.targetFormat, frameCount: 160))
             try await recorder.finish()
             let ready = try await fixture.database.dbQueue.read { db in
                 try #require(try RecordingAudioSegmentRecord.fetchOne(db))
@@ -99,7 +99,7 @@ import GRDB
                 targetSegmentDuration: .seconds(60),
                 maximumFinalizingSegmentCountPerSource: 2,
                 maximumActiveSegmentDuration: .seconds(600),
-                maximumActiveSegmentByteCount: 64 * 1_024 * 1_024,
+                maximumActiveSegmentByteCount: 64 * 1024 * 1024,
                 minimumAvailableCapacity: 0,
                 capacityCheckInterval: .seconds(5)
             )

@@ -11,13 +11,13 @@ struct CodexChatConfigurationButton: View {
     var body: some View {
         Button(configurationLabel, action: showConfiguration)
             .buttonStyle(.plain)
-            .dahliaFont(.body)
-            .foregroundStyle(.secondary)
+            .font(.callout)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .lineLimit(1)
             .padding(.horizontal, 10)
             .frame(height: CodexChatDesign.controlSize)
             .background(
-                isHovering || presentationIsActive ? DahliaDesign.hoverHighlightColor : .clear,
+                isHovering || presentationIsActive ? DahliaDesign.contentHighlightColor : .clear,
                 in: Capsule()
             )
             .onHover { isHovering = $0 }

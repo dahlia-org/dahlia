@@ -21,7 +21,7 @@ struct CodexChatReasoningView: View {
                     CodexChatThinkingIndicator()
                 }
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
         }
         .textSelection(.enabled)
     }

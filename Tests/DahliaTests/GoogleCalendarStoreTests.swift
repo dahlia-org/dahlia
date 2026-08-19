@@ -4,652 +4,652 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
-import Testing
+    import Testing
 
-@MainActor
-struct GoogleCalendarStoreTests {
-    @Test
-    func unconfiguredStoreStartsInUnconfiguredState() {
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
-            apiClient: MockGoogleCalendarAPIClient(),
-            userDefaults: isolatedUserDefaults()
-        )
+    @MainActor
+    struct GoogleCalendarStoreTests {
+        @Test
+        func unconfiguredStoreStartsInUnconfiguredState() {
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
+                apiClient: MockGoogleCalendarAPIClient(),
+                userDefaults: isolatedUserDefaults()
+            )
 
-        #expect(store.state == .unconfigured)
-        #expect(!store.isConfigured)
-    }
+            #expect(store.state == .unconfigured)
+            #expect(!store.isConfigured)
+        }
 
-    @Test
-    func restorePreviousSessionLoadsCalendarsAndEvents() async throws {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
+        @Test
+        func restorePreviousSessionLoadsCalendarsAndEvents() async throws {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
 
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession)
-        )
-        let apiClient = MockGoogleCalendarAPIClient(
-            calendars: [primaryCalendar],
-            events: [fixtureEvent]
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-
-        await store.restoreSessionIfNeeded()
-
-        #expect(store.state == .loaded)
-        #expect(store.account == fixtureSession.account)
-        #expect(store.availableCalendars == [primaryCalendar])
-        #expect(store.upcomingEvents == [fixtureEvent])
-        #expect(apiClient.fetchEventsCallCount == 1)
-    }
-
-    @Test
-    func refreshTriggeredRestoreDoesNotCancelItsOwnerTask() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let apiClient = ControllableGoogleCalendarAPIClient(
-            initialEvents: [fixtureEvent],
-            suspendsCalendarList: true
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(
+            let signInProvider = MockGoogleCalendarSignInProvider(
                 hasPreviousSignIn: true,
-                restoreResult: .success(fixtureSession),
-                refreshResult: .success(fixtureSession)
-            ),
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-
-        let refresh = Task { await store.refreshIfNeeded() }
-        await apiClient.waitUntilCalendarListFetchStarts()
-        apiClient.finishCalendarListFetch()
-        await refresh.value
-
-        #expect(store.availableCalendars == [primaryCalendar])
-        #expect(store.upcomingEvents == [fixtureEvent])
-        #expect(store.state == .loaded)
-    }
-
-    @Test
-    func olderRefreshCannotOverwriteANewerResult() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession),
-            refreshResult: .success(fixtureSession)
-        )
-        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-        await store.restoreSessionIfNeeded()
-
-        let olderRefresh = Task { await store.refreshIfNeeded(force: true) }
-        await apiClient.waitForFetchEventsCallCount(2)
-        let newerRefresh = Task { await store.refreshIfNeeded(force: true) }
-        await apiClient.waitForFetchEventsCallCount(3)
-
-        let newerEvent = calendarEvent(id: "newer")
-        apiClient.resumePendingRequest(at: 1, with: [newerEvent])
-        await newerRefresh.value
-        apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "older")])
-        await olderRefresh.value
-
-        #expect(store.upcomingEvents == [newerEvent])
-        #expect(store.state == .loaded)
-    }
-
-    @Test
-    func identicalBackgroundRefreshKeepsLoadedStateAndCoalescesRequests() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(
-                hasPreviousSignIn: true,
-                restoreResult: .success(fixtureSession),
-                refreshResult: .success(fixtureSession)
-            ),
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow },
-            refreshInterval: 0
-        )
-        await store.restoreSessionIfNeeded()
-
-        var eventPublicationCount = 0
-        let cancellable = store.$upcomingEvents.dropFirst().sink { _ in eventPublicationCount += 1 }
-        let firstRefresh = Task { await store.refreshIfNeeded() }
-        await apiClient.waitForFetchEventsCallCount(2)
-        let coalescedRefresh = Task { await store.refreshIfNeeded() }
-        await Task.yield()
-
-        #expect(store.state == .loaded)
-        #expect(store.upcomingEvents == [fixtureEvent])
-        #expect(apiClient.fetchEventsCallCount == 2)
-
-        apiClient.resumePendingRequest(at: 0, with: [fixtureEvent])
-        await firstRefresh.value
-        await coalescedRefresh.value
-
-        #expect(eventPublicationCount == 0)
-        #expect(store.state == .loaded)
-        withExtendedLifetime(cancellable) {}
-    }
-
-    @Test
-    func cancellingOneCallerKeepsACoalescedRefreshAlive() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(
-                hasPreviousSignIn: true,
-                restoreResult: .success(fixtureSession),
-                refreshResult: .success(fixtureSession)
-            ),
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow },
-            refreshInterval: 0
-        )
-        await store.restoreSessionIfNeeded()
-
-        let firstCaller = Task { await store.refreshIfNeeded() }
-        await apiClient.waitForFetchEventsCallCount(2)
-        let remainingCaller = Task { await store.refreshIfNeeded() }
-        firstCaller.cancel()
-
-        let updatedEvent = calendarEvent(id: "updated")
-        apiClient.resumePendingRequest(at: 0, with: [updatedEvent])
-        await firstCaller.value
-        await remainingCaller.value
-
-        #expect(apiClient.fetchEventsCallCount == 2)
-        #expect(store.upcomingEvents == [updatedEvent])
-        #expect(store.state == .loaded)
-    }
-
-    @Test
-    func initialRefreshCancellationDoesNotMarkTheStoreLoaded() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(
-                hasPreviousSignIn: true,
-                restoreResult: .success(fixtureSession),
-                refreshResult: .success(fixtureSession)
-            ),
-            apiClient: MockGoogleCalendarAPIClient(
+                restoreResult: .success(fixtureSession)
+            )
+            let apiClient = MockGoogleCalendarAPIClient(
                 calendars: [primaryCalendar],
-                eventsResult: .failure(CancellationError())
-            ),
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
+                events: [fixtureEvent]
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
 
-        await store.restoreSessionIfNeeded()
+            await store.restoreSessionIfNeeded()
 
-        #expect(store.state == .loading)
-        #expect(store.upcomingEvents.isEmpty)
-    }
+            #expect(store.state == .loaded)
+            #expect(store.account == fixtureSession.account)
+            #expect(store.availableCalendars == [primaryCalendar])
+            #expect(store.upcomingEvents == [fixtureEvent])
+            #expect(apiClient.fetchEventsCallCount == 1)
+        }
 
-    @Test
-    func retryAfterCachedRefreshFailureShowsLoading() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(
+        @Test
+        func refreshTriggeredRestoreDoesNotCancelItsOwnerTask() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(
+                initialEvents: [fixtureEvent],
+                suspendsCalendarList: true
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(
+                    hasPreviousSignIn: true,
+                    restoreResult: .success(fixtureSession),
+                    refreshResult: .success(fixtureSession)
+                ),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+
+            let refresh = Task { await store.refreshIfNeeded() }
+            await apiClient.waitUntilCalendarListFetchStarts()
+            apiClient.finishCalendarListFetch()
+            await refresh.value
+
+            #expect(store.availableCalendars == [primaryCalendar])
+            #expect(store.upcomingEvents == [fixtureEvent])
+            #expect(store.state == .loaded)
+        }
+
+        @Test
+        func olderRefreshCannotOverwriteANewerResult() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let signInProvider = MockGoogleCalendarSignInProvider(
                 hasPreviousSignIn: true,
                 restoreResult: .success(fixtureSession),
                 refreshResult: .success(fixtureSession)
-            ),
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-        await store.restoreSessionIfNeeded()
+            )
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+            await store.restoreSessionIfNeeded()
 
-        let failedRefresh = Task { await store.refreshIfNeeded(force: true) }
-        await apiClient.waitForFetchEventsCallCount(2)
-        apiClient.failPendingRequest(at: 0)
-        await failedRefresh.value
-        #expect(store.state == .failed)
+            let olderRefresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(2)
+            let newerRefresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(3)
 
-        let retry = Task { await store.refreshIfNeeded(force: true) }
-        await apiClient.waitForFetchEventsCallCount(3)
-        #expect(store.state == .loading)
-        apiClient.resumePendingRequest(at: 0, with: [fixtureEvent])
-        await retry.value
+            let newerEvent = calendarEvent(id: "newer")
+            apiClient.resumePendingRequest(at: 1, with: [newerEvent])
+            await newerRefresh.value
+            apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "older")])
+            await olderRefresh.value
 
-        #expect(store.state == .loaded)
-    }
+            #expect(store.upcomingEvents == [newerEvent])
+            #expect(store.state == .loaded)
+        }
 
-    @Test
-    func disconnectInvalidatesAnInFlightRefresh() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession),
-            refreshResult: .success(fixtureSession)
-        )
-        let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-        await store.restoreSessionIfNeeded()
+        @Test
+        func identicalBackgroundRefreshKeepsLoadedStateAndCoalescesRequests() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(
+                    hasPreviousSignIn: true,
+                    restoreResult: .success(fixtureSession),
+                    refreshResult: .success(fixtureSession)
+                ),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow },
+                refreshInterval: 0
+            )
+            await store.restoreSessionIfNeeded()
 
-        let refresh = Task { await store.refreshIfNeeded(force: true) }
-        await apiClient.waitForFetchEventsCallCount(2)
-        await store.disconnect()
-        apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "old-account")])
-        await refresh.value
+            var eventPublicationCount = 0
+            let cancellable = store.$upcomingEvents.dropFirst().sink { _ in eventPublicationCount += 1 }
+            let firstRefresh = Task { await store.refreshIfNeeded() }
+            await apiClient.waitForFetchEventsCallCount(2)
+            let coalescedRefresh = Task { await store.refreshIfNeeded() }
+            await Task.yield()
 
-        #expect(store.upcomingEvents.isEmpty)
-        #expect(store.state == .signedOut)
-    }
+            #expect(store.state == .loaded)
+            #expect(store.upcomingEvents == [fixtureEvent])
+            #expect(apiClient.fetchEventsCallCount == 2)
 
-    @Test
-    func refreshIsIgnoredWhileDisconnectIsInProgress() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession),
-            refreshResult: .success(fixtureSession),
-            suspendsDisconnect: true
-        )
-        let apiClient = MockGoogleCalendarAPIClient(
-            calendars: [primaryCalendar],
-            events: [fixtureEvent]
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-        await store.restoreSessionIfNeeded()
+            apiClient.resumePendingRequest(at: 0, with: [fixtureEvent])
+            await firstRefresh.value
+            await coalescedRefresh.value
 
-        let disconnect = Task { await store.disconnect() }
-        await signInProvider.waitUntilDisconnectStarts()
-        await store.refreshIfNeeded(force: true)
+            #expect(eventPublicationCount == 0)
+            #expect(store.state == .loaded)
+            withExtendedLifetime(cancellable) {}
+        }
 
-        #expect(apiClient.fetchEventsCallCount == 1)
-        #expect(store.upcomingEvents.isEmpty)
-        signInProvider.finishDisconnect()
-        await disconnect.value
-        #expect(store.state == .signedOut)
-    }
+        @Test
+        func cancellingOneCallerKeepsACoalescedRefreshAlive() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(
+                    hasPreviousSignIn: true,
+                    restoreResult: .success(fixtureSession),
+                    refreshResult: .success(fixtureSession)
+                ),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow },
+                refreshInterval: 0
+            )
+            await store.restoreSessionIfNeeded()
 
-    @Test
-    func refreshIsIgnoredUntilRestoredAccountCalendarsAreLoaded() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession),
-            refreshResult: .success(fixtureSession)
-        )
-        let apiClient = ControllableGoogleCalendarAPIClient(
-            initialEvents: [fixtureEvent],
-            suspendsCalendarList: true
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
+            let firstCaller = Task { await store.refreshIfNeeded() }
+            await apiClient.waitForFetchEventsCallCount(2)
+            let remainingCaller = Task { await store.refreshIfNeeded() }
+            firstCaller.cancel()
 
-        let restore = Task { await store.restoreSessionIfNeeded() }
-        await apiClient.waitUntilCalendarListFetchStarts()
-        await store.refreshIfNeeded(force: true)
-        #expect(apiClient.fetchEventsCallCount == 0)
+            let updatedEvent = calendarEvent(id: "updated")
+            apiClient.resumePendingRequest(at: 0, with: [updatedEvent])
+            await firstCaller.value
+            await remainingCaller.value
 
-        apiClient.finishCalendarListFetch()
-        await restore.value
-        #expect(store.availableCalendars == [primaryCalendar])
-        #expect(store.upcomingEvents == [fixtureEvent])
-        #expect(store.state == .loaded)
-    }
+            #expect(apiClient.fetchEventsCallCount == 2)
+            #expect(store.upcomingEvents == [updatedEvent])
+            #expect(store.state == .loaded)
+        }
 
-    @Test
-    func restoreFailureMapsWebClientIDErrorToActionableMessage() async {
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .failure(
-                NSError(
-                    domain: "GoogleSignIn",
-                    code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "invalid_request: client_secret is missing."]
+        @Test
+        func initialRefreshCancellationDoesNotMarkTheStoreLoaded() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(
+                    hasPreviousSignIn: true,
+                    restoreResult: .success(fixtureSession),
+                    refreshResult: .success(fixtureSession)
+                ),
+                apiClient: MockGoogleCalendarAPIClient(
+                    calendars: [primaryCalendar],
+                    eventsResult: .failure(CancellationError())
+                ),
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+
+            await store.restoreSessionIfNeeded()
+
+            #expect(store.state == .loading)
+            #expect(store.upcomingEvents.isEmpty)
+        }
+
+        @Test
+        func retryAfterCachedRefreshFailureShowsLoading() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(
+                    hasPreviousSignIn: true,
+                    restoreResult: .success(fixtureSession),
+                    refreshResult: .success(fixtureSession)
+                ),
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+            await store.restoreSessionIfNeeded()
+
+            let failedRefresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(2)
+            apiClient.failPendingRequest(at: 0)
+            await failedRefresh.value
+            #expect(store.state == .failed)
+
+            let retry = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(3)
+            #expect(store.state == .loading)
+            apiClient.resumePendingRequest(at: 0, with: [fixtureEvent])
+            await retry.value
+
+            #expect(store.state == .loaded)
+        }
+
+        @Test
+        func disconnectInvalidatesAnInFlightRefresh() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession),
+                refreshResult: .success(fixtureSession)
+            )
+            let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+            await store.restoreSessionIfNeeded()
+
+            let refresh = Task { await store.refreshIfNeeded(force: true) }
+            await apiClient.waitForFetchEventsCallCount(2)
+            await store.disconnect()
+            apiClient.resumePendingRequest(at: 0, with: [calendarEvent(id: "old-account")])
+            await refresh.value
+
+            #expect(store.upcomingEvents.isEmpty)
+            #expect(store.state == .signedOut)
+        }
+
+        @Test
+        func refreshIsIgnoredWhileDisconnectIsInProgress() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession),
+                refreshResult: .success(fixtureSession),
+                suspendsDisconnect: true
+            )
+            let apiClient = MockGoogleCalendarAPIClient(
+                calendars: [primaryCalendar],
+                events: [fixtureEvent]
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+            await store.restoreSessionIfNeeded()
+
+            let disconnect = Task { await store.disconnect() }
+            await signInProvider.waitUntilDisconnectStarts()
+            await store.refreshIfNeeded(force: true)
+
+            #expect(apiClient.fetchEventsCallCount == 1)
+            #expect(store.upcomingEvents.isEmpty)
+            signInProvider.finishDisconnect()
+            await disconnect.value
+            #expect(store.state == .signedOut)
+        }
+
+        @Test
+        func refreshIsIgnoredUntilRestoredAccountCalendarsAreLoaded() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession),
+                refreshResult: .success(fixtureSession)
+            )
+            let apiClient = ControllableGoogleCalendarAPIClient(
+                initialEvents: [fixtureEvent],
+                suspendsCalendarList: true
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+
+            let restore = Task { await store.restoreSessionIfNeeded() }
+            await apiClient.waitUntilCalendarListFetchStarts()
+            await store.refreshIfNeeded(force: true)
+            #expect(apiClient.fetchEventsCallCount == 0)
+
+            apiClient.finishCalendarListFetch()
+            await restore.value
+            #expect(store.availableCalendars == [primaryCalendar])
+            #expect(store.upcomingEvents == [fixtureEvent])
+            #expect(store.state == .loaded)
+        }
+
+        @Test
+        func restoreFailureMapsWebClientIDErrorToActionableMessage() async {
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .failure(
+                    NSError(
+                        domain: "GoogleSignIn",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "invalid_request: client_secret is missing."]
+                    )
                 )
             )
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: MockGoogleCalendarAPIClient(),
-            userDefaults: isolatedUserDefaults()
-        )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(),
+                userDefaults: isolatedUserDefaults()
+            )
 
-        await store.restoreSessionIfNeeded()
+            await store.restoreSessionIfNeeded()
 
-        #expect(store.state == .failed)
-        #expect(store.lastErrorMessage == L10n.googleCalendarClientSecretMissingMessage)
-        #expect(store.account == nil)
+            #expect(store.state == .failed)
+            #expect(store.lastErrorMessage == L10n.googleCalendarClientSecretMissingMessage)
+            #expect(store.account == nil)
+        }
+
+        @Test
+        func restoreWithoutSelectedCalendarsRequiresSelection() async {
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession)
+            )
+            let apiClient = MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [])
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: isolatedUserDefaults(),
+                now: { fixtureNow }
+            )
+
+            await store.restoreSessionIfNeeded()
+
+            #expect(store.state == .needsCalendarSelection)
+            #expect(store.upcomingEvents.isEmpty)
+        }
+
+        @Test
+        func disconnectClearsSelectionAndCachedData() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession)
+            )
+            let apiClient = MockGoogleCalendarAPIClient(
+                calendars: [primaryCalendar],
+                events: [fixtureEvent]
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+
+            await store.restoreSessionIfNeeded()
+            await store.disconnect()
+
+            #expect(signInProvider.disconnectCallCount == 1)
+            #expect(store.state == .signedOut)
+            #expect(store.selectedCalendarIDs.isEmpty)
+            #expect(store.account == nil)
+            #expect(store.availableCalendars.isEmpty)
+            #expect(store.upcomingEvents.isEmpty)
+        }
+
+        @Test
+        func setCalendarSelectionPersistsIDs() async {
+            let defaults = isolatedUserDefaults()
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession),
+                refreshResult: .success(fixtureSession)
+            )
+            let apiClient = MockGoogleCalendarAPIClient(
+                calendars: [primaryCalendar, secondaryCalendar],
+                events: [fixtureEvent]
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
+
+            await store.restoreSessionIfNeeded()
+            store.setCalendarSelection([secondaryCalendar.id])
+
+            #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
+
+            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+            #expect(saved?.contains(secondaryCalendar.id) == true)
+        }
+
+        @Test
+        func signInRequestsCalendarScopes() async {
+            let signInProvider = MockGoogleCalendarSignInProvider(signInResult: .success(fixtureSession))
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+                userDefaults: isolatedUserDefaults(),
+                now: { fixtureNow },
+                presentingWindowProvider: { NSWindow() }
+            )
+
+            await store.signIn()
+
+            #expect(signInProvider.signInRequestedScopes == [GoogleOAuthScope.calendar])
+        }
+
+        @Test
+        func ignoresUnrelatedSessionChangeNotification() async {
+            let watchedNotification = Notification.Name("GoogleCalendarStoreTests.watched.\(UUID().uuidString)")
+            let ignoredNotification = Notification.Name("GoogleCalendarStoreTests.ignored.\(UUID().uuidString)")
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                sessionDidChangeNotification: watchedNotification,
+                restoreResult: .success(fixtureSession)
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
+                userDefaults: isolatedUserDefaults()
+            )
+
+            NotificationCenter.default.post(name: ignoredNotification, object: nil)
+            await Task.yield()
+
+            #expect(store.state == .signedOut)
+            #expect(signInProvider.restoreCallCount == 0)
+        }
+
+        @Test
+        func eventTransformationPrefersConferenceEntryPointAndFiltersFutureWindow() throws {
+            let conferenceItem = GoogleCalendarAPIClient.EventItem(
+                id: "event-1",
+                summary: "Weekly sync",
+                description: "Discuss launch plan",
+                iCalUID: "event-1@google.com",
+                htmlLink: nil,
+                hangoutLink: nil,
+                start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
+                originalStartTime: nil,
+                conferenceData: .init(entryPoints: [
+                    .init(uri: "tel:+81-3-1234-5678"),
+                    .init(uri: "https://meet.google.com/abc-defg-hij"),
+                ]),
+                eventType: nil
+            )
+            let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
+                from: conferenceItem,
+                calendarItem: primaryCalendar,
+                calendar: .current
+            )
+            let event = try #require(transformedEvent)
+
+            #expect(event.conferenceURI?.absoluteString == "https://meet.google.com/abc-defg-hij")
+            #expect(event.platformId == "event-1")
+            #expect(event.description == "Discuss launch plan")
+            #expect(event.icalUid == "event-1@google.com")
+            #expect(event.recurrenceId.isEmpty)
+            #expect(!event.isAllDay)
+
+            let intervalEnd = Calendar.current.date(byAdding: .day, value: 7, to: fixtureNow)!
+            let filtered = GoogleCalendarAPIClient.sortAndFilter(
+                [
+                    event,
+                    CalendarEvent(
+                        id: "late",
+                        calendarID: primaryCalendar.id,
+                        calendarName: primaryCalendar.title,
+                        calendarColorHex: nil,
+                        platformId: "late",
+                        title: "Outside window",
+                        description: "",
+                        icalUid: nil,
+                        startDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
+                        endDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
+                        isAllDay: true,
+                        conferenceURI: nil
+                    ),
+                ],
+                now: fixtureNow,
+                intervalEnd: intervalEnd
+            )
+
+            #expect(filtered == [event])
+        }
+
+        @Test
+        func allDayEventIsAvailableForDisplayFiltering() throws {
+            let allDayItem = GoogleCalendarAPIClient.EventItem(
+                id: "event-2",
+                summary: nil,
+                description: nil,
+                iCalUID: nil,
+                htmlLink: nil,
+                hangoutLink: nil,
+                start: .init(date: "2026-04-18", dateTime: nil),
+                end: .init(date: "2026-04-19", dateTime: nil),
+                originalStartTime: nil,
+                conferenceData: nil,
+                eventType: nil
+            )
+
+            let event = try GoogleCalendarAPIClient.makeEvent(
+                from: allDayItem,
+                calendarItem: secondaryCalendar,
+                calendar: Calendar(identifier: .gregorian)
+            )
+
+            #expect(event?.isAllDay == true)
+        }
+
+        @Test
+        func outOfOfficeEventIsAvailableForDisplayFiltering() throws {
+            let outOfOfficeItem = GoogleCalendarAPIClient.EventItem(
+                id: "event-3",
+                summary: "Out of office",
+                description: nil,
+                iCalUID: nil,
+                htmlLink: nil,
+                hangoutLink: nil,
+                start: .init(date: nil, dateTime: "2026-04-18T01:00:00Z"),
+                end: .init(date: nil, dateTime: "2026-04-18T02:00:00Z"),
+                originalStartTime: nil,
+                conferenceData: nil,
+                eventType: "outOfOffice"
+            )
+
+            let event = try GoogleCalendarAPIClient.makeEvent(
+                from: outOfOfficeItem,
+                calendarItem: secondaryCalendar,
+                calendar: .current
+            )
+
+            #expect(event?.isOutOfOffice == true)
+        }
     }
-
-    @Test
-    func restoreWithoutSelectedCalendarsRequiresSelection() async {
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession)
-        )
-        let apiClient = MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [])
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: isolatedUserDefaults(),
-            now: { fixtureNow }
-        )
-
-        await store.restoreSessionIfNeeded()
-
-        #expect(store.state == .needsCalendarSelection)
-        #expect(store.upcomingEvents.isEmpty)
-    }
-
-    @Test
-    func disconnectClearsSelectionAndCachedData() async {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
-
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession)
-        )
-        let apiClient = MockGoogleCalendarAPIClient(
-            calendars: [primaryCalendar],
-            events: [fixtureEvent]
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-
-        await store.restoreSessionIfNeeded()
-        await store.disconnect()
-
-        #expect(signInProvider.disconnectCallCount == 1)
-        #expect(store.state == .signedOut)
-        #expect(store.selectedCalendarIDs.isEmpty)
-        #expect(store.account == nil)
-        #expect(store.availableCalendars.isEmpty)
-        #expect(store.upcomingEvents.isEmpty)
-    }
-
-    @Test
-    func setCalendarSelectionPersistsIDs() async {
-        let defaults = isolatedUserDefaults()
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession),
-            refreshResult: .success(fixtureSession)
-        )
-        let apiClient = MockGoogleCalendarAPIClient(
-            calendars: [primaryCalendar, secondaryCalendar],
-            events: [fixtureEvent]
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
-
-        await store.restoreSessionIfNeeded()
-        store.setCalendarSelection([secondaryCalendar.id])
-
-        #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
-
-        let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey)
-        #expect(saved?.contains(secondaryCalendar.id) == true)
-    }
-
-    @Test
-    func signInRequestsCalendarScopes() async {
-        let signInProvider = MockGoogleCalendarSignInProvider(signInResult: .success(fixtureSession))
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-            userDefaults: isolatedUserDefaults(),
-            now: { fixtureNow },
-            presentingWindowProvider: { NSWindow() }
-        )
-
-        await store.signIn()
-
-        #expect(signInProvider.signInRequestedScopes == [GoogleOAuthScope.calendar])
-    }
-
-    @Test
-    func ignoresUnrelatedSessionChangeNotification() async {
-        let watchedNotification = Notification.Name("GoogleCalendarStoreTests.watched.\(UUID().uuidString)")
-        let ignoredNotification = Notification.Name("GoogleCalendarStoreTests.ignored.\(UUID().uuidString)")
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            sessionDidChangeNotification: watchedNotification,
-            restoreResult: .success(fixtureSession)
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-            userDefaults: isolatedUserDefaults()
-        )
-
-        NotificationCenter.default.post(name: ignoredNotification, object: nil)
-        await Task.yield()
-
-        #expect(store.state == .signedOut)
-        #expect(signInProvider.restoreCallCount == 0)
-    }
-
-    @Test
-    func eventTransformationPrefersConferenceEntryPointAndFiltersFutureWindow() throws {
-        let conferenceItem = GoogleCalendarAPIClient.EventItem(
-            id: "event-1",
-            summary: "Weekly sync",
-            description: "Discuss launch plan",
-            iCalUID: "event-1@google.com",
-            htmlLink: nil,
-            hangoutLink: nil,
-            start: .init(date: nil, dateTime: "2026-04-17T01:00:00Z"),
-            end: .init(date: nil, dateTime: "2026-04-17T02:00:00Z"),
-            originalStartTime: nil,
-            conferenceData: .init(entryPoints: [
-                .init(uri: "tel:+81-3-1234-5678"),
-                .init(uri: "https://meet.google.com/abc-defg-hij"),
-            ]),
-            eventType: nil
-        )
-        let transformedEvent = try GoogleCalendarAPIClient.makeEvent(
-            from: conferenceItem,
-            calendarItem: primaryCalendar,
-            calendar: .current
-        )
-        let event = try #require(transformedEvent)
-
-        #expect(event.conferenceURI?.absoluteString == "https://meet.google.com/abc-defg-hij")
-        #expect(event.platformId == "event-1")
-        #expect(event.description == "Discuss launch plan")
-        #expect(event.icalUid == "event-1@google.com")
-        #expect(event.recurrenceId.isEmpty)
-        #expect(!event.isAllDay)
-
-        let intervalEnd = Calendar.current.date(byAdding: .day, value: 7, to: fixtureNow)!
-        let filtered = GoogleCalendarAPIClient.sortAndFilter(
-            [
-                event,
-                CalendarEvent(
-                    id: "late",
-                    calendarID: primaryCalendar.id,
-                    calendarName: primaryCalendar.title,
-                    calendarColorHex: nil,
-                    platformId: "late",
-                    title: "Outside window",
-                    description: "",
-                    icalUid: nil,
-                    startDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
-                    endDate: Calendar.current.date(byAdding: .day, value: 9, to: fixtureNow)!,
-                    isAllDay: true,
-                    conferenceURI: nil
-                ),
-            ],
-            now: fixtureNow,
-            intervalEnd: intervalEnd
-        )
-
-        #expect(filtered == [event])
-    }
-
-    @Test
-    func allDayEventIsAvailableForDisplayFiltering() throws {
-        let allDayItem = GoogleCalendarAPIClient.EventItem(
-            id: "event-2",
-            summary: nil,
-            description: nil,
-            iCalUID: nil,
-            htmlLink: nil,
-            hangoutLink: nil,
-            start: .init(date: "2026-04-18", dateTime: nil),
-            end: .init(date: "2026-04-19", dateTime: nil),
-            originalStartTime: nil,
-            conferenceData: nil,
-            eventType: nil
-        )
-
-        let event = try GoogleCalendarAPIClient.makeEvent(
-            from: allDayItem,
-            calendarItem: secondaryCalendar,
-            calendar: Calendar(identifier: .gregorian)
-        )
-
-        #expect(event?.isAllDay == true)
-    }
-
-    @Test
-    func outOfOfficeEventIsAvailableForDisplayFiltering() throws {
-        let outOfOfficeItem = GoogleCalendarAPIClient.EventItem(
-            id: "event-3",
-            summary: "Out of office",
-            description: nil,
-            iCalUID: nil,
-            htmlLink: nil,
-            hangoutLink: nil,
-            start: .init(date: nil, dateTime: "2026-04-18T01:00:00Z"),
-            end: .init(date: nil, dateTime: "2026-04-18T02:00:00Z"),
-            originalStartTime: nil,
-            conferenceData: nil,
-            eventType: "outOfOffice"
-        )
-
-        let event = try GoogleCalendarAPIClient.makeEvent(
-            from: outOfOfficeItem,
-            calendarItem: secondaryCalendar,
-            calendar: .current
-        )
-
-        #expect(event?.isOutOfOffice == true)
-    }
-}
 
 #elseif canImport(XCTest)
-import XCTest
+    import XCTest
 
-@MainActor
-final class GoogleCalendarStoreTests: XCTestCase {
-    func testUnconfiguredStoreStartsInUnconfiguredState() {
-        let store = GoogleCalendarStore(
-            signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
-            apiClient: MockGoogleCalendarAPIClient(),
-            userDefaults: isolatedUserDefaults()
-        )
+    @MainActor
+    final class GoogleCalendarStoreTests: XCTestCase {
+        func testUnconfiguredStoreStartsInUnconfiguredState() {
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
+                apiClient: MockGoogleCalendarAPIClient(),
+                userDefaults: isolatedUserDefaults()
+            )
 
-        XCTAssertEqual(store.state, .unconfigured)
-        XCTAssertFalse(store.isConfigured)
-    }
+            XCTAssertEqual(store.state, .unconfigured)
+            XCTAssertFalse(store.isConfigured)
+        }
 
-    func testRestorePreviousSessionLoadsCalendarsAndEvents() async throws {
-        let defaults = isolatedUserDefaults()
-        seedSelectedCalendars(["primary"], defaults: defaults)
+        func testRestorePreviousSessionLoadsCalendarsAndEvents() async throws {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
 
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .success(fixtureSession)
-        )
-        let apiClient = MockGoogleCalendarAPIClient(
-            calendars: [primaryCalendar],
-            events: [fixtureEvent]
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: apiClient,
-            userDefaults: defaults,
-            now: { fixtureNow }
-        )
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .success(fixtureSession)
+            )
+            let apiClient = MockGoogleCalendarAPIClient(
+                calendars: [primaryCalendar],
+                events: [fixtureEvent]
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: apiClient,
+                userDefaults: defaults,
+                now: { fixtureNow }
+            )
 
-        await store.restoreSessionIfNeeded()
+            await store.restoreSessionIfNeeded()
 
-        XCTAssertEqual(store.state, .loaded)
-        XCTAssertEqual(store.account, fixtureSession.account)
-        XCTAssertEqual(store.availableCalendars, [primaryCalendar])
-        XCTAssertEqual(store.upcomingEvents, [fixtureEvent])
-        XCTAssertEqual(apiClient.fetchEventsCallCount, 1)
-    }
+            XCTAssertEqual(store.state, .loaded)
+            XCTAssertEqual(store.account, fixtureSession.account)
+            XCTAssertEqual(store.availableCalendars, [primaryCalendar])
+            XCTAssertEqual(store.upcomingEvents, [fixtureEvent])
+            XCTAssertEqual(apiClient.fetchEventsCallCount, 1)
+        }
 
-    func testRestoreFailureMapsWebClientIDErrorToActionableMessage() async {
-        let signInProvider = MockGoogleCalendarSignInProvider(
-            hasPreviousSignIn: true,
-            restoreResult: .failure(
-                NSError(
-                    domain: "GoogleSignIn",
-                    code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "invalid_request: client_secret is missing."]
+        func testRestoreFailureMapsWebClientIDErrorToActionableMessage() async {
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true,
+                restoreResult: .failure(
+                    NSError(
+                        domain: "GoogleSignIn",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "invalid_request: client_secret is missing."]
+                    )
                 )
             )
-        )
-        let store = GoogleCalendarStore(
-            signInProvider: signInProvider,
-            apiClient: MockGoogleCalendarAPIClient(),
-            userDefaults: isolatedUserDefaults()
-        )
+            let store = GoogleCalendarStore(
+                signInProvider: signInProvider,
+                apiClient: MockGoogleCalendarAPIClient(),
+                userDefaults: isolatedUserDefaults()
+            )
 
-        await store.restoreSessionIfNeeded()
+            await store.restoreSessionIfNeeded()
 
-        XCTAssertEqual(store.state, .failed)
-        XCTAssertEqual(store.lastErrorMessage, L10n.googleCalendarClientSecretMissingMessage)
-        XCTAssertNil(store.account)
+            XCTAssertEqual(store.state, .failed)
+            XCTAssertEqual(store.lastErrorMessage, L10n.googleCalendarClientSecretMissingMessage)
+            XCTAssertNil(store.account)
+        }
     }
-}
 #endif
 
 private let fixtureNow = Date(timeIntervalSince1970: 1_776_384_000)

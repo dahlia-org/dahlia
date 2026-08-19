@@ -1,6 +1,6 @@
-@testable import Dahlia
 import AppKit
 import Testing
+@testable import Dahlia
 
 struct ProjectIconTests {
     @Test

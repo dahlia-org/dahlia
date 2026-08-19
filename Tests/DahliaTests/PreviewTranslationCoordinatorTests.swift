@@ -2,315 +2,315 @@ import Foundation
 @testable import Dahlia
 
 #if canImport(Testing)
-import Testing
+    import Testing
 
-struct PreviewTranslationCoordinatorTests {
-    @Test
-    func waitsForDebounceBeforeTranslating() async {
-        let sleepGate = SleepGate()
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { duration in
-                await sleepGate.wait(duration: duration)
-            },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
+    struct PreviewTranslationCoordinatorTests {
+        @Test
+        func waitsForDebounceBeforeTranslating() async {
+            let sleepGate = SleepGate()
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { duration in
+                    await sleepGate.wait(duration: duration)
+                },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await sleepGate.waitUntilWaiting()
+            #expect(await recorder.translateCallCount() == 0)
+
+            await sleepGate.release()
+
+            #expect(await waitUntil { await recorder.translateCallCount() == 1 })
+            #expect(await recorder.appliedTexts() == ["訳: Hello"])
         }
 
-        await sleepGate.waitUntilWaiting()
-        #expect(await recorder.translateCallCount() == 0)
+        @Test
+        func ignoresSmallChangesUntilThresholdIsReached() async {
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
 
-        await sleepGate.release()
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Helloa", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
+            ) { _, _ in }
 
-        #expect(await waitUntil { await recorder.translateCallCount() == 1 })
-        #expect(await recorder.appliedTexts() == ["訳: Hello"])
-    }
+            #expect(await waitUntil { await recorder.translateCallCount() == 2 })
+            #expect(await recorder.translatedTexts() == ["Hello", "Helloabc"])
+        }
 
-    @Test
-    func ignoresSmallChangesUntilThresholdIsReached() async {
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
+        @Test
+        func reTranslatesWhenTrailingBoundaryChanges() async {
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
+            ) { _, _ in }
+
+            #expect(await waitUntil { await recorder.translateCallCount() == 2 })
+            #expect(await recorder.translatedTexts() == ["Hello", "Hello."])
+        }
+
+        @Test
+        func dropsStaleResultWhenTextChangesDuringTranslation() async {
+            let translator = BlockingTranslator()
+            let recorder = PreviewTranslationRecorder()
+            let firstSegmentID = UUID.v7()
+            let secondSegmentID = UUID.v7()
+            let thirdSegmentID = UUID.v7()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return await translator.translate(text: segment.text)
+                }
+            )
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: firstSegmentID, startTime: .now, text: "Hello", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Helloa", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
-        ) { _, _ in }
+            await translator.waitUntilStarted()
 
-        #expect(await waitUntil { await recorder.translateCallCount() == 2 })
-        #expect(await recorder.translatedTexts() == ["Hello", "Helloabc"])
-    }
-
-    @Test
-    func reTranslatesWhenTrailingBoundaryChanges() async {
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: secondSegmentID, startTime: .now, text: "Helloa", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
-        ) { _, _ in }
+            await translator.resume(with: "古い訳")
 
-        #expect(await waitUntil { await recorder.translateCallCount() == 2 })
-        #expect(await recorder.translatedTexts() == ["Hello", "Hello."])
-    }
+            #expect(await waitUntil { await recorder.appliedTexts().isEmpty })
+            #expect(await recorder.appliedTexts().isEmpty)
 
-    @Test
-    func dropsStaleResultWhenTextChangesDuringTranslation() async {
-        let translator = BlockingTranslator()
-        let recorder = PreviewTranslationRecorder()
-        let firstSegmentID = UUID.v7()
-        let secondSegmentID = UUID.v7()
-        let thirdSegmentID = UUID.v7()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return await translator.translate(text: segment.text)
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: thirdSegmentID, startTime: .now, text: "Helloabc", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: firstSegmentID, startTime: .now, text: "Hello", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await translator.waitUntilStarted(count: 2)
+            await translator.resume(with: "新しい訳")
+
+            #expect(await waitUntil { await recorder.appliedTexts() == ["新しい訳"] })
+            #expect(await recorder.appliedTexts() == ["新しい訳"])
+            #expect(await recorder.appliedSegmentIDs() == [thirdSegmentID])
         }
 
-        await translator.waitUntilStarted()
+        @Test
+        func resetWaitsForAllInFlightTranslationsAndSuppressesTheirResults() async {
+            let translator = BlockingTranslator()
+            let recorder = PreviewTranslationRecorder()
+            let resetState = AsyncCompletionState()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return await translator.translate(text: segment.text)
+                }
+            )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: secondSegmentID, startTime: .now, text: "Helloa", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
-        }
-
-        await translator.resume(with: "古い訳")
-
-        #expect(await waitUntil { await recorder.appliedTexts().isEmpty })
-        #expect(await recorder.appliedTexts().isEmpty)
-
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: thirdSegmentID, startTime: .now, text: "Helloabc", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
-        }
-
-        await translator.waitUntilStarted(count: 2)
-        await translator.resume(with: "新しい訳")
-
-        #expect(await waitUntil { await recorder.appliedTexts() == ["新しい訳"] })
-        #expect(await recorder.appliedTexts() == ["新しい訳"])
-        #expect(await recorder.appliedSegmentIDs() == [thirdSegmentID])
-    }
-
-    @Test
-    func resetWaitsForAllInFlightTranslationsAndSuppressesTheirResults() async {
-        let translator = BlockingTranslator()
-        let recorder = PreviewTranslationRecorder()
-        let resetState = AsyncCompletionState()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return await translator.translate(text: segment.text)
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
+            await translator.waitUntilStarted()
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello world", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            }
+            await translator.waitUntilStarted(count: 2)
+
+            let resetTask = Task {
+                await coordinator.reset()
+                await resetState.markFinished()
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+            #expect(await !(resetState.isFinished()))
+
+            await translator.resume(with: "古い訳")
+            try? await Task.sleep(for: .milliseconds(20))
+            #expect(await !(resetState.isFinished()))
+
+            await translator.resume(with: "新しい訳")
+            await resetTask.value
+
+            #expect(await resetState.isFinished())
+            #expect(await recorder.appliedTexts().isEmpty)
         }
-        await translator.waitUntilStarted()
-
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello world", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
-        }
-        await translator.waitUntilStarted(count: 2)
-
-        let resetTask = Task {
-            await coordinator.reset()
-            await resetState.markFinished()
-        }
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(await !(resetState.isFinished()))
-
-        await translator.resume(with: "古い訳")
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(await !(resetState.isFinished()))
-
-        await translator.resume(with: "新しい訳")
-        await resetTask.value
-
-        #expect(await resetState.isFinished())
-        #expect(await recorder.appliedTexts().isEmpty)
     }
-}
 
 #elseif canImport(XCTest)
-import XCTest
+    import XCTest
 
-final class PreviewTranslationCoordinatorTests: XCTestCase {
-    func testWaitsForDebounceBeforeTranslating() async {
-        let sleepGate = SleepGate()
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { duration in
-                await sleepGate.wait(duration: duration)
-            },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
+    final class PreviewTranslationCoordinatorTests: XCTestCase {
+        func testWaitsForDebounceBeforeTranslating() async {
+            let sleepGate = SleepGate()
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { duration in
+                    await sleepGate.wait(duration: duration)
+                },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
             }
-        )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await sleepGate.waitUntilWaiting()
+            let countBeforeRelease = await recorder.translateCallCount()
+            XCTAssertEqual(countBeforeRelease, 0)
+
+            await sleepGate.release()
+
+            let didTranslate = await waitUntil { await recorder.translateCallCount() == 1 }
+            let appliedTexts = await recorder.appliedTexts()
+            XCTAssertTrue(didTranslate)
+            XCTAssertEqual(appliedTexts, ["訳: Hello"])
         }
 
-        await sleepGate.waitUntilWaiting()
-        let countBeforeRelease = await recorder.translateCallCount()
-        XCTAssertEqual(countBeforeRelease, 0)
+        func testIgnoresSmallChangesUntilThresholdIsReached() async {
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
 
-        await sleepGate.release()
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Helloa", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
+            ) { _, _ in }
 
-        let didTranslate = await waitUntil { await recorder.translateCallCount() == 1 }
-        let appliedTexts = await recorder.appliedTexts()
-        XCTAssertTrue(didTranslate)
-        XCTAssertEqual(appliedTexts, ["訳: Hello"])
-    }
-
-    func testIgnoresSmallChangesUntilThresholdIsReached() async {
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
-            }
-        )
-
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Helloa", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Helloabc", isConfirmed: false)
-        ) { _, _ in }
-
-        let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
-        let translatedTexts = await recorder.translatedTexts()
-        XCTAssertTrue(didTranslate)
-        XCTAssertEqual(translatedTexts, ["Hello", "Helloabc"])
-    }
-
-    func testReTranslatesWhenTrailingBoundaryChanges() async {
-        let recorder = PreviewTranslationRecorder()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return "訳: \(segment.text)"
-            }
-        )
-
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
-        ) { _, _ in }
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
-        ) { _, _ in }
-
-        let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
-        let translatedTexts = await recorder.translatedTexts()
-        XCTAssertTrue(didTranslate)
-        XCTAssertEqual(translatedTexts, ["Hello", "Hello."])
-    }
-
-    func testDropsStaleResultWhenTextChangesDuringTranslation() async {
-        let translator = BlockingTranslator()
-        let recorder = PreviewTranslationRecorder()
-        let firstSegmentID = UUID.v7()
-        let secondSegmentID = UUID.v7()
-        let thirdSegmentID = UUID.v7()
-        let coordinator = PreviewTranslationCoordinator(
-            sleep: { _ in },
-            translate: { segment in
-                await recorder.recordTranslate(text: segment.text)
-                return await translator.translate(text: segment.text)
-            }
-        )
-
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: firstSegmentID, startTime: .now, text: "Hello", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
+            let translatedTexts = await recorder.translatedTexts()
+            XCTAssertTrue(didTranslate)
+            XCTAssertEqual(translatedTexts, ["Hello", "Helloabc"])
         }
 
-        await translator.waitUntilStarted()
+        func testReTranslatesWhenTrailingBoundaryChanges() async {
+            let recorder = PreviewTranslationRecorder()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return "訳: \(segment.text)"
+                }
+            )
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: secondSegmentID, startTime: .now, text: "Helloa", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello", isConfirmed: false)
+            ) { _, _ in }
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(startTime: .now, text: "Hello.", isConfirmed: false)
+            ) { _, _ in }
+
+            let didTranslate = await waitUntil { await recorder.translateCallCount() == 2 }
+            let translatedTexts = await recorder.translatedTexts()
+            XCTAssertTrue(didTranslate)
+            XCTAssertEqual(translatedTexts, ["Hello", "Hello."])
         }
 
-        await translator.resume(with: "古い訳")
+        func testDropsStaleResultWhenTextChangesDuringTranslation() async {
+            let translator = BlockingTranslator()
+            let recorder = PreviewTranslationRecorder()
+            let firstSegmentID = UUID.v7()
+            let secondSegmentID = UUID.v7()
+            let thirdSegmentID = UUID.v7()
+            let coordinator = PreviewTranslationCoordinator(
+                sleep: { _ in },
+                translate: { segment in
+                    await recorder.recordTranslate(text: segment.text)
+                    return await translator.translate(text: segment.text)
+                }
+            )
 
-        let didDropStaleText = await waitUntil { await recorder.appliedTexts().isEmpty }
-        let staleAppliedTexts = await recorder.appliedTexts()
-        XCTAssertTrue(didDropStaleText)
-        XCTAssertTrue(staleAppliedTexts.isEmpty)
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: firstSegmentID, startTime: .now, text: "Hello", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            }
 
-        await coordinator.unconfirmedSegmentDidChange(
-            TranscriptSegment(id: thirdSegmentID, startTime: .now, text: "Helloabc", isConfirmed: false)
-        ) { segmentID, translatedText in
-            await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            await translator.waitUntilStarted()
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: secondSegmentID, startTime: .now, text: "Helloa", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            }
+
+            await translator.resume(with: "古い訳")
+
+            let didDropStaleText = await waitUntil { await recorder.appliedTexts().isEmpty }
+            let staleAppliedTexts = await recorder.appliedTexts()
+            XCTAssertTrue(didDropStaleText)
+            XCTAssertTrue(staleAppliedTexts.isEmpty)
+
+            await coordinator.unconfirmedSegmentDidChange(
+                TranscriptSegment(id: thirdSegmentID, startTime: .now, text: "Helloabc", isConfirmed: false)
+            ) { segmentID, translatedText in
+                await recorder.recordApply(segmentID: segmentID, translatedText: translatedText)
+            }
+
+            await translator.waitUntilStarted(count: 2)
+            await translator.resume(with: "新しい訳")
+
+            let didApplyLatestText = await waitUntil { await recorder.appliedTexts() == ["新しい訳"] }
+            let latestAppliedTexts = await recorder.appliedTexts()
+            let appliedSegmentIDs = await recorder.appliedSegmentIDs()
+            XCTAssertTrue(didApplyLatestText)
+            XCTAssertEqual(latestAppliedTexts, ["新しい訳"])
+            XCTAssertEqual(appliedSegmentIDs, [thirdSegmentID])
         }
-
-        await translator.waitUntilStarted(count: 2)
-        await translator.resume(with: "新しい訳")
-
-        let didApplyLatestText = await waitUntil { await recorder.appliedTexts() == ["新しい訳"] }
-        let latestAppliedTexts = await recorder.appliedTexts()
-        let appliedSegmentIDs = await recorder.appliedSegmentIDs()
-        XCTAssertTrue(didApplyLatestText)
-        XCTAssertEqual(latestAppliedTexts, ["新しい訳"])
-        XCTAssertEqual(appliedSegmentIDs, [thirdSegmentID])
     }
-}
 #endif
 
 private actor PreviewTranslationRecorder {

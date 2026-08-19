@@ -8,7 +8,7 @@ struct CodexChatLiveModeStatusView: View {
     var body: some View {
         HStack(spacing: CodexChatDesign.liveModeStatusSpacing) {
             Label(L10n.chatLiveModeOn, systemImage: "waveform")
-                .dahliaFont(.body)
+                .font(.body)
                 .foregroundStyle(Color.accentColor)
 
             Spacer(minLength: CodexChatDesign.liveModeStatusSpacing)
@@ -23,8 +23,8 @@ struct CodexChatLiveModeStatusView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(isCloseHovered ? .primary : .secondary)
-            .background(isCloseHovered ? DahliaDesign.hoverHighlightColor : .clear, in: Circle())
+            .foregroundStyle(isCloseHovered ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor)
+            .background(isCloseHovered ? DahliaDesign.contentHighlightColor : .clear, in: Circle())
             .onHover { isCloseHovered = $0 }
             .help(L10n.disableChatLiveMode)
         }

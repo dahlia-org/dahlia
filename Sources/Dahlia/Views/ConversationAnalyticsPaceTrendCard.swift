@@ -9,13 +9,13 @@ struct ConversationAnalyticsPaceTrendCard: View {
             .formatted(.number.precision(.fractionLength(0)))
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsPaceTrend)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(L10n.conversationAnalyticsPaceTrendDescription(bucketMinutes))
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             if metrics.paceSamples.isEmpty {
                 Text(L10n.conversationAnalyticsPaceTrendUnavailable)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, minHeight: 150)
             } else {
                 Chart(metrics.paceSamples) { sample in
@@ -67,8 +67,8 @@ struct ConversationAnalyticsPaceTrendCard: View {
                     L10n.conversationAnalyticsPaceTrendExcludesUnmeasurable,
                     systemImage: "approximately"
                 )
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

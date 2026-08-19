@@ -23,7 +23,7 @@ struct VaultDetailView: View {
                     if isCurrentVault {
                         LabeledContent {
                             Label(L10n.currentVault, systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(DahliaDesign.secondaryTextColor)
                         } label: {
                             Text(L10n.status)
                             Text(L10n.currentVaultRemoveDescription)

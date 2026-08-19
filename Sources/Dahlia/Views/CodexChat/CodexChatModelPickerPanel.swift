@@ -8,8 +8,8 @@ struct CodexChatModelPickerPanel: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 Text(L10n.model)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.tertiary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.optionalTextColor)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 2)
 

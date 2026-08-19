@@ -151,7 +151,7 @@ struct OrganizationCanvasView: View {
                     .dahliaFixedSymbol()
                     .foregroundStyle(.tint)
                 Text(node.organization.name)
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
                     .lineLimit(2)
                 Spacer(minLength: 0)
             }
@@ -185,11 +185,11 @@ struct OrganizationCanvasView: View {
                     Task { await model.loadMoreChildren(of: node.id) }
                 }
                 .buttonStyle(.link)
-                .dahliaFont(.secondary)
+                .font(.callout)
                 .disabled(model.loadingChildNodeIDs.contains(node.id))
             }
         }
-        .dahliaFont(.secondary)
-        .foregroundStyle(.secondary)
+        .font(.callout)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
     }
 }

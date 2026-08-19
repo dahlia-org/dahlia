@@ -14,10 +14,10 @@ import Foundation
 
         @Test
         func includesOnlyOngoingAndUpcomingEventsToday() {
-            let ended = event(id: "ended", start: -7_200, end: -3_600)
-            let overnight = event(id: "overnight", start: -46_800, end: 1_800)
-            let upcoming = event(id: "upcoming", start: 3_600, end: 7_200)
-            let tomorrow = event(id: "tomorrow", start: 46_800, end: 50_400)
+            let ended = event(id: "ended", start: -7200, end: -3600)
+            let overnight = event(id: "overnight", start: -46800, end: 1800)
+            let upcoming = event(id: "upcoming", start: 3600, end: 7200)
+            let tomorrow = event(id: "tomorrow", start: 46800, end: 50400)
 
             let agenda = agenda(events: [ended, overnight, upcoming, tomorrow])
 
@@ -32,10 +32,10 @@ import Foundation
                 id: "google",
                 platform: CalendarEventPlatform.googleCalendar,
                 icalUid: "shared",
-                start: 3_600,
-                end: 7_200
+                start: 3600,
+                end: 7200
             )
-            let declined = event(id: "declined", start: 7_200, end: 10_800, isDeclined: true)
+            let declined = event(id: "declined", start: 7200, end: 10800, isDeclined: true)
 
             let agenda = MenuBarCalendarAgenda(
                 events: [googleEvent, declined],
@@ -49,7 +49,7 @@ import Foundation
 
         @Test
         func distinguishesEventsExcludedByFiltersFromAnEmptyCalendar() {
-            let declined = event(id: "declined", start: 3_600, end: 7_200, isDeclined: true)
+            let declined = event(id: "declined", start: 3600, end: 7200, isDeclined: true)
 
             let filteredAgenda = MenuBarCalendarAgenda(
                 events: [declined],
@@ -66,8 +66,8 @@ import Foundation
 
         @Test
         func prioritizesAttendingOngoingEventBeforeLaterUnconfirmedEvent() {
-            let attending = event(id: "attending", start: -1_800, end: 3_600, isAttending: true)
-            let laterUnconfirmed = event(id: "unconfirmed", start: -600, end: 1_800)
+            let attending = event(id: "attending", start: -1800, end: 3600, isAttending: true)
+            let laterUnconfirmed = event(id: "unconfirmed", start: -600, end: 1800)
 
             let agenda = agenda(events: [laterUnconfirmed, attending])
 
@@ -77,9 +77,9 @@ import Foundation
 
         @Test
         func prioritizesMostRecentlyStartedOngoingEventWithSameParticipationThenNextEvent() {
-            let earlierOngoing = event(id: "earlier", start: -1_800, end: 3_600)
-            let laterOngoing = event(id: "later", start: -600, end: 1_800)
-            let next = event(id: "next", start: 3_600, end: 7_200)
+            let earlierOngoing = event(id: "earlier", start: -1800, end: 3600)
+            let laterOngoing = event(id: "later", start: -600, end: 1800)
+            let next = event(id: "next", start: 3600, end: 7200)
 
             let ongoingAgenda = agenda(events: [next, earlierOngoing, laterOngoing])
             let upcomingAgenda = agenda(events: [next])
@@ -94,7 +94,7 @@ import Foundation
         func keepsAllDayEventsInListButNotInMenuBarLabel() {
             let startOfDay = calendar.startOfDay(for: now)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)
-                ?? startOfDay.addingTimeInterval(86_400)
+                ?? startOfDay.addingTimeInterval(86400)
             let allDay = event(
                 id: "all-day",
                 startDate: startOfDay,
@@ -112,14 +112,14 @@ import Foundation
         func usesNoEventsLabelWhenNoTimedEventIsAvailable() {
             let startOfDay = calendar.startOfDay(for: now)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)
-                ?? startOfDay.addingTimeInterval(86_400)
+                ?? startOfDay.addingTimeInterval(86400)
             let allDay = event(
                 id: "all-day",
                 startDate: startOfDay,
                 endDate: endOfDay,
                 isAllDay: true
             )
-            let declined = event(id: "declined", start: 3_600, end: 7_200, isDeclined: true)
+            let declined = event(id: "declined", start: 3600, end: 7200, isDeclined: true)
             let filteredAgenda = MenuBarCalendarAgenda(
                 events: [declined],
                 filter: CalendarEventFilter(includesDeclinedEvents: false),
@@ -135,7 +135,7 @@ import Foundation
 
         @Test
         func keepsDahliaFallbackWhenAllCalendarLabelDetailsAreDisabled() {
-            let upcoming = event(id: "upcoming", start: 3_600, end: 7_200)
+            let upcoming = event(id: "upcoming", start: 3600, end: 7200)
 
             #expect(agenda(events: [upcoming]).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
             #expect(agenda(events: []).labelText(showsTitle: false, showsCountdown: false, now: now) == nil)
@@ -143,7 +143,7 @@ import Foundation
 
         @Test
         func roundsCountdownUpAndHonorsLabelSettings() {
-            let upcoming = event(id: "upcoming", title: "Planning", start: 3_601, end: 7_200)
+            let upcoming = event(id: "upcoming", title: "Planning", start: 3601, end: 7200)
             let agenda = agenda(events: [upcoming])
 
             #expect(MenuBarCalendarAgenda.remainingMinutes(from: now, to: upcoming.startDate) == 61)
@@ -156,7 +156,7 @@ import Foundation
         @Test
         func truncatesLongMenuBarTitlesWithoutTruncatingAccessibilityText() {
             let title = "Office Hours for Japan PS/DSA/Training [Weekly]"
-            let upcoming = event(id: "upcoming", title: title, start: 3_600, end: 7_200)
+            let upcoming = event(id: "upcoming", title: title, start: 3600, end: 7200)
             let agenda = agenda(events: [upcoming])
 
             #expect(agenda.labelText(showsTitle: true, showsCountdown: false, now: now) == "Office Hours for Japan P…")
@@ -165,8 +165,8 @@ import Foundation
 
         @Test
         func usesSoonTextForEventsStartingOrEndingInLessThanOneMinute() {
-            let startingSoon = event(id: "starting", start: 59, end: 3_600)
-            let endingSoon = event(id: "ending", start: -3_600, end: 59)
+            let startingSoon = event(id: "starting", start: 59, end: 3600)
+            let endingSoon = event(id: "ending", start: -3600, end: 59)
 
             #expect(agenda(events: [startingSoon]).countdownText(now: now) == L10n.menuBarStartingSoon)
             #expect(agenda(events: [endingSoon]).countdownText(now: now) == L10n.menuBarEndingSoon)

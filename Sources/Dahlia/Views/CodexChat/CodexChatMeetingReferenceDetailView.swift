@@ -8,7 +8,7 @@ struct CodexChatMeetingReferenceDetailView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "calendar")
                 .dahliaFixedSymbol()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -17,7 +17,7 @@ struct CodexChatMeetingReferenceDetailView: View {
                     .lineLimit(2)
                 if let reference {
                     Text(reference.recordingStartedAt, format: .dateTime.year().month(.abbreviated).day().hour().minute())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
             }
         }

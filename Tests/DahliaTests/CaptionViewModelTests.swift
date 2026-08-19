@@ -553,9 +553,9 @@ import GRDB
                 conferenceURI: nil
             )
 
-            viewModel.beginDraftMeeting(
+            try viewModel.beginDraftMeeting(
                 from: event,
-                dbQueue: try DatabaseQueue(path: ":memory:"),
+                dbQueue: DatabaseQueue(path: ":memory:"),
                 vaultURL: testVaultURL
             )
             viewModel.clearCurrentMeeting()
@@ -581,9 +581,9 @@ import GRDB
                 isAllDay: false,
                 conferenceURI: nil
             )
-            viewModel.beginDraftMeeting(
+            try viewModel.beginDraftMeeting(
                 from: event,
-                dbQueue: try DatabaseQueue(path: ":memory:"),
+                dbQueue: DatabaseQueue(path: ":memory:"),
                 vaultURL: testVaultURL
             )
             viewModel.updateDraftMeetingTitle("Edited title")

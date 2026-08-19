@@ -29,8 +29,8 @@ struct ConversationAnalyticsNotesView: View {
             Text(L10n.conversationAnalyticsVoiceCaveat)
             Text(L10n.conversationAnalyticsBatchFeatureCaveat)
         }
-        .dahliaFont(.secondary)
-        .foregroundStyle(.secondary)
+        .font(.footnote)
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -14,7 +14,7 @@ struct SummaryProgressStepRow: View {
                     case .pending:
                         Image(systemName: "circle")
                             .dahliaFixedSymbol()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(DahliaDesign.optionalTextColor)
                     case .running:
                         ProgressView()
                             .controlSize(.mini)
@@ -25,7 +25,7 @@ struct SummaryProgressStepRow: View {
                     case .skipped:
                         Image(systemName: "minus.circle")
                             .dahliaFixedSymbol()
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(DahliaDesign.optionalTextColor)
                     case .failed:
                         Image(systemName: "xmark.circle.fill")
                             .dahliaFixedSymbol()
@@ -36,13 +36,13 @@ struct SummaryProgressStepRow: View {
                 .accessibilityHidden(true)
 
                 Text(label)
-                    .dahliaFont(.secondary)
+                    .font(.callout)
                     .foregroundStyle(textColor)
             }
 
             if let failureMessage = status.failureMessage {
                 Text(failureMessage)
-                    .dahliaFont(.metadata)
+                    .font(.footnote)
                     .foregroundStyle(.red)
                     .lineLimit(2)
                     .padding(.leading, 22)

@@ -8,10 +8,10 @@ struct ConversationAnalyticsEntrainmentCard: View {
         let entrainment = metrics.voiceAnalytics.pitchEntrainment
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.conversationAnalyticsPitchEntrainment)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(L10n.conversationAnalyticsPitchEntrainmentDescription)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             if let entrainment {
                 Chart(entrainment.distanceSamples) { sample in
                     LineMark(
@@ -53,15 +53,15 @@ struct ConversationAnalyticsEntrainmentCard: View {
                         : L10n.conversationAnalyticsPitchEntrainmentNeutral,
                     systemImage: entrainment.isConverging ? "arrow.down.right" : "arrow.right"
                 )
-                .dahliaFont(.body)
+                .font(.body)
             } else {
                 Text(L10n.conversationAnalyticsPitchEntrainmentUnavailable)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(maxWidth: .infinity, minHeight: 150)
             }
             Label(L10n.conversationAnalyticsPitchEntrainmentExperimental, systemImage: "flask")
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.callout)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(16)

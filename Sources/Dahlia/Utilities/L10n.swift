@@ -810,6 +810,7 @@ enum L10n {
     }
 
     static var periodFilter: String { String(localized: "Period filter", bundle: bundle) }
+    static var descriptionTitle: String { String(localized: "Description", bundle: bundle) }
     static var descriptionMatch: String { String(localized: "Description:", bundle: bundle) }
     static var calendarMatch: String { String(localized: "Event:", bundle: bundle) }
     static var tagMatch: String { String(localized: "Tag:", bundle: bundle) }
@@ -1616,9 +1617,6 @@ enum L10n {
     static var removingVault: String { String(localized: "Removing Vault…", bundle: bundle) }
     static var appearance: String { String(localized: "Appearance", bundle: bundle) }
     static var display: String { String(localized: "Display", bundle: bundle) }
-    static var typography: String { String(localized: "Typography", bundle: bundle) }
-    static var fontSize: String { String(localized: "Font Size", bundle: bundle) }
-    static func pointSize(_ size: Int) -> String { String(localized: "\(size) pt", bundle: bundle) }
     static var meetingList: String { String(localized: "Meeting List", bundle: bundle) }
     static var displayStyle: String { String(localized: "Display Style", bundle: bundle) }
     static var standard: String { String(localized: "Standard", bundle: bundle) }

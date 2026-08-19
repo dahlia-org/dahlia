@@ -5,6 +5,7 @@ struct MeetingSidebarListGroupLabel: View {
     let isExpanded: Bool
     let onToggleExpansion: () -> Void
     var displayMode: Binding<MeetingSidebarDisplayMode>?
+    var textStyle: Font = .callout
 
     @State private var isHovered = false
     @FocusState private var isMenuFocused: Bool
@@ -30,7 +31,7 @@ struct MeetingSidebarListGroupLabel: View {
                     .opacity(isHovered || isMenuFocused ? 1 : 0)
             }
         }
-        .dahliaFont(.body)
+        .font(textStyle)
         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .listRowSeparator(.hidden)
         .contentShape(.rect)

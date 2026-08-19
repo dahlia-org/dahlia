@@ -112,12 +112,12 @@ struct RecordingStatusBar: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(recordingLabels.activity)
-                    .dahliaFont(.metadata, weight: .bold)
+                    .font(.footnote.bold())
                     .foregroundStyle(.red)
 
                 Text(recordingTitle)
-                    .dahliaFont(.metadata)
-                    .foregroundStyle(.primary)
+                    .font(.footnote)
+                    .foregroundStyle(DahliaDesign.primaryTextColor)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,8 +130,8 @@ struct RecordingStatusBar: View {
     private var elapsedText: some View {
         TimelineView(.periodic(from: recordingTimelineStart, by: 1)) { context in
             Text(formatElapsedTime(at: context.date))
-                .dahliaFont(.metadata, design: .monospaced)
-                .foregroundStyle(.secondary)
+                .font(.footnote.monospaced())
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(1)
         }
     }
@@ -429,18 +429,18 @@ private struct RecordingSourceControlLabel: View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .frame(width: 14)
 
             Text(title)
-                .dahliaFont(.metadata, weight: .semibold)
-                .foregroundStyle(.primary)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(DahliaDesign.primaryTextColor)
                 .frame(width: 58, alignment: .leading)
                 .lineLimit(1)
 
             Text(value)
-                .dahliaFont(.metadata)
-                .foregroundStyle(.secondary)
+                .font(.footnote)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -455,7 +455,7 @@ private struct RecordingSourceControlLabel: View {
 
             Image(systemName: "chevron.down")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(DahliaDesign.optionalTextColor)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)

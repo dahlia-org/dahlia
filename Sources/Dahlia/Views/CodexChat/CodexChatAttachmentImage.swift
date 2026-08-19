@@ -19,7 +19,7 @@ struct CodexChatAttachmentImage: View {
             case .failed:
                 Image(systemName: "photo.badge.exclamationmark")
                     .dahliaFixedSymbol()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
         }
         .frame(width: size, height: size)

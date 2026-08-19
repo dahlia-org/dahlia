@@ -61,7 +61,8 @@
 
             defaults.set(
                 Data(
-                    #"{"\#(firstVault.uuidString)":{"\#(project.uuidString)":{"icon":"unknown","color":"blue"},"\#(validProject.uuidString)":{"icon":"music.note","color":"purple"}}}"#.utf8
+                    #"{"\#(firstVault.uuidString)":{"\#(project.uuidString)":{"icon":"unknown","color":"blue"},"\#(validProject.uuidString)":{"icon":"music.note","color":"purple"}}}"#
+                        .utf8
                 ),
                 forKey: "projectAppearances"
             )

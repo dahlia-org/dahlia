@@ -20,7 +20,7 @@ struct CodexChatIconButton: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering ? DahliaDesign.hoverHighlightColor : .clear,
+            isHovering ? DahliaDesign.contentHighlightColor : .clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
         .onHover { isHovering = $0 }

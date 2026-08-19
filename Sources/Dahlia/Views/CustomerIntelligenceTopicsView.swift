@@ -108,14 +108,14 @@ struct CustomerIntelligenceTopicsView: View {
             }
             TableColumn(L10n.customerIntelligenceCurrentState, value: \.sortCurrentState) { topic in
                 Text(topic.topic.currentState)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(2)
             }
             TableColumn(L10n.customerIntelligenceLastDiscussed, value: \.sortLastDiscussedAt) { topic in
                 if let date = topic.lastDiscussedAt {
                     Text(date, format: .dateTime.year().month().day())
                 } else {
-                    Text("—").foregroundStyle(.tertiary)
+                    Text("—").foregroundStyle(DahliaDesign.optionalTextColor)
                 }
             }
             .width(min: 110, ideal: 130)

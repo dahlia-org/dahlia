@@ -5,8 +5,8 @@ struct CodexChatAttachmentValidationView: View {
 
     var body: some View {
         Label(message, systemImage: "info.circle")
-            .dahliaFont(.body)
-            .foregroundStyle(.secondary)
+            .font(.body)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
     }

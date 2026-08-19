@@ -60,6 +60,10 @@ store, repository, or global worker.
 ## Implementation Conventions
 
 - Use time-sortable `UUID.v7()` values for new table-row and domain-entity IDs.
+- Use macOS semantic text styles directly in SwiftUI (`.title`, `.title2`, `.title3`, `.headline`, `.body`, `.callout`, `.subheadline`,
+  `.footnote`, `.caption`, `.caption2`) and `NSFont.preferredFont(forTextStyle:)` in AppKit. Use `.caption2` for badges, tags, and chips.
+  Do not introduce Dahlia-specific point-size scales or global font-size settings without explicit product approval; derive numeric sizes only
+  when an API requires them.
 - Follow the SwiftFormat and SwiftLint configuration: four-space indentation, 150-character line limit, and trailing commas.
 - Add UI strings as computed properties in `Utilities/L10n.swift`, then add the same key to both `Resources/ja.lproj` and `Resources/en.lproj`. Japanese is the primary localization.
 - Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.switch)` for toggles and `.checkbox` for multiple selection.

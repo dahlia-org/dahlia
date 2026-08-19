@@ -49,7 +49,7 @@ import GRDB
             let meetingName: String = row["meetingName"]
             let meetingDescription: String? = row["meetingDescription"]
             let summaryCreatedAt: Date = row["summaryCreatedAt"]
-            #expect(document == (try corrected.databaseJSONString()))
+            #expect(try document == (corrected.databaseJSONString()))
             #expect(summaryTitle == "Corrected planning title")
             #expect(meetingName == "Corrected planning title")
             #expect(meetingDescription == "One line description")
@@ -335,7 +335,7 @@ import GRDB
             let result = try store.updateMeetingSummary(
                 meetingID: fixture.firstMeetingID,
                 expectedDocumentVersion: version,
-                document: try SummaryDocument.decode(databaseJSON: stored)
+                document: SummaryDocument.decode(databaseJSON: stored)
             )
 
             #expect(!result.changed)
@@ -542,7 +542,7 @@ import GRDB
 
             #expect(result["changed"] as? Bool == false)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
-            #expect(stored == (try rich.databaseJSONString()))
+            #expect(try stored == (rich.databaseJSONString()))
         }
 
         @Test
@@ -555,8 +555,8 @@ import GRDB
             legacyObject.removeValue(forKey: "description")
             legacyObject.removeValue(forKey: "tags")
             legacyObject.removeValue(forKey: "actionItems")
-            let legacyJSON = String(
-                decoding: try JSONSerialization.data(withJSONObject: legacyObject, options: [.sortedKeys]),
+            let legacyJSON = try String(
+                decoding: JSONSerialization.data(withJSONObject: legacyObject, options: [.sortedKeys]),
                 as: UTF8.self
             )
             try fixture.replaceSummaryDocument(meetingID: fixture.firstMeetingID, databaseJSON: legacyJSON)
@@ -716,7 +716,7 @@ import GRDB
                 "method": "tools/call",
                 "params": ["name": "update_meeting_summary", "arguments": arguments],
             ]
-            return String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+            return try String(decoding: JSONSerialization.data(withJSONObject: request), as: UTF8.self)
         }
 
         private static func updatingFirstBlock(

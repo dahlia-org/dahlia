@@ -289,14 +289,14 @@ private struct LiveSubtitleOverlayView: View {
             ForEach(Array(model.payload.entries.enumerated()), id: \.offset) { index, entry in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(entry.primaryText)
-                        .dahliaFont(.displayTitle, weight: .semibold)
+                        .font(.title3)
                         .foregroundStyle(.white)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
 
                     if let secondaryText = entry.secondaryText {
                         Text(secondaryText)
-                            .dahliaFont(.sectionTitle, weight: .medium)
+                            .font(.headline)
                             .foregroundStyle(Color(nsColor: .systemCyan))
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)

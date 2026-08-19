@@ -10,18 +10,18 @@ import Foundation
     struct MeetingLinkOpeningTests {
         @Test
         func servicesResolveFromConferenceHosts() throws {
-            #expect(MeetingLinkService(conferenceURL: try url("https://meet.google.com/abc")) == .googleMeet)
-            #expect(MeetingLinkService(conferenceURL: try url("https://US06WEB.ZOOM.US/j/123")) == .zoom)
-            #expect(MeetingLinkService(conferenceURL: try url("https://teams.microsoft.com/l/meetup-join/abc")) == .teams)
-            #expect(MeetingLinkService(conferenceURL: try url("https://app.slack.com/huddle/T1/C1")) == .slack)
-            #expect(MeetingLinkService(conferenceURL: try url("https://example.com/meeting")) == nil)
+            #expect(try MeetingLinkService(conferenceURL: url("https://meet.google.com/abc")) == .googleMeet)
+            #expect(try MeetingLinkService(conferenceURL: url("https://US06WEB.ZOOM.US/j/123")) == .zoom)
+            #expect(try MeetingLinkService(conferenceURL: url("https://teams.microsoft.com/l/meetup-join/abc")) == .teams)
+            #expect(try MeetingLinkService(conferenceURL: url("https://app.slack.com/huddle/T1/C1")) == .slack)
+            #expect(try MeetingLinkService(conferenceURL: url("https://example.com/meeting")) == nil)
             #expect(MeetingLinkService.allCases == [.googleMeet, .zoom, .teams, .slack])
             #expect(CalendarConferenceURIExtractor.conferenceURI(
                 url: nil,
                 textFields: ["Join https://workspace.slack.com/huddle/T1/C1"]
             )?.host() == "workspace.slack.com")
-            #expect(CalendarConferenceURIExtractor.conferenceURI(
-                url: try url("https://workspace.slack.com/archives/C1/p123"),
+            #expect(try CalendarConferenceURIExtractor.conferenceURI(
+                url: url("https://workspace.slack.com/archives/C1/p123"),
                 textFields: ["See https://workspace.slack.com/archives/C1/p456"]
             ) == nil)
         }
@@ -180,7 +180,7 @@ import Foundation
                 workspace: workspace
             )
 
-            opener.open(try url("https://meet.google.com/abc"))
+            try opener.open(url("https://meet.google.com/abc"))
 
             #expect(openSignal.wait(timeout: .now() + 5) == .success)
         }
@@ -240,7 +240,7 @@ import Foundation
             )
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
 
-            #expect(await opener.open(try url("https://zoom.us/j/123")).value)
+            #expect(try await opener.open(url("https://zoom.us/j/123")).value)
             #expect(await workspace.attemptedApplications() == [zoomURL, chromeURL])
         }
 
@@ -255,7 +255,7 @@ import Foundation
                 workspace: workspace
             )
 
-            #expect(await opener.open(try url("https://example.com/meeting")).value)
+            #expect(try await opener.open(url("https://example.com/meeting")).value)
             #expect(await workspace.attemptedApplications() == [chromeURL])
         }
 
@@ -270,7 +270,7 @@ import Foundation
             )
             let opener = MeetingLinkOpener(settings: settings, workspace: workspace)
 
-            #expect(await opener.open(try url("https://teams.microsoft.com/l/meetup-join/abc")).value)
+            #expect(try await opener.open(url("https://teams.microsoft.com/l/meetup-join/abc")).value)
             #expect(await workspace.attemptedApplications() == [nil])
         }
 

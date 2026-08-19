@@ -13,7 +13,7 @@ struct CodexChatThreadRow: View {
             .lineLimit(1)
             Spacer(minLength: 12)
             Text(thread.updatedAt, format: .relative(presentation: .named))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(DahliaDesign.optionalTextColor)
                 .lineLimit(1)
         }
         .contentShape(Rectangle())

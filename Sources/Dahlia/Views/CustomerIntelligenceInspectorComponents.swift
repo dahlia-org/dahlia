@@ -17,16 +17,16 @@ struct CustomerIntelligenceInspectorHeader: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .dahliaFont(.displayTitle, weight: .bold)
+                        .font(.title3)
                         .textSelection(.enabled)
                     if let subtitle {
                         Text(subtitle)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .textSelection(.enabled)
                     }
                     if let badge {
                         Text(badge)
-                            .dahliaFont(.body)
+                            .font(.caption2)
                             .foregroundStyle(.orange)
                     }
                 }
@@ -47,7 +47,7 @@ struct CustomerIntelligenceInspectorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             content
         }
     }
@@ -63,7 +63,7 @@ struct CustomerIntelligenceLinkRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .frame(width: 18)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
@@ -71,15 +71,15 @@ struct CustomerIntelligenceLinkRow: View {
                         .lineLimit(2)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .dahliaFont(.body)
-                            .foregroundStyle(.secondary)
+                            .font(.body)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
                             .lineLimit(2)
                     }
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.forward")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(DahliaDesign.optionalTextColor)
                     .accessibilityHidden(true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,10 +99,10 @@ struct CustomerIntelligenceDangerSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
             Text(L10n.customerIntelligenceDangerZone)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
             Text(message)
-                .dahliaFont(.body)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             Button(title, systemImage: "trash", role: .destructive, action: action)
         }
         .padding(.top)

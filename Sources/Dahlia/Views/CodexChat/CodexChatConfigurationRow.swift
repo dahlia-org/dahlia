@@ -15,13 +15,13 @@ struct CodexChatConfigurationRow: View {
                 if let leadingSystemImage {
                     Image(systemName: leadingSystemImage)
                         .dahliaFixedSymbol()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .accessibilityHidden(true)
                 }
 
                 Text(title)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.primary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.primaryTextColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
 
@@ -30,7 +30,7 @@ struct CodexChatConfigurationRow: View {
                 if isSelected || trailingSystemImage != nil {
                     Image(systemName: trailingSystemImage ?? "checkmark")
                         .dahliaFixedSymbol()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .accessibilityHidden(true)
                 }
             }
@@ -40,7 +40,7 @@ struct CodexChatConfigurationRow: View {
         }
         .buttonStyle(.plain)
         .background(
-            isHovering || isSelected ? DahliaDesign.hoverHighlightColor : .clear,
+            isHovering || isSelected ? DahliaDesign.contentHighlightColor : .clear,
             in: RoundedRectangle(cornerRadius: 8)
         )
         .onHover { isHovering = $0 }

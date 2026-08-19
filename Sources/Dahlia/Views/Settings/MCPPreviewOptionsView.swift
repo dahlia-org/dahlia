@@ -11,8 +11,8 @@ struct MCPPreviewOptionsView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading) {
                 Text(L10n.mcpClient)
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Picker(L10n.mcpClient, selection: $selectedClient) {
                     ForEach(MCPClient.allCases) { client in
@@ -26,8 +26,8 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.vault)
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Picker(L10n.vault, selection: $selectedVaultID) {
                     ForEach(availableVaults) { vault in
@@ -42,8 +42,8 @@ struct MCPPreviewOptionsView: View {
 
             VStack(alignment: .leading) {
                 Text(L10n.mcpAllowWriteAccess)
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
                     .labelsHidden()

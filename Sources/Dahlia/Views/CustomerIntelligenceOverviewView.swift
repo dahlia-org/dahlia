@@ -41,11 +41,11 @@ struct CustomerIntelligenceOverviewView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(scopeTitle)
-                .dahliaFont(.displayTitle, weight: .bold)
+                .font(.title2)
             Text(scope == .all
                 ? L10n.customerIntelligenceOverviewAllDescription
                 : L10n.customerIntelligenceOverviewCustomerDescription)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
         }
     }
 
@@ -87,7 +87,7 @@ struct CustomerIntelligenceOverviewView: View {
     private var customers: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.organizations)
-                .dahliaFont(.displayTitle, weight: .bold)
+                .font(.title3)
             LazyVGrid(
                 columns: CustomerIntelligenceCustomerCardLayout.columns,
                 alignment: .leading,
@@ -173,7 +173,7 @@ struct CustomerIntelligenceOverviewView: View {
             .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
         } label: {
             Label(title, systemImage: systemImage)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
         }
         .frame(maxWidth: .infinity)
     }
@@ -189,8 +189,8 @@ struct CustomerIntelligenceOverviewView: View {
                     .lineLimit(2)
                 if let detail, !detail.isEmpty {
                     Text(detail)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(1)
                 }
             }

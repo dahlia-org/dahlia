@@ -43,7 +43,7 @@ struct ProjectEditorHierarchyFields: View {
                     .frame(width: 220, alignment: .trailing)
                 } else {
                     Label(L10n.subprojectTypeInheritanceHelp, systemImage: "arrow.triangle.branch")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .frame(minWidth: 220, minHeight: 36, alignment: .leading)
                 }
             }

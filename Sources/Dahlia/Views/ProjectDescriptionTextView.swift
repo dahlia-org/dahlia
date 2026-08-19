@@ -5,7 +5,7 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
     @Binding var text: String
     @FocusState.Binding var isFocused: Bool
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.dahliaBaseFontSize) private var baseFontSize
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -35,8 +35,8 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
         )
         textView.delegate = context.coordinator
         textView.string = text
-        textView.font = .systemFont(ofSize: DahliaFontRole.body.pointSize(baseSize: baseFontSize))
-        textView.textColor = .labelColor
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.textColor = DahliaDesign.primaryTextNSColor
         textView.drawsBackground = false
         textView.isRichText = false
         textView.isEditable = isEnabled
@@ -55,8 +55,9 @@ struct ProjectDescriptionTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? ProjectDescriptionNSTextView else { return }
+        _ = dynamicTypeSize
         textView.isEditable = isEnabled
-        textView.font = .systemFont(ofSize: DahliaFontRole.body.pointSize(baseSize: baseFontSize))
+        textView.font = .preferredFont(forTextStyle: .body)
         guard textView.string != text,
               !textView.hasMarkedText()
         else { return }

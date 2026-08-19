@@ -258,7 +258,7 @@ import GRDB
                 SummaryRecord(
                     meetingId: meeting.id,
                     title: "Summary",
-                    document: try SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
+                    document: SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
                     createdAt: .now
                 )
             )
@@ -301,7 +301,7 @@ import GRDB
                 SummaryRecord(
                     meetingId: meeting.id,
                     title: "Summary",
-                    document: try SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
+                    document: SummaryDocument(title: "Summary", sections: []).databaseJSONString(),
                     createdAt: .now
                 )
             )

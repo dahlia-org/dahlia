@@ -8,13 +8,13 @@ struct CustomerIntelligenceCustomerCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 Label(customer.root.organization.name, systemImage: "building.2")
-                    .dahliaFont(.subsectionTitle, weight: .semibold)
+                    .font(.headline)
                     .lineLimit(2)
 
                 if let description = customer.root.organization.description.nilIfBlank {
                     Text(description)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .lineLimit(2)
                 }
 
@@ -23,7 +23,7 @@ struct CustomerIntelligenceCustomerCard: View {
                     count(customer.contactCount, title: L10n.people, systemImage: "person.2")
                     count(customer.topicCount, title: L10n.topics, systemImage: "text.bubble")
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
 
                 if let date = customer.lastInteractionAt {
                     Label {
@@ -32,12 +32,12 @@ struct CustomerIntelligenceCustomerCard: View {
                         Image(systemName: "clock")
                             .dahliaFixedSymbol()
                     }
-                    .dahliaFont(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 } else {
                     Text(L10n.customerIntelligenceNoRecentInteraction)
-                        .dahliaFont(.body)
-                        .foregroundStyle(.tertiary)
+                        .font(.body)
+                        .foregroundStyle(DahliaDesign.optionalTextColor)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)

@@ -82,7 +82,7 @@ struct MeetingListSidebarView: View {
                             meetingRow(selectedMeeting)
                         } header: {
                             Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                .dahliaFont(.body)
+                                .font(.subheadline)
                         }
                     }
 
@@ -119,7 +119,7 @@ struct MeetingListSidebarView: View {
                                 meetingRow(selectedMeeting)
                             } header: {
                                 Text(sidebarViewModel.isSearchingMeetings ? L10n.selectedMeetingOutsideResults : L10n.selectedMeeting)
-                                    .dahliaFont(.body)
+                                    .font(.subheadline)
                             }
                         }
 
@@ -133,7 +133,8 @@ struct MeetingListSidebarView: View {
                             title: L10n.recent,
                             isExpanded: isRecentSectionExpanded,
                             onToggleExpansion: { isRecentSectionExpanded.toggle() },
-                            displayMode: $mainWindowNavigation.meetingSidebarDisplayMode
+                            displayMode: $mainWindowNavigation.meetingSidebarDisplayMode,
+                            textStyle: .body
                         )
                         if isRecentSectionExpanded {
                             projectSection(
@@ -148,7 +149,6 @@ struct MeetingListSidebarView: View {
             }
             .listStyle(.sidebar)
             .contentMargins(.trailing, 12, for: .scrollContent)
-            .tint(DahliaDesign.sidebarSelectionColor)
             .scrollContentBackground(.hidden)
             .overlay {
                 if !hasExpandedContent {
@@ -191,7 +191,7 @@ struct MeetingListSidebarView: View {
                 onSelectVault: onSelectVault
             )
         }
-        .dahliaFont(.body)
+        .font(.callout)
         .foregroundStyle(DahliaDesign.sidebarPrimaryTextColor)
         .onDeleteCommand {
             requestDeletion(of: sidebarViewModel.selectedMeetingIds)

@@ -12,7 +12,7 @@ struct MCPCommandView: View {
     var body: some View {
         VStack(alignment: .leading) {
             Text(command)
-                .dahliaFont(.body, design: .monospaced)
+                .font(.body.monospaced())
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
                 .accessibilityLabel(L10n.registrationCommand(title))

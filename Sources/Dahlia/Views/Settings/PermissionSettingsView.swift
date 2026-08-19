@@ -25,7 +25,7 @@ struct PermissionSettingsView: View {
         Form {
             Section {
                 Text(L10n.permissionGuideDescription)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
 
             ForEach(AppPermission.allCases) { permission in
@@ -78,7 +78,7 @@ private struct PermissionSettingsRow: View {
                 VStack(alignment: .leading) {
                     Text(permission.title)
                     Text(permission.description)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                     Label(status.label, systemImage: status.systemImage)
                         .foregroundStyle(statusColor)
                 }

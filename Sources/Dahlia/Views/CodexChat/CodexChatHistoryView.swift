@@ -14,12 +14,12 @@ struct CodexChatHistoryView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 Button(L10n.newChat, systemImage: "square.and.pencil", action: onNewChat)
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .padding(.vertical, 12)
 
                 if threads.isEmpty, !isLoading {
                     Text(L10n.noRecentChats)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .padding(.vertical, 12)
                 }
 
@@ -34,13 +34,13 @@ struct CodexChatHistoryView: View {
                         .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                 }
 
                 if hasMore {
                     Button(L10n.loadMore, action: onLoadMore)
                         .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
                         .padding(.vertical, 12)
                 }
 

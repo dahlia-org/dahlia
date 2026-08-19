@@ -8,15 +8,15 @@ struct ConversationAnalyticsMetricStat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .dahliaFont(.secondary)
-                .foregroundStyle(.secondary)
+                .font(.footnote)
+                .foregroundStyle(DahliaDesign.secondaryTextColor)
             Text(value)
-                .dahliaFont(.subsectionTitle, weight: .semibold)
+                .font(.headline)
                 .monospacedDigit()
             if let detail {
                 Text(detail)
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .monospacedDigit()
             }
         }

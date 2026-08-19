@@ -24,8 +24,8 @@ struct OrganizationAIScopeView: View {
                     }
                 }
                 Text(L10n.aiScopeDoesNotSend)
-                    .dahliaFont(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
             }
             .formStyle(.grouped)
 

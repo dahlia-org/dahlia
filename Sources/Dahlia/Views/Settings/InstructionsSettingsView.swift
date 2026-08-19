@@ -75,7 +75,7 @@ struct InstructionsSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(L10n.instructions)
-                    .dahliaFont(.displayTitle, weight: .semibold)
+                    .font(.title3)
 
                 Spacer(minLength: 0)
 
@@ -104,7 +104,6 @@ struct InstructionsSettingsView: View {
                 }
             }
             .listStyle(.inset)
-            .tint(DahliaDesign.sidebarSelectionColor)
         }
     }
 
@@ -116,12 +115,12 @@ struct InstructionsSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         TextField(L10n.title, text: $draftName)
                             .textFieldStyle(.plain)
-                            .dahliaFont(.displayTitle, weight: .semibold)
+                            .font(.title3)
                             .focused($isNameFieldFocused)
 
                         Text(editorStatusText(for: selectedInstruction))
-                            .dahliaFont(.body)
-                            .foregroundStyle(isInstructionTitleValid ? Color.secondary : Color.red)
+                            .font(.body)
+                            .foregroundStyle(isInstructionTitleValid ? DahliaDesign.secondaryTextColor : Color.red)
                     }
 
                     Spacer(minLength: 0)
@@ -150,7 +149,7 @@ struct InstructionsSettingsView: View {
                 Divider()
 
                 TextEditor(text: $draftContent)
-                    .dahliaFont(.body)
+                    .font(.body)
                     .scrollContentBackground(.hidden)
                     .padding(InstructionsEditorLayout.editorPadding)
                     .background(Color(nsColor: .textBackgroundColor))
@@ -199,13 +198,14 @@ struct InstructionsSettingsView: View {
                 }
 
                 Text(preview(for: instruction.content))
-                    .dahliaFont(.secondary)
-                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
                     .lineLimit(2)
             }
 
             Spacer(minLength: 0)
         }
+        .modifier(SidebarNavigationRowModifier(isSelected: selectedInstructionID == instruction.id))
     }
 
     private func preview(for content: String) -> String {

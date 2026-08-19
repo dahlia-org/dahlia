@@ -15,7 +15,7 @@ struct DahliaWindowHeaderHelp: View {
                     .background(.white.opacity(0.12), in: Capsule())
             }
         }
-        .dahliaFont(.secondary)
+        .font(.callout)
         .foregroundStyle(.white)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
