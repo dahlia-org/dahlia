@@ -21,13 +21,11 @@ struct ProjectCatalogRow: View {
             } icon: {
                 ProjectAppearanceIcon(appearance: appearance)
             }
-            .frame(maxWidth: 420, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(activityDate, format: .relative(presentation: .numeric, unitsStyle: .wide))
                 .foregroundStyle(.secondary)
                 .frame(width: 120, alignment: .leading)
-
-            Spacer()
 
             HStack(spacing: 4) {
                 Menu(L10n.projectOptions, systemImage: "ellipsis") {

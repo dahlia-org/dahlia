@@ -8,10 +8,9 @@ struct ProjectCatalogHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             sortButton(L10n.name, field: .name)
-                .frame(maxWidth: 420, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             sortButton(L10n.updated, field: .updated)
                 .frame(width: 120, alignment: .leading)
-            Spacer()
             Color.clear
                 .frame(width: 80, height: 1)
         }
