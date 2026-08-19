@@ -3,6 +3,7 @@ import SwiftUI
 struct MainSearchOverlay: View {
     @Bindable var model: MainSearchModel
     var sidebarViewModel: SidebarViewModel
+    let appearanceForProject: (UUID) -> ProjectAppearance
     let onOpenMeeting: (UUID) -> Void
     let onOpenProject: (UUID) -> Void
 
@@ -21,6 +22,7 @@ struct MainSearchOverlay: View {
                     model: model,
                     sidebarViewModel: sidebarViewModel,
                     panelWidth: min(MainSearchDesign.panelWidth, max(geometry.size.width - 32, 0)),
+                    appearanceForProject: appearanceForProject,
                     onDismiss: model.dismiss,
                     onOpenMeeting: { id in
                         model.dismiss()

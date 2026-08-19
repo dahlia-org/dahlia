@@ -233,6 +233,8 @@
 "Unknown project filter" = "Unknown project filter";
 "Unknown tag filter" = "Unknown tag filter";
 "Period filter" = "Period filter";
+"Project filter" = "Project filter";
+"Tag filter" = "Tag filter";
 "Description" = "Description";
 "Description:" = "Description:";
 "Event:" = "Event:";

@@ -2,8 +2,12 @@ import SwiftUI
 
 struct MainSearchResultRow: View {
     let title: String
-    let subtitle: String?
-    let systemImage: String
+    var inlineDetail: String?
+    var projectBadge: String?
+    var projectTint: Color?
+    var dateText: String?
+    var shortcutNumber: Int?
+    var leadingProjectAppearance: ProjectAppearance?
     let isSelected: Bool
     let action: () -> Void
 
@@ -11,24 +15,51 @@ struct MainSearchResultRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .dahliaFixedSymbol()
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    .frame(width: 22)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .lineLimit(1)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.body)
-                            .foregroundStyle(DahliaDesign.secondaryTextColor)
-                            .lineLimit(1)
-                    }
+            HStack(spacing: 8) {
+                if let leadingProjectAppearance {
+                    ProjectAppearanceIcon(appearance: leadingProjectAppearance)
                 }
 
-                Spacer(minLength: 12)
+                Text(title)
+                    .lineLimit(1)
+
+                if let inlineDetail, !inlineDetail.isEmpty {
+                    Text(inlineDetail)
+                        .font(.subheadline)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .lineLimit(1)
+                }
+
+                if let projectBadge, !projectBadge.isEmpty {
+                    Text(projectBadge)
+                        .font(.caption2)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .lineLimit(1)
+                        .dahliaChipSurface(tint: projectTint)
+                        .layoutPriority(1)
+                }
+
+                Spacer(minLength: 8)
+
+                if let dateText {
+                    Text(dateText)
+                        .font(.footnote)
+                        .monospacedDigit()
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .fixedSize()
+                }
+
+                if dateText != nil {
+                    Text(shortcutNumber.map { "⌘\($0)" } ?? "⌘9")
+                        .font(.caption)
+                        .monospaced()
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                        .opacity(shortcutNumber == nil ? 0 : 1)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
