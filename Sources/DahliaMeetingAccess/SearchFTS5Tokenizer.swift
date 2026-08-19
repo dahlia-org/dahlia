@@ -2,18 +2,18 @@ import DahliaLindera
 import Foundation
 import GRDB
 
-final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
-    static let name = SearchDocumentsMigration.analyzerVersion
+public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
+    public static let name = "dahlia_lindera_ipadic_v1"
+    public static let configurationHash = "e4e5d5c88f88895432fe3ec7e98b00ee2f05ca9ff6d78b47dda780ba6f5f308c"
 
     private var analyzer: UnsafeMutableRawPointer?
 
-    init(db _: Database, arguments: [String]) throws {
+    public init(db _: Database, arguments: [String]) throws {
         guard arguments.isEmpty else {
             throw DatabaseError(resultCode: .SQLITE_ERROR, message: "Search tokenizer accepts no arguments")
         }
         guard String(cString: dahlia_lindera_analyzer_version()) == Self.name,
-              String(cString: dahlia_lindera_config_hash())
-              == SearchDocumentsMigration.analyzerConfigurationHash
+              String(cString: dahlia_lindera_config_hash()) == Self.configurationHash
         else {
             throw DatabaseError(resultCode: .SQLITE_ERROR, message: "Search tokenizer version mismatch")
         }
@@ -23,7 +23,7 @@ final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
         dahlia_lindera_delete(analyzer)
     }
 
-    func tokenize(
+    public func tokenize(
         context: UnsafeMutableRawPointer?,
         tokenization _: FTS5Tokenization,
         pText: UnsafePointer<CChar>?,
@@ -61,7 +61,17 @@ final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
         }
     }
 
-    static func register(in db: Database) throws {
+    public static func register(in db: Database) throws {
         db.add(tokenizer: Self.self)
+    }
+
+    public static func queryTokens(for query: String, in db: Database) throws -> [String] {
+        guard query.count >= 2 else { return [] }
+        let tokenizer = try db.makeTokenizer(tokenizerDescriptor())
+        return try Array(tokenizer.tokenize(query: query).prefix(16).map(\.token))
+    }
+
+    public static func quotedQueryToken(_ token: String, isPrefix: Bool) -> String {
+        "\"\(token.replacingOccurrences(of: "\"", with: "\"\""))\"\(isPrefix ? "*" : "")"
     }
 }

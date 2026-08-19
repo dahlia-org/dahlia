@@ -1,6 +1,7 @@
 // Migration order and helpers remain colocated so the complete schema history can be audited sequentially.
 // swiftlint:disable file_length
 
+import DahliaMeetingAccess
 import DahliaRuntimeSupport
 import Foundation
 import GRDB
@@ -10,14 +11,15 @@ import GRDB
 // swiftlint:disable:next type_body_length
 final class AppDatabaseManager: Sendable {
     let dbQueue: DatabaseQueue
+    let searchDBQueue: DatabaseQueue
     let searchIndexer: SearchIndexer
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init() throws {
-        try self.init(path: Self.databaseURL.path)
+        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true)
     }
 
-    init(path: String) throws {
+    init(path: String, enablesConcurrentSearch: Bool = false) throws {
         if path != ":memory:" {
             let dbURL = URL(fileURLWithPath: path)
             try FileManager.default.createDirectory(
@@ -31,14 +33,35 @@ final class AppDatabaseManager: Sendable {
             try SearchFTS5Tokenizer.register(in: db)
         }
         dbQueue = try DatabaseQueue(path: path, configuration: configuration)
-        searchIndexer = SearchIndexer(dbQueue: dbQueue)
+        if enablesConcurrentSearch, path != ":memory:" {
+            let journalMode = try dbQueue.writeWithoutTransaction {
+                try String.fetchOne($0, sql: "PRAGMA journal_mode = WAL")
+            }
+            guard journalMode?.lowercased() == "wal" else {
+                throw DatabaseError(message: "Dahlia requires WAL mode for isolated search reads")
+            }
+        }
         try Self.migrator.migrate(dbQueue)
+        if !enablesConcurrentSearch || path == ":memory:" {
+            searchDBQueue = dbQueue
+        } else {
+            configuration.readonly = true
+            searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
+        }
+        searchIndexer = SearchIndexer(dbQueue: dbQueue)
         if path != ":memory:" {
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o600],
                 ofItemAtPath: path
             )
         }
+    }
+
+    func close() throws {
+        if searchDBQueue !== dbQueue {
+            try searchDBQueue.close()
+        }
+        try dbQueue.close()
     }
 
     /// DB ファイルの URL。

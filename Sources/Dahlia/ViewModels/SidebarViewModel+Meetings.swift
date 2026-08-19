@@ -114,6 +114,7 @@ extension SidebarViewModel {
         meetingSearchObservationGeneration &+= 1
         let generation = meetingSearchObservationGeneration
         let cursor = appending ? meetingSearchCursor : nil
+        let searchQueue = searchDBQueue ?? dbQueue
         meetingSearchTask = Task { [weak self] in
             do {
                 if let delay {
@@ -124,7 +125,7 @@ extension SidebarViewModel {
                     criteria: criteria,
                     after: cursor,
                     limit: Self.meetingPageSize,
-                    dbQueue: dbQueue
+                    dbQueue: searchQueue
                 )
                 try Task.checkCancellation()
                 guard let self,

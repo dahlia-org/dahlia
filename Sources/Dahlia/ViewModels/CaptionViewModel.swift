@@ -590,6 +590,7 @@ final class CaptionViewModel: ObservableObject {
     private var liveCaptionEventRelay: LiveCaptionEventRelay?
     private var liveTranscriptRelay: FinalizedLiveTranscriptRelay?
     private var isChatLiveModeEnabled = false
+    private var searchIndexer: SearchIndexer?
     private var batchTranscriptionCoordinator: BatchTranscriptionCoordinator?
     private var batchTranscriptionRecoveryTask: Task<Void, Never>?
     private var activeBatchTelemetrySessionIDs: Set<UUID> = []
@@ -782,6 +783,10 @@ final class CaptionViewModel: ObservableObject {
         onBatchTranscriptionRecoveryCompleted = onRecoveryCompleted
         guard recoverExistingSessions else { return }
         retryBatchTranscriptionRecovery()
+    }
+
+    func configureSearchIndexer(_ searchIndexer: SearchIndexer) {
+        self.searchIndexer = searchIndexer
     }
 
     func retryBatchTranscriptionRecovery() {
@@ -2856,6 +2861,7 @@ final class CaptionViewModel: ObservableObject {
               !isFinalizingRecording,
               !isTerminationRequested,
               canStartRecording() else { return }
+        await searchIndexer?.stop()
         let previousBatchTranscriptionState = batchTranscriptionState
         let activeDraftMeeting = usesDraftMeeting ? draftMeeting : nil
         let preservedDraftContext: PreservedDraftContext? = if !usesDraftMeeting, let draftMeeting {
@@ -3008,6 +3014,7 @@ final class CaptionViewModel: ObservableObject {
                 meetingScope: meetingScope,
                 previousBatchTranscriptionState: previousBatchTranscriptionState
             )
+            await searchIndexer?.start()
         }
     }
 
@@ -3155,6 +3162,9 @@ final class CaptionViewModel: ObservableObject {
         startingLocaleIdentifier = nil
         liveCaptionStore.clear()
         recordingLifecycle = .idle
+        if !isTerminationRequested {
+            await searchIndexer?.start()
+        }
         var segments = context.store.segments
         let recordingSessions = context.store.recordingSessions
         isFinalizingRecording = false

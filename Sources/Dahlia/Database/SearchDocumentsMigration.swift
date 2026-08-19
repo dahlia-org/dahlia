@@ -1,16 +1,16 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
 enum SearchDocumentsMigration {
-    static let analyzerVersion = "dahlia_lindera_ipadic_v1"
-    static let analyzerConfigurationHash = "e4e5d5c88f88895432fe3ec7e98b00ee2f05ca9ff6d78b47dda780ba6f5f308c"
+    static let analyzerVersion = SearchFTS5Tokenizer.name
+    static let analyzerConfigurationHash = SearchFTS5Tokenizer.configurationHash
 
     static func migrate(in db: Database) throws {
         try requireContentlessDeleteSupport(in: db)
         try db.execute(sql: schemaSQL)
         let sourceTables = [
-            "vaults", "meetings", "projects", "transcript_segments",
-            "meeting_tags", "tags", "calendar_events",
+            "vaults", "meetings", "projects", "meeting_tags", "tags", "calendar_events",
         ]
         if try sourceTables.allSatisfy({ try db.tableExists($0) }) {
             try db.execute(sql: triggerSQL)
@@ -44,13 +44,11 @@ enum SearchDocumentsMigration {
     private static let schemaSQL = """
     CREATE TABLE search_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind TEXT NOT NULL CHECK(kind IN ('meeting', 'project', 'segment')),
+        kind TEXT NOT NULL CHECK(kind IN ('meeting', 'project')),
         sourceId BLOB NOT NULL,
         vaultId BLOB NOT NULL,
         meetingId BLOB,
         projectId BLOB,
-        segmentStart REAL,
-        segmentEnd REAL,
         sourceContentHash TEXT NOT NULL,
         indexGeneration INTEGER NOT NULL,
         updatedAt DATETIME NOT NULL,
@@ -62,13 +60,13 @@ enum SearchDocumentsMigration {
     CREATE INDEX search_documents_project
         ON search_documents(projectId, kind, indexGeneration);
 
+    -- Contentless FTS stores tokens only; selecting these columns directly returns NULL by design.
     CREATE VIRTUAL TABLE search_documents_fts USING fts5(
         title,
         description,
         calendar,
         tags,
         projectPath,
-        transcript,
         content='',
         contentless_delete=1,
         detail=column,
@@ -102,7 +100,7 @@ enum SearchDocumentsMigration {
         analyzerConfigurationHash TEXT NOT NULL,
         indexGeneration INTEGER NOT NULL,
         indexRevision INTEGER NOT NULL,
-        phase TEXT NOT NULL CHECK(phase IN ('pending', 'metadata', 'segments', 'ready', 'failed')),
+        phase TEXT NOT NULL CHECK(phase IN ('pending', 'metadata', 'ready', 'failed')),
         totalCount INTEGER NOT NULL DEFAULT 0,
         completedCount INTEGER NOT NULL DEFAULT 0,
         lastErrorCode TEXT,
@@ -207,42 +205,6 @@ enum SearchDocumentsMigration {
     CREATE TRIGGER search_queue_projects_delete AFTER DELETE ON projects BEGIN
         INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
         VALUES('fts', 'projectCleanup', old.id, 100, unixepoch('subsec'), unixepoch('subsec'))
-        ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
-            generation = generation + 1, priority = 100, status = 'pending',
-            availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,
-            lastErrorCode = NULL, updatedAt = excluded.updatedAt;
-    END;
-
-    CREATE TRIGGER search_queue_segments_insert AFTER INSERT ON transcript_segments
-    WHEN new.isConfirmed BEGIN
-        INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, availableAt, updatedAt)
-        VALUES('fts', 'segment', new.id, unixepoch('subsec'), unixepoch('subsec'))
-        ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
-            generation = generation + 1, status = 'pending', availableAt = excluded.availableAt,
-            claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = excluded.updatedAt;
-    END;
-    CREATE TRIGGER search_queue_segments_update
-    AFTER UPDATE OF text, isConfirmed, meetingId, startTime, endTime ON transcript_segments
-    WHEN new.isConfirmed BEGIN
-        INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, availableAt, updatedAt)
-        VALUES('fts', 'segment', new.id, unixepoch('subsec'), unixepoch('subsec'))
-        ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
-            generation = generation + 1, status = 'pending', availableAt = excluded.availableAt,
-            claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = NULL, updatedAt = excluded.updatedAt;
-    END;
-    CREATE TRIGGER search_queue_segments_unconfirmed
-    AFTER UPDATE OF isConfirmed ON transcript_segments
-    WHEN NOT new.isConfirmed BEGIN
-        INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
-        VALUES('fts', 'segmentCleanup', new.id, 100, unixepoch('subsec'), unixepoch('subsec'))
-        ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
-            generation = generation + 1, priority = 100, status = 'pending',
-            availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,
-            lastErrorCode = NULL, updatedAt = excluded.updatedAt;
-    END;
-    CREATE TRIGGER search_queue_segments_delete AFTER DELETE ON transcript_segments BEGIN
-        INSERT INTO search_index_jobs(indexKind, targetKind, targetKey, priority, availableAt, updatedAt)
-        VALUES('fts', 'segmentCleanup', old.id, 100, unixepoch('subsec'), unixepoch('subsec'))
         ON CONFLICT(indexKind, targetKind, targetKey) DO UPDATE SET
             generation = generation + 1, priority = 100, status = 'pending',
             availableAt = excluded.availableAt, claimedAt = NULL, leaseExpiresAt = NULL,

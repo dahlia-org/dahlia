@@ -183,10 +183,6 @@ struct MeetingSidebarRow: View {
                     .frame(width: 8)
             }
 
-            if let timestamp = context.timestamp {
-                Text(timestamp.formatted(date: .omitted, time: .shortened))
-                    .foregroundStyle(.tertiary)
-            }
             Text(matchContextPrefix(context.kind))
                 .foregroundStyle(.tertiary)
             highlightedText(context.text)
@@ -207,8 +203,6 @@ struct MeetingSidebarRow: View {
             L10n.tagMatch
         case .project:
             L10n.projectMatch
-        case .transcript:
-            L10n.transcriptMatch
         case .title:
             ""
         }

@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Dispatch
 import Foundation
 import GRDB
@@ -44,11 +45,16 @@ actor SearchIndexer {
         }
     }
 
-    func stop() {
-        workerTask?.cancel()
+    func stop() async {
+        let task = workerTask
+        task?.cancel()
         workerTask = nil
         jobObservation?.cancel()
         jobObservation = nil
+        await task?.value
+        while isDraining {
+            await Task.yield()
+        }
     }
 
     func requestRebuild() async throws {
@@ -72,6 +78,7 @@ actor SearchIndexer {
     }
 
     private func drainScheduledWork() async {
+        guard workerTask != nil else { return }
         let now = Date()
         let checksDivergence = lastDivergenceCheckAt.map {
             now.timeIntervalSince($0) >= Self.divergenceCheckInterval
@@ -196,7 +203,6 @@ actor SearchIndexer {
                 sql: """
                 SELECT (SELECT COUNT(*) FROM meetings)
                      + (SELECT COUNT(*) FROM projects)
-                     + (SELECT COUNT(*) FROM transcript_segments WHERE isConfirmed)
                 """
             ) ?? 0
             try db.execute(
@@ -226,20 +232,6 @@ actor SearchIndexer {
             try Task.checkCancellation()
             try await indexMeeting(id: id, generation: generation, forceFTSUpdate: true)
             try await incrementRebuildProgress()
-        }
-
-        try await dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE search_index_state SET phase = 'segments', updatedAt = ? WHERE indexKind = 'fts'",
-                arguments: [Date()]
-            )
-        }
-        for id in meetingIDs {
-            try Task.checkCancellation()
-            try await indexTranscript(
-                meetingID: id,
-                generation: generation
-            )
         }
 
         try await removeDocumentsOlderThan(generation: generation)
@@ -277,7 +269,7 @@ actor SearchIndexer {
         try await dbQueue.write { db in
             let now = Date()
             let cleanupFilter = cleanupOnly
-                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup', 'segmentCleanup')"
+                ? "AND targetKind IN ('vaultCleanup', 'meetingCleanup', 'projectCleanup')"
                 : ""
             guard let row = try Row.fetchOne(
                 db,
@@ -327,13 +319,6 @@ actor SearchIndexer {
             try await indexMeeting(id: job.targetID, generation: generation)
         case "meetingCleanup":
             try await deleteDocuments(where: "meetingId = ?", arguments: [job.targetID])
-        case "segment":
-            try await indexSegment(id: job.targetID, generation: generation)
-        case "segmentCleanup":
-            try await deleteDocuments(
-                where: "kind = 'segment' AND sourceId = ?",
-                arguments: [job.targetID]
-            )
         case "project":
             try await indexProject(id: job.targetID, generation: generation)
         case "projectHierarchy":
@@ -422,8 +407,7 @@ private extension SearchIndexer {
                 description: meeting.description,
                 calendar: calendarText,
                 tags: tags,
-                projectPath: projectPath,
-                transcript: ""
+                projectPath: projectPath
             )
             try db.execute(
                 sql: "UPDATE search_documents SET projectId = ? WHERE meetingId = ? AND projectId IS NOT ?",
@@ -435,8 +419,6 @@ private extension SearchIndexer {
                 vaultID: meeting.vaultId,
                 meetingID: id,
                 projectID: meeting.projectId,
-                segmentStart: nil,
-                segmentEnd: nil,
                 fields: fields
             )
             try upsertDocument(document, generation: generation, forceFTSUpdate: forceFTSUpdate, in: db)
@@ -475,121 +457,14 @@ private extension SearchIndexer {
             vaultID: project.vaultId,
             meetingID: nil,
             projectID: project.id,
-            segmentStart: nil,
-            segmentEnd: nil,
             fields: SearchDocumentFields(
                 title: project.name,
                 description: project.description,
                 calendar: "",
                 tags: "",
-                projectPath: project.path,
-                transcript: ""
+                projectPath: project.path
             )
         )
-    }
-
-    private func indexSegment(id: UUID, generation: Int) async throws {
-        try await dbQueue.write { db in
-            guard let segment = try TranscriptSegmentRecord.fetchOne(db, key: id),
-                  segment.isConfirmed,
-                  let meeting = try MeetingRecord.fetchOne(db, key: segment.meetingId) else {
-                try Self.deleteDocuments(
-                    where: "kind = 'segment' AND sourceId = ?",
-                    arguments: [id],
-                    in: db
-                )
-                return
-            }
-            let document = SearchDocumentProjection(
-                kind: "segment",
-                sourceID: segment.id,
-                vaultID: meeting.vaultId,
-                meetingID: meeting.id,
-                projectID: meeting.projectId,
-                segmentStart: segment.startTime,
-                segmentEnd: segment.endTime,
-                fields: .transcript(segment.text)
-            )
-            try upsertDocument(document, generation: generation, in: db)
-        }
-    }
-
-    private func indexTranscript(
-        meetingID: UUID,
-        generation: Int
-    ) async throws {
-        var cursor: (startTime: Date, id: UUID)?
-        while true {
-            try Task.checkCancellation()
-            let pageCursor = cursor
-            let batch = try await dbQueue.read { db in
-                if let pageCursor {
-                    try TranscriptSegmentRecord.fetchAll(
-                        db,
-                        sql: """
-                        SELECT * FROM transcript_segments
-                        WHERE meetingId = ? AND isConfirmed = 1
-                          AND (startTime > ? OR (startTime = ? AND id > ?))
-                        ORDER BY startTime, id LIMIT 50
-                        """,
-                        arguments: [meetingID, pageCursor.startTime, pageCursor.startTime, pageCursor.id]
-                    )
-                } else {
-                    try TranscriptSegmentRecord.fetchAll(
-                        db,
-                        sql: """
-                        SELECT * FROM transcript_segments
-                        WHERE meetingId = ? AND isConfirmed = 1
-                        ORDER BY startTime, id LIMIT 50
-                        """,
-                        arguments: [meetingID]
-                    )
-                }
-            }
-            guard !batch.isEmpty else { break }
-            try await dbQueue.write { db in
-                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID) else { return }
-                for segment in batch {
-                    let document = SearchDocumentProjection(
-                        kind: "segment",
-                        sourceID: segment.id,
-                        vaultID: meeting.vaultId,
-                        meetingID: meetingID,
-                        projectID: meeting.projectId,
-                        segmentStart: segment.startTime,
-                        segmentEnd: segment.endTime,
-                        fields: .transcript(segment.text)
-                    )
-                    try upsertDocument(
-                        document,
-                        generation: generation,
-                        forceFTSUpdate: true,
-                        in: db
-                    )
-                }
-            }
-            try await incrementRebuildProgress(by: batch.count)
-            let last = batch[batch.count - 1]
-            cursor = (last.startTime, last.id)
-        }
-        let staleRows = try await dbQueue.read { db in
-            try Int64.fetchAll(
-                db,
-                sql: """
-                SELECT search_documents.id
-                FROM search_documents
-                LEFT JOIN transcript_segments
-                  ON transcript_segments.id = search_documents.sourceId
-                 AND transcript_segments.meetingId = ?
-                 AND transcript_segments.isConfirmed = 1
-                WHERE search_documents.meetingId = ?
-                  AND search_documents.kind = 'segment'
-                  AND transcript_segments.id IS NULL
-                """,
-                arguments: [meetingID, meetingID]
-            )
-        }
-        try await deleteDocuments(rowIDs: staleRows)
     }
 
     private func removeDocumentsOlderThan(generation: Int) async throws {

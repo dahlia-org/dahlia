@@ -23,7 +23,7 @@ import GRDB
             try initial.dbQueue.write { db in
                 try makeVault(name: "Main", path: rootURL.appending(path: "MainVault").path).insert(db)
             }
-            try initial.dbQueue.close()
+            try initial.close()
 
             let walQueue = try DatabaseQueue(path: databaseURL.path)
             try walQueue.writeWithoutTransaction { db in
@@ -75,12 +75,12 @@ import GRDB
             try current.dbQueue.write { db in
                 try makeVault(name: "Unverified", path: rootURL.appending(path: "UnverifiedVault").path).insert(db)
             }
-            try current.dbQueue.close()
+            try current.close()
             let recovery = try AppDatabaseManager(path: recoveryURL.path)
             try recovery.dbQueue.write { db in
                 try makeVault(name: "Original", path: rootURL.appending(path: "OriginalVault").path).insert(db)
             }
-            try recovery.dbQueue.close()
+            try recovery.close()
 
             let outcome = BackupRestoreStartupProcessor.applyPendingRestore(
                 applicationSupportURL: rootURL,
@@ -139,7 +139,7 @@ import GRDB
             try current.dbQueue.write { db in
                 try makeVault(name: "Current", path: rootURL.appending(path: "CurrentVault").path).insert(db)
             }
-            try current.dbQueue.close()
+            try current.close()
             try Data("not sqlite".utf8).write(to: stagedURL)
             try writeMarker(stagedURL: stagedURL, restoreDirectoryURL: restoreDirectoryURL)
 
@@ -177,13 +177,13 @@ import GRDB
             try current.dbQueue.write { db in
                 try makeVault(name: "Current", path: rootURL.appending(path: "CurrentVault").path).insert(db)
             }
-            try current.dbQueue.close()
+            try current.close()
 
             let staged = try AppDatabaseManager(path: stagedURL.path)
             try staged.dbQueue.write { db in
                 try makeVault(name: "Restored", path: rootURL.appending(path: "RestoredVault").path).insert(db)
             }
-            try staged.dbQueue.close()
+            try staged.close()
 
             let metadata = BackupMetadata(
                 formatVersion: BackupMetadata.currentFormatVersion,

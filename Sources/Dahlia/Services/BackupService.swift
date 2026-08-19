@@ -309,7 +309,7 @@ actor BackupService {
                 }
                 try Self.validateIntegrity(in: db)
             }
-            try stagedDatabase.dbQueue.close()
+            try stagedDatabase.close()
             let checksum = try Self.sha256(of: stagedURL)
             let marker = PendingDatabaseRestore(
                 stagedFilename: stagedFilename,

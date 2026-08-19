@@ -3,6 +3,7 @@ import Foundation
 
 public struct MeetingQuery: Sendable, Equatable {
     public var query: String?
+    public var simple: Bool
     public var project: String?
     public var projectID: UUID?
     public var organizationID: UUID?
@@ -16,6 +17,7 @@ public struct MeetingQuery: Sendable, Equatable {
 
     public init(
         query: String? = nil,
+        simple: Bool = false,
         project: String? = nil,
         projectID: UUID? = nil,
         organizationID: UUID? = nil,
@@ -28,6 +30,7 @@ public struct MeetingQuery: Sendable, Equatable {
         cursor: String? = nil
     ) {
         self.query = query
+        self.simple = simple
         self.project = project
         self.projectID = projectID
         self.organizationID = organizationID
@@ -256,9 +259,12 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
     case vaultNotFound
     case meetingNotFound
     case databaseUpgradeRequired
+    case searchUnavailable
+    case searchTimedOut
     case invalidSummaryDocument
     case invalidCursor
     case invalidLimit(maximum: Int)
+    case invalidSearchQuery(maximum: Int)
     case invalidTimeRange
     case screenshotNotFound
     case screenshotEncodingFailed
@@ -297,12 +303,18 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "The meeting was not found in the configured vault."
         case .databaseUpgradeRequired:
             "The Dahlia database must be upgraded before meeting access can start. Open Dahlia once, then try again."
+        case .searchUnavailable:
+            "The search index is unavailable. Open Dahlia and rebuild it before trying again."
+        case .searchTimedOut:
+            "The search took longer than 30 seconds. Narrow the query and try again."
         case .invalidSummaryDocument:
             "The stored summary document is invalid. Open Dahlia and regenerate the summary."
         case .invalidCursor:
             "The cursor is invalid for the configured vault or meeting."
         case let .invalidLimit(maximum):
             "The limit must be between 1 and \(maximum)."
+        case let .invalidSearchQuery(maximum):
+            "The search query must be at most \(maximum) characters."
         case .invalidTimeRange:
             "Elapsed time values must be finite and nonnegative, and the start must be before the end."
         case .screenshotNotFound:
@@ -381,6 +393,10 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
             "invalid_reference"
         case .workspaceBusy:
             "database_busy"
+        case .searchUnavailable:
+            "search_unavailable"
+        case .searchTimedOut:
+            "search_timeout"
         default:
             "invalid_input"
         }

@@ -484,9 +484,10 @@ import ImageIO
         }
 
         @Test
-        func querySearchesMetadataPaginatesAndNeverCrossesVaults() throws {
+        func querySearchesMetadataPaginatesAndNeverCrossesVaults() async throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            await fixture.manager.searchIndexer.drain()
 
             let firstPage = try store.queryMeetings(MeetingQuery(limit: 2))
             #expect(firstPage.vault.id == fixture.primaryVaultID)
@@ -502,9 +503,14 @@ import ImageIO
             #expect(descriptionMatch.meetings.map(\.id) == [fixture.firstMeetingID])
             let tagMatch = try store.queryMeetings(MeetingQuery(query: "launch-tag"))
             #expect(tagMatch.meetings.map(\.id) == [fixture.firstMeetingID])
-            let literalWildcardMatch = try store.queryMeetings(MeetingQuery(query: "%"))
+            #expect(try store.queryMeetings(MeetingQuery(query: "anning")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "anning", simple: true)).meetings.map(\.id) == [fixture.firstMeetingID])
+            #expect(throws: MeetingAccessError.invalidSearchQuery(maximum: 1024)) {
+                try store.queryMeetings(MeetingQuery(query: String(repeating: "a", count: 1025)))
+            }
+            let literalWildcardMatch = try store.queryMeetings(MeetingQuery(query: "%", simple: true))
             #expect(literalWildcardMatch.meetings.map(\.id) == [fixture.secondMeetingID])
-            #expect(try store.queryMeetings(MeetingQuery(query: "_")).meetings.isEmpty)
+            #expect(try store.queryMeetings(MeetingQuery(query: "_", simple: true)).meetings.isEmpty)
             let projectMatch = try store.queryMeetings(MeetingQuery(project: "Acme"))
             #expect(projectMatch.meetings.count == 2)
             let projectIDMatch = try store.queryMeetings(MeetingQuery(projectID: fixture.primaryProjectID))
@@ -524,6 +530,32 @@ import ImageIO
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try otherStore.queryMeetings(MeetingQuery(cursor: cursor))
             }
+        }
+
+        @Test
+        func fullTextSearchRejectsFailedOrChangedIndex() async throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(vaultID: fixture.primaryVaultID)
+            await fixture.manager.searchIndexer.drain()
+
+            let firstPage = try store.queryMeetings(.init(query: "Acme", limit: 1))
+            let cursor = try #require(firstPage.nextCursor)
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE search_index_state SET indexRevision = indexRevision + 1 WHERE indexKind = 'fts'"
+                )
+            }
+            #expect(throws: MeetingAccessError.invalidCursor) {
+                try store.queryMeetings(.init(query: "Acme", limit: 1, cursor: cursor))
+            }
+
+            try await fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed' WHERE indexKind = 'fts'")
+            }
+            #expect(throws: MeetingAccessError.searchUnavailable) {
+                try store.queryMeetings(.init(query: "planning"))
+            }
+            #expect(try store.queryMeetings(.init(query: "planning", simple: true)).meetings.map(\.id) == [fixture.firstMeetingID])
         }
 
         @Test
@@ -2408,11 +2440,13 @@ import ImageIO
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
             let delimiterCursor = try #require(store.queryMeetings(.init(
                 query: "Plan\u{1f}Acme",
+                simple: true,
                 limit: 1
             )).nextCursor)
             #expect(throws: MeetingAccessError.invalidCursor) {
                 try store.queryMeetings(.init(
                     query: "Plan",
+                    simple: true,
                     project: "Acme",
                     limit: 1,
                     cursor: delimiterCursor
@@ -2501,7 +2535,7 @@ import ImageIO
         }
 
         @Test
-        func v24DatabaseKeepsMeetingAccessButRejectsCustomerIntelligenceAccess() throws {
+        func v24DatabaseRequiresOpeningDahliaForMeetingAccess() throws {
             let databaseURL = URL.temporaryDirectory
                 .appending(path: "dahlia-meeting-access-v24-\(UUID.v7().uuidString)")
                 .appendingPathExtension("sqlite")
@@ -2514,9 +2548,31 @@ import ImageIO
             }
             let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
 
-            #expect(try store.scopedVault().id == vault.id)
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
             #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
                 try store.queryOrganizations()
+            }
+        }
+
+        @Test
+        func v34DatabaseRequiresOpeningDahliaForSearchSchema() throws {
+            let databaseURL = URL.temporaryDirectory
+                .appending(path: "dahlia-meeting-access-v34-\(UUID.v7().uuidString)")
+                .appendingPathExtension("sqlite")
+            defer { try? FileManager.default.removeItem(at: databaseURL) }
+            let vault = customerIntelligenceVault(name: "Before v35")
+            let queue = try DatabaseQueue(path: databaseURL.path)
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v34_meetingRecordingStartedAt")
+            try queue.write { try vault.insert($0) }
+            let store = try MeetingAccessStore(databaseURL: databaseURL, vaultID: vault.id)
+
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.scopedVault()
+            }
+            #expect(throws: MeetingAccessError.databaseUpgradeRequired) {
+                try store.queryMeetings(.init(query: "meeting"))
             }
         }
 
@@ -2684,8 +2740,9 @@ import ImageIO
     @MainActor
     struct MCPDiscoveryContractTests {
         @Test
-        func exposesRelationshipKeys() throws {
+        func exposesRelationshipKeys() async throws {
             let fixture = try Fixture()
+            await fixture.manager.searchIndexer.drain()
             let server = try DahliaMCPServer(store: fixture.store(vaultID: fixture.primaryVaultID))
 
             let initialized = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
@@ -2707,6 +2764,7 @@ import ImageIO
             #expect(inputProperties["organization_id"] != nil)
             #expect(inputProperties["include_descendants"] != nil)
             #expect(inputProperties["topic_id"] != nil)
+            #expect(inputProperties["simple"] != nil)
             #expect(definitions.contains { $0["name"] as? String == "query_organization_chart" })
             #expect(definitions.contains { $0["name"] as? String == "query_conversation_topics" })
             #expect(definitions.contains { $0["name"] as? String == "get_conversation_topic" })
@@ -2728,6 +2786,14 @@ import ImageIO
             #expect(meeting["project_id"] as? String == fixture.primaryProjectID.uuidString)
             #expect(meeting["ical_uid"] as? String == "roadmap@example.com")
             #expect((meeting["recurrence_id"] as? String)?.isEmpty == true)
+
+            let simpleQuery = try Self.json(server.handleLine(#"""
+            {"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"query_meetings","arguments":{
+                "query":"anning","simple":true
+            }}}
+            """#))
+            let simpleContent = (simpleQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            #expect((simpleContent?["meetings"] as? [[String: Any]])?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
 
             let projectQuery = try Self.json(server.handleLine(#"""
             {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_meetings","arguments":{"project_id":"\#(fixture

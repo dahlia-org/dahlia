@@ -119,6 +119,8 @@ Read tools:
 All `query_meetings` parameters are optional filters. Clients should omit unused properties instead of sending empty
 strings. For compatibility with clients that populate every property, the server treats empty or whitespace-only
 optional string filters as unspecified; nonblank malformed UUIDs, dates, and cursors remain errors.
+Text queries use the FTS index by default. Set `simple: true` to use literal substring matching (`LIKE`) against
+Meeting and Project metadata instead.
 
 `get_meeting_screenshots` uses `image_size: "preview"` by default. Set `image_size` to `"original"` only when an
 external agent needs the original resolution, such as when preparing a document that must preserve screenshot detail.

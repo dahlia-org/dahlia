@@ -88,6 +88,7 @@ final class SidebarViewModel {
     @ObservationIgnored private(set) var appDatabase: AppDatabaseManager?
     var currentVault: VaultRecord? { settings.currentVault }
     var dbQueue: DatabaseQueue? { appDatabase?.dbQueue }
+    var searchDBQueue: DatabaseQueue? { appDatabase?.searchDBQueue }
 
     @ObservationIgnored var meetingRepository: MeetingRepository?
     @ObservationIgnored var projectWorkspaceService: ProjectWorkspaceService?

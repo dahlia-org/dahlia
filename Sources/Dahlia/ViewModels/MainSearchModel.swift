@@ -155,7 +155,7 @@ final class MainSearchModel {
         generation &+= 1
         let requestGeneration = generation
         let vaultID = sidebarViewModel.currentVault?.id
-        let dbQueue = sidebarViewModel.dbQueue
+        let dbQueue = sidebarViewModel.searchDBQueue
         let criteria = searchCriteria(using: sidebarViewModel)
         activeMeetingCriteria = criteria
         let cursor = appending ? meetingCursor : nil
@@ -235,7 +235,7 @@ final class MainSearchModel {
         isProjectCatalogLoading = false
         projectCatalogLoadFailed = sidebarViewModel.projectCatalogLoadFailed
         guard let vaultID = sidebarViewModel.currentVault?.id,
-              let dbQueue = sidebarViewModel.dbQueue else { return }
+              let dbQueue = sidebarViewModel.searchDBQueue else { return }
         guard !projectCatalogLoadFailed else { return }
         guard sidebarViewModel.isProjectCatalogLoaded else {
             isProjectCatalogLoading = true

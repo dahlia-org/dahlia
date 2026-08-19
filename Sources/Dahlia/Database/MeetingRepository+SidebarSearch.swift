@@ -1,3 +1,4 @@
+import DahliaMeetingAccess
 import Foundation
 import GRDB
 
@@ -54,7 +55,7 @@ extension MeetingRepository {
         try await withThrowingTaskGroup(of: Result.self) { group in
             group.addTask(operation: operation)
             group.addTask {
-                try await Task.sleep(for: .milliseconds(500))
+                try await Task.sleep(for: .seconds(30))
                 throw MeetingSearchError.queryTooBroad
             }
             defer { group.cancelAll() }
@@ -88,7 +89,7 @@ extension MeetingRepository {
         let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
         guard phase != "failed" else { return .empty(replacesResults: cursor != nil) }
 
-        let tokens = try fullTextTokens(for: criteria.text, in: db)
+        let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
         guard !tokens.isEmpty else { return .empty(replacesResults: cursor != nil) }
         let revision = try Int.fetchOne(
             db,
@@ -162,16 +163,12 @@ extension MeetingRepository {
                         db,
                         sql: """
                         WITH candidate_documents AS MATERIALIZED (
-                            SELECT id, meetingId,
-                                   CASE WHEN kind = 'segment' THEN sourceId END AS segmentId,
-                                   segmentStart
+                            SELECT id, meetingId
                             FROM search_documents
-                            WHERE kind IN ('meeting', 'segment')
+                            WHERE kind = 'meeting'
                               AND meetingId IN (\(searchPlaceholders(ids.count)))
                         )
                         SELECT candidate_documents.meetingId AS meetingId,
-                               candidate_documents.segmentId AS segmentId,
-                               candidate_documents.segmentStart AS segmentStart,
                                \(sidebarRecordingStartedAtSQL) AS meetingDate,
                                -bm25(search_documents_fts) AS relevance
                         FROM candidate_documents
@@ -184,7 +181,6 @@ extension MeetingRepository {
                     )
                     merge(
                         rows: rows,
-                        token: queryToken.token,
                         field: field,
                         ordinal: queryToken.ordinal,
                         into: &meetingHits
@@ -217,7 +213,7 @@ extension MeetingRepository {
             return FTSQueryToken(
                 ordinal: ordinal,
                 token: token,
-                query: quotedFTSToken(token, isPrefix: isPrefix),
+                query: SearchFTS5Tokenizer.quotedQueryToken(token, isPrefix: isPrefix),
                 estimatedDocuments: estimatedDocuments
             )
         }.sorted {
@@ -243,7 +239,7 @@ extension MeetingRepository {
                 FROM search_documents AS matching_documents
                 CROSS JOIN search_documents_fts
                 WHERE matching_documents.meetingId = seed_documents.meetingId
-                  AND matching_documents.kind IN ('meeting', 'segment')
+                  AND matching_documents.kind = 'meeting'
                   AND search_documents_fts.rowid = matching_documents.id
                   AND search_documents_fts MATCH ?
             )
@@ -262,7 +258,7 @@ extension MeetingRepository {
                 JOIN meetings ON meetings.id = search_documents.meetingId
                 WHERE search_documents_fts MATCH ?
                   AND search_documents.vaultId = ?
-                  AND search_documents.kind IN ('meeting', 'segment')
+                  AND search_documents.kind = 'meeting'
                   \(filters.condition)
                 GROUP BY search_documents.meetingId
             )
@@ -276,7 +272,6 @@ extension MeetingRepository {
 
     private nonisolated static func merge(
         rows: [Row],
-        token: String,
         field: SearchField,
         ordinal: Int,
         into meetingHits: inout [UUID: [Int: SearchTokenHit]]
@@ -284,11 +279,8 @@ extension MeetingRepository {
         for row in rows {
             let meetingID: UUID = row["meetingId"]
             let hit = SearchTokenHit(
-                token: token,
                 field: field,
                 relevance: row["relevance"],
-                segmentID: row["segmentId"],
-                segmentStart: row["segmentStart"],
                 meetingDate: row["meetingDate"]
             )
             if let current = meetingHits[meetingID]?[ordinal] {
@@ -315,7 +307,7 @@ extension MeetingRepository {
             }) else { return nil }
             return RankedMeeting(
                 meetingID: meetingID,
-                matchClass: hits.map(\.field.matchClass).max() ?? 3,
+                matchClass: evidence.field.matchClass,
                 relevance: hits.map(\.relevance).min() ?? 0,
                 meetingDate: hits.first?.meetingDate ?? .distantPast,
                 evidence: evidence
@@ -461,32 +453,7 @@ extension MeetingRepository {
         case .projectPath:
             let projectID = try UUID.fetchOne(db, sql: "SELECT projectId FROM meetings WHERE id = ?", arguments: [meetingID])
             return .init(kind: .project, text: projectID.flatMap { id in projects.first { $0.id == id }?.path } ?? "")
-        case .transcript:
-            let text = try hit.segmentID.flatMap {
-                try String.fetchOne(db, sql: "SELECT text FROM transcript_segments WHERE id = ?", arguments: [$0])
-            } ?? ""
-            return .init(
-                kind: .transcript,
-                text: transcriptSnippet(text, matching: hit.token),
-                segmentId: hit.segmentID,
-                timestamp: hit.segmentStart
-            )
         }
-    }
-
-    private nonisolated static func transcriptSnippet(_ text: String, matching token: String) -> String {
-        let maximumLength = 180
-        guard text.count > maximumLength else { return text }
-        guard let match = text.range(
-            of: token,
-            options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current
-        ) else {
-            return String(text.prefix(maximumLength))
-        }
-        let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
-        let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
-        return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
     }
 
     private nonisolated static func meetingText(
@@ -495,16 +462,6 @@ extension MeetingRepository {
         in db: Database
     ) throws -> String {
         try String.fetchOne(db, sql: "SELECT \(column) FROM meetings WHERE id = ?", arguments: [meetingID]) ?? ""
-    }
-
-    private nonisolated static func quotedFTSToken(_ token: String, isPrefix: Bool) -> String {
-        "\"\(token.replacingOccurrences(of: "\"", with: "\"\""))\"\(isPrefix ? "*" : "")"
-    }
-
-    private nonisolated static func fullTextTokens(for query: String, in db: Database) throws -> [String] {
-        guard query.count >= 2 else { return [] }
-        let tokenizer = try db.makeTokenizer(SearchFTS5Tokenizer.tokenizerDescriptor())
-        return try Array(tokenizer.tokenize(query: query).prefix(16).map(\.token))
     }
 
     private nonisolated static func searchPlaceholders(_ count: Int) -> String {
@@ -535,10 +492,10 @@ extension MeetingRepository {
     ) throws -> [UUID] {
         let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
         guard phase != "failed" else { return [] }
-        let tokens = try fullTextTokens(for: query, in: db)
+        let tokens = try SearchFTS5Tokenizer.queryTokens(for: query, in: db)
         guard !tokens.isEmpty else { return [] }
         let tokenQuery = tokens.enumerated().map { ordinal, token in
-            quotedFTSToken(token, isPrefix: ordinal == tokens.count - 1)
+            SearchFTS5Tokenizer.quotedQueryToken(token, isPrefix: ordinal == tokens.count - 1)
         }.joined(separator: " AND ")
         let columnScopes = ["title", "{title projectPath}", "{title projectPath description}"]
         var projectIDs: [UUID] = []
@@ -568,14 +525,13 @@ extension MeetingRepository {
 }
 
 private enum SearchField: String, CaseIterable {
-    case title, tags, projectPath, calendar, description, transcript
+    case title, tags, projectPath, calendar, description
 
     var matchClass: Int {
         switch self {
         case .title: 0
         case .tags, .projectPath, .calendar: 1
         case .description: 2
-        case .transcript: 3
         }
     }
 }
@@ -588,13 +544,9 @@ private struct FTSQueryToken {
 }
 
 private struct SearchTokenHit {
-    let token: String
     let field: SearchField
     let relevance: Double
-    let segmentID: UUID?
-    let segmentStart: Date?
     let meetingDate: Date
-
 }
 
 private struct RankedMeeting {

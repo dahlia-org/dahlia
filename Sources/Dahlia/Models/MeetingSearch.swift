@@ -90,27 +90,20 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
         case calendar
         case tag
         case project
-        case transcript
     }
 
     let kind: Kind
     let text: String
     let colorHex: String?
-    let segmentId: UUID?
-    let timestamp: Date?
 
     init(
         kind: Kind,
         text: String,
-        colorHex: String? = nil,
-        segmentId: UUID? = nil,
-        timestamp: Date? = nil
+        colorHex: String? = nil
     ) {
         self.kind = kind
         self.text = text
         self.colorHex = colorHex
-        self.segmentId = segmentId
-        self.timestamp = timestamp
     }
 }
 

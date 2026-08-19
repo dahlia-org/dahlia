@@ -100,7 +100,7 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(3)))
-        func debouncesSearchAndIncludesTranscriptMatches() async throws {
+        func debouncesSearchAndExcludesTranscriptMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
                 fixture.stop()
@@ -146,9 +146,8 @@ import GRDB
             #expect(!viewModel.isMeetingSearchLoaded)
             #expect(await waitUntil {
                 viewModel.isMeetingSearchLoaded
-                    && viewModel.meetingSearchItems.map(\.id) == [metadataMeetingID, transcriptOnlyMeetingID]
+                    && viewModel.meetingSearchItems.map(\.id) == [metadataMeetingID]
             })
-            #expect(viewModel.meetingSearchItems.last?.searchMatchContext?.kind == .transcript)
 
             viewModel.updateMeetingSearchQuery("")
 

@@ -72,7 +72,6 @@ enum L10n {
     static var search: String { String(localized: "Search", bundle: bundle) }
     static var searchResults: String { String(localized: "Search Results", bundle: bundle) }
     static var searchQueryTooBroad: String { String(localized: "Search query is too broad", bundle: bundle) }
-    static var transcriptMatch: String { String(localized: "Transcript match", bundle: bundle) }
     static var searchIndex: String { String(localized: "Search index", bundle: bundle) }
     static var searchIndexStatus: String { String(localized: "Search index status", bundle: bundle) }
     static var searchQueuePending: String { String(localized: "Pending search jobs", bundle: bundle) }
@@ -86,7 +85,6 @@ enum L10n {
 
     static var searchIndexPending: String { String(localized: "Search index pending", bundle: bundle) }
     static var searchIndexMetadata: String { String(localized: "Indexing meeting metadata", bundle: bundle) }
-    static var searchIndexSegments: String { String(localized: "Indexing transcripts", bundle: bundle) }
     static var searchIndexReady: String { String(localized: "Search index ready", bundle: bundle) }
     static var searchIndexFailed: String { String(localized: "Search index failed", bundle: bundle) }
     static var searchIndexErrorFormat: String { String(localized: "Search index error format", bundle: bundle) }

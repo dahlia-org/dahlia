@@ -57,7 +57,6 @@ struct SearchSettingsView: View {
         switch model.phase {
         case "pending": L10n.searchIndexPending
         case "metadata": L10n.searchIndexMetadata
-        case "segments": L10n.searchIndexSegments
         case "ready": L10n.searchIndexReady
         case "failed": L10n.searchIndexFailed
         default: model.phase

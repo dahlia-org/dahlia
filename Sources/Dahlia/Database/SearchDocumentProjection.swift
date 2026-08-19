@@ -8,8 +8,6 @@ struct SearchDocumentProjection {
     let vaultID: UUID
     let meetingID: UUID?
     let projectID: UUID?
-    let segmentStart: Date?
-    let segmentEnd: Date?
     let fields: SearchDocumentFields
 }
 
@@ -19,14 +17,9 @@ struct SearchDocumentFields {
     let calendar: String
     let tags: String
     let projectPath: String
-    let transcript: String
-
-    static func transcript(_ text: String) -> Self {
-        Self(title: "", description: "", calendar: "", tags: "", projectPath: "", transcript: text)
-    }
 
     var hash: String {
-        let content = [title, description, calendar, tags, projectPath, transcript]
+        let content = [title, description, calendar, tags, projectPath]
             .map { "\($0.utf8.count):\($0)" }.joined()
         return SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
     }
@@ -74,15 +67,13 @@ private func updateRegistry(
     try db.execute(
         sql: """
         UPDATE search_documents SET vaultId = ?, meetingId = ?, projectId = ?,
-            segmentStart = ?, segmentEnd = ?, sourceContentHash = ?, indexGeneration = ?, updatedAt = ?
+            sourceContentHash = ?, indexGeneration = ?, updatedAt = ?
         WHERE id = ?
         """,
         arguments: [
             document.vaultID,
             document.meetingID,
             document.projectID,
-            document.segmentStart,
-            document.segmentEnd,
             hash,
             generation,
             Date(),
@@ -101,8 +92,8 @@ private func insertRegistry(
         sql: """
         INSERT INTO search_documents(
             kind, sourceId, vaultId, meetingId, projectId,
-            segmentStart, segmentEnd, sourceContentHash, indexGeneration, updatedAt
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            sourceContentHash, indexGeneration, updatedAt
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
         """,
         arguments: [
             document.kind,
@@ -110,8 +101,6 @@ private func insertRegistry(
             document.vaultID,
             document.meetingID,
             document.projectID,
-            document.segmentStart,
-            document.segmentEnd,
             hash,
             generation,
             Date(),
@@ -123,8 +112,8 @@ private func insertFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         INSERT INTO search_documents_fts(
-            rowid, title, description, calendar, tags, projectPath, transcript
-        ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            rowid, title, description, calendar, tags, projectPath
+        ) VALUES(?, ?, ?, ?, ?, ?)
         """,
         arguments: [
             rowID,
@@ -133,7 +122,6 @@ private func insertFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
             fields.calendar,
             fields.tags,
             fields.projectPath,
-            fields.transcript,
         ]
     )
 }
@@ -142,7 +130,7 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
     try db.execute(
         sql: """
         UPDATE search_documents_fts
-        SET title = ?, description = ?, calendar = ?, tags = ?, projectPath = ?, transcript = ?
+        SET title = ?, description = ?, calendar = ?, tags = ?, projectPath = ?
         WHERE rowid = ?
         """,
         arguments: [
@@ -151,7 +139,6 @@ private func updateFTS(rowID: Int64, fields: SearchDocumentFields, in db: Databa
             fields.calendar,
             fields.tags,
             fields.projectPath,
-            fields.transcript,
             rowID,
         ]
     )

@@ -9,7 +9,7 @@ import GRDB
     // swiftlint:disable:next type_body_length
     struct SearchIndexTests {
         @Test
-        func migrationCreatesProjectionAndSegmentQueue() throws {
+        func migrationCreatesProjectionWithoutSegmentQueue() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = Self.makeVault()
             let meeting = Self.makeMeeting(vaultID: vault.id)
@@ -45,13 +45,14 @@ import GRDB
 
             #expect(snapshot.0)
             #expect(snapshot.1)
-            #expect(snapshot.2 == 3)
+            #expect(snapshot.2 == 0)
             #expect(snapshot.3?.contains("detail=column") == true)
             #expect(snapshot.3?.contains("contentless_delete=1") == true)
+            #expect(snapshot.3?.contains("transcript") == false)
         }
 
         @Test
-        func tokensInDifferentSegmentsFindMeetingAndExposeSegmentEvidence() async throws {
+        func transcriptSegmentsAreNotIndexedOrSearched() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = Self.makeVault()
             let meeting = Self.makeMeeting(vaultID: vault.id)
@@ -75,31 +76,12 @@ import GRDB
                 limit: 20,
                 dbQueue: database.dbQueue
             )
-            let excluded = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
-                query: "秘密語",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-            let prefix = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
-                query: "検索精",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-            let oneCharacter = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
-                query: "検",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
+            let segmentDocumentCount = try await database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM search_documents WHERE kind = 'segment'") ?? -1
+            }
 
-            #expect(page.items.map(\.id) == [meeting.id])
-            #expect(page.items.first?.searchMatchContext?.kind == .transcript)
-            #expect(page.items.first?.searchMatchContext?.segmentId != nil)
-            #expect(prefix.items.map(\.id) == [meeting.id])
-            #expect(excluded.items.isEmpty)
-            #expect(oneCharacter.items.isEmpty)
+            #expect(page.items.isEmpty)
+            #expect(segmentDocumentCount == 0)
         }
 
         @Test
@@ -121,15 +103,12 @@ import GRDB
                             vaultID: vault.id,
                             meetingID: meeting.id,
                             projectID: nil,
-                            segmentStart: nil,
-                            segmentEnd: nil,
                             fields: SearchDocumentFields(
                                 title: meeting.name,
                                 description: "",
                                 calendar: "",
                                 tags: "",
-                                projectPath: "",
-                                transcript: ""
+                                projectPath: ""
                             )
                         ),
                         generation: 1,
@@ -167,15 +146,12 @@ import GRDB
                             vaultID: vault.id,
                             meetingID: nil,
                             projectID: projectID,
-                            segmentStart: nil,
-                            segmentEnd: nil,
                             fields: SearchDocumentFields(
                                 title: title,
                                 description: "",
                                 calendar: "",
                                 tags: "",
-                                projectPath: title,
-                                transcript: ""
+                                projectPath: title
                             )
                         ),
                         generation: 1,
@@ -201,29 +177,6 @@ import GRDB
 
             #expect(common.count == 20)
             #expect(narrowed == [targetID])
-        }
-
-        @Test
-        func transcriptEvidenceIsWindowedAroundTheMatch() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let meeting = Self.makeMeeting(vaultID: vault.id)
-            let transcript = String(repeating: "前置き ", count: 80) + "verbatimneedle の詳細"
-            try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try meeting.insert(db)
-                try Self.makeSegment(meetingID: meeting.id, text: transcript, offset: 10).insert(db)
-            }
-            await database.searchIndexer.drain()
-
-            let page = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
-                query: "verbatimneedle",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-
-            #expect(page.items.first?.searchMatchContext?.text.contains("verbatimneedle") == true)
         }
 
         @Test
@@ -417,7 +370,7 @@ import GRDB
                 try db.execute(
                     sql: """
                     UPDATE search_documents_fts
-                    SET title = '破損内容', description = '', calendar = '', tags = '', projectPath = '', transcript = ''
+                    SET title = '破損内容', description = '', calendar = '', tags = '', projectPath = ''
                     WHERE rowid = ?
                     """,
                     arguments: [rowID]
@@ -469,7 +422,7 @@ import GRDB
         }
 
         @Test
-        func translatedTranscriptIsNotIndexedOrRequeued() async throws {
+        func transcriptIsNotIndexedOrRequeued() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = Self.makeVault()
             let meeting = Self.makeMeeting(vaultID: vault.id)
@@ -500,7 +453,7 @@ import GRDB
                 limit: 20,
                 dbQueue: database.dbQueue
             )
-            #expect(original.items.first?.searchMatchContext?.text == "原文だけの検索語")
+            #expect(original.items.isEmpty)
 
             try await database.dbQueue.write { db in
                 try db.execute(
@@ -643,42 +596,6 @@ import GRDB
             )
             #expect(unrelatedUpdatedAfterHierarchyChange == unrelatedUpdatedAt)
             #expect(projectIDs == [child.id])
-        }
-
-        @Test
-        func movingSegmentRemovesEvidenceFromItsPreviousMeeting() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let vault = Self.makeVault()
-            let previousMeeting = Self.makeMeeting(vaultID: vault.id)
-            let currentMeeting = Self.makeMeeting(vaultID: vault.id)
-            let segment = Self.makeSegment(
-                meetingID: previousMeeting.id,
-                text: "所属変更語を含む発話",
-                offset: 10
-            )
-            try await database.dbQueue.write { db in
-                try vault.insert(db)
-                try previousMeeting.insert(db)
-                try currentMeeting.insert(db)
-                try segment.insert(db)
-            }
-            await database.searchIndexer.drain()
-
-            try await database.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE transcript_segments SET meetingId = ? WHERE id = ?",
-                    arguments: [currentMeeting.id, segment.id]
-                )
-            }
-            await database.searchIndexer.drain()
-
-            let result = try await MeetingRepository.searchMeetingSidebarPage(
-                vaultId: vault.id,
-                query: "所属変更語",
-                limit: 20,
-                dbQueue: database.dbQueue
-            )
-            #expect(result.items.map(\.id) == [currentMeeting.id])
         }
 
         @Test

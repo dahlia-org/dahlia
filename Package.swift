@@ -5,7 +5,7 @@ let package = Package(
     name: "Dahlia",
     defaultLocalization: "ja",
     platforms: [
-        .macOS(.v26)
+        .macOS(.v26),
     ],
     products: [
         .executable(name: "Dahlia", targets: ["Dahlia"]),
@@ -34,8 +34,10 @@ let package = Package(
         .target(
             name: "DahliaMeetingAccess",
             dependencies: [
+                "DahliaLindera",
                 "DahliaRuntimeSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "GRDBSQLite", package: "GRDB.swift"),
             ],
             path: "Sources/DahliaMeetingAccess"
         ),
@@ -51,7 +53,7 @@ let package = Package(
             name: "Dahlia",
             dependencies: [
                 "DahliaAEC3",
-                "DahliaLindera",
+                "DahliaMeetingAccess",
                 "DahliaRuntimeSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
@@ -81,6 +83,6 @@ let package = Package(
                 "AGENTS.md",
                 "CLAUDE.md",
             ]
-        )
+        ),
     ]
 )

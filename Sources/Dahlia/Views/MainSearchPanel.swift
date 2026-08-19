@@ -194,7 +194,6 @@ struct MainSearchPanel: View {
         }
         return MainSearchResultRow(
             title: meeting.displayTitle,
-            inlineDetail: meetingSubtitle(meeting),
             projectBadge: meeting.projectName,
             projectTint: meeting.projectId.map { appearanceForProject($0).color.color },
             dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .omitted),
@@ -244,15 +243,6 @@ struct MainSearchPanel: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .accessibilityAddTraits(.isHeader)
-    }
-
-    private func meetingSubtitle(_ meeting: MeetingSidebarItem) -> String? {
-        guard let context = meeting.searchMatchContext, context.kind == .transcript else {
-            return nil
-        }
-        let evidence = "\(L10n.transcriptMatch) \(context.text)"
-        guard let timestamp = context.timestamp else { return evidence }
-        return "\(timestamp.formatted(date: .omitted, time: .shortened)) · \(evidence)"
     }
 
     private func activateSelectionOrSubmit() {
