@@ -4,6 +4,7 @@ struct MainSearchPanel: View {
     @Bindable var model: MainSearchModel
     var sidebarViewModel: SidebarViewModel
     let panelWidth: CGFloat
+    let appearanceForProject: (UUID) -> ProjectAppearance
     let onDismiss: () -> Void
     let onOpenMeeting: (UUID) -> Void
     let onOpenProject: (UUID) -> Void
@@ -122,23 +123,17 @@ struct MainSearchPanel: View {
         } else {
             if !model.meetings.isEmpty {
                 sectionHeader(model.isRecent ? L10n.recentMeetings : L10n.meetings)
-                ForEach(model.meetings) { meeting in
-                    MainSearchResultRow(
-                        title: meeting.displayTitle,
-                        subtitle: meeting.projectName,
-                        systemImage: "list.bullet.rectangle",
-                        isSelected: model.selectedResultID == .meeting(meeting.id),
-                        action: { onOpenMeeting(meeting.id) }
-                    )
-                    .id(MainSearchResultID.meeting(meeting.id))
+                ForEach(Array(model.meetings.enumerated()), id: \.element.id) { index, meeting in
+                    meetingRow(meeting, index: index)
                 }
                 if model.hasMoreMeetings {
-                    Button(L10n.loadMore) {
-                        model.loadMore(using: sidebarViewModel)
-                    }
-                    .disabled(model.isLoading)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    Button(L10n.loadMore) { model.loadMore(using: sidebarViewModel) }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .disabled(model.isLoading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
             }
 
@@ -161,8 +156,8 @@ struct MainSearchPanel: View {
                 ForEach(model.projects) { project in
                     MainSearchResultRow(
                         title: project.projectName,
-                        subtitle: L10n.meetingCount(project.meetingCount),
-                        systemImage: "folder",
+                        inlineDetail: L10n.meetingCount(project.meetingCount),
+                        leadingProjectAppearance: appearanceForProject(project.id),
                         isSelected: model.selectedResultID == .project(project.id),
                         action: { onOpenProject(project.id) }
                     )
@@ -176,6 +171,24 @@ struct MainSearchPanel: View {
                     .padding(.vertical, 8)
             }
         }
+    }
+
+    private func meetingRow(_ meeting: MeetingSidebarItem, index: Int) -> some View {
+        let shortcutNumber = index < 9 ? index + 1 : nil
+        let shortcut = shortcutNumber.map {
+            KeyboardShortcut(KeyEquivalent(Character(String($0))), modifiers: .command)
+        }
+        return MainSearchResultRow(
+            title: meeting.displayTitle,
+            projectBadge: meeting.projectName,
+            projectTint: meeting.projectId.map { appearanceForProject($0).color.color },
+            dateText: meeting.effectiveRecordingStartedAt.formatted(date: .numeric, time: .shortened),
+            shortcutNumber: shortcutNumber,
+            isSelected: model.selectedResultID == .meeting(meeting.id),
+            action: { onOpenMeeting(meeting.id) }
+        )
+        .keyboardShortcut(shortcut)
+        .id(MainSearchResultID.meeting(meeting.id))
     }
 
     private func sectionHeader(_ title: String) -> some View {

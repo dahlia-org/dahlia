@@ -143,6 +143,7 @@ struct ContentView: View {
             )
         }
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
+        .disabled(searchModel.isPresented && !isShowingSettings)
         .overlay(alignment: .topTrailing) {
             if !isShowingSettings {
                 DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
@@ -188,6 +189,12 @@ struct ContentView: View {
                 MainSearchOverlay(
                     model: searchModel,
                     sidebarViewModel: sidebarViewModel,
+                    appearanceForProject: { projectId in
+                        mainWindowNavigation.projectAppearance(
+                            projectId: projectId,
+                            vaultId: sidebarViewModel.currentVault?.id
+                        )
+                    },
                     onOpenMeeting: openSearchMeeting,
                     onOpenProject: openSearchProject
                 )

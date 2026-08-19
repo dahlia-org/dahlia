@@ -36,6 +36,7 @@ struct MainSearchSuggestions: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .controlSize(.small)
         .sheet(isPresented: $isCustomDateRangePresented) {
             MeetingSearchDateRangeView(
