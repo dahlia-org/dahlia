@@ -56,12 +56,12 @@ swift build && swift run Dahlia
 swift test
 
 # Dahlia.dmg のビルド + 署名 + notarization + staple
-./scripts/notarize.sh
+.agents/skills/release-dahlia-app/scripts/notarize.sh
 
-# $release-dahlia でレビュー済みの日英ノートを準備してから GitHub Release を作成
-./scripts/create-github-release.sh \
-  --notes-file-ja .build/release-notes/Dahlia.ja.md \
-  --notes-file-en .build/release-notes/Dahlia.en.md
+# $release-dahlia-app でレビュー済みの日英ノートを準備してから GitHub Release を作成
+.agents/skills/release-dahlia-app/scripts/create-github-release.sh \
+  --notes-file-ja .build/release-notes/release-note-ja.md \
+  --notes-file-en .build/release-notes/release-note-en.md
 
 # 整形 + Lint
 ./scripts/lint.sh
@@ -92,9 +92,9 @@ xcrun notarytool store-credentials "dahlia-notary" \
   --password "APP_SPECIFIC_PASSWORD"
 ```
 
-`./scripts/notarize.sh` は `NOTARY_PROFILE` 環境変数（既定値: `dahlia-notary`）を使い、署名・notarization・staple 済みの `Dahlia.dmg` を作成します。
+`.agents/skills/release-dahlia-app/scripts/notarize.sh` は `NOTARY_PROFILE` 環境変数（既定値: `dahlia-notary`）を使い、署名・notarization・staple 済みの `Dahlia.dmg` を作成します。
 
-Dahlia のアプリ内更新には Sparkle 2 を使用します。製品版は24時間ごとに更新を確認し、利用可能な場合はユーザーに案内します。更新は既定では自動インストールしません。Ed25519 秘密鍵はログインキーチェーンの `com.dahlia.app` アカウントに保存されるため、安全な場所へバックアップしてください。別のリリースマシンでは Sparkle の `generate_keys` ツールで既存の秘密鍵をインポートし、代替鍵を新規生成したり、エクスポートした秘密鍵をコミットしたりしないでください。`create-github-release.sh` はこの鍵で DMG 更新、appcast、多言語リリースノートに署名し、GitHub Release へ `Dahlia.dmg`、`appcast.xml`、`Dahlia.ja.md`、`Dahlia.en.md` をアップロードします。
+Dahlia のアプリ内更新には Sparkle 2 を使用します。製品版は24時間ごとに更新を確認し、利用可能な場合はユーザーに案内します。更新は既定では自動インストールしません。Ed25519 秘密鍵はログインキーチェーンの `com.dahlia.app` アカウントに保存されるため、安全な場所へバックアップしてください。別のリリースマシンでは Sparkle の `generate_keys` ツールで既存の秘密鍵をインポートし、代替鍵を新規生成したり、エクスポートした秘密鍵をコミットしたりしないでください。`create-github-release.sh` はこの鍵で DMG 更新、appcast、多言語リリースノートに署名し、GitHub Release へ `Dahlia.dmg`、`appcast.xml`、`release-note-ja.md`、`release-note-en.md` をアップロードします。
 
 リリース用ラップトップを交換するときは、次の手順で Sparkle 鍵を移行します。エクスポートファイルはパスワードと同等に機密性の高い、暗号化されていない秘密鍵です。暗号化済みのオフラインストレージへ直接エクスポートし、信頼できる経路で移してください。リポジトリ、クラウド同期フォルダ、チャット、Issue の添付ファイルには置かないでください。
 
@@ -120,13 +120,13 @@ swift package resolve
 
 インポート後は暗号化されていない転送用コピーを削除し、アクセス制御された暗号化バックアップを 1 つ保管してください。新しいラップトップで `-f` を付けずに `generate_keys` を実行してはいけません。別の鍵を生成すると、インストール済みの Dahlia が以後の更新を受け入れられなくなります。
 
-リリースを公開するには GitHub CLI（`gh`）をインストールして認証し、Codex でリポジトリの `$release-dahlia` skill を使用します。この skill はリリース範囲全体からバージョンを決定し、`Resources/Info.plist` の両バージョンを更新して、レビュー対象の日英ノートを `.build/release-notes` 配下に作成します。バージョン変更を含むすべてのソース変更をコミットして push してから、次を実行します。
+リリースを公開するには GitHub CLI（`gh`）をインストールして認証し、Codex でリポジトリの `$release-dahlia-app` skill を使用します。この skill はリリース範囲全体からバージョンを決定し、`Resources/Info.plist` の両バージョンを更新して、レビュー対象の日英ノートを `.build/release-notes` 配下に作成します。バージョン変更を含むすべてのソース変更をコミットして push してから、次を実行します。
 
 ```bash
-./scripts/notarize.sh
-./scripts/create-github-release.sh \
-  --notes-file-ja .build/release-notes/Dahlia.ja.md \
-  --notes-file-en .build/release-notes/Dahlia.en.md
+.agents/skills/release-dahlia-app/scripts/notarize.sh
+.agents/skills/release-dahlia-app/scripts/create-github-release.sh \
+  --notes-file-ja .build/release-notes/release-note-ja.md \
+  --notes-file-en .build/release-notes/release-note-en.md
 ```
 
 `create-github-release.sh` はレビュー済みの日英ノートを必須入力とし、決定的な検証と公開だけを行います。DMG の署名、公証チケット、固定ファイル名 `Dahlia.dmg`、内包アプリのマーケティング／ビルドバージョン、ビルド番号の単調増加、Sparkle feed と署名設定、ディスクイメージの整合性、両言語ノートの署名と長さを検証します。その後、現在のコミットに `v<version>` タグを作成（既存タグがある場合は同じコミットを指すことを確認）し、対応する GitHub Release に appcast が署名した DMG と多言語ノートをアップロードします。Sparkle はアプリの優先言語に応じて日本語または英語のノートを選択します。作業ツリーに未コミットの変更がある場合は公開しません。最新版は常に <https://github.com/dahlia-org/dahlia/releases/latest/download/Dahlia.dmg> から直接ダウンロードできます。

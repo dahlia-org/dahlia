@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dahlia App Release"
+  short_description: "Prepare and publish a localized Dahlia app release."
+  default_prompt: "Use $release-dahlia-app to prepare and publish the next Dahlia desktop app release."
