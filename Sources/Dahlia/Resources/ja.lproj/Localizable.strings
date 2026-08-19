@@ -101,6 +101,14 @@
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
 "Meetings" = "ミーティング";
+"List" = "リスト";
+"Project Detail Display" = "プロジェクト詳細の表示";
+"Previous Month" = "前の月";
+"Next Month" = "次の月";
+"Only the newest 500 meetings are shown." = "最新500件のミーティングのみ表示しています。";
+"Only the newest 500 meetings in this month are shown." = "この月の最新500件のミーティングのみ表示しています。";
+"%lld more" = "他%lld件";
+"The selected project is no longer available." = "選択したプロジェクトは利用できなくなりました。";
 "Recent" = "最近の項目";
 "Projects" = "プロジェクト";
 "Organize Sidebar" = "サイドバーを整理";

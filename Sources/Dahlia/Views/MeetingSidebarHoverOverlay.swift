@@ -7,6 +7,7 @@ struct MeetingSidebarHoverOverlay: View {
     let controller: MeetingSidebarHoverController
     let containerOrigin: CGPoint
     let windowBounds: CGRect
+    let onOpenProject: (UUID) -> Void
     let onEditProject: (UUID) -> Void
     let onToggleProjectPin: (UUID) -> Void
 
@@ -41,6 +42,10 @@ struct MeetingSidebarHoverOverlay: View {
                     project: project,
                     appearance: controller.visibleProjectAppearance,
                     isPinned: controller.visibleProjectIsPinned,
+                    onOpen: {
+                        controller.dismissAll()
+                        onOpenProject(project.projectId)
+                    },
                     onTogglePin: {
                         controller.dismissAll()
                         onToggleProjectPin(project.projectId)

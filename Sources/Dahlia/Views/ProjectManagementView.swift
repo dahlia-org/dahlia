@@ -14,6 +14,9 @@ struct ProjectManagementView: View {
     let showsCustomerIntelligence: Bool
     let onOpenCustomerIntelligence: () -> Void
     let onCreateProject: () -> Void
+    let onOpenProject: (UUID) -> Void
+    let onOpenMeeting: (UUID) -> Void
+    let onShowProjectCatalog: () -> Void
     let onEditProject: (ProjectOverviewItem) -> Void
     let onRequestProjectDeletion: (ProjectOverviewItem) -> Void
     let onOpenSidebarProject: (UUID, ProjectNavigationIntent) -> Void
@@ -40,7 +43,7 @@ struct ProjectManagementView: View {
                     isShowingUpcomingSchedule: false,
                     onShowUpcomingSchedule: onShowUpcomingSchedule,
                     isShowingProjects: true,
-                    onShowProjects: showProjects,
+                    onShowProjects: onShowProjectCatalog,
                     isShowingUnprocessedRecordings: false,
                     onShowUnprocessedRecordings: onShowUnprocessedRecordings,
                     showsCustomerIntelligence: showsCustomerIntelligence,
@@ -69,6 +72,9 @@ struct ProjectManagementView: View {
             }
             .mainDetailPane()
         }
+        .onChange(of: sidebarViewModel.allProjectItems) {
+            reconcileVisibleProject()
+        }
     }
 
     @ViewBuilder
@@ -89,12 +95,31 @@ struct ProjectManagementView: View {
             } actions: {
                 Button(L10n.retry, action: sidebarViewModel.retryProjectCatalogLoading)
             }
+        } else if case let .project(projectID) = mainWindowNavigation.currentLocation,
+                  let project = sidebarViewModel.allProjectItems.first(where: { $0.projectId == projectID }) {
+            ProjectDetailView(
+                project: project,
+                projects: sidebarViewModel.allProjectItems,
+                appearance: projectAppearance(project.projectId),
+                appearanceForProject: projectAppearance,
+                vaultID: sidebarViewModel.currentVault?.id,
+                dbQueue: sidebarViewModel.dbQueue,
+                workspaceChangeToken: sidebarViewModel.workspaceChangeToken,
+                displayMode: mainWindowNavigation.projectDetailDisplayMode(vaultId: sidebarViewModel.currentVault?.id),
+                onChangeDisplayMode: {
+                    mainWindowNavigation.setProjectDetailDisplayMode($0, vaultId: sidebarViewModel.currentVault?.id)
+                },
+                onBack: onShowProjectCatalog,
+                onEdit: { onEditProject(project) },
+                onOpenMeeting: onOpenMeeting
+            )
         } else {
             ProjectCatalogView(
                 projects: sidebarViewModel.allProjectItems,
                 pinnedProjectIDs: Set(mainWindowNavigation.pinnedProjectIDs(vaultId: sidebarViewModel.currentVault?.id)),
                 canCreateMeeting: !captionViewModel.isRecordingStartPending && !captionViewModel.isFinalizingRecording,
                 appearanceForProject: projectAppearance,
+                onOpenProject: { onOpenProject($0.projectId) },
                 onEditProject: onEditProject,
                 onDeleteProject: onRequestProjectDeletion,
                 onTogglePin: toggleProjectPin,
@@ -104,8 +129,10 @@ struct ProjectManagementView: View {
         }
     }
 
-    private func showProjects() {
-        mainWindowNavigation.recordNavigation(to: .projects)
+    private func reconcileVisibleProject() {
+        guard case let .project(projectID) = mainWindowNavigation.currentLocation,
+              !sidebarViewModel.allProjectItems.contains(where: { $0.projectId == projectID }) else { return }
+        onShowProjectCatalog()
     }
 
     private func toggleProjectPin(_ project: ProjectOverviewItem) {

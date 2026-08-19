@@ -10,6 +10,7 @@ struct ProjectCatalogView: View {
     let pinnedProjectIDs: Set<UUID>
     let canCreateMeeting: Bool
     let appearanceForProject: (UUID) -> ProjectAppearance
+    let onOpenProject: (ProjectOverviewItem) -> Void
     let onEditProject: (ProjectOverviewItem) -> Void
     let onDeleteProject: (ProjectOverviewItem) -> Void
     let onTogglePin: (ProjectOverviewItem) -> Void
@@ -67,6 +68,7 @@ struct ProjectCatalogView: View {
                                     appearance: appearanceForProject(project.projectId),
                                     isPinned: pinnedProjectIDs.contains(project.projectId),
                                     canCreateMeeting: canCreateMeeting,
+                                    onOpen: { onOpenProject(project) },
                                     onEdit: { onEditProject(project) },
                                     onDelete: { onDeleteProject(project) },
                                     onTogglePin: { onTogglePin(project) },

@@ -6,6 +6,8 @@ struct DahliaWindowHeaderIconButton: View {
     let helpShortcut: String?
     let showsHoverHighlight: Bool
     let presentsHelpInContainerOverlay: Bool
+    let controlSize: CGFloat
+    let symbolFont: Font
     let action: () -> Void
 
     @Environment(DahliaWindowHeaderHelpController.self) private var helpController
@@ -21,6 +23,8 @@ struct DahliaWindowHeaderIconButton: View {
         helpShortcut: String? = nil,
         showsHoverHighlight: Bool = true,
         presentsHelpInContainerOverlay: Bool = false,
+        controlSize: CGFloat = DahliaDesign.windowHeaderControlSize,
+        symbolFont: Font = .body,
         action: @escaping () -> Void
     ) {
         self.label = label
@@ -28,6 +32,8 @@ struct DahliaWindowHeaderIconButton: View {
         self.helpShortcut = helpShortcut
         self.showsHoverHighlight = showsHoverHighlight
         self.presentsHelpInContainerOverlay = presentsHelpInContainerOverlay
+        self.controlSize = controlSize
+        self.symbolFont = symbolFont
         self.action = action
     }
 
@@ -35,10 +41,10 @@ struct DahliaWindowHeaderIconButton: View {
         Button(action: action) {
             Label(label, systemImage: systemImage)
                 .labelStyle(.iconOnly)
-                .dahliaFixedSymbol()
+                .font(symbolFont)
                 .frame(
-                    width: DahliaDesign.windowHeaderControlSize,
-                    height: DahliaDesign.windowHeaderControlSize
+                    width: controlSize,
+                    height: controlSize
                 )
                 .contentShape(.rect)
         }

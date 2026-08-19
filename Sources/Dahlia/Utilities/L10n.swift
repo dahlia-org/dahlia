@@ -170,6 +170,23 @@ enum L10n {
     static var meetings: String { String(localized: "Meetings", bundle: bundle) }
     static var recent: String { String(localized: "Recent", bundle: bundle) }
     static var projects: String { String(localized: "Projects", bundle: bundle) }
+    static var list: String { String(localized: "List", bundle: bundle) }
+    static var projectDetailDisplay: String { String(localized: "Project Detail Display", bundle: bundle) }
+    static var previousMonth: String { String(localized: "Previous Month", bundle: bundle) }
+    static var nextMonth: String { String(localized: "Next Month", bundle: bundle) }
+    static var projectMeetingLimitReached: String { String(
+        localized: "Only the newest 500 meetings are shown.",
+        bundle: bundle
+    ) }
+    static var projectCalendarLimitReached: String { String(
+        localized: "Only the newest 500 meetings in this month are shown.",
+        bundle: bundle
+    ) }
+
+    static func otherMeetings(_ count: Int) -> String {
+        String(format: String(localized: "%lld more", bundle: bundle), locale: .current, count)
+    }
+
     static var sidebarOrganization: String { String(localized: "Organize Sidebar", bundle: bundle) }
     static var chronological: String { String(localized: "Chronological", bundle: bundle) }
     static var groupByProject: String { String(localized: "Group by Project", bundle: bundle) }
@@ -673,6 +690,11 @@ enum L10n {
     static var chatSelectedMeetingUnavailable: String {
         String(localized: "The selected meeting is no longer available.", bundle: bundle)
     }
+
+    static var chatSelectedProjectUnavailable: String { String(
+        localized: "The selected project is no longer available.",
+        bundle: bundle
+    ) }
 
     static var projectName: String { String(localized: "Project Name", bundle: bundle) }
     static var projectIcon: String { String(localized: "Project Icon", bundle: bundle) }

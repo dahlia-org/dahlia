@@ -101,6 +101,14 @@
 "Good afternoon" = "Good afternoon";
 "Good evening" = "Good evening";
 "Meetings" = "Meetings";
+"List" = "List";
+"Project Detail Display" = "Project Detail Display";
+"Previous Month" = "Previous Month";
+"Next Month" = "Next Month";
+"Only the newest 500 meetings are shown." = "Only the newest 500 meetings are shown.";
+"Only the newest 500 meetings in this month are shown." = "Only the newest 500 meetings in this month are shown.";
+"%lld more" = "%lld more";
+"The selected project is no longer available." = "The selected project is no longer available.";
 "Recent" = "Recent";
 "Projects" = "Projects";
 "Organize Sidebar" = "Organize Sidebar";

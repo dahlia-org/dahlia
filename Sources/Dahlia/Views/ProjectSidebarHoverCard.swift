@@ -4,6 +4,7 @@ struct ProjectSidebarHoverCard: View {
     let project: ProjectOverviewItem
     let appearance: ProjectAppearance
     let isPinned: Bool
+    let onOpen: () -> Void
     let onTogglePin: () -> Void
     let onEdit: () -> Void
 
@@ -13,13 +14,19 @@ struct ProjectSidebarHoverCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                ProjectAppearanceIcon(appearance: appearance)
+                Button(action: onOpen) {
+                    HStack(spacing: 8) {
+                        ProjectAppearanceIcon(appearance: appearance)
 
-                Text(project.projectName)
-                    .bold()
-                    .lineLimit(2)
+                        Text(project.projectName)
+                            .bold()
+                            .lineLimit(2)
 
-                Spacer(minLength: 0)
+                        Spacer(minLength: 0)
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button(pinActionLabel, systemImage: pinSystemImage, action: onTogglePin)
                     .labelStyle(.iconOnly)
@@ -28,13 +35,9 @@ struct ProjectSidebarHoverCard: View {
                     .padding(5)
                     .background(
                         isPinHovered ? Color.black.opacity(0.08) : .clear,
-                        in: .rect(corners: .concentric(
-                            minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
-                        ))
+                        in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                     )
-                    .contentShape(.rect(corners: .concentric(
-                        minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
-                    )))
+                    .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
                     .onHover { isPinHovered = $0 }
             }
 
@@ -49,13 +52,9 @@ struct ProjectSidebarHoverCard: View {
                 .padding(.vertical, 4)
                 .background(
                     isEditHovered ? Color.black.opacity(0.08) : .clear,
-                    in: .rect(corners: .concentric(
-                        minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
-                    ))
+                    in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
                 )
-                .contentShape(.rect(corners: .concentric(
-                    minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
-                )))
+                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
                 .onHover { isEditHovered = $0 }
         }
         .dahliaSidebarHoverCard()

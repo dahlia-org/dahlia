@@ -8,6 +8,55 @@ import GRDB
     @MainActor
     struct CodexChatContextProviderTests {
         @Test
+        func projectUsesLatestDatabaseSnapshotAndActiveVault() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let vault = testVault(name: "Active Project")
+            let otherVault = testVault(name: "Other Project")
+            let projectID = UUID.v7()
+            try await database.dbQueue.write { db in
+                try vault.insert(db)
+                try otherVault.insert(db)
+                try ProjectRecord(
+                    id: projectID,
+                    vaultId: vault.id,
+                    parentProjectId: nil,
+                    name: "Project",
+                    createdAt: .now,
+                    description: "Initial",
+                    projectType: .customer
+                ).insert(db)
+            }
+            let provider = CodexChatContextProvider()
+            provider.update(
+                vaultID: vault.id,
+                meetingID: nil,
+                projectID: projectID,
+                draftMeeting: nil,
+                dbQueue: database.dbQueue
+            )
+
+            #expect(try await provider.currentContext(vaultID: vault.id) == .project(
+                id: projectID,
+                name: "Project",
+                description: "Initial"
+            ))
+
+            try await database.dbQueue.write { db in
+                let fetchedProject = try ProjectRecord.fetchOne(db, key: projectID)
+                var project = try #require(fetchedProject)
+                project.description = "Latest"
+                try project.update(db)
+            }
+
+            #expect(try await provider.currentContext(vaultID: vault.id) == .project(
+                id: projectID,
+                name: "Project",
+                description: "Latest"
+            ))
+            #expect(try await provider.currentContext(vaultID: otherVault.id) == nil)
+        }
+
+        @Test
         func savedMeetingUsesLatestDatabaseSnapshotAndActiveVault() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = testVault(name: "Active")

@@ -35,8 +35,8 @@ struct CodexChatContextDivider: View {
 
     var title: String {
         guard let context else { return L10n.noMeetingSelected }
-        let meetingName = context.meetingName.nilIfBlank ?? L10n.newMeeting
-        return context.isDraft ? L10n.chatMeetingDraft(meetingName) : meetingName
+        let displayName = context.displayName.nilIfBlank ?? L10n.newMeeting
+        return context.isDraft ? L10n.chatMeetingDraft(displayName) : displayName
     }
 
     var accessibilityLabel: String {

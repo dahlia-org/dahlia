@@ -71,6 +71,23 @@
             #expect(invalidRestored.projectAppearance(projectId: validProject, vaultId: firstVault) == appearance)
         }
 
+        @Test
+        func persistsVaultScopedProjectDetailDisplayMode() throws {
+            let suiteName = "MainWindowNavigationTests-\(UUID.v7())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let firstVault = UUID.v7()
+            let secondVault = UUID.v7()
+            let navigation = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+
+            #expect(navigation.projectDetailDisplayMode(vaultId: firstVault) == .list)
+            navigation.setProjectDetailDisplayMode(.calendar, vaultId: firstVault)
+
+            let restored = MainWindowNavigation(openMainWindow: {}, settingsDefaults: defaults)
+            #expect(restored.projectDetailDisplayMode(vaultId: firstVault) == .calendar)
+            #expect(restored.projectDetailDisplayMode(vaultId: secondVault) == .list)
+        }
+
     }
 
     extension MainWindowNavigationTests {
@@ -98,6 +115,21 @@
             await navigateForward(navigation)
             #expect(navigation.currentLocation == .unprocessedRecordings)
             #expect(!navigation.canGoForward)
+        }
+
+        @Test
+        func navigatesBetweenProjectCatalogAndProjectDetail() async {
+            let navigation = MainWindowNavigation(openMainWindow: {})
+            let projectID = UUID.v7()
+            navigation.recordNavigation(to: .projects)
+            navigation.recordNavigation(to: .project(projectID))
+
+            await navigateBack(navigation)
+            #expect(navigation.currentLocation == .projects)
+
+            await navigateForward(navigation)
+            #expect(navigation.currentLocation == .project(projectID))
+            #expect(navigation.section == .projects)
         }
 
         @Test

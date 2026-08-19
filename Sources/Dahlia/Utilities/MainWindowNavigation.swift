@@ -6,12 +6,13 @@ enum MainWindowLocation: Equatable {
     case unprocessedRecordings
     case meeting(UUID)
     case projects
+    case project(UUID)
 
     var section: MainWindowSection {
         switch self {
         case .upcomingSchedule, .unprocessedRecordings, .meeting:
             .meetings
-        case .projects:
+        case .projects, .project:
             .projects
         }
     }
@@ -31,6 +32,7 @@ final class MainWindowNavigation {
     private static let meetingSidebarDisplayModeDefaultsKey = "meetingSidebarDisplayMode"
     private static let pinnedProjectIDsDefaultsKey = "meetingSidebarPinnedProjectIDs"
     private static let projectAppearancesDefaultsKey = "projectAppearances"
+    private static let projectDetailDisplayModesDefaultsKey = "projectDetailDisplayModes"
 
     private(set) var section: MainWindowSection = .meetings
     private(set) var currentLocation: MainWindowLocation = .upcomingSchedule
@@ -53,6 +55,7 @@ final class MainWindowNavigation {
 
     private var pinnedProjectIDsByVault: [String: [String]]
     private var projectAppearancesByVault: [String: [String: ProjectAppearance]]
+    private var projectDetailDisplayModesByVault: [String: ProjectDetailDisplayMode]
     private var navigationGeneration = 0
     private var backHistory: [MainWindowLocation] = []
     private var forwardHistory: [MainWindowLocation] = []
@@ -94,6 +97,7 @@ final class MainWindowNavigation {
             .flatMap(MeetingSidebarDisplayMode.init(rawValue:)) ?? .chronological
         pinnedProjectIDsByVault = Self.loadPinnedProjectIDs(from: settingsDefaults)
         projectAppearancesByVault = Self.loadProjectAppearances(from: settingsDefaults)
+        projectDetailDisplayModesByVault = Self.loadProjectDetailDisplayModes(from: settingsDefaults)
     }
 
     func showMeetings() {
@@ -138,6 +142,17 @@ final class MainWindowNavigation {
         guard let vaultId else { return }
         projectAppearancesByVault[vaultId.uuidString, default: [:]][projectId.uuidString] = appearance
         saveProjectAppearances()
+    }
+
+    func projectDetailDisplayMode(vaultId: UUID?) -> ProjectDetailDisplayMode {
+        guard let vaultId else { return .list }
+        return projectDetailDisplayModesByVault[vaultId.uuidString] ?? .list
+    }
+
+    func setProjectDetailDisplayMode(_ mode: ProjectDetailDisplayMode, vaultId: UUID?) {
+        guard let vaultId else { return }
+        projectDetailDisplayModesByVault[vaultId.uuidString] = mode
+        saveProjectDetailDisplayModes()
     }
 
     func openMeetings() {
@@ -198,6 +213,17 @@ final class MainWindowNavigation {
     private func saveProjectAppearances() {
         guard let data = try? JSONEncoder().encode(projectAppearancesByVault) else { return }
         settingsDefaults.set(data, forKey: Self.projectAppearancesDefaultsKey)
+    }
+
+    private static func loadProjectDetailDisplayModes(from defaults: UserDefaults) -> [String: ProjectDetailDisplayMode] {
+        guard let data = defaults.data(forKey: projectDetailDisplayModesDefaultsKey),
+              let values = try? JSONDecoder().decode([String: ProjectDetailDisplayMode].self, from: data) else { return [:] }
+        return values
+    }
+
+    private func saveProjectDetailDisplayModes() {
+        guard let data = try? JSONEncoder().encode(projectDetailDisplayModesByVault) else { return }
+        settingsDefaults.set(data, forKey: Self.projectDetailDisplayModesDefaultsKey)
     }
 
     var canGoBack: Bool { !backHistory.isEmpty && !isNavigatingHistory }

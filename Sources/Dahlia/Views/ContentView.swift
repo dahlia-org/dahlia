@@ -54,6 +54,9 @@ struct ContentView: View {
                         showsCustomerIntelligence: isCustomerIntelligenceBetaEnabled,
                         onOpenCustomerIntelligence: { openWindow(id: WindowID.organizationWorkspace) },
                         onCreateProject: presentProjectCreation,
+                        onOpenProject: openProjectDetail,
+                        onOpenMeeting: openProjectMeeting,
+                        onShowProjectCatalog: showProjectCatalog,
                         onEditProject: presentProjectEditor,
                         onRequestProjectDeletion: { projectPendingDeletion = $0 },
                         onOpenSidebarProject: handleMeetingSidebarProjectAction,
@@ -124,13 +127,14 @@ struct ContentView: View {
             }
             .meetingSidebarHoverOverlay(
                 sidebarViewModel: sidebarViewModel,
-                isVisible: isSidebarVisible && !isShowingSettings,
+                isVisible: !isShowingSettings,
+                onOpenProject: openProjectDetail,
                 onEditProject: { handleMeetingSidebarProjectAction($0, .edit) },
                 onToggleProjectPin: {
                     mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id)
                 }
             )
-            .mainSidebarHelpOverlay(isVisible: isSidebarVisible && !isShowingSettings)
+            .mainSidebarHelpOverlay(isVisible: !isShowingSettings)
 
         } sidebar: {
             CodexChatSidebarView(
@@ -331,8 +335,8 @@ private extension ContentView {
         sidebarViewModel.selectMeeting(id)
     }
 
-    private func openSearchProject(_: UUID) {
-        showProjectCatalog()
+    private func openSearchProject(_ id: UUID) {
+        openProjectDetail(id)
     }
 
     private func handleMeetingSidebarProjectAction(_ id: UUID, _ intent: ProjectNavigationIntent) {
@@ -358,9 +362,11 @@ private extension ContentView {
 
     private func syncChatContext() {
         if mainWindowNavigation.section == .projects {
+            let projectID: UUID? = if case let .project(id) = mainWindowNavigation.currentLocation { id } else { nil }
             chatCoordinator.updateCurrentContext(
                 vaultID: sidebarViewModel.currentVault?.id,
                 meetingID: nil,
+                projectID: projectID,
                 draftMeeting: nil,
                 dbQueue: sidebarViewModel.dbQueue
             )
@@ -491,6 +497,17 @@ private extension ContentView {
 
     private func showProjectCatalog() {
         mainWindowNavigation.recordNavigation(to: .projects)
+        syncChatContext()
+    }
+
+    private func openProjectDetail(_ id: UUID) {
+        mainWindowNavigation.recordNavigation(to: .project(id))
+        syncChatContext()
+    }
+
+    private func openProjectMeeting(_ id: UUID) {
+        mainWindowNavigation.showMeetings()
+        sidebarViewModel.selectMeeting(id)
     }
 
     private func presentProjectCreation() {
@@ -702,6 +719,8 @@ private extension ContentView {
             return exists
         case .projects:
             return true
+        case let .project(projectID):
+            return sidebarViewModel.allProjectItems.contains(where: { $0.projectId == projectID })
         }
     }
 
@@ -717,7 +736,10 @@ private extension ContentView {
             sidebarViewModel.selectMeeting(meetingID)
         case .projects:
             mainWindowNavigation.showProjects()
+        case .project:
+            mainWindowNavigation.showProjects()
         }
+        syncChatContext()
     }
 
     private func deleteProject(
