@@ -129,6 +129,14 @@ struct ContentView: View {
                     onGoForward: goForward
                 )
             }
+            .meetingSidebarHoverOverlay(
+                sidebarViewModel: sidebarViewModel,
+                isVisible: isSidebarVisible && !isShowingSettings,
+                onEditProject: { handleMeetingSidebarProjectAction($0, .edit) },
+                onToggleProjectPin: {
+                    mainWindowNavigation.toggleProjectPin($0, vaultId: sidebarViewModel.currentVault?.id)
+                }
+            )
             .mainSidebarHelpOverlay(isVisible: isSidebarVisible && !isShowingSettings)
 
         } sidebar: {

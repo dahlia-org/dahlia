@@ -35,6 +35,8 @@ enum DahliaDesign {
     ))
     static let sidebarRowVerticalPadding: CGFloat = 3
     static let sidebarNavigationVerticalPadding: CGFloat = 8
+    static let sidebarHighlightCornerRadius: CGFloat = 6
+    static let sidebarHoverCardWidth: CGFloat = 280
 
     static let windowHeaderHeight: CGFloat = 32
     static let windowHeaderHorizontalPadding: CGFloat = 12
@@ -137,6 +139,27 @@ extension View {
     func dahliaChipSurface(isHovered: Bool = false, tint: Color? = nil) -> some View {
         modifier(DahliaChipSurface(isHovered: isHovered, tint: tint))
     }
+
+    func dahliaSidebarHoverCard() -> some View {
+        modifier(DahliaSidebarHoverCardModifier())
+    }
+}
+
+private struct DahliaSidebarHoverCardModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.callout)
+            .foregroundStyle(.black.opacity(0.82))
+            .padding(12)
+            .frame(width: DahliaDesign.sidebarHoverCardWidth, alignment: .leading)
+            .background(.white, in: .rect(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
+                    .stroke(.black.opacity(0.1), lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 private struct DahliaSidebarHoverHighlightModifier: ViewModifier {
@@ -151,7 +174,7 @@ private struct DahliaSidebarHoverHighlightModifier: ViewModifier {
 
         content
             .background {
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: DahliaDesign.sidebarHighlightCornerRadius)
                     .fill(color)
                     .padding(.vertical, -verticalOutset)
                     .padding(.horizontal, -6)

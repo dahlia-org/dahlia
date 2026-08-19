@@ -4,6 +4,8 @@ struct MeetingSidebarRow: View {
     let item: MeetingSidebarItem
     var contentLeadingPadding: CGFloat = 0
     var projectTint: Color?
+    var projectAppearance: ProjectAppearance?
+    var showsProjectChip = true
     let showsDateInTimestamp: Bool
     let searchText: String
     let isSelected: Bool
@@ -14,7 +16,10 @@ struct MeetingSidebarRow: View {
     let onCommitRename: () -> Void
     let onCancelRename: () -> Void
 
+    @Environment(MeetingSidebarHoverController.self) private var hoverController
     @State private var isHovered = false
+    @State private var hoverRowID = UUID()
+    @State private var rowFrame: CGRect = .zero
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
 
@@ -37,8 +42,30 @@ struct MeetingSidebarRow: View {
             verticalOutset: 2
         )
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        .onGeometryChange(for: CGRect.self) { geometry in
+            geometry.frame(in: .global)
+        } action: { frame in
+            rowFrame = frame
+            hoverController.updateRowFrame(frame, for: item.meetingId, rowID: hoverRowID)
+        }
+        .onHover(perform: updateHoverState)
+        .onDisappear { hoverController.meetingDisappeared(for: item.meetingId, rowID: hoverRowID) }
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func updateHoverState(_ isHovered: Bool) {
+        self.isHovered = isHovered
+        if isHovered {
+            hoverController.hoverBegan(
+                item: item,
+                isActiveRecording: isActiveRecording,
+                projectAppearance: projectAppearance,
+                rowFrame: rowFrame,
+                rowID: hoverRowID
+            )
+        } else {
+            hoverController.hoverEnded(for: item.meetingId, rowID: hoverRowID)
+        }
     }
 
     private var rowStyle: MeetingSidebarRowStyle {
@@ -73,7 +100,7 @@ struct MeetingSidebarRow: View {
                     .monospacedDigit()
                     .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
 
-                if let projectName = item.projectName?.nilIfBlank {
+                if showsProjectChip, let projectName = item.projectName?.nilIfBlank {
                     Text(projectName)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
