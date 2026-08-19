@@ -252,7 +252,6 @@ struct ControlPanelView: View {
             SummaryTabContentView(
                 screenshotStore: viewModel.screenshotStore,
                 document: viewModel.currentSummaryDocument,
-                meetingDescription: currentMeetingItem?.meetingDescription,
                 hasSummary: viewModel.hasCurrentMeetingSummary,
                 openScreenshot: openSummaryScreenshot,
                 transcriptText: summaryTranscriptText
