@@ -134,14 +134,24 @@ enum BackupRestoreStartupProcessor {
     }
 
     private static func validateRestoredDatabase(at url: URL) throws {
+        var probeConfiguration = Configuration()
+        probeConfiguration.readonly = true
+        let probe = try DatabaseQueue(path: url.path, configuration: probeConfiguration)
+        defer { try? probe.close() }
+        let quickCheck = try probe.read { db in
+            try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
+        }
+        guard quickCheck == "ok" else {
+            throw BackupServiceError.integrityCheckFailed(quickCheck)
+        }
+
         let queue = try DatabaseQueue(
             path: url.path,
             configuration: AppDatabaseManager.configuration(readonly: true)
         )
+        defer { try? queue.close() }
         try queue.read { db in
-            let quickCheck = try String.fetchOne(db, sql: "PRAGMA quick_check") ?? "unknown"
-            guard quickCheck == "ok",
-                  try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty,
+            guard try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty,
                   try AppDatabaseManager.migrator.hasCompletedMigrations(db),
                   try !AppDatabaseManager.migrator.hasBeenSuperseded(db),
                   try !db.tableExists(BackupService.metadataTableName),
@@ -155,10 +165,9 @@ enum BackupRestoreStartupProcessor {
         for databaseURL: URL,
         fileManager: FileManager
     ) throws {
-        let queue = try DatabaseQueue(
-            path: databaseURL.path,
-            configuration: AppDatabaseManager.configuration()
-        )
+        var configuration = Configuration()
+        configuration.busyMode = .timeout(5)
+        let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         try queue.writeWithoutTransaction { db in
             _ = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)")
         }

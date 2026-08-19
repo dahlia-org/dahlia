@@ -106,7 +106,7 @@ enum SearchDocumentsMigration {
         lastErrorCode TEXT,
         lastIntegrityCheckAt DATETIME,
         updatedAt DATETIME NOT NULL
-    ) WITHOUT ROWID;
+    );
 
     CREATE TRIGGER search_revision_jobs_insert AFTER INSERT ON search_index_jobs
     WHEN new.indexKind = 'fts' BEGIN

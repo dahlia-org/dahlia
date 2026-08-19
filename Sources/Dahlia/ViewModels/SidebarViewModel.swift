@@ -325,11 +325,12 @@ final class SidebarViewModel {
             onChange: { [weak self] revision in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    guard revision != self.searchIndexRevision else { return }
+                    self.searchIndexRevision = revision
                     self.searchIndexRefreshTask?.cancel()
                     self.searchIndexRefreshTask = Task { @MainActor [weak self] in
                         try? await Task.sleep(for: .milliseconds(500))
-                        guard !Task.isCancelled, let self, revision != self.searchIndexRevision else { return }
-                        self.searchIndexRevision = revision
+                        guard !Task.isCancelled, let self else { return }
                         self.restartCurrentMeetingSearch()
                     }
                 }
