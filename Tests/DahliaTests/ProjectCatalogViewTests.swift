@@ -20,6 +20,50 @@
             #expect(result.map(\.projectId) == [newerMatch.projectId, olderMatch.projectId])
         }
 
+        @Test
+        func sortsByNameInEitherDirection() {
+            let alpha = project(named: "Alpha", createdAt: .distantPast)
+            let beta = project(named: "Beta", createdAt: .distantFuture)
+
+            let ascending = ProjectCatalogView.projects(
+                [beta, alpha],
+                matching: "",
+                sortedBy: .name,
+                ascending: true
+            )
+            let descending = ProjectCatalogView.projects(
+                [alpha, beta],
+                matching: "",
+                sortedBy: .name,
+                ascending: false
+            )
+
+            #expect(ascending.map(\.projectId) == [alpha.projectId, beta.projectId])
+            #expect(descending.map(\.projectId) == [beta.projectId, alpha.projectId])
+        }
+
+        @Test
+        func sortsByUpdatedDateInEitherDirection() {
+            let older = project(named: "Older", createdAt: Date(timeIntervalSince1970: 100))
+            let newer = project(named: "Newer", createdAt: Date(timeIntervalSince1970: 200))
+
+            let ascending = ProjectCatalogView.projects(
+                [newer, older],
+                matching: "",
+                sortedBy: .updated,
+                ascending: true
+            )
+            let descending = ProjectCatalogView.projects(
+                [older, newer],
+                matching: "",
+                sortedBy: .updated,
+                ascending: false
+            )
+
+            #expect(ascending.map(\.projectId) == [older.projectId, newer.projectId])
+            #expect(descending.map(\.projectId) == [newer.projectId, older.projectId])
+        }
+
         private func project(named name: String, createdAt: Date, latestMeetingDate: Date? = nil) -> ProjectOverviewItem {
             ProjectOverviewItem(
                 projectId: .v7(),

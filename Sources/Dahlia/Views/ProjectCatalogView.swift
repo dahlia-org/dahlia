@@ -1,6 +1,11 @@
 import SwiftUI
 
 struct ProjectCatalogView: View {
+    enum SortField {
+        case name
+        case updated
+    }
+
     let projects: [ProjectOverviewItem]
     let pinnedProjectIDs: Set<UUID>
     let canCreateMeeting: Bool
@@ -12,9 +17,16 @@ struct ProjectCatalogView: View {
     let onCreateProject: () -> Void
 
     @State private var searchText = ""
+    @State private var sortField = SortField.updated
+    @State private var sortAscending = false
 
     var body: some View {
-        let visibleProjects = Self.projects(projects, matching: searchText)
+        let visibleProjects = Self.projects(
+            projects,
+            matching: searchText,
+            sortedBy: sortField,
+            ascending: sortAscending
+        )
 
         VStack(alignment: .leading, spacing: 24) {
             Text(L10n.projects)
@@ -40,7 +52,11 @@ struct ProjectCatalogView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
-                    ProjectCatalogHeader()
+                    ProjectCatalogHeader(
+                        sortField: sortField,
+                        sortAscending: sortAscending,
+                        onSort: updateSort
+                    )
                     Divider()
 
                     ScrollView {
@@ -66,20 +82,40 @@ struct ProjectCatalogView: View {
         .padding(.top, DahliaDesign.detailTopPadding)
         .padding(.horizontal, 48)
         .padding(.bottom, 24)
-        .frame(maxWidth: DahliaDesign.readingMaxWidth, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    static func projects(_ projects: [ProjectOverviewItem], matching query: String) -> [ProjectOverviewItem] {
+    static func projects(
+        _ projects: [ProjectOverviewItem],
+        matching query: String,
+        sortedBy sortField: SortField = .updated,
+        ascending: Bool = false
+    ) -> [ProjectOverviewItem] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return projects
             .filter { trimmedQuery.isEmpty || $0.projectName.localizedStandardContains(trimmedQuery) }
             .sorted {
-                let firstDate = $0.latestMeetingDate ?? $0.createdAt
-                let secondDate = $1.latestMeetingDate ?? $1.createdAt
-                return firstDate == secondDate
-                    ? $0.projectName.localizedStandardCompare($1.projectName) == .orderedAscending
-                    : firstDate > secondDate
+                switch sortField {
+                case .name:
+                    let comparison = $0.projectName.localizedStandardCompare($1.projectName)
+                    return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+                case .updated:
+                    let firstDate = $0.latestMeetingDate ?? $0.createdAt
+                    let secondDate = $1.latestMeetingDate ?? $1.createdAt
+                    return firstDate == secondDate
+                        ? $0.projectName.localizedStandardCompare($1.projectName) == .orderedAscending
+                        : ascending ? firstDate < secondDate : firstDate > secondDate
+                }
             }
+    }
+
+    private func updateSort(_ field: SortField) {
+        if sortField == field {
+            sortAscending.toggle()
+        } else {
+            sortField = field
+            sortAscending = field == .name
+        }
     }
 }

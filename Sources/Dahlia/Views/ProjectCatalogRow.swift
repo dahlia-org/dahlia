@@ -27,6 +27,8 @@ struct ProjectCatalogRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 120, alignment: .leading)
 
+            Spacer()
+
             HStack(spacing: 4) {
                 Menu(L10n.projectOptions, systemImage: "ellipsis") {
                     Button(L10n.editProject, systemImage: "pencil", action: onEdit)
@@ -44,7 +46,7 @@ struct ProjectCatalogRow: View {
                     .help(isPinned ? L10n.unpinProject : L10n.pinProject)
                     .projectCatalogIconHoverHighlight()
 
-                Button(L10n.createNewMeeting, systemImage: "plus", action: onCreateMeeting)
+                Button(L10n.createNewMeeting, systemImage: "square.and.pencil", action: onCreateMeeting)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.plain)
                     .disabled(!canCreateMeeting)
@@ -54,8 +56,6 @@ struct ProjectCatalogRow: View {
             .foregroundStyle(.secondary)
             .frame(width: 80, alignment: .trailing)
             .opacity(isHovered ? 1 : 0.72)
-
-            Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 16)
