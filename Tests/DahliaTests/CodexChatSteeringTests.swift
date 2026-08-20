@@ -82,7 +82,10 @@ import Foundation
         func liveTranscriptStartsANewTurnWhenTheActiveTurnFinishedBeforeSteering() async {
             let service = TestCodexChatService(
                 mode: .block,
-                steerErrors: [.rpcError(code: nil, message: "no active turn to steer")]
+                steerErrors: [.rpcError(
+                    code: nil,
+                    message: "Turn already completed: no active turn to steer. Please start another turn."
+                )]
             )
             let session = makeSession(service: service)
 
@@ -93,16 +96,19 @@ import Foundation
             session.receiveFinalizedLiveTranscript("send on the next turn")
             await waitUntilAsync { await service.steeredTextBlocks.count == 1 }
             await waitUntilAsync { await service.sentTextBlocks.count == 2 }
+            await service.completeBlockedTurn()
+            await waitUntil { !session.isGenerating }
 
-            #expect(await service.sentTextBlocks[1] == [
+            let sentTextBlocks = await service.sentTextBlocks
+            #expect(sentTextBlocks.count == 2)
+            #expect(sentTextBlocks[1] == [
                 "<live_transcript source=\"dahlia\">send on the next turn</live_transcript>",
             ])
+            #expect(await service.steeredTextBlocks.count == 1)
             #expect(session.messages.contains { $0.role == .assistant && $0.text == "Final answer" })
-            #expect(session.isGenerating)
             #expect(session.errorMessage == nil)
 
             session.disableLiveMode()
-            await waitUntil { !session.isGenerating }
         }
 
         private func makeSession(service: TestCodexChatService) -> CodexChatSessionModel {
