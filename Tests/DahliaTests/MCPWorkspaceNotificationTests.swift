@@ -9,7 +9,7 @@ import Foundation
     @MainActor
     @Suite(.serialized)
     struct MCPWorkspaceNotificationTests {
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func projectMutationNotifiesTheRunningApplication() async throws {
             let fixture = try Fixture()
             let store = try fixture.store(vaultID: fixture.primaryVaultID, allowsWrites: true)
@@ -36,7 +36,7 @@ import Foundation
             #expect(await iterator.next() != nil)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func projectMutationRefreshesTheRunningSidebar() async throws {
             let fixture = try Fixture()
             let vault = VaultRecord(

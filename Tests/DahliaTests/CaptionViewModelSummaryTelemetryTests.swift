@@ -70,11 +70,7 @@ import GRDB
         }
 
         private func waitUntil(_ condition: @escaping @MainActor () -> Bool) async -> Bool {
-            for _ in 0 ..< 10000 {
-                if condition() { return true }
-                await Task.yield()
-            }
-            return condition()
+            await pollUntil { condition() }
         }
     }
 #endif

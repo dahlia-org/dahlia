@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     @MainActor
-    @Suite(.timeLimit(.minutes(3)))
+    @Suite(.timeLimit(.minutes(1)))
     struct TranscriptPersistenceRetryTests {
         @Test
         func stopRetriesEventsRetainedAfterATemporaryDatabaseFailure() async throws {
@@ -124,11 +124,11 @@
                 try db.execute(sql: "DROP TRIGGER fail_transcript_insert")
             }
 
-            await waitUntil {
+            #expect(await waitUntil {
                 (try? fixture.database.dbQueue.read { db in
                     try TranscriptSegmentRecord.fetchOne(db, key: segment.id) != nil
                 }) == true
-            }
+            })
             let automaticallyPersisted = try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentRecord.fetchOne(db, key: segment.id) != nil
             }
@@ -233,14 +233,6 @@
                 END
                 """
             )
-        }
-    }
-
-    private func waitUntil(
-        condition: @escaping @Sendable () -> Bool
-    ) async {
-        while !condition() {
-            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 

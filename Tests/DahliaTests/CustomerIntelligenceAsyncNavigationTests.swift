@@ -21,14 +21,15 @@ import GRDB
             )
             model.scope = .organization(UUID.v7())
             let contactID = UUID.v7()
+            let newerSection: CustomerIntelligenceSection = model.section == .topics ? .projects : .topics
 
             let navigation = Task { await model.openContact(contactID) }
             await gate.waitUntilStarted()
-            model.selectSection(.topics)
+            model.selectSection(newerSection)
             await gate.release()
             await navigation.value
 
-            #expect(model.section == .topics)
+            #expect(model.section == newerSection)
             #expect(model.selection.contactID == nil)
         }
 

@@ -88,7 +88,7 @@ import os
         }
 
         @Test
-        func retriesListenerRegistrationAfterFailureWithoutPublishingEmptyState() async {
+        func retriesListenerRegistrationAfterFailureWithoutPublishingEmptyState() async throws {
             let listenerAdds = AsyncStream.makeStream(
                 of: AudioObjectPropertySelector.self,
                 bufferingPolicy: .unbounded
@@ -111,16 +111,18 @@ import os
             var listenerAddIterator = listenerAdds.stream.makeAsyncIterator()
             _ = await listenerAddIterator.next()
             _ = await listenerAddIterator.next()
-            _ = await monitor.isMonitoring()
+            #expect(await pollUntil { events.withLock { $0.count >= 2 } })
 
             let values = events.withLock { $0 }
             #expect(values.count == 2)
-            if case let .failure(failure) = values[0] {
+            let first = try #require(values.first)
+            let second = try #require(values.dropFirst().first)
+            if case let .failure(failure) = first {
                 #expect(failure.operation == .addListener)
             } else {
                 Issue.record("Expected an initial listener-registration failure")
             }
-            #expect((try? values[1].get()) == Set(["com.tinyspeck.slackmacgap.helper"]))
+            #expect((try? second.get()) == Set(["com.tinyspeck.slackmacgap.helper"]))
             await monitor.removeRunningInputObserver(observerID)
         }
     }

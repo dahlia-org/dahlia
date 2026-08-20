@@ -83,10 +83,7 @@ import Foundation
         }
 
         func waitForCount(_ count: Int) async {
-            for _ in 0 ..< 1000 {
-                if deliveries.count >= count { return }
-                await Task.yield()
-            }
+            if await pollUntil({ deliveries.count >= count }) { return }
             Issue.record("Timed out waiting for live transcript delivery")
         }
     }

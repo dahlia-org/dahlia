@@ -6,8 +6,9 @@ import GRDB
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     struct MainSearchModelTests {
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func presentsSixRecentMeetingsAndProjectsInNewestOrder() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -31,7 +32,7 @@ import GRDB
             #expect(model.selectedResultID == model.resultIDs.first)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func searchesMeetingsAndProjectsTogetherAndRejectsStaleQuery() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -52,7 +53,7 @@ import GRDB
             #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func boundsProjectSearchResults() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -70,7 +71,7 @@ import GRDB
             #expect(model.projects.count == MainSearchDesign.projectResultLimit)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func resolvesProjectQualifierIntoTokenAndFiltersMeetings() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -90,7 +91,7 @@ import GRDB
             #expect(model.projects.isEmpty)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func pagesMeetingSearchInFiftyItemBatches() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -111,7 +112,7 @@ import GRDB
             #expect(!model.hasMoreMeetings)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func presentsEmptyStateAndReportsMissingVault() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -131,7 +132,7 @@ import GRDB
             #expect(!model.hasResults)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func vaultChangeAndDismissResetAllSearchState() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -158,7 +159,7 @@ import GRDB
             #expect(model.errorMessage == nil)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func submittingPlainTextPreservesKeyboardSelection() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -179,7 +180,7 @@ import GRDB
             #expect(!model.isLoading)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func clearsSelectionWhileReplacementSearchIsPending() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -204,7 +205,7 @@ import GRDB
             model.dismiss()
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func preservesProjectSelectionWhenMeetingSearchFinishes() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -234,7 +235,7 @@ import GRDB
             #expect(model.selectedResultID == selection)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func clearsProjectSelectionWhileCatalogResultsRebuild() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -258,7 +259,7 @@ import GRDB
             model.dismiss()
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func updatesProjectResultsWhenCatalogFinishesLoading() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -279,7 +280,7 @@ import GRDB
             #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func resolvesPendingProjectQualifierAfterCatalogLoads() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
@@ -301,7 +302,7 @@ import GRDB
             #expect(model.tokens.count == 1)
         }
 
-        @Test(.timeLimit(.minutes(3)))
+        @Test(.timeLimit(.minutes(1)))
         func rebuildsMeetingSearchWhenClosedQualifierCatalogLoadsWithoutSubmit() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }

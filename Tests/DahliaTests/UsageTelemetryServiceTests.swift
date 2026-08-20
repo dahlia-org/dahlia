@@ -198,11 +198,7 @@ import Foundation
         }
 
         private func waitUntilEnabled(_ service: UsageTelemetryService) async -> Bool {
-            for _ in 0 ..< 10000 {
-                if service.isEnabled { return true }
-                await Task.yield()
-            }
-            return service.isEnabled
+            await pollUntil { service.isEnabled }
         }
 
         @Test

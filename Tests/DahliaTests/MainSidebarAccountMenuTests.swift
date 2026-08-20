@@ -17,25 +17,23 @@
         }
 
         @Test
-        func submenuAppearsOnRightWhenSpaceIsAvailable() {
-            let origin = MainSidebarAccountMenuLayout.submenuOrigin(
-                panelSize: CGSize(width: 180, height: 100),
+        func submenuAppearsOnRightAndFlipsLeftAtTheScreenEdge() {
+            let panelSize = CGSize(width: 180, height: 100)
+            let screenFrame = CGRect(x: 0, y: 0, width: 1000, height: 800)
+
+            let fitsOnRight = MainSidebarAccountMenuLayout.submenuOrigin(
+                panelSize: panelSize,
                 mainPanelFrame: CGRect(x: 100, y: 200, width: 180, height: 120),
-                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+                screenFrame: screenFrame
             )
-
-            #expect(origin == CGPoint(x: 286, y: 220))
-        }
-
-        @Test
-        func submenuMovesToLeftInsteadOfOverlappingAtRightEdge() {
-            let origin = MainSidebarAccountMenuLayout.submenuOrigin(
-                panelSize: CGSize(width: 180, height: 100),
+            let flipsToLeft = MainSidebarAccountMenuLayout.submenuOrigin(
+                panelSize: panelSize,
                 mainPanelFrame: CGRect(x: 800, y: 200, width: 180, height: 120),
-                screenFrame: CGRect(x: 0, y: 0, width: 1000, height: 800)
+                screenFrame: screenFrame
             )
 
-            #expect(origin == CGPoint(x: 614, y: 220))
+            #expect(fitsOnRight == CGPoint(x: 286, y: 220))
+            #expect(flipsToLeft == CGPoint(x: 614, y: 220))
         }
 
         @Test

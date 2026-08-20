@@ -685,6 +685,18 @@
             )
             await pipeline.start()
 
+            let persistenceReady = AsyncTestGate()
+            let startPersistence = AsyncTestGate()
+            let persistenceTask = Task.detached(priority: .high) {
+                await persistenceReady.open()
+                await startPersistence.wait()
+                for event in events {
+                    await pipeline.enqueue(event)
+                }
+                await persistedEvents.waitForCount(2)
+            }
+            await persistenceReady.wait()
+
             let stall = FiniteMainActorStall()
             defer { stall.release() }
             let stallTask = Task { @MainActor in
@@ -693,10 +705,8 @@
             #expect(await stall.waitUntilStarted())
 
             writer.appendBuffer(buffer)
-            for event in events {
-                await pipeline.enqueue(event)
-            }
-            await persistedEvents.waitForCount(2)
+            await startPersistence.open()
+            await persistenceTask.value
 
             #expect(stall.isBlocking)
             #expect(writer.acceptedFrameCount == 160)

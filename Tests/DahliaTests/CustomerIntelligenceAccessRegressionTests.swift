@@ -100,7 +100,7 @@ import Foundation
         }
 
         @Test
-        func organizationChartTruncationKeepsAStableBreadthFirstPrefix() throws {
+        func organizationChartTruncationKeepsAStableBreadthFirstPrefix() async throws {
             let fixture = try Fixture()
             let repository = MeetingRepository(dbQueue: fixture.manager.dbQueue)
             let root = try repository.createOrganization(
@@ -109,8 +109,8 @@ import Foundation
                 nodeKind: .organization,
                 name: "Acme"
             )
-            var branchIDs: [UUID] = []
-            try fixture.manager.dbQueue.write { db in
+            let branchIDs = try await fixture.manager.dbQueue.write { db in
+                var branchIDs: [UUID] = []
                 for branchIndex in 0 ..< 5 {
                     let branch = OrganizationRecord(
                         id: .v7(),
@@ -137,6 +137,7 @@ import Foundation
                         ).insert(db)
                     }
                 }
+                return branchIDs
             }
 
             let store = try fixture.store(vaultID: fixture.primaryVaultID)
@@ -145,8 +146,9 @@ import Foundation
                 maximumDepth: 2,
                 childrenPerNode: 100
             )
-            let first = try store.queryOrganizationChart(query)
-            let second = try store.queryOrganizationChart(query)
+            let (first, second) = try await Task.detached {
+                try (store.queryOrganizationChart(query), store.queryOrganizationChart(query))
+            }.value
 
             #expect(first.nodes.count == 500)
             #expect(first.nodesTruncated)

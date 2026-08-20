@@ -65,21 +65,31 @@ jobs:
           toolchain_hash="$(printf '%s' "$toolchain" | shasum -a 256 | awk '{ print $1 }')"
           echo "hash=$toolchain_hash" >> "$GITHUB_OUTPUT"
 
-      - name: Cache SwiftPM build
-        uses: actions/cache@v5
+      - name: Restore SwiftPM build cache
+        id: cache
+        uses: actions/cache/restore@v5
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('Package.resolved') }}-
 
+      - name: Build package and tests
+        run: swift build --build-tests
+
       - name: Run unit tests
         run: |
           set -o pipefail
-          swift test 2>&1 | tee test-output.log
+          swift test --skip-build --experimental-maximum-parallelization-width 2 -q 2>&1 | tee test-output.log
 
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
 
-      - name: Build executable
-        run: swift build
+      # Each entry is ~1.5 GB against a 10 GB repository limit. Pull requests restore the latest
+      # main cache but do not create short-lived entries that evict it.
+      - name: Save SwiftPM build cache
+        if: success() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v5
+        with:
+          path: .build
+          key: ${{ steps.cache.outputs.cache-primary-key }}

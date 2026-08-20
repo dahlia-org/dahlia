@@ -6,12 +6,8 @@
     @MainActor
     struct CodexChatComposerFocusDismissalTests {
         @Test
-        func outsideClickClearsComposerFocus() {
+        func outsideClickClearsComposerFocusUnlessTheAddPanelIsOpen() {
             #expect(CodexChatComposer.dismissesComposerFocus(showsAddPanel: false))
-        }
-
-        @Test
-        func addPanelKeepsComposerFocusWhileSelectingASuggestion() {
             #expect(!CodexChatComposer.dismissesComposerFocus(showsAddPanel: true))
         }
     }

@@ -6,13 +6,9 @@ import Foundation
 
     struct MeetingSidebarItemTests {
         @Test
-        func displayTitleFallsBackForBlankMeetingNames() {
-            #expect(item(meetingName: " \n ").displayTitle == L10n.newMeeting)
-        }
-
-        @Test
-        func displayTitleTrimsMeetingNames() {
+        func displayTitleTrimsMeetingNamesAndFallsBackForBlankOnes() {
             #expect(item(meetingName: "  Weekly sync  ").displayTitle == "Weekly sync")
+            #expect(item(meetingName: " \n ").displayTitle == L10n.newMeeting)
         }
 
         private func item(meetingName: String) -> MeetingSidebarItem {

@@ -20,14 +20,14 @@ import GRDB
                 projectId: nil,
                 vaultURL: context.vaultURL
             )
-            #expect(await Self.waitUntil { viewModel.currentSummaryDocument?.title == "Original title" })
+            #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Original title" })
 
             viewModel.noteText = "Draft the user is still editing"
             try context.replaceSummary(title: "Corrected title", body: "Tanaka approved the plan")
 
             viewModel.reloadSummaryDocument()
 
-            #expect(await Self.waitUntil { viewModel.currentSummaryDocument?.title == "Corrected title" })
+            #expect(await pollUntil { viewModel.currentSummaryDocument?.title == "Corrected title" })
             #expect(viewModel.noteText == "Draft the user is still editing")
         }
 
@@ -100,15 +100,6 @@ import GRDB
             }
 
             return Context(manager: manager, meetingID: meeting.id, vaultURL: vaultURL)
-        }
-
-        private static func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {
-            for _ in 0 ..< 1000 {
-                if predicate() { return true }
-                await Task.yield()
-                try? await Task.sleep(for: .milliseconds(5))
-            }
-            return predicate()
         }
     }
 #endif

@@ -9,19 +9,14 @@ import Foundation
     @MainActor
     struct ScreenshotCollectionViewTests {
         @Test
-        func layoutUsesAdaptiveColumnsAndStableAspectRatio() {
+        func layoutAdaptsColumnsToTileAndContainerWidth() {
             let metrics = ScreenshotCollectionLayout.metrics(containerWidth: 1000, minimumItemWidth: 200)
+            let smallTiles = ScreenshotCollectionLayout.metrics(containerWidth: 1000, minimumItemWidth: 110)
+            let narrowContainer = ScreenshotCollectionLayout.metrics(containerWidth: 80, minimumItemWidth: 200)
 
             #expect(metrics.columnCount == 4)
             #expect(metrics.itemSize.width == 235)
             #expect(metrics.itemSize.height == 161)
-        }
-
-        @Test
-        func layoutSupportsSmallTilesAndNarrowContainers() {
-            let smallTiles = ScreenshotCollectionLayout.metrics(containerWidth: 1000, minimumItemWidth: 110)
-            let narrowContainer = ScreenshotCollectionLayout.metrics(containerWidth: 80, minimumItemWidth: 200)
-
             #expect(smallTiles.columnCount == 8)
             #expect(smallTiles.itemSize.width == 111)
             #expect(narrowContainer.columnCount == 1)
@@ -353,18 +348,12 @@ import Foundation
         }
 
         private func waitUntil(_ predicate: @MainActor () -> Bool) async {
-            for _ in 0 ..< 1000 {
-                if predicate() { return }
-                await Task.yield()
-            }
+            if await pollUntil({ predicate() }) { return }
             Issue.record("Timed out waiting for MainActor state")
         }
 
         private func waitUntilAsync(_ predicate: @escaping @Sendable () async -> Bool) async {
-            for _ in 0 ..< 1000 {
-                if await predicate() { return }
-                await Task.yield()
-            }
+            if await pollUntil({ await predicate() }) { return }
             Issue.record("Timed out waiting for asynchronous state")
         }
     }
