@@ -231,14 +231,6 @@ enum ErrorReportingService {
         SentrySDK.addBreadcrumb(breadcrumb)
     }
 
-    static func recordAutomaticScreenshotStreamRestart() {
-        guard isEnabled else { return }
-        let breadcrumb = Breadcrumb(level: .warning, category: "runtime.automatic_screenshot")
-        breadcrumb.type = "state"
-        breadcrumb.data = ["event": "stream_restart"]
-        SentrySDK.addBreadcrumb(breadcrumb)
-    }
-
     static func automaticScreenshotDurationBucket(_ milliseconds: Int) -> Int {
         switch milliseconds {
         case ..<1000: 500

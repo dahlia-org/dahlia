@@ -1,125 +1,109 @@
+import CoreGraphics
 import Foundation
 import GRDB
-@preconcurrency import ScreenCaptureKit
 @testable import Dahlia
 
 #if canImport(Testing)
     import Testing
 
+    @MainActor
     struct AutomaticScreenshotCaptureServiceTests {
         @Test
-        func lifecycleRejectsFramesFromStoppedAndReplacedStreams() throws {
+        func lifecycleRejectsStoppedAndReplacedCaptureGenerations() {
             var lifecycle = AutomaticScreenshotCaptureLifecycle()
 
-            let firstGenerationResult = lifecycle.begin()
-            let firstGeneration = try #require(firstGenerationResult)
+            let firstGeneration = lifecycle.beginReplacement()
             #expect(lifecycle.accepts(generation: firstGeneration))
 
-            lifecycle.stop()
-            #expect(!lifecycle.accepts(generation: firstGeneration))
-
-            let secondGenerationResult = lifecycle.begin()
-            let secondGeneration = try #require(secondGenerationResult)
-            #expect(secondGeneration != firstGeneration)
-            #expect(!lifecycle.accepts(generation: firstGeneration))
-            #expect(lifecycle.accepts(generation: secondGeneration))
-        }
-
-        @Test
-        func lifecycleAllowsOnlyOneCompletionOwnerPerStreamAttempt() throws {
-            var lifecycle = AutomaticScreenshotCaptureLifecycle()
-            let generationResult = lifecycle.begin()
-            let generation = try #require(generationResult)
-            let firstAttemptResult = lifecycle.beginAttempt(generation: generation)
-            let firstAttempt = try #require(firstAttemptResult)
-
-            let overlappingAttempt = lifecycle.beginAttempt(generation: generation)
-            let firstClaim = lifecycle.claimCompletion(attempt: firstAttempt)
-            let duplicateClaim = lifecycle.claimCompletion(attempt: firstAttempt)
-            #expect(overlappingAttempt == nil)
-            #expect(firstClaim)
-            #expect(!duplicateClaim)
-            #expect(!lifecycle.accepts(attempt: firstAttempt))
-
-            lifecycle.finishAttempt(firstAttempt)
-            let retryAttemptResult = lifecycle.beginAttempt(generation: generation)
-            let retryAttempt = try #require(retryAttemptResult)
-            #expect(retryAttempt != firstAttempt)
-            #expect(lifecycle.accepts(attempt: retryAttempt))
-        }
-
-        @Test
-        func replacementStartRejectsAnEarlierStartResumingAfterCleanup() throws {
-            var lifecycle = AutomaticScreenshotCaptureLifecycle()
-            let staleGeneration = lifecycle.beginReplacement()
-            let staleAttemptResult = lifecycle.beginAttempt(generation: staleGeneration)
-            let staleAttempt = try #require(staleAttemptResult)
-
             let replacementGeneration = lifecycle.beginReplacement()
-            let replacementAttemptResult = lifecycle.beginAttempt(generation: replacementGeneration)
-            let replacementAttempt = try #require(replacementAttemptResult)
-            lifecycle.finishAttempt(staleAttempt)
-
-            #expect(!lifecycle.accepts(generation: staleGeneration))
-            #expect(!lifecycle.accepts(attempt: staleAttempt))
+            #expect(!lifecycle.accepts(generation: firstGeneration))
             #expect(lifecycle.accepts(generation: replacementGeneration))
-            #expect(lifecycle.accepts(attempt: replacementAttempt))
+
+            lifecycle.stop()
+            #expect(!lifecycle.accepts(generation: replacementGeneration))
         }
 
         @Test
-        func staleProcessingCompletionPreservesReplacementOperationAndPendingFrame() throws {
-            var state = AutomaticScreenshotProcessingState()
-            let staleAttempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
-            let replacementAttempt = AutomaticScreenshotCaptureAttempt(generation: 2, id: 2)
-            state.begin(attempt: staleAttempt) { _ in Task {} }
-            _ = state.queueLatest(
-                makeFrame(byte: 1, capturedAt: Date(timeIntervalSince1970: 100)),
-                attempt: staleAttempt
-            )
-            let staleOperationResult = state.take(matching: staleAttempt)
-            let staleOperation = try #require(staleOperationResult)
-
-            state.begin(attempt: replacementAttempt) { _ in Task {} }
-            let replacementDate = Date(timeIntervalSince1970: 200)
-            let queuedReplacement = state.queueLatest(
-                makeFrame(byte: 2, capturedAt: replacementDate),
-                attempt: replacementAttempt
-            )
-            #expect(queuedReplacement)
-            let stalePending = state.complete(
-                operationID: staleOperation.id,
-                attempt: staleAttempt
+        func failedOneShotCaptureRetriesAfterTheConfiguredInterval() async throws {
+            let captureProbe = CaptureProbe()
+            let sleeper = ControlledSleeper()
+            let failures = FailureProbe()
+            let service = AutomaticScreenshotCaptureService(
+                captureImage: { _ in try await captureProbe.fail() },
+                sleep: { duration in try await sleeper.sleep(duration) }
             )
 
-            #expect(stalePending == nil)
-            #expect(state.operation?.attempt == replacementAttempt)
-            #expect(state.pendingFrame?.attempt == replacementAttempt)
-            #expect(state.pendingFrame?.frame.capturedAt == replacementDate)
+            await service.start(try makeRequest(onFailure: { error in
+                failures.record(error)
+            }))
+            await failures.wait(for: 1)
+            await sleeper.wait(for: 1)
+            #expect(await captureProbe.count == 1)
+            #expect(await sleeper.recordedDurations == [.seconds(5)])
+
+            await sleeper.resumeNext()
+            await failures.wait(for: 2)
+            #expect(await captureProbe.count == 2)
+
+            await service.stop()
+            await sleeper.resumeAll()
         }
 
         @Test
-        func frameMailboxRetainsOnlyTheNewestPendingFullResolutionFrame() async throws {
-            let mailbox = AutomaticScreenshotFrameMailbox()
-            let firstDate = Date(timeIntervalSince1970: 100)
-            let latestDate = Date(timeIntervalSince1970: 300)
-            mailbox.yield(makeFrame(byte: 1, capturedAt: firstDate))
-            mailbox.yield(makeFrame(byte: 2, capturedAt: Date(timeIntervalSince1970: 200)))
-            mailbox.yield(makeFrame(byte: 3, capturedAt: latestDate))
-            mailbox.finish()
+        func settingsChangeReplacesThePendingIntervalWithoutAnImmediateCapture() async throws {
+            let captureProbe = CaptureProbe()
+            let sleeper = ControlledSleeper()
+            let failures = FailureProbe()
+            let service = AutomaticScreenshotCaptureService(
+                captureImage: { _ in try await captureProbe.fail() },
+                sleep: { duration in try await sleeper.sleep(duration) }
+            )
 
-            var iterator = mailbox.stream.makeAsyncIterator()
-            let received = try #require(await iterator.next())
-            #expect(received.pixels == Data(repeating: 3, count: 4))
-            #expect(received.capturedAt == latestDate)
-            #expect(await iterator.next() == nil)
+            await service.start(try makeRequest(onFailure: { error in
+                failures.record(error)
+            }))
+            await failures.wait(for: 1)
+            await sleeper.wait(for: 1)
+
+            await service.updateSettings(intervalSeconds: 10, changeThresholdRatio: 0.30)
+            await sleeper.wait(for: 2)
+            #expect(await sleeper.recordedDurations == [.seconds(5), .seconds(10)])
+            #expect(await captureProbe.count == 1)
+
+            await sleeper.resumeAll()
+            await failures.wait(for: 2)
+            #expect(await captureProbe.count == 2)
+
+            await service.stop()
+            await sleeper.resumeAll()
         }
 
         @Test
-        func persistedRecordUsesFrameReceiptTime() {
+        func stopInvalidatesAStaleCaptureWithoutWaitingForItToFinish() async throws {
+            let capture = BlockingCapture()
+            let persisted = PersistenceProbe()
+            let service = AutomaticScreenshotCaptureService(
+                captureImage: { _ in try await capture.capture() },
+                sleep: { duration in try await Task.sleep(for: duration) }
+            )
+
+            await service.start(try makeRequest(onPersisted: { _ in
+                persisted.record()
+            }))
+            await capture.waitUntilStarted()
+
+            await service.stop()
+            await capture.waitUntilCancelled()
+            #expect(!persisted.didPersist)
+
+            await capture.resume(try makeCaptureOutput())
+        }
+
+        @Test
+        func persistedRecordUsesOneShotCaptureTime() {
             let capturedAt = Date(timeIntervalSince1970: 123)
-            let frame = makeFrame(byte: 1, capturedAt: capturedAt)
             let record = AutomaticScreenshotCaptureService.makeRecord(
-                frame: frame,
+                capturedAt: capturedAt,
                 meetingID: .v7(),
                 sessionID: .v7(),
                 encodedData: Data([9]),
@@ -127,157 +111,6 @@ import GRDB
             )
 
             #expect(record.capturedAt == capturedAt)
-        }
-
-        @Test
-        func sourcePixelDimensionsRecoverNativeSizeFromScaledSurface() throws {
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                contentRect: CGRect(x: 0, y: 0, width: 600, height: 400),
-                contentScale: 0.5,
-                scaleFactor: 2
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2400, height: 1600))
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                contentRect: .zero,
-                contentScale: 1,
-                scaleFactor: 2
-            ) == nil)
-        }
-
-        @Test
-        func sourcePixelDimensionsDecodeDictionaryContentRect() throws {
-            let contentRect = CGRect(x: 0, y: 0, width: 600, height: 400)
-            let attachments: [SCStreamFrameInfo: Any] = [
-                .contentRect: contentRect.dictionaryRepresentation,
-                .contentScale: CGFloat(0.5),
-                .scaleFactor: CGFloat(2),
-            ]
-
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                from: attachments
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 2400, height: 1600))
-        }
-
-        @Test
-        func sourcePixelDimensionsDecodeDirectContentRectAndRejectInvalidMetadata() throws {
-            let directAttachments: [SCStreamFrameInfo: Any] = [
-                .contentRect: CGRect(x: 0, y: 0, width: 1358, height: 1219),
-                .contentScale: CGFloat(1),
-                .scaleFactor: CGFloat(1),
-            ]
-            let dimensions = try #require(AutomaticScreenshotCaptureService.sourcePixelDimensions(
-                from: directAttachments
-            ))
-
-            #expect(dimensions == AutomaticScreenshotPixelDimensions(width: 1358, height: 1219))
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
-                .contentRect: "invalid",
-                .contentScale: CGFloat(1),
-                .scaleFactor: CGFloat(1),
-            ]) == nil)
-            #expect(AutomaticScreenshotCaptureService.sourcePixelDimensions(from: [
-                .contentRect: CGRect(x: 0, y: 0, width: 1358, height: 1219).dictionaryRepresentation,
-                .contentScale: CGFloat(0),
-                .scaleFactor: CGFloat(1),
-            ]) == nil)
-        }
-
-        @Test
-        func resolutionActionUpdatesThenDiscardsStaleSurfaceBeforeProcessingNativeFrame() {
-            let staleDimensions = AutomaticScreenshotPixelDimensions(width: 1104, height: 932)
-            let nativeDimensions = AutomaticScreenshotPixelDimensions(width: 1358, height: 1219)
-
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: staleDimensions
-            ) == .updateConfiguration(nativeDimensions))
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: staleDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: nativeDimensions,
-                sourcePixelDimensions: nativeDimensions,
-                configuredDimensions: nativeDimensions
-            ) == .process)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: staleDimensions,
-                sourcePixelDimensions: nil,
-                configuredDimensions: nativeDimensions
-            ) == .discard)
-            #expect(AutomaticScreenshotCaptureService.frameResolutionAction(
-                frameDimensions: nativeDimensions,
-                sourcePixelDimensions: nil,
-                configuredDimensions: nativeDimensions
-            ) == .process)
-        }
-
-        @Test
-        func resolutionUpdateDiscardsPendingFrameWithoutRemovingActiveOperation() {
-            var state = AutomaticScreenshotProcessingState()
-            let attempt = AutomaticScreenshotCaptureAttempt(generation: 1, id: 1)
-            state.begin(attempt: attempt) { _ in Task {} }
-            let didQueuePendingFrame = state.queueLatest(
-                makeFrame(byte: 1, capturedAt: Date(timeIntervalSince1970: 100)),
-                attempt: attempt
-            )
-            #expect(didQueuePendingFrame)
-
-            state.discardPendingFrame(matching: attempt)
-
-            #expect(state.operation?.attempt == attempt)
-            #expect(state.pendingFrame == nil)
-        }
-
-        @Test
-        @MainActor
-        func stopBypassesBlockedStartAndInvalidatesPendingSettings() async throws {
-            let capture = BlockingAutomaticScreenshotCapture()
-            let control = AutomaticScreenshotCaptureControl(capture: capture)
-            let request = try AutomaticScreenshotCaptureRequest(
-                source: .entireDesktop,
-                intervalSeconds: 5,
-                changeThresholdRatio: 0.20,
-                meetingID: .v7(),
-                sessionID: .v7(),
-                dbQueue: DatabaseQueue(),
-                onPersisted: { _ in },
-                onFailure: { _ in }
-            )
-            let startTask = control.enqueue { capture in
-                await capture.start(request)
-            }
-            await capture.waitUntilStartBegins()
-            let settingsTask = control.enqueue { capture in
-                await capture.updateSettings(intervalSeconds: 10, changeThresholdRatio: 0.30)
-            }
-
-            let stopTask = control.stop()
-            var stopBypassedStart = false
-            for _ in 0 ..< 100 {
-                if await capture.stopCount() == 1 {
-                    stopBypassedStart = true
-                    break
-                }
-                try await Task.sleep(for: .milliseconds(1))
-            }
-            #expect(stopBypassedStart)
-
-            await capture.resumeStart()
-            await startTask.value
-            await settingsTask.value
-            await stopTask.value
-            #expect(await capture.settingsUpdateCount() == 0)
         }
 
         @Test
@@ -289,23 +122,238 @@ import GRDB
             #expect(ErrorReportingService.automaticScreenshotDurationBucket(8000) == 5000)
         }
 
-        private func makeFrame(byte: UInt8, capturedAt: Date) -> CopiedScreenshotFrame {
-            CopiedScreenshotFrame(
-                width: 1,
-                height: 1,
-                bytesPerRow: 4,
-                pixels: Data(repeating: byte, count: 4),
-                capturedAt: capturedAt
+        @Test
+        func stopBypassesBlockedStartAndInvalidatesPendingSettings() async throws {
+            let capture = BlockingAutomaticScreenshotCapture()
+            let control = AutomaticScreenshotCaptureControl(capture: capture)
+            let request = try makeRequest()
+            let startTask = control.enqueue { capture in
+                await capture.start(request)
+            }
+            await capture.waitUntilStartBegins()
+            let settingsTask = control.enqueue { capture in
+                await capture.updateSettings(intervalSeconds: 10, changeThresholdRatio: 0.30)
+            }
+
+            let stopTask = control.stop()
+            await capture.waitUntilStopped()
+            await capture.resumeStart()
+            await startTask.value
+            await settingsTask.value
+            await stopTask.value
+            #expect(await capture.settingsUpdateCount == 0)
+        }
+
+        private func makeRequest(
+            onPersisted: @escaping @MainActor @Sendable (MeetingScreenshotRecord) -> Void = { _ in },
+            onFailure: @escaping @MainActor @Sendable (Error) -> Void = { _ in }
+        ) throws -> AutomaticScreenshotCaptureRequest {
+            try AutomaticScreenshotCaptureRequest(
+                source: .entireDesktop,
+                intervalSeconds: 5,
+                changeThresholdRatio: 0.20,
+                meetingID: .v7(),
+                sessionID: .v7(),
+                dbQueue: DatabaseQueue(),
+                onPersisted: onPersisted,
+                onFailure: onFailure
             )
         }
+    }
+
+    private enum CaptureFailure: Error {
+        case expected
+    }
+
+    private actor CaptureProbe {
+        private(set) var count = 0
+
+        func fail() throws -> AutomaticScreenshotCaptureOutput {
+            count += 1
+            throw CaptureFailure.expected
+        }
+    }
+
+    private actor ControlledSleeper {
+        private struct PendingSleep {
+            let id: UUID
+            let continuation: CheckedContinuation<Void, Error>
+        }
+
+        private var durations: [Duration] = []
+        private var pendingSleeps: [PendingSleep] = []
+        private var countWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+        var recordedDurations: [Duration] {
+            durations
+        }
+
+        func sleep(_ duration: Duration) async throws {
+            durations.append(duration)
+            resumeSatisfiedWaiters()
+            let id = UUID()
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    if Task.isCancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        pendingSleeps.append(PendingSleep(id: id, continuation: continuation))
+                    }
+                }
+            } onCancel: {
+                Task { await self.cancel(id: id) }
+            }
+        }
+
+        func wait(for count: Int) async {
+            guard durations.count < count else { return }
+            await withCheckedContinuation { continuation in
+                countWaiters.append((count, continuation))
+            }
+        }
+
+        func resumeNext() {
+            guard !pendingSleeps.isEmpty else { return }
+            pendingSleeps.removeFirst().continuation.resume()
+        }
+
+        func resumeAll() {
+            let pending = pendingSleeps
+            pendingSleeps.removeAll()
+            pending.forEach { $0.continuation.resume() }
+        }
+
+        private func cancel(id: UUID) {
+            guard let index = pendingSleeps.firstIndex(where: { $0.id == id }) else { return }
+            pendingSleeps.remove(at: index).continuation.resume(throwing: CancellationError())
+        }
+
+        private func resumeSatisfiedWaiters() {
+            var pending: [(Int, CheckedContinuation<Void, Never>)] = []
+            for waiter in countWaiters {
+                if durations.count >= waiter.0 {
+                    waiter.1.resume()
+                } else {
+                    pending.append(waiter)
+                }
+            }
+            countWaiters = pending
+        }
+    }
+
+    @MainActor
+    private final class FailureProbe {
+        private var count = 0
+        private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+        func record(_: Error) {
+            count += 1
+            var pending: [(Int, CheckedContinuation<Void, Never>)] = []
+            for waiter in waiters {
+                if count >= waiter.0 {
+                    waiter.1.resume()
+                } else {
+                    pending.append(waiter)
+                }
+            }
+            waiters = pending
+        }
+
+        func wait(for expectedCount: Int) async {
+            guard count < expectedCount else { return }
+            await withCheckedContinuation { continuation in
+                waiters.append((expectedCount, continuation))
+            }
+        }
+    }
+
+    @MainActor
+    private final class PersistenceProbe {
+        private(set) var didPersist = false
+
+        func record() {
+            didPersist = true
+        }
+    }
+
+    private actor BlockingCapture {
+        private var continuation: CheckedContinuation<AutomaticScreenshotCaptureOutput, Error>?
+        private var startWaiters: [CheckedContinuation<Void, Never>] = []
+        private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+        private var didStart = false
+        private var wasCancelled = false
+
+        func capture() async throws -> AutomaticScreenshotCaptureOutput {
+            didStart = true
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    self.continuation = continuation
+                }
+            } onCancel: {
+                Task { await self.recordCancellation() }
+            }
+        }
+
+        func waitUntilStarted() async {
+            guard !didStart else { return }
+            await withCheckedContinuation { continuation in
+                startWaiters.append(continuation)
+            }
+        }
+
+        func waitUntilCancelled() async {
+            guard !wasCancelled else { return }
+            await withCheckedContinuation { continuation in
+                cancellationWaiters.append(continuation)
+            }
+        }
+
+        func resume(_ output: AutomaticScreenshotCaptureOutput) {
+            continuation?.resume(returning: output)
+            continuation = nil
+        }
+
+        private func recordCancellation() {
+            wasCancelled = true
+            let waiters = cancellationWaiters
+            cancellationWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    private enum TestImageError: Error {
+        case contextUnavailable
+        case imageUnavailable
+    }
+
+    private func makeCaptureOutput() throws -> AutomaticScreenshotCaptureOutput {
+        guard let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw TestImageError.contextUnavailable
+        }
+        guard let image = context.makeImage() else {
+            throw TestImageError.imageUnavailable
+        }
+        return AutomaticScreenshotCaptureOutput(image: image, capturedAt: .now)
     }
 
     private actor BlockingAutomaticScreenshotCapture: AutomaticScreenshotCapturing {
         private var startContinuation: CheckedContinuation<Void, Never>?
         private var startWaiters: [CheckedContinuation<Void, Never>] = []
+        private var stopWaiters: [CheckedContinuation<Void, Never>] = []
         private var didBeginStart = false
-        private var observedStopCount = 0
-        private var observedSettingsUpdateCount = 0
+        private var didStop = false
+        private(set) var settingsUpdateCount = 0
 
         func start(_: AutomaticScreenshotCaptureRequest) async {
             didBeginStart = true
@@ -318,11 +366,14 @@ import GRDB
         }
 
         func updateSettings(intervalSeconds _: Int, changeThresholdRatio _: Double) {
-            observedSettingsUpdateCount += 1
+            settingsUpdateCount += 1
         }
 
         func stop() {
-            observedStopCount += 1
+            didStop = true
+            let waiters = stopWaiters
+            stopWaiters.removeAll()
+            waiters.forEach { $0.resume() }
         }
 
         func waitUntilStartBegins() async {
@@ -332,17 +383,16 @@ import GRDB
             }
         }
 
+        func waitUntilStopped() async {
+            guard !didStop else { return }
+            await withCheckedContinuation { continuation in
+                stopWaiters.append(continuation)
+            }
+        }
+
         func resumeStart() {
             startContinuation?.resume()
             startContinuation = nil
-        }
-
-        func stopCount() -> Int {
-            observedStopCount
-        }
-
-        func settingsUpdateCount() -> Int {
-            observedSettingsUpdateCount
         }
     }
 #endif
