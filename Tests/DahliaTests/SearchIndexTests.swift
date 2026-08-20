@@ -879,6 +879,23 @@ import GRDB
         }
 
         @Test
+        func summarySearchMigrationCanBeRerun() throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+
+            try database.dbQueue.write { db in
+                try SummarySearchMigration.migrate(in: db)
+            }
+
+            let triggerCount = try database.dbQueue.read { db in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'search_queue_summaries_%'"
+                ) ?? 0
+            }
+            #expect(triggerCount == 3)
+        }
+
+        @Test
         func schemaSignatureIncludesFTSShadowTables() throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let matches = try database.dbQueue.read { db in

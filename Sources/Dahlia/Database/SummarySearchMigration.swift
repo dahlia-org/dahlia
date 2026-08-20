@@ -8,6 +8,10 @@ enum SummarySearchMigration {
         defer { try? db.execute(sql: "PRAGMA secure_delete = \(previousSecureDelete)") }
 
         try db.execute(sql: """
+        DROP TRIGGER IF EXISTS search_queue_summaries_insert;
+        DROP TRIGGER IF EXISTS search_queue_summaries_update;
+        DROP TRIGGER IF EXISTS search_queue_summaries_delete;
+
         DROP TABLE search_documents_fts_vocab;
         DROP TABLE search_documents_fts;
 
