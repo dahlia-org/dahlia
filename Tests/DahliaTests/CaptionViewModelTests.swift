@@ -603,8 +603,6 @@ import GRDB
                 vaultURL: testVaultURL
             )
             viewModel.updateDraftMeetingTitle("Edited design review")
-            viewModel.noteText = "Keep this draft note"
-
             let databaseAccessStarted = AsyncStream<Void>.makeStream()
             let releaseDatabase = DispatchSemaphore(value: 0)
             let blockingDatabaseTask = Task.detached {

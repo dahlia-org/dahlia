@@ -10,7 +10,7 @@ import GRDB
     @Suite(.serialized)
     struct AdvisoryFileLockTests {
         @Test
-        func separateProcessCannotAcquireProcessWideLock() throws {
+        func separateProcessCannotAcquireProcessWideLock() async throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-process-lock-\(UUID.v7().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -28,6 +28,7 @@ import GRDB
                 // Expected: the losing process must not proceed to open the database.
             }
             child.release()
+            #expect(await pollUntil { !child.isRunning })
             _ = try AdvisoryFileLock.acquire(at: lockURL)
         }
 
@@ -84,6 +85,7 @@ import GRDB
             #expect(FileManager.default.fileExists(atPath: partialURL.path))
 
             child.release()
+            #expect(await pollUntil { !child.isRunning })
             let recovered = await store.reconcileStartup()
             let current = try await fixture.database.dbQueue.read { db in
                 try RecordingAudioSegmentRecord.fetchOne(db, key: ready.id)
@@ -121,41 +123,30 @@ import GRDB
         private var standardInput: FileHandle?
 
         init(lockURL: URL) throws {
-            // Python's fcntl.flock maps straight onto flock(2), so the child holds the same
-            // process-wide advisory lock the production code takes. Running the helper through
-            // `xcrun swift -e` instead compiled Swift on every call, which cost tens of seconds
-            // and blocked the caller — including the MainActor — for the whole compile.
-            let helper = """
-            import fcntl, os, sys
-            descriptor = os.open(os.environ["DAHLIA_TEST_LOCK_PATH"], os.O_RDWR)
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                sys.exit(2)
-            sys.stdout.buffer.write(bytes([1]))
-            sys.stdout.buffer.flush()
-            sys.stdin.buffer.read()
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
-            """
-            let inputPipe = Pipe()
-            let outputPipe = Pipe()
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-            process.arguments = ["-c", helper]
-            process.standardInput = inputPipe
-            process.standardOutput = outputPipe
-            process.standardError = Pipe()
-            var environment = ProcessInfo.processInfo.environment
-            environment["DAHLIA_TEST_LOCK_PATH"] = lockURL.path
-            process.environment = environment
-            try process.run()
-            let status = try outputPipe.fileHandleForReading.read(upToCount: 1)
-            guard status == Data([1]), process.isRunning else {
-                inputPipe.fileHandleForWriting.closeFile()
-                process.waitUntilExit()
+            let descriptor = open(lockURL.path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
+            guard descriptor >= 0, flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+                if descriptor >= 0 { close(descriptor) }
                 throw CocoaError(.fileLocking)
             }
+
+            // `flock` follows the open file description across exec. Passing the descriptor as
+            // stderr transfers the lock to a tiny native child without compiling or interpreting
+            // a helper program on the test runner; closing stdin then ends the child naturally.
+            let lockHandle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            let inputPipe = Pipe()
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/cat")
+            process.standardInput = inputPipe
+            process.standardError = lockHandle
+            do {
+                try process.run()
+            } catch {
+                inputPipe.fileHandleForWriting.closeFile()
+                lockHandle.closeFile()
+                throw error
+            }
+            lockHandle.closeFile()
+            guard process.isRunning else { throw CocoaError(.fileLocking) }
             self.process = process
             standardInput = inputPipe.fileHandleForWriting
         }
@@ -164,8 +155,9 @@ import GRDB
             guard let standardInput else { return }
             standardInput.closeFile()
             self.standardInput = nil
-            process.waitUntilExit()
         }
+
+        var isRunning: Bool { process.isRunning }
 
         deinit {
             release()

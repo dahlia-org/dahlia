@@ -8,8 +8,7 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # A cancelled run never saves its build cache, so only supersede pushes on a pull request.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -52,7 +51,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -86,11 +85,10 @@ jobs:
       - name: Verify tests executed
         run: grep -Eq "Test run with [1-9][0-9]* tests" test-output.log
 
-      # Saving only on main keeps pull requests from evicting each other: the cache entry is
-      # ~1.5 GB and the repository limit is 10 GB. `always()` also saves a timed-out run, so a
-      # slow build cannot compound into a colder cache on the next run.
+      # Each entry is ~1.5 GB against a 10 GB repository limit. Pull requests restore the latest
+      # main cache but do not create short-lived entries that evict it.
       - name: Save SwiftPM build cache
-        if: always() && github.ref == 'refs/heads/main'
+        if: success() && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v5
         with:
           path: .build

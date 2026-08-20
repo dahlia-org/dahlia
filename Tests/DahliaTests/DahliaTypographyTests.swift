@@ -58,10 +58,8 @@ import SwiftUI
 
         @Test
         func sidebarHighlightStrengthensWithIncreasedContrast() {
-            #expect(
-                DahliaDesign.sidebarHighlightOpacity(for: .increased)
-                    > DahliaDesign.sidebarHighlightOpacity(for: .standard)
-            )
+            #expect(DahliaDesign.sidebarHighlightOpacity(for: .standard) == 0.10)
+            #expect(DahliaDesign.sidebarHighlightOpacity(for: .increased) == 0.20)
         }
 
         @MainActor
