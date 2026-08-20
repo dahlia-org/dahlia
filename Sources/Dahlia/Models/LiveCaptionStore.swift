@@ -4,8 +4,6 @@ import Foundation
 /// 現在の録音セッションに限った、一時的なライブ字幕の表示状態。
 @MainActor
 final class LiveCaptionStore: ObservableObject {
-    private static let maximumRetainedSegmentCount = 20
-
     @Published private(set) var segments: [TranscriptSegment] = []
     @Published private(set) var activeSessionId: UUID?
     @Published private(set) var failureMessage: String?
@@ -33,7 +31,7 @@ final class LiveCaptionStore: ObservableObject {
         case let .previewTranslation(sessionId, segmentID, translatedText),
              let .translation(sessionId, segmentID, translatedText):
             guard activeSessionId == sessionId,
-                  let index = segments.firstIndex(where: { $0.id == segmentID }) else { return }
+                  let index = segments.lastIndex(where: { $0.id == segmentID }) else { return }
             segments[index].translatedText = translatedText
         case let .failure(sessionId, _, _, message):
             guard activeSessionId == sessionId else { return }
@@ -44,12 +42,7 @@ final class LiveCaptionStore: ObservableObject {
     /// 正本文字起こしの現在セッション分を、字幕を有効化した時点の初期値として取り込む。
     func seed(_ newSegments: [TranscriptSegment], sessionId: UUID) {
         guard activeSessionId == sessionId else { return }
-        segments = Array(
-            newSegments
-                .lazy
-                .filter { $0.sessionId == sessionId }
-                .suffix(Self.maximumRetainedSegmentCount)
-        )
+        segments = newSegments.filter { $0.sessionId == sessionId }
     }
 
     func clear() {
@@ -67,46 +60,49 @@ final class LiveCaptionStore: ObservableObject {
         var preview = newSegment
         preview.isConfirmed = false
 
-        if preview.translatedText == nil,
-           let existingPreview = segments.last(where: {
-               !$0.isConfirmed && $0.speakerLabel == preview.speakerLabel
-           }),
-           existingPreview.id == preview.id {
-            preview.translatedText = existingPreview.translatedText
+        if let existingPreviewIndex = previewIndex(forSource: preview.speakerLabel) {
+            let existingPreview = segments[existingPreviewIndex]
+            if preview.translatedText == nil, existingPreview.id == preview.id {
+                preview.translatedText = existingPreview.translatedText
+            }
+            var replacement = Array(segments[segments.index(after: existingPreviewIndex)...])
+            replacement.append(preview)
+            segments.replaceSubrange(existingPreviewIndex..., with: replacement)
+        } else {
+            segments.append(preview)
         }
-
-        clearPreview(forSource: preview.speakerLabel)
-        segments.append(preview)
     }
 
     private func appendFinalized(_ newSegment: TranscriptSegment) {
         var finalized = newSegment
         finalized.isConfirmed = true
 
-        if finalized.translatedText == nil,
-           let existingSegment = segments.first(where: { $0.id == finalized.id }) {
-            finalized.translatedText = existingSegment.translatedText
+        let existingSegmentIndex = segments.lastIndex(where: { $0.id == finalized.id })
+        if let existingSegmentIndex {
+            if finalized.translatedText == nil {
+                finalized.translatedText = segments[existingSegmentIndex].translatedText
+            }
         }
 
-        segments.removeAll {
+        let confirmedInsertionIndex = segments.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? segments.startIndex
+        let replacementStart = min(existingSegmentIndex ?? confirmedInsertionIndex, confirmedInsertionIndex)
+        var replacement = Array(segments[replacementStart...])
+        replacement.removeAll {
             $0.id == finalized.id || (!$0.isConfirmed && $0.speakerLabel == finalized.speakerLabel)
         }
-
-        // LiveSubtitleOverlayPayload は未確定セグメントを末尾として扱うため、
-        // 確定セグメントは残っている preview より前へ追加する。
-        let insertionIndex = segments.firstIndex(where: { !$0.isConfirmed }) ?? segments.endIndex
-        segments.insert(finalized, at: insertionIndex)
-        trimOldSegmentsIfNeeded()
+        let insertionIndex = replacement.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? replacement.startIndex
+        replacement.insert(finalized, at: insertionIndex)
+        segments.replaceSubrange(replacementStart..., with: replacement)
     }
 
     private func clearPreview(forSource sourceLabel: String?) {
-        segments.removeAll {
-            !$0.isConfirmed && $0.speakerLabel == sourceLabel
-        }
+        guard let index = previewIndex(forSource: sourceLabel) else { return }
+        segments.remove(at: index)
     }
 
-    private func trimOldSegmentsIfNeeded() {
-        guard segments.count > Self.maximumRetainedSegmentCount else { return }
-        segments.removeFirst(segments.count - Self.maximumRetainedSegmentCount)
+    private func previewIndex(forSource sourceLabel: String?) -> Int? {
+        segments.lastIndex {
+            !$0.isConfirmed && $0.speakerLabel == sourceLabel
+        }
     }
 }

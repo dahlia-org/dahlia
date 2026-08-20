@@ -67,10 +67,25 @@ import Foundation
                 viewModel: viewModel,
                 liveSubtitleOverlayService: presenter
             )
-            try await Task.sleep(for: .milliseconds(20))
+            var previousUpdateCount = presenter.updateCount
+            var stableCheckCount = 0
+            let initialUpdatesSettled = await pollUntil {
+                let currentUpdateCount = presenter.updateCount
+                if currentUpdateCount == previousUpdateCount {
+                    stableCheckCount += 1
+                } else {
+                    previousUpdateCount = currentUpdateCount
+                    stableCheckCount = 0
+                }
+                return stableCheckCount >= 3
+            }
+            #expect(initialUpdatesSettled)
             let initialUpdateCount = presenter.updateCount
+            let clock = ContinuousClock()
+            let end = clock.now.advanced(by: .seconds(1))
+            var index = 0
 
-            for index in 0 ..< 20 {
+            while clock.now < end {
                 viewModel.liveCaptionStore.apply(event: .preview(
                     TranscriptSegment(
                         sessionId: sessionID,
@@ -79,16 +94,19 @@ import Foundation
                         speakerLabel: "system"
                     )
                 ))
+                index += 1
+                try await Task.sleep(for: .milliseconds(20))
             }
 
+            let latestPreview = "Preview \(index - 1)"
             let showedLatestPreview = await waitUntil {
-                presenter.lastPayload?.entries.map(\.primaryText) == ["Preview 19"]
+                presenter.lastPayload?.entries.map(\.primaryText) == [latestPreview]
             }
             #expect(showedLatestPreview)
 
             let payload = try #require(presenter.lastPayload)
-            #expect(payload.entries.map(\.primaryText) == ["Preview 19"])
-            #expect(presenter.updateCount - initialUpdateCount <= 2)
+            #expect(payload.entries.map(\.primaryText) == [latestPreview])
+            #expect(presenter.updateCount - initialUpdateCount <= 7)
             withExtendedLifetime(coordinator) {}
         }
 

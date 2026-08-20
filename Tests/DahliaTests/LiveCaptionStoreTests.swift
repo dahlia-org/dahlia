@@ -140,6 +140,25 @@ import Foundation
             #expect(store.failureMessage == nil)
         }
 
+        @Test
+        func retainsAllFinalizedSegmentsForTheActiveSession() {
+            let sessionID = UUID.v7()
+            let store = LiveCaptionStore()
+            store.start(sessionId: sessionID)
+
+            for index in 0 ..< 25 {
+                store.apply(event: .finalized(makeSegment(
+                    sessionID: sessionID,
+                    text: "Segment \(index)",
+                    source: "system"
+                )))
+            }
+
+            #expect(store.segments.count == 25)
+            #expect(store.segments.first?.text == "Segment 0")
+            #expect(store.segments.last?.text == "Segment 24")
+        }
+
         private func makeSegment(
             id: UUID = .v7(),
             sessionID: UUID,
