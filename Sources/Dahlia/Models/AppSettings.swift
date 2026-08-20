@@ -115,7 +115,8 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
     nonisolated static let defaultCustomerIntelligenceBetaEnabled = false
     nonisolated static let defaultConversationAnalyticsBetaEnabled = false
-    nonisolated static let defaultGoogleDriveExportFolderName = "Meeting Notes"
+    nonisolated static let defaultGoogleDriveExportFolderName = "Dahlia"
+    private nonisolated static let legacyGoogleDriveExportFolderName = "Meeting Notes"
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 30
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 20
 
@@ -153,15 +154,35 @@ final class AppSettings: ObservableObject, GoogleDriveExportFolderSettingsProvid
 
     // MARK: - Google Drive
 
-    /// 変更可能だった試用版の保存先 ID を Meeting Notes として再利用しないため、旧フォルダ名も照合する。
+    /// 変更可能だった試用版の保存先 ID を固定の書き出し先として再利用しないため、フォルダ名も照合する。
     @AppStorage("googleDriveExportFolderName") private var storedGoogleDriveExportFolderName = AppSettings.defaultGoogleDriveExportFolderName
     @AppStorage("googleDriveExportFolderID") private var googleDriveExportFolderID = ""
     @AppStorage("googleDriveExportFolderAccountID") private var googleDriveExportFolderAccountID = ""
 
     func googleDriveExportFolderID(forAccountID accountID: String) -> String? {
-        guard googleDriveExportFolderAccountID == accountID,
-              storedGoogleDriveExportFolderName == Self.defaultGoogleDriveExportFolderName else { return nil }
-        return googleDriveExportFolderID.nilIfBlank
+        Self.validatedGoogleDriveExportFolderID(
+            storedID: googleDriveExportFolderID,
+            storedAccountID: googleDriveExportFolderAccountID,
+            storedFolderName: storedGoogleDriveExportFolderName,
+            accountID: accountID
+        )
+    }
+
+    func googleDriveExportFolderName(forAccountID accountID: String) -> String? {
+        guard googleDriveExportFolderID(forAccountID: accountID) != nil else { return nil }
+        return storedGoogleDriveExportFolderName
+    }
+
+    nonisolated static func validatedGoogleDriveExportFolderID(
+        storedID: String,
+        storedAccountID: String,
+        storedFolderName: String,
+        accountID: String
+    ) -> String? {
+        let isManagedFolder = storedFolderName == defaultGoogleDriveExportFolderName
+            || storedFolderName == legacyGoogleDriveExportFolderName
+        guard storedAccountID == accountID, isManagedFolder else { return nil }
+        return storedID.nilIfBlank
     }
 
     func googleDriveExportFolderURL(forAccountID accountID: String) -> URL? {

@@ -105,7 +105,8 @@ struct ContentView: View {
                                 captionViewModel: viewModel,
                                 sidebarViewModel: sidebarViewModel,
                                 appDatabase: appDatabase,
-                                vaultManagementModel: vaultManagementModel
+                                vaultManagementModel: vaultManagementModel,
+                                onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                             )
                         }
                         .mainDetailPane()
@@ -500,6 +501,16 @@ private extension ContentView {
 
     private func showUnprocessedRecordings() {
         mainWindowNavigation.recordNavigation(to: .unprocessedRecordings)
+        displayUnprocessedRecordings()
+    }
+
+    private func openUnprocessedRecordingsFromSettings(vaultID: UUID) {
+        if sidebarViewModel.currentVault?.id != vaultID {
+            guard let vault = vaultManagementModel.vaults.first(where: { $0.id == vaultID }) else { return }
+            onSelectVault(vault)
+            guard sidebarViewModel.currentVault?.id == vaultID else { return }
+        }
+        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
         displayUnprocessedRecordings()
     }
 

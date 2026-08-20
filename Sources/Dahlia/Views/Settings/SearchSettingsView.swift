@@ -39,6 +39,7 @@ struct SearchSettingsView: View {
                 Button(L10n.rebuildSearchIndex) {
                     Task { await model.rebuild() }
                 }
+                .buttonStyle(.dahlia(.primary))
                 .disabled(model.isRequestingRebuild)
             } footer: {
                 Text(L10n.rebuildSearchIndexDescription)

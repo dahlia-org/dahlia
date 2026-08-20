@@ -33,6 +33,7 @@
 "Restore this backup?" = "このバックアップを復元しますか？";
 "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "現在のデータベースを先に退避してから置き換え、Dahliaを再起動します。音声ファイルとアプリ設定は復元されません。";
 "Unprocessed Recordings" = "未処理の録音";
+"Open Unprocessed Recordings" = "未処理の録音を開く";
 "Recordings that need manual transcription will appear here." = "手動で文字起こしする必要がある録音がここに表示されます。";
 "Transcribe or discard every unprocessed recording before creating or restoring a backup." = "バックアップの作成または復元前に、すべての未処理録音を文字起こしするか破棄してください。";
 "Waiting for transcription" = "文字起こし待ち";
@@ -500,8 +501,9 @@
 "Typography" = "文字";
 "Font Size" = "フォントサイズ";
 "%lld pt" = "%lld pt";
-"Meeting List" = "ミーティング一覧";
-"Display Style" = "表示スタイル";
+"Meeting Sidebar" = "会議サイドバー";
+"Sidebar Display Style" = "サイドバーの表示スタイル";
+"Controls how meetings appear in the sidebar." = "サイドバーに表示する会議の見た目を設定します。";
 "App Language" = "表示言語";
 "Set the display language for the app." = "アプリの表示言語を設定します。";
 "Follow System" = "システムに従う";
@@ -570,7 +572,7 @@
 "Dahlia requests access only to the Google Drive files and folders it creates or that you explicitly use with Dahlia." = "Dahlia は、Dahlia が作成した、またはユーザーが Dahlia で明示的に使用した Google Drive のファイルとフォルダだけへのアクセスを要求します。";
 "Data Dahlia Accesses" = "Dahlia がアクセスするデータ";
 "Your Google account name and email address, calendar names, and event titles, descriptions, dates, attendance status, and meeting links." = "Google アカウントの名前とメールアドレス、カレンダー名、予定のタイトル、説明、日時、参加状態、会議リンクです。";
-"Your Google account name and email address, a Meeting Notes folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Google アカウントの名前とメールアドレス、Meeting Notes フォルダ、Dahlia が作成した Google Docs の要約です。Dahlia はその他の Drive ファイルにアクセスできません。";
+"Your Google account name and email address, a Dahlia folder, and Google Docs summaries created by Dahlia. Other Drive files are not accessible to Dahlia." = "Google アカウントの名前とメールアドレス、Dahlia フォルダ、Dahlia が作成した Google Docs の要約です。Dahlia はその他の Drive ファイルにアクセスできません。";
 "How Dahlia Uses and Stores It" = "利用方法と保存場所";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. Upcoming events are shown in Dahlia. Auto-recording stores the selected event occurrence identifier and its start and end dates in local settings until the recording attempt or event end. Linked event details are stored in the local meeting database and any database backups you create while a saved meeting refers to them." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。今後の予定を Dahlia に表示します。自動録音を有効にした開催回の識別子と開始・終了日時は、録音開始を試みるか予定が終了するまでローカル設定に保存します。関連付けた予定の詳細は、その予定を参照する会議がある間、ローカル会議 DB とユーザーが作成した DB バックアップに保存します。";
 "OAuth tokens and your account ID, name, and email address are stored in Keychain. The export folder and account IDs are stored in local settings. Exported document URLs and IDs are stored with the related meeting and in any database backups you create." = "OAuth トークンとアカウント ID、名前、メールアドレスは Keychain に保存します。書き出しフォルダとアカウント ID はローカル設定に、書き出した文書の URL と ID は関連する会議およびユーザーが作成した DB バックアップに保存します。";
@@ -789,15 +791,16 @@
 
 /* Keychain */
 "Cloud Storage" = "Cloud Storage";
-"Google Docs" = "Google Docs";
+"Google Drive" = "Google Drive";
+"Notion" = "Notion";
+"Export summaries to Notion." = "要約を Notion に書き出します。";
 "Connect a Google account to export summaries, including images, to Google Docs from the Share menu." = "Google アカウントを接続し、共有メニューから画像を含む要約を Google Docs に書き出します。";
 "Sign in with Google to export summaries to Google Docs." = "Google にサインインして要約を Google Docs に書き出します。";
 "Google Docs connected" = "Google Docs 接続済み";
-"Export Destination" = "書き出し先";
 "Export Folder" = "書き出しフォルダ";
 "Open in Google Drive" = "Google Drive で開く";
 "My Drive" = "マイドライブ";
-"On first connection, Dahlia creates Meeting Notes directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder." = "初回接続時にマイドライブ直下へ Meeting Notes フォルダを作成し、Google Docs を書き出します。書き出し先はこのフォルダに固定されます。";
+"On first connection, Dahlia creates a Dahlia folder directly under My Drive and exports Google Docs into it. The export destination is fixed to this folder." = "初回接続時にマイドライブ直下へ Dahlia フォルダを作成し、Google Docs を書き出します。書き出し先はこのフォルダに固定されます。";
 "The Google Drive export folder has not been configured." = "Google Drive の書き出しフォルダが設定されていません。";
 "Could not configure the Google Drive export folder." = "Google Drive の書き出しフォルダを設定できませんでした。";
 "Open Cloud Storage Settings" = "Cloud Storage 設定を開く";

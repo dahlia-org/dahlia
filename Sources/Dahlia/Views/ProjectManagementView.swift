@@ -67,7 +67,8 @@ struct ProjectManagementView: View {
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
-                    vaultManagementModel: vaultManagementModel
+                    vaultManagementModel: vaultManagementModel,
+                    onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }
             .mainDetailPane()
@@ -75,6 +76,16 @@ struct ProjectManagementView: View {
         .onChange(of: sidebarViewModel.allProjectItems) {
             reconcileVisibleProject()
         }
+    }
+
+    private func openUnprocessedRecordingsFromSettings(vaultID: UUID) {
+        if sidebarViewModel.currentVault?.id != vaultID {
+            guard let vault = vaultManagementModel.vaults.first(where: { $0.id == vaultID }) else { return }
+            onSelectVault(vault)
+            guard sidebarViewModel.currentVault?.id == vaultID else { return }
+        }
+        onShowUnprocessedRecordings()
+        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
     }
 
     @ViewBuilder

@@ -180,6 +180,11 @@ final class MainWindowNavigation {
         isShowingSettings = false
     }
 
+    func openUnprocessedRecordingsFromSettings() {
+        recordNavigation(to: .unprocessedRecordings)
+        dismissSettings()
+    }
+
     func updateSidebarWidth(_ width: CGFloat) {
         let clampedWidth = MainSidebarLayout.clampedWidth(width)
         guard clampedWidth != sidebarWidth else { return }

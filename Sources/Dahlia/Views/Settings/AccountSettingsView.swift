@@ -6,15 +6,13 @@ struct AccountSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker(selection: $settings.codexAccountProvider) {
-                    ForEach(AIAccountProvider.allCases) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                } label: {
-                    Text(L10n.provider)
-                    Text(L10n.aiAccountDescription)
-                }
-                .pickerStyle(.menu)
+                DahliaMenuPicker(
+                    title: L10n.provider,
+                    description: L10n.aiAccountDescription,
+                    selection: $settings.codexAccountProvider,
+                    options: AIAccountProvider.allCases,
+                    label: \.displayName
+                )
 
                 LabeledContent(L10n.codexVersion, value: CodexBundle.version)
             } header: {

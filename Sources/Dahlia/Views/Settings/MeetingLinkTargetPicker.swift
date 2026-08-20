@@ -8,29 +8,36 @@ struct MeetingLinkTargetPicker: View {
     let isLoading: Bool
 
     var body: some View {
-        LabeledContent(title) {
-            Picker(title, selection: $selection) {
-                if allowsGlobalInheritance {
-                    Text(L10n.useAllMeetingLinksSetting)
-                        .tag(MeetingLinkOpenTarget.inheritGlobal.rawValue)
-                }
+        DahliaMenuPicker(
+            title: title,
+            selection: $selection,
+            options: options,
+            label: optionLabel
+        )
+    }
 
-                Text(L10n.defaultWebBrowser)
-                    .tag(MeetingLinkOpenTarget.systemDefault.rawValue)
+    private var options: [String] {
+        var values = allowsGlobalInheritance ? [MeetingLinkOpenTarget.inheritGlobal.rawValue] : []
+        values.append(MeetingLinkOpenTarget.systemDefault.rawValue)
+        values.append(contentsOf: applications.map {
+            MeetingLinkOpenTarget.application(bundleIdentifier: $0.bundleIdentifier).rawValue
+        })
+        if selectedBundleIdentifier != nil {
+            values.append(selection)
+        }
+        return values
+    }
 
-                ForEach(applications) { application in
-                    Text(application.displayName)
-                        .tag(MeetingLinkOpenTarget.application(bundleIdentifier: application.bundleIdentifier).rawValue)
-                }
-
-                if let selectedBundleIdentifier {
-                    Text(isLoading
-                        ? selectedBundleIdentifier
-                        : L10n.selectedApplicationUnavailable(selectedBundleIdentifier))
-                        .tag(selection)
-                }
-            }
-            .labelsHidden()
+    private func optionLabel(_ value: String) -> String {
+        guard let target = MeetingLinkOpenTarget(rawValue: value) else { return value }
+        switch target {
+        case .inheritGlobal:
+            return L10n.useAllMeetingLinksSetting
+        case .systemDefault:
+            return L10n.defaultWebBrowser
+        case let .application(bundleIdentifier):
+            return applications.first(where: { $0.bundleIdentifier == bundleIdentifier })?.displayName
+                ?? (isLoading ? bundleIdentifier : L10n.selectedApplicationUnavailable(bundleIdentifier))
         }
     }
 

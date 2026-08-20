@@ -97,7 +97,8 @@ struct VaultPickerView: View {
                     captionViewModel: captionViewModel,
                     sidebarViewModel: sidebarViewModel,
                     appDatabase: appDatabase,
-                    vaultManagementModel: model
+                    vaultManagementModel: model,
+                    onShowUnprocessedRecordings: openUnprocessedRecordingsFromSettings
                 )
             }
             .padding(.top, isShowingSettings ? DahliaDesign.windowHeaderHeight : 0)
@@ -126,6 +127,14 @@ struct VaultPickerView: View {
 
     private func showFolderPicker() {
         isShowingFolderPicker = true
+    }
+
+    private func openUnprocessedRecordingsFromSettings(vaultID: UUID) {
+        guard canSwitchVault,
+              let vault = model.vaults.first(where: { $0.id == vaultID }) else { return }
+        openVault(vault)
+        guard sidebarViewModel.currentVault?.id == vaultID else { return }
+        mainWindowNavigation.openUnprocessedRecordingsFromSettings()
     }
 
     private func updateSidebarWidth(_ width: CGFloat) {

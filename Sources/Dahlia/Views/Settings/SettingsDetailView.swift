@@ -6,6 +6,7 @@ struct SettingsDetailView: View {
     var sidebarViewModel: SidebarViewModel
     let appDatabase: AppDatabaseManager?
     var vaultManagementModel: VaultManagementModel
+    let onShowUnprocessedRecordings: (UUID) -> Void
 
     @ObservedObject private var appSettings = AppSettings.shared
 
@@ -49,7 +50,8 @@ struct SettingsDetailView: View {
         case .backups:
             BackupSettingsView(
                 dbQueue: sidebarViewModel.dbQueue,
-                captionViewModel: captionViewModel
+                captionViewModel: captionViewModel,
+                onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
         case .search:
             SearchSettingsView(database: appDatabase)
