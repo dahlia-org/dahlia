@@ -4686,6 +4686,7 @@ final class CaptionViewModel: ObservableObject {
               let recordingSessionId = activeRecordingSessionId else { return }
         guard plan.liveSubtitlesEnabled != isEnabled else { return }
         let previousValue = plan.liveSubtitlesEnabled
+        let captionStoreWasActive = liveCaptionStore.activeSessionId == recordingSessionId
 
         switch recordingLifecycle {
         case let .starting(sessionId) where sessionId == recordingSessionId:
@@ -4693,8 +4694,6 @@ final class CaptionViewModel: ObservableObject {
             activeTranscriptionPlan = plan
             if isEnabled {
                 liveCaptionStore.start(sessionId: recordingSessionId)
-            } else {
-                liveCaptionStore.clear()
             }
             return
         case let .recording(sessionId) where sessionId == recordingSessionId:
@@ -4711,8 +4710,6 @@ final class CaptionViewModel: ObservableObject {
             if plan.persistsRealtimeTranscript {
                 liveCaptionStore.seed(activeTranscriptStore.segments, sessionId: recordingSessionId)
             }
-        } else {
-            liveCaptionStore.clear()
         }
 
         enqueueRecordingConfiguration { [weak self] _ in
@@ -4729,13 +4726,18 @@ final class CaptionViewModel: ObservableObject {
                 self.errorMessage = error.localizedDescription
                 self.restoreLiveSubtitleSetting(
                     previousValue,
-                    recordingSessionId: recordingSessionId
+                    recordingSessionId: recordingSessionId,
+                    clearsNewCaptionStore: isEnabled && !captionStoreWasActive
                 )
             }
         }
     }
 
-    private func restoreLiveSubtitleSetting(_ isEnabled: Bool, recordingSessionId: UUID) {
+    private func restoreLiveSubtitleSetting(
+        _ isEnabled: Bool,
+        recordingSessionId: UUID,
+        clearsNewCaptionStore: Bool
+    ) {
         guard activeRecordingSessionId == recordingSessionId,
               var plan = activeTranscriptionPlan else { return }
         plan.liveSubtitlesEnabled = isEnabled
@@ -4744,10 +4746,7 @@ final class CaptionViewModel: ObservableObject {
 
         if isEnabled {
             liveCaptionStore.start(sessionId: recordingSessionId)
-            if plan.persistsRealtimeTranscript {
-                liveCaptionStore.seed(activeTranscriptStore.segments, sessionId: recordingSessionId)
-            }
-        } else {
+        } else if clearsNewCaptionStore {
             liveCaptionStore.clear()
         }
     }

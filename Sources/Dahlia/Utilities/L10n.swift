@@ -1222,7 +1222,7 @@ enum L10n {
     ) }
     static var liveSubtitleOverlaySegmentCount: String { String(localized: "Overlay Segment Count", bundle: bundle) }
     static var liveSubtitleOverlaySegmentCountDescription: String { String(
-        localized: "Choose how many recent transcript segments the live subtitle overlay shows.",
+        localized: "Choose how many recent transcript segments are visible at once in the live subtitle overlay.",
         bundle: bundle
     ) }
     static var liveSubtitleConversionFailed: String { String(

@@ -112,6 +112,23 @@ import Foundation
         }
 
         @Test
+        func seedBackfillsPersistedSegmentsWithoutDiscardingRetainedHistory() {
+            let sessionID = UUID.v7()
+            let retained = makeSegment(sessionID: sessionID, text: "Before disabling", source: "system", isConfirmed: true)
+            let gap = makeSegment(sessionID: sessionID, text: "While disabled", source: "system", isConfirmed: true)
+            let stalePreview = makeSegment(sessionID: sessionID, text: "Stale preview", source: "system")
+            let currentPreview = makeSegment(sessionID: sessionID, text: "Current preview", source: "system")
+            let store = LiveCaptionStore()
+            store.start(sessionId: sessionID)
+            store.apply(event: .finalized(retained))
+            store.apply(event: .preview(stalePreview))
+
+            store.seed([retained, gap, currentPreview], sessionId: sessionID)
+
+            #expect(store.segments == [retained, gap, currentPreview])
+        }
+
+        @Test
         func startingNewSessionAndClearingResetTransientState() {
             let firstSessionID = UUID.v7()
             let secondSessionID = UUID.v7()
@@ -138,6 +155,25 @@ import Foundation
             #expect(store.activeSessionId == nil)
             #expect(store.segments.isEmpty)
             #expect(store.failureMessage == nil)
+        }
+
+        @Test
+        func retainsAllFinalizedSegmentsForTheActiveSession() {
+            let sessionID = UUID.v7()
+            let store = LiveCaptionStore()
+            store.start(sessionId: sessionID)
+
+            for index in 0 ..< 25 {
+                store.apply(event: .finalized(makeSegment(
+                    sessionID: sessionID,
+                    text: "Segment \(index)",
+                    source: "system"
+                )))
+            }
+
+            #expect(store.segments.count == 25)
+            #expect(store.segments.first?.text == "Segment 0")
+            #expect(store.segments.last?.text == "Segment 24")
         }
 
         private func makeSegment(

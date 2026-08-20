@@ -50,6 +50,77 @@ import Foundation
         }
 
         @Test
+        func availableUpdateSlotConsumesStoreChangeSynchronously() {
+            let settingsSnapshot = UserDefaultsValueSnapshot(key: "liveSubtitleOverlayEnabled")
+            AppSettings.shared.liveSubtitleOverlayEnabled = true
+            defer { settingsSnapshot.restore() }
+
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let sessionID = UUID.v7()
+            viewModel.isListening = true
+            viewModel.liveCaptionStore.start(sessionId: sessionID)
+            let presenter = FakeLiveSubtitlePresenter()
+            let coordinator = LiveSubtitleOverlayCoordinator(viewModel: viewModel, liveSubtitleOverlayService: presenter)
+
+            viewModel.liveCaptionStore.apply(event: .preview(TranscriptSegment(
+                sessionId: sessionID,
+                startTime: .now,
+                text: "Immediate preview",
+                speakerLabel: "system"
+            )))
+
+            #expect(presenter.lastPayload?.entries.map(\.primaryText) == ["Immediate preview"])
+            withExtendedLifetime(coordinator) {}
+        }
+
+        @Test
+        func clearImmediatelyFollowedByFinalizedDoesNotHideOverlay() async {
+            let settingsSnapshot = UserDefaultsValueSnapshot(key: "liveSubtitleOverlayEnabled")
+            AppSettings.shared.liveSubtitleOverlayEnabled = true
+            defer { settingsSnapshot.restore() }
+
+            let viewModel = CaptionViewModel(
+                availableInputDevicesProvider: { [] },
+                defaultInputDeviceIDProvider: { nil }
+            )
+            let sessionID = UUID.v7()
+            let segmentID = UUID.v7()
+            viewModel.isListening = true
+            viewModel.liveCaptionStore.start(sessionId: sessionID)
+            viewModel.liveCaptionStore.apply(event: .preview(TranscriptSegment(
+                id: segmentID,
+                sessionId: sessionID,
+                startTime: .now,
+                text: "Preview",
+                speakerLabel: "system"
+            )))
+            let presenter = FakeLiveSubtitlePresenter()
+            let coordinator = LiveSubtitleOverlayCoordinator(viewModel: viewModel, liveSubtitleOverlayService: presenter)
+            let initialUpdateCount = presenter.updateCount
+
+            viewModel.liveCaptionStore.apply(event: .clearPreview(sessionId: sessionID, sourceLabel: "system"))
+            viewModel.liveCaptionStore.apply(event: .finalized(TranscriptSegment(
+                id: segmentID,
+                sessionId: sessionID,
+                startTime: .now,
+                text: "Final",
+                isConfirmed: true,
+                speakerLabel: "system"
+            )))
+
+            #expect(presenter.lastPayload?.entries.map(\.primaryText) == ["Preview"])
+            #expect(presenter.updateCount == initialUpdateCount)
+            let showedFinal = await waitUntil {
+                presenter.lastPayload?.entries.map(\.primaryText) == ["Final"]
+            }
+            #expect(showedFinal)
+            withExtendedLifetime(coordinator) {}
+        }
+
+        @Test
         func continuouslyChangingPreviewPublishesLatestAtBoundedCadence() async throws {
             let settingsSnapshot = UserDefaultsValueSnapshot(key: "liveSubtitleOverlayEnabled")
             AppSettings.shared.liveSubtitleOverlayEnabled = true
@@ -67,10 +138,25 @@ import Foundation
                 viewModel: viewModel,
                 liveSubtitleOverlayService: presenter
             )
-            try await Task.sleep(for: .milliseconds(20))
+            var previousUpdateCount = presenter.updateCount
+            var stableCheckCount = 0
+            let initialUpdatesSettled = await pollUntil {
+                let currentUpdateCount = presenter.updateCount
+                if currentUpdateCount == previousUpdateCount {
+                    stableCheckCount += 1
+                } else {
+                    previousUpdateCount = currentUpdateCount
+                    stableCheckCount = 0
+                }
+                return stableCheckCount >= 3
+            }
+            #expect(initialUpdatesSettled)
             let initialUpdateCount = presenter.updateCount
+            let clock = ContinuousClock()
+            let end = clock.now.advanced(by: .seconds(1))
+            var index = 0
 
-            for index in 0 ..< 20 {
+            while clock.now < end {
                 viewModel.liveCaptionStore.apply(event: .preview(
                     TranscriptSegment(
                         sessionId: sessionID,
@@ -79,16 +165,19 @@ import Foundation
                         speakerLabel: "system"
                     )
                 ))
+                index += 1
+                try await Task.sleep(for: .milliseconds(20))
             }
 
+            let latestPreview = "Preview \(index - 1)"
             let showedLatestPreview = await waitUntil {
-                presenter.lastPayload?.entries.map(\.primaryText) == ["Preview 19"]
+                presenter.lastPayload?.entries.map(\.primaryText) == [latestPreview]
             }
             #expect(showedLatestPreview)
 
             let payload = try #require(presenter.lastPayload)
-            #expect(payload.entries.map(\.primaryText) == ["Preview 19"])
-            #expect(presenter.updateCount - initialUpdateCount <= 2)
+            #expect(payload.entries.map(\.primaryText) == [latestPreview])
+            #expect(presenter.updateCount - initialUpdateCount <= 7)
             withExtendedLifetime(coordinator) {}
         }
 

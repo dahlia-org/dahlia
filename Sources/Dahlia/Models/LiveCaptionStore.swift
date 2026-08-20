@@ -4,19 +4,29 @@ import Foundation
 /// 現在の録音セッションに限った、一時的なライブ字幕の表示状態。
 @MainActor
 final class LiveCaptionStore: ObservableObject {
-    private static let maximumRetainedSegmentCount = 20
+    enum OverlayChange {
+        case reload
+        case preview(TranscriptSegment)
+        case finalized(TranscriptSegment)
+        case clearPreview(sourceLabel: String?)
+        case update(TranscriptSegment)
+    }
 
     @Published private(set) var segments: [TranscriptSegment] = []
     @Published private(set) var activeSessionId: UUID?
     @Published private(set) var failureMessage: String?
+    let overlayChanges = PassthroughSubject<OverlayChange, Never>()
+    private var segmentIndices: [UUID: Int] = [:]
 
     /// 新しいセッションを開始する。同じセッションへの再設定は現在の字幕を維持する。
     func start(sessionId: UUID) {
         guard activeSessionId != sessionId else { return }
 
         segments.removeAll()
+        segmentIndices.removeAll()
         failureMessage = nil
         activeSessionId = sessionId
+        overlayChanges.send(.reload)
     }
 
     func apply(event: TranscriptionEvent) {
@@ -33,8 +43,9 @@ final class LiveCaptionStore: ObservableObject {
         case let .previewTranslation(sessionId, segmentID, translatedText),
              let .translation(sessionId, segmentID, translatedText):
             guard activeSessionId == sessionId,
-                  let index = segments.firstIndex(where: { $0.id == segmentID }) else { return }
+                  let index = segmentIndices[segmentID] else { return }
             segments[index].translatedText = translatedText
+            overlayChanges.send(.update(segments[index]))
         case let .failure(sessionId, _, _, message):
             guard activeSessionId == sessionId else { return }
             failureMessage = message
@@ -44,18 +55,36 @@ final class LiveCaptionStore: ObservableObject {
     /// 正本文字起こしの現在セッション分を、字幕を有効化した時点の初期値として取り込む。
     func seed(_ newSegments: [TranscriptSegment], sessionId: UUID) {
         guard activeSessionId == sessionId else { return }
-        segments = Array(
-            newSegments
-                .lazy
-                .filter { $0.sessionId == sessionId }
-                .suffix(Self.maximumRetainedSegmentCount)
-        )
+        let incomingSegments = newSegments.filter { $0.sessionId == sessionId }
+        guard !segments.isEmpty else {
+            segments = incomingSegments
+            rebuildSegmentIndices()
+            overlayChanges.send(.reload)
+            return
+        }
+
+        var mergedSegments = segments.filter(\.isConfirmed)
+        var confirmedIndices = Dictionary(uniqueKeysWithValues: mergedSegments.enumerated().map { ($1.id, $0) })
+        for segment in incomingSegments where segment.isConfirmed {
+            if let index = confirmedIndices[segment.id] {
+                mergedSegments[index] = segment
+            } else {
+                confirmedIndices[segment.id] = mergedSegments.endIndex
+                mergedSegments.append(segment)
+            }
+        }
+        mergedSegments.append(contentsOf: incomingSegments.filter { !$0.isConfirmed })
+        segments = mergedSegments
+        rebuildSegmentIndices()
+        overlayChanges.send(.reload)
     }
 
     func clear() {
         segments.removeAll()
+        segmentIndices.removeAll()
         activeSessionId = nil
         failureMessage = nil
+        overlayChanges.send(.reload)
     }
 
     private func accepts(_ segment: TranscriptSegment) -> Bool {
@@ -67,46 +96,72 @@ final class LiveCaptionStore: ObservableObject {
         var preview = newSegment
         preview.isConfirmed = false
 
-        if preview.translatedText == nil,
-           let existingPreview = segments.last(where: {
-               !$0.isConfirmed && $0.speakerLabel == preview.speakerLabel
-           }),
-           existingPreview.id == preview.id {
-            preview.translatedText = existingPreview.translatedText
+        if let existingPreviewIndex = previewIndex(forSource: preview.speakerLabel) {
+            let existingPreview = segments[existingPreviewIndex]
+            if preview.translatedText == nil, existingPreview.id == preview.id {
+                preview.translatedText = existingPreview.translatedText
+            }
+            var replacement = Array(segments[segments.index(after: existingPreviewIndex)...])
+            replacement.append(preview)
+            replaceSegments(from: existingPreviewIndex, with: replacement)
+        } else {
+            segmentIndices[preview.id] = segments.endIndex
+            segments.append(preview)
         }
-
-        clearPreview(forSource: preview.speakerLabel)
-        segments.append(preview)
+        overlayChanges.send(.preview(preview))
     }
 
     private func appendFinalized(_ newSegment: TranscriptSegment) {
         var finalized = newSegment
         finalized.isConfirmed = true
 
-        if finalized.translatedText == nil,
-           let existingSegment = segments.first(where: { $0.id == finalized.id }) {
-            finalized.translatedText = existingSegment.translatedText
+        let existingSegmentIndex = segmentIndices[finalized.id]
+        if let existingSegmentIndex, finalized.translatedText == nil {
+            finalized.translatedText = segments[existingSegmentIndex].translatedText
         }
 
-        segments.removeAll {
+        let confirmedInsertionIndex = segments.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? segments.startIndex
+        let replacementStart = min(existingSegmentIndex ?? confirmedInsertionIndex, confirmedInsertionIndex)
+        var replacement = Array(segments[replacementStart...])
+        replacement.removeAll {
             $0.id == finalized.id || (!$0.isConfirmed && $0.speakerLabel == finalized.speakerLabel)
         }
-
-        // LiveSubtitleOverlayPayload は未確定セグメントを末尾として扱うため、
-        // 確定セグメントは残っている preview より前へ追加する。
-        let insertionIndex = segments.firstIndex(where: { !$0.isConfirmed }) ?? segments.endIndex
-        segments.insert(finalized, at: insertionIndex)
-        trimOldSegmentsIfNeeded()
+        let insertionIndex = replacement.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? replacement.startIndex
+        replacement.insert(finalized, at: insertionIndex)
+        replaceSegments(from: replacementStart, with: replacement)
+        overlayChanges.send(.finalized(finalized))
     }
 
     private func clearPreview(forSource sourceLabel: String?) {
-        segments.removeAll {
+        guard let index = previewIndex(forSource: sourceLabel) else { return }
+        segmentIndices.removeValue(forKey: segments[index].id)
+        segments.remove(at: index)
+        refreshSegmentIndices(from: index)
+        overlayChanges.send(.clearPreview(sourceLabel: sourceLabel))
+    }
+
+    private func previewIndex(forSource sourceLabel: String?) -> Int? {
+        let previewStartIndex = segments.lastIndex(where: \.isConfirmed).map { $0 + 1 } ?? segments.startIndex
+        return segments[previewStartIndex...].lastIndex {
             !$0.isConfirmed && $0.speakerLabel == sourceLabel
         }
     }
 
-    private func trimOldSegmentsIfNeeded() {
-        guard segments.count > Self.maximumRetainedSegmentCount else { return }
-        segments.removeFirst(segments.count - Self.maximumRetainedSegmentCount)
+    private func replaceSegments(from startIndex: Int, with replacement: [TranscriptSegment]) {
+        for segment in segments[startIndex...] {
+            segmentIndices.removeValue(forKey: segment.id)
+        }
+        segments.replaceSubrange(startIndex..., with: replacement)
+        refreshSegmentIndices(from: startIndex)
+    }
+
+    private func rebuildSegmentIndices() {
+        segmentIndices = Dictionary(uniqueKeysWithValues: segments.enumerated().map { ($1.id, $0) })
+    }
+
+    private func refreshSegmentIndices(from startIndex: Int) {
+        for index in startIndex ..< segments.endIndex {
+            segmentIndices[segments[index].id] = index
+        }
     }
 }

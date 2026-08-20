@@ -16,8 +16,19 @@ enum TranscriptionEventRouter {
         plan: TranscriptionSessionPlan,
         liveCaptionStore: LiveCaptionStore
     ) {
-        guard plan.liveSubtitlesEnabled else { return }
-        liveCaptionStore.apply(event: event)
+        if plan.liveSubtitlesEnabled {
+            liveCaptionStore.apply(event: event)
+            return
+        }
+
+        guard plan.persistsRealtimeTranscript,
+              liveCaptionStore.activeSessionId != nil else { return }
+        switch event {
+        case .finalized, .clearPreview, .translation:
+            liveCaptionStore.apply(event: event)
+        case .preview, .previewTranslation, .failure:
+            break
+        }
     }
 
     @MainActor

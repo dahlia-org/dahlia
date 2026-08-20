@@ -91,6 +91,36 @@ import Foundation
         }
 
         @Test
+        func realtimeRetainsFinalizedHistoryWhileLiveSubtitlesAreDisabled() {
+            let sessionID = UUID.v7()
+            let liveStore = LiveCaptionStore()
+            liveStore.start(sessionId: sessionID)
+            let plan = TranscriptionSessionPlan(
+                finalMode: .realtime,
+                liveSubtitlesEnabled: false,
+                retainBatchAudio: false
+            )
+
+            for index in 0 ... TranscriptStore.maximumConfirmedSegmentCount {
+                TranscriptionEventRouter.routeLiveCaption(
+                    .finalized(TranscriptSegment(
+                        sessionId: sessionID,
+                        startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double(index)),
+                        text: "Segment \(index)",
+                        isConfirmed: true,
+                        speakerLabel: "system"
+                    )),
+                    plan: plan,
+                    liveCaptionStore: liveStore
+                )
+            }
+
+            #expect(liveStore.segments.count == TranscriptStore.maximumConfirmedSegmentCount + 1)
+            #expect(liveStore.segments.first?.text == "Segment 0")
+            #expect(liveStore.segments.last?.text == "Segment \(TranscriptStore.maximumConfirmedSegmentCount)")
+        }
+
+        @Test
         func finalizationRemovesMatchingPreviewSynchronously() {
             let sessionID = UUID.v7()
             let segmentID = UUID.v7()
