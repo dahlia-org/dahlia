@@ -48,8 +48,7 @@ private struct CodexChatCommandApprovalDetails: View {
         if request.command != nil || request.cwd != nil {
             VStack(alignment: .leading, spacing: 6) {
                 if let command = request.command {
-                    Text(command)
-                        .font(.body.monospaced())
+                    CodexChatMarkdownTextView(blocks: [.code(language: nil, text: command)])
                 }
                 if let cwd = request.cwd {
                     Text(cwd)
@@ -74,9 +73,7 @@ private struct CodexChatMCPApprovalDetails: View {
                         .font(.body.weight(.medium).monospaced())
                 }
                 if let arguments = request.mcpArguments {
-                    Text(arguments)
-                        .font(.footnote.monospaced())
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    CodexChatMarkdownTextView(blocks: [.code(language: "json", text: arguments)])
                 }
             }
             .approvalDetailRegion()
@@ -95,9 +92,7 @@ private struct CodexChatFileApprovalDetails: View {
                         Text(title(for: change))
                             .font(.footnote.weight(.medium).monospaced())
                         if !change.diff.isEmpty {
-                            Text(change.diff)
-                                .font(.footnote.monospaced())
-                                .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            CodexChatMarkdownTextView(blocks: [.code(language: "diff", text: change.diff)])
                         }
                     }
                 }
