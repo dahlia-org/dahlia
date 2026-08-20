@@ -693,10 +693,13 @@
             #expect(await stall.waitUntilStarted())
 
             writer.appendBuffer(buffer)
-            for event in events {
-                await pipeline.enqueue(event)
+            let persistenceTask = Task.detached(priority: .high) {
+                for event in events {
+                    await pipeline.enqueue(event)
+                }
+                await persistedEvents.waitForCount(2)
             }
-            await persistedEvents.waitForCount(2)
+            await persistenceTask.value
 
             #expect(stall.isBlocking)
             #expect(writer.acceptedFrameCount == 160)

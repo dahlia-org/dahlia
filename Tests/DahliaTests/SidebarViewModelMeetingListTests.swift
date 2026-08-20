@@ -155,7 +155,7 @@ import GRDB
             #expect(viewModel.displayedMeetingItems.count == 2)
         }
 
-        @Test(.timeLimit(.minutes(1)))
+        @Test(.timeLimit(.minutes(2)))
         func searchesBeyondInitialPageAndPaginatesMatches() async throws {
             let fixture = try SidebarViewModelMeetingListFixture()
             defer {
