@@ -43,7 +43,7 @@ enum CodexAppServerError: LocalizedError, Equatable {
 
     var isNoActiveTurnToSteer: Bool {
         guard case let .rpcError(_, message) = self else { return false }
-        return message.caseInsensitiveCompare("no active turn to steer") == .orderedSame
+        return message.localizedCaseInsensitiveContains("no active turn to steer")
     }
 
     var isThreadNotFound: Bool {
