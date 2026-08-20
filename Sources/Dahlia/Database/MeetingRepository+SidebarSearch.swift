@@ -6,6 +6,7 @@ extension MeetingRepository {
     nonisolated static func searchMeetingSidebarPage(
         vaultId: UUID,
         query: String,
+        mode: SearchMode = .advanced,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
         dbQueue: DatabaseQueue
@@ -13,6 +14,7 @@ extension MeetingRepository {
         try await searchMeetingSidebarPage(
             vaultId: vaultId,
             criteria: MeetingSearchCriteria(text: query),
+            mode: mode,
             after: cursor,
             limit: limit,
             dbQueue: dbQueue
@@ -22,6 +24,7 @@ extension MeetingRepository {
     nonisolated static func searchMeetingSidebarPage(
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
+        mode: SearchMode = .advanced,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
         dbQueue: DatabaseQueue
@@ -37,13 +40,26 @@ extension MeetingRepository {
                         in: db
                     )
                 }
-                return try fullTextSearch(
-                    vaultId: vaultId,
-                    criteria: criteria,
-                    cursor: cursor,
-                    limit: limit,
-                    in: db
-                )
+                return switch mode {
+                case .simple:
+                    try simpleSearch(
+                        vaultId: vaultId,
+                        criteria: criteria,
+                        cursor: cursor,
+                        limit: limit,
+                        in: db
+                    )
+                case .advanced:
+                    try fullTextSearch(
+                        vaultId: vaultId,
+                        criteria: criteria,
+                        cursor: cursor,
+                        limit: limit,
+                        in: db
+                    )
+                case .neural:
+                    throw MeetingSearchError.indexUnavailable
+                }
             }
         }
     }
@@ -79,6 +95,147 @@ extension MeetingRepository {
         )
     }
 
+    private nonisolated static let simpleProjectPathsCTE = """
+    WITH RECURSIVE project_paths(id, vaultId, path) AS (
+        SELECT id, vaultId, name
+        FROM projects
+        WHERE parentProjectId IS NULL AND vaultId = ?
+        UNION ALL
+        SELECT child.id, child.vaultId, project_paths.path || '/' || child.name
+        FROM projects AS child
+        JOIN project_paths ON project_paths.id = child.parentProjectId
+        WHERE child.vaultId = ?
+    )
+    """
+
+    private nonisolated static func simpleSearch(
+        vaultId: UUID,
+        criteria: MeetingSearchCriteria,
+        cursor: MeetingSearchCursor?,
+        limit: Int,
+        in db: Database
+    ) throws -> MeetingSearchPage {
+        try requireReadySearchIndex(in: db)
+        let chronologicalCursor: MeetingSidebarCursor? = if case let .chronological(value) = cursor { value } else {
+            nil
+        }
+        let projects = try ProjectRecord.fetchResolvedAll(vaultId: vaultId, in: db)
+        let includedProjects = descendantProjectIDs(selectedIDs: criteria.projectIDs, projects: projects)
+        let filters = searchFilters(criteria: criteria, includedProjectIDs: includedProjects)
+        let cursorFilter = sidebarCursorFilter(chronologicalCursor)
+        let pattern = "%\(escapedLikePattern(criteria.text))%"
+        var arguments: StatementArguments = [vaultId, vaultId, vaultId]
+        arguments += filters.arguments
+        for _ in 0 ..< 6 {
+            arguments += [pattern]
+        }
+        arguments += cursorFilter.arguments
+        arguments += [limit + 1]
+        var ids = try UUID.fetchAll(
+            db,
+            sql: """
+            \(simpleProjectPathsCTE)
+            SELECT meetings.id
+            FROM meetings
+            LEFT JOIN calendar_events
+              ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
+             AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
+            LEFT JOIN project_paths ON project_paths.id = meetings.projectId
+            WHERE meetings.vaultId = ?
+              \(filters.condition)
+              AND (
+                meetings.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR meetings.description LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR calendar_events.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR calendar_events.description LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR EXISTS (
+                    SELECT 1 FROM meeting_tags
+                    JOIN tags ON tags.id = meeting_tags.tagId
+                    WHERE meeting_tags.meetingId = meetings.id
+                      AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                )
+                OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
+              )
+              \(cursorFilter.condition)
+            ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
+            LIMIT ?
+            """,
+            arguments: arguments
+        )
+        let hasMore = ids.count > limit
+        if hasMore { ids.removeLast() }
+        var itemsByID = try Dictionary(
+            uniqueKeysWithValues: fetchMeetingSidebarItems(ids: ids, vaultId: vaultId, in: db)
+                .map { ($0.id, $0) }
+        )
+        for id in ids {
+            itemsByID[id]?.searchMatchContext = try simpleMatchContext(
+                query: criteria.text,
+                meetingID: id,
+                projects: projects,
+                in: db
+            )
+        }
+        let items = ids.compactMap { itemsByID[$0] }
+        return MeetingSearchPage(
+            items: items,
+            groups: MeetingDateGrouping.searchResultGroups(from: items),
+            hasMore: hasMore,
+            nextCursor: hasMore ? items.last.map { .chronological(MeetingSidebarCursor(item: $0)) } : nil,
+            replacesResults: cursor != nil && chronologicalCursor == nil
+        )
+    }
+
+    private nonisolated static func simpleMatchContext(
+        query: String,
+        meetingID: UUID,
+        projects: [ProjectRecord],
+        in db: Database
+    ) throws -> MeetingSearchMatchContext {
+        let meeting = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT meetings.name, meetings.description, meetings.projectId,
+                   calendar_events.title AS calendarTitle,
+                   calendar_events.description AS calendarDescription
+            FROM meetings LEFT JOIN calendar_events
+              ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
+             AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
+            WHERE meetings.id = ?
+            """,
+            arguments: [meetingID]
+        )
+        let title: String = meeting?["name"] ?? ""
+        if title.localizedStandardContains(query) {
+            return .init(kind: .title, text: title)
+        }
+        let tags = try Row.fetchAll(
+            db,
+            sql: """
+            SELECT tags.name, tags.colorHex FROM tags
+            JOIN meeting_tags ON meeting_tags.tagId = tags.id
+            WHERE meeting_tags.meetingId = ? ORDER BY tags.id
+            """,
+            arguments: [meetingID]
+        )
+        if let tag = tags.first(where: { ($0["name"] as String).localizedStandardContains(query) }) {
+            return .init(kind: .tag, text: tag["name"], colorHex: tag["colorHex"])
+        }
+        let projectID: UUID? = meeting?["projectId"]
+        if let path = projectID.flatMap({ id in projects.first { $0.id == id }?.path }),
+           path.localizedStandardContains(query) {
+            return .init(kind: .project, text: path)
+        }
+        let calendar = [meeting?["calendarTitle"] as String?, meeting?["calendarDescription"] as String?]
+            .compactMap(\.self)
+            .joined(separator: " ")
+        if calendar.localizedStandardContains(query) {
+            return .init(kind: .calendar, text: calendar)
+        }
+        let description: String = meeting?["description"] ?? ""
+        return .init(kind: .description, text: snippet(description, matching: query))
+    }
+
     private nonisolated static func fullTextSearch(
         vaultId: UUID,
         criteria: MeetingSearchCriteria,
@@ -86,8 +243,7 @@ extension MeetingRepository {
         limit: Int,
         in db: Database
     ) throws -> MeetingSearchPage {
-        let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
-        guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
+        try requireReadySearchIndex(in: db)
 
         let tokens = try SearchFTS5Tokenizer.queryTokens(for: criteria.text, in: db)
         guard !tokens.isEmpty else { return .empty(replacesResults: cursor != nil) }
@@ -495,20 +651,66 @@ extension MeetingRepository {
         Array(repeating: "?", count: count).joined(separator: ",")
     }
 
+    private nonisolated static func escapedLikePattern(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+    }
+
+    private nonisolated static func requireReadySearchIndex(in db: Database) throws {
+        let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
+        guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
+    }
+
 }
 
 extension MeetingRepository {
     nonisolated static func searchProjectIDs(
         vaultID: UUID,
         query: String,
+        mode: SearchMode = .advanced,
         limit: Int,
         dbQueue: DatabaseQueue
     ) async throws -> [UUID] {
         try await withSearchDeadline {
             try await dbQueue.read { db in
-                try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+                try requireReadySearchIndex(in: db)
+                return switch mode {
+                case .simple:
+                    try simpleProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+                case .advanced:
+                    try searchProjectIDs(vaultID: vaultID, query: query, limit: limit, in: db)
+                case .neural:
+                    throw MeetingSearchError.indexUnavailable
+                }
             }
         }
+    }
+
+    private nonisolated static func simpleProjectIDs(
+        vaultID: UUID,
+        query: String,
+        limit: Int,
+        in db: Database
+    ) throws -> [UUID] {
+        let pattern = "%\(escapedLikePattern(query))%"
+        return try UUID.fetchAll(
+            db,
+            sql: """
+            \(simpleProjectPathsCTE)
+            SELECT projects.id FROM projects
+            JOIN project_paths ON project_paths.id = projects.id
+            WHERE projects.vaultId = ? AND (
+                projects.name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR projects.description LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
+            )
+            ORDER BY project_paths.path, projects.id
+            LIMIT ?
+            """,
+            arguments: [vaultID, vaultID, vaultID, pattern, pattern, pattern, limit]
+        )
     }
 
     private nonisolated static func searchProjectIDs(
@@ -517,8 +719,6 @@ extension MeetingRepository {
         limit: Int,
         in db: Database
     ) throws -> [UUID] {
-        let phase = try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'")
-        guard phase == "ready" else { throw MeetingSearchError.indexUnavailable }
         let tokens = try SearchFTS5Tokenizer.queryTokens(for: query, in: db)
         guard !tokens.isEmpty else { return [] }
         let tokenQuery = tokens.enumerated().map { ordinal, token in

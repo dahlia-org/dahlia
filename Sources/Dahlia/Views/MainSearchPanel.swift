@@ -16,23 +16,39 @@ struct MainSearchPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .dahliaFixedSymbol()
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                TextField(L10n.searchMeetingsAndProjects, text: $model.inputText)
-                    .textFieldStyle(.plain)
-                    .font(.headline)
-                    .focused($isSearchFocused)
-                    .onSubmit(activateSelectionOrSubmit)
-                filterButton(L10n.projectFilter, systemImage: "folder", mode: .projects)
-                filterButton(L10n.tagFilter, systemImage: "tag", mode: .tags)
-                filterButton(L10n.periodFilter, systemImage: "calendar", mode: .period)
-                Button(L10n.close, systemImage: "xmark", action: onDismiss)
-                    .labelStyle(.iconOnly)
-                    .dahliaFixedSymbol()
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DahliaDesign.secondaryTextColor)
-                    .help(L10n.close)
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .dahliaFixedSymbol()
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .accessibilityHidden(true)
+                    TextField(L10n.searchMeetingsAndProjects, text: $model.inputText)
+                        .textFieldStyle(.plain)
+                        .font(.headline)
+                        .focused($isSearchFocused)
+                        .onSubmit(activateSelectionOrSubmit)
+                    HStack(spacing: 2) {
+                        filterButton(L10n.projectFilter, systemImage: "folder", mode: .projects)
+                        filterButton(L10n.tagFilter, systemImage: "tag", mode: .tags)
+                        filterButton(L10n.periodFilter, systemImage: "calendar", mode: .period)
+                    }
+                    Button(L10n.close, systemImage: "xmark", action: onDismiss)
+                        .labelStyle(.iconOnly)
+                        .dahliaFixedSymbol()
+                        .buttonStyle(.plain)
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .frame(width: 28, height: 28)
+                        .contentShape(.rect)
+                        .help(L10n.close)
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 6)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(.background, in: .rect(cornerRadius: DahliaDesign.Field.cornerRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: DahliaDesign.Field.cornerRadius)
+                        .stroke(.separator, lineWidth: 1)
+                }
+                MainSearchModeControl(selection: $model.searchMode)
             }
             .padding(.horizontal, 20)
             .frame(minHeight: 72)
@@ -88,6 +104,9 @@ struct MainSearchPanel: View {
         }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
+        }
+        .onChange(of: model.searchMode) {
+            model.searchModeDidChange(using: sidebarViewModel)
         }
         .onChange(of: sidebarViewModel.allProjectItems) {
             model.catalogDidChange(using: sidebarViewModel)

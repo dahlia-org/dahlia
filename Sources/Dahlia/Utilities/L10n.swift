@@ -802,6 +802,10 @@ enum L10n {
     static var noMeetingsYet: String { String(localized: "No meetings yet", bundle: bundle) }
     static var searchMeetings: String { String(localized: "Search meetings...", bundle: bundle) }
     static var searchMeetingsAndProjects: String { String(localized: "Search meetings and projects", bundle: bundle) }
+    static var searchMode: String { String(localized: "Search mode", bundle: bundle) }
+    static var searchModeSimple: String { String(localized: "Search mode Simple", bundle: bundle) }
+    static var searchModeAdvanced: String { String(localized: "Search mode Advanced", bundle: bundle) }
+    static var searchModeNeural: String { String(localized: "Search mode Neural", bundle: bundle) }
     static var closeSearch: String { String(localized: "Close search", bundle: bundle) }
     static var removeSearchFilter: String { String(localized: "Remove search filter", bundle: bundle) }
     static var searchUnavailable: String { String(localized: "Search unavailable", bundle: bundle) }

@@ -33,6 +33,62 @@ import GRDB
         }
 
         @Test(.timeLimit(.minutes(1)))
+        func defaultsToAdvancedAndKeepsAvailableModeAcrossPresentations() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertSearchContent()
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            #expect(model.searchMode == .advanced)
+            #expect(!SearchMode.neural.isAvailable)
+            model.searchMode = .neural
+            model.searchModeDidChange(using: sidebar)
+            #expect(model.searchMode == .advanced)
+
+            model.present(using: sidebar)
+            model.inputText = "Needle"
+            model.queryDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+
+            model.searchMode = .simple
+            model.searchModeDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
+            #expect(model.projects.map(\.projectDisplayName) == ["Needle project"])
+
+            model.dismiss()
+            model.present(using: sidebar)
+            #expect(model.searchMode == .simple)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
+        func switchingModeReplacesResultsFromThePreviousMode() async throws {
+            let fixture = try MainSearchModelFixture()
+            defer { fixture.stop() }
+            try await fixture.insertSearchContent()
+            let sidebar = fixture.makeSidebarViewModel()
+            defer { sidebar.setAppDatabase(nil) }
+            #expect(await pollUntil { sidebar.isProjectCatalogLoaded })
+
+            let model = MainSearchModel()
+            model.present(using: sidebar)
+            model.inputText = "eedle"
+            model.searchMode = .simple
+            model.searchModeDidChange(using: sidebar)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+            #expect(model.meetings.map(\.meetingName) == ["Needle meeting"])
+
+            model.searchMode = .advanced
+            model.searchModeDidChange(using: sidebar)
+            #expect(model.meetings.isEmpty)
+            #expect(await pollUntil { !model.isLoading && !model.isProjectCatalogLoading })
+            #expect(model.meetings.isEmpty)
+        }
+
+        @Test(.timeLimit(.minutes(1)))
         func searchesMeetingsAndProjectsTogetherAndRejectsStaleQuery() async throws {
             let fixture = try MainSearchModelFixture()
             defer { fixture.stop() }
