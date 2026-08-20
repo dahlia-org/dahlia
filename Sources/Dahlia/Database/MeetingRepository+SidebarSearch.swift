@@ -156,7 +156,7 @@ extension MeetingRepository {
                       AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
                 )
                 OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
-                OR dahlia_summary_body(summaries.document) LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR summaries.document LIKE ? ESCAPE '\\' COLLATE NOCASE
               )
               \(cursorFilter.condition)
             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
@@ -646,12 +646,8 @@ extension MeetingRepository {
     }
 
     private nonisolated static func summaryBodyText(meetingID: UUID, in db: Database) throws -> String {
-        let document = try String.fetchOne(
-            db,
-            sql: "SELECT document FROM summaries WHERE meetingId = ?",
-            arguments: [meetingID]
-        )
-        return SummarySearchDatabaseFunction.bodyText(databaseJSON: document)
+        try SummaryRecord.fetchOne(db, key: meetingID)
+            .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
     }
 
     private nonisolated static func snippet(_ text: String, matching token: String) -> String {

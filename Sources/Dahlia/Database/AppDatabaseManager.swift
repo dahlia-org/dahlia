@@ -60,7 +60,6 @@ final class AppDatabaseManager: Sendable {
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
-            SummarySearchDatabaseFunction.register(in: db)
         }
         return configuration
     }

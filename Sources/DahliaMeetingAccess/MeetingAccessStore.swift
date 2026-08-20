@@ -26,7 +26,6 @@ public final class MeetingAccessStore: Sendable {
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
-            SummarySearchDatabaseFunction.register(in: db)
         }
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
@@ -977,7 +976,7 @@ private struct QueryComponents {
                 WHERE meeting_tags.meetingId = meetings.id
                   AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
             )
-            OR dahlia_summary_body(summaries.document) LIKE ? ESCAPE '\\' COLLATE NOCASE
+            OR summaries.document LIKE ? ESCAPE '\\' COLLATE NOCASE
         )
         """)
         for _ in 0 ..< 6 {
