@@ -524,7 +524,7 @@ import ImageIO
             )).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(projectID: fixture.otherVaultProjectID)).meetings.isEmpty)
             #expect(try store.queryMeetings(MeetingQuery(query: "secret body")).meetings.map(\.id) == [fixture.firstMeetingID])
-            #expect(try store.queryMeetings(MeetingQuery(query: "cret bo", simple: true)).meetings.map(\.id) == [fixture.firstMeetingID])
+            #expect(try store.queryMeetings(MeetingQuery(query: "cret bo", simple: true)).meetings.isEmpty)
             #expect(!firstPage.meetings.contains { $0.id == fixture.otherVaultMeetingID })
 
             let otherStore = try fixture.store(vaultID: fixture.otherVaultID)
@@ -2828,7 +2828,8 @@ import ImageIO
                 }}}
                 """#))
                 let summaryContent = (summaryQuery["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
-                #expect((summaryContent?["meetings"] as? [[String: Any]])?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
+                let meetings = summaryContent?["meetings"] as? [[String: Any]]
+                #expect(simple ? meetings?.isEmpty == true : meetings?.first?["id"] as? String == fixture.firstMeetingID.uuidString)
             }
 
             let projectQuery = try Self.json(server.handleLine(#"""

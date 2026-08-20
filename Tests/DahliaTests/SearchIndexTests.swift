@@ -122,7 +122,7 @@ import GRDB
         }
 
         @Test
-        func summaryBodyIsIndexedUpdatedDeletedAndAvailableToSimpleSearch() async throws {
+        func summaryBodyIsIndexedUpdatedDeletedAndExcludedFromSimpleSearch() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let vault = Self.makeVault()
             let meeting = Self.makeMeeting(vaultID: vault.id)
@@ -153,8 +153,7 @@ import GRDB
             )
             #expect(advanced.items.map(\.id) == [meeting.id])
             #expect(advanced.items.first?.searchMatchContext?.kind == .summary)
-            #expect(simple.items.map(\.id) == [meeting.id])
-            #expect(simple.items.first?.searchMatchContext?.kind == .summary)
+            #expect(simple.items.isEmpty)
 
             try await database.dbQueue.write { db in
                 try db.execute(

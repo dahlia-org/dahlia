@@ -976,10 +976,9 @@ private struct QueryComponents {
                 WHERE meeting_tags.meetingId = meetings.id
                   AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
             )
-            OR summaries.document LIKE ? ESCAPE '\\' COLLATE NOCASE
         )
         """)
-        for _ in 0 ..< 6 {
+        for _ in 0 ..< 5 {
             arguments += [pattern]
         }
     }

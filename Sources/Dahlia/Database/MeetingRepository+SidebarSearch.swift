@@ -126,7 +126,7 @@ extension MeetingRepository {
         let pattern = "%\(escapedLikePattern(criteria.text))%"
         var arguments: StatementArguments = [vaultId, vaultId, vaultId]
         arguments += filters.arguments
-        for _ in 0 ..< 7 {
+        for _ in 0 ..< 6 {
             arguments += [pattern]
         }
         arguments += cursorFilter.arguments
@@ -141,7 +141,6 @@ extension MeetingRepository {
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             LEFT JOIN project_paths ON project_paths.id = meetings.projectId
-            LEFT JOIN summaries ON summaries.meetingId = meetings.id
             WHERE meetings.vaultId = ?
               \(filters.condition)
               AND (
@@ -156,7 +155,6 @@ extension MeetingRepository {
                       AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
                 )
                 OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
-                OR summaries.document LIKE ? ESCAPE '\\' COLLATE NOCASE
               )
               \(cursorFilter.condition)
             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
@@ -235,11 +233,7 @@ extension MeetingRepository {
             return .init(kind: .calendar, text: calendar)
         }
         let description: String = meeting?["description"] ?? ""
-        if description.localizedStandardContains(query) {
-            return .init(kind: .description, text: snippet(description, matching: query))
-        }
-        let summary = try summaryBodyText(meetingID: meetingID, in: db)
-        return .init(kind: .summary, text: snippet(summary, matching: query))
+        return .init(kind: .description, text: snippet(description, matching: query))
     }
 
     private nonisolated static func fullTextSearch(
