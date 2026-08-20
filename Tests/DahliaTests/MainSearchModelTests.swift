@@ -6,6 +6,7 @@ import GRDB
     import Testing
 
     @MainActor
+    @Suite(.serialized)
     struct MainSearchModelTests {
         @Test(.timeLimit(.minutes(1)))
         func presentsSixRecentMeetingsAndProjectsInNewestOrder() async throws {
