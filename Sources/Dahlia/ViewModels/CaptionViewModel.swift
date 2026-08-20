@@ -4707,7 +4707,7 @@ final class CaptionViewModel: ObservableObject {
 
         if isEnabled {
             liveCaptionStore.start(sessionId: recordingSessionId)
-            if !captionStoreWasActive, plan.persistsRealtimeTranscript {
+            if plan.persistsRealtimeTranscript {
                 liveCaptionStore.seed(activeTranscriptStore.segments, sessionId: recordingSessionId)
             }
         }

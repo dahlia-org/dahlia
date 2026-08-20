@@ -391,7 +391,7 @@ private struct LiveSubtitleOverlayView: View {
 }
 
 private struct LiveSubtitleOverlaySizingView: View {
-    let entries: ArraySlice<LiveSubtitleOverlayPayload.Entry>
+    let entries: [LiveSubtitleOverlayPayload.Entry]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {

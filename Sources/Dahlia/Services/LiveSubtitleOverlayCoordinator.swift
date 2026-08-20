@@ -6,6 +6,7 @@ import Foundation
 final class LiveSubtitleOverlayCoordinator {
     private let viewModel: CaptionViewModel
     private let liveSubtitleOverlayService: any LiveSubtitlePresenting
+    private let payloadProjector = LiveSubtitleOverlayPayloadProjector()
 
     private var viewModelCancellables: [AnyCancellable] = []
     private var storeCancellable: AnyCancellable?
@@ -29,11 +30,9 @@ final class LiveSubtitleOverlayCoordinator {
             viewModel.$liveSubtitleLocale.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] _ in self?.sync() },
         ]
 
-        storeCancellable = viewModel.liveCaptionStore.objectWillChange
-            .receive(on: RunLoop.main)
-            // Publish the newest partial caption at most five times per second.
-            .sink { [weak self] _ in
-                self?.scheduleStoreSync()
+        storeCancellable = viewModel.liveCaptionStore.overlayChanges
+            .sink { [weak self] change in
+                self?.applyStoreChange(change)
             }
 
         defaultsCancellables = [
@@ -47,9 +46,22 @@ final class LiveSubtitleOverlayCoordinator {
         ]
     }
 
-    private func scheduleStoreSync() {
+    private func applyStoreChange(_ change: LiveCaptionStore.OverlayChange) {
+        payloadProjector.apply(change)
+        if case .clearPreview = change {
+            scheduleStoreSync(allowsImmediateSync: false)
+        } else {
+            scheduleStoreSync()
+        }
+    }
+
+    private func scheduleStoreSync(allowsImmediateSync: Bool = true) {
         let clock = ContinuousClock()
         let now = clock.now
+        if !allowsImmediateSync,
+           nextStoreSyncTime.map({ now >= $0 }) ?? true {
+            nextStoreSyncTime = now.advanced(by: .milliseconds(200))
+        }
         guard let nextStoreSyncTime, now < nextStoreSyncTime else {
             pendingStoreSyncTask?.cancel()
             pendingStoreSyncTask = nil
@@ -71,19 +83,26 @@ final class LiveSubtitleOverlayCoordinator {
     private func sync() {
         guard viewModel.isListening,
               AppSettings.shared.liveSubtitleOverlayEnabled else {
+            payloadProjector.apply(.reload)
             liveSubtitleOverlayService.hide()
             return
         }
 
-        let payload = LiveSubtitleOverlayPayload.history(
+        let payload = payloadProjector.payload(
             from: viewModel.liveCaptionStore.segments,
-            sourceMode: AppSettings.shared.liveSubtitleSourceMode,
-            transcriptionLocaleIdentifier: viewModel.liveRecognitionLocaleIdentifier,
-            translationEnabled: AppSettings.shared.transcriptTranslationEnabled,
-            targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage,
+            configuration: payloadConfiguration,
             visibleEntryCount: AppSettings.shared.liveSubtitleOverlaySegmentCount
         )
 
         liveSubtitleOverlayService.update(payload: payload)
+    }
+
+    private var payloadConfiguration: LiveSubtitleOverlayPayload.Configuration {
+        LiveSubtitleOverlayPayload.Configuration(
+            sourceMode: AppSettings.shared.liveSubtitleSourceMode,
+            transcriptionLocaleIdentifier: viewModel.liveRecognitionLocaleIdentifier,
+            translationEnabled: AppSettings.shared.transcriptTranslationEnabled,
+            targetLanguageIdentifier: AppSettings.shared.transcriptTranslationTargetLanguage
+        )
     }
 }

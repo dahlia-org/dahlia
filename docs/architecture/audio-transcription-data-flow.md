@@ -94,7 +94,7 @@ flowchart LR
     Router -.->|"latest-wins / 約10 Hz"| Meter["AudioLevelMeteringWorker<br/>rebuildable UI projection"]
     Meter -.-> LevelUI["録音パネル<br/>音源別レベルメーター"]
 
-    Events --> Caption["bounded UI projection<br/>LiveCaptionStore / TranscriptStore"]
+    Events --> Caption["session history + bounded rendering<br/>LiveCaptionStore / TranscriptStore"]
     Events --> Chat["live transcript relay"]
     Events -->|"realtime policy"| StreamWriter["TranscriptPersistenceWriter"]
     StreamWriter --> TranscriptDB[("SQLite<br/>transcript_segments")]
@@ -116,7 +116,7 @@ flowchart LR
 | Event distribution | `TranscriptionEventPipeline` | durable persistence と bounded UI／optional consumer の分離 |
 | Realtime transcript | `TranscriptPersistenceWriter` | 確定イベントの順序、再試行、SQLite transaction |
 | Batch transcript | `BatchTranscriptionCoordinator`, `BatchTranscriptionPersistence` | ready CAF の読出し、認識、成功結果の原子的反映 |
-| UI projection | `TranscriptStore`, `LiveCaptionStore` | bounded で再構築可能な表示状態 |
+| UI projection | `TranscriptStore`, `LiveCaptionStore` | `TranscriptStore` は bounded／再読込可能、ライブ字幕はセッション履歴を差分投影して layout を遅延生成 |
 
 ## データと永続化境界
 
@@ -191,7 +191,7 @@ sequenceDiagram
     participant Chat as Live transcript relay
 
     Speech->>Pipeline: preview
-    Pipeline-->>UI: bounded / replaceable projection
+    Pipeline-->>UI: bounded relay / incremental projection
 
     Speech->>Pipeline: finalized / translation
     Pipeline->>Persist: persistence ingress before suspension
@@ -207,6 +207,8 @@ sequenceDiagram
 ライブ字幕の音源設定は `LiveCaptionStore` からオーバーレイ payload を作る際の表示フィルタである。既定では
 システムオーディオだけを表示し、ユーザーが「マイク入力を含める」を有効にした場合はマイク由来の字幕も表示する。
 この設定は録音する音声、逐次認識器への入力、SQLite の正本文字起こしには影響しない。
+`LiveCaptionStore` は現在の録音セッションの字幕履歴を停止まで保持する。オーバーレイは差分を最大 5 Hz で反映し、
+最新 1〜5 件だけを高さ計測して全履歴の行を遅延生成するため、preview 更新ごとに全件を再投影・layout しない。
 
 preview は保存しない。finalized segment と確定 translation は `TranscriptPersistenceWriter` が順序を保ち、
 SQLite failure 時は actor 内に保持して backoff 付きで再試行する。process が終了すれば memory backlog は失われ得るため、

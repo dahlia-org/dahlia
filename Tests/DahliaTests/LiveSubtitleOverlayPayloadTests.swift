@@ -4,6 +4,7 @@ import Foundation
 #if canImport(Testing)
     import Testing
 
+    @MainActor
     struct LiveSubtitleOverlayPayloadTests {
         @Test
         func latestDefaultsToSystemAudioOnly() {
@@ -326,6 +327,53 @@ import Foundation
             )
 
             #expect(payload == nil)
+        }
+    }
+
+    extension LiveSubtitleOverlayPayloadTests {
+        @Test
+        func projectorAppliesIncrementalCaptionChangesWithoutDroppingHistory() throws {
+            let configuration = LiveSubtitleOverlayPayload.Configuration(
+                sourceMode: .includeMicrophone,
+                transcriptionLocaleIdentifier: "en_US",
+                translationEnabled: true,
+                targetLanguageIdentifier: "ja"
+            )
+            let history = (0 ..< 25).map {
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: 1_776_384_000 + Double($0)),
+                    text: "Segment \($0)",
+                    isConfirmed: true,
+                    speakerLabel: "system"
+                )
+            }
+            let preview = TranscriptSegment(startTime: .now, text: "Preview", speakerLabel: "system")
+            let finalized = TranscriptSegment(id: preview.id, startTime: .now, text: "Final", isConfirmed: true, speakerLabel: "system")
+            var translated = finalized
+            translated.translatedText = "確定"
+            let projector = LiveSubtitleOverlayPayloadProjector()
+
+            projector.apply(.reload)
+            let initialPayload = try #require(projector.payload(
+                from: history,
+                configuration: configuration,
+                visibleEntryCount: 5
+            ))
+            projector.apply(.preview(preview))
+            projector.apply(.finalized(finalized))
+            projector.apply(.update(translated))
+
+            let payload = try #require(projector.payload(
+                from: [],
+                configuration: configuration,
+                visibleEntryCount: 5
+            ))
+            #expect(initialPayload.entries === payload.entries)
+            #expect(payload.entries.count == 26)
+            #expect(payload.entries.first?.primaryText == "Segment 0")
+            #expect(payload.entries.last?.id == finalized.id)
+            #expect(payload.entries.last?.primaryText == "Final")
+            #expect(payload.entries.last?.secondaryText == "確定")
         }
     }
 #endif
