@@ -419,7 +419,7 @@ private struct LiveSubtitleEntryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(entry.primaryText)
                 .font(.title3)
-                .foregroundStyle(.white)
+                .foregroundStyle(entry.isConfirmed ? .white : .white.opacity(0.7))
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
 
