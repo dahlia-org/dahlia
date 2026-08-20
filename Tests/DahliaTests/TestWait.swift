@@ -2,11 +2,9 @@ import Foundation
 
 /// Deadline shared by the polling waits in this test target.
 ///
-/// Swift Testing schedules the entire target concurrently, so MainActor work can queue behind
-/// synchronous database tests even when the observed operation itself resolves in milliseconds.
-/// Two minutes still fails a genuine hang before the CI job timeout without treating runner
-/// scheduling as failure.
-let testPollTimeout = Duration.seconds(120)
+/// Every wait in this target resolves in milliseconds once the process is healthy, so this
+/// deadline exists only to describe a genuine hang.
+let testPollTimeout = Duration.seconds(15)
 
 /// Polls `condition` until it holds or `timeout` elapses, and reports whether it held.
 ///
