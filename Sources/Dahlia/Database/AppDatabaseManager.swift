@@ -60,6 +60,7 @@ final class AppDatabaseManager: Sendable {
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
+            SummarySearchDatabaseFunction.register(in: db)
         }
         return configuration
     }
@@ -223,6 +224,11 @@ final class AppDatabaseManager: Sendable {
         migrator.registerMigration("v35_searchDocuments") { db in
             try SearchFTS5Tokenizer.register(in: db)
             try SearchDocumentsMigration.migrate(in: db)
+        }
+
+        migrator.registerMigration("v36_summarySearch") { db in
+            try SearchFTS5Tokenizer.register(in: db)
+            try SummarySearchMigration.migrate(in: db)
         }
 
         return migrator

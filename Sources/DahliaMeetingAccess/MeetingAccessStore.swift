@@ -26,6 +26,7 @@ public final class MeetingAccessStore: Sendable {
         configuration.busyMode = .timeout(5)
         configuration.prepareDatabase { db in
             try SearchFTS5Tokenizer.register(in: db)
+            SummarySearchDatabaseFunction.register(in: db)
         }
         database = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
         self.vaultID = vaultID
@@ -848,10 +849,12 @@ extension MeetingAccessStore {
     func fetchVault(in db: Database) throws -> ScopedVault {
         let meetingColumns = try String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('meetings')")
         let summaryColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('summaries')"))
+        let searchColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('search_documents_fts')"))
         let projectColumns = try Set(String.fetchAll(db, sql: "SELECT name FROM pragma_table_info('projects')"))
         let legacySummaryColumns: Set = ["summary", "googleFileId", "vaultRelativePath"]
         guard meetingColumns.contains("description"),
               summaryColumns.contains("document"),
+              searchColumns.contains("summary"),
               summaryColumns.isDisjoint(with: legacySummaryColumns),
               projectColumns.isSuperset(of: ["parentProjectId", "name", "nameKey", "projectType", "revision"]),
               try Bool.fetchOne(
@@ -974,9 +977,10 @@ private struct QueryComponents {
                 WHERE meeting_tags.meetingId = meetings.id
                   AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
             )
+            OR dahlia_summary_body(summaries.document) LIKE ? ESCAPE '\\' COLLATE NOCASE
         )
         """)
-        for _ in 0 ..< 5 {
+        for _ in 0 ..< 6 {
             arguments += [pattern]
         }
     }

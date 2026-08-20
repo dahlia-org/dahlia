@@ -126,7 +126,7 @@ extension MeetingRepository {
         let pattern = "%\(escapedLikePattern(criteria.text))%"
         var arguments: StatementArguments = [vaultId, vaultId, vaultId]
         arguments += filters.arguments
-        for _ in 0 ..< 6 {
+        for _ in 0 ..< 7 {
             arguments += [pattern]
         }
         arguments += cursorFilter.arguments
@@ -141,6 +141,7 @@ extension MeetingRepository {
               ON calendar_events.ical_uid = meetings.calendar_event_ical_uid
              AND calendar_events.recurrence_id = meetings.calendar_event_recurrence_id
             LEFT JOIN project_paths ON project_paths.id = meetings.projectId
+            LEFT JOIN summaries ON summaries.meetingId = meetings.id
             WHERE meetings.vaultId = ?
               \(filters.condition)
               AND (
@@ -155,6 +156,7 @@ extension MeetingRepository {
                       AND tags.name LIKE ? ESCAPE '\\' COLLATE NOCASE
                 )
                 OR project_paths.path LIKE ? ESCAPE '\\' COLLATE NOCASE
+                OR dahlia_summary_body(summaries.document) LIKE ? ESCAPE '\\' COLLATE NOCASE
               )
               \(cursorFilter.condition)
             ORDER BY \(sidebarRecordingStartedAtSQL) DESC, meetings.id DESC
@@ -233,7 +235,11 @@ extension MeetingRepository {
             return .init(kind: .calendar, text: calendar)
         }
         let description: String = meeting?["description"] ?? ""
-        return .init(kind: .description, text: snippet(description, matching: query))
+        if description.localizedStandardContains(query) {
+            return .init(kind: .description, text: snippet(description, matching: query))
+        }
+        let summary = try summaryBodyText(meetingID: meetingID, in: db)
+        return .init(kind: .summary, text: snippet(summary, matching: query))
     }
 
     private nonisolated static func fullTextSearch(
@@ -589,6 +595,11 @@ extension MeetingRepository {
                 kind: .description,
                 text: snippet(meetingText("description", meetingID: meetingID, in: db), matching: hit.token)
             )
+        case .summary:
+            return try .init(
+                kind: .summary,
+                text: snippet(summaryBodyText(meetingID: meetingID, in: db), matching: hit.token)
+            )
         case .calendar:
             let calendar = try Row.fetchOne(
                 db,
@@ -632,6 +643,15 @@ extension MeetingRepository {
         in db: Database
     ) throws -> String {
         try String.fetchOne(db, sql: "SELECT \(column) FROM meetings WHERE id = ?", arguments: [meetingID]) ?? ""
+    }
+
+    private nonisolated static func summaryBodyText(meetingID: UUID, in db: Database) throws -> String {
+        let document = try String.fetchOne(
+            db,
+            sql: "SELECT document FROM summaries WHERE meetingId = ?",
+            arguments: [meetingID]
+        )
+        return SummarySearchDatabaseFunction.bodyText(databaseJSON: document)
     }
 
     private nonisolated static func snippet(_ text: String, matching token: String) -> String {
@@ -752,13 +772,13 @@ extension MeetingRepository {
 }
 
 private enum SearchField: String, CaseIterable {
-    case title, tags, projectPath, calendar, description
+    case title, tags, projectPath, calendar, description, summary
 
     var matchClass: Int {
         switch self {
         case .title: 0
         case .tags, .projectPath, .calendar: 1
-        case .description: 2
+        case .description, .summary: 2
         }
     }
 }

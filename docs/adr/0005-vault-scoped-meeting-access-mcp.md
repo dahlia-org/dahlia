@@ -1,6 +1,6 @@
 # ADR 0005: Vault-scoped read-only meeting access over local MCP
 
-- Status: Accepted, amended by ADR 0010
+- Status: Accepted, amended by ADR 0010 and ADR 0034
 - Date: 2026-07-16
 
 > ADR 0010 retains this Vault boundary and read-only default, and adds an explicit `--write` capability for Project
@@ -9,6 +9,8 @@
 >
 > ADR 0018 adds `update_meeting_summary` under the same `--write` capability. `get_meeting` now also returns
 > `summary_document_version`, and a summary already exported to the vault is rewritten in place by the helper.
+>
+> ADR 0034 extends `query_meetings` to search structured summary body text while preserving this ADR's Vault boundary.
 
 ## Context
 
@@ -21,7 +23,7 @@ Dahlia ships a signed local stdio helper named `dahlia-mcp`. The process require
 By default, the helper opens Dahlia's SQLite database read-only and never runs migrations, changes permissions, or
 writes application data. The initial interface exposed three tools:
 
-- `query_meetings` searches compact metadata: AI meeting name and description, calendar title, project, and tags. It does not search summary or transcript bodies.
+- `query_meetings` searches compact metadata and structured summary body text. It does not search transcript bodies.
 - `get_meeting` returns metadata and the stored Markdown summary, or `null` when absent.
 - `get_meeting_transcript` returns paginated confirmed original segments with speaker, absolute timestamps, and elapsed time across recording sessions.
 
@@ -44,4 +46,4 @@ Settings only displays and copies CLI registration commands. It does not edit Cl
 - Users must explicitly re-register the external MCP server when changing vaults.
 - ADR 0010 defines the current Project read tools and the three write tools exposed only by `--write`; deletion and
   merge remain unsupported.
-- Full-text body search or additional media require a separate security and privacy decision.
+- Transcript search or additional media require a separate security and privacy decision.

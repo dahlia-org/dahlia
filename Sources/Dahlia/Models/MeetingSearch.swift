@@ -87,6 +87,7 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
     enum Kind: Equatable, Hashable, Sendable {
         case title
         case description
+        case summary
         case calendar
         case tag
         case project

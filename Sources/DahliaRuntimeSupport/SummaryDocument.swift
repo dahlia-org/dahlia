@@ -69,6 +69,15 @@ public struct SummaryDocument: Codable, Equatable, Sendable {
         Set(orderedScreenshotIds)
     }
 
+    /// Summary body text used by local search. Metadata and reference identifiers stay out of the index.
+    public var searchableBodyText: String {
+        sections.flatMap { section in
+            [section.heading] + section.blocks.flatMap(\.content.searchableText)
+        }
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .joined(separator: "\n")
+    }
+
     public func removingScreenshotReferences(_ screenshotIds: Set<UUID>) -> SummaryDocument {
         guard !screenshotIds.isEmpty else { return self }
 
@@ -384,6 +393,23 @@ extension SummaryBlockContent: Codable {
             try container.encode(BlockType.table.rawValue, forKey: .type)
             try container.encode(headers, forKey: .headers)
             try container.encode(rows, forKey: .rows)
+        }
+    }
+}
+
+private extension SummaryBlockContent {
+    var searchableText: [String] {
+        switch self {
+        case let .paragraph(text), let .quote(text), let .image(_, text), let .heading(_, text):
+            [text.text]
+        case let .bulletedList(items), let .numberedList(items):
+            items.map(\.text)
+        case let .checklist(items):
+            items.map(\.text.text)
+        case let .code(_, content):
+            [content.text]
+        case let .table(headers, rows):
+            (headers + rows.flatMap(\.self)).map(\.text)
         }
     }
 }
